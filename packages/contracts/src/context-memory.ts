@@ -113,6 +113,12 @@ export interface ContextMemoryBundle {
     encoder: string;
     candidates: number;
     limited: boolean;
+    index?: {
+      state: "building" | "ready" | "capacity" | "blocked";
+      indexed_sources: number;
+      indexed_chunks: number;
+      scan_limited: boolean;
+    };
   };
 }
 
@@ -123,4 +129,16 @@ export interface ContextMemoryRanker {
     passages: readonly string[],
     signal?: AbortSignal
   ): Promise<{ encoder: string; scores: number[] }>;
+}
+export interface ContextMemoryEncoder extends ContextMemoryRanker {
+  readonly encoder: string;
+  /** Join native work retired by cancellation, without stopping other owners' active requests. */
+  drain(): Promise<void>;
+  /** Low-priority caller may skip IO while the shared encoder is cold/busy. */
+  readyForBackground?(): boolean;
+  embed(
+    kind: "query" | "passage",
+    texts: readonly string[],
+    signal?: AbortSignal
+  ): Promise<{ encoder: string; vectors: (number[] | null)[] }>;
 }

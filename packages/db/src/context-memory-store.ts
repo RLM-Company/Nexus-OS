@@ -2,6 +2,11 @@ import { createHash, randomUUID } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
 import { Value } from "typebox/value";
 import { memoryContainsCredential } from "./context-memory-sensitive.js";
+import type {
+  IndexedMemoryRecall,
+  SemanticSource,
+  SemanticIndexInfo
+} from "./semantic-memory-types.js";
 import {
   explicitProfileStatements,
   type ProfileCandidatePage,
@@ -110,6 +115,7 @@ const EMPTY_SETTINGS: ContextMemorySettings = {
 /** Explicit source-backed memory. Optional local ranking never grants source access. */
 export class ContextMemoryStore {
   semanticRanker: ContextMemoryRanker | undefined;
+  indexedRecall: IndexedMemoryRecall | undefined;
   constructor(
     private readonly db: DatabaseSync,
     private readonly now = () => Date.now()
@@ -1025,6 +1031,16 @@ export class ContextMemoryStore {
     budget = 6000,
     signal?: AbortSignal
   ): Promise<ContextMemoryBundle> {
+    if (this.indexedRecall)
+      return this.indexedRecall.resolve(
+        this,
+        target,
+        owner,
+        query,
+        excludeMessageIds,
+        budget,
+        signal
+      );
     signal?.throwIfAborted();
     const initial = this.resolve(target, owner, query, excludeMessageIds, budget);
     const ranker = this.semanticRanker;
@@ -1164,23 +1180,51 @@ export class ContextMemoryStore {
       return this.resolve(target, owner, query, excludeMessageIds, budget);
     }
     signal?.throwIfAborted();
+    return this.fuseSemantic(
+      target,
+      owner,
+      query,
+      excludeMessageIds,
+      budget,
+      settings.version,
+      pool.map((evidence, i) => ({ evidence, score: ranked.scores[i]! })),
+      ranked.encoder,
+      limited
+    );
+  }
+  /** Trusted local index input only; revalidates every selected original. */
+  fuseSemantic(
+    target: MemoryTarget,
+    owner: string,
+    query: string,
+    excludeMessageIds: readonly string[],
+    budget: number,
+    settingsVersion: number,
+    matches: { evidence: ContextMemoryEvidence; score: number }[],
+    encoder: string,
+    limited: boolean,
+    index?: SemanticIndexInfo
+  ): ContextMemoryBundle {
     const current = this.resolve(target, owner, query, excludeMessageIds, budget);
-    if (this.settings(target, owner).version !== settings.version) return current;
+    const settings = this.settings(target, owner);
+    const grants = this.grants(target, settings, owner);
+    const excluded = new Set(excludeMessageIds);
+    if (!settings.enabled || settings.version !== settingsVersion) return current;
     const candidates: RecallCandidate[] = current.items.map((evidence, rank) => ({
       evidence,
       required: evidence.priority || evidence.memory_kind === "constraint",
       score: 1 / (60 + rank + 1)
     }));
     const seen = new Set<string>();
-    const ordered = ranked.scores
-      .map((score, index) => ({ score, index }))
-      .sort((a, b) => b.score - a.score || a.index - b.index);
-    for (const { score, index } of ordered) {
+    const ordered = matches
+      .filter((m) => Number.isFinite(m.score))
+      .sort((a, b) => b.score - a.score);
+    for (const { score, evidence } of ordered) {
       // E5 cosine is not calibrated probability. Fixed retrieval gate, not a
       // claim that a recalled statement is true. Keep no more than eight sources.
       if (score < 0.72 || score < ordered[0]!.score - 0.06 || seen.size >= 8) break;
-      const evidence = pool[index]!;
       if (seen.has(evidence.reference)) continue;
+      if (evidence.source && excluded.has(evidence.source.message_id)) continue;
       if (evidence.kind === "memory") {
         const entry = this.get(evidence.reference.slice(2), owner);
         if (
@@ -1226,10 +1270,136 @@ export class ContextMemoryStore {
         items: [],
         bytes: 0,
         retrieval: "hybrid",
-        semantic_retrieval: { encoder: ranked.encoder, candidates: pool.length, limited }
+        semantic_retrieval: {
+          encoder,
+          candidates: matches.length,
+          limited,
+          ...(index ? { index } : {})
+        }
       },
       candidates
     );
+  }
+  semanticScope(target: MemoryTarget, owner: string) {
+    const settings = this.settings(target, owner);
+    this.owned(target, owner, true);
+    return { settings, grants: this.grants(target, settings, owner) };
+  }
+  semanticSourcePage(
+    target: MemoryTarget,
+    owner: string,
+    phase: number,
+    after: string,
+    limit = 32
+  ): string[] {
+    if (
+      ![0, 1, 2].includes(phase) ||
+      after.length > 128 ||
+      !Number.isInteger(limit) ||
+      limit < 1 ||
+      limit > 64
+    )
+      throw new ContextMemoryError(400, "INVALID_MEMORY_QUERY");
+    const { settings, grants } = this.semanticScope(target, owner);
+    if (!settings.enabled) return [];
+    const chats = JSON.stringify(grants.chats),
+      projects = JSON.stringify(grants.projects);
+    const rows =
+      phase === 0
+        ? this.db
+            .prepare(
+              "SELECT id FROM context_memory_entries WHERE owner_id=? AND id>? AND (expires_at IS NULL OR julianday(expires_at)>julianday(?)) AND ((scope='personal' AND ?=1) OR chat_id IN (SELECT value FROM json_each(?)) OR project_id IN (SELECT value FROM json_each(?))) ORDER BY id LIMIT ?"
+            )
+            .all(
+              owner,
+              after,
+              new Date(this.now()).toISOString(),
+              Number(settings.use_personal),
+              chats,
+              projects,
+              limit
+            )
+        : phase === 1
+          ? this.db
+              .prepare(
+                "SELECT m.id FROM general_chat_messages m JOIN general_chats c ON c.id=m.chat_id AND c.owner_id=m.owner_id WHERE c.owner_id=? AND m.id>? AND c.archived=0 AND m.status='completed' AND m.role IN ('user','assistant') AND c.id IN (SELECT value FROM json_each(?)) ORDER BY m.id LIMIT ?"
+              )
+              .all(owner, after, chats, limit)
+          : this.db
+              .prepare(
+                "SELECT m.id FROM messages m JOIN projects p ON p.id=m.project_id WHERE p.owner_id=? AND m.id>? AND p.status='ACTIVE' AND m.status='completed' AND m.role IN ('user','assistant') AND p.id IN (SELECT value FROM json_each(?)) ORDER BY m.id LIMIT ?"
+              )
+              .all(owner, after, projects, limit);
+    return (rows as { id: string }[]).map((r) => ["M:", "H:g:", "H:p:"][phase]! + r.id);
+  }
+  semanticSource(target: MemoryTarget, owner: string, reference: string): SemanticSource | null {
+    const { settings, grants } = this.semanticScope(target, owner);
+    if (!settings.enabled) return null;
+    let evidence: ContextMemoryEvidence;
+    if (reference.startsWith("M:")) {
+      const entry = this.get(reference.slice(2), owner);
+      if (
+        !entry ||
+        !this.allowed(entry, settings, grants) ||
+        memoryContainsCredential(entry.title + "\n" + entry.content)
+      )
+        return null;
+      evidence = {
+        reference,
+        kind: "memory",
+        text: entry.content,
+        title: entry.title,
+        source: entry.source,
+        memory_kind: entry.kind,
+        version: entry.version,
+        priority: entry.pinned || entry.kind === "constraint",
+        excerpt_only: false
+      };
+    } else {
+      const match = /^H:([gp]):(.{1,128})$/.exec(reference);
+      if (!match) return null;
+      const kind = match[1] === "g" ? "chat_message" : "project_message";
+      const message = this.message(kind, match[2]!, owner);
+      if (
+        !message ||
+        !(kind === "chat_message"
+          ? grants.chats.includes(message.chat_id)
+          : grants.projects.includes(message.project_id!))
+      )
+        return null;
+      evidence = {
+        reference,
+        kind: "history",
+        title: message.created_at,
+        text: message.content,
+        excerpt_only: false,
+        source: {
+          kind,
+          message_id: message.id,
+          chat_id: message.chat_id,
+          project_id: message.project_id,
+          role: message.role,
+          quote: message.content,
+          sha256: hash(message.content)
+        }
+      };
+    }
+    const text = evidence.kind === "memory" ? evidence.title + "\n" + evidence.text : evidence.text;
+    const fingerprint = hash(
+      JSON.stringify(
+        evidence.kind === "memory"
+          ? evidence
+          : [
+              reference,
+              evidence.title,
+              evidence.source!.sha256,
+              evidence.source!.role,
+              evidence.source!.chat_id,
+              evidence.source!.project_id
+            ]
+      )
+    );
+    return { evidence, text, fingerprint };
   }
   private measure(bundle: ContextMemoryBundle) {
     // bytes itself changes the serialized size; converge to an exact fixed point.

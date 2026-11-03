@@ -84,12 +84,15 @@ import { canvasPrivacyAdapter } from "./canvas/canvas-privacy.js";
 import { ProjectAutomationStore } from "@cosmora/db";
 import { PayStore } from "@cosmora/db";
 import { LocalMemoryRanker } from "./semantic-memory/local-ranker.js";
+import { SemanticHistoryIndex } from "./semantic-memory/index-service.js";
+import { SemanticMemoryPrivacy } from "./semantic-memory-privacy.js";
 import { ProjectAutomationPrivacy } from "./project-automation-privacy.js";
 
 const config = loadServerConfig();
 const database = openDatabase(config.databaseUrl);
 let app: ReturnType<typeof buildApp> | undefined;
 let semanticRanker: LocalMemoryRanker | undefined;
+let semanticIndex: SemanticHistoryIndex | undefined;
 let managerBackgroundCoordinator: ManagerBackgroundRunCoordinator | undefined;
 let generalChatBackgroundCoordinator: GeneralChatBackgroundRunCoordinator | undefined;
 let managerWorkCoordinator: ManagerWorkCoordinator | undefined;
@@ -102,6 +105,7 @@ const shutdown = async (signal: NodeJS.Signals): Promise<void> => {
   shuttingDown = true;
 
   if (!app) {
+    await semanticIndex?.stop();
     await semanticRanker?.close();
     database.close();
     process.exitCode = 0;
@@ -135,6 +139,10 @@ try {
     ? new LocalMemoryRanker(process.env.KOSMORA_SEMANTIC_MODEL_DIR)
     : undefined;
   generalChatStore.contextMemory.semanticRanker = semanticRanker;
+  semanticIndex = semanticRanker
+    ? new SemanticHistoryIndex(database.sqlite, semanticRanker)
+    : undefined;
+  generalChatStore.contextMemory.indexedRecall = semanticIndex;
   const sharedBudget = new SharedOwnerBudget(accountStore, projectStore);
   const documentLibrary = new DocumentLibraryStore(database.sqlite);
   const canvasStore = new CanvasArtifactStore(database.sqlite);
@@ -186,6 +194,7 @@ try {
   const recoveredChatRuns = generalChatStore.recoverInterruptedRuns();
   const managerWorkStore = new ManagerWorkStore(database.sqlite);
   managerWorkStore.contextMemory.semanticRanker = semanticRanker;
+  managerWorkStore.contextMemory.indexedRecall = semanticIndex;
   const policyStore = new PolicyStore(database.sqlite);
   managerWorkCoordinator = new ManagerWorkCoordinator({
     ownerBudget: accountStore,
@@ -268,6 +277,7 @@ try {
   ownerPrivacy.register(new NotificationPrivacyAdapter(database.sqlite));
   ownerPrivacy.register(new OwnerSkillPrivacyAdapter(database.sqlite));
   ownerPrivacy.register(new EmailChangePrivacyAdapter(database.sqlite));
+  ownerPrivacy.register(new SemanticMemoryPrivacy(database.sqlite, semanticIndex));
   ownerPrivacy.register(canvasPrivacyAdapter(canvasStore));
   ownerPrivacy.register(intelligenceGraphPrivacyAdapter(graphRepository));
   ownerPrivacy.register(new ProjectAutomationPrivacy(database.sqlite));
@@ -280,6 +290,7 @@ try {
     )
   );
   app = buildApp({
+    indexedRecall: semanticIndex,
     semanticRanker,
     googleDrive,
     computerControl: { enabled: true },
@@ -397,6 +408,9 @@ try {
   app.addHook("onClose", async () => {
     await semanticRanker?.close();
   });
+  app.addHook("preClose", async () => {
+    await semanticIndex?.stop();
+  });
   if (semanticRanker)
     void semanticRanker.warmup().then((ready) => {
       app?.log.info({ semantic_memory_ready: ready }, "Local memory encoder readiness");
@@ -428,6 +442,7 @@ try {
     app.log.warn({ recoveredChatRuns }, "Recovered interrupted ordinary-chat runs after restart");
   }
   await app.listen({ host: config.apiHost, port: config.apiPort });
+  semanticIndex?.start();
   managerWorkCoordinator.start();
   managerBackgroundCoordinator.start();
   generalChatBackgroundCoordinator.start();
@@ -442,6 +457,7 @@ try {
     app.log.error(error, "Failed to start Kosmora API");
     await app.close();
   } else {
+    await semanticIndex?.stop();
     await semanticRanker?.close();
     database.close();
     process.stderr.write("Failed to start Kosmora API\n");

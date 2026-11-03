@@ -1,5 +1,6 @@
 import { registerGithubIssueRoutes } from "./github-issue-routes.js";
 import type { ContextMemoryRanker } from "@cosmora/contracts";
+import type { IndexedMemoryRecall } from "@cosmora/db";
 import { registerRuntimeClockRoutes } from "./runtime-clock-routes.js";
 import { registerContextMemoryRoutes } from "./context-memory-routes.js";
 import { registerHistoryCompactionRoutes } from "./history-compaction-routes.js";
@@ -219,6 +220,7 @@ import type { CanvasArtifactStore } from "@cosmora/db";
 import type { MediaService } from "./media/media-service.js";
 
 export interface AppDependencies {
+  indexedRecall?: IndexedMemoryRecall | undefined;
   semanticRanker?: ContextMemoryRanker | undefined;
   googleDrive?: GoogleDriveRuntime;
   computerControl?: { enabled: boolean };
@@ -1450,7 +1452,8 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
       manager: dependencies.manager,
       budget: dependencies.ownerBudget,
       policy: dependencies.policyStore,
-      semanticRanker: dependencies.semanticRanker
+      semanticRanker: dependencies.semanticRanker,
+      indexedRecall: dependencies.indexedRecall
     });
     registerComputerControlRoutes(app, computer, identityFor);
     dependencies.ownerPrivacy?.register(computer.privacyAdapter());

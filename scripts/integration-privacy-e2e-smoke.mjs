@@ -39,6 +39,7 @@ try {
     ["apps/api/src/notification-privacy.ts", "notification-privacy.js"],
     ["apps/api/src/owner-skill-privacy.ts", "owner-skill-privacy.js"],
     ["apps/api/src/email-change-privacy.ts", "email-change-privacy.js"],
+    ["apps/api/src/semantic-memory-privacy.ts", "semantic-memory-privacy.js"],
     [
       "apps/api/src/account-settings/privacy/account-core-adapter.ts",
       "privacy/account-core-adapter.js"
@@ -65,6 +66,7 @@ try {
   const { NotificationPrivacyAdapter } = await load("notification-privacy.js");
   const { OwnerSkillPrivacyAdapter } = await load("owner-skill-privacy.js");
   const { EmailChangePrivacyAdapter } = await load("email-change-privacy.js");
+  const { SemanticMemoryPrivacy } = await load("semantic-memory-privacy.js");
   const { AccountCorePrivacyAdapter } = await load("privacy/account-core-adapter.js");
   const {
     DocumentsPrivacyAdapter,
@@ -229,6 +231,7 @@ try {
   privacy.register(new NotificationPrivacyAdapter(sql));
   privacy.register(new OwnerSkillPrivacyAdapter(sql));
   privacy.register(new EmailChangePrivacyAdapter(sql));
+  privacy.register(new SemanticMemoryPrivacy(sql));
   assert.equal(privacy.overview("alice").ready, true);
   // A descriptor mismatch MUST abort the entire archive and release owner export fences.
   const canonicalRead = documents.readBinary.bind(documents);

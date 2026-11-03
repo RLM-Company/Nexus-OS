@@ -21,6 +21,18 @@ describe("local semantic encoder runtime", () => {
       "INVALID_SEMANTIC_CONFIG"
     );
   });
+  it("supports a single-thread, single-passage profile without changing the encoder identity", async () => {
+    const ranker = new LocalMemoryRanker(resolve("missing-semantic-model"), 8000, {
+      batchSize: 1,
+      intraThreads: 1
+    });
+    try {
+      expect(ranker.runtimeProfile).toEqual({ batchSize: 1, intraThreads: 1 });
+      expect(await ranker.warmup()).toBe(false);
+    } finally {
+      await ranker.close();
+    }
+  });
   it("fails closed for a corrupt local model before accepting private passages", async () => {
     const directory = await mkdtemp(resolve(tmpdir(), "kosmora-semantic-"));
     await writeFile(resolve(directory, "config.json"), "{}");
