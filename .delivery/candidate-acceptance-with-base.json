@@ -1,0 +1,183 @@
+{
+  "base_commit": "1443d6449a2e95cb9600ea3c549d4420437efa0e",
+  "passed": 25,
+  "total": 25,
+  "network": "disabled",
+  "rows": [
+    {
+      "suite": "scripts/integration-google-drive-smoke.mjs",
+      "initial_exit_code": 0,
+      "final_exit_code": 0,
+      "rerun": false,
+      "note": "First run passed."
+    },
+    {
+      "suite": "scripts/integration-vault-memory-smoke.mjs",
+      "initial_exit_code": 0,
+      "final_exit_code": 0,
+      "rerun": false,
+      "note": "First run passed."
+    },
+    {
+      "suite": "scripts/integration-hybrid-memory-and-download-smoke.mjs",
+      "initial_exit_code": 0,
+      "final_exit_code": 0,
+      "rerun": false,
+      "note": "First run passed."
+    },
+    {
+      "suite": "scripts/integration-compaction-profile-and-vps-smoke.mjs",
+      "initial_exit_code": 0,
+      "final_exit_code": 0,
+      "rerun": false,
+      "note": "First run passed."
+    },
+    {
+      "suite": "scripts/integration-drive-spool-and-koswork-report-smoke.mjs",
+      "initial_exit_code": 0,
+      "final_exit_code": 0,
+      "rerun": false,
+      "note": "First run passed."
+    },
+    {
+      "suite": "scripts/integration-journal-recovery-hazard-and-bpe-smoke.mjs",
+      "initial_exit_code": 0,
+      "final_exit_code": 0,
+      "rerun": false,
+      "note": "First run passed."
+    },
+    {
+      "suite": "scripts/integration-vault-bridge-search-and-emergency-smoke.mjs",
+      "initial_exit_code": 0,
+      "final_exit_code": 0,
+      "rerun": false,
+      "note": "First run passed."
+    },
+    {
+      "suite": "scripts/integration-fable-memory-cache-and-workflows-smoke.mjs",
+      "initial_exit_code": 0,
+      "final_exit_code": 0,
+      "rerun": false,
+      "note": "First run passed."
+    },
+    {
+      "suite": "scripts/integration-workflow-portability-and-fable-discovery-smoke.mjs",
+      "initial_exit_code": 0,
+      "final_exit_code": 0,
+      "rerun": false,
+      "note": "First run passed."
+    },
+    {
+      "suite": "scripts/integration-workflow-dag-receipts-and-unified-smoke.mjs",
+      "initial_exit_code": 0,
+      "final_exit_code": 0,
+      "rerun": false,
+      "note": "First run passed."
+    },
+    {
+      "suite": "scripts/run-all-stage2-acceptance-suites.mjs",
+      "initial_exit_code": 1,
+      "final_exit_code": 0,
+      "rerun": true,
+      "note": "Read-only Git commands allowed after review harness refusal; rerun exited 0."
+    },
+    {
+      "suite": "scripts/integration-nextgen-technologies-smoke.mjs",
+      "initial_exit_code": 0,
+      "final_exit_code": 0,
+      "rerun": false,
+      "note": "First run passed."
+    },
+    {
+      "suite": "scripts/integration-self-healing-and-watchdog-smoke.mjs",
+      "initial_exit_code": 0,
+      "final_exit_code": 0,
+      "rerun": false,
+      "note": "First run passed."
+    },
+    {
+      "suite": "scripts/driver-mock-gateway-live-e2e.mjs",
+      "initial_exit_code": 0,
+      "final_exit_code": 0,
+      "rerun": false,
+      "note": "First run passed."
+    },
+    {
+      "suite": "scripts/benchmark-kosmora-stage2-performance.mjs",
+      "initial_exit_code": 0,
+      "final_exit_code": 0,
+      "rerun": false,
+      "note": "First run passed."
+    },
+    {
+      "suite": "scripts/integration-dynamic-budget-and-blackbox-smoke.mjs",
+      "initial_exit_code": 0,
+      "final_exit_code": 0,
+      "rerun": false,
+      "note": "First run passed."
+    },
+    {
+      "suite": "scripts/integration-reflexion-grounding-and-dom-diff-smoke.mjs",
+      "initial_exit_code": 0,
+      "final_exit_code": 0,
+      "rerun": false,
+      "note": "First run passed."
+    },
+    {
+      "suite": "scripts/integration-crdt-mcts-pii-and-excel-smoke.mjs",
+      "initial_exit_code": 0,
+      "final_exit_code": 0,
+      "rerun": false,
+      "note": "First run passed."
+    },
+    {
+      "suite": "scripts/integration-pptx-temporal-kg-and-shield-smoke.mjs",
+      "initial_exit_code": 0,
+      "final_exit_code": 0,
+      "rerun": false,
+      "note": "First run passed."
+    },
+    {
+      "suite": "scripts/integration-cdc-ast-bandit-and-pdf-smoke.mjs",
+      "initial_exit_code": 0,
+      "final_exit_code": 0,
+      "rerun": false,
+      "note": "First run passed."
+    },
+    {
+      "suite": "scripts/integration-hnsw-merkle-grammar-and-dpi-smoke.mjs",
+      "initial_exit_code": 0,
+      "final_exit_code": 0,
+      "rerun": false,
+      "note": "First run passed."
+    },
+    {
+      "suite": "scripts/integration-datalog-minhash-otel-and-clipboard-smoke.mjs",
+      "initial_exit_code": 0,
+      "final_exit_code": 0,
+      "rerun": false,
+      "note": "First run passed."
+    },
+    {
+      "suite": "scripts/integration-roaring-dp-petri-and-wav-smoke.mjs",
+      "initial_exit_code": 0,
+      "final_exit_code": 0,
+      "rerun": false,
+      "note": "First run passed."
+    },
+    {
+      "suite": "scripts/integration-cuckoo-shamir-causal-and-html-smoke.mjs",
+      "initial_exit_code": 0,
+      "final_exit_code": 0,
+      "rerun": false,
+      "note": "First run passed."
+    },
+    {
+      "suite": "scripts/integration-pq-kalman-zk-and-archive-smoke.mjs",
+      "initial_exit_code": 0,
+      "final_exit_code": 0,
+      "rerun": false,
+      "note": "First run passed."
+    }
+  ]
+}

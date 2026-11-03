@@ -22,8 +22,14 @@ Windows/Node 26, using the actual installed TypeScript transpiler and native
 SQLite. Six could not complete because the patch delivery omits required base
 files such as account-settings/privacy/archive.ts and desktop-state.cjs. This
 does not establish six functional regressions: the archive is not a full repo.
-The author's 25/25 statement is not independently reproduced by this run.
+That standalone run did not reproduce the author's 25/25 statement.
 No paid model, live Drive/VPS request or owner-desktop action was used.
+
+After supplementing a separate test tree with accepted base `1443d644`, all 25
+component scripts passed. One first attempt was blocked by the review harness's
+process policy; a rerun passed after allowing read-only Git commands. The network
+remained disabled. Full repository typecheck and product integration are separate
+from these fixture-based component runs. Intake evidence includes both runs.
 
 These scripts transpile small fixtures; passing them is distinct from the
 complete workspace's typecheck, validation, authorization and runtime wiring.
