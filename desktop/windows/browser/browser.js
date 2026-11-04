@@ -3,8 +3,16 @@ const $ = (id) => document.getElementById(id),
   bridge = window.kosworkBrowser;
 let current = { tabs: [], projects: [], downloads: [] },
   busy = false,
-  historyBusy = false;
+  historyBusy = false,
+  selectedReference = null;
 const messages = {
+  COMPUTER_REFERENCE_UNAVAILABLE:
+    "Пример недоступен: выберите завершённую задачу с принятым результатом и полным планом.",
+  COMPUTER_REFERENCE_CHANGED:
+    "Выбранный пример изменился или удалён. Выберите его заново либо начните без примера.",
+  COMPUTER_REFERENCE_UNSUPPORTED:
+    "Сервер ещё не поддерживает примеры задач. Обновите API или запустите без примера.",
+  COMPUTER_REFERENCE_CONFLICT: "Пример задачи изменился во время сеанса. Начните новую задачу.",
   BROWSER_DOM_TIMEOUT: "Страница отвечает слишком долго. Перезагрузите или закройте вкладку.",
   BROWSER_QUERY_INVALID: "Запрос должен содержать от 1 до 240 символов.",
   BROWSER_SEARCH_UNAVAILABLE:
@@ -139,6 +147,7 @@ function render(value) {
   if (current.projects.some((p) => p.id === selected)) $("project").value = selected;
   else if (current.projects[0]) $("project").value = current.projects[0].id;
   if (current.prefill) {
+    selectedReference = null;
     if (current.prefill.goal) $("goal").value = current.prefill.goal.slice(0, 8000);
     if (current.projects.some((p) => p.id === current.prefill.project))
       $("project").value = current.prefill.project;
@@ -233,13 +242,22 @@ async function run(name, input) {
     add("Соединение с исполнителем прервано.");
   } finally {
     busy = false;
+    selectedReference = null;
     update(await command("state"));
     if ($("history-details").open) await refreshHistory();
   }
 }
+$("project").addEventListener("change", () => {
+  selectedReference = null;
+  void refreshHistory();
+});
 $("start").addEventListener("click", () => {
   if ($("goal").value.trim())
-    void run("start", { project: $("project").value, goal: $("goal").value });
+    void run("start", {
+      project: $("project").value,
+      goal: $("goal").value,
+      ...(selectedReference ? { reference: selectedReference } : {})
+    });
 });
 $("takeover").addEventListener("click", async () => {
   await command("stop");
@@ -303,6 +321,34 @@ async function refreshHistory() {
         button.addEventListener("click", async () => {
           await command("accept", item.id);
           await refreshHistory();
+        });
+        row.append(button);
+      }
+      if (current.taskMode === "work" && item.reusable) {
+        const button = document.createElement("button"),
+          selected = selectedReference?.taskId === item.id;
+        button.textContent = selected ? "Не использовать пример" : "Использовать как пример";
+        button.disabled = busy || current.running;
+        button.addEventListener("click", async () => {
+          if (busy || current.running) return;
+          busy = true;
+          button.disabled = true;
+          render({});
+          try {
+            if (selected) selectedReference = null;
+            else {
+              const value = await command("reference", item.id);
+              if (value.error) return;
+              selectedReference = value.reference;
+              $("project").value = value.project;
+              if (!$("goal").value.trim()) $("goal").value = value.goal;
+              $("goal").focus();
+            }
+          } finally {
+            busy = false;
+            render({});
+            await refreshHistory();
+          }
         });
         row.append(button);
       }

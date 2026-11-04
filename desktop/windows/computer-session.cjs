@@ -43,6 +43,13 @@ class ComputerSession {
     const context = await this.identity();
     if (!context || context.origin !== state.grant.origin || context.owner !== state.grant.owner)
       throw Error("COMPUTER_IDENTITY_CHANGED");
+    if (state.reference)
+      this.history.reference(
+        context,
+        state.grant.project,
+        state.reference.taskId,
+        state.reference.revision
+      );
     if (
       this.workspace &&
       (this.workspace.snapshot(context)?.id ?? null) !== (state.workspace?.id ?? null)
@@ -52,7 +59,14 @@ class ComputerSession {
       throw Error("COMPUTER_SESSION_STOPPED");
     this.gate.assert(state.grant);
   }
-  async run({ project, goal, maxSteps = 20, recovery = null, expectedContext = null }) {
+  async run({
+    project,
+    goal,
+    maxSteps = 20,
+    recovery = null,
+    expectedContext = null,
+    reference = null
+  }) {
     if (this.poisoned) throw Error("COMPUTER_RECOVERY_RESTART_REQUIRED");
     if (this.active) throw Error("COMPUTER_BUSY");
     if (
@@ -93,6 +107,26 @@ class ComputerSession {
         if ((recovery.workspaceId ?? null) !== (state.workspace?.id ?? null))
           throw Error("COMPUTER_WORKSPACE_CHANGED");
       }
+      if (
+        recovery &&
+        reference &&
+        JSON.stringify(reference) !== JSON.stringify(recovery.reference ?? null)
+      )
+        throw Error("COMPUTER_REFERENCE_CHANGED");
+      reference = reference ?? recovery?.reference ?? null;
+      if (reference) {
+        if (
+          this.executionMode !== "work" ||
+          !this.history ||
+          Object.keys(reference).length !== 2 ||
+          typeof reference.taskId !== "string" ||
+          typeof reference.revision !== "string" ||
+          !/^[a-f0-9]{64}$/.test(reference.revision)
+        )
+          throw Error("COMPUTER_REFERENCE_UNAVAILABLE");
+        this.history.reference(context, project, reference.taskId, reference.revision);
+        state.reference = { ...reference };
+      }
       if (this.active !== state || state.controller.signal.aborted)
         throw Error("COMPUTER_SESSION_STOPPED");
       if (
@@ -102,6 +136,14 @@ class ComputerSession {
           project,
           goal,
           recovery,
+          reference: state.reference
+            ? this.history.reference(
+                context,
+                project,
+                state.reference.taskId,
+                state.reference.revision
+              )
+            : null,
           workspace: state.workspace,
           signal: state.controller.signal
         }))
@@ -126,7 +168,8 @@ class ComputerSession {
         goal,
         recoveredFrom: recovery?.taskId ?? null,
         workspaceId: state.workspace?.id ?? null,
-        executionMode: this.executionMode
+        executionMode: this.executionMode,
+        reference: state.reference ?? null
       });
       if (state.journal)
         this.notify({
@@ -143,6 +186,8 @@ class ComputerSession {
         context: state.grant,
         signal: state.controller.signal
       });
+      if (state.reference && state.session?.supports_work_reference !== true)
+        throw Error("COMPUTER_REFERENCE_UNSUPPORTED");
       let previousResult = recovery?.previousResult ?? "";
       let approval = null;
       let pendingObservation = null;
@@ -203,6 +248,16 @@ class ComputerSession {
           step,
           observation,
           previousResult,
+          ...(state.reference
+            ? {
+                workReference: this.history.reference(
+                  state.grant,
+                  project,
+                  state.reference.taskId,
+                  state.reference.revision
+                )
+              }
+            : {}),
           signal: state.controller.signal
         });
         await this.assertLive(state);

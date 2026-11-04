@@ -63,6 +63,7 @@ function createComputerApiClient({ identity, getSession }) {
         "COMPUTER_POLICY_BLOCKED",
         "COMPUTER_BUSY",
         "COMPUTER_OUTPUT_INVALID",
+        "COMPUTER_REFERENCE_CONFLICT",
         "COMPUTER_OUTPUT_INCOMPLETE",
         "COMPUTER_RUNTIME_UNAVAILABLE",
         "COMPUTER_ROUTE_UNAVAILABLE",
@@ -105,6 +106,7 @@ function createComputerApiClient({ identity, getSession }) {
           throw Error("COMPUTER_LIVE_MODEL_REQUIRED");
         if (executionMode !== "computer" && result.execution_mode !== executionMode)
           throw Error("COMPUTER_LIVE_MODEL_REQUIRED");
+        if (result.supports_work_reference === true) session.supports_work_reference = true;
         if (result.supports_workspace_read_lines === true)
           session.supports_workspace_read_lines = true;
         if (result.supports_workspace_documents === true)
@@ -125,13 +127,20 @@ function createComputerApiClient({ identity, getSession }) {
         throw error;
       }
     },
-    async next({ session, project, step, observation, previousResult, signal }) {
+    async next({ session, project, step, observation, previousResult, workReference, signal }) {
+      if (workReference && session.supports_work_reference !== true)
+        throw Error("COMPUTER_REFERENCE_UNSUPPORTED");
       const result = await request(`${root(project)}/${encodeURIComponent(session.id)}/step`, {
         method: "POST",
         token: session.token,
         expected: session,
         signal,
-        body: { step, observation, previous_result: previousResult }
+        body: {
+          step,
+          observation,
+          previous_result: previousResult,
+          ...(workReference ? { work_reference: workReference } : {})
+        }
       });
       const source = result?.decision_source;
       if (

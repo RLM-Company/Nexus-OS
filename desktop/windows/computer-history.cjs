@@ -5,6 +5,7 @@ const path = require("node:path");
 const { randomUUID, createHash } = require("node:crypto");
 const { normalizeServerOrigin } = require("./connection-policy.cjs");
 const { computerActionKinds, recoveryWriteActions } = require("./computer-policy.cjs");
+const { buildWorkReference, canReference } = require("./work-experience.cjs");
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const PROJECT = /^[a-zA-Z0-9_-]{1,160}$/;
 const PHASES = new Set(["planned", "not_executed", "dispatching", "requested", "observed"]);
@@ -59,6 +60,9 @@ function cleanRecord(r) {
     !PROJECT.test(r.project) ||
     !STATES.has(r.status) ||
     (r.executionMode !== undefined && !["computer", "browser", "work"].includes(r.executionMode)) ||
+    (r.referenceSource != null &&
+      (!UUID.test(r.referenceSource.taskId) ||
+        !/^[a-f0-9]{64}$/.test(r.referenceSource.revision))) ||
     !validTime(r.createdAt) ||
     !validTime(r.updatedAt) ||
     r.updatedAt < r.createdAt ||
@@ -97,6 +101,14 @@ function cleanRecord(r) {
         ? r.workspaceId
         : null,
     reviewRequired: r.reviewRequired === true,
+    ...(r.referenceSource
+      ? {
+          referenceSource: {
+            taskId: r.referenceSource.taskId,
+            revision: r.referenceSource.revision
+          }
+        }
+      : {}),
     acceptedAt: validTime(r.acceptedAt) && r.status === "completed" ? r.acceptedAt : null
   };
 }
@@ -224,9 +236,29 @@ function createComputerHistory(userData, { codec, now = Date.now, namespace = "c
         .sort((a, b) => b.updatedAt - a.updatedAt)
         .map((r) => ({
           ...r,
+          ...(r.executionMode === "work" ? { reusable: canReference(r) } : {}),
           recoverable: RESTORABLE.has(r.status) && r.goal !== null,
           requiresReview: needsReview(r)
         }));
+    },
+    reference(context, project, id, expectedRevision = null) {
+      let r;
+      try {
+        r = get(context, id);
+      } catch (error) {
+        if (error.message === "COMPUTER_HISTORY_NOT_FOUND")
+          throw Error(
+            expectedRevision !== null
+              ? "COMPUTER_REFERENCE_CHANGED"
+              : "COMPUTER_REFERENCE_UNAVAILABLE"
+          );
+        throw error;
+      }
+      if (r.project !== project) throw Error("COMPUTER_REFERENCE_UNAVAILABLE");
+      const value = buildWorkReference(r);
+      if (expectedRevision !== null && value.revision !== expectedRevision)
+        throw Error("COMPUTER_REFERENCE_CHANGED");
+      return value;
     },
     recovery(context, id) {
       const r = get(context, id);
@@ -234,6 +266,7 @@ function createComputerHistory(userData, { codec, now = Date.now, namespace = "c
         throw Error("COMPUTER_RECOVERY_UNAVAILABLE");
       return {
         taskId: r.id,
+        ...(r.referenceSource ? { reference: r.referenceSource } : {}),
         executionMode: r.executionMode,
         ...(r.executionMode === "work" ? { workPlan: r.workPlan } : {}),
         project: r.project,
@@ -280,7 +313,14 @@ function createComputerHistory(userData, { codec, now = Date.now, namespace = "c
     },
     start(
       context,
-      { project, goal, recoveredFrom = null, workspaceId = null, executionMode = "computer" }
+      {
+        project,
+        goal,
+        recoveredFrom = null,
+        workspaceId = null,
+        executionMode = "computer",
+        reference = null
+      }
     ) {
       if (
         !PROJECT.test(project) ||
@@ -289,6 +329,10 @@ function createComputerHistory(userData, { codec, now = Date.now, namespace = "c
       )
         fail();
       if (!["computer", "browser", "work"].includes(executionMode)) fail();
+      if (reference) {
+        if (executionMode !== "work") throw Error("COMPUTER_REFERENCE_UNAVAILABLE");
+        api.reference(context, project, reference.taskId, reference.revision);
+      }
       const savedGoal = safeGoal(goal);
       const records = read(context);
       let reviewRequired = false;
@@ -297,12 +341,14 @@ function createComputerHistory(userData, { codec, now = Date.now, namespace = "c
         if (prior.goal !== goal || prior.project !== project)
           throw Error("COMPUTER_RECOVERY_UNAVAILABLE");
         if (prior.executionMode !== executionMode) throw Error("COMPUTER_RECOVERY_UNAVAILABLE");
+        if (JSON.stringify(prior.reference ?? null) !== JSON.stringify(reference ?? null))
+          throw Error("COMPUTER_REFERENCE_CHANGED");
         if (prior.workspaceId !== workspaceId) throw Error("COMPUTER_WORKSPACE_CHANGED");
         reviewRequired = prior.requiresReview;
       }
       while (records.length >= MAX_RECORDS) {
         const candidates = records
-          .filter((r) => !["running", "paused"].includes(r.status))
+          .filter((r) => !["running", "paused"].includes(r.status) && r.id !== reference?.taskId)
           .sort((a, b) => a.updatedAt - b.updatedAt);
         if (!candidates.length) fail();
         records.splice(
@@ -324,7 +370,10 @@ function createComputerHistory(userData, { codec, now = Date.now, namespace = "c
         recoveredFrom,
         workspaceId,
         reviewRequired,
-        acceptedAt: null
+        acceptedAt: null,
+        ...(reference
+          ? { referenceSource: { taskId: reference.taskId, revision: reference.revision } }
+          : {})
       };
       records.push(r);
       write(context, records);
