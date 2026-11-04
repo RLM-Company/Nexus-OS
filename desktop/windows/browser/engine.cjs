@@ -5,6 +5,7 @@ const { safeUrl, agentUrl } = require("./policy.cjs");
 const documentCode = require("./document.cjs");
 const searchCode = require("./search.cjs");
 const { actionProbe, actionEvidence } = require("./action-evidence.cjs");
+const { recordRecovery, recoveryHint } = require("./recovery.cjs");
 
 const HOME = "about:blank";
 function createBrowserEngine({
@@ -31,7 +32,8 @@ function createBrowserEngine({
     stopped = false,
     wantImage = false,
     automated = 0,
-    pendingEvidence = null;
+    pendingEvidence = null,
+    pendingRecovery = null;
   const downloads = [],
     intents = new Map();
   const activeDownloads = () => downloads.filter((d) => d.status === "progressing").length;
@@ -470,8 +472,15 @@ function createBrowserEngine({
     const tab = expected(observation);
     const node = refNode(action, observation);
     const found = await evaluate(tab, documentCode.locate, [last.id, action.ref]);
-    if (!found || found.blocked || found.info.signature !== node.signature)
-      throw Error("BROWSER_ELEMENT_UNAVAILABLE");
+    if (!found || found.blocked || found.info.signature !== node.signature) {
+      const error = Error("BROWSER_ELEMENT_UNAVAILABLE");
+      error.browserRecoveryReason = !found
+        ? "target_missing"
+        : found.blocked
+          ? "target_blocked"
+          : "target_changed";
+      throw error;
+    }
     expected(observation);
     return { tab, web: tab.view.webContents, node, found };
   }
@@ -536,15 +545,19 @@ function createBrowserEngine({
     if (tab.search) doc.url = HOME;
     if (signal.aborted || version !== tab.version) throw Error("BROWSER_STALE");
     tab.dirty ||= doc.dirty;
+    if (doc.text.length > 6000) doc.truncated = true;
     doc.text = doc.text.slice(0, 6000);
     const evidence = pendingEvidence;
     pendingEvidence = null;
+    const failure = pendingRecovery;
+    pendingRecovery = null;
     const transition =
       evidence && evidence.tab === tab.id && now() - evidence.at <= 30000
         ? actionEvidence(evidence.probe, doc, evidence.inputVerified)
         : null;
-    const publicDoc = () =>
-      JSON.stringify({
+    const publicDoc = () => {
+      const recovery = recoveryHint(failure, { id, tab: tab.id, version, document: doc }, now());
+      return JSON.stringify({
         url: agentUrl(doc.url),
         title: doc.title,
         ...(tab.search
@@ -565,10 +578,18 @@ function createBrowserEngine({
         ...(doc.notices?.length ? { notices: doc.notices } : {}),
         ...(doc.skipped_frames ? { skipped_frames: doc.skipped_frames } : {}),
         ...(transition ? { transition } : {}),
+        ...(recovery ? { recovery } : {}),
         downloads: downloads.slice(-5).map(({ item, path, ...d }) => d)
       });
-    while (publicDoc().length > 14500 && doc.nodes.length) doc.nodes.pop();
-    if (publicDoc().length > 14500) doc.text = doc.text.slice(0, 1000);
+    };
+    while (publicDoc().length > 14500 && doc.nodes.length) {
+      doc.nodes.pop();
+      doc.truncated = true;
+    }
+    if (publicDoc().length > 14500) {
+      doc.text = doc.text.slice(0, 1000);
+      doc.truncated = true;
+    }
     last = { id, tab: active, version, document: doc };
     const size = bounds(),
       observation = {
@@ -618,10 +639,21 @@ function createBrowserEngine({
     return { site: tabs.get(active)?.url, target: node?.name, role: node?.role, path: action.path };
   }
   async function execute(action, observation, signal) {
+    pendingRecovery = null;
     expected(observation);
     const probe = actionProbe(action, last.document),
       tab = active;
-    const receipt = await executeAction(action, observation, signal);
+    const snapshot = last;
+    let receipt;
+    try {
+      receipt = await executeAction(action, observation, signal);
+    } catch (error) {
+      // executeAction turns every post-input failure into BROWSER_INPUT_UNCERTAIN.
+      // Only a known rejection before input may create a recovery hint.
+      if (error.message === "BROWSER_ELEMENT_UNAVAILABLE")
+        pendingRecovery = recordRecovery(action, snapshot, error.browserRecoveryReason, now());
+      throw error;
+    }
     if (probe)
       pendingEvidence = { tab, probe, at: now(), inputVerified: receipt.input_verified === true };
     return receipt;
@@ -1045,6 +1077,7 @@ function createBrowserEngine({
     cancel() {
       for (const tab of tabs.values()) tab.searchAbort?.abort();
       last = null;
+      pendingRecovery = null;
       wantImage = false;
       intents.clear();
       for (const d of downloads) if (d.item) d.item.cancel();

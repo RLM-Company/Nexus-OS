@@ -343,6 +343,23 @@ async function run() {
     );
     deep = await observeDeep();
     assert.notEqual(deep.doc.nodes.find((n) => n.name === "Save shadow").ref, stale.ref);
+    const replacementRef = deep.doc.nodes.find((n) => n.name === "Save shadow").ref;
+    assert.deepEqual(deep.doc.recovery.candidate_refs, [replacementRef]);
+    assert.equal(deep.doc.recovery.requires_new_action, true);
+    assert.equal(deep.doc.recovery.reason, "target_missing");
+    assert.equal(
+      await page.evaluate(() => window.shadowClicks),
+      1,
+      "a recovery hint itself has no input effect"
+    );
+    await engine.execute({ kind: "browser_click", ref: replacementRef }, deep.observation, abort);
+    assert.equal(
+      await page.evaluate(() => window.shadowClicks),
+      2,
+      "the explicitly replanned replacement is clicked once"
+    );
+    deep = await observeDeep();
+    assert.equal(deep.doc.recovery, undefined, "failure metadata is one-shot");
     const keyButton = deep.doc.nodes.find((n) => n.name === "Keyboard submit");
     await engine.execute(
       { kind: "browser_key", ref: keyButton.ref, key: "ENTER" },
