@@ -28,3 +28,7 @@ Thumbs.db
 /apps/api/.work-dag-test-temp/
 /apps/web/.data-test-temp/
 /apps/web/.primitives-test-temp/
+
+# Generated, pinned offline PDF/OCR runtime (rebuilt by document-reader/prepare.cjs).
+/desktop/windows/document-reader/vendor/
+/desktop/windows/document-reader/assets-manifest.json

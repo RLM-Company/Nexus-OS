@@ -9,14 +9,21 @@ const {
   resolveSafeWorkspaceTarget
 } = require("./workspace/index.cjs");
 
-function createComputerWorkspace({ userDataPath, codec, pickDirectory, scopeNamespace = "" }) {
+function createComputerWorkspace({
+  userDataPath,
+  codec,
+  pickDirectory,
+  scopeNamespace = "",
+  pdfReader = null
+}) {
   if (!codec?.seal || !codec?.open) throw Error("COMPUTER_WORKSPACE_UNAVAILABLE");
   const service = createKosworkWorkspaceService({
     userDataPath,
     codec,
     requireOwnerScope: true,
     pickDirectory,
-    scopeNamespace
+    scopeNamespace,
+    pdfReader: pdfReader?.read
   });
   let scope = null;
   const owner = (context) => ({ ownerId: context.owner, origin: context.origin });
@@ -37,6 +44,7 @@ function createComputerWorkspace({ userDataPath, codec, pickDirectory, scopeName
     supportsLineReads: (context) => Boolean(snapshot(context)),
     supportsDocuments: (context) => Boolean(snapshot(context)),
     supportsDocumentReads: (context) => Boolean(snapshot(context)),
+    supportsPdfReads: (context) => Boolean(snapshot(context) && pdfReader?.available()),
     uploadFile(context, workspaceId, relativePath) {
       if (snapshot(context)?.id !== workspaceId || !workspaceId)
         throw Error("COMPUTER_WORKSPACE_CHANGED");
@@ -150,6 +158,16 @@ function createComputerWorkspace({ userDataPath, codec, pickDirectory, scopeName
           break;
         case "workspace_read":
           result = await service.readTextFile({ ...args, maxBytes: 10000 });
+          break;
+        case "workspace_read_pdf":
+          result = await service.readPdfFile({
+            ...args,
+            pageIndex: action.page_index,
+            mode: action.mode,
+            offset: action.offset_utf16,
+            expectedVersion: action.expected_version,
+            expectedTextSha256: action.expected_text_sha256
+          });
           break;
         case "workspace_read_document":
           result = await service.readDocumentFile({

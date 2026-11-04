@@ -30,6 +30,7 @@ const OWNER_ID_PATTERN = /^[^\s\u0000-\u001f\u007f]{1,128}$/u;
 
 const DEFAULT_LIMITS = Object.freeze({
   maxReadBytes: 2 * 1024 * 1024, // 2 MiB max text read
+  maxPdfBytes: 25 * 1024 * 1024, // local page-oriented PDF processing
   maxWriteBytes: 2 * 1024 * 1024, // 2 MiB max text write
   maxListEntries: 200,
   hardMaxListEntries: 1000,
@@ -134,7 +135,8 @@ function createKosworkWorkspaceService({
   now = () => Date.now(),
   codec = null,
   scopeNamespace = "",
-  pickDirectory = null
+  pickDirectory = null,
+  pdfReader = null
 } = {}) {
   const limits = sanitizeLimits(customLimits);
 
@@ -1126,6 +1128,166 @@ function createKosworkWorkspaceService({
       op.end();
     }
   }
+  async function readPdfFile({
+    relativePath,
+    pageIndex = 0,
+    mode = "auto",
+    offset = 0,
+    expectedVersion = null,
+    expectedTextSha256 = null,
+    ownerId = null,
+    origin = null,
+    signal = null,
+    ipcEvent = null
+  } = {}) {
+    const session = verifyCallerOwner({ ownerId, origin, ipcEvent }),
+      op = beginOperation(signal);
+    try {
+      if (
+        typeof pdfReader !== "function" ||
+        !Number.isSafeInteger(pageIndex) ||
+        pageIndex < 0 ||
+        pageIndex > 1999 ||
+        !["auto", "text", "ocr"].includes(mode) ||
+        !Number.isSafeInteger(offset) ||
+        offset < 0 ||
+        offset > 180000 ||
+        !/\.pdf$/i.test(relativePath) ||
+        (offset > 0 && (expectedVersion === null || expectedTextSha256 === null)) ||
+        (expectedTextSha256 !== null && !/^[a-f0-9]{64}$/.test(expectedTextSha256)) ||
+        (expectedVersion !== null && !/^sha256:[a-f0-9]{64}$/.test(expectedVersion))
+      )
+        throw new KosworkWorkspaceError(
+          ERROR_CODES.WORKSPACE_RANGE_INVALID,
+          "Укажите PDF, страницу, режим чтения и версию для продолжения."
+        );
+      const target = resolveSafeWorkspaceTarget(session.canonicalRoot, relativePath, {
+        allowEmpty: false,
+        mustExist: true,
+        signal,
+        activeController: op.controller
+      });
+      const snapshot = readBoundedFileSnapshot(target.absolutePath, {
+        relativePath: target.relativePath,
+        maxBytes: limits.maxPdfBytes,
+        signal,
+        activeController: op.controller
+      });
+      if (expectedVersion !== null && !versionsMatch(snapshot.sha256, expectedVersion))
+        throw new KosworkWorkspaceError(
+          ERROR_CODES.WORKSPACE_VERSION_CONFLICT,
+          "PDF изменился. Начните чтение актуальной версии."
+        );
+      let parsed;
+      try {
+        parsed = await pdfReader({
+          bytes: snapshot.buffer,
+          pageIndex,
+          mode,
+          signal: signal ? AbortSignal.any([signal, op.controller.signal]) : op.controller.signal
+        });
+        parsed = require("../document-reader/host.cjs").validateResult(parsed, pageIndex);
+      } catch (error) {
+        throwIfAborted(signal, op.controller);
+        throw new KosworkWorkspaceError(
+          ERROR_CODES.WORKSPACE_BINARY_FILE,
+          "Не удалось прочитать страницу PDF: файл повреждён, защищён, страница недоступна либо превышен ресурс обработки."
+        );
+      }
+      verifyCallerOwner({ ownerId, origin, ipcEvent });
+      assertRootIdentity(session);
+      throwIfAborted(signal, op.controller);
+      const final = resolveSafeWorkspaceTarget(session.canonicalRoot, target.relativePath, {
+        mustExist: true,
+        signal,
+        activeController: op.controller
+      });
+      const checked = readBoundedFileSnapshot(final.absolutePath, {
+        relativePath: target.relativePath,
+        maxBytes: limits.maxPdfBytes,
+        signal,
+        activeController: op.controller
+      });
+      if (checked.sha256 !== snapshot.sha256)
+        throw new KosworkWorkspaceError(
+          ERROR_CODES.WORKSPACE_VERSION_CONFLICT,
+          "PDF изменился во время обработки. Не объединяйте разные версии."
+        );
+      const text = parsed.text;
+      if (
+        expectedTextSha256 !== null &&
+        computeBufferVersion(Buffer.from(text, "utf8")).sha256 !== expectedTextSha256
+      )
+        throw new KosworkWorkspaceError(
+          ERROR_CODES.WORKSPACE_VERSION_CONFLICT,
+          "Текст страницы изменился. Начните с позиции 0 и не объединяйте разные представления."
+        );
+      if (
+        offset > text.length ||
+        (offset > 0 &&
+          /[\uDC00-\uDFFF]/.test(text[offset] || "") &&
+          /[\uD800-\uDBFF]/.test(text[offset - 1] || ""))
+      )
+        throw new KosworkWorkspaceError(
+          ERROR_CODES.WORKSPACE_RANGE_INVALID,
+          "Позиция вне текста страницы."
+        );
+      const representation = {
+        parser: "koswork-pdfjs-6.3.289-tesseract-7.0.0-v1",
+        method: parsed.method,
+        text_sha256: computeBufferVersion(Buffer.from(text, "utf8")).sha256,
+        page_count: parsed.page_count,
+        page_index: pageIndex,
+        page_number: pageIndex + 1,
+        needs_ocr: parsed.needs_ocr,
+        text_clipped: parsed.text_clipped,
+        ocr_confidence: parsed.confidence,
+        complete_document: false,
+        limitations: [
+          "Only selected page; layout, tables, images and handwriting are not guaranteed.",
+          "OCR may misread names and numbers. Its confidence is not factual accuracy."
+        ]
+      };
+      let end = Math.min(text.length, offset + 6000),
+        result;
+      do {
+        if (
+          end < text.length &&
+          /[\uDC00-\uDFFF]/.test(text[end] || "") &&
+          /[\uD800-\uDBFF]/.test(text[end - 1] || "")
+        )
+          end--;
+        result = {
+          kind: "untrusted_pdf_page_excerpt",
+          path: target.relativePath,
+          sha256: snapshot.sha256,
+          version: snapshot.version,
+          size: snapshot.size,
+          representation,
+          offset_utf16: offset,
+          end_utf16: end,
+          total_characters: text.length,
+          excerpt_only: offset > 0 || end < text.length,
+          content: text.slice(offset, end),
+          next_offset: end < text.length ? end : null
+        };
+        if (Buffer.byteLength(JSON.stringify(result), "utf8") <= 10000) break;
+        end = offset + Math.floor((end - offset) / 2);
+      } while (end > offset);
+      if (
+        Buffer.byteLength(JSON.stringify(result), "utf8") > 10000 ||
+        (end === offset && offset < text.length)
+      )
+        throw new KosworkWorkspaceError(
+          ERROR_CODES.WORKSPACE_FILE_TOO_LARGE,
+          "Не удалось вместить выдержку страницы PDF."
+        );
+      return result;
+    } finally {
+      op.end();
+    }
+  }
+
   async function createDirectory({
     relativePath,
     recursive = true,
@@ -1623,6 +1785,7 @@ function createKosworkWorkspaceService({
     searchByText,
     readTextFile,
     readDocumentFile,
+    readPdfFile,
     createDirectory,
     createFile,
     createDocument,

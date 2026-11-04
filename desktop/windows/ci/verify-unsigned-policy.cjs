@@ -18,6 +18,7 @@ function verify() {
   assert.equal(pkg.build.electronVersion, "44.5.1");
   assert.equal(pkg.build.asar, true);
   assert.equal(pkg.build.nsis.oneClick, false);
+  assert.ok(pkg.build.files.includes("document-reader/vendor/**/*"));
   assert.equal(pkg.build.nsis.perMachine, false);
   assert.equal(pkg.build.nsis.deleteAppDataOnUninstall, false);
   assert.deepEqual(pkg.build.win.target, [{ target: "nsis", arch: ["x64"] }]);
@@ -25,6 +26,10 @@ function verify() {
   assert.deepEqual(pkg.build.protocols[0].schemes, ["kosmora"]);
   for (const file of [
     "main.cjs",
+    "document-reader/host.cjs",
+    "document-reader/reader.js",
+    "document-reader/index.html",
+    "document-reader/assets-manifest.json",
     "browser/policy.cjs",
     "browser/document.cjs",
     "browser/profiles.cjs",

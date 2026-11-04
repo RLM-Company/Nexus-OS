@@ -77,6 +77,12 @@ jobs:
           TURBO_TELEMETRY_DISABLED: "1"
         run: pnpm test:e2e
 
+      - name: Verify offline PDF text and Russian-English scan recognition
+        run: |
+          npm ci --ignore-scripts --omit=optional --prefix desktop/windows/document-reader/deps
+          node desktop/windows/document-reader/prepare.cjs
+          node desktop/windows/ci/document-reader-smoke.cjs
+
       - name: Verify Koswork browser CDP engine and native-window UI assets
         env:
           KOSWORK_BROWSER_SCREENSHOT: ${{ runner.temp }}/koswork-browser-home.png

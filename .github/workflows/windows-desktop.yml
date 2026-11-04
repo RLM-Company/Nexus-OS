@@ -38,6 +38,14 @@ jobs:
           node-version: 24
           package-manager-cache: false
 
+      - name: Prepare pinned offline PDF and OCR assets
+        shell: pwsh
+        run: |
+          npm ci --ignore-scripts --omit=optional --prefix desktop/windows/document-reader/deps
+          if ($LASTEXITCODE -ne 0) { throw "Document asset dependency install failed." }
+          node desktop/windows/document-reader/prepare.cjs
+          if ($LASTEXITCODE -ne 0) { throw "Document asset preparation failed." }
+
       - name: Syntax and policy checks
         working-directory: desktop/windows
         shell: pwsh

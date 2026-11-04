@@ -6,6 +6,7 @@ const path = require("node:path");
 const { pathToFileURL } = require("node:url");
 const {
   app,
+  protocol,
   BrowserWindow,
   WebContentsView,
   dialog,
@@ -28,6 +29,9 @@ const { createPreferenceStore, deepLinkFromArgv, restoredBounds } = require("./d
 const { createUpdateService } = require("./update-service.cjs");
 const { createDraftStore } = require("./draft-store.cjs");
 const { createComputerWorkspace } = require("./computer-workspace.cjs");
+const { registerDocumentScheme, createPdfReaderHost } = require("./document-reader/host.cjs");
+registerDocumentScheme(protocol);
+const pdfReader = createPdfReaderHost({ BrowserWindow, session });
 const { createComputerHistory } = require("./computer-history.cjs");
 const { fetchElectronOwner } = require("./owner-session.cjs");
 const { createDraftSessionGate } = require("./draft-session-gate.cjs");
@@ -92,6 +96,7 @@ const workCycleHistory = createComputerHistory(profileDirectory, {
   namespace: "work"
 });
 const computerWorkspace = createComputerWorkspace({
+  pdfReader,
   userDataPath: profileDirectory,
   codec: localTextCodec,
   pickDirectory: async () => {
@@ -164,6 +169,7 @@ const vaultConsole =
     : null;
 const taskGate = createTaskGate();
 const browserWorkspace = createComputerWorkspace({
+  pdfReader,
   userDataPath: profileDirectory,
   codec: localTextCodec,
   scopeNamespace: "browser",
@@ -197,6 +203,7 @@ const kosworkBrowser =
       })
     : null;
 const workCycleBaseWorkspace = createComputerWorkspace({
+  pdfReader,
   userDataPath: profileDirectory,
   codec: localTextCodec,
   scopeNamespace: "work-cycle",
