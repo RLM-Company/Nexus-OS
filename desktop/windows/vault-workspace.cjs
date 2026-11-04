@@ -72,6 +72,7 @@ function createVaultWorkspace({ base, vault, now = Date.now }) {
     supportsLineReads: (context) => Boolean(base.snapshot(context)),
     supportsDocuments: (context) => Boolean(base.snapshot(context)),
     supportsDocumentReads: (context) => Boolean(base.snapshot(context)),
+    supportsPdfReads: (context) => base.supportsPdfReads?.(context) === true,
     vaultState: (c) => Boolean(allowed(c)),
     async connect(c, signal) {
       revoke();

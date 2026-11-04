@@ -47,6 +47,14 @@ const fields = {
   workspace_list: ["path", "cursor"],
   workspace_find: ["path", "mode", "query"],
   workspace_read: ["path"],
+  workspace_read_pdf: [
+    "path",
+    "page_index",
+    "mode",
+    "offset_utf16",
+    "expected_text_sha256",
+    "expected_version"
+  ],
   workspace_read_document: ["path", "offset_utf16", "expected_version"],
   workspace_read_lines: ["path", "start_line", "end_line", "expected_version"],
   workspace_mkdir: ["path"],
@@ -149,6 +157,24 @@ function validateComputerAction(action) {
     }
     if (action.kind.startsWith("workspace_")) {
       try {
+        if (
+          action.kind === "workspace_read_pdf" &&
+          (!Number.isSafeInteger(action.page_index) ||
+            action.page_index < 0 ||
+            action.page_index > 1999 ||
+            !["auto", "text", "ocr"].includes(action.mode) ||
+            !Number.isSafeInteger(action.offset_utf16) ||
+            action.offset_utf16 < 0 ||
+            action.offset_utf16 > 180000 ||
+            !/\.pdf$/i.test(action.path) ||
+            (action.offset_utf16 > 0 &&
+              (action.expected_version === null || action.expected_text_sha256 === null)) ||
+            (action.expected_text_sha256 !== null &&
+              !/^[a-f0-9]{64}$/.test(action.expected_text_sha256)) ||
+            (action.expected_version !== null &&
+              !/^sha256:[a-f0-9]{64}$/.test(action.expected_version)))
+        )
+          return false;
         if (
           action.kind === "workspace_read_document" &&
           (!Number.isSafeInteger(action.offset_utf16) ||

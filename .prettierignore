@@ -13,3 +13,6 @@ apps/api/.work-dag-test-temp/
 apps/web/.data-test-temp/
 apps/web/.primitives-test-temp/
 apps/web/public/generated/
+
+desktop/windows/document-reader/vendor/
+desktop/windows/document-reader/assets-manifest.json

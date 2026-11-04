@@ -11,6 +11,10 @@ if ($env:CSC_LINK -or $env:WIN_CSC_LINK -or $env:CSC_NAME -or $env:WIN_CSC_NAME 
 $nodeMajor = [int]((node -p 'process.versions.node').Split('.')[0])
 if ($LASTEXITCODE -ne 0 -or $nodeMajor -lt 24) { throw 'Требуется Node.js 24+.' }
 $env:CSC_IDENTITY_AUTO_DISCOVERY = 'false'
+npm ci --ignore-scripts --omit=optional --prefix document-reader/deps
+if ($LASTEXITCODE -ne 0) { throw "PDF/OCR dependencies failed." }
+node document-reader/prepare.cjs
+if ($LASTEXITCODE -ne 0) { throw "PDF/OCR assets failed." }
 node ci/verify-unsigned-policy.cjs
 if ($LASTEXITCODE -ne 0) { throw 'Policy preflight не пройден.' }
 npm run check

@@ -241,6 +241,9 @@ async function runPackagedGuiAcceptance({
         origin: config.origin
       });
     checkpoint("native-browser-fixture-completed");
+    const nativePdf =
+      await require("./document-reader/native-acceptance.cjs").runNativePdfAcceptance({ app });
+    checkpoint("native-pdf-fixture-completed");
 
     const draftResult = await win.webContents.executeJavaScript(
       `(async () => {
@@ -361,6 +364,7 @@ async function runPackagedGuiAcceptance({
         lastPath: preferences.get().lastPath,
         draftSaved: true,
         nativeBrowser,
+        nativePdf,
         nativeIdentityRedirectDenied: true,
         downloadsCount: panelList.entries.length,
         foreignRedirectBlocked: true,

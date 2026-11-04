@@ -565,6 +565,53 @@ describe("owner-bound computer proposals", () => {
     value.observation.workspace = { id: "a".repeat(24), name: "Legacy client folder" };
     await expect(f.next(value)).rejects.toMatchObject({ code: "COMPUTER_OUTPUT_INVALID" });
   });
+  it("negotiates PDF/OCR reads independently and blocks legacy clients", async () => {
+    for (const capable of [false, true]) {
+      const a = {
+        kind: "workspace_read_pdf",
+        path: "report.pdf",
+        page_index: 0,
+        mode: "auto",
+        offset_utf16: 0,
+        expected_text_sha256: null,
+        expected_version: null
+      };
+      const f = await fixture({ output: { ...action, action: a } });
+      await f.create();
+      const value = structuredClone(step);
+      value.observation.workspace = {
+        id: "a".repeat(24),
+        name: "Folder",
+        ...(capable ? { read_pdf: true as const } : {})
+      };
+      if (capable) expect(await f.next(value)).toMatchObject({ action: a });
+      else await expect(f.next(value)).rejects.toMatchObject({ code: "COMPUTER_OUTPUT_INVALID" });
+      expect(f.calls[0]!.messages[0]!.content.includes("workspace_read_pdf")).toBe(capable);
+    }
+  });
+  it.each([
+    { page_index: 2000 },
+    { mode: "remote" },
+    { offset_utf16: 1 },
+    { expected_text_sha256: "wrong" },
+    { path: "report.exe" }
+  ])("rejects malformed PDF reading parameters: %j", async (invalid) => {
+    const a = {
+      kind: "workspace_read_pdf",
+      path: "report.pdf",
+      page_index: 0,
+      mode: "auto",
+      offset_utf16: 0,
+      expected_text_sha256: null,
+      expected_version: null,
+      ...invalid
+    };
+    const f = await fixture({ output: { ...action, action: a } });
+    await f.create();
+    const value = structuredClone(step);
+    value.observation.workspace = { id: "a".repeat(24), name: "Folder", read_pdf: true };
+    await expect(f.next(value)).rejects.toMatchObject({ code: "COMPUTER_OUTPUT_INVALID" });
+  });
   it("only offers document readback to negotiated clients and never sends it to a legacy client", async () => {
     for (const capable of [false, true]) {
       const a = {
