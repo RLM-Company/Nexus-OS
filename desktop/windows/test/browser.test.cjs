@@ -91,7 +91,7 @@ function fixture(t, options = {}) {
                   value: {
                     url: web.url,
                     title: "Fixture",
-                    text: "Fixture page",
+                    text: web.snapshotText ?? "Fixture page",
                     nodes: nodes.map((n) => ({ ...n })),
                     dirty: false
                   }
@@ -172,6 +172,99 @@ function fixture(t, options = {}) {
     }
   };
 }
+
+test("a detached target supplies fresh candidates, never repeats input and expires after one observation", async (t) => {
+  const f = fixture(t),
+    signal = new AbortController().signal;
+  await f.engine.open("https://example.test");
+  const old = await f.engine.observe(signal);
+  let replaced = false;
+  f.setHook((method, args) => {
+    if (
+      !replaced &&
+      method === "Runtime.callFunctionOn" &&
+      args.functionDeclaration === documentCode.locate
+    ) {
+      replaced = true;
+      const i = f.nodes.findIndex((n) => n.ref === "e2");
+      f.nodes.splice(i, 1, { ...f.nodes[i], ref: "e7" });
+    }
+  });
+  await assert.rejects(
+    f.engine.execute({ kind: "browser_fill", ref: "e2", text: "private draft" }, old, signal),
+    /BROWSER_ELEMENT_UNAVAILABLE/
+  );
+  assert.equal(f.calls.filter((c) => c.method.startsWith("Input.")).length, 0);
+  const fresh = await f.engine.observe(signal),
+    doc = JSON.parse(fresh.description);
+  assert.deepEqual(doc.recovery.candidate_refs, ["e7"]);
+  assert.equal(doc.recovery.reason, "target_missing");
+  assert.ok(!JSON.stringify(doc.recovery).includes("private draft"));
+  assert.equal(f.engine.requiresConfirmation({ kind: "browser_fill", ref: "e7" }, fresh), true);
+  await f.engine.execute(
+    { kind: "browser_fill", ref: "e7", text: "explicit new action" },
+    fresh,
+    signal
+  );
+  assert.equal(f.calls.filter((c) => c.method === "Input.insertText").length, 1);
+  assert.equal(JSON.parse((await f.engine.observe(signal)).description).recovery, undefined);
+});
+
+test("a failure after input starts cannot supply a not-executed recovery hint", async (t) => {
+  const f = fixture(t),
+    signal = new AbortController().signal;
+  await f.engine.open("https://example.test");
+  const old = await f.engine.observe(signal);
+  f.setHook((method) => {
+    if (method === "Input.insertText") throw Error("BROWSER_ELEMENT_UNAVAILABLE");
+  });
+  await assert.rejects(
+    f.engine.execute({ kind: "browser_fill", ref: "e2", text: "draft" }, old, signal),
+    /BROWSER_INPUT_UNCERTAIN/
+  );
+  assert.equal(JSON.parse((await f.engine.observe(signal)).description).recovery, undefined);
+});
+
+test("recovery refs are trimmed with the current observation and cancellation discards pending hints", async (t) => {
+  const f = fixture(t),
+    signal = new AbortController().signal;
+  await f.engine.open("https://example.test");
+  f.views[0].webContents.snapshotText = "x".repeat(6001);
+  const shortened = JSON.parse((await f.engine.observe(signal)).description);
+  assert.equal(shortened.text.length, 6000);
+  assert.equal(shortened.truncated, true);
+  f.views[0].webContents.snapshotText = "Fixture page";
+  const old = await f.engine.observe(signal);
+  const original = { ...f.nodes[1] };
+  f.nodes.splice(1, 1);
+  await assert.rejects(
+    f.engine.execute({ kind: "browser_fill", ref: "e2", text: "never typed" }, old, signal),
+    /BROWSER_ELEMENT_UNAVAILABLE/
+  );
+  f.nodes.push(
+    ...Array.from({ length: 200 }, (_, i) => ({
+      ref: "large" + i,
+      role: "button",
+      name: "Длинная подпись ".repeat(12),
+      signature: "other" + i
+    })),
+    { ...original, ref: "e9" }
+  );
+  const fresh = JSON.parse((await f.engine.observe(signal)).description);
+  assert.equal(fresh.truncated, true);
+  assert.equal(fresh.recovery.partial_snapshot, true);
+  assert.deepEqual(fresh.recovery.candidate_refs, []);
+  assert.ok(!fresh.nodes.some((n) => n.ref === "e9"));
+  f.nodes.splice(0, f.nodes.length, original);
+  const second = await f.engine.observe(signal);
+  f.nodes.length = 0;
+  await assert.rejects(
+    f.engine.execute({ kind: "browser_fill", ref: "e2", text: "never typed" }, second, signal),
+    /BROWSER_ELEMENT_UNAVAILABLE/
+  );
+  f.engine.cancel();
+  assert.equal(JSON.parse((await f.engine.observe(signal)).description).recovery, undefined);
+});
 
 test("first-party search keeps the Kosmora page, passes validated live data and opens no external search UI", async (t) => {
   const requests = [];
@@ -708,6 +801,74 @@ test("stable browser approval rechecks locally without a second model proposal",
   assert.equal(confirmations, 2);
   assert.equal(f.views[0].webContents.value, "approved");
 });
+test("session replans from recovery metadata and renews confirmation before typing into the replacement", async (t) => {
+  const f = fixture(t);
+  await f.engine.open("https://example.test");
+  let replaced = false,
+    requests = 0,
+    authorizations = 0,
+    confirmations = 0;
+  f.setHook((method, args) => {
+    if (
+      !replaced &&
+      method === "Runtime.callFunctionOn" &&
+      args.functionDeclaration === documentCode.locate
+    ) {
+      replaced = true;
+      const i = f.nodes.findIndex((n) => n.ref === "e2");
+      f.nodes.splice(i, 1, { ...f.nodes[i], ref: "e7" });
+    }
+  });
+  const runner = new ComputerSession({
+    executionMode: "browser",
+    driver: f.engine,
+    identity: async () => context,
+    confirm: async ({ kind }) => {
+      if (kind === "action") confirmations++;
+      return true;
+    },
+    notify() {},
+    planner: {
+      begin: async () => ({ id: "fixture" }),
+      end: async () => {},
+      authorize: async () => {
+        authorizations++;
+        return { authorized: true, valid_for_ms: 10000 };
+      },
+      next: async ({ observation, previousResult }) => {
+        requests++;
+        const doc = JSON.parse(observation.description);
+        if (requests === 2) {
+          assert.equal(JSON.parse(previousResult).not_executed, true);
+          assert.deepEqual(doc.recovery.candidate_refs, ["e7"]);
+          assert.equal(doc.recovery.current_observation_id, observation.observation_id);
+        }
+        return {
+          action:
+            requests === 3
+              ? { kind: "done", summary: "Verified replacement" }
+              : {
+                  kind: "browser_fill",
+                  ref: requests === 1 ? "e2" : doc.recovery.candidate_refs[0],
+                  text: "replanned once"
+                },
+          message: "test",
+          requires_confirmation: false
+        };
+      }
+    }
+  });
+  assert.equal(
+    (await runner.run({ project: "project", goal: "Fill fixture", maxSteps: 4 })).status,
+    "completed"
+  );
+  assert.equal(requests, 3);
+  assert.equal(authorizations, 2);
+  assert.equal(confirmations, 2);
+  assert.equal(f.calls.filter((c) => c.method === "Input.insertText").length, 1);
+  assert.equal(f.views[0].webContents.value, "replanned once");
+});
+
 test("changed browser target after native approval cannot reuse that permission", async (t) => {
   const f = fixture(t);
   await f.engine.open("https://example.test");

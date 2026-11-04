@@ -29,6 +29,7 @@ function verify() {
     "browser/document.cjs",
     "browser/profiles.cjs",
     "browser/engine.cjs",
+    "browser/recovery.cjs",
     "browser/shell.cjs",
     "browser/preload.cjs",
     "browser/browser.html",
