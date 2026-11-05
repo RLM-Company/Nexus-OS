@@ -20,6 +20,11 @@ async function fixture(t, options = {}) {
   });
   const folder = path.join(root, "files");
   fs.mkdirSync(folder);
+  // The native action protocol is Windows-only, even when this fixture runs on Linux.
+  const reportActionPath =
+    process.platform === "win32"
+      ? path.join(folder, "report.md")
+      : "C:\\koswork-fixture\\report.md";
   const key = crypto.randomBytes(32);
   const codec = {
     seal(text) {
@@ -68,8 +73,11 @@ async function fixture(t, options = {}) {
     async execute(action) {
       calls.push(environment + ":" + action.kind);
       if (action.kind === "open_file") {
-        assert.equal(action.path, path.join(folder, "report.md"));
-        assert.equal(fs.readFileSync(action.path, "utf8"), "Verified source report");
+        assert.equal(action.path, reportActionPath);
+        assert.equal(
+          fs.readFileSync(path.join(folder, "report.md"), "utf8"),
+          "Verified source report"
+        );
         opened = true;
       }
       return { requested: true };
@@ -91,6 +99,7 @@ async function fixture(t, options = {}) {
   return {
     root,
     folder,
+    reportActionPath,
     workspace,
     history,
     driver,
@@ -250,7 +259,7 @@ test("one work task plans, searches, writes a real scoped file, switches to an a
       observation_id: obs.observation_id
     }),
     () => ({ kind: "work_switch", environment: "computer" }),
-    () => ({ kind: "open_file", path: path.join(f.folder, "report.md") }),
+    () => ({ kind: "open_file", path: f.reportActionPath }),
     (obs) => ({
       kind: "work_step",
       step: 3,
