@@ -3,6 +3,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { createHash, randomUUID } = require("node:crypto");
 const guard = require("./workspace/path-guard.cjs");
+const { fitDocumentExcerpt } = require("./workspace/text-range.cjs");
 const { extractOfficeText } = require("./workspace/office-text.cjs");
 const sha = (b) => createHash("sha256").update(b).digest("hex");
 const ID = /^[a-f0-9]{64}$/;
@@ -254,10 +255,17 @@ function createLocalVault({ userDataPath, codec }) {
         const hay = (item.name + "\n" + content).normalize("NFKC").toLocaleLowerCase();
         if (terms.every((t) => hay.includes(t))) {
           const pos = content.toLocaleLowerCase().indexOf(terms[0]);
+          let offset = Math.max(0, pos - 80);
+          if (
+            offset > 0 &&
+            /[\uDC00-\uDFFF]/.test(content[offset] || "") &&
+            /[\uD800-\uDBFF]/.test(content[offset - 1] || "")
+          )
+            offset--;
           results.push({
             ...item,
-            snippet: content.slice(Math.max(0, pos - 80), Math.max(0, pos - 80) + 500),
-            offset: Math.max(0, pos - 80)
+            snippet: content.slice(offset, offset + 500),
+            offset
           });
         }
       }
@@ -276,7 +284,7 @@ function createLocalVault({ userDataPath, codec }) {
           ...(extracted.representation ? { representation: extracted.representation } : {}),
           content
         });
-      if (framed.length > 20000) throw Error("VAULT_CONTEXT_LIMIT");
+      if (Buffer.byteLength(framed, "utf8") > 20000) throw Error("VAULT_CONTEXT_LIMIT");
       return framed;
     },
     fragment(c, id, start = 0) {
@@ -290,33 +298,14 @@ function createLocalVault({ userDataPath, codec }) {
         /[\uDC00-\uDFFF]/.test(text[start] || "") &&
         /[\uD800-\uDBFF]/.test(text[start - 1] || "")
       )
-        start--;
-      let end = Math.min(start + 6000, text.length),
-        result;
-      do {
-        if (
-          end < text.length &&
-          /[\uDC00-\uDFFF]/.test(text[end] || "") &&
-          /[\uD800-\uDBFF]/.test(text[end - 1] || "")
-        )
-          end--;
-        result = {
-          kind: "untrusted_local_excerpt",
-          name: item.name,
-          sha256: item.id,
-          source_kind: item.kind,
-          ...(extracted.representation ? { representation: extracted.representation } : {}),
-          offset_utf16: start,
-          end_utf16: end,
-          total_characters: text.length,
-          excerpt_only: start > 0 || end < text.length,
-          content: text.slice(start, end),
-          next_offset: end < text.length ? end : null
-        };
-        if (JSON.stringify(result).length <= 12000) break;
-        end = start + Math.floor((end - start) / 2);
-      } while (end > start);
-      return result;
+        throw Error("VAULT_QUERY");
+      return fitDocumentExcerpt(text, start, {
+        kind: "untrusted_local_excerpt",
+        name: item.name,
+        sha256: item.id,
+        source_kind: item.kind,
+        ...(extracted.representation ? { representation: extracted.representation } : {})
+      });
     },
     remove(c, id) {
       const { root, data } = state(c);

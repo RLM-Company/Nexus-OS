@@ -460,3 +460,29 @@ test("a bounded Koswork session searches the vault, writes a report and checks i
   assert.equal(f.workspace.vaultState(c), false);
   assert.ok(!f.workspace.snapshot(c).name.includes(P));
 });
+
+test("Vault wire responses stay bounded in UTF-8 across opaque continuation paths", async (t) => {
+  const f = fixture(t);
+  const text = '漢🚀\\"\t 00123; кроме доставки. '.repeat(700);
+  const item = f.vault.put(c, "source.txt", Buffer.from(text));
+  await f.grant();
+  let next = P + "/" + item.id + "/0",
+    joined = "";
+  while (next) {
+    const page = await f.execute({ kind: "workspace_read", path: next });
+    assert.ok(Buffer.byteLength(JSON.stringify(page), "utf8") <= 14000);
+    assert.equal(page.error, undefined);
+    assert.equal(page.sha256, item.id);
+    assert.ok(page.content.isWellFormed());
+    assert.ok(page.end_utf16 > page.offset_utf16);
+    joined += page.content;
+    next = page.next_path;
+  }
+  assert.equal(joined, text);
+  await assert.rejects(
+    f.execute({ kind: "workspace_read", path: P + "/" + item.id + "/2" }),
+    (e) => e.code === "WORKSPACE_PATH_TRAVERSAL"
+  );
+  f.workspace.revokeVault();
+  await assert.rejects(f.execute({ kind: "workspace_read", path: P + "/" + item.id + "/0" }));
+});

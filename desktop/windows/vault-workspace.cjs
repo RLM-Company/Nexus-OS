@@ -56,7 +56,7 @@ function createVaultWorkspace({ base, vault, now = Date.now }) {
     };
   }
   function bounded(data) {
-    if (JSON.stringify(data).length > 14000)
+    if (Buffer.byteLength(JSON.stringify(data), "utf8") > 14000)
       return {
         error: "WORKSPACE_RESULT_TOO_LARGE",
         instruction: "Narrow the query or use a more specific path; no partial JSON was returned."
