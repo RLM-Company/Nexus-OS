@@ -838,3 +838,40 @@ test("outline section paths cannot leak a neighbouring section through continuat
     (e) => e.code === "WORKSPACE_NOT_FOUND"
   );
 });
+
+test("Koswork searches a selected section, follows matches and binds search pages to query/grant", async (t) => {
+  const f = fixture(t);
+  const text =
+    "# Selected\n" +
+    "19700 ₽, кроме доставки.\n".repeat(19) +
+    "# Other\n19700 ₽, доставка включена.";
+  const item = f.vault.put(c, "prices.md", Buffer.from(text));
+  await f.grant();
+  const o = await f.execute({ kind: "workspace_read", path: P + "/" + item.id + "/outline" });
+  const source = o.headings[0].path;
+  let p = source,
+    positions = [],
+    first;
+  while (p) {
+    const r = await f.execute({ kind: "workspace_find", path: p, mode: "text", query: "19700 ₽" });
+    assert.ok(Buffer.byteLength(JSON.stringify(r)) <= 14000);
+    positions.push(...r.matches.map((m) => m.offset_utf16));
+    first ??= r.next_search_path;
+    const read = await f.execute({ kind: "workspace_read", path: r.matches[0].path });
+    assert.ok(read.content.startsWith("19700 ₽"));
+    assert.ok(!read.content.includes("доставка включена"));
+    p = r.next_search_path;
+  }
+  assert.equal(positions.length, 19);
+  assert.equal(new Set(positions).size, 19);
+  await assert.rejects(
+    f.execute({ kind: "workspace_find", path: first, mode: "text", query: "other" }),
+    (e) => e.code === "WORKSPACE_VERSION_CONFLICT"
+  );
+  f.workspace.revokeVault();
+  await f.grant();
+  await assert.rejects(
+    f.execute({ kind: "workspace_find", path: first, mode: "text", query: "19700 ₽" }),
+    (e) => e.code === "WORKSPACE_VERSION_CONFLICT"
+  );
+});

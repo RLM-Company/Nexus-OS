@@ -68,6 +68,24 @@ function* markdownLines(text) {
     yield { index: line.index, end: lines.lastIndex, heading };
   }
 }
+function sectionBounds(text, start) {
+  if (!Number.isSafeInteger(start) || start < 0 || start > text.length) throw Error("VAULT_QUERY");
+  let selected = null,
+    end = text.length;
+  for (const line of markdownLines(text)) {
+    if (!line.heading) continue;
+    if (line.index === start) selected = line.heading;
+    else if (line.index > start) {
+      if (!selected) break;
+      if (line.heading.level <= selected.level) {
+        end = line.index;
+        break;
+      }
+    }
+  }
+  if (!selected) throw Error("VAULT_QUERY");
+  return { end, level: selected.level };
+}
 function createLocalVault({ userDataPath, codec }) {
   guard.inspectRootDirectory(userDataPath);
   userDataPath = fs.realpathSync.native(userDataPath);
@@ -420,21 +438,8 @@ function createLocalVault({ userDataPath, codec }) {
         offset > text.length
       )
         throw Error("VAULT_QUERY");
-      let selected = null,
-        end = text.length;
-      for (const line of markdownLines(text)) {
-        if (!line.heading) continue;
-        if (line.index === start) selected = line.heading;
-        else if (line.index > start) {
-          if (!selected) break;
-          if (line.heading.level <= selected.level) {
-            end = line.index;
-            break;
-          }
-        }
-      }
+      const { end, level } = sectionBounds(text, start);
       if (
-        !selected ||
         offset > end ||
         (offset > 0 &&
           /[\uDC00-\uDFFF]/.test(text[offset] || "") &&
@@ -451,11 +456,78 @@ function createLocalVault({ userDataPath, codec }) {
           source_kind: item.kind,
           section_start_utf16: start,
           section_end_utf16: end,
-          section_level: selected.level
+          section_level: level
         },
         10000,
         end
       );
+    },
+    sectionMatches(c, id, start, query, offset = start) {
+      const { item, bytes } = get(c, id);
+      if (!/\.md$/i.test(item.name)) throw Error("VAULT_TEXT_ONLY");
+      const text = material(item, bytes).text;
+      const { end } = sectionBounds(text, start);
+      if (
+        typeof query !== "string" ||
+        !query.trim() ||
+        query.length > 160 ||
+        !query.isWellFormed() ||
+        !Number.isSafeInteger(offset) ||
+        offset < start ||
+        offset > end ||
+        (offset > 0 &&
+          /[\uDC00-\uDFFF]/.test(text[offset] || "") &&
+          /[\uD800-\uDBFF]/.test(text[offset - 1] || ""))
+      )
+        throw Error("VAULT_QUERY");
+      let limit = Math.min(end, offset + 256000);
+      if (
+        limit < end &&
+        /[\uDC00-\uDFFF]/.test(text[limit]) &&
+        /[\uD800-\uDBFF]/.test(text[limit - 1])
+      )
+        limit--;
+      const window = text.slice(offset, Math.min(end, limit + query.length - 1));
+      const matches = [];
+      let at = offset;
+      while (matches.length < 8) {
+        const position = window.indexOf(query, at - offset);
+        if (position < 0 || position + offset >= limit) {
+          at = limit;
+          break;
+        }
+        const hit = position + offset;
+        let quoteStart = Math.max(start, hit - 80),
+          quoteEnd = Math.min(end, hit + query.length + 80);
+        if (
+          /[\uDC00-\uDFFF]/.test(text[quoteStart] || "") &&
+          /[\uD800-\uDBFF]/.test(text[quoteStart - 1] || "")
+        )
+          quoteStart--;
+        if (
+          quoteEnd < end &&
+          /[\uDC00-\uDFFF]/.test(text[quoteEnd]) &&
+          /[\uD800-\uDBFF]/.test(text[quoteEnd - 1])
+        )
+          quoteEnd--;
+        matches.push({
+          offset_utf16: hit,
+          end_utf16: hit + query.length,
+          snippet: text.slice(quoteStart, quoteEnd),
+          snippet_offset_utf16: quoteStart
+        });
+        at = hit + (text.codePointAt(hit) > 0xffff ? 2 : 1);
+      }
+      return {
+        kind: "untrusted_markdown_section_matches",
+        sha256: item.id,
+        section_start_utf16: start,
+        section_end_utf16: end,
+        matches,
+        next_offset: at < end ? at : null,
+        scanned_until_utf16: at,
+        match_mode: "exact_case_sensitive_literal"
+      };
     },
     fragment(c, id, start = 0) {
       const { item, bytes } = get(c, id);
