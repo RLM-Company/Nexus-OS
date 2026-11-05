@@ -486,3 +486,54 @@ test("Vault wire responses stay bounded in UTF-8 across opaque continuation path
   f.workspace.revokeVault();
   await assert.rejects(f.execute({ kind: "workspace_read", path: P + "/" + item.id + "/0" }));
 });
+
+test("Koswork discovers an outline, follows a source section and loses access after revocation", async (t) => {
+  const f = fixture(t);
+  const text =
+    "# Обзор\n" + "Вступление. ".repeat(900) + "\n## Условия 00123\nЦена 19 700 ₽, кроме доставки.";
+  const item = f.vault.put(c, "manual.md", Buffer.from(text));
+  await assert.rejects(f.execute({ kind: "workspace_read", path: P + "/" + item.id + "/outline" }));
+  await f.grant();
+  const listed = await f.execute({ kind: "workspace_list", path: P, cursor: 0 });
+  const source = listed.items.find((i) => i.sha256 === item.id);
+  assert.ok(source.outline_path.endsWith("/outline"));
+  const outline = await f.execute({ kind: "workspace_read", path: source.outline_path });
+  const section = outline.headings.find((h) => h.title === "Условия 00123");
+  const read = await f.execute({ kind: "workspace_read", path: section.path });
+  assert.equal(read.sha256, item.id);
+  assert.ok(read.content.startsWith("## Условия 00123"));
+  assert.ok(read.content.includes("19 700 ₽, кроме доставки"));
+  assert.ok(Buffer.byteLength(JSON.stringify(outline)) <= 14000);
+  f.workspace.revokeVault();
+  await assert.rejects(f.execute({ kind: "workspace_read", path: section.path }));
+});
+
+test("outline wire budget includes every section link and refuses foreign or deleted originals", async (t) => {
+  const f = fixture(t);
+  const item = f.vault.put(
+    c,
+    "sections.md",
+    Buffer.from(Array.from({ length: 100 }, () => "# " + "漢🚀".repeat(90)).join("\n"))
+  );
+  await f.grant();
+  const p = P + "/" + item.id + "/outline";
+  const outline = await f.execute({ kind: "workspace_read", path: p });
+  assert.equal(outline.error, undefined);
+  assert.equal(outline.truncated, true);
+  assert.ok(Buffer.byteLength(JSON.stringify(outline)) <= 14000);
+  await assert.rejects(
+    f.workspace.execute(
+      { kind: "workspace_read", path: p },
+      {
+        context: { ...c, owner: "other" },
+        workspaceId: f.workspace.snapshot(c).id,
+        signal: f.signal
+      }
+    )
+  );
+  f.vault.remove(c, item.id);
+  await assert.rejects(
+    f.execute({ kind: "workspace_read", path: p }),
+    (e) => e.code === "WORKSPACE_NOT_FOUND"
+  );
+});
