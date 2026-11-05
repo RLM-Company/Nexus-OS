@@ -806,3 +806,35 @@ test("real Work session navigates listing and outline pages before writing a ver
   assert.equal(fs.readFileSync(path.join(f.folder, "report.md"), "utf8"), quote);
   assert.equal(f.workspace.vaultState(c), false);
 });
+
+test("outline section paths cannot leak a neighbouring section through continuation", async (t) => {
+  const f = fixture(t);
+  const text =
+    "# First\n" +
+    "00123; кроме доставки. 🚀 ".repeat(1500) +
+    "\n# Neighbour\n99999; доставка включена.";
+  const item = f.vault.put(c, "scoped.md", Buffer.from(text));
+  await f.grant();
+  const outline = await f.execute({ kind: "workspace_read", path: P + "/" + item.id + "/outline" });
+  let p = outline.headings[0].path,
+    actual = "";
+  assert.ok(p.includes("/section/"));
+  while (p) {
+    const r = await f.execute({ kind: "workspace_read", path: p });
+    assert.equal(r.kind, "untrusted_markdown_section_excerpt");
+    assert.equal(r.sha256, item.id);
+    assert.equal(r.section_end_utf16, text.indexOf("# Neighbour"));
+    assert.ok(!r.content.includes("99999"));
+    assert.ok(Buffer.byteLength(JSON.stringify(r)) <= 14000);
+    actual += r.content;
+    p = r.next_path;
+  }
+  assert.equal(actual, text.slice(0, text.indexOf("# Neighbour")));
+  const next = await f.execute({ kind: "workspace_read", path: outline.headings[1].path });
+  assert.ok(next.content.includes("99999"));
+  f.vault.remove(c, item.id);
+  await assert.rejects(
+    f.execute({ kind: "workspace_read", path: outline.headings[0].path }),
+    (e) => e.code === "WORKSPACE_NOT_FOUND"
+  );
+});

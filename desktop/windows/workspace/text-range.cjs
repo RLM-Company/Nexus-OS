@@ -57,7 +57,7 @@ function selectTextRange(content, { startLine, endLine, maxBytes = 10000 } = {})
 }
 // Fit the complete wire response, including metadata and escaped text. Search
 // UTF-16 offsets but never publish a cursor inside a surrogate pair.
-function fitDocumentExcerpt(text, offset, metadata, maxBytes = 10000) {
+function fitDocumentExcerpt(text, offset, metadata, maxBytes = 10000, endLimit = text.length) {
   const boundary = (end) =>
     end < text.length &&
     /[\uDC00-\uDFFF]/.test(text[end]) &&
@@ -71,10 +71,10 @@ function fitDocumentExcerpt(text, offset, metadata, maxBytes = 10000) {
     total_characters: text.length,
     excerpt_only: offset > 0 || end < text.length,
     content: text.slice(offset, end),
-    next_offset: end < text.length ? end : null
+    next_offset: end < endLimit ? end : null
   });
   const fits = (value) => Buffer.byteLength(JSON.stringify(value), "utf8") <= maxBytes;
-  const limit = boundary(Math.min(text.length, offset + 6000));
+  const limit = boundary(Math.min(endLimit, offset + 6000));
   const full = build(limit);
   if (fits(full)) return full;
   let low = offset,
