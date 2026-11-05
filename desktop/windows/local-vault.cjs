@@ -490,6 +490,16 @@ function createLocalVault({ userDataPath, codec }) {
       const window = text.slice(offset, Math.min(end, limit + query.length - 1));
       const matches = [];
       let at = offset;
+      const response = () => ({
+        kind: "untrusted_markdown_section_matches",
+        sha256: item.id,
+        section_start_utf16: start,
+        section_end_utf16: end,
+        matches,
+        next_offset: at < end ? at : null,
+        scanned_until_utf16: at,
+        match_mode: "exact_case_sensitive_literal"
+      });
       while (matches.length < 8) {
         const position = window.indexOf(query, at - offset);
         if (position < 0 || position + offset >= limit) {
@@ -517,17 +527,16 @@ function createLocalVault({ userDataPath, codec }) {
           snippet_offset_utf16: quoteStart
         });
         at = hit + (text.codePointAt(hit) > 0xffff ? 2 : 1);
+        // Escape-heavy source text may exceed the wire budget before eight hits.
+        // Keep the whole source snippet and retry this hit on the next page.
+        // Leave room for the workspace adapter's opaque paths and instructions.
+        if (Buffer.byteLength(JSON.stringify(response()), "utf8") > 10000) {
+          matches.pop();
+          at = hit;
+          break;
+        }
       }
-      return {
-        kind: "untrusted_markdown_section_matches",
-        sha256: item.id,
-        section_start_utf16: start,
-        section_end_utf16: end,
-        matches,
-        next_offset: at < end ? at : null,
-        scanned_until_utf16: at,
-        match_mode: "exact_case_sensitive_literal"
-      };
+      return response();
     },
     fragment(c, id, start = 0) {
       const { item, bytes } = get(c, id);

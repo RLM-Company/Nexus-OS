@@ -875,3 +875,190 @@ test("Koswork searches a selected section, follows matches and binds search page
     (e) => e.code === "WORKSPACE_VERSION_CONFLICT"
   );
 });
+
+test("section search fits escaped source snippets and resumes before every omitted match", async (t) => {
+  const f = fixture(t);
+  const query = String.fromCharCode(1).repeat(159) + "Q";
+  const row = String.fromCharCode(2).repeat(80) + query + String.fromCharCode(3).repeat(80);
+  const text = "# Selected\n" + (row + "\n").repeat(19) + "# Other\n" + query;
+  const item = f.vault.put(c, "escaped.md", Buffer.from(text));
+  await f.grant();
+  let p = P + "/" + item.id + "/section/0/0",
+    positions = [],
+    pages = 0;
+  while (p) {
+    const r = await f.execute({ kind: "workspace_find", path: p, mode: "text", query });
+    assert.equal(r.error, undefined);
+    assert.ok(Buffer.byteLength(JSON.stringify(r), "utf8") <= 14000);
+    assert.ok(r.matches.length > 0);
+    for (const m of r.matches) {
+      assert.equal(text.slice(m.offset_utf16, m.end_utf16), query);
+      assert.equal(
+        m.snippet,
+        text.slice(m.snippet_offset_utf16, m.snippet_offset_utf16 + m.snippet.length)
+      );
+      positions.push(m.offset_utf16);
+    }
+    p = r.next_search_path;
+    assert.ok(++pages < 20);
+  }
+  assert.ok(pages > 3, "actual JSON bytes must determine page size");
+  const expected = [...text.slice(0, text.indexOf("# Other")).matchAll(new RegExp(query, "g"))].map(
+    (m) => m.index
+  );
+  assert.deepEqual(positions, expected);
+});
+
+test("real Work session continues empty and populated section-search pages before verifying a report", async (t) => {
+  const f = fixture(t);
+  const clause = "00123: 19 700 ₽, кроме доставки.";
+  const text =
+    "# Selected\n" +
+    "Reference 🚀. ".repeat(21000) +
+    "\n" +
+    Array.from({ length: 19 }, (_, i) => (i === 18 ? clause : `00123: reference row ${i}.`)).join(
+      "\n"
+    ) +
+    "\n# Other\n00123: 99 999 ₽, доставка включена.";
+  const target = f.vault.put(c, "contract.md", Buffer.from(text));
+  await f.workspace.connect(c, f.signal);
+  await f.grant();
+  let state = "plan",
+    section,
+    quote,
+    report,
+    searchPages = 0,
+    emptyPages = 0,
+    approvals = 0;
+  const observedPositions = [];
+  const driver = createWorkCycleDriver({
+    browser: { stop() {} },
+    computer: { stop() {} },
+    identity: async () => c,
+    confirmEnvironment: async () => {
+      throw Error("Unexpected device permission");
+    }
+  });
+  const runner = new ComputerSession({
+    executionMode: "work",
+    driver,
+    workspace: f.workspace,
+    identity: async () => c,
+    notify() {},
+    confirm: async () => {
+      approvals++;
+      return true;
+    },
+    planner: {
+      begin: async () => ({ id: "section-search-fixture" }),
+      authorize: async () => ({ authorized: true, valid_for_ms: 10000 }),
+      end: async () => {},
+      next: async ({ observation, previousResult }) => {
+        let action;
+        if (state === "plan") {
+          state = "start";
+          action = {
+            kind: "work_plan",
+            steps: [
+              {
+                title: "Verify contract clause",
+                criteria: "Preserve price, identifier and delivery exception"
+              }
+            ]
+          };
+        } else if (state === "start") {
+          state = "find-file";
+          action = {
+            kind: "work_step",
+            step: 1,
+            state: "running",
+            evidence: "",
+            observation_id: observation.observation_id
+          };
+        } else if (state === "find-file") {
+          state = "outline";
+          action = { kind: "workspace_find", path: P, mode: "name", query: "contract.md" };
+        } else if (state === "outline") {
+          const found = JSON.parse(previousResult).matches;
+          assert.equal(found.length, 1);
+          assert.equal(found[0].sha256, target.id);
+          state = "section";
+          action = { kind: "workspace_read", path: found[0].outline_path };
+        } else if (state === "section") {
+          section = JSON.parse(previousResult).headings.find((h) => h.title === "Selected").path;
+          state = "begin-search";
+          action = { kind: "workspace_read", path: section };
+        } else if (state === "begin-search") {
+          const r = JSON.parse(previousResult);
+          assert.ok(!r.content.includes("00123"));
+          assert.ok(r.next_path, "first excerpt alone cannot answer this task");
+          state = "search";
+          action = { kind: "workspace_find", path: section, mode: "text", query: "00123" };
+        } else if (state === "search") {
+          const r = JSON.parse(previousResult);
+          assert.equal(r.sha256, target.id);
+          assert.equal(r.match_mode, "exact_case_sensitive_literal");
+          assert.ok(Buffer.byteLength(previousResult, "utf8") <= 14000);
+          searchPages++;
+          if (!r.matches.length) emptyPages++;
+          observedPositions.push(...r.matches.map((m) => m.offset_utf16));
+          const match = r.matches.find((m) => m.offset_utf16 === text.indexOf(clause));
+          if (match) {
+            assert.ok(match.snippet.includes(clause));
+            state = "source";
+            action = { kind: "workspace_read", path: match.path };
+          } else {
+            assert.ok(r.next_search_path, "an empty window is not absence from the full section");
+            action = {
+              kind: "workspace_find",
+              path: r.next_search_path,
+              mode: "text",
+              query: "00123"
+            };
+          }
+        } else if (state === "source") {
+          const r = JSON.parse(previousResult);
+          assert.equal(r.sha256, target.id);
+          assert.equal(r.section_end_utf16, text.indexOf("# Other"));
+          quote = r.content;
+          assert.equal(quote.trim(), clause);
+          assert.equal(r.next_path, null);
+          report = `Источник SHA256: ${r.sha256}\n\n${quote}`;
+          state = "written";
+          action = { kind: "workspace_create", path: "contract-report.md", content: report };
+        } else if (state === "written") {
+          state = "verify";
+          action = { kind: "workspace_read", path: "contract-report.md" };
+        } else if (state === "verify") {
+          assert.equal(JSON.parse(previousResult).content, report);
+          state = "done";
+          action = {
+            kind: "work_step",
+            step: 1,
+            state: "checked",
+            evidence: "Report bytes read back against the selected source clause and hash",
+            observation_id: observation.observation_id
+          };
+        } else action = { kind: "done", summary: "Clause and report verified" };
+        return { action, message: "Scripted planner fixture", requires_confirmation: false };
+      }
+    }
+  });
+  const result = await runner.run({
+    project: "project",
+    goal: "Find clause 00123 within Selected and create a verified report",
+    maxSteps: 30
+  });
+  assert.equal(result.status, "completed");
+  assert.equal(emptyPages, 1);
+  assert.equal(searchPages, 4);
+  assert.equal(observedPositions.length, 19);
+  assert.equal(new Set(observedPositions).size, 19);
+  assert.ok(approvals > 0);
+  assert.equal(fs.readFileSync(path.join(f.folder, "contract-report.md"), "utf8"), report);
+  assert.ok(!report.includes("99 999") && !report.includes("доставка включена"));
+  assert.equal(f.workspace.vaultState(c), false);
+  await assert.rejects(
+    f.execute({ kind: "workspace_find", path: section, mode: "text", query: "00123" })
+  );
+});
