@@ -234,18 +234,39 @@ function createLocalVault({ userDataPath, codec }) {
       if (fs.existsSync(binding(c))) fs.unlinkSync(binding(c));
       return { connected: false, items: [], bytes: 0 };
     },
-    search(c, query) {
+    search(c, query, { cursor = 0, maxResults = 30 } = {}) {
       if (typeof query !== "string" || query.length < 1 || query.length > 160)
         throw Error("VAULT_QUERY");
       const terms = query.normalize("NFKC").toLocaleLowerCase().split(/\s+/).filter(Boolean);
       if (!terms.length || terms.length > 12) throw Error("VAULT_QUERY");
       const { data } = state(c);
+      if (
+        !Number.isSafeInteger(cursor) ||
+        cursor < 0 ||
+        cursor > data.items.length ||
+        !Number.isSafeInteger(maxResults) ||
+        maxResults < 1 ||
+        maxResults > 30
+      )
+        throw Error("VAULT_QUERY");
       const results = [];
+      let next_cursor = null;
       let scanned = 0,
         budget = 4 * 1024 * 1024,
         limited = false;
-      for (const item of data.items) {
-        if (results.length >= 30) {
+      for (let index = cursor; index < data.items.length; index++) {
+        const item = data.items[index];
+        if (results.length >= maxResults) {
+          next_cursor = index;
+          limited = true;
+          break;
+        }
+        if (
+          (item.kind === "memory" || textType(item.name) || officeType(item.name)) &&
+          item.bytes <= 1024 * 1024 &&
+          item.bytes > budget
+        ) {
+          next_cursor = index;
           limited = true;
           break;
         }
@@ -288,7 +309,7 @@ function createLocalVault({ userDataPath, codec }) {
           });
         }
       }
-      return { items: results, scanned, limited };
+      return { items: results, scanned, limited, next_cursor };
     },
     context(c, id) {
       const { item, bytes } = get(c, id);

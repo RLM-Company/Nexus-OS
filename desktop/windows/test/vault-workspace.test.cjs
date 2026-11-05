@@ -566,3 +566,68 @@ test("Koswork follows opaque outline pages to a late source section and rechecks
   f.workspace.revokeVault();
   await assert.rejects(f.execute({ kind: "workspace_read", path: last }));
 });
+
+test("paginated Vault search reaches every match and binds continuation to query, sources and grant", async (t) => {
+  const f = fixture(t);
+  const ids = [];
+  for (let i = 0; i < 23; i++)
+    ids.push(
+      f.vault.put(c, `report-${i}.md`, Buffer.from(`needle ${i} 00123; кроме доставки.`)).id
+    );
+  await f.grant();
+  for (const mode of ["text", "name"]) {
+    const query = mode === "text" ? "needle" : "report-";
+    let p = P,
+      seen = [],
+      first;
+    do {
+      const r = await f.execute({ kind: "workspace_find", path: p, mode, query });
+      assert.ok(Buffer.byteLength(JSON.stringify(r)) <= 14000);
+      assert.ok(r.matches.length <= 8);
+      seen.push(...r.matches.map((i) => i.sha256));
+      first ??= r.next_search_path;
+      p = r.next_search_path;
+    } while (p);
+    assert.deepEqual(seen, ids);
+    await assert.rejects(
+      f.execute({ kind: "workspace_find", path: first, mode, query: query + "changed" }),
+      (e) => e.code === "WORKSPACE_VERSION_CONFLICT"
+    );
+    const old = first;
+    const newItem = f.vault.put(c, `unrelated-${mode}.txt`, Buffer.from(`other ${mode}`));
+    await assert.rejects(
+      f.execute({ kind: "workspace_find", path: old, mode, query }),
+      (e) => e.code === "WORKSPACE_VERSION_CONFLICT"
+    );
+    f.vault.remove(c, newItem.id);
+  }
+  const page = await f.execute({ kind: "workspace_find", path: P, mode: "text", query: "needle" });
+  const read = await f.execute({ kind: "workspace_read", path: page.matches[0].path });
+  assert.ok(read.content.includes("00123; кроме доставки"));
+  f.workspace.revokeVault();
+  await f.grant();
+  await assert.rejects(
+    f.execute({
+      kind: "workspace_find",
+      path: page.next_search_path,
+      mode: "text",
+      query: "needle"
+    }),
+    (e) => e.code === "WORKSPACE_VERSION_CONFLICT"
+  );
+});
+
+test("search page budgets include escaped multilingual snippets and expose their truncation", async (t) => {
+  const f = fixture(t);
+  for (let i = 0; i < 8; i++)
+    f.vault.put(
+      c,
+      `${i}-` + "漢".repeat(150) + ".md",
+      Buffer.from(`needle ${i} ` + "漢🚀".repeat(300))
+    );
+  await f.grant();
+  const r = await f.execute({ kind: "workspace_find", path: P, mode: "text", query: "needle" });
+  assert.equal(r.matches.length, 8);
+  assert.ok(Buffer.byteLength(JSON.stringify(r)) <= 14000);
+  assert.ok(r.matches.every((m) => m.snippet_truncated && m.snippet.isWellFormed()));
+});
