@@ -357,3 +357,42 @@ test("Markdown outline is bounded and explicitly reports missing coverage", (t) 
   const plain = f.vault.put(alice, "plain.txt", Buffer.from("# Not Markdown"));
   assert.throws(() => f.vault.outline(alice, plain.id), /VAULT_TEXT_ONLY/);
 });
+
+test("outline continuation traverses every heading once and restores fence state", (t) => {
+  const f = fixture(t);
+  f.vault.choose(alice, f.folder);
+  const text = Array.from({ length: 105 }, (_, i) => `## Section ${i}\r\nbody\n`).join("");
+  const item = f.vault.put(alice, "many.md", Buffer.from(text));
+  let offset = 0,
+    titles = [];
+  do {
+    const r = f.vault.outline(alice, item.id, offset);
+    titles.push(...r.headings.map((h) => h.title));
+    assert.equal(r.start_utf16, offset);
+    assert.ok(r.next_offset === null || r.next_offset > offset);
+    offset = r.next_offset;
+  } while (offset !== null);
+  assert.deepEqual(
+    titles,
+    Array.from({ length: 105 }, (_, i) => `Section ${i}`)
+  );
+  const fenced = "```\n" + "x".repeat(256001) + "\n# Not a section\n```\n# Real section";
+  const code = f.vault.put(alice, "code.md", Buffer.from(fenced));
+  const first = f.vault.outline(alice, code.id);
+  assert.equal(first.headings.length, 0);
+  assert.ok(first.next_offset > 0);
+  const next = f.vault.outline(alice, code.id, first.next_offset);
+  assert.deepEqual(
+    next.headings.map((h) => h.title),
+    ["Real section"]
+  );
+  assert.equal(next.next_offset, null);
+});
+test("outline continuation rejects invalid cursors instead of guessing a boundary", (t) => {
+  const f = fixture(t);
+  f.vault.choose(alice, f.folder);
+  const item = f.vault.put(alice, "cursor.md", Buffer.from("# One\r\n# Two\n"));
+  for (const offset of [-1, 1, 6, 999, 1.5, "0"])
+    assert.throws(() => f.vault.outline(alice, item.id, offset), /VAULT_QUERY/);
+  assert.equal(f.vault.outline(alice, item.id, 7).headings[0].title, "Two");
+});

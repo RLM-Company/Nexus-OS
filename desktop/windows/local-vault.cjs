@@ -306,17 +306,27 @@ function createLocalVault({ userDataPath, codec }) {
       if (Buffer.byteLength(framed, "utf8") > 20000) throw Error("VAULT_CONTEXT_LIMIT");
       return framed;
     },
-    outline(c, id) {
+    outline(c, id, start = 0) {
       const { item, bytes } = get(c, id);
       if (!/\.md$/i.test(item.name)) throw Error("VAULT_TEXT_ONLY");
       const text = material(item, bytes).text;
-      const limit = Math.min(text.length, 256000);
+      if (
+        !Number.isSafeInteger(start) ||
+        start < 0 ||
+        start > text.length ||
+        (start > 0 && !/[\r\n]/.test(text[start - 1])) ||
+        (text[start - 1] === "\r" && text[start] === "\n")
+      )
+        throw Error("VAULT_QUERY");
+      const limit = Math.min(text.length, start + 256000);
       const result = {
         kind: "untrusted_markdown_outline",
         name: item.name,
         sha256: item.id,
         headings: [],
-        scanned_utf16: 0,
+        start_utf16: start,
+        scanned_utf16: start,
+        next_offset: null,
         total_characters: text.length,
         truncated: false,
         syntax:
@@ -326,7 +336,7 @@ function createLocalVault({ userDataPath, codec }) {
       const lines = /([^\r\n]*)(\r\n|\r|\n|$)/g;
       let line;
       while ((line = lines.exec(text)) && line[0].length) {
-        if (lines.lastIndex > limit) {
+        if (line.index >= limit && line.index > start) {
           result.truncated = true;
           break;
         }
@@ -344,7 +354,7 @@ function createLocalVault({ userDataPath, codec }) {
           fence = { char: marker[1][0], length: marker[1].length };
         } else {
           const h = value.match(/^ {0,3}(#{1,6})(?:[ \t]+(.*?)|[ \t]*)$/);
-          if (h) {
+          if (h && line.index >= start) {
             let title = (h[2] || "").replace(/[ \t]+#+[ \t]*$/, "").trim();
             const title_truncated = title.length > 160;
             if (title.length > 160)
@@ -366,9 +376,12 @@ function createLocalVault({ userDataPath, codec }) {
             }
           }
         }
-        result.scanned_utf16 = lines.lastIndex;
+        if (line.index >= start) result.scanned_utf16 = lines.lastIndex;
       }
-      if (result.scanned_utf16 < text.length) result.truncated = true;
+      if (result.scanned_utf16 < text.length) {
+        result.truncated = true;
+        result.next_offset = result.scanned_utf16;
+      }
       return result;
     },
     fragment(c, id, start = 0) {
