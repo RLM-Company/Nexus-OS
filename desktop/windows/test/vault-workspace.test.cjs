@@ -537,3 +537,32 @@ test("outline wire budget includes every section link and refuses foreign or del
     (e) => e.code === "WORKSPACE_NOT_FOUND"
   );
 });
+
+test("Koswork follows opaque outline pages to a late source section and rechecks grants", async (t) => {
+  const f = fixture(t);
+  const text = Array.from({ length: 95 }, (_, i) => `# Section ${i}\nValue 00123 ${i}\n`).join("");
+  const item = f.vault.put(c, "paginated.md", Buffer.from(text));
+  await f.grant();
+  let p = P + "/" + item.id + "/outline",
+    found = [],
+    last;
+  while (p) {
+    const r = await f.execute({ kind: "workspace_read", path: p });
+    assert.ok(Buffer.byteLength(JSON.stringify(r)) <= 14000);
+    found.push(...r.headings);
+    last = p;
+    p = r.next_outline_path;
+  }
+  assert.deepEqual(
+    found.map((h) => h.title),
+    Array.from({ length: 95 }, (_, i) => `Section ${i}`)
+  );
+  const read = await f.execute({ kind: "workspace_read", path: found[94].path });
+  assert.ok(read.content.startsWith("# Section 94\nValue 00123 94"));
+  await assert.rejects(
+    f.execute({ kind: "workspace_read", path: P + "/" + item.id + "/outline/2" }),
+    (e) => e.code === "WORKSPACE_PATH_TRAVERSAL"
+  );
+  f.workspace.revokeVault();
+  await assert.rejects(f.execute({ kind: "workspace_read", path: last }));
+});
