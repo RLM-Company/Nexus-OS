@@ -286,3 +286,39 @@ test("Vault search paths begin at a whole Unicode character", (t) => {
   assert.equal(hit.offset, 1);
   assert.ok(f.vault.fragment(alice, item.id, hit.offset).content.startsWith("🚀"));
 });
+
+test("normalized Vault matches quote the actual original occurrence, including expanded graphemes", (t) => {
+  const f = fixture(t);
+  f.vault.choose(alice, f.folder);
+  for (const [original, query] of [
+    ["① １２３", "1 123"],
+    ["ﬃ", "ffi"],
+    ["Cafe\u0301", "café"],
+    ["İstanbul", "i\u0307stanbul"]
+  ]) {
+    const text = "Вступление. ".repeat(90) + original + " — кроме доставки.";
+    const item = f.vault.put(alice, "source.txt", Buffer.from(text));
+    const hit = f.vault.search(alice, query).items.find((i) => i.id === item.id);
+    assert.ok(hit, query);
+    assert.ok(hit.snippet.includes(original), JSON.stringify(hit));
+    assert.ok(hit.snippet.includes("кроме доставки"));
+    assert.equal(hit.snippet, text.slice(hit.offset, hit.offset + hit.snippet.length));
+    assert.ok(f.vault.fragment(alice, item.id, hit.offset).content.includes(original));
+  }
+});
+test("Vault rejects blank queries and excess terms instead of silently matching unrelated sources", (t) => {
+  const f = fixture(t);
+  f.vault.choose(alice, f.folder);
+  f.vault.put(alice, "source.txt", Buffer.from("private"));
+  for (const query of ["   ", "\t\n", Array(13).fill("word").join(" ")])
+    assert.throws(() => f.vault.search(alice, query), /VAULT_QUERY/);
+});
+test("Vault search snippets never end inside an emoji", (t) => {
+  const f = fixture(t);
+  f.vault.choose(alice, f.folder);
+  const text = "needle" + "x".repeat(493) + "🚀";
+  const item = f.vault.put(alice, "source.txt", Buffer.from(text));
+  const hit = f.vault.search(alice, "needle").items.find((i) => i.id === item.id);
+  assert.ok(hit.snippet.isWellFormed());
+  assert.equal(hit.snippet, text.slice(0, 499));
+});

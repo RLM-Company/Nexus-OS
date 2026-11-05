@@ -21,6 +21,22 @@ function material(item, bytes, workLimit = 16 * 1024 * 1024) {
   return { text, expanded_bytes: bytes.length };
 }
 
+// Map a folded search hit back to its original grapheme. Normalization and
+// case folding may expand or combine characters; their offsets are not source offsets.
+function sourceSearchOffset(content, term) {
+  const folded = content.normalize("NFKC").toLocaleLowerCase();
+  const hit = folded.indexOf(term);
+  if (hit < 0) return null;
+  let foldedOffset = 0;
+  for (const { segment, index } of new Intl.Segmenter("und", { granularity: "grapheme" }).segment(
+    content
+  )) {
+    const length = segment.normalize("NFKC").toLocaleLowerCase().length;
+    if (foldedOffset + length > hit) return index;
+    foldedOffset += length;
+  }
+  return null;
+}
 function createLocalVault({ userDataPath, codec }) {
   guard.inspectRootDirectory(userDataPath);
   userDataPath = fs.realpathSync.native(userDataPath);
@@ -221,12 +237,8 @@ function createLocalVault({ userDataPath, codec }) {
     search(c, query) {
       if (typeof query !== "string" || query.length < 1 || query.length > 160)
         throw Error("VAULT_QUERY");
-      const terms = query
-        .normalize("NFKC")
-        .toLocaleLowerCase()
-        .split(/\s+/)
-        .filter(Boolean)
-        .slice(0, 12);
+      const terms = query.normalize("NFKC").toLocaleLowerCase().split(/\s+/).filter(Boolean);
+      if (!terms.length || terms.length > 12) throw Error("VAULT_QUERY");
       const { data } = state(c);
       const results = [];
       let scanned = 0,
@@ -254,7 +266,7 @@ function createLocalVault({ userDataPath, codec }) {
         }
         const hay = (item.name + "\n" + content).normalize("NFKC").toLocaleLowerCase();
         if (terms.every((t) => hay.includes(t))) {
-          const pos = content.toLocaleLowerCase().indexOf(terms[0]);
+          const pos = sourceSearchOffset(content, terms[0]) ?? 0;
           let offset = Math.max(0, pos - 80);
           if (
             offset > 0 &&
@@ -262,9 +274,16 @@ function createLocalVault({ userDataPath, codec }) {
             /[\uD800-\uDBFF]/.test(content[offset - 1] || "")
           )
             offset--;
+          let end = Math.min(content.length, offset + 500);
+          if (
+            end < content.length &&
+            /[\uDC00-\uDFFF]/.test(content[end]) &&
+            /[\uD800-\uDBFF]/.test(content[end - 1] || "")
+          )
+            end--;
           results.push({
             ...item,
-            snippet: content.slice(offset, offset + 500),
+            snippet: content.slice(offset, end),
             offset
           });
         }
