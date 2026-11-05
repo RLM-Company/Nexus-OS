@@ -631,3 +631,55 @@ test("search page budgets include escaped multilingual snippets and expose their
   assert.ok(Buffer.byteLength(JSON.stringify(r)) <= 14000);
   assert.ok(r.matches.every((m) => m.snippet_truncated && m.snippet.isWellFormed()));
 });
+
+test("Vault listing pages are source-bound, complete and compatible with numeric cursors", async (t) => {
+  const f = fixture(t),
+    ids = [f.source.id];
+  for (let i = 0; i < 24; i++)
+    ids.push(f.vault.put(c, `source-${i}.txt`, Buffer.from(`original ${i}`)).id);
+  await f.grant();
+  let p = P,
+    seen = [],
+    first;
+  do {
+    const r = await f.execute({ kind: "workspace_list", path: p, cursor: 0 });
+    assert.ok(r.items.length <= 10);
+    assert.ok(Buffer.byteLength(JSON.stringify(r)) <= 14000);
+    seen.push(...r.items.map((i) => i.sha256));
+    first ??= r.next_list_path;
+    p = r.next_list_path;
+  } while (p);
+  assert.deepEqual(seen, ids);
+  const legacy = await f.execute({ kind: "workspace_list", path: P, cursor: 10 });
+  assert.deepEqual(
+    legacy.items.map((i) => i.sha256),
+    ids.slice(10, 20)
+  );
+  const added = f.vault.put(c, "new.txt", Buffer.from("new original"));
+  await assert.rejects(
+    f.execute({ kind: "workspace_list", path: first, cursor: 0 }),
+    (e) => e.code === "WORKSPACE_VERSION_CONFLICT"
+  );
+  await assert.rejects(
+    f.execute({ kind: "workspace_list", path: P, cursor: 10 }),
+    (e) => e.code === "WORKSPACE_VERSION_CONFLICT"
+  );
+  const fresh = await f.execute({ kind: "workspace_list", path: P, cursor: 0 });
+  assert.ok(fresh.next_list_path);
+  f.vault.remove(c, added.id);
+  await assert.rejects(
+    f.execute({ kind: "workspace_list", path: fresh.next_list_path, cursor: 0 }),
+    (e) => e.code === "WORKSPACE_VERSION_CONFLICT"
+  );
+  const page = await f.execute({ kind: "workspace_list", path: P, cursor: 0 });
+  f.workspace.revokeVault();
+  await f.grant();
+  await assert.rejects(
+    f.execute({ kind: "workspace_list", path: page.next_list_path, cursor: 0 }),
+    (e) => e.code === "WORKSPACE_VERSION_CONFLICT"
+  );
+  await assert.rejects(
+    f.execute({ kind: "workspace_list", path: P, cursor: 10 }),
+    (e) => e.code === "WORKSPACE_VERSION_CONFLICT"
+  );
+});
