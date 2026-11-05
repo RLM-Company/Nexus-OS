@@ -17,3 +17,13 @@ workspace_list с cursor 0. Добавление/удаление источни
 числовые cursors, изменение состава, повторное grant, JSON-byte bounds.
 Secrets/format/whitespace прошли. Нет UI/dependency/migration, платных вызовов,
 установки Windows или VPS. Новый CI/review проверяются отдельно.
+
+## Сквозной сценарий через настоящий ComputerSession/WorkCycleDriver
+
+Добавлен scripted-planner сценарий: три страницы списка → несколько страниц
+оглавления → поздний раздел 94 → подтверждённая запись report.md → чтение
+результата с диска → checked/done → отзыв Vault. Проверяются 00123, 19 700 ₽
+и «кроме доставки», отсутствие browser/computer grants. Это реальный файловый
+исполнитель со сценарным планировщиком, не live LLM acceptance.
+Итоговый полный набор: 273 tests, 272 passed, 0 failed, 1 штатный skip;
+22 workspace tests passed. Финальный commit должен пройти новый CI.

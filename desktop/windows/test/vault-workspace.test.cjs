@@ -683,3 +683,126 @@ test("Vault listing pages are source-bound, complete and compatible with numeric
     (e) => e.code === "WORKSPACE_VERSION_CONFLICT"
   );
 });
+
+test("real Work session navigates listing and outline pages before writing a verified report", async (t) => {
+  const f = fixture(t);
+  for (let i = 0; i < 23; i++) f.vault.put(c, `other-${i}.txt`, Buffer.from(`other document ${i}`));
+  const text = Array.from(
+    { length: 95 },
+    (_, i) =>
+      `# Section ${i}\n` + (i === 94 ? "00123: 19 700 ₽, кроме доставки." : "Reference section")
+  ).join("\n");
+  const target = f.vault.put(c, "target.md", Buffer.from(text));
+  await f.workspace.connect(c, f.signal);
+  await f.grant();
+  let state = "plan",
+    quote = "",
+    listPages = 0,
+    outlinePages = 0,
+    approvals = 0;
+  const driver = createWorkCycleDriver({
+    browser: { stop() {} },
+    computer: { stop() {} },
+    identity: async () => c,
+    confirmEnvironment: async () => {
+      throw Error("Unexpected device permission");
+    }
+  });
+  const runner = new ComputerSession({
+    executionMode: "work",
+    driver,
+    workspace: f.workspace,
+    identity: async () => c,
+    notify() {},
+    confirm: async () => {
+      approvals++;
+      return true;
+    },
+    planner: {
+      begin: async () => ({ id: "fixture" }),
+      authorize: async () => ({ authorized: true, valid_for_ms: 10000 }),
+      end: async () => {},
+      next: async ({ observation, previousResult }) => {
+        let action;
+        if (state === "plan") {
+          state = "start";
+          action = {
+            kind: "work_plan",
+            steps: [
+              {
+                title: "Read source and verify report",
+                criteria: "Exact late section and exception retained"
+              }
+            ]
+          };
+        } else if (state === "start") {
+          state = "list";
+          action = {
+            kind: "work_step",
+            step: 1,
+            state: "running",
+            evidence: "",
+            observation_id: observation.observation_id
+          };
+        } else if (state === "list") {
+          state = "listing";
+          action = { kind: "workspace_list", path: P, cursor: 0 };
+        } else if (state === "listing") {
+          listPages++;
+          const r = JSON.parse(previousResult),
+            item = r.items.find((i) => i.sha256 === target.id);
+          if (item) {
+            state = "outline";
+            action = { kind: "workspace_read", path: item.outline_path };
+          } else {
+            assert.ok(r.next_list_path);
+            action = { kind: "workspace_list", path: r.next_list_path, cursor: 0 };
+          }
+        } else if (state === "outline") {
+          outlinePages++;
+          const r = JSON.parse(previousResult),
+            h = r.headings.find((i) => i.title === "Section 94");
+          if (h) {
+            state = "source";
+            action = { kind: "workspace_read", path: h.path };
+          } else {
+            assert.ok(r.next_outline_path);
+            action = { kind: "workspace_read", path: r.next_outline_path };
+          }
+        } else if (state === "source") {
+          const r = JSON.parse(previousResult);
+          assert.equal(r.sha256, target.id);
+          quote = r.content;
+          assert.ok(quote.includes("00123: 19 700 ₽, кроме доставки."));
+          state = "written";
+          action = { kind: "workspace_create", path: "report.md", content: quote };
+        } else if (state === "written") {
+          state = "verify";
+          action = { kind: "workspace_read", path: "report.md" };
+        } else if (state === "verify") {
+          assert.equal(JSON.parse(previousResult).content, quote);
+          state = "done";
+          action = {
+            kind: "work_step",
+            step: 1,
+            state: "checked",
+            evidence: "Output read back against exact source",
+            observation_id: observation.observation_id
+          };
+        } else action = { kind: "done", summary: "Report verified" };
+        return { action, message: "Scripted planner fixture", requires_confirmation: false };
+      }
+    }
+  });
+  const result = await runner.run({
+    project: "project",
+    goal: "Find the final section and create a report",
+    maxSteps: 30
+  });
+  assert.equal(result.status, "completed");
+  assert.equal(listPages, 3);
+  assert.ok(outlinePages >= 3);
+  assert.ok(approvals > 0);
+  assert.equal(fs.readFileSync(path.join(f.folder, "report.md"), "utf8"), quote);
+  assert.equal(f.workspace.vaultState(c), false);
+});
