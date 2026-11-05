@@ -190,7 +190,14 @@ function createVaultWorkspace({ base, vault, now = Date.now }) {
             truncated: start + 10 < items.length,
             readonly: true
           };
-        } else if (p === PREFIX && action.kind === "workspace_find") {
+        } else if (
+          action.kind === "workspace_find" &&
+          (p === PREFIX ||
+            (segments.length === 4 &&
+              segments[1] === "search" &&
+              /^[a-f0-9]{64}$/.test(segments[2]) &&
+              /^(?:0|[1-9]\d{0,3})$/.test(segments[3])))
+        ) {
           if (
             !["text", "name"].includes(action.mode) ||
             typeof action.query !== "string" ||
@@ -198,27 +205,57 @@ function createVaultWorkspace({ base, vault, now = Date.now }) {
             action.query.length > 160
           )
             throw error("WORKSPACE_PATH_TRAVERSAL");
-          const listed = action.mode === "name" ? vault.list(c).items : null;
-          const found = listed
-            ? {
-                items: listed.filter((i) =>
-                  i.name
-                    .normalize("NFKC")
-                    .toLocaleLowerCase()
-                    .includes(action.query.normalize("NFKC").toLocaleLowerCase())
-                ),
-                limited: false,
-                scanned: listed.length
-              }
-            : vault.search(c, action.query);
+          const items = vault.list(c).items;
+          const fingerprint = createHash("sha256")
+            .update(JSON.stringify([grant.id, action.mode, action.query, items]))
+            .digest("hex");
+          const cursor = p === PREFIX ? 0 : Number(segments[3]);
+          if (p !== PREFIX && segments[2] !== fingerprint)
+            throw error("WORKSPACE_VERSION_CONFLICT");
+          let found;
+          if (action.mode === "name") {
+            const matches = items.filter((i) =>
+              i.name
+                .normalize("NFKC")
+                .toLocaleLowerCase()
+                .includes(action.query.normalize("NFKC").toLocaleLowerCase())
+            );
+            if (cursor > matches.length) throw error("WORKSPACE_PATH_TRAVERSAL");
+            found = {
+              items: matches.slice(cursor, cursor + 8),
+              scanned: items.length,
+              limited: false,
+              next_cursor: cursor + 8 < matches.length ? cursor + 8 : null
+            };
+          } else found = vault.search(c, action.query, { cursor, maxResults: 8 });
           result = {
-            matches: found.items.slice(0, 8).map((i) => ({
+            matches: found.items.map((i) => ({
               ...record(i),
               path: ref(i.id, i.offset ?? 0),
-              ...(i.snippet !== undefined ? { snippet: i.snippet } : {})
+              ...(i.snippet !== undefined
+                ? (() => {
+                    let end = i.snippet.length;
+                    while (
+                      Buffer.byteLength(JSON.stringify(i.snippet.slice(0, end)), "utf8") > 500
+                    ) {
+                      end--;
+                      if (/[\uD800-\uDBFF]/.test(i.snippet[end - 1] || "")) end--;
+                    }
+                    return {
+                      snippet: i.snippet.slice(0, end),
+                      snippet_truncated: end < i.snippet.length
+                    };
+                  })()
+                : {})
             })),
-            truncated: found.limited || found.items.length > 8,
+            truncated: found.limited || found.next_cursor !== null,
             filesScanned: found.scanned,
+            next_search_path:
+              found.next_cursor === null
+                ? null
+                : PREFIX + "/search/" + fingerprint + "/" + found.next_cursor,
+            instruction:
+              "Continue with workspace_find at next_search_path using the exact same mode and query. Changed sources require a fresh search. Limited coverage is not proof of absence.",
             readonly: true
           };
         } else if (

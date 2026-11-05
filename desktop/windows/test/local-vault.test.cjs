@@ -396,3 +396,24 @@ test("outline continuation rejects invalid cursors instead of guessing a boundar
     assert.throws(() => f.vault.outline(alice, item.id, offset), /VAULT_QUERY/);
   assert.equal(f.vault.outline(alice, item.id, 7).headings[0].title, "Two");
 });
+
+test("Vault search resumes at the unscanned source after exhausting its byte budget", (t) => {
+  const f = fixture(t);
+  f.vault.choose(alice, f.folder);
+  const ids = [];
+  for (let i = 0; i < 6; i++)
+    ids.push(
+      f.vault.put(alice, `large-${i}.txt`, Buffer.from(`needle ${i} ` + "x".repeat(900000))).id
+    );
+  const first = f.vault.search(alice, "needle");
+  assert.equal(first.items.length, 4);
+  assert.equal(first.next_cursor, 4);
+  const rest = f.vault.search(alice, "needle", { cursor: first.next_cursor });
+  assert.deepEqual(
+    [...first.items, ...rest.items].map((i) => i.id),
+    ids
+  );
+  assert.equal(rest.next_cursor, null);
+  for (const cursor of [-1, 7, 0.1])
+    assert.throws(() => f.vault.search(alice, "needle", { cursor }), /VAULT_QUERY/);
+});
