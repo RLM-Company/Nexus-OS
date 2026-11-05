@@ -322,3 +322,38 @@ test("Vault search snippets never end inside an emoji", (t) => {
   assert.ok(hit.snippet.isWellFormed());
   assert.equal(hit.snippet, text.slice(0, 499));
 });
+
+test("Markdown outline returns exact heading offsets and ignores fenced examples", (t) => {
+  const f = fixture(t);
+  f.vault.choose(alice, f.folder);
+  const text =
+    "# План 🚀\r\nТекст\r## Бюджет 00123 ###\n```md\n# Ложный раздел\n```\n~~~\n## Также код\n~~~\n### Кроме доставки\n    # Отступ кода\n";
+  const item = f.vault.put(alice, "report.md", Buffer.from(text));
+  const outline = f.vault.outline(alice, item.id);
+  assert.equal(outline.truncated, false);
+  assert.equal(outline.sha256, item.id);
+  assert.deepEqual(
+    outline.headings.map((h) => h.title),
+    ["План 🚀", "Бюджет 00123", "Кроме доставки"]
+  );
+  for (const h of outline.headings) {
+    const read = f.vault.fragment(alice, item.id, h.offset_utf16);
+    assert.ok(read.content.startsWith("#".repeat(h.level)));
+    assert.ok(read.content.includes(h.title));
+  }
+});
+test("Markdown outline is bounded and explicitly reports missing coverage", (t) => {
+  const f = fixture(t);
+  f.vault.choose(alice, f.folder);
+  const text = Array.from({ length: 120 }, (_, i) => "## " + i + " 🚀".repeat(150)).join("\n");
+  const item = f.vault.put(alice, "large.md", Buffer.from(text));
+  const r = f.vault.outline(alice, item.id);
+  assert.ok(r.headings.length > 0 && r.headings.length <= 40);
+  assert.equal(r.truncated, true);
+  assert.ok(r.headings.every((h) => h.title_truncated && h.title.isWellFormed()));
+  assert.ok(Buffer.byteLength(JSON.stringify(r)) < 6600);
+  const huge = f.vault.put(alice, "huge.md", Buffer.from("x".repeat(256001) + "\n# Hidden"));
+  assert.equal(f.vault.outline(alice, huge.id).truncated, true);
+  const plain = f.vault.put(alice, "plain.txt", Buffer.from("# Not Markdown"));
+  assert.throws(() => f.vault.outline(alice, plain.id), /VAULT_TEXT_ONLY/);
+});
