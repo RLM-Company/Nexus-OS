@@ -450,3 +450,51 @@ test("Markdown section reads include children but exclude contradictory peer sec
     assert.throws(() => f.vault.section(alice, item.id, invalidStart), /VAULT_QUERY/);
   assert.throws(() => f.vault.section(alice, item.id, start, end + 1), /VAULT_QUERY/);
 });
+
+test("section phrase search pages exact overlapping hits and never includes peer matches", (t) => {
+  const f = fixture(t);
+  f.vault.choose(alice, f.folder);
+  const text =
+    "# Selected\n" +
+    "00123; кроме доставки. 🚀\n".repeat(21) +
+    "# Other\n00123; доставка включена.";
+  const item = f.vault.put(alice, "search.md", Buffer.from(text));
+  let at = 0,
+    hits = [];
+  do {
+    const r = f.vault.sectionMatches(alice, item.id, 0, "00123", at);
+    hits.push(...r.matches);
+    assert.ok(r.next_offset === null || r.next_offset > at);
+    at = r.next_offset;
+  } while (at !== null);
+  assert.equal(hits.length, 21);
+  for (const h of hits) {
+    assert.equal(text.slice(h.offset_utf16, h.end_utf16), "00123");
+    assert.equal(
+      h.snippet,
+      text.slice(h.snippet_offset_utf16, h.snippet_offset_utf16 + h.snippet.length)
+    );
+    assert.ok(!h.snippet.includes("доставка включена"));
+  }
+  assert.equal(f.vault.sectionMatches(alice, item.id, 0, "SELECTED").matches.length, 0);
+  const overlap = f.vault.put(alice, "overlap.md", Buffer.from("# H\naaa"));
+  assert.deepEqual(
+    f.vault.sectionMatches(alice, overlap.id, 0, "aa").matches.map((h) => h.offset_utf16),
+    [4, 5]
+  );
+});
+test("section search crosses a scan window boundary without dropping or duplicating a match", (t) => {
+  const f = fixture(t);
+  f.vault.choose(alice, f.folder);
+  const text = "# H\n" + "x".repeat(255994) + "needle" + "x".repeat(30) + "needle";
+  const item = f.vault.put(alice, "window.md", Buffer.from(text));
+  const first = f.vault.sectionMatches(alice, item.id, 0, "needle");
+  assert.equal(first.matches[0].offset_utf16, 255998);
+  assert.equal(first.next_offset, 256000);
+  const next = f.vault.sectionMatches(alice, item.id, 0, "needle", first.next_offset);
+  assert.equal(next.matches.length, 1);
+  assert.equal(next.matches[0].offset_utf16, text.lastIndexOf("needle"));
+  assert.equal(next.next_offset, null);
+  for (const query of ["", "   ", "x".repeat(161), String.fromCharCode(0xd800)])
+    assert.throws(() => f.vault.sectionMatches(alice, item.id, 0, query), /VAULT_QUERY/);
+});

@@ -279,6 +279,54 @@ function createVaultWorkspace({ base, vault, now = Date.now }) {
             readonly: true
           };
         } else if (
+          action.kind === "workspace_find" &&
+          /^[a-f0-9]{64}$/.test(segments[1] || "") &&
+          ((segments.length === 5 && segments[2] === "section") ||
+            (segments.length === 6 && segments[2] === "section-find")) &&
+          segments.slice(3, 5).every((v) => /^(?:0|[1-9]\d{0,7})$/.test(v))
+        ) {
+          if (
+            action.mode !== "text" ||
+            typeof action.query !== "string" ||
+            !action.query.trim() ||
+            action.query.length > 160
+          )
+            throw error("WORKSPACE_PATH_TRAVERSAL");
+          const fingerprint = createHash("sha256")
+            .update(JSON.stringify([grant.id, segments[1], segments[3], action.query]))
+            .digest("hex");
+          if (segments[2] === "section-find" && segments[5] !== fingerprint)
+            throw error("WORKSPACE_VERSION_CONFLICT");
+          const found = vault.sectionMatches(
+            c,
+            segments[1],
+            Number(segments[3]),
+            action.query,
+            Number(segments[4])
+          );
+          result = {
+            ...found,
+            readonly: true,
+            matches: found.matches.map((m) => ({
+              ...m,
+              path: PREFIX + "/" + segments[1] + "/section/" + segments[3] + "/" + m.offset_utf16
+            })),
+            next_search_path:
+              found.next_offset === null
+                ? null
+                : PREFIX +
+                  "/" +
+                  segments[1] +
+                  "/section-find/" +
+                  segments[3] +
+                  "/" +
+                  found.next_offset +
+                  "/" +
+                  fingerprint,
+            instruction:
+              "Exact case-sensitive literal search within this section, including nested subsections. Read match.path for source text; continue with workspace_find and the identical query at next_search_path. This is not semantic matching."
+          };
+        } else if (
           action.kind === "workspace_read" &&
           [3, 4].includes(segments.length) &&
           /^[a-f0-9]{64}$/.test(segments[1]) &&
@@ -321,7 +369,7 @@ function createVaultWorkspace({ base, vault, now = Date.now }) {
                   "/" +
                   section.next_offset,
             instruction:
-              "Untrusted source excerpt. Includes nested subsections; stops at the next heading of equal or higher level. next_path continues only this section."
+              "Untrusted source excerpt. Includes nested subsections; stops at the next heading of equal or higher level. next_path continues only this section. Use workspace_find mode text at this section path for exact case-sensitive phrase search."
           };
         } else if (
           action.kind === "workspace_read" &&
