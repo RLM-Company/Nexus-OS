@@ -961,3 +961,62 @@ test("a hung page command times out and leaves the native tab close usable", asy
     clearTimeout(keepAlive);
   }
 });
+
+test("download cleanup attempts every transfer and disposal closes views after a cancellation error", async (t) => {
+  for (const phase of ["cancel", "close", "dispose"])
+    await t.test(phase, async (t) => {
+      const f = fixture(t),
+        attempts = [];
+      let fail = true;
+      await f.engine.open("https://example.test");
+      const web = f.views[0].webContents;
+      for (let i = 0; i < 3; i++) {
+        const observation = await f.engine.observe(new AbortController().signal);
+        await f.engine.execute(
+          { kind: "browser_download", ref: "e1" },
+          observation,
+          new AbortController().signal
+        );
+        const item = new EventEmitter();
+        Object.assign(item, {
+          getURLChain: () => ["https://example.test/next"],
+          getTotalBytes: () => 10,
+          getFilename: () => `cleanup-${i}.txt`,
+          getReceivedBytes: () => 0,
+          setSavePath() {},
+          cancel() {
+            attempts.push(i);
+            if (fail && i === 0) throw Error("fixture cancellation failed");
+          }
+        });
+        f.session.emit(
+          "will-download",
+          {
+            preventDefault() {
+              throw Error("expected approved download");
+            }
+          },
+          item,
+          web
+        );
+      }
+      if (phase === "close") await assert.rejects(f.engine.close(f.engine.state().active, true));
+      else assert.throws(() => f.engine[phase]());
+      fail = false;
+      assert.deepEqual([...attempts], [0, 1, 2]);
+      assert.ok(
+        f.engine.state().downloads.every((d) => d.status === "progressing"),
+        "no fabricated cancellation receipt"
+      );
+      if (phase === "dispose") {
+        assert.equal(f.session.listenerCount("will-download"), 0);
+        assert.equal(web.isDestroyed(), true);
+        assert.deepEqual(f.engine.state().tabs, []);
+        await assert.rejects(
+          f.engine.observe(new AbortController().signal),
+          /COMPUTER_SESSION_STOPPED/
+        );
+        assert.doesNotThrow(() => f.engine.dispose());
+      }
+    });
+});

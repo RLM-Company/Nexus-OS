@@ -436,3 +436,45 @@ test("stop keeps a dispatched final action uncertain in durable recovery despite
       assert.equal(s.calls.filter((call) => "previous" in call).length, 1);
     });
 });
+
+test("Work checkpoint labels use the same credential exclusions as task goals", (t) => {
+  const f = fixture(t);
+  const policy = require("../work-cycle-policy.cjs");
+  for (const label of [
+    "PIN: 4815",
+    "код 732619",
+    "passwd=fixture-value",
+    "github_" + "pat_" + "x".repeat(20)
+  ]) {
+    const plan = [{ title: "Проверить результат", criteria: label, state: "checked" }];
+    assert.equal(policy.checkpoint(plan), null);
+    const task = f.store.start(context, { ...input, executionMode: "work" });
+    task.plan(plan);
+    task.state("failed");
+    const saved = f
+      .create()
+      .list(context)
+      .find((r) => r.id === task.id);
+    assert.equal(saved.workPlan, null);
+    assert.equal(f.create().recovery(context, task.id).workPlan, null);
+  }
+  const normal = [
+    { title: "Проверить код проекта", criteria: "Цена 19 700 ₽, кроме доставки", state: "checked" }
+  ];
+  assert.deepEqual(policy.checkpoint(normal), normal);
+});
+
+test("legacy credential-bearing Work labels cannot return through recovery", (t) => {
+  const f = fixture(t),
+    task = f.store.start(context, { ...input, executionMode: "work" });
+  task.plan([{ title: "Проверить", criteria: "Сверить результат", state: "pending" }]);
+  task.state("failed");
+  const file = f.files()[0],
+    envelope = JSON.parse(fs.readFileSync(file, "utf8"));
+  const data = JSON.parse(f.codec.open(envelope.sealed));
+  data.records[0].workPlan[0].criteria = "PIN: 4815";
+  envelope.sealed = f.codec.seal(JSON.stringify(data));
+  fs.writeFileSync(file, JSON.stringify(envelope));
+  assert.equal(f.create().list(context)[0].workPlan, null);
+  assert.equal(f.create().recovery(context, task.id).workPlan, null);
+});
