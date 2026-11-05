@@ -247,3 +247,42 @@ test("native console rechecks identity after a delayed folder dialog", async (t)
   assert.equal(f.vault.status(alice).connected, false);
   console.invalidate();
 });
+
+test("Vault preview bounds UTF-8 bytes and falls back to exact paginated source reads", (t) => {
+  const f = fixture(t);
+  f.vault.choose(alice, f.folder);
+  const text = "漢".repeat(9000),
+    item = f.vault.put(alice, "source.txt", Buffer.from(text));
+  assert.throws(() => f.vault.context(alice, item.id), /VAULT_CONTEXT_LIMIT/);
+  let offset = 0,
+    actual = "";
+  do {
+    const page = f.vault.fragment(alice, item.id, offset);
+    assert.ok(Buffer.byteLength(JSON.stringify(page), "utf8") <= 10000);
+    assert.equal(page.offset_utf16, offset);
+    assert.equal(page.sha256, item.id);
+    actual += page.content;
+    offset = page.next_offset;
+  } while (offset !== null);
+  assert.equal(actual, text);
+  assert.equal(f.vault.get(alice, item.id).bytes.toString(), text);
+});
+
+test("Vault refuses a cursor inside a Unicode character without rewinding or duplicating text", (t) => {
+  const f = fixture(t);
+  f.vault.choose(alice, f.folder);
+  const item = f.vault.put(alice, "emoji.txt", Buffer.from("A🚀B"));
+  assert.throws(() => f.vault.fragment(alice, item.id, 2), /VAULT_QUERY/);
+  assert.equal(f.vault.fragment(alice, item.id, 3).content, "B");
+  assert.equal(f.vault.fragment(alice, item.id, 4).next_offset, null);
+});
+
+test("Vault search paths begin at a whole Unicode character", (t) => {
+  const f = fixture(t);
+  f.vault.choose(alice, f.folder);
+  const text = "A🚀" + "x".repeat(78) + " needle";
+  const item = f.vault.put(alice, "search.txt", Buffer.from(text));
+  const hit = f.vault.search(alice, "needle").items.find((i) => i.id === item.id);
+  assert.equal(hit.offset, 1);
+  assert.ok(f.vault.fragment(alice, item.id, hit.offset).content.startsWith("🚀"));
+});
