@@ -400,3 +400,39 @@ test("recovery rederives review policy from encrypted history, never a caller fl
   assert.equal(s.confirmations[1].recoveryReview, true);
   assert.equal(JSON.parse(s.calls[1].previous).status, "recovery_checkpoint");
 });
+
+test("stop keeps a dispatched final action uncertain in durable recovery despite its late reply", async (t) => {
+  for (const rejected of [false, true])
+    await t.test(rejected ? "late rejection" : "late receipt", async (t) => {
+      const f = fixture(t),
+        s = sessionFixture(f.store, [{ kind: "type_text", text: "private fixture input" }]);
+      let enter, settle;
+      const ready = new Promise((resolve) => {
+        enter = resolve;
+      });
+      s.driver.execute = () =>
+        new Promise((resolve, reject) => {
+          settle = rejected
+            ? () => reject(Error("COMPUTER_WINDOW_CHANGED"))
+            : () => resolve({ requested: true });
+          enter();
+        });
+      const pending = s.session.run({ ...input, maxSteps: 1 });
+      await ready;
+      const id = f.store.list(context)[0].id;
+      assert.equal(f.store.list(context)[0].steps[0].phase, "dispatching");
+      s.session.stop();
+      settle();
+      await assert.rejects(pending, /COMPUTER_SESSION_STOPPED/);
+      const restarted = f.create();
+      const record = restarted.list(context)[0];
+      assert.equal(record.status, "cancelled");
+      assert.equal(record.steps[0].phase, "dispatching");
+      assert.equal(record.requiresReview, true);
+      const recovery = restarted.recovery(context, id);
+      assert.equal(recovery.requiresReview, true);
+      assert.equal(JSON.parse(recovery.previousResult).steps[0].phase, "dispatching");
+      assert.ok(!recovery.previousResult.includes("private fixture input"));
+      assert.equal(s.calls.filter((call) => "previous" in call).length, 1);
+    });
+});

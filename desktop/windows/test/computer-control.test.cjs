@@ -611,3 +611,57 @@ test("computer modules are packaged and the helper is extracted from ASAR", () =
     "hosted content must not receive native computer IPC"
   );
 });
+
+test("stop fences a late final action result and a late safe-rejection response", async (t) => {
+  for (const rejected of [false, true])
+    await t.test(rejected ? "late rejection" : "late result", async () => {
+      const f = fixture([proposal({ kind: "type_text", text: "fixture" })]);
+      let enter,
+        settle,
+        recorded = 0;
+      const ready = new Promise((resolve) => {
+        enter = resolve;
+      });
+      f.driver.recordResult = () => {
+        recorded++;
+      };
+      f.driver.execute = () =>
+        new Promise((resolve, reject) => {
+          settle = rejected
+            ? () => reject(Error("BROWSER_STALE"))
+            : () => resolve({ requested: true });
+          enter();
+        });
+      const pending = f.session.run({ project: context.project, goal: context.goal, maxSteps: 1 });
+      await ready;
+      f.session.stop();
+      settle();
+      await assert.rejects(pending, /COMPUTER_SESSION_STOPPED/);
+      assert.equal(recorded, 0);
+      assert.equal(f.session.active, null);
+    });
+});
+
+test("owner changes during the final action fence its result before recording success", async () => {
+  const f = fixture([proposal({ kind: "type_text", text: "fixture" })]);
+  let enter,
+    settle,
+    recorded = 0;
+  const ready = new Promise((resolve) => {
+    enter = resolve;
+  });
+  f.driver.recordResult = () => {
+    recorded++;
+  };
+  f.driver.execute = () =>
+    new Promise((resolve) => {
+      settle = resolve;
+      enter();
+    });
+  const pending = f.session.run({ project: context.project, goal: context.goal, maxSteps: 1 });
+  await ready;
+  f.setIdentity({ ...context, owner: "other" });
+  settle({ requested: true });
+  await assert.rejects(pending, /COMPUTER_IDENTITY_CHANGED/);
+  assert.equal(recorded, 0);
+});
