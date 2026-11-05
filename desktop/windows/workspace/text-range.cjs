@@ -55,4 +55,44 @@ function selectTextRange(content, { startLine, endLine, maxBytes = 10000 } = {})
     excerpt_only: startLine !== 1 || actualEnd !== line
   };
 }
-module.exports = { selectTextRange };
+// Fit the complete wire response, including metadata and escaped text. Search
+// UTF-16 offsets but never publish a cursor inside a surrogate pair.
+function fitDocumentExcerpt(text, offset, metadata, maxBytes = 10000) {
+  const boundary = (end) =>
+    end < text.length &&
+    /[\uDC00-\uDFFF]/.test(text[end]) &&
+    /[\uD800-\uDBFF]/.test(text[end - 1] || "")
+      ? end - 1
+      : end;
+  const build = (end) => ({
+    ...metadata,
+    offset_utf16: offset,
+    end_utf16: end,
+    total_characters: text.length,
+    excerpt_only: offset > 0 || end < text.length,
+    content: text.slice(offset, end),
+    next_offset: end < text.length ? end : null
+  });
+  const fits = (value) => Buffer.byteLength(JSON.stringify(value), "utf8") <= maxBytes;
+  const limit = boundary(Math.min(text.length, offset + 6000));
+  const full = build(limit);
+  if (fits(full)) return full;
+  let low = offset,
+    high = limit - 1,
+    best = null;
+  while (low <= high) {
+    const mid = low + Math.floor((high - low) / 2);
+    const value = build(boundary(mid));
+    if (fits(value)) {
+      best = value;
+      low = mid + 1;
+    } else high = mid - 1;
+  }
+  if (!best || (best.end_utf16 === offset && offset < text.length))
+    throw new KosworkWorkspaceError(
+      ERROR_CODES.WORKSPACE_FILE_TOO_LARGE,
+      "Не удалось вместить выдержку документа."
+    );
+  return best;
+}
+module.exports = { selectTextRange, fitDocumentExcerpt };

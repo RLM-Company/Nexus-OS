@@ -5,7 +5,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { normalizeServerOrigin } = require("../connection-policy.cjs");
 const { ERROR_CODES, KosworkWorkspaceError, throwIfAborted } = require("./errors.cjs");
-const { selectTextRange } = require("./text-range.cjs");
+const { selectTextRange, fitDocumentExcerpt } = require("./text-range.cjs");
 const { buildOfficeDocument } = require("./office-document.cjs");
 const { extractOfficeText } = require("./office-text.cjs");
 const {
@@ -1089,41 +1089,14 @@ function createKosworkWorkspaceService({
           ERROR_CODES.WORKSPACE_RANGE_INVALID,
           "Позиция вне извлечённого текста или внутри символа Unicode."
         );
-      let end = Math.min(text.length, offset + 6000),
-        result;
-      do {
-        if (
-          end < text.length &&
-          /[\uDC00-\uDFFF]/.test(text[end] || "") &&
-          /[\uD800-\uDBFF]/.test(text[end - 1] || "")
-        )
-          end--;
-        result = {
-          kind: "untrusted_office_excerpt",
-          path: target.relativePath,
-          sha256: snapshot.sha256,
-          version: snapshot.version,
-          size: snapshot.size,
-          representation: parsed.representation,
-          offset_utf16: offset,
-          end_utf16: end,
-          total_characters: text.length,
-          excerpt_only: offset > 0 || end < text.length,
-          content: text.slice(offset, end),
-          next_offset: end < text.length ? end : null
-        };
-        if (Buffer.byteLength(JSON.stringify(result), "utf8") <= 10000) break;
-        end = offset + Math.floor((end - offset) / 2);
-      } while (end > offset);
-      if (
-        Buffer.byteLength(JSON.stringify(result), "utf8") > 10000 ||
-        (end === offset && offset < text.length)
-      )
-        throw new KosworkWorkspaceError(
-          ERROR_CODES.WORKSPACE_FILE_TOO_LARGE,
-          "Не удалось вместить выдержку документа."
-        );
-      return result;
+      return fitDocumentExcerpt(text, offset, {
+        kind: "untrusted_office_excerpt",
+        path: target.relativePath,
+        sha256: snapshot.sha256,
+        version: snapshot.version,
+        size: snapshot.size,
+        representation: parsed.representation
+      });
     } finally {
       op.end();
     }
@@ -1248,41 +1221,14 @@ function createKosworkWorkspaceService({
           "OCR may misread names and numbers. Its confidence is not factual accuracy."
         ]
       };
-      let end = Math.min(text.length, offset + 6000),
-        result;
-      do {
-        if (
-          end < text.length &&
-          /[\uDC00-\uDFFF]/.test(text[end] || "") &&
-          /[\uD800-\uDBFF]/.test(text[end - 1] || "")
-        )
-          end--;
-        result = {
-          kind: "untrusted_pdf_page_excerpt",
-          path: target.relativePath,
-          sha256: snapshot.sha256,
-          version: snapshot.version,
-          size: snapshot.size,
-          representation,
-          offset_utf16: offset,
-          end_utf16: end,
-          total_characters: text.length,
-          excerpt_only: offset > 0 || end < text.length,
-          content: text.slice(offset, end),
-          next_offset: end < text.length ? end : null
-        };
-        if (Buffer.byteLength(JSON.stringify(result), "utf8") <= 10000) break;
-        end = offset + Math.floor((end - offset) / 2);
-      } while (end > offset);
-      if (
-        Buffer.byteLength(JSON.stringify(result), "utf8") > 10000 ||
-        (end === offset && offset < text.length)
-      )
-        throw new KosworkWorkspaceError(
-          ERROR_CODES.WORKSPACE_FILE_TOO_LARGE,
-          "Не удалось вместить выдержку страницы PDF."
-        );
-      return result;
+      return fitDocumentExcerpt(text, offset, {
+        kind: "untrusted_pdf_page_excerpt",
+        path: target.relativePath,
+        sha256: snapshot.sha256,
+        version: snapshot.version,
+        size: snapshot.size,
+        representation
+      });
     } finally {
       op.end();
     }

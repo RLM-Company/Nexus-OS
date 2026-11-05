@@ -68,3 +68,43 @@ test("malformed, excessive and missing ranges fail closed in both the parser and
       (e) => e.code === "WORKSPACE_RANGE_INVALID"
     );
 });
+
+test("document pagination fills the wire budget with the longest whole-Unicode prefix", () => {
+  const { fitDocumentExcerpt } = require("../workspace/text-range.cjs");
+  for (const text of ["Ж".repeat(12000), '🚀\t"\\'.repeat(4000), "a".repeat(13000)]) {
+    let offset = 0,
+      reconstructed = "",
+      pages = 0;
+    do {
+      const r = fitDocumentExcerpt(text, offset, { version: "sha256:" + "a".repeat(64) });
+      assert.ok(Buffer.byteLength(JSON.stringify(r)) <= 10000);
+      assert.ok(r.content.isWellFormed());
+      assert.ok(r.end_utf16 > offset);
+      if (r.end_utf16 < Math.min(text.length, offset + 6000)) {
+        const extra = text.codePointAt(r.end_utf16) > 0xffff ? 2 : 1;
+        const end = r.end_utf16 + extra;
+        const larger = {
+          ...r,
+          end_utf16: end,
+          content: text.slice(offset, end),
+          next_offset: end < text.length ? end : null,
+          excerpt_only: offset > 0 || end < text.length
+        };
+        assert.ok(Buffer.byteLength(JSON.stringify(larger)) > 10000);
+      }
+      reconstructed += r.content;
+      offset = r.next_offset;
+      pages++;
+    } while (offset !== null);
+    assert.equal(reconstructed, text);
+    if (text.startsWith("Ж")) assert.equal(pages, 3);
+  }
+});
+test("document pagination retains an empty final page and rejects oversized metadata", () => {
+  const { fitDocumentExcerpt } = require("../workspace/text-range.cjs");
+  assert.equal(fitDocumentExcerpt("", 0, {}).next_offset, null);
+  assert.throws(
+    () => fitDocumentExcerpt("value", 0, { path: "x".repeat(10000) }),
+    (e) => e.code === "WORKSPACE_FILE_TOO_LARGE"
+  );
+});
