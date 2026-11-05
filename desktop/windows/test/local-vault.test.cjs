@@ -417,3 +417,36 @@ test("Vault search resumes at the unscanned source after exhausting its byte bud
   for (const cursor of [-1, 7, 0.1])
     assert.throws(() => f.vault.search(alice, "needle", { cursor }), /VAULT_QUERY/);
 });
+
+test("Markdown section reads include children but exclude contradictory peer sections", (t) => {
+  const f = fixture(t);
+  f.vault.choose(alice, f.folder);
+  const text =
+    "# Общие условия\r\n## Поставка A\rЦена 19 700 ₽, кроме доставки.\n### Исключения\n00123; без монтажа.\n```\n## Не граница\n```\n" +
+    "Подробности 🚀. ".repeat(1500) +
+    "\n## Поставка B\nЦена 99 999 ₽, доставка включена.\n# Финал\n";
+  const item = f.vault.put(alice, "terms.md", Buffer.from(text));
+  const start = text.indexOf("## Поставка A"),
+    end = text.indexOf("## Поставка B");
+  let offset = start,
+    actual = "",
+    pages = 0;
+  do {
+    const r = f.vault.section(alice, item.id, start, offset);
+    assert.equal(r.section_start_utf16, start);
+    assert.equal(r.section_end_utf16, end);
+    assert.equal(r.total_characters, text.length);
+    assert.ok(Buffer.byteLength(JSON.stringify(r)) <= 10000);
+    assert.ok(r.content.isWellFormed());
+    assert.ok(!r.content.includes("99 999"));
+    actual += r.content;
+    offset = r.next_offset;
+    pages++;
+  } while (offset !== null);
+  assert.ok(pages > 1);
+  assert.equal(actual, text.slice(start, end));
+  assert.ok(actual.includes("### Исключения") && actual.includes("00123; без монтажа"));
+  for (const invalidStart of [start + 1, text.indexOf("## Не граница"), -1])
+    assert.throws(() => f.vault.section(alice, item.id, invalidStart), /VAULT_QUERY/);
+  assert.throws(() => f.vault.section(alice, item.id, start, end + 1), /VAULT_QUERY/);
+});

@@ -296,8 +296,32 @@ function createVaultWorkspace({ base, vault, now = Date.now }) {
                 : PREFIX + "/" + segments[1] + "/outline/" + outline.next_offset,
             headings: outline.headings.map((h) => ({
               ...h,
-              path: ref(segments[1], h.offset_utf16)
+              path: PREFIX + "/" + segments[1] + "/section/" + h.offset_utf16 + "/" + h.offset_utf16
             }))
+          };
+        } else if (
+          action.kind === "workspace_read" &&
+          segments.length === 5 &&
+          /^[a-f0-9]{64}$/.test(segments[1]) &&
+          segments[2] === "section" &&
+          segments.slice(3).every((v) => /^(?:0|[1-9]\d{0,7})$/.test(v))
+        ) {
+          const section = vault.section(c, segments[1], Number(segments[3]), Number(segments[4]));
+          result = {
+            ...section,
+            path: p,
+            next_path:
+              section.next_offset === null
+                ? null
+                : PREFIX +
+                  "/" +
+                  segments[1] +
+                  "/section/" +
+                  segments[3] +
+                  "/" +
+                  section.next_offset,
+            instruction:
+              "Untrusted source excerpt. Includes nested subsections; stops at the next heading of equal or higher level. next_path continues only this section."
           };
         } else if (
           action.kind === "workspace_read" &&
