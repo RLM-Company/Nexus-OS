@@ -3,6 +3,7 @@
 const { ComputerSessionGate, recoveryWriteActions } = require("./computer-policy.cjs");
 const { setTimeout: delay } = require("node:timers/promises");
 const { WorkRetryGuard } = require("./work-retry-guard.cjs");
+const { serializeToolResult } = require("./tool-result.cjs");
 
 class ComputerSession {
   constructor({
@@ -511,7 +512,7 @@ class ComputerSession {
           if (this.executionMode === "work") state.journal?.plan(this.driver.checkpoint());
           state.journal?.mark(step + 1, "requested");
           pendingObservation = step + 1;
-          previousResult = JSON.stringify(response).slice(0, 16000);
+          previousResult = serializeToolResult(response, action.kind);
         } catch (error) {
           const knownWorkspaceRejection = [
             "WORKSPACE_VERSION_CONFLICT",
