@@ -1154,3 +1154,45 @@ test("a page-text reply arriving after cancellation is discarded", async (t) => 
   release();
   await assert.rejects(pending, /COMPUTER_SESSION_STOPPED/);
 });
+
+test("tab receipts preserve every tab ID with bounded, explicitly incomplete long URLs", async (t) => {
+  const f = fixture(t),
+    signal = new AbortController().signal;
+  for (let i = 0; i < 8; i++)
+    await f.engine.open("https://example.test/?q=" + "x".repeat(3500) + i, signal);
+  f.views.at(-1).webContents.emit("page-title-updated", {}, "x".repeat(179) + "🌙");
+  const result = await f.engine.execute(
+    { kind: "browser_tabs" },
+    await f.engine.observe(signal),
+    signal
+  );
+  assert.equal(result.complete_tab_list, true);
+  assert.equal(result.tabs.length, 8);
+  assert.equal(new Set(result.tabs.map((tab) => tab.id)).size, 8);
+  assert.ok(Buffer.byteLength(JSON.stringify(result), "utf8") < 12000);
+  for (const tab of result.tabs) {
+    assert.equal(tab.url, undefined);
+    assert.equal(tab.url_excerpt_only, true);
+    assert.equal(tab.url_preview.length, 512);
+    assert.ok(tab.title.isWellFormed());
+    assert.match(tab.instruction, /not an address to open/);
+  }
+  assert.equal(result.tabs.at(-1).title, "x".repeat(179));
+  const next = await f.engine.observe(signal);
+  const target = result.tabs[0].id;
+  await f.engine.execute({ kind: "browser_switch", tab_id: target }, next, signal);
+  const selected = JSON.parse((await f.engine.observe(signal)).description);
+  assert.equal(selected.url, "https://example.test/?q=" + "x".repeat(3500) + "0");
+  const worst = fixture(t);
+  for (let i = 0; i < 8; i++) {
+    await worst.engine.open("https://example.test/?q=" + "x".repeat(4000) + i, signal);
+    worst.views.at(-1).webContents.emit("page-title-updated", {}, "\u0001".repeat(180));
+  }
+  const bounded = await worst.engine.execute(
+    { kind: "browser_tabs" },
+    await worst.engine.observe(signal),
+    signal
+  );
+  assert.equal(bounded.tabs.length, 8);
+  assert.ok(Buffer.byteLength(JSON.stringify(bounded), "utf8") <= 16000);
+});
