@@ -1020,3 +1020,32 @@ test("download cleanup attempts every transfer and disposal closes views after a
       }
     });
 });
+
+test("tab listing retains every opaque ID within its wire budget when URLs are long", async (t) => {
+  const f = fixture(t),
+    signal = new AbortController().signal;
+  for (let i = 0; i < 8; i++) {
+    await f.engine.open(
+      i === 0 ? "https://example.test/short" : `https://example.test/${i}?long=` + "x".repeat(3900)
+    );
+    f.views
+      .at(-1)
+      .webContents.emit("page-title-updated", {}, i === 0 ? "Short" : '"'.repeat(179) + "🚀");
+  }
+  const observation = await f.engine.observe(signal);
+  const tabs = await f.engine.execute({ kind: "browser_tabs" }, observation, signal);
+  assert.ok(Buffer.byteLength(JSON.stringify(tabs), "utf8") <= 14000);
+  assert.deepEqual(
+    tabs.tabs.map((tab) => tab.id),
+    f.engine.state().tabs.map((tab) => tab.id)
+  );
+  assert.ok(tabs.tabs.some((tab) => tab.url_omitted));
+  assert.equal(tabs.tabs[0].url, "https://example.test/short");
+  assert.ok(tabs.tabs.every((tab) => tab.title.isWellFormed()));
+  assert.ok(tabs.tabs.slice(1).every((tab) => tab.title_truncated));
+  for (const tab of tabs.tabs) {
+    const actual = f.engine.state().tabs.find((source) => source.id === tab.id);
+    if (tab.url_omitted) assert.equal(tab.url, null);
+    else assert.equal(tab.url, actual.url);
+  }
+});

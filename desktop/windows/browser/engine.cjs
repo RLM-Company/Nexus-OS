@@ -87,6 +87,33 @@ function createBrowserEngine({
       downloads: downloads.map(({ item, path, ...d }) => d)
     };
   }
+  function tabListing() {
+    const result = {
+      tabs: state().tabs.map(({ id, title, url, loaded }) => {
+        let end = Math.min(title.length, 180);
+        if (/[\uD800-\uDBFF]/.test(title[end - 1] || "")) end--;
+        return {
+          id,
+          title: title.slice(0, end),
+          url: agentUrl(url),
+          loaded,
+          ...(end < title.length ? { title_truncated: true } : {})
+        };
+      })
+    };
+    while (Buffer.byteLength(JSON.stringify(result), "utf8") > 14000) {
+      const largest = result.tabs
+        .filter((tab) => tab.url !== null)
+        .sort((a, b) => Buffer.byteLength(b.url, "utf8") - Buffer.byteLength(a.url, "utf8"))[0];
+      // Eight bounded titles/IDs always fit after oversized URLs are omitted.
+      if (!largest) throw Error("BROWSER_RESULT_TOO_LARGE");
+      largest.url = null;
+      largest.url_omitted = true;
+      result.instruction =
+        "All tab IDs are included. Oversized URLs are omitted, not shortened into usable addresses. Switch to a selected tab and inspect a fresh observation for its current page.";
+    }
+    return result;
+  }
   function detach(tab) {
     if (!tab.view) return;
     window.contentView.removeChildView(tab.view);
@@ -695,14 +722,7 @@ function createBrowserEngine({
           await delay(action.milliseconds, undefined, { signal });
           return { waited: true };
         case "browser_tabs":
-          return {
-            tabs: state().tabs.map(({ id, title, url, loaded }) => ({
-              id,
-              title,
-              url: agentUrl(url),
-              loaded
-            }))
-          };
+          return tabListing();
         case "browser_open":
           await open(action.url, signal);
           return { opened: true };

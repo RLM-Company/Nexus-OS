@@ -691,3 +691,32 @@ test("session stop attempts workspace and driver cleanup independently and block
     assert.equal(f.executions.length, 0);
   }
 });
+
+test("large native tool replies stay complete JSON within the UTF-8 budget and never replay effects", async () => {
+  for (const content of ["x".repeat(20000), "Цена 🚀. ".repeat(2500)]) {
+    const f = fixture(),
+      feedback = [];
+    let planned = 0,
+      executed = 0;
+    f.planner.next = async ({ previousResult }) => {
+      feedback.push(previousResult);
+      return proposal(
+        planned++ === 0
+          ? { kind: "type_text", text: "fixture" }
+          : { kind: "done", summary: "Inspect completed" }
+      );
+    };
+    f.driver.execute = async () => {
+      executed++;
+      return { content };
+    };
+    const r = await f.session.run({ project: context.project, goal: context.goal, maxSteps: 3 });
+    assert.equal(r.status, "completed");
+    assert.ok(Buffer.byteLength(feedback[1], "utf8") <= 16000);
+    const omitted = JSON.parse(feedback[1]);
+    assert.equal(omitted.error, "COMPUTER_RESULT_TOO_LARGE");
+    assert.equal(omitted.result_omitted, true);
+    assert.equal(omitted.action_kind, "type_text");
+    assert.equal(executed, 1);
+  }
+});
