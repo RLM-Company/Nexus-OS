@@ -504,3 +504,70 @@ test("local temporary folder demo executes end-to-end without errors", async () 
   assert.equal(result.ok, true);
   assert.equal(result.steps.length, 9);
 });
+
+test(
+  "text search returns source coordinates and useful whole-Unicode match excerpts",
+  withTempWorkspace(async ({ workspaceRoot, userDataPath }) => {
+    const service = createKosworkWorkspaceService({ userDataPath });
+    await service.connectFolder({ folderPath: workspaceRoot });
+    const lines = [
+      "Small TARGET 00123",
+      "İ " + "prefix🌙".repeat(100) + "TARGET 19 700 ₽, кроме доставки. " + "suffix".repeat(100),
+      "x" + "🌙" + "x".repeat(79) + "TARGET" + "🌙".repeat(300)
+    ];
+    const content = lines.join("\r\n");
+    fs.writeFileSync(path.join(workspaceRoot, "source.txt"), content, "utf8");
+    const result = await service.searchByText({ query: "target", caseSensitive: false });
+    assert.equal(result.matches.length, 3);
+    for (const match of result.matches) {
+      const source = lines[match.line - 1];
+      assert.equal(match.column, source.indexOf("TARGET") + 1);
+      assert.equal(match.column_unit, "utf16");
+      assert.equal(match.match_length_utf16, 6);
+      assert.equal(
+        match.preview,
+        source.slice(match.preview_start_column - 1, match.preview_end_column_exclusive - 1)
+      );
+      assert.ok(match.preview.isWellFormed());
+      assert.ok(match.preview.length <= 240);
+      assert.ok(match.preview.includes("TARGET"));
+      assert.equal(match.match_in_preview, true);
+      assert.equal(match.preview_excerpt_only, source.length > 240);
+    }
+    assert.equal(
+      (await service.searchByText({ query: "target", caseSensitive: true })).matches.length,
+      0
+    );
+    assert.equal(fs.readFileSync(path.join(workspaceRoot, "source.txt"), "utf8"), content);
+    fs.writeFileSync(
+      path.join(workspaceRoot, "literal.txt"),
+      "Exact a+b[1] token; axb1 is different",
+      "utf8"
+    );
+    const literal = await service.searchByText({ query: "a+b[1]", caseSensitive: false });
+    assert.equal(literal.matches.length, 1);
+    assert.equal(literal.matches[0].column, 7);
+    for (const query of ["$5", "(x)", "a.b", "a?b", "[x]", "a\\b", "a^b", "a{2}", "a|b"]) {
+      fs.writeFileSync(
+        path.join(workspaceRoot, "literal.txt"),
+        "Exact " + query + " token",
+        "utf8"
+      );
+      const result = await service.searchByText({ query, caseSensitive: false });
+      assert.equal(result.matches.length, 1, "literal query " + query);
+      assert.equal(result.matches[0].column, 7);
+    }
+
+    const longQuery = "Q".repeat(300);
+    fs.writeFileSync(
+      path.join(workspaceRoot, "literal.txt"),
+      "prefix " + longQuery + " suffix",
+      "utf8"
+    );
+    const long = await service.searchByText({ query: longQuery });
+    assert.equal(long.matches.length, 1);
+    assert.equal(long.matches[0].match_in_preview, false);
+    assert.equal(long.matches[0].preview_excerpt_only, true);
+    assert.ok(long.matches[0].preview.length <= 240);
+  })
+);
