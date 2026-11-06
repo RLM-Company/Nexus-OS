@@ -750,7 +750,12 @@ function createKosworkWorkspaceService({
         limits.maxSearchFilesScanned
       );
       const rawQuery = query;
-      const needle = caseSensitive ? rawQuery : rawQuery.toLowerCase();
+      // Literal Unicode case-insensitive matching retains original UTF-16 indices.
+      // Lowercasing the entire line can expand characters (e.g. İ) and shift columns.
+      const matcher = new RegExp(
+        rawQuery.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
+        caseSensitive ? "u" : "iu"
+      );
       const effectiveMaxResults = Math.max(
         1,
         Math.min(
@@ -841,15 +846,35 @@ function createKosworkWorkspaceService({
         for (let lineIdx = 0; lineIdx < lines.length; lineIdx += 1) {
           op.check();
           const lineText = lines[lineIdx];
-          const haystack = caseSensitive ? lineText : lineText.toLowerCase();
-          const colIdx = haystack.indexOf(needle);
+          const match = matcher.exec(lineText);
+          const colIdx = match?.index ?? -1;
           if (colIdx !== -1) {
             if (matches.length < effectiveMaxResults) {
+              const length = match[0].length;
+              const before = Math.min(80, Math.max(0, limits.maxLinePreviewChars - length));
+              let start = Math.max(0, colIdx - before);
+              if (
+                /[\uD800-\uDBFF]/.test(lineText[start - 1] || "") &&
+                /[\uDC00-\uDFFF]/.test(lineText[start] || "")
+              )
+                start--;
+              let end = Math.min(lineText.length, start + limits.maxLinePreviewChars);
+              if (
+                /[\uD800-\uDBFF]/.test(lineText[end - 1] || "") &&
+                /[\uDC00-\uDFFF]/.test(lineText[end] || "")
+              )
+                end--;
               matches.push({
                 path: fileRel,
                 line: lineIdx + 1,
                 column: colIdx + 1,
-                preview: lineText.slice(0, limits.maxLinePreviewChars),
+                column_unit: "utf16",
+                match_length_utf16: length,
+                preview: lineText.slice(start, end),
+                preview_start_column: start + 1,
+                preview_end_column_exclusive: end + 1,
+                preview_excerpt_only: start > 0 || end < lineText.length,
+                match_in_preview: colIdx >= start && colIdx + length <= end,
                 sha256: snapshot.sha256,
                 version: snapshot.version
               });
