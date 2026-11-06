@@ -215,6 +215,10 @@ class ComputerSession {
           }
         }
         await this.assertLive(state);
+        if (observation.browser?.read_text && state.session.supports_browser_text_reads !== true) {
+          observation = { ...observation, browser: { ...observation.browser } };
+          delete observation.browser.read_text;
+        }
         if (state.workspace)
           observation = {
             ...observation,
@@ -280,6 +284,8 @@ class ComputerSession {
           (this.executionMode === "computer" && action.kind.startsWith("browser_")) ||
           (this.executionMode !== "work" && action.kind.startsWith("work_"))
         )
+          throw Error("COMPUTER_ACTION_INVALID");
+        if (action.kind === "browser_read_text" && observation.browser?.read_text !== true)
           throw Error("COMPUTER_ACTION_INVALID");
         state.journal?.proposal(step + 1, action, proposal.decision_source);
         this.notify({
@@ -529,7 +535,10 @@ class ComputerSession {
               "COMPUTER_TARGET_OCCLUDED",
               "BROWSER_STALE",
               "BROWSER_ELEMENT_UNAVAILABLE",
-              "BROWSER_TAB_LIMIT"
+              "BROWSER_TAB_LIMIT",
+              "BROWSER_TEXT_CHANGED",
+              "BROWSER_TEXT_RANGE_INVALID",
+              "BROWSER_TEXT_UNAVAILABLE"
             ].includes(error?.message)
           )
             throw error;

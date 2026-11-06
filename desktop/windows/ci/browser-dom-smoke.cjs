@@ -467,6 +467,86 @@ async function run() {
       assert.equal(doc.text.length, expected ? 399 : 400);
       assert.ok(Buffer.byteLength(observation.description, "utf8") <= 14500);
     }
+    const article = "Цена 19 700 ₽, кроме доставки 🌙.\n".repeat(700) + "Final literal 00123";
+    await page.evaluate((text) => {
+      document.body.replaceChildren(
+        Object.assign(document.createElement("p"), { textContent: text })
+      );
+      const hidden = Object.assign(document.createElement("p"), {
+        textContent: "hidden-reader-secret"
+      });
+      hidden.style.display = "none";
+      const input = Object.assign(document.createElement("input"), {
+        type: "password",
+        value: "password-reader-secret"
+      });
+      const editor = Object.assign(document.createElement("p"), {
+        textContent: "editable-reader-secret"
+      });
+      editor.contentEditable = "true";
+      const frame = document.createElement("iframe");
+      frame.srcdoc = "<p>frame-reader-secret</p>";
+      const shadow = document.createElement("div");
+      shadow.attachShadow({ mode: "open" }).innerHTML = "<p>shadow-reader-secret</p>";
+      shadow.append(
+        Object.assign(document.createElement("p"), { textContent: "unprojected-reader-secret" })
+      );
+      document.body.append(hidden, input, editor, frame, shadow);
+    }, article);
+    let cursor = 0,
+      readerVersion = null,
+      articleResult = "",
+      firstExcerpt;
+    do {
+      const fresh = await engine.observe(abort);
+      const part = await engine.execute(
+        { kind: "browser_read_text", offset_utf16: cursor, expected_version: readerVersion },
+        fresh,
+        abort
+      );
+      firstExcerpt ??= part;
+      assert.ok(Buffer.byteLength(JSON.stringify(part), "utf8") <= 10000);
+      assert.ok(part.content.isWellFormed());
+      assert.equal(part.version, firstExcerpt.version);
+      assert.equal(part.skipped_frames, 1);
+      assert.equal(part.skipped_shadows, 1);
+      articleResult += part.content;
+      readerVersion = part.version;
+      cursor = part.next_offset;
+    } while (cursor !== null);
+    assert.equal(articleResult, article);
+    assert.equal(articleResult.includes("reader-secret"), false);
+    await page
+      .locator("p")
+      .first()
+      .evaluate((el) => {
+        el.textContent += " changed";
+      });
+    await assert.rejects(
+      engine.execute(
+        {
+          kind: "browser_read_text",
+          offset_utf16: firstExcerpt.next_offset,
+          expected_version: firstExcerpt.version
+        },
+        await engine.observe(abort),
+        abort
+      ),
+      /BROWSER_TEXT_CHANGED/
+    );
+    await page.evaluate(() => {
+      document.body.replaceChildren(
+        Object.assign(document.createElement("p"), { textContent: "x".repeat(256001) })
+      );
+    });
+    const boundedSource = await engine.execute(
+      { kind: "browser_read_text", offset_utf16: 0, expected_version: null },
+      await engine.observe(abort),
+      abort
+    );
+    assert.equal(boundedSource.total_characters, 256000);
+    assert.equal(boundedSource.source_truncated, true);
+    assert.equal(boundedSource.complete_document, false);
     const preview = await browser.newPage({ viewport: { width: 1280, height: 840 } });
     await preview.addInitScript(() => {
       const state = {
@@ -668,6 +748,8 @@ async function run() {
         owner_desktop_input: false,
         accepted_example_ui:
           "explicit selection, current goal preservation, reset after run/project change and literal untrusted labels passed",
+        paged_text:
+          "actual DOM long article readback, source/version checks and hidden/editable/frame/shadow exclusions passed",
         source_text:
           "real DOM clipping is disclosed; Unicode prefixes and serialized UTF-8 budget verified",
         deep_dom:

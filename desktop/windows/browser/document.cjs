@@ -403,8 +403,68 @@ const focus = function (snapshotId, ref) {
   e.node.focus({ preventScroll: true });
   return s.focused(e.node);
 };
+// A separate bounded light-DOM reader. No page-supplied code, selectors or frames.
+const readText = function () {
+  const root = document.body || document.documentElement;
+  if (!root) return { text: "", source_truncated: false, skipped_frames: 0, skipped_shadows: 0 };
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT);
+  const visibility = new WeakMap();
+  const visible = (el, depth = 0) => {
+    if (!el || depth > 80) return false;
+    if (visibility.has(el)) return visibility.get(el);
+    const css = getComputedStyle(el);
+    const value =
+      !el.hidden &&
+      el.getAttribute("aria-hidden") !== "true" &&
+      css.display !== "none" &&
+      css.visibility !== "hidden" &&
+      css.visibility !== "collapse" &&
+      css.opacity !== "0" &&
+      (!el.parentElement || visible(el.parentElement, depth + 1));
+    visibility.set(el, value);
+    return value;
+  };
+  let text = "",
+    visited = 0,
+    truncated = false,
+    frames = 0,
+    shadows = 0,
+    node;
+  while ((node = walker.nextNode())) {
+    if (++visited > 12000) {
+      truncated = true;
+      break;
+    }
+    if (node.nodeType === Node.ELEMENT_NODE) {
+      if (node.tagName === "IFRAME") frames++;
+      if (node.shadowRoot) shadows++;
+      continue;
+    }
+    const parent = node.parentElement;
+    if (
+      !parent ||
+      parent.closest("script,style,noscript,input,textarea,select,[contenteditable]") ||
+      !visible(parent) ||
+      !parent.getClientRects().length
+    )
+      continue;
+    const value = node.nodeValue || "";
+    if (!value.trim()) continue;
+    const available = 256000 - text.length - (text ? 1 : 0);
+    let end = Math.min(value.length, Math.max(0, available));
+    if (/[\uD800-\uDBFF]/.test(value[end - 1] || "") && /[\uDC00-\uDFFF]/.test(value[end] || ""))
+      end--;
+    if (end > 0) text += (text ? "\n" : "") + value.slice(0, end);
+    if (end < value.length) {
+      truncated = true;
+      break;
+    }
+  }
+  return { text, source_truncated: truncated, skipped_frames: frames, skipped_shadows: shadows };
+};
 module.exports = {
   capture: capture.toString(),
+  readText: readText.toString(),
   locate: locate.toString(),
   fileNode: fileNode.toString(),
   focused: focused.toString(),

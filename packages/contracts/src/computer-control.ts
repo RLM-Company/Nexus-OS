@@ -51,6 +51,11 @@ export const ComputerActionSchema = Type.Union([
   object({ kind: Type.Literal("browser_forward") }),
   object({ kind: Type.Literal("browser_reload") }),
   object({ kind: Type.Literal("browser_read") }),
+  object({
+    kind: Type.Literal("browser_read_text"),
+    offset_utf16: Type.Integer({ minimum: 0, maximum: 256000 }),
+    expected_version: Type.Union([Type.Null(), Type.String({ pattern: "^sha256:[a-f0-9]{64}$" })])
+  }),
   object({ kind: Type.Literal("browser_screenshot") }),
   object({ kind: Type.Literal("browser_open"), url: text(4096) }),
   object({ kind: Type.Literal("browser_search"), query: text(240) }),
@@ -244,6 +249,7 @@ export const ComputerSessionAcceptanceSchema = object({
   supports_workspace_document_reads: Type.Optional(Type.Literal(true)),
   supports_workspace_pdf_reads: Type.Optional(Type.Literal(true)),
   supports_work_reference: Type.Optional(Type.Literal(true)),
+  supports_browser_text_reads: Type.Optional(Type.Literal(true)),
   execution_mode: Type.Optional(
     Type.Union([Type.Literal("computer"), Type.Literal("browser"), Type.Literal("work")])
   ),
@@ -271,7 +277,8 @@ export const ComputerObservationSchema = object({
   browser: Type.Optional(
     object({
       tab_id: Type.String({ pattern: "^[a-f0-9]{12}$" }),
-      generation: Type.Integer({ minimum: 0 })
+      generation: Type.Integer({ minimum: 0 }),
+      read_text: Type.Optional(Type.Literal(true))
     })
   ),
   workspace: Type.Optional(

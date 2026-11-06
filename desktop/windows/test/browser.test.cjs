@@ -98,6 +98,19 @@ function fixture(t, options = {}) {
                 }
               };
             }
+            if (args.functionDeclaration === documentCode.readText) {
+              await web.readerHook?.();
+              return {
+                result: {
+                  value: {
+                    text: web.readerText ?? "Reader fixture",
+                    source_truncated: false,
+                    skipped_frames: 0,
+                    skipped_shadows: 0
+                  }
+                }
+              };
+            }
             if (args.functionDeclaration === searchCode.render) {
               web.searchData = values[0];
               return { result: { value: true } };
@@ -1046,4 +1059,98 @@ test("browser observations bound serialized UTF-8 and preserve whole Unicode sou
   assert.equal(doc.text, "x".repeat(5999));
   assert.equal(doc.truncated, true);
   assert.ok(doc.text.isWellFormed());
+});
+
+test("long browser text is paged with version/source hashes and rejects mixed pages", async (t) => {
+  const f = fixture(t),
+    signal = new AbortController().signal;
+  await f.engine.open("https://example.test");
+  const source = "Цена 19 700 ₽, кроме доставки 🌙.\n".repeat(800) + "Exact 00123";
+  f.views[0].webContents.readerText = source;
+  let offset = 0,
+    version = null,
+    restored = "",
+    first,
+    count = 0;
+  do {
+    const obs = await f.engine.observe(signal);
+    assert.equal(obs.browser.read_text, true);
+    const action = { kind: "browser_read_text", offset_utf16: offset, expected_version: version };
+    assert.deepEqual(validateComputerAction(action), action);
+    const result = await f.engine.execute(action, obs, signal);
+    first ??= result;
+    assert.ok(Buffer.byteLength(JSON.stringify(result), "utf8") <= 10000);
+    assert.ok(result.content.isWellFormed());
+    assert.equal(result.version, first.version);
+    assert.equal(result.text_sha256, first.text_sha256);
+    assert.equal(result.complete_document, false);
+    assert.equal(result.offset_utf16, offset);
+    restored += result.content;
+    offset = result.next_offset;
+    version = result.version;
+    count++;
+  } while (offset !== null);
+  assert.equal(restored, source);
+  assert.ok(count > 2);
+  assert.equal(
+    first.text_sha256,
+    require("node:crypto").createHash("sha256").update(source, "utf8").digest("hex")
+  );
+  for (const offset of [source.indexOf("🌙") + 1, source.length + 1])
+    await assert.rejects(
+      f.engine.execute(
+        { kind: "browser_read_text", offset_utf16: offset, expected_version: first.version },
+        await f.engine.observe(signal),
+        signal
+      ),
+      /BROWSER_TEXT_RANGE_INVALID/
+    );
+  f.views[0].webContents.readerText += " changed";
+  const obs = await f.engine.observe(signal);
+  await assert.rejects(
+    f.engine.execute(
+      {
+        kind: "browser_read_text",
+        offset_utf16: first.next_offset,
+        expected_version: first.version
+      },
+      obs,
+      signal
+    ),
+    /BROWSER_TEXT_CHANGED/
+  );
+  for (const action of [
+    { kind: "browser_read_text", offset_utf16: 1, expected_version: null },
+    { kind: "browser_read_text", offset_utf16: -1, expected_version: null },
+    { kind: "browser_read_text", offset_utf16: 0, expected_version: "bad" }
+  ]) {
+    assert.throws(() => validateComputerAction(action), /COMPUTER_ACTION_INVALID/);
+    await assert.rejects(f.engine.execute(action, obs, signal), /BROWSER_TEXT_RANGE_INVALID/);
+  }
+});
+
+test("a page-text reply arriving after cancellation is discarded", async (t) => {
+  const f = fixture(t),
+    controller = new AbortController();
+  await f.engine.open("https://example.test");
+  const obs = await f.engine.observe(controller.signal);
+  let enter, release;
+  const ready = new Promise((resolve) => {
+    enter = resolve;
+  });
+  f.views[0].webContents.readerHook = async () => {
+    enter();
+    await new Promise((resolve) => {
+      release = resolve;
+    });
+  };
+  const pending = f.engine.execute(
+    { kind: "browser_read_text", offset_utf16: 0, expected_version: null },
+    obs,
+    controller.signal
+  );
+  await ready;
+  controller.abort();
+  release();
+  await assert.rejects(pending, /COMPUTER_SESSION_STOPPED/);
 });
