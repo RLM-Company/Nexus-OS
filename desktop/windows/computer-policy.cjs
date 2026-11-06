@@ -36,6 +36,7 @@ const fields = {
   browser_forward: [],
   browser_reload: [],
   browser_read: [],
+  browser_read_text: ["offset_utf16", "expected_version"],
   browser_screenshot: [],
   browser_click: ["ref"],
   browser_fill: ["ref", "text"],
@@ -122,6 +123,15 @@ function validateComputerAction(action) {
       );
     if (action.kind.startsWith("browser_")) {
       try {
+        if (action.kind === "browser_read_text")
+          return (
+            Number.isSafeInteger(action.offset_utf16) &&
+            action.offset_utf16 >= 0 &&
+            action.offset_utf16 <= 256000 &&
+            (action.expected_version === null ||
+              /^sha256:[a-f0-9]{64}$/.test(action.expected_version)) &&
+            (action.offset_utf16 === 0 || action.expected_version !== null)
+          );
         if (action.kind === "browser_open")
           return require("./browser/policy.cjs").safeUrl(action.url) !== null;
         if (action.kind === "browser_search") {

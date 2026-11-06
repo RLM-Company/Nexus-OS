@@ -24,6 +24,7 @@ test("native source and document tools require explicit server capability flags"
             ...(capability === undefined
               ? {}
               : {
+                  supports_browser_text_reads: capability,
                   supports_workspace_read_lines: capability,
                   supports_workspace_documents: capability,
                   supports_workspace_document_reads: capability
@@ -39,6 +40,7 @@ test("native source and document tools require explicit server capability flags"
       executionMode: "work",
       signal: new AbortController().signal
     });
+    assert.equal(result.supports_browser_text_reads, capability === true ? true : undefined);
     assert.equal(result.supports_workspace_read_lines, capability === true ? true : undefined);
     assert.equal(result.supports_workspace_documents, capability === true ? true : undefined);
     assert.equal(result.supports_workspace_document_reads, capability === true ? true : undefined);
@@ -354,5 +356,56 @@ test("native JSON preserves split multilingual UTF-8 and rejects corrupt bytes w
         client.request("/api/v1/projects"),
         (error) => error.message === "COMPUTER_RESPONSE_INVALID"
       );
+  }
+});
+
+test("page reader is advertised only after server capability negotiation and cannot bypass it", async () => {
+  for (const capability of [undefined, true]) {
+    const native = {
+      observation_id: "native-reader",
+      active_window: "tab:0",
+      width: 960,
+      height: 740,
+      description: "{}",
+      browser: { tab_id: "a".repeat(12), generation: 0, read_text: true }
+    };
+    let seen,
+      executions = 0;
+    const runner = new ComputerSession({
+      executionMode: "browser",
+      identity: async () => owner,
+      confirm: async () => true,
+      notify() {},
+      driver: {
+        observe: async () => native,
+        execute: async () => {
+          executions++;
+          return { content: "fixture" };
+        },
+        stop() {}
+      },
+      planner: {
+        begin: async () => ({ id: "fixture", supports_browser_text_reads: capability }),
+        authorize: async () => ({ authorized: true, valid_for_ms: 10000 }),
+        end: async () => {},
+        next: async ({ observation }) => {
+          seen = observation.browser;
+          return {
+            action: { kind: "browser_read_text", offset_utf16: 0, expected_version: null },
+            message: "fixture",
+            requires_confirmation: false
+          };
+        }
+      }
+    });
+    if (capability) await runner.run({ project: "project", goal: "Read this page", maxSteps: 1 });
+    else
+      await assert.rejects(
+        runner.run({ project: "project", goal: "Read this page", maxSteps: 1 }),
+        /COMPUTER_ACTION_INVALID/
+      );
+    assert.equal(seen.read_text, capability === true ? true : undefined);
+    assert.equal(executions, capability === true ? 1 : 0);
+    assert.equal(native.browser.read_text, true);
   }
 });

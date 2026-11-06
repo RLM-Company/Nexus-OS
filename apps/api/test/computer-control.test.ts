@@ -1322,3 +1322,30 @@ describe("native planner history integrity", () => {
     expect(f.calls).toHaveLength(1);
   });
 });
+
+describe("bounded browser text capability", () => {
+  for (const capable of [false, true])
+    it(`requires native page-reader capability: ${capable}`, async () => {
+      const f = await fixture({
+        vision: false,
+        output: {
+          ...action,
+          action: { kind: "browser_read_text", offset_utf16: 0, expected_version: null }
+        }
+      });
+      Object.assign(f.input, { execution_mode: "browser" });
+      expect(await f.create()).toMatchObject({ supports_browser_text_reads: true });
+      const value = structuredClone(step);
+      delete value.observation.image_jpeg_base64;
+      value.observation.browser = {
+        tab_id: "a".repeat(12),
+        generation: 0,
+        ...(capable ? { read_text: true as const } : {})
+      };
+      if (capable) {
+        expect(await f.next(value)).toMatchObject({ action: { kind: "browser_read_text" } });
+        expect(f.calls[0]!.messages[0]!.content).toContain("never mix versions");
+      } else await expect(f.next(value)).rejects.toThrow("OUTPUT_INVALID");
+      expect(f.calls).toHaveLength(1);
+    });
+});
