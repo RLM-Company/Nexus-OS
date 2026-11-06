@@ -262,7 +262,7 @@ function createBrowserEngine({
       }
     });
     listen("page-title-updated", (_e, title) => {
-      tab.title = String(title).slice(0, 180);
+      tab.title = unicodePrefix(String(title), 180);
       emit();
     });
     for (const event of ["did-start-loading", "did-stop-loading"]) listen(event, emit);
@@ -766,15 +766,32 @@ function createBrowserEngine({
         case "wait":
           await delay(action.milliseconds, undefined, { signal });
           return { waited: true };
-        case "browser_tabs":
-          return {
-            tabs: state().tabs.map(({ id, title, url, loaded }) => ({
+        case "browser_tabs": {
+          const entries = state().tabs.map(({ id, title, url, loaded }) => {
+            const address = agentUrl(url);
+            return {
               id,
               title,
-              url: agentUrl(url),
-              loaded
-            }))
+              loaded,
+              ...(address.length <= 512
+                ? { url: address }
+                : {
+                    url_preview: unicodePrefix(address, 512),
+                    url_excerpt_only: true
+                  })
+            };
+          });
+          return {
+            complete_tab_list: true,
+            tabs: entries,
+            ...(entries.some((tab) => tab.url_excerpt_only)
+              ? {
+                  instruction:
+                    "Switch to a tab by ID and inspect its current observation for the full URL; a preview is not an address to open."
+                }
+              : {})
           };
+        }
         case "browser_open":
           await open(action.url, signal);
           return { opened: true };
