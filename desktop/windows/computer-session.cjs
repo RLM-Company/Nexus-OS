@@ -450,7 +450,17 @@ class ComputerSession {
           if (this.executionMode === "work") state.journal?.plan(this.driver.checkpoint());
           state.journal?.mark(step + 1, "requested");
           pendingObservation = step + 1;
-          previousResult = JSON.stringify(response).slice(0, 16000);
+          const serialized = JSON.stringify(response);
+          previousResult =
+            Buffer.byteLength(serialized, "utf8") <= 16000
+              ? serialized
+              : JSON.stringify({
+                  error: "COMPUTER_RESULT_TOO_LARGE",
+                  result_omitted: true,
+                  action_kind: action.kind,
+                  instruction:
+                    "Execution returned a reply exceeding the result budget. Inspect fresh state or narrow a read. The action may already have had an effect; never repeat it merely to recover the omitted reply."
+                });
         } catch (error) {
           const knownWorkspaceRejection = [
             "WORKSPACE_VERSION_CONFLICT",

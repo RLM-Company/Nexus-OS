@@ -478,3 +478,17 @@ test("legacy credential-bearing Work labels cannot return through recovery", (t)
   assert.equal(f.create().list(context)[0].workPlan, null);
   assert.equal(f.create().recovery(context, task.id).workPlan, null);
 });
+
+test("an omitted large reply preserves the dispatched effect in recovery", async (t) => {
+  const f = fixture(t),
+    s = sessionFixture(f.store, [{ kind: "type_text", text: "fixture" }]);
+  s.driver.execute = async () => ({ content: "private fixture response ".repeat(2000) });
+  const result = await s.session.run({ ...input, maxSteps: 1 });
+  assert.equal(result.status, "step_limit");
+  const record = f.create().list(context)[0];
+  assert.equal(record.steps[0].phase, "requested");
+  assert.equal(record.requiresReview, true);
+  const recovery = f.create().recovery(context, record.id);
+  assert.equal(recovery.requiresReview, true);
+  assert.ok(!recovery.previousResult.includes("private fixture response"));
+});
