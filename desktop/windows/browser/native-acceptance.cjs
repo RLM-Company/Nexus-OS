@@ -271,7 +271,85 @@ async function runNativeBrowserAcceptance({ app, origin }) {
     );
     assert.deepEqual(environmentGrants, ["browser", "computer"]);
     assert.deepEqual(workDriver.state().permissions, []);
-    await engine.close(engine.state().active, true);
+    stage = "paged-reader";
+    const expectedArticle =
+      "Цена 19 700 ₽, кроме доставки 🌙.\n".repeat(700) + "Final literal 00123";
+    let articleText = "",
+      offset = 0,
+      sourceVersion = null,
+      openedArticle = false,
+      reloadedArticle = false,
+      reloadSettled = false,
+      versionRejected = false;
+    const articleRunner = new ComputerSession({
+      executionMode: "browser",
+      driver: engine,
+      identity: async () => context,
+      confirm: async () => true,
+      notify() {},
+      planner: {
+        begin: async () => ({ id: "native-reader-fixture", supports_browser_text_reads: true }),
+        authorize: async () => ({ authorized: true, valid_for_ms: 10000 }),
+        end: async () => {},
+        next: async ({ observation, previousResult }) => {
+          assert.equal(observation.image_jpeg_base64, undefined);
+          assert.equal(observation.browser.read_text, true);
+          const previous = previousResult ? JSON.parse(previousResult) : {};
+          let action;
+          if (!openedArticle) {
+            openedArticle = true;
+            action = { kind: "browser_open", url: origin + "/browser/article" };
+          } else if (!reloadedArticle) {
+            if (typeof previous.version === "string") {
+              assert.ok(Buffer.byteLength(previousResult, "utf8") <= 10000);
+              assert.equal(previous.complete_document, false);
+              assert.equal(previous.skipped_frames, 1);
+              assert.equal(previous.skipped_shadows, 1);
+              assert.ok(previous.content.isWellFormed());
+              if (sourceVersion !== null) assert.equal(previous.version, sourceVersion);
+              articleText += previous.content;
+              sourceVersion = previous.version;
+              offset = previous.next_offset;
+            }
+            if (offset === null) {
+              assert.equal(articleText, expectedArticle);
+              assert.equal(articleText.includes("READER-SECRET"), false);
+              reloadedArticle = true;
+              action = { kind: "browser_reload" };
+            } else
+              action = {
+                kind: "browser_read_text",
+                offset_utf16: offset,
+                expected_version: sourceVersion
+              };
+          } else if (!reloadSettled) {
+            reloadSettled = true;
+            action = { kind: "wait", milliseconds: 350 };
+          } else if (previous.not_executed && previous.reason === "BROWSER_TEXT_CHANGED") {
+            versionRejected = true;
+            action = { kind: "done", summary: "Packaged reader checked" };
+          } else
+            action = {
+              kind: "browser_read_text",
+              offset_utf16: 0,
+              expected_version: sourceVersion
+            };
+          return { action, message: "Native reader fixture only", requires_confirmation: false };
+        }
+      }
+    });
+    assert.equal(
+      (
+        await articleRunner.run({
+          project: "fixture",
+          goal: "Read the generated CI article and detect navigation",
+          maxSteps: 20
+        })
+      ).status,
+      "completed"
+    );
+    assert.equal(versionRejected, true);
+    for (const tab of engine.state().tabs) await engine.close(tab.id, true);
     assert.equal(engine.state().liveTabs, 0);
     return {
       transport: "packaged Electron WebContentsView + debugger",
@@ -284,6 +362,9 @@ async function runNativeBrowserAcceptance({ app, origin }) {
       noPaidModel: true,
       fixturePlanner: true,
       unifiedWorkCycle: true,
+      pagedTextReader: true,
+      pagedTextReaderVersionGuard: true,
+      pagedTextReaderExclusions: true,
       computerTransport: "fixture only; no OS capture/input",
       separateEnvironmentGrants: true
     };
