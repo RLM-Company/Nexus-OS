@@ -110,6 +110,15 @@ class ComputerSession {
       if (this.active !== state || state.controller.signal.aborted)
         throw Error("COMPUTER_SESSION_STOPPED");
       state.grant = this.gate.enable({ ...context, project, goal });
+      // Expiry must cancel work already waiting on an asynchronous adapter,
+      // not just reject the next action after it eventually returns.
+      state.expiryTimer = setTimeout(
+        () => {
+          if (this.active === state) this.stop();
+        },
+        Math.max(0, state.grant.expires - this.gate.now())
+      );
+      state.expiryTimer.unref?.();
       await this.assertLive(state);
       if (this.executionMode === "work") this.driver.begin({ context, goal, recovery });
       if (
@@ -526,6 +535,7 @@ class ComputerSession {
       throw error;
     } finally {
       const wasAborted = state.controller.signal.aborted;
+      clearTimeout(state.expiryTimer);
       this.gate.stop();
       state.controller.abort();
       let cleanupFailed = false;
@@ -563,6 +573,7 @@ class ComputerSession {
     }
   }
   stop() {
+    clearTimeout(this.active?.expiryTimer);
     this.gate.stop();
     this.active?.controller.abort();
     // A broken workspace cancel must not skip native input cleanup (or vice versa).
