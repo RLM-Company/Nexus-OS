@@ -10,13 +10,15 @@ function createComputerApiClient({ identity, getSession }) {
       route.includes("\\")
     )
       throw Error("COMPUTER_ROUTE_INVALID");
+    const deadline = AbortSignal.timeout(130000);
+    const combined = signal ? AbortSignal.any([signal, deadline]) : deadline;
+    combined.throwIfAborted();
     const current = await identity();
+    combined.throwIfAborted();
     if (!current) throw Error("COMPUTER_OWNER_UNVERIFIED");
     if (expected && (current.origin !== expected.origin || current.owner !== expected.owner))
       throw Error("COMPUTER_IDENTITY_CHANGED");
     const url = current.origin + route;
-    const deadline = AbortSignal.timeout(130000);
-    const combined = signal ? AbortSignal.any([signal, deadline]) : deadline;
     const response = await getSession().fetch(url, {
       method,
       redirect: "manual",
@@ -30,21 +32,29 @@ function createComputerApiClient({ identity, getSession }) {
       ...(body ? { body: JSON.stringify(body) } : {}),
       signal: combined
     });
+    if (combined.aborted) {
+      await response.body?.cancel().catch(() => {});
+      combined.throwIfAborted();
+    }
     if (
       response.redirected ||
       (response.url !== "" && response.url !== url) ||
       response.status < 200 ||
       (response.status >= 300 && response.status < 400) ||
       !/^application\/json(?:\s*;|$)/i.test(response.headers.get("content-type") || "")
-    )
+    ) {
+      void response.body?.cancel().catch(() => {});
       throw Error(response.status === 404 ? "COMPUTER_API_UNAVAILABLE" : "COMPUTER_REQUEST_FAILED");
+    }
     if (!response.body) throw Error("COMPUTER_RESPONSE_INVALID");
     const reader = response.body.getReader(),
       chunks = [];
     let size = 0;
     try {
       for (;;) {
+        combined.throwIfAborted();
         const { done, value } = await reader.read();
+        combined.throwIfAborted();
         if (done) break;
         size += value.byteLength;
         if (size > 200000) throw Error("COMPUTER_RESPONSE_TOO_LARGE");
@@ -54,9 +64,18 @@ function createComputerApiClient({ identity, getSession }) {
       await reader.cancel().catch(() => {});
     }
     const after = await identity();
+    combined.throwIfAborted();
     if (!after || after.origin !== current.origin || after.owner !== current.owner)
       throw Error("COMPUTER_IDENTITY_CHANGED");
-    const result = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+    let result;
+    try {
+      result = JSON.parse(
+        new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(Buffer.concat(chunks))
+      );
+    } catch {
+      // Invalid bytes must not silently replace source text or expose body fragments.
+      throw Error("COMPUTER_RESPONSE_INVALID");
+    }
     if (response.status >= 400) {
       const allowed = new Set([
         "COMPUTER_SESSION_STOPPED",

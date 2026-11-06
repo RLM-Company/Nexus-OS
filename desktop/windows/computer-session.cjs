@@ -555,11 +555,13 @@ class ComputerSession {
   stop() {
     this.gate.stop();
     this.active?.controller.abort();
-    this.workspace?.cancel();
-    try {
-      this.driver.stop?.();
-    } catch {
-      this.poisoned = true;
+    // A broken workspace cancel must not skip native input cleanup (or vice versa).
+    for (const cleanup of [() => this.workspace?.cancel(), () => this.driver.stop?.()]) {
+      try {
+        cleanup();
+      } catch {
+        this.poisoned = true;
+      }
     }
   }
   resume() {

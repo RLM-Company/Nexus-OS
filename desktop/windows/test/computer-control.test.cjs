@@ -665,3 +665,29 @@ test("owner changes during the final action fence its result before recording su
   await assert.rejects(pending, /COMPUTER_IDENTITY_CHANGED/);
   assert.equal(recorded, 0);
 });
+
+test("session stop attempts workspace and driver cleanup independently and blocks unsafe reuse", async () => {
+  for (const failed of ["workspace", "driver", "both"]) {
+    const f = fixture(),
+      attempts = [];
+    f.session.workspace = {
+      snapshot: () => null,
+      cancel() {
+        attempts.push("workspace");
+        if (failed !== "driver") throw Error("fixture workspace cleanup failed");
+      }
+    };
+    f.driver.stop = () => {
+      attempts.push("driver");
+      if (failed !== "workspace") throw Error("fixture driver cleanup failed");
+    };
+    assert.doesNotThrow(() => f.session.stop());
+    assert.deepEqual(attempts, ["workspace", "driver"]);
+    assert.equal(f.session.poisoned, true);
+    await assert.rejects(
+      f.session.run({ project: context.project, goal: context.goal }),
+      /COMPUTER_RECOVERY_RESTART_REQUIRED/
+    );
+    assert.equal(f.executions.length, 0);
+  }
+});

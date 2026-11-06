@@ -23,8 +23,7 @@ const MAX_RECORDS = 20,
   MAX_PLAIN = 1_000_000,
   MAX_FILE = 1_500_000,
   MAX_AGE = 30 * 86400_000;
-const SENSITIVE =
-  /(?:\bBearer\s+\S+|\b(?:password|passwd|api[_-]?key|access[_-]?token|secret)\s*[:=]\s*\S+|пароль\s*[:=]?\s*\S+|(?:\b(?:pin|code)\b|код)\s*[:=—-]?\s*\d{4,8}|\b(?:gh[opsur]_|github_pat_|sk-)[a-z0-9_-]{12,}|-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----)/iu;
+const { containsCredentialText } = require("./checkpoint-text.cjs");
 const fail = () => {
   throw Error("COMPUTER_HISTORY_UNAVAILABLE");
 };
@@ -49,7 +48,7 @@ function scopeFor({ origin, owner }) {
 }
 function safeGoal(goal) {
   if (typeof goal !== "string" || !goal.trim() || goal.length > 8000 || goal.includes("\0")) fail();
-  return SENSITIVE.test(goal) ? null : goal;
+  return containsCredentialText(goal) ? null : goal;
 }
 function cleanRecord(r) {
   if (
@@ -86,7 +85,13 @@ function cleanRecord(r) {
     status: r.status,
     executionMode: r.executionMode ?? "computer",
     ...(r.executionMode === "work"
-      ? { workPlan: r.workPlan ? require("./work-cycle-policy.cjs").plan(r.workPlan, true) : null }
+      ? {
+          workPlan: r.workPlan
+            ? require("./work-cycle-policy.cjs").checkpoint(
+                require("./work-cycle-policy.cjs").plan(r.workPlan, true)
+              )
+            : null
+        }
       : {}),
     createdAt: r.createdAt,
     updatedAt: r.updatedAt,
@@ -333,7 +338,11 @@ function createComputerHistory(userData, { codec, now = Date.now, namespace = "c
         plan(value) {
           if (executionMode !== "work") fail();
           const metadata =
-            value === null ? null : require("./work-cycle-policy.cjs").plan(value, true);
+            value === null
+              ? null
+              : require("./work-cycle-policy.cjs").checkpoint(
+                  require("./work-cycle-policy.cjs").plan(value, true)
+                );
           mutate(
             context,
             r.id,

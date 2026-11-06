@@ -48,6 +48,7 @@ function verify() {
     "work-cycle-driver.cjs",
     "work-cycle-preload.cjs",
     "computer-history.cjs",
+    "checkpoint-text.cjs",
     "computer-workspace.cjs",
     "workspace/index.cjs",
     "workspace/path-guard.cjs",

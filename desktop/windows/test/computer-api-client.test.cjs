@@ -241,3 +241,118 @@ test("computer decisions must identify a provider run bound to this session and 
   ])
     await assert.rejects(next(changed), /DECISION_SOURCE_INVALID/);
 });
+
+test("cancelled native requests never start fetch after pending identity verification", async () => {
+  for (const alreadyCancelled of [true, false]) {
+    const controller = new AbortController();
+    let enter,
+      release,
+      fetches = 0;
+    const ready = new Promise((resolve) => {
+      enter = resolve;
+    });
+    const client = createComputerApiClient({
+      identity: async () => {
+        enter();
+        if (!alreadyCancelled)
+          await new Promise((resolve) => {
+            release = resolve;
+          });
+        return owner;
+      },
+      getSession: () => ({
+        fetch: async () => {
+          fetches++;
+          return response({ ok: true });
+        }
+      })
+    });
+    if (alreadyCancelled) controller.abort();
+    const pending = client.request("/api/v1/projects", { signal: controller.signal });
+    if (!alreadyCancelled) {
+      await ready;
+      controller.abort();
+      release();
+    }
+    await assert.rejects(pending, (error) => error.name === "AbortError");
+    assert.equal(fetches, 0);
+  }
+});
+
+test("late fetch and body replies cannot revive an aborted native request", async (t) => {
+  for (const phase of ["fetch", "body", "final identity"])
+    await t.test(phase, async () => {
+      const controller = new AbortController();
+      let enter,
+        release,
+        identityChecks = 0;
+      const ready = new Promise((resolve) => {
+        enter = resolve;
+      });
+      const hold = () =>
+        new Promise((resolve) => {
+          release = resolve;
+          enter();
+        });
+      const client = createComputerApiClient({
+        identity: async () => {
+          if (++identityChecks === 2 && phase === "final identity") await hold();
+          return owner;
+        },
+        getSession: () => ({
+          fetch: async () => {
+            if (phase === "fetch") await hold();
+            if (phase !== "body") return response({ private: "fixture" });
+            return new Response(
+              new ReadableStream({
+                async start(stream) {
+                  await hold();
+                  stream.enqueue(Buffer.from('{"private":"fixture"}'));
+                  stream.close();
+                }
+              }),
+              { headers: { "content-type": "application/json" } }
+            );
+          }
+        })
+      });
+      const pending = client.request("/api/v1/projects", { signal: controller.signal });
+      await ready;
+      controller.abort();
+      release();
+      await assert.rejects(pending, (error) => error.name === "AbortError");
+    });
+});
+
+test("native JSON preserves split multilingual UTF-8 and rejects corrupt bytes without echoing payloads", async () => {
+  const valid = Buffer.from(JSON.stringify({ quote: "Цена 19 700 ₽, кроме доставки. 🚀" }));
+  for (const bytes of [
+    valid,
+    Buffer.from([123, 34, 120, 34, 58, 34, 0xc3, 0x28, 34, 125]),
+    Buffer.from('{"private-fixture-details":')
+  ]) {
+    const client = createComputerApiClient({
+      identity: async () => owner,
+      getSession: () => ({
+        fetch: async () =>
+          new Response(
+            new ReadableStream({
+              start(stream) {
+                for (let at = 0; at < bytes.length; at++)
+                  stream.enqueue(bytes.subarray(at, at + 1));
+                stream.close();
+              }
+            }),
+            { headers: { "content-type": "application/json" } }
+          )
+      })
+    });
+    if (bytes === valid)
+      assert.deepEqual(await client.request("/api/v1/projects"), JSON.parse(valid.toString()));
+    else
+      await assert.rejects(
+        client.request("/api/v1/projects"),
+        (error) => error.message === "COMPUTER_RESPONSE_INVALID"
+      );
+  }
+});
