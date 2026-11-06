@@ -923,3 +923,64 @@ test("a legacy API never receives a selected local example or a paid planner ste
   assert.equal(planned, 0);
   assert.deepEqual(f.grants, []);
 });
+
+test("Work composition discloses dropped view data and never splits Unicode or the task plan", async () => {
+  for (const source of [
+    JSON.stringify({ text: "x".repeat(1999) + "🌙" + "z".repeat(16000), nodes: [] }),
+    JSON.stringify({
+      text: "Current exact 00123",
+      nodes: Array.from({ length: 100 }, (_, i) => ({ ref: "e" + i, name: "z".repeat(1000) }))
+    }),
+    "x".repeat(5999) + "🌙" + "z".repeat(16000)
+  ]) {
+    const child = {
+      stop() {},
+      observe: async () => ({
+        observation_id: crypto.randomUUID(),
+        active_window: "tab:0",
+        width: 960,
+        height: 740,
+        description: source,
+        browser: { tab_id: "a".repeat(12), generation: 0 }
+      })
+    };
+    const driver = createWorkCycleDriver({
+      browser: child,
+      computer: child,
+      identity: async () => context,
+      confirmEnvironment: async () => true
+    });
+    const signal = new AbortController().signal;
+    driver.begin({ context, goal: "Preserve the current task" });
+    let obs = await driver.observe(signal);
+    await driver.execute(
+      {
+        kind: "work_plan",
+        steps: [{ title: "Exact current step 00123", criteria: "19 700 ₽, кроме доставки" }]
+      },
+      obs,
+      signal
+    );
+    obs = await driver.observe(signal);
+    await driver.execute({ kind: "work_switch", environment: "browser" }, obs, signal);
+    obs = await driver.observe(signal);
+    const doc = JSON.parse(obs.description);
+    assert.equal(doc.task.steps[0].title, "Exact current step 00123");
+    assert.equal(doc.task.steps[0].criteria, "19 700 ₽, кроме доставки");
+    assert.ok(obs.description.length <= 16000);
+    if (typeof doc.view === "string") {
+      assert.equal(doc.view_excerpt_only, true);
+      assert.equal(doc.view, "x".repeat(5999));
+      assert.ok(doc.view.isWellFormed());
+    } else {
+      assert.equal(doc.view.truncated, true);
+      assert.ok(doc.view.text.isWellFormed());
+      if (!doc.view.nodes.length) assert.equal(doc.view.text, "x".repeat(1999));
+      else {
+        assert.ok(doc.view.nodes.length < 100);
+        assert.equal(doc.view.text, "Current exact 00123");
+      }
+    }
+    driver.stop();
+  }
+});

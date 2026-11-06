@@ -1250,3 +1250,75 @@ describe("owner-bound computer proposals", () => {
     expect(f.calls).toHaveLength(0);
   });
 });
+
+describe("native planner history integrity", () => {
+  it("marks old source excerpts and preserves Unicode while keeping current data complete", async () => {
+    const f = await fixture();
+    await f.create();
+    const first = structuredClone(step);
+    first.observation.description = "x".repeat(2999) + "🌙 omitted condition 19 700 ₽";
+    first.previous_result = "z".repeat(2999) + "🌙 кроме доставки";
+    await f.next(first);
+    const second = structuredClone(step);
+    second.step = 1;
+    second.observation.observation_id = "fresh-history-fixture";
+    second.observation.description = "Current exact source 00123";
+    second.previous_result = "Current result 19 700 ₽, кроме доставки";
+    await f.next(second);
+    const payload = JSON.parse(f.calls[1]!.messages.find((m) => m.role === "user")!.content) as {
+      goal: string;
+      observation: { description: string };
+      previous_result: string;
+      history: string[];
+    };
+    const prior = JSON.parse(payload.history[0]!) as {
+      observation: string;
+      observation_excerpt_only: boolean;
+      result: string;
+      result_excerpt_only: boolean;
+    };
+    expect(prior.observation).toBe("x".repeat(2999));
+    expect(prior.result).toBe("z".repeat(2999));
+    expect(prior.observation.isWellFormed()).toBe(true);
+    expect(prior.result.isWellFormed()).toBe(true);
+    expect(prior.observation_excerpt_only).toBe(true);
+    expect(prior.result_excerpt_only).toBe(true);
+    expect(payload.observation.description).toBe(second.observation.description);
+    expect(payload.previous_result).toBe(second.previous_result);
+    expect(payload.goal).toBe(f.input.goal);
+    expect(f.calls[1]!.messages[0]!.content).toContain("omitted content is unknown");
+  });
+  it("reuses a completed decision without another model call and grants its action only once", async () => {
+    const f = await fixture();
+    await f.create();
+    const original = await f.next();
+    expect(await f.next()).toEqual(original);
+    expect(f.calls).toHaveLength(1);
+    const authorization = {
+      step: 0,
+      action_hash: createHash("sha256").update(JSON.stringify(original.action)).digest("hex")
+    };
+    expect(
+      f.service.authorize(
+        "local-owner",
+        f.project.id,
+        f.input.client_request_id,
+        f.input.client_secret,
+        authorization
+      )
+    ).toMatchObject({ authorized: true });
+    expect(() =>
+      f.service.authorize(
+        "local-owner",
+        f.project.id,
+        f.input.client_request_id,
+        f.input.client_secret,
+        authorization
+      )
+    ).toThrow("ACTION_CONFLICT");
+    const changed = structuredClone(step);
+    changed.observation.description = "Different step zero";
+    expect(() => f.next(changed)).toThrow("STEP_CONFLICT");
+    expect(f.calls).toHaveLength(1);
+  });
+});

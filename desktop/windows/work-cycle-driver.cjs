@@ -11,6 +11,13 @@ const observationsOnly = new Set([
   "browser_tabs",
   "browser_screenshot"
 ]);
+const wholePrefix = (text, end) =>
+  text.slice(
+    0,
+    /[\uD800-\uDBFF]/.test(text[end - 1] || "") && /[\uDC00-\uDFFF]/.test(text[end] || "")
+      ? end - 1
+      : end
+  );
 function createWorkCycleDriver({
   browser,
   computer,
@@ -140,10 +147,20 @@ function createWorkCycleDriver({
       }
       const body = { task, view };
       const stringify = () => JSON.stringify(body);
-      while (stringify().length > 15000 && view?.nodes?.length) view.nodes.pop();
+      while (stringify().length > 15000 && view?.nodes?.length) {
+        view.nodes.pop();
+        view.truncated = true;
+      }
       if (stringify().length > 15000) {
-        if (view && typeof view === "object") view.text = String(view.text ?? "").slice(0, 2000);
-        else body.view = String(view ?? "").slice(0, 6000);
+        if (view && typeof view === "object") {
+          const text = String(view.text ?? "");
+          view.text = wholePrefix(text, 2000);
+          if (view.text.length < text.length) view.truncated = true;
+        } else {
+          const text = String(view ?? "");
+          body.view = wholePrefix(text, 6000);
+          if (body.view.length < text.length) body.view_excerpt_only = true;
+        }
       }
       const obs = {
         ...(inner || {
