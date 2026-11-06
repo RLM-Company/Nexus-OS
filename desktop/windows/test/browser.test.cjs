@@ -1175,8 +1175,9 @@ test("tab receipts preserve every tab ID with bounded, explicitly incomplete lon
     assert.equal(tab.url_excerpt_only, true);
     assert.equal(tab.url_preview.length, 512);
     assert.ok(tab.title.isWellFormed());
-    assert.match(tab.instruction, /not an address to open/);
+    assert.equal(tab.instruction, undefined);
   }
+  assert.match(result.instruction, /not an address to open/);
   assert.equal(result.tabs.at(-1).title, "x".repeat(179));
   const next = await f.engine.observe(signal);
   const target = result.tabs[0].id;

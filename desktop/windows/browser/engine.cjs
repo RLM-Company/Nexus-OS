@@ -766,26 +766,32 @@ function createBrowserEngine({
         case "wait":
           await delay(action.milliseconds, undefined, { signal });
           return { waited: true };
-        case "browser_tabs":
+        case "browser_tabs": {
+          const entries = state().tabs.map(({ id, title, url, loaded }) => {
+            const address = agentUrl(url);
+            return {
+              id,
+              title,
+              loaded,
+              ...(address.length <= 512
+                ? { url: address }
+                : {
+                    url_preview: unicodePrefix(address, 512),
+                    url_excerpt_only: true
+                  })
+            };
+          });
           return {
             complete_tab_list: true,
-            tabs: state().tabs.map(({ id, title, url, loaded }) => {
-              const address = agentUrl(url);
-              return {
-                id,
-                title,
-                loaded,
-                ...(address.length <= 512
-                  ? { url: address }
-                  : {
-                      url_preview: unicodePrefix(address, 512),
-                      url_excerpt_only: true,
-                      instruction:
-                        "Switch to this tab and inspect its current observation for the full URL; the preview is not an address to open."
-                    })
-              };
-            })
+            tabs: entries,
+            ...(entries.some((tab) => tab.url_excerpt_only)
+              ? {
+                  instruction:
+                    "Switch to a tab by ID and inspect its current observation for the full URL; a preview is not an address to open."
+                }
+              : {})
           };
+        }
         case "browser_open":
           await open(action.url, signal);
           return { opened: true };
