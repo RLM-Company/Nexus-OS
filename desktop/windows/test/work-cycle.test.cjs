@@ -730,3 +730,196 @@ test("Work stop attempts both native cleanup paths even if one environment throw
     await assert.rejects(driver.observe(signal), /COMPUTER_SESSION_STOPPED/);
   }
 });
+
+test("an owner-selected accepted example informs a fresh Work plan and creates a new real file", async (t) => {
+  const f = await fixture(t);
+  const source = f.history.start(context, {
+    project: "project",
+    goal: "Prepare previous summary",
+    executionMode: "work"
+  });
+  source.plan([{ title: "Подготовить отчёт", criteria: "Файл проверен", state: "checked" }]);
+  source.state("completed");
+  f.history.accept(context, source.id);
+  const example = f.history.reference(context, "project", source.id),
+    refs = [],
+    confirmations = [];
+  let stage = 0;
+  const runner = new ComputerSession({
+    driver: f.driver,
+    workspace: f.workspace,
+    history: f.history,
+    executionMode: "work",
+    identity: async () => context,
+    notify() {},
+    confirm: async (value) => {
+      confirmations.push(value);
+      return true;
+    },
+    planner: {
+      begin: async () => ({ id: "fixture-reference", supports_work_reference: true }),
+      authorize: async () => ({ authorized: true, valid_for_ms: 10000 }),
+      end: async () => {},
+      next: async ({ observation, previousResult, workReference }) => {
+        refs.push(workReference);
+        assert.equal(workReference.revision, example.revision);
+        assert.equal(workReference.source_goal, "Prepare previous summary");
+        let action;
+        switch (stage++) {
+          case 0:
+            assert.equal(JSON.parse(observation.description).task.steps.length, 0);
+            action = {
+              kind: "work_plan",
+              steps: [{ title: "Новый отчёт", criteria: "Новый файл прочитан" }]
+            };
+            break;
+          case 1:
+            action = {
+              kind: "work_step",
+              step: 1,
+              state: "running",
+              evidence: "",
+              observation_id: observation.observation_id
+            };
+            break;
+          case 2:
+            action = {
+              kind: "workspace_create",
+              path: "new-report.md",
+              content: "New goal, current source 00123"
+            };
+            break;
+          case 3:
+            action = { kind: "workspace_read", path: "new-report.md" };
+            break;
+          case 4:
+            assert.ok(JSON.parse(previousResult).content.includes("00123"));
+            action = {
+              kind: "work_step",
+              step: 1,
+              state: "checked",
+              evidence: "Read the new exact result",
+              observation_id: observation.observation_id
+            };
+            break;
+          default:
+            action = { kind: "done", summary: "New report checked" };
+        }
+        return { action, message: "Fixture only", requires_confirmation: false };
+      }
+    }
+  });
+  const result = await runner.run({
+    project: "project",
+    goal: "Create a new report",
+    reference: { taskId: source.id, revision: example.revision },
+    maxSteps: 8
+  });
+  assert.equal(result.status, "completed");
+  assert.equal(
+    fs.readFileSync(path.join(f.folder, "new-report.md"), "utf8"),
+    "New goal, current source 00123"
+  );
+  assert.equal(refs.length, 6);
+  assert.equal(confirmations[0].reference.revision, example.revision);
+  assert.ok(confirmations.some((x) => x.kind !== "session"));
+  assert.deepEqual(f.grants, []);
+  assert.equal(
+    f.history.list(context).find((r) => r.id === result.task_id).referenceSource.taskId,
+    source.id
+  );
+});
+
+test("clearing a selected example while the model runs stops before the proposed file write", async (t) => {
+  const f = await fixture(t),
+    source = f.history.start(context, {
+      project: "project",
+      goal: "Source",
+      executionMode: "work"
+    });
+  source.plan([{ title: "Source", criteria: "Checked", state: "checked" }]);
+  source.state("completed");
+  f.history.accept(context, source.id);
+  const example = f.history.reference(context, "project", source.id);
+  let calls = 0,
+    authorized = 0;
+  const runner = new ComputerSession({
+    driver: f.driver,
+    workspace: f.workspace,
+    history: f.history,
+    executionMode: "work",
+    identity: async () => context,
+    confirm: async () => true,
+    notify() {},
+    planner: {
+      begin: async () => ({ id: "fixture", supports_work_reference: true }),
+      end: async () => {},
+      authorize: async () => {
+        authorized++;
+        return { authorized: true, valid_for_ms: 10000 };
+      },
+      next: async () => {
+        calls++;
+        f.history.clear(context);
+        return {
+          action: { kind: "workspace_create", path: "must-not-exist.md", content: "late" },
+          message: "late fixture",
+          requires_confirmation: false
+        };
+      }
+    }
+  });
+  await assert.rejects(
+    runner.run({
+      project: "project",
+      goal: "New task",
+      reference: { taskId: source.id, revision: example.revision },
+      maxSteps: 4
+    })
+  );
+  assert.equal(calls, 1);
+  assert.equal(authorized, 0);
+  assert.equal(fs.existsSync(path.join(f.folder, "must-not-exist.md")), false);
+});
+
+test("a legacy API never receives a selected local example or a paid planner step", async (t) => {
+  const f = await fixture(t),
+    source = f.history.start(context, {
+      project: "project",
+      goal: "Source",
+      executionMode: "work"
+    });
+  source.plan([{ title: "Source", criteria: "Checked", state: "checked" }]);
+  source.state("completed");
+  f.history.accept(context, source.id);
+  const example = f.history.reference(context, "project", source.id);
+  let planned = 0;
+  const runner = new ComputerSession({
+    driver: f.driver,
+    workspace: f.workspace,
+    history: f.history,
+    executionMode: "work",
+    identity: async () => context,
+    confirm: async () => true,
+    notify() {},
+    planner: {
+      begin: async () => ({ id: "legacy" }),
+      end: async () => {},
+      next: async () => {
+        planned++;
+        throw Error("must not dispatch");
+      }
+    }
+  });
+  await assert.rejects(
+    runner.run({
+      project: "project",
+      goal: "New task",
+      reference: { taskId: source.id, revision: example.revision },
+      maxSteps: 4
+    }),
+    /COMPUTER_REFERENCE_UNSUPPORTED/
+  );
+  assert.equal(planned, 0);
+  assert.deepEqual(f.grants, []);
+});

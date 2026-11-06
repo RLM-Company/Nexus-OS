@@ -521,15 +521,40 @@ async function run() {
     const workPreview = await browser.newPage({ viewport: { width: 1000, height: 640 } });
     await workPreview.addInitScript(() => {
       let vaultAccess = false;
+      window.__workCommands = [];
+      const exampleId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
       window.kosworkBrowser = {
         onState() {},
         onEvent() {},
-        command: async (name) => {
+        command: async (name, input) => {
+          window.__workCommands.push({ name, input });
+          if (name === "history")
+            return {
+              items: [
+                {
+                  id: exampleId,
+                  goal: "<img src=x onerror=alert(1)> accepted example",
+                  status: "completed",
+                  acceptedAt: 1,
+                  reusable: true
+                }
+              ]
+            };
+          if (name === "reference")
+            return {
+              project: "project",
+              goal: "Old goal",
+              reference: { taskId: exampleId, revision: "a".repeat(64) }
+            };
+          if (name === "start") return { status: "completed", summary: "Fixture only" };
           if (name === "vault") vaultAccess = true;
           if (name === "revoke-vault") vaultAccess = false;
           return {
             tabs: [],
-            projects: [],
+            projects: [
+              { id: "project", title: "Fixture project" },
+              { id: "other", title: "Other fixture project" }
+            ],
             downloads: [],
             taskMode: "work",
             vaultAvailable: true,
@@ -571,6 +596,41 @@ async function run() {
       await workPreview.locator("body").evaluate((e) => e.scrollWidth > innerWidth),
       false
     );
+    await workPreview.locator("#history-details").evaluate((e) => {
+      e.open = true;
+    });
+    await workPreview
+      .getByRole("button", { name: "Использовать как пример", exact: true })
+      .waitFor();
+    assert.equal(await workPreview.locator("#history img").count(), 0);
+    await workPreview.locator("#goal").fill("New explicit goal");
+    await workPreview.getByRole("button", { name: "Использовать как пример", exact: true }).click();
+    await workPreview
+      .getByRole("button", { name: "Не использовать пример", exact: true })
+      .waitFor();
+    assert.equal(await workPreview.locator("#goal").inputValue(), "New explicit goal");
+    await workPreview.locator("#start").click();
+    await workPreview.waitForFunction(() => window.__workCommands.some((x) => x.name === "start"));
+    const chosen = await workPreview.evaluate(
+      () => window.__workCommands.find((x) => x.name === "start").input
+    );
+    assert.equal(chosen.goal, "New explicit goal");
+    assert.equal(chosen.reference.taskId, "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa");
+    await workPreview
+      .getByRole("button", { name: "Использовать как пример", exact: true })
+      .waitFor();
+    await workPreview.getByRole("button", { name: "Использовать как пример", exact: true }).click();
+    await workPreview
+      .getByRole("button", { name: "Не использовать пример", exact: true })
+      .waitFor();
+    await workPreview.locator("#project").selectOption("other");
+    await workPreview
+      .getByRole("button", { name: "Использовать как пример", exact: true })
+      .waitFor();
+    assert.equal(
+      await workPreview.locator("body").evaluate((e) => e.scrollWidth > innerWidth),
+      false
+    );
     process.stdout.write(
       JSON.stringify({
         status: "passed",
@@ -586,6 +646,8 @@ async function run() {
         page_screenshots: sourceScreenshots,
         ui_viewport: "1280x840",
         owner_desktop_input: false,
+        accepted_example_ui:
+          "explicit selection, current goal preservation, reset after run/project change and literal untrusted labels passed",
         deep_dom:
           "shadow fill, same-origin frame/shadow fill, nested-frame click, cross-origin/closed-root exclusion, stale ref/navigation/occlusion/transform fences passed"
       }) + "\n"

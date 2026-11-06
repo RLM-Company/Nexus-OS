@@ -243,6 +243,7 @@ export const ComputerSessionAcceptanceSchema = object({
   supports_workspace_documents: Type.Optional(Type.Literal(true)),
   supports_workspace_document_reads: Type.Optional(Type.Literal(true)),
   supports_workspace_pdf_reads: Type.Optional(Type.Literal(true)),
+  supports_work_reference: Type.Optional(Type.Literal(true)),
   execution_mode: Type.Optional(
     Type.Union([Type.Literal("computer"), Type.Literal("browser"), Type.Literal("work")])
   ),
@@ -302,7 +303,29 @@ export const CreateComputerSessionSchema = object({
   max_steps: Type.Integer({ minimum: 1, maximum: 90 })
 });
 export type CreateComputerSession = Static<typeof CreateComputerSessionSchema>;
+export const WorkReferenceSchema = object({
+  format: Type.Literal("koswork.accepted-example.v1"),
+  source_task_id: Type.String({
+    pattern: "^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$"
+  }),
+  source_project_id: text(160),
+  accepted_at: Type.Integer({ minimum: 0 }),
+  outcome: Type.Literal("owner_accepted"),
+  source_goal: text(500),
+  goal_excerpt_only: Type.Boolean(),
+  revision: Type.String({ pattern: "^[a-f0-9]{64}$" }),
+  plan: Type.Array(object({ title: text(180), criteria: text(240) }), { minItems: 1, maxItems: 8 }),
+  tool_observations: Type.Array(
+    object({
+      kind: Type.String({ pattern: "^[a-z_]{1,64}$" }),
+      count: Type.Integer({ minimum: 1, maximum: 90 })
+    }),
+    { maxItems: 16 }
+  ),
+  tool_summary_truncated: Type.Boolean()
+});
 export const ComputerStepSchema = object({
+  work_reference: Type.Optional(WorkReferenceSchema),
   step: Type.Integer({ minimum: 0, maximum: 89 }),
   observation: ComputerObservationSchema,
   previous_result: Type.String({ maxLength: 16000 })

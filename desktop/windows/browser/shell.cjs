@@ -288,7 +288,7 @@ function createKosworkBrowser({
               : "Подтвердить действие на сайте?",
           detail:
             value.kind === "session"
-              ? `${value.goal}\n\n${executionMode === "work" ? "Сначала агент составит план. Доступ к браузеру и управление ПК запрашиваются отдельно; разрешения не восстанавливаются после перезапуска." : "Агент получит текст и элементы активной страницы; по запросу — снимок только страницы."} Входы и CAPTCHA выполняются вами на паузе. ${value.workspace ? "Выбрана папка: " + value.workspace.name + ". Разрешённые файлы могут передаваться сайту или модели для задачи." : "Рабочая папка не подключена."} Сеанс — до 30 минут и ${stepLimit} шагов. Остановка: Ctrl+Alt+Shift+K или «Забрать управление».`
+              ? `${value.goal}\n\n${value.reference ? "Пример из истории: " + value.reference.source_goal + "\nЕго план, выдержка цели и сводка инструментов будут переданы модели как данные. Старые разрешения и действия не переносятся.\n\n" : ""}${executionMode === "work" ? "Сначала агент составит план. Доступ к браузеру и управление ПК запрашиваются отдельно; разрешения не восстанавливаются после перезапуска." : "Агент получит текст и элементы активной страницы; по запросу — снимок только страницы."} Входы и CAPTCHA выполняются вами на паузе. ${value.workspace ? "Выбрана папка: " + value.workspace.name + ". Разрешённые файлы могут передаваться сайту или модели для задачи." : "Рабочая папка не подключена."} Сеанс — до 30 минут и ${stepLimit} шагов. Остановка: Ctrl+Alt+Shift+K или «Забрать управление».`
               : `${value.message}\n\n${JSON.stringify(value.evidence ?? {})}\n\n${JSON.stringify(value.action)}${value.recoveryReview ? "\nПрошлая попытка могла уже изменить данные. Сначала проверьте результат." : ""}`
         });
         return answer.response === 0;
@@ -429,6 +429,26 @@ function createKosworkBrowser({
         return failure(error);
       }
     }
+    if (command === "reference") {
+      try {
+        if (executionMode !== "work" || pending || runner?.active)
+          throw Error("COMPUTER_REFERENCE_UNAVAILABLE");
+        const context = await authorize(e),
+          item = history
+            .list(context)
+            .find((r) => r.id === input && r.reusable && r.executionMode === "work");
+        if (!item || !projects.some((p) => p.id === item.project))
+          throw Error("COMPUTER_REFERENCE_UNAVAILABLE");
+        const source = history.reference(context, item.project, item.id);
+        return {
+          project: item.project,
+          goal: item.goal,
+          reference: { taskId: item.id, revision: source.revision }
+        };
+      } catch (error) {
+        return failure(error);
+      }
+    }
     if (command === "accept") {
       try {
         if (pending || runner?.active) throw Error("COMPUTER_BUSY");
@@ -451,7 +471,7 @@ function createKosworkBrowser({
         } else {
           if (
             !input ||
-            Object.keys(input).some((k) => !["project", "goal"].includes(k)) ||
+            Object.keys(input).some((k) => !["project", "goal", "reference"].includes(k)) ||
             typeof input.goal !== "string" ||
             !input.goal.trim() ||
             input.goal.length > 8000 ||
@@ -459,7 +479,13 @@ function createKosworkBrowser({
             !/^[a-zA-Z0-9_-]{1,160}$/.test(input.project)
           )
             throw Error("COMPUTER_PROPOSAL_INVALID");
-          value = { project: input.project, goal: input.goal.trim() };
+          if (input.reference && executionMode !== "work")
+            throw Error("COMPUTER_REFERENCE_UNAVAILABLE");
+          value = {
+            project: input.project,
+            goal: input.goal.trim(),
+            reference: input.reference ?? null
+          };
         }
         if (taskGate?.busy) throw Error("COMPUTER_BUSY");
         const ownedRunner = runner;
