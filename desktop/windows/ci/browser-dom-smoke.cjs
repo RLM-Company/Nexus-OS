@@ -447,6 +447,26 @@ async function run() {
       deep.doc.nodes.some((n) => n.name === "Frame Query"),
       false
     );
+    // Exercise fixed capture code against actual DOM, not a synthetic text snapshot.
+    for (const [source, expected] of [
+      ["x".repeat(400), false],
+      ["x".repeat(399) + "🌙tail", true]
+    ]) {
+      await page.evaluate((value) => {
+        document.body.replaceChildren(
+          Object.assign(document.createElement("p"), { textContent: value })
+        );
+        document.title = "x".repeat(179) + "🌙";
+      }, source);
+      const observation = await engine.observe(abort),
+        doc = JSON.parse(observation.description);
+      assert.equal(doc.truncated, expected);
+      assert.ok(doc.text.isWellFormed());
+      assert.ok(doc.title.isWellFormed());
+      assert.ok(source.startsWith(doc.text));
+      assert.equal(doc.text.length, expected ? 399 : 400);
+      assert.ok(Buffer.byteLength(observation.description, "utf8") <= 14500);
+    }
     const preview = await browser.newPage({ viewport: { width: 1280, height: 840 } });
     await preview.addInitScript(() => {
       const state = {
@@ -648,6 +668,8 @@ async function run() {
         owner_desktop_input: false,
         accepted_example_ui:
           "explicit selection, current goal preservation, reset after run/project change and literal untrusted labels passed",
+        source_text:
+          "real DOM clipping is disclosed; Unicode prefixes and serialized UTF-8 budget verified",
         deep_dom:
           "shadow fill, same-origin frame/shadow fill, nested-frame click, cross-origin/closed-root exclusion, stale ref/navigation/occlusion/transform fences passed"
       }) + "\n"

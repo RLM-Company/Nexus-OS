@@ -1,6 +1,6 @@
 {
   "name": "cosmora-windows-desktop",
-  "version": "0.20.0",
+  "version": "0.20.1",
   "private": true,
   "description": "Windows client for Kosmora with user-enabled local computer control",
   "main": "main.cjs",
