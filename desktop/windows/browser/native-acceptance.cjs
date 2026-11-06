@@ -349,7 +349,7 @@ async function runNativeBrowserAcceptance({ app, origin }) {
       "completed"
     );
     assert.equal(versionRejected, true);
-    await engine.close(engine.state().active, true);
+    for (const tab of engine.state().tabs) await engine.close(tab.id, true);
     assert.equal(engine.state().liveTabs, 0);
     return {
       transport: "packaged Electron WebContentsView + debugger",
