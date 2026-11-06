@@ -71,6 +71,7 @@ function createVaultWorkspace({ base, vault, now = Date.now }) {
   return {
     snapshot,
     supportsLineReads: (context) => Boolean(base.snapshot(context)),
+    supportsTextReads: (context) => base.supportsTextReads?.(context) === true,
     supportsDocuments: (context) => Boolean(base.snapshot(context)),
     supportsDocumentReads: (context) => Boolean(base.snapshot(context)),
     supportsPdfReads: (context) => base.supportsPdfReads?.(context) === true,

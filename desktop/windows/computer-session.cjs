@@ -225,6 +225,10 @@ class ComputerSession {
             ...observation,
             workspace: {
               ...state.workspace,
+              ...(state.session?.supports_workspace_text_reads === true &&
+              this.workspace.supportsTextReads?.(state.grant) === true
+                ? { read_text_pages: true }
+                : {}),
               ...(state.session?.supports_workspace_read_lines === true &&
               this.workspace.supportsLineReads?.(state.grant) === true
                 ? { read_lines: true }
@@ -287,6 +291,11 @@ class ComputerSession {
         )
           throw Error("COMPUTER_ACTION_INVALID");
         if (action.kind === "browser_read_text" && observation.browser?.read_text !== true)
+          throw Error("COMPUTER_ACTION_INVALID");
+        if (
+          action.kind === "workspace_read_text" &&
+          observation.workspace?.read_text_pages !== true
+        )
           throw Error("COMPUTER_ACTION_INVALID");
         state.journal?.proposal(step + 1, action, proposal.decision_source);
         this.notify({

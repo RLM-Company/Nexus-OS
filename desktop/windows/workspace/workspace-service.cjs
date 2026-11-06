@@ -843,6 +843,7 @@ function createKosworkWorkspaceService({
         }
 
         const lines = text.split(/\r\n|\r|\n/);
+        let lineOffset = 0;
         for (let lineIdx = 0; lineIdx < lines.length; lineIdx += 1) {
           op.check();
           const lineText = lines[lineIdx];
@@ -869,6 +870,8 @@ function createKosworkWorkspaceService({
                 line: lineIdx + 1,
                 column: colIdx + 1,
                 column_unit: "utf16",
+                offset_utf16: lineOffset + colIdx,
+                match_end_utf16: lineOffset + colIdx + length,
                 match_length_utf16: length,
                 preview: lineText.slice(start, end),
                 preview_start_column: start + 1,
@@ -883,6 +886,9 @@ function createKosworkWorkspaceService({
               return;
             }
           }
+          lineOffset += lineText.length;
+          if (text.slice(lineOffset, lineOffset + 2) === "\r\n") lineOffset += 2;
+          else if (lineOffset < text.length) lineOffset++;
         }
       }
 
@@ -971,6 +977,7 @@ function createKosworkWorkspaceService({
     relativePath,
     maxBytes = limits.maxReadBytes,
     range = null,
+    page = null,
     ownerId = null,
     origin = null,
     signal = null,
@@ -979,11 +986,33 @@ function createKosworkWorkspaceService({
     const session = verifyCallerOwner({ ownerId, origin, ipcEvent });
     const op = beginOperation(signal);
     try {
+      if (
+        page !== null &&
+        (range !== null ||
+          !page ||
+          typeof page !== "object" ||
+          Array.isArray(page) ||
+          Object.keys(page).length !== 2 ||
+          !Object.hasOwn(page, "offset") ||
+          !Object.hasOwn(page, "expectedVersion") ||
+          !Number.isSafeInteger(page.offset) ||
+          page.offset < 0 ||
+          page.offset > 2097152 ||
+          (page.offset > 0 && page.expectedVersion === null) ||
+          (page.expectedVersion !== null &&
+            (typeof page.expectedVersion !== "string" ||
+              !/^sha256:[a-f0-9]{64}$/.test(page.expectedVersion))))
+      )
+        throw new KosworkWorkspaceError(
+          ERROR_CODES.WORKSPACE_RANGE_INVALID,
+          "Укажите позицию и точную версию для продолжения текстового файла."
+        );
       const effectiveMaxBytes = Math.max(
         1,
         Math.min(
           Number.isSafeInteger(maxBytes) ? maxBytes : limits.maxReadBytes,
-          limits.maxReadBytes
+          limits.maxReadBytes,
+          page ? 2097152 : Infinity
         )
       );
       let target = resolveSafeWorkspaceTarget(session.canonicalRoot, relativePath, {
@@ -1006,13 +1035,14 @@ function createKosworkWorkspaceService({
         activeController: op.controller
       });
       const content = decodeStrictUtf8Text(snapshot.buffer, target.relativePath);
-      if (range?.expectedVersion !== undefined) {
-        if (!/^sha256:[a-f0-9]{64}$/.test(range.expectedVersion))
+      const expectedVersion = page ? page.expectedVersion : range?.expectedVersion;
+      if (page ? expectedVersion !== null : expectedVersion !== undefined) {
+        if (!/^sha256:[a-f0-9]{64}$/.test(expectedVersion))
           throw new KosworkWorkspaceError(
             ERROR_CODES.WORKSPACE_INVALID_ARGUMENT,
             "Ожидался точный SHA256 версии файла."
           );
-        if (!versionsMatch(snapshot.sha256, range.expectedVersion))
+        if (!versionsMatch(snapshot.sha256, expectedVersion))
           throw new KosworkWorkspaceError(
             ERROR_CODES.WORKSPACE_VERSION_CONFLICT,
             "Файл изменился после предыдущего чтения. Обновите источники.",
@@ -1020,6 +1050,29 @@ function createKosworkWorkspaceService({
           );
       }
 
+      if (page) {
+        const offset = page.offset;
+        if (
+          offset > content.length ||
+          (/[\uD800-\uDBFF]/.test(content[offset - 1] || "") &&
+            /[\uDC00-\uDFFF]/.test(content[offset] || ""))
+        )
+          throw new KosworkWorkspaceError(
+            ERROR_CODES.WORKSPACE_RANGE_INVALID,
+            "Позиция вне текста или разделяет Unicode-символ."
+          );
+        return fitDocumentExcerpt(content, offset, {
+          path: target.relativePath,
+          encoding: "utf-8",
+          size: snapshot.size,
+          sha256: snapshot.sha256,
+          version: snapshot.version,
+          text_sha256: crypto.createHash("sha256").update(content, "utf8").digest("hex"),
+          representation: "strict_utf8_file_text_without_bom",
+          bom_stripped: snapshot.buffer.subarray(0, 3).equals(Buffer.from([239, 187, 191])),
+          source_truncated: false
+        });
+      }
       return {
         path: target.relativePath,
         content,

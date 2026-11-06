@@ -42,6 +42,7 @@ function createComputerWorkspace({
   }
   return {
     supportsLineReads: (context) => Boolean(snapshot(context)),
+    supportsTextReads: (context) => Boolean(snapshot(context)),
     supportsDocuments: (context) => Boolean(snapshot(context)),
     supportsDocumentReads: (context) => Boolean(snapshot(context)),
     supportsPdfReads: (context) => Boolean(snapshot(context) && pdfReader?.available()),
@@ -158,6 +159,12 @@ function createComputerWorkspace({
           break;
         case "workspace_read":
           result = await service.readTextFile({ ...args, maxBytes: 10000 });
+          break;
+        case "workspace_read_text":
+          result = await service.readTextFile({
+            ...args,
+            page: { offset: action.offset_utf16, expectedVersion: action.expected_version }
+          });
           break;
         case "workspace_read_pdf":
           result = await service.readPdfFile({

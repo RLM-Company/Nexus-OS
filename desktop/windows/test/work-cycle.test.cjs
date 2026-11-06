@@ -984,3 +984,107 @@ test("Work composition discloses dropped view data and never splits Unicode or t
     driver.stop();
   }
 });
+
+test("Work finds a late file clause, reads it by exact version/offset and writes a verified result", async (t) => {
+  const f = await fixture(t),
+    clause = "TARGET 00123: 19 700 ₽, кроме доставки.";
+  const source = "header\r\n" + "x".repeat(24000) + clause;
+  fs.writeFileSync(path.join(f.folder, "source.txt"), source, "utf8");
+  let index = 0,
+    hit,
+    excerpt;
+  const confirmations = [];
+  const runner = new ComputerSession({
+    executionMode: "work",
+    driver: f.driver,
+    workspace: f.workspace,
+    history: f.history,
+    identity: async () => context,
+    confirm: async (value) => {
+      confirmations.push(value);
+      return true;
+    },
+    notify() {},
+    planner: {
+      begin: async () => ({ id: "text-pages-fixture", supports_workspace_text_reads: true }),
+      authorize: async () => ({ authorized: true, valid_for_ms: 10000 }),
+      end: async () => {},
+      next: async ({ observation, previousResult }) => {
+        assert.equal(observation.workspace.read_text_pages, true);
+        let action;
+        switch (index++) {
+          case 0:
+            action = {
+              kind: "work_plan",
+              steps: [
+                { title: "Extract source clause", criteria: "Exact result saved and read back" }
+              ]
+            };
+            break;
+          case 1:
+            action = {
+              kind: "work_step",
+              step: 1,
+              state: "running",
+              evidence: "",
+              observation_id: observation.observation_id
+            };
+            break;
+          case 2:
+            action = { kind: "workspace_find", path: "", mode: "text", query: "TARGET 00123" };
+            break;
+          case 3:
+            hit = JSON.parse(previousResult).matches[0];
+            assert.equal(hit.offset_utf16, source.indexOf("TARGET 00123"));
+            assert.ok(hit.offset_utf16 > 24000);
+            action = {
+              kind: "workspace_read_text",
+              path: hit.path,
+              offset_utf16: hit.offset_utf16,
+              expected_version: hit.version
+            };
+            break;
+          case 4:
+            excerpt = JSON.parse(previousResult);
+            assert.equal(excerpt.content, clause);
+            assert.equal(excerpt.version, hit.version);
+            assert.equal(excerpt.excerpt_only, true);
+            assert.equal(excerpt.next_offset, null);
+            action = { kind: "workspace_create", path: "report.md", content: excerpt.content };
+            break;
+          case 5:
+            action = { kind: "workspace_read", path: "report.md" };
+            break;
+          case 6:
+            assert.equal(JSON.parse(previousResult).content, clause);
+            action = {
+              kind: "work_step",
+              step: 1,
+              state: "checked",
+              evidence: "Exact file read back",
+              observation_id: observation.observation_id
+            };
+            break;
+          default:
+            action = { kind: "done", summary: "Source clause extracted and checked" };
+        }
+        return { action, message: "Fixture only", requires_confirmation: false };
+      }
+    }
+  });
+  assert.equal(
+    (
+      await runner.run({
+        project: "project",
+        goal: "Extract the exact target clause from the selected folder",
+        maxSteps: 12
+      })
+    ).status,
+    "completed"
+  );
+  assert.equal(index, 8);
+  assert.deepEqual(f.grants, []);
+  assert.equal(fs.readFileSync(path.join(f.folder, "source.txt"), "utf8"), source);
+  assert.equal(fs.readFileSync(path.join(f.folder, "report.md"), "utf8"), clause);
+  assert.equal(confirmations.filter((x) => x.action?.kind === "workspace_create").length, 1);
+});

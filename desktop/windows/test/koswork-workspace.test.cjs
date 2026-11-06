@@ -571,3 +571,141 @@ test(
     assert.ok(long.matches[0].preview.length <= 240);
   })
 );
+
+test(
+  "versioned UTF-8 pages reconstruct long files and jump to search evidence without reading the prefix",
+  withTempWorkspace(async ({ workspaceRoot, userDataPath }) => {
+    const service = createKosworkWorkspaceService({ userDataPath });
+    await service.connectFolder({ folderPath: workspaceRoot });
+    const source =
+      "header\r\n" + '文🌙"\\'.repeat(4500) + "\rFINAL 00123: 19 700 ₽, кроме доставки\nlast";
+    const raw = Buffer.concat([Buffer.from([239, 187, 191]), Buffer.from(source, "utf8")]);
+    fs.writeFileSync(path.join(workspaceRoot, "long.txt"), raw);
+    let offset = 0,
+      version = null,
+      restored = "",
+      first,
+      pages = 0;
+    do {
+      const result = await service.readTextFile({
+        relativePath: "long.txt",
+        page: { offset, expectedVersion: version }
+      });
+      first ??= result;
+      assert.ok(Buffer.byteLength(JSON.stringify(result), "utf8") <= 10000);
+      assert.ok(result.content.isWellFormed());
+      assert.equal(result.end_utf16 - result.offset_utf16, result.content.length);
+      assert.equal(result.total_characters, source.length);
+      assert.equal(result.source_truncated, false);
+      assert.equal(result.bom_stripped, true);
+      assert.equal(result.version, first.version);
+      assert.equal(
+        result.sha256,
+        require("node:crypto").createHash("sha256").update(raw).digest("hex")
+      );
+      assert.equal(
+        result.text_sha256,
+        require("node:crypto").createHash("sha256").update(source, "utf8").digest("hex")
+      );
+      restored += result.content;
+      offset = result.next_offset;
+      version = result.version;
+      pages++;
+    } while (offset !== null);
+    assert.equal(restored, source);
+    assert.ok(pages > 3);
+    const found = await service.searchByText({ query: "FINAL 00123" });
+    assert.equal(found.matches.length, 1);
+    const hit = found.matches[0];
+    assert.equal(hit.offset_utf16, source.indexOf("FINAL 00123"));
+    assert.equal(hit.match_end_utf16, hit.offset_utf16 + "FINAL 00123".length);
+    const excerpt = await service.readTextFile({
+      relativePath: hit.path,
+      page: { offset: hit.offset_utf16, expectedVersion: hit.version }
+    });
+    assert.equal(excerpt.content, source.slice(hit.offset_utf16));
+    assert.equal(excerpt.excerpt_only, true);
+    assert.equal(excerpt.next_offset, null);
+    assert.ok(excerpt.content.includes("19 700 ₽, кроме доставки"));
+    assert.deepEqual(fs.readFileSync(path.join(workspaceRoot, "long.txt")), raw);
+  })
+);
+
+test(
+  "text pages reject invalid cursors, changed versions, binary/oversized inputs and revoked access",
+  withTempWorkspace(async ({ workspaceRoot, userDataPath, outsideDir }) => {
+    const service = createKosworkWorkspaceService({ userDataPath });
+    await service.connectFolder({ folderPath: workspaceRoot });
+    const source = "a🌙b" + "x".repeat(5000);
+    fs.writeFileSync(path.join(workspaceRoot, "safe.txt"), source, "utf8");
+    const first = await service.readTextFile({
+      relativePath: "safe.txt",
+      page: { offset: 0, expectedVersion: null }
+    });
+    for (const page of [
+      { offset: -1, expectedVersion: null },
+      { offset: 2097153, expectedVersion: null },
+      { offset: 1, expectedVersion: null },
+      { offset: 0, expectedVersion: "bad" },
+      { offset: 2, expectedVersion: first.version },
+      { offset: source.length + 1, expectedVersion: first.version },
+      { offset: 0, expectedVersion: null, authority: true }
+    ])
+      await assert.rejects(
+        service.readTextFile({ relativePath: "safe.txt", page }),
+        (e) => e.code === ERROR_CODES.WORKSPACE_RANGE_INVALID
+      );
+    await assert.rejects(
+      service.readTextFile({
+        relativePath: "safe.txt",
+        page: { offset: 0, expectedVersion: null },
+        range: { startLine: 1, endLine: 1 }
+      }),
+      (e) => e.code === ERROR_CODES.WORKSPACE_RANGE_INVALID
+    );
+    fs.writeFileSync(path.join(workspaceRoot, "safe.txt"), source + "changed", "utf8");
+    await assert.rejects(
+      service.readTextFile({
+        relativePath: "safe.txt",
+        page: { offset: 1, expectedVersion: first.version }
+      }),
+      (e) => e.code === ERROR_CODES.WORKSPACE_VERSION_CONFLICT
+    );
+    fs.writeFileSync(path.join(workspaceRoot, "invalid.txt"), Buffer.from([192, 175]));
+    fs.writeFileSync(path.join(workspaceRoot, "large.txt"), Buffer.alloc(2097153, 120));
+    for (const [relativePath, code] of [
+      ["invalid.txt", ERROR_CODES.WORKSPACE_BINARY_FILE],
+      ["large.txt", ERROR_CODES.WORKSPACE_FILE_TOO_LARGE],
+      ["../outside.txt", ERROR_CODES.WORKSPACE_PATH_TRAVERSAL]
+    ])
+      await assert.rejects(
+        service.readTextFile({ relativePath, page: { offset: 0, expectedVersion: null } }),
+        (e) => e.code === code
+      );
+    fs.writeFileSync(path.join(outsideDir, "linked.txt"), "outside-private-fixture");
+    fileOrDirectoryLink(
+      path.join(outsideDir, "linked.txt"),
+      path.join(workspaceRoot, "linked.txt"),
+      "file"
+    );
+    await assert.rejects(
+      service.readTextFile({
+        relativePath: "linked.txt",
+        page: { offset: 0, expectedVersion: null }
+      })
+    );
+    const controller = new AbortController();
+    controller.abort();
+    await assert.rejects(
+      service.readTextFile({
+        relativePath: "safe.txt",
+        page: { offset: 0, expectedVersion: null },
+        signal: controller.signal
+      })
+    );
+    await service.revokeAccess();
+    await assert.rejects(
+      service.readTextFile({ relativePath: "safe.txt", page: { offset: 0, expectedVersion: null } })
+    );
+  })
+);
