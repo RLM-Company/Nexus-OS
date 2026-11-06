@@ -1020,3 +1020,30 @@ test("download cleanup attempts every transfer and disposal closes views after a
       }
     });
 });
+
+test("browser observations bound serialized UTF-8 and preserve whole Unicode source prefixes", async (t) => {
+  const f = fixture(t),
+    signal = new AbortController().signal;
+  await f.engine.open("https://example.test");
+  for (const text of [
+    "Я".repeat(6000),
+    "文".repeat(6000),
+    "\u0001".repeat(6000),
+    "🌙".repeat(3000),
+    '"\\'.repeat(3000)
+  ]) {
+    f.views[0].webContents.snapshotText = text;
+    const observation = await f.engine.observe(signal),
+      doc = JSON.parse(observation.description);
+    assert.ok(Buffer.byteLength(observation.description, "utf8") <= 14500);
+    assert.ok(doc.text.isWellFormed());
+    assert.ok(text.startsWith(doc.text));
+    assert.equal(doc.nodes.length, f.nodes.length, "long text must not evict affordable controls");
+    if (doc.text.length < text.length) assert.equal(doc.truncated, true);
+  }
+  f.views[0].webContents.snapshotText = "x".repeat(5999) + "🌙tail";
+  const doc = JSON.parse((await f.engine.observe(signal)).description);
+  assert.equal(doc.text, "x".repeat(5999));
+  assert.equal(doc.truncated, true);
+  assert.ok(doc.text.isWellFormed());
+});

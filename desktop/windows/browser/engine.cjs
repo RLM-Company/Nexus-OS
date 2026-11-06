@@ -8,6 +8,13 @@ const { actionProbe, actionEvidence } = require("./action-evidence.cjs");
 const { recordRecovery, recoveryHint } = require("./recovery.cjs");
 
 const HOME = "about:blank";
+const unicodePrefix = (text, end) =>
+  text.slice(
+    0,
+    /[\uD800-\uDBFF]/.test(text[end - 1] || "") && /[\uDC00-\uDFFF]/.test(text[end] || "")
+      ? end - 1
+      : end
+  );
 function createBrowserEngine({
   WebContentsView,
   Menu,
@@ -558,7 +565,7 @@ function createBrowserEngine({
     if (signal.aborted || version !== tab.version) throw Error("BROWSER_STALE");
     tab.dirty ||= doc.dirty;
     if (doc.text.length > 6000) doc.truncated = true;
-    doc.text = doc.text.slice(0, 6000);
+    doc.text = unicodePrefix(doc.text, 6000);
     const evidence = pendingEvidence;
     pendingEvidence = null;
     const failure = pendingRecovery;
@@ -594,13 +601,29 @@ function createBrowserEngine({
         downloads: downloads.slice(-5).map(({ item, path, ...d }) => d)
       });
     };
-    while (publicDoc().length > 14500 && doc.nodes.length) {
-      doc.nodes.pop();
+    const fits = () => Buffer.byteLength(publicDoc(), "utf8") <= 14500;
+    if (!fits()) {
+      const source = doc.text;
       doc.truncated = true;
-    }
-    if (publicDoc().length > 14500) {
-      doc.text = doc.text.slice(0, 1000);
-      doc.truncated = true;
+      // Retain actionable controls before spending the remaining bytes on prose.
+      // Keep a small text floor while pruning oversized control metadata.
+      doc.text = unicodePrefix(source, 1000);
+      while (!fits() && doc.nodes.length) doc.nodes.pop();
+      while (!fits() && doc.notices?.length) doc.notices.pop();
+      if (!fits()) doc.text = "";
+      if (!fits()) throw Error("BROWSER_RESULT_TOO_LARGE");
+      let low = doc.text.length,
+        high = source.length,
+        best = doc.text;
+      while (low <= high) {
+        const mid = low + Math.floor((high - low) / 2);
+        doc.text = unicodePrefix(source, mid);
+        if (fits()) {
+          best = doc.text;
+          low = mid + 1;
+        } else high = mid - 1;
+      }
+      doc.text = best;
     }
     last = { id, tab: active, version, document: doc };
     const size = bounds(),

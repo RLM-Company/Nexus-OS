@@ -7,11 +7,16 @@ const capture = function (snapshotId) {
   state.refs.clear();
   state.snapshotId = snapshotId;
   const contexts = new WeakMap();
-  const clean = (v, n) =>
-    String(v ?? "")
+  const clean = (v, n) => {
+    const value = String(v ?? "")
       .replace(/\s+/g, " ")
-      .trim()
-      .slice(0, n);
+      .trim();
+    const end =
+      /[\uD800-\uDBFF]/.test(value[n - 1] || "") && /[\uDC00-\uDFFF]/.test(value[n] || "")
+        ? n - 1
+        : n;
+    return value.slice(0, end);
+  };
   const parent = (el) => el.assignedSlot || el.parentElement || el.getRootNode()?.host;
   const contains = (el, target) => {
     for (let n = target, i = 0; n && i < 80; n = parent(n), i++) if (n === el) return true;
@@ -238,12 +243,19 @@ const capture = function (snapshotId) {
       if (node.nodeType === Node.TEXT_NODE) {
         const p = node.parentElement;
         if (
-          text.length < 7000 &&
           p &&
           !p.closest("script,style,noscript,input,textarea,[contenteditable],[aria-hidden=true]")
         ) {
           contexts.set(p, ctx);
-          if (geometry(p)) text += clean(node.textContent, 400) + " ";
+          if (geometry(p)) {
+            const source = String(node.textContent ?? "")
+              .replace(/\s+/g, " ")
+              .trim();
+            const budget = Math.max(0, Math.min(400, 7000 - text.length));
+            const excerpt = clean(source, budget);
+            if (excerpt.length < source.length) truncated = true;
+            if (excerpt) text += excerpt + " ";
+          }
         }
         continue;
       }
