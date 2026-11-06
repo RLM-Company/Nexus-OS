@@ -48,6 +48,16 @@ function startGuiAcceptanceFixture({ onSpawnSecondInstance = null } = {}) {
 
   const server = http.createServer(async (req, res) => {
     const parsed = new URL(req.url || "/", "http://127.0.0.1");
+    if (parsed.pathname === "/browser/article") {
+      const article = "Цена 19 700 ₽, кроме доставки 🌙.\n".repeat(700) + "Final literal 00123";
+      res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+      res.end(
+        '<!doctype html><html><meta charset="utf-8"><body><p>' +
+          article +
+          '</p><p hidden>HIDDEN-READER-SECRET</p><input type="password" value="PASSWORD-READER-SECRET"><p contenteditable>EDITABLE-READER-SECRET</p><iframe srcdoc="FRAME-READER-SECRET"></iframe><div id="reader-shadow"></div><script>document.querySelector("#reader-shadow").attachShadow({mode:"open"}).innerHTML="<p>SHADOW-READER-SECRET</p>";</script></body></html>'
+      );
+      return;
+    }
     if (parsed.pathname === "/browser/page") {
       res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
       res.end(
