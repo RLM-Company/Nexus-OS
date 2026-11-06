@@ -492,3 +492,39 @@ test("an omitted large reply preserves the dispatched effect in recovery", async
   assert.equal(recovery.requiresReview, true);
   assert.ok(!recovery.previousResult.includes("private fixture response"));
 });
+
+test("grant expiry aborts pending native input without clearing its uncertain durable phase", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const f = fixture(t),
+    s = sessionFixture(f.store, [{ kind: "type_text", text: "private fixture input" }]);
+  let clock = 0,
+    enter,
+    release,
+    nativeSignal;
+  const ready = new Promise((resolve) => {
+    enter = resolve;
+  });
+  s.session.gate.now = () => clock;
+  const enable = s.session.gate.enable.bind(s.session.gate);
+  s.session.gate.enable = (args) => enable({ ...args, durationMs: 20 });
+  s.driver.execute = async (_action, _observation, signal) => {
+    nativeSignal = signal;
+    enter();
+    return new Promise((resolve) => {
+      release = resolve;
+    });
+  };
+  const pending = s.session.run({ ...input, maxSteps: 1 });
+  await ready;
+  clock = 20;
+  t.mock.timers.tick(20);
+  const abortedAtExpiry = nativeSignal.aborted;
+  release({ requested: true });
+  await assert.rejects(pending, /COMPUTER_SESSION_STOPPED/);
+  assert.equal(abortedAtExpiry, true);
+  const record = f.create().list(context)[0];
+  assert.equal(record.status, "cancelled");
+  assert.equal(record.steps[0].phase, "dispatching");
+  assert.equal(record.requiresReview, true);
+  assert.equal(f.create().recovery(context, record.id).requiresReview, true);
+});
