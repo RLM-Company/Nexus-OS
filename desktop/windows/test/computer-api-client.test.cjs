@@ -26,6 +26,7 @@ test("native source and document tools require explicit server capability flags"
               : {
                   supports_browser_text_reads: capability,
                   supports_workspace_read_lines: capability,
+                  supports_workspace_text_reads: capability,
                   supports_workspace_documents: capability,
                   supports_workspace_document_reads: capability
                 })
@@ -42,6 +43,7 @@ test("native source and document tools require explicit server capability flags"
     });
     assert.equal(result.supports_browser_text_reads, capability === true ? true : undefined);
     assert.equal(result.supports_workspace_read_lines, capability === true ? true : undefined);
+    assert.equal(result.supports_workspace_text_reads, capability === true ? true : undefined);
     assert.equal(result.supports_workspace_documents, capability === true ? true : undefined);
     assert.equal(result.supports_workspace_document_reads, capability === true ? true : undefined);
   }
@@ -407,5 +409,71 @@ test("page reader is advertised only after server capability negotiation and can
     assert.equal(seen.read_text, capability === true ? true : undefined);
     assert.equal(executions, capability === true ? 1 : 0);
     assert.equal(native.browser.read_text, true);
+  }
+});
+
+test("file pages require both current server and selected-folder capability", async () => {
+  for (const [server, native] of [
+    [false, true],
+    [true, false],
+    [true, true]
+  ]) {
+    let executed = 0,
+      advertised;
+    const workspace = {
+      snapshot: () => ({ id: "a".repeat(24), name: "Selected" }),
+      supportsTextReads: () => native,
+      execute: async () => {
+        executed++;
+        return { content: "fixture" };
+      }
+    };
+    const runner = new ComputerSession({
+      executionMode: "work",
+      identity: async () => owner,
+      workspace,
+      confirm: async () => true,
+      notify() {},
+      driver: {
+        begin() {},
+        checkpoint: () => null,
+        observe: async () => ({
+          observation_id: "file-page",
+          active_window: "work:0",
+          width: 960,
+          height: 740,
+          description: "{}",
+          work: { environment: "none", generation: 0, plan_steps: 0, plan_complete: false }
+        }),
+        stop() {}
+      },
+      planner: {
+        begin: async () => ({ id: "fixture", supports_workspace_text_reads: server }),
+        authorize: async () => ({ authorized: true, valid_for_ms: 10000 }),
+        end: async () => {},
+        next: async ({ observation }) => {
+          advertised = observation.workspace.read_text_pages;
+          return {
+            action: {
+              kind: "workspace_read_text",
+              path: "source.txt",
+              offset_utf16: 0,
+              expected_version: null
+            },
+            message: "Fixture only",
+            requires_confirmation: false
+          };
+        }
+      }
+    });
+    if (server && native)
+      await runner.run({ project: "project", goal: "Read source", maxSteps: 1 });
+    else
+      await assert.rejects(
+        runner.run({ project: "project", goal: "Read source", maxSteps: 1 }),
+        /COMPUTER_ACTION_INVALID/
+      );
+    assert.equal(advertised, server && native ? true : undefined);
+    assert.equal(executed, server && native ? 1 : 0);
   }
 });

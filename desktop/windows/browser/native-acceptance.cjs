@@ -349,6 +349,158 @@ async function runNativeBrowserAcceptance({ app, origin }) {
       "completed"
     );
     assert.equal(versionRejected, true);
+    stage = "file-text-pages";
+    const { createComputerWorkspace } = require("../computer-workspace.cjs");
+    const { randomBytes, createCipheriv, createDecipheriv } = require("node:crypto");
+    const profile = fs.mkdtempSync(path.join(root, "koswork-reader-profile-")),
+      key = randomBytes(32);
+    const codec = {
+      seal(text) {
+        const iv = randomBytes(12),
+          cipher = createCipheriv("aes-256-gcm", key, iv);
+        return Buffer.concat([
+          iv,
+          cipher.update(text, "utf8"),
+          cipher.final(),
+          cipher.getAuthTag()
+        ]).toString("base64");
+      },
+      open(text) {
+        const b = Buffer.from(text, "base64"),
+          decipher = createDecipheriv("aes-256-gcm", key, b.subarray(0, 12));
+        decipher.setAuthTag(b.subarray(-16));
+        return Buffer.concat([decipher.update(b.subarray(12, -16)), decipher.final()]).toString(
+          "utf8"
+        );
+      }
+    };
+    const fileWorkspace = createComputerWorkspace({
+      userDataPath: profile,
+      scopeNamespace: "ci-file-pages",
+      codec,
+      pickDirectory: async () => folder
+    });
+    let fileHit,
+      fileIndex = 0,
+      approvedFileWrites = 0;
+    const clause = "FILE TARGET 00123: 19 700 ₽, кроме доставки 🌙.";
+    const fileSource = "header\r\n" + "x".repeat(24000) + clause;
+    fs.writeFileSync(path.join(folder, "source.txt"), fileSource, "utf8");
+    try {
+      await fileWorkspace.connect(context, new AbortController().signal);
+      const fileRunner = new ComputerSession({
+        executionMode: "work",
+        driver: workDriver,
+        workspace: fileWorkspace,
+        identity: async () => context,
+        confirm: async (value) => {
+          if (value.action?.kind === "workspace_create") approvedFileWrites++;
+          return true;
+        },
+        notify() {},
+        planner: {
+          begin: async () => ({ id: "native-file-pages", supports_workspace_text_reads: true }),
+          authorize: async () => ({ authorized: true, valid_for_ms: 10000 }),
+          end: async () => {},
+          next: async ({ observation, previousResult }) => {
+            assert.equal(observation.workspace.read_text_pages, true);
+            let action;
+            switch (fileIndex++) {
+              case 0:
+                action = {
+                  kind: "work_plan",
+                  steps: [
+                    { title: "Read exact file clause", criteria: "Result saved and read back" }
+                  ]
+                };
+                break;
+              case 1:
+                action = {
+                  kind: "work_step",
+                  step: 1,
+                  state: "running",
+                  evidence: "",
+                  observation_id: observation.observation_id
+                };
+                break;
+              case 2:
+                action = {
+                  kind: "workspace_find",
+                  path: "",
+                  mode: "text",
+                  query: "FILE TARGET 00123"
+                };
+                break;
+              case 3:
+                fileHit = JSON.parse(previousResult).matches[0];
+                assert.equal(fileHit.offset_utf16, fileSource.indexOf("FILE TARGET 00123"));
+                action = {
+                  kind: "workspace_read_text",
+                  path: fileHit.path,
+                  offset_utf16: fileHit.offset_utf16,
+                  expected_version: fileHit.version
+                };
+                break;
+              case 4:
+                assert.equal(JSON.parse(previousResult).content, clause);
+                assert.ok(Buffer.byteLength(previousResult, "utf8") <= 10000);
+                action = { kind: "workspace_create", path: "extracted-clause.md", content: clause };
+                break;
+              case 5:
+                action = { kind: "workspace_read", path: "extracted-clause.md" };
+                break;
+              case 6:
+                assert.equal(JSON.parse(previousResult).content, clause);
+                action = {
+                  kind: "work_step",
+                  step: 1,
+                  state: "checked",
+                  evidence: "Exact file read back",
+                  observation_id: observation.observation_id
+                };
+                break;
+              default:
+                action = { kind: "done", summary: "Native UTF-8 file read checked" };
+            }
+            return { action, message: "File reader fixture only", requires_confirmation: false };
+          }
+        }
+      });
+      assert.equal(
+        (
+          await fileRunner.run({
+            project: "fixture",
+            goal: "Extract exact clause from selected file",
+            maxSteps: 12
+          })
+        ).status,
+        "completed"
+      );
+      assert.equal(fileIndex, 8);
+      assert.equal(approvedFileWrites, 1);
+      assert.equal(fs.readFileSync(path.join(folder, "extracted-clause.md"), "utf8"), clause);
+      assert.equal(fs.readFileSync(path.join(folder, "source.txt"), "utf8"), fileSource);
+      assert.deepEqual(workDriver.state().permissions, []);
+      fs.appendFileSync(path.join(folder, "source.txt"), " changed", "utf8");
+      await assert.rejects(
+        fileWorkspace.execute(
+          {
+            kind: "workspace_read_text",
+            path: "source.txt",
+            offset_utf16: fileHit.offset_utf16,
+            expected_version: fileHit.version
+          },
+          {
+            context,
+            workspaceId: fileWorkspace.snapshot(context).id,
+            signal: new AbortController().signal
+          }
+        ),
+        (e) => e.code === "WORKSPACE_VERSION_CONFLICT"
+      );
+    } finally {
+      await fileWorkspace.invalidate();
+    }
     for (const tab of engine.state().tabs) await engine.close(tab.id, true);
     assert.equal(engine.state().liveTabs, 0);
     return {
@@ -362,6 +514,9 @@ async function runNativeBrowserAcceptance({ app, origin }) {
       noPaidModel: true,
       fixturePlanner: true,
       unifiedWorkCycle: true,
+      utf8FilePages: true,
+      utf8FileVersionGuard: true,
+      utf8FileReadback: true,
       pagedTextReader: true,
       pagedTextReaderVersionGuard: true,
       pagedTextReaderExclusions: true,

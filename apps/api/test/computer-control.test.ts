@@ -1349,3 +1349,72 @@ describe("bounded browser text capability", () => {
       expect(f.calls).toHaveLength(1);
     });
 });
+
+describe("selected-folder UTF-8 page capability", () => {
+  for (const capable of [false, true])
+    it(`requires agreed text-page capability: ${capable}`, async () => {
+      const f = await fixture({
+        vision: false,
+        output: {
+          ...action,
+          action: {
+            kind: "workspace_read_text",
+            path: "long.json",
+            offset_utf16: 0,
+            expected_version: null
+          }
+        }
+      });
+      Object.assign(f.input, { execution_mode: "work" });
+      expect(await f.create()).toMatchObject({ supports_workspace_text_reads: true });
+      const value = structuredClone(step);
+      delete value.observation.image_jpeg_base64;
+      value.observation.work = {
+        environment: "none",
+        generation: 0,
+        plan_steps: 1,
+        plan_complete: false
+      };
+      value.observation.workspace = {
+        id: "a".repeat(24),
+        name: "Selected folder",
+        ...(capable ? { read_text_pages: true as const } : {})
+      };
+      if (capable) {
+        expect(await f.next(value)).toMatchObject({ action: { kind: "workspace_read_text" } });
+        expect(f.calls[0]!.messages[0]!.content).toContain("workspace_find's exact offset_utf16");
+      } else await expect(f.next(value)).rejects.toThrow("OUTPUT_INVALID");
+      expect(f.calls).toHaveLength(1);
+    });
+  it("does not accept an unversioned continuation", async () => {
+    const f = await fixture({
+      vision: false,
+      output: {
+        ...action,
+        action: {
+          kind: "workspace_read_text",
+          path: "long.json",
+          offset_utf16: 200,
+          expected_version: null
+        }
+      }
+    });
+    Object.assign(f.input, { execution_mode: "work" });
+    await f.create();
+    const value = structuredClone(step);
+    delete value.observation.image_jpeg_base64;
+    value.observation.work = {
+      environment: "none",
+      generation: 0,
+      plan_steps: 1,
+      plan_complete: false
+    };
+    value.observation.workspace = {
+      id: "a".repeat(24),
+      name: "Selected folder",
+      read_text_pages: true
+    };
+    await expect(f.next(value)).rejects.toThrow("OUTPUT_INVALID");
+    expect(f.calls).toHaveLength(1);
+  });
+});

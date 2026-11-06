@@ -104,6 +104,12 @@ export const ComputerActionSchema = Type.Union([
   }),
   object({ kind: Type.Literal("workspace_read"), path: text(512) }),
   object({
+    kind: Type.Literal("workspace_read_text"),
+    path: text(512),
+    offset_utf16: Type.Integer({ minimum: 0, maximum: 2097152 }),
+    expected_version: Type.Union([Type.Null(), Type.String({ pattern: "^sha256:[a-f0-9]{64}$" })])
+  }),
+  object({
     kind: Type.Literal("workspace_read_pdf"),
     path: text(512),
     page_index: Type.Integer({ minimum: 0, maximum: 1999 }),
@@ -245,6 +251,7 @@ export const ComputerDecisionSchema = object({
 export type ComputerDecision = Static<typeof ComputerDecisionSchema>;
 export const ComputerSessionAcceptanceSchema = object({
   supports_workspace_read_lines: Type.Optional(Type.Literal(true)),
+  supports_workspace_text_reads: Type.Optional(Type.Literal(true)),
   supports_workspace_documents: Type.Optional(Type.Literal(true)),
   supports_workspace_document_reads: Type.Optional(Type.Literal(true)),
   supports_workspace_pdf_reads: Type.Optional(Type.Literal(true)),
@@ -286,6 +293,7 @@ export const ComputerObservationSchema = object({
       id: Type.String({ pattern: "^[a-f0-9]{24}$" }),
       name: text(180),
       read_lines: Type.Optional(Type.Literal(true)),
+      read_text_pages: Type.Optional(Type.Literal(true)),
       create_documents: Type.Optional(Type.Literal(true)),
       read_documents: Type.Optional(Type.Literal(true)),
       read_pdf: Type.Optional(Type.Literal(true))

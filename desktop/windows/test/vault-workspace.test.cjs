@@ -1062,3 +1062,34 @@ test("real Work session continues empty and populated section-search pages befor
     f.execute({ kind: "workspace_find", path: section, mode: "text", query: "00123" })
   );
 });
+
+test("text-page capability belongs to the selected folder and never opens a vault source", async (t) => {
+  const f = fixture(t);
+  await f.grant();
+  assert.equal(f.workspace.supportsTextReads(c), false);
+  const sourcePath = P + "/" + f.source.id + "/0";
+  const virtual = {
+    kind: "workspace_read_text",
+    path: sourcePath,
+    offset_utf16: 0,
+    expected_version: null
+  };
+  await assert.rejects(f.execute(virtual), (e) => e.code === "WORKSPACE_PROTECTED_PATH");
+  await f.workspace.connect(c, f.signal);
+  await f.grant();
+  assert.equal(f.workspace.supportsTextReads(c), true);
+  await assert.rejects(f.execute(virtual), (e) => e.code === "WORKSPACE_PROTECTED_PATH");
+  fs.writeFileSync(
+    path.join(f.folder, "ordinary.txt"),
+    "Exact selected-folder source 00123",
+    "utf8"
+  );
+  const result = await f.execute({
+    kind: "workspace_read_text",
+    path: "ordinary.txt",
+    offset_utf16: 0,
+    expected_version: null
+  });
+  assert.equal(result.content, "Exact selected-folder source 00123");
+  assert.equal(result.excerpt_only, false);
+});
