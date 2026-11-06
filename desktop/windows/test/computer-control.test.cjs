@@ -691,3 +691,44 @@ test("session stop attempts workspace and driver cleanup independently and block
     assert.equal(f.executions.length, 0);
   }
 });
+
+test("large native results become explicit valid excerpts without repeating their action", async () => {
+  const { serializeToolResult } = require("../tool-result.cjs");
+  const small = { version: "sha256:" + "a".repeat(64), content: "19 700 ₽, кроме доставки 00123" };
+  assert.equal(serializeToolResult(small, "workspace_read"), JSON.stringify(small));
+  for (const value of [
+    { text: "文".repeat(7000) },
+    { text: "🌙".repeat(9000) },
+    { text: "\u0001".repeat(5000) }
+  ]) {
+    const serialized = serializeToolResult(value, "list_apps"),
+      excerpt = JSON.parse(serialized);
+    assert.ok(Buffer.byteLength(serialized, "utf8") <= 10000);
+    assert.equal(excerpt.excerpt_only, true);
+    assert.equal(excerpt.driver_returned, true);
+    assert.ok(excerpt.content.isWellFormed());
+    assert.ok(JSON.stringify(value).startsWith(excerpt.content));
+    assert.equal(excerpt.original_characters, JSON.stringify(value).length);
+    assert.equal(excerpt.next_offset, undefined);
+    assert.match(excerpt.instruction, /Do not replay/);
+  }
+  const f = fixture();
+  let modelSteps = 0;
+  f.driver.execute = async (action) => {
+    f.executions.push(action);
+    return { text: "🌙".repeat(9000) };
+  };
+  f.planner.next = async ({ previousResult }) => {
+    if (modelSteps++ === 0) return proposal({ kind: "list_apps" });
+    const result = JSON.parse(previousResult);
+    assert.equal(result.format, "koswork.tool-result-excerpt.v1");
+    assert.equal(result.excerpt_only, true);
+    return proposal({ kind: "done", summary: "Observed bounded result" });
+  };
+  assert.equal(
+    (await f.session.run({ project: context.project, goal: context.goal, maxSteps: 3 })).status,
+    "completed"
+  );
+  assert.equal(f.executions.length, 1);
+  assert.equal(modelSteps, 2);
+});
