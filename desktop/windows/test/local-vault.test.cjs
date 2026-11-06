@@ -247,3 +247,254 @@ test("native console rechecks identity after a delayed folder dialog", async (t)
   assert.equal(f.vault.status(alice).connected, false);
   console.invalidate();
 });
+
+test("Vault preview bounds UTF-8 bytes and falls back to exact paginated source reads", (t) => {
+  const f = fixture(t);
+  f.vault.choose(alice, f.folder);
+  const text = "漢".repeat(9000),
+    item = f.vault.put(alice, "source.txt", Buffer.from(text));
+  assert.throws(() => f.vault.context(alice, item.id), /VAULT_CONTEXT_LIMIT/);
+  let offset = 0,
+    actual = "";
+  do {
+    const page = f.vault.fragment(alice, item.id, offset);
+    assert.ok(Buffer.byteLength(JSON.stringify(page), "utf8") <= 10000);
+    assert.equal(page.offset_utf16, offset);
+    assert.equal(page.sha256, item.id);
+    actual += page.content;
+    offset = page.next_offset;
+  } while (offset !== null);
+  assert.equal(actual, text);
+  assert.equal(f.vault.get(alice, item.id).bytes.toString(), text);
+});
+
+test("Vault refuses a cursor inside a Unicode character without rewinding or duplicating text", (t) => {
+  const f = fixture(t);
+  f.vault.choose(alice, f.folder);
+  const item = f.vault.put(alice, "emoji.txt", Buffer.from("A🚀B"));
+  assert.throws(() => f.vault.fragment(alice, item.id, 2), /VAULT_QUERY/);
+  assert.equal(f.vault.fragment(alice, item.id, 3).content, "B");
+  assert.equal(f.vault.fragment(alice, item.id, 4).next_offset, null);
+});
+
+test("Vault search paths begin at a whole Unicode character", (t) => {
+  const f = fixture(t);
+  f.vault.choose(alice, f.folder);
+  const text = "A🚀" + "x".repeat(78) + " needle";
+  const item = f.vault.put(alice, "search.txt", Buffer.from(text));
+  const hit = f.vault.search(alice, "needle").items.find((i) => i.id === item.id);
+  assert.equal(hit.offset, 1);
+  assert.ok(f.vault.fragment(alice, item.id, hit.offset).content.startsWith("🚀"));
+});
+
+test("normalized Vault matches quote the actual original occurrence, including expanded graphemes", (t) => {
+  const f = fixture(t);
+  f.vault.choose(alice, f.folder);
+  for (const [original, query] of [
+    ["① １２３", "1 123"],
+    ["ﬃ", "ffi"],
+    ["Cafe\u0301", "café"],
+    ["İstanbul", "i\u0307stanbul"]
+  ]) {
+    const text = "Вступление. ".repeat(90) + original + " — кроме доставки.";
+    const item = f.vault.put(alice, "source.txt", Buffer.from(text));
+    const hit = f.vault.search(alice, query).items.find((i) => i.id === item.id);
+    assert.ok(hit, query);
+    assert.ok(hit.snippet.includes(original), JSON.stringify(hit));
+    assert.ok(hit.snippet.includes("кроме доставки"));
+    assert.equal(hit.snippet, text.slice(hit.offset, hit.offset + hit.snippet.length));
+    assert.ok(f.vault.fragment(alice, item.id, hit.offset).content.includes(original));
+  }
+});
+test("Vault rejects blank queries and excess terms instead of silently matching unrelated sources", (t) => {
+  const f = fixture(t);
+  f.vault.choose(alice, f.folder);
+  f.vault.put(alice, "source.txt", Buffer.from("private"));
+  for (const query of ["   ", "\t\n", Array(13).fill("word").join(" ")])
+    assert.throws(() => f.vault.search(alice, query), /VAULT_QUERY/);
+});
+test("Vault search snippets never end inside an emoji", (t) => {
+  const f = fixture(t);
+  f.vault.choose(alice, f.folder);
+  const text = "needle" + "x".repeat(493) + "🚀";
+  const item = f.vault.put(alice, "source.txt", Buffer.from(text));
+  const hit = f.vault.search(alice, "needle").items.find((i) => i.id === item.id);
+  assert.ok(hit.snippet.isWellFormed());
+  assert.equal(hit.snippet, text.slice(0, 499));
+});
+
+test("Markdown outline returns exact heading offsets and ignores fenced examples", (t) => {
+  const f = fixture(t);
+  f.vault.choose(alice, f.folder);
+  const text =
+    "# План 🚀\r\nТекст\r## Бюджет 00123 ###\n```md\n# Ложный раздел\n```\n~~~\n## Также код\n~~~\n### Кроме доставки\n    # Отступ кода\n";
+  const item = f.vault.put(alice, "report.md", Buffer.from(text));
+  const outline = f.vault.outline(alice, item.id);
+  assert.equal(outline.truncated, false);
+  assert.equal(outline.sha256, item.id);
+  assert.deepEqual(
+    outline.headings.map((h) => h.title),
+    ["План 🚀", "Бюджет 00123", "Кроме доставки"]
+  );
+  for (const h of outline.headings) {
+    const read = f.vault.fragment(alice, item.id, h.offset_utf16);
+    assert.ok(read.content.startsWith("#".repeat(h.level)));
+    assert.ok(read.content.includes(h.title));
+  }
+});
+test("Markdown outline is bounded and explicitly reports missing coverage", (t) => {
+  const f = fixture(t);
+  f.vault.choose(alice, f.folder);
+  const text = Array.from({ length: 120 }, (_, i) => "## " + i + " 🚀".repeat(150)).join("\n");
+  const item = f.vault.put(alice, "large.md", Buffer.from(text));
+  const r = f.vault.outline(alice, item.id);
+  assert.ok(r.headings.length > 0 && r.headings.length <= 40);
+  assert.equal(r.truncated, true);
+  assert.ok(r.headings.every((h) => h.title_truncated && h.title.isWellFormed()));
+  assert.ok(Buffer.byteLength(JSON.stringify(r)) < 6600);
+  const huge = f.vault.put(alice, "huge.md", Buffer.from("x".repeat(256001) + "\n# Hidden"));
+  assert.equal(f.vault.outline(alice, huge.id).truncated, true);
+  const plain = f.vault.put(alice, "plain.txt", Buffer.from("# Not Markdown"));
+  assert.throws(() => f.vault.outline(alice, plain.id), /VAULT_TEXT_ONLY/);
+});
+
+test("outline continuation traverses every heading once and restores fence state", (t) => {
+  const f = fixture(t);
+  f.vault.choose(alice, f.folder);
+  const text = Array.from({ length: 105 }, (_, i) => `## Section ${i}\r\nbody\n`).join("");
+  const item = f.vault.put(alice, "many.md", Buffer.from(text));
+  let offset = 0,
+    titles = [];
+  do {
+    const r = f.vault.outline(alice, item.id, offset);
+    titles.push(...r.headings.map((h) => h.title));
+    assert.equal(r.start_utf16, offset);
+    assert.ok(r.next_offset === null || r.next_offset > offset);
+    offset = r.next_offset;
+  } while (offset !== null);
+  assert.deepEqual(
+    titles,
+    Array.from({ length: 105 }, (_, i) => `Section ${i}`)
+  );
+  const fenced = "```\n" + "x".repeat(256001) + "\n# Not a section\n```\n# Real section";
+  const code = f.vault.put(alice, "code.md", Buffer.from(fenced));
+  const first = f.vault.outline(alice, code.id);
+  assert.equal(first.headings.length, 0);
+  assert.ok(first.next_offset > 0);
+  const next = f.vault.outline(alice, code.id, first.next_offset);
+  assert.deepEqual(
+    next.headings.map((h) => h.title),
+    ["Real section"]
+  );
+  assert.equal(next.next_offset, null);
+});
+test("outline continuation rejects invalid cursors instead of guessing a boundary", (t) => {
+  const f = fixture(t);
+  f.vault.choose(alice, f.folder);
+  const item = f.vault.put(alice, "cursor.md", Buffer.from("# One\r\n# Two\n"));
+  for (const offset of [-1, 1, 6, 999, 1.5, "0"])
+    assert.throws(() => f.vault.outline(alice, item.id, offset), /VAULT_QUERY/);
+  assert.equal(f.vault.outline(alice, item.id, 7).headings[0].title, "Two");
+});
+
+test("Vault search resumes at the unscanned source after exhausting its byte budget", (t) => {
+  const f = fixture(t);
+  f.vault.choose(alice, f.folder);
+  const ids = [];
+  for (let i = 0; i < 6; i++)
+    ids.push(
+      f.vault.put(alice, `large-${i}.txt`, Buffer.from(`needle ${i} ` + "x".repeat(900000))).id
+    );
+  const first = f.vault.search(alice, "needle");
+  assert.equal(first.items.length, 4);
+  assert.equal(first.next_cursor, 4);
+  const rest = f.vault.search(alice, "needle", { cursor: first.next_cursor });
+  assert.deepEqual(
+    [...first.items, ...rest.items].map((i) => i.id),
+    ids
+  );
+  assert.equal(rest.next_cursor, null);
+  for (const cursor of [-1, 7, 0.1])
+    assert.throws(() => f.vault.search(alice, "needle", { cursor }), /VAULT_QUERY/);
+});
+
+test("Markdown section reads include children but exclude contradictory peer sections", (t) => {
+  const f = fixture(t);
+  f.vault.choose(alice, f.folder);
+  const text =
+    "# Общие условия\r\n## Поставка A\rЦена 19 700 ₽, кроме доставки.\n### Исключения\n00123; без монтажа.\n```\n## Не граница\n```\n" +
+    "Подробности 🚀. ".repeat(1500) +
+    "\n## Поставка B\nЦена 99 999 ₽, доставка включена.\n# Финал\n";
+  const item = f.vault.put(alice, "terms.md", Buffer.from(text));
+  const start = text.indexOf("## Поставка A"),
+    end = text.indexOf("## Поставка B");
+  let offset = start,
+    actual = "",
+    pages = 0;
+  do {
+    const r = f.vault.section(alice, item.id, start, offset);
+    assert.equal(r.section_start_utf16, start);
+    assert.equal(r.section_end_utf16, end);
+    assert.equal(r.total_characters, text.length);
+    assert.ok(Buffer.byteLength(JSON.stringify(r)) <= 10000);
+    assert.ok(r.content.isWellFormed());
+    assert.ok(!r.content.includes("99 999"));
+    actual += r.content;
+    offset = r.next_offset;
+    pages++;
+  } while (offset !== null);
+  assert.ok(pages > 1);
+  assert.equal(actual, text.slice(start, end));
+  assert.ok(actual.includes("### Исключения") && actual.includes("00123; без монтажа"));
+  for (const invalidStart of [start + 1, text.indexOf("## Не граница"), -1])
+    assert.throws(() => f.vault.section(alice, item.id, invalidStart), /VAULT_QUERY/);
+  assert.throws(() => f.vault.section(alice, item.id, start, end + 1), /VAULT_QUERY/);
+});
+
+test("section phrase search pages exact overlapping hits and never includes peer matches", (t) => {
+  const f = fixture(t);
+  f.vault.choose(alice, f.folder);
+  const text =
+    "# Selected\n" +
+    "00123; кроме доставки. 🚀\n".repeat(21) +
+    "# Other\n00123; доставка включена.";
+  const item = f.vault.put(alice, "search.md", Buffer.from(text));
+  let at = 0,
+    hits = [];
+  do {
+    const r = f.vault.sectionMatches(alice, item.id, 0, "00123", at);
+    hits.push(...r.matches);
+    assert.ok(r.next_offset === null || r.next_offset > at);
+    at = r.next_offset;
+  } while (at !== null);
+  assert.equal(hits.length, 21);
+  for (const h of hits) {
+    assert.equal(text.slice(h.offset_utf16, h.end_utf16), "00123");
+    assert.equal(
+      h.snippet,
+      text.slice(h.snippet_offset_utf16, h.snippet_offset_utf16 + h.snippet.length)
+    );
+    assert.ok(!h.snippet.includes("доставка включена"));
+  }
+  assert.equal(f.vault.sectionMatches(alice, item.id, 0, "SELECTED").matches.length, 0);
+  const overlap = f.vault.put(alice, "overlap.md", Buffer.from("# H\naaa"));
+  assert.deepEqual(
+    f.vault.sectionMatches(alice, overlap.id, 0, "aa").matches.map((h) => h.offset_utf16),
+    [4, 5]
+  );
+});
+test("section search crosses a scan window boundary without dropping or duplicating a match", (t) => {
+  const f = fixture(t);
+  f.vault.choose(alice, f.folder);
+  const text = "# H\n" + "x".repeat(255994) + "needle" + "x".repeat(30) + "needle";
+  const item = f.vault.put(alice, "window.md", Buffer.from(text));
+  const first = f.vault.sectionMatches(alice, item.id, 0, "needle");
+  assert.equal(first.matches[0].offset_utf16, 255998);
+  assert.equal(first.next_offset, 256000);
+  const next = f.vault.sectionMatches(alice, item.id, 0, "needle", first.next_offset);
+  assert.equal(next.matches.length, 1);
+  assert.equal(next.matches[0].offset_utf16, text.lastIndexOf("needle"));
+  assert.equal(next.next_offset, null);
+  for (const query of ["", "   ", "x".repeat(161), String.fromCharCode(0xd800)])
+    assert.throws(() => f.vault.sectionMatches(alice, item.id, 0, query), /VAULT_QUERY/);
+});

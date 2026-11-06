@@ -20,6 +20,11 @@ async function fixture(t, options = {}) {
   });
   const folder = path.join(root, "files");
   fs.mkdirSync(folder);
+  // The native action protocol is Windows-only, even when this fixture runs on Linux.
+  const reportActionPath =
+    process.platform === "win32"
+      ? path.join(folder, "report.md")
+      : "C:\\koswork-fixture\\report.md";
   const key = crypto.randomBytes(32);
   const codec = {
     seal(text) {
@@ -68,8 +73,11 @@ async function fixture(t, options = {}) {
     async execute(action) {
       calls.push(environment + ":" + action.kind);
       if (action.kind === "open_file") {
-        assert.equal(action.path, path.join(folder, "report.md"));
-        assert.equal(fs.readFileSync(action.path, "utf8"), "Verified source report");
+        assert.equal(action.path, reportActionPath);
+        assert.equal(
+          fs.readFileSync(path.join(folder, "report.md"), "utf8"),
+          "Verified source report"
+        );
         opened = true;
       }
       return { requested: true };
@@ -91,6 +99,7 @@ async function fixture(t, options = {}) {
   return {
     root,
     folder,
+    reportActionPath,
     workspace,
     history,
     driver,
@@ -250,7 +259,7 @@ test("one work task plans, searches, writes a real scoped file, switches to an a
       observation_id: obs.observation_id
     }),
     () => ({ kind: "work_switch", environment: "computer" }),
-    () => ({ kind: "open_file", path: path.join(f.folder, "report.md") }),
+    () => ({ kind: "open_file", path: f.reportActionPath }),
     (obs) => ({
       kind: "work_step",
       step: 3,
@@ -601,6 +610,125 @@ test("file-only task needs no screen grant and rechecks file consent locally wit
     false
   );
   assert.equal(fs.readFileSync(path.join(f.folder, "note.md"), "utf8"), "File-only fixture");
+});
+
+test("read-only browser exploration does not require plan-replacement consent, while file effects still do", async (t) => {
+  const f = await fixture(t),
+    approvals = [];
+  let stage = 0;
+  const plan = (title) => ({
+    kind: "work_plan",
+    steps: [{ title, criteria: "Сверить фактический результат" }]
+  });
+  const progress = (obs, state) => ({
+    kind: "work_step",
+    step: 1,
+    state,
+    evidence: state === "checked" ? "Файл прочитан обратно" : "",
+    observation_id: obs.observation_id
+  });
+  const actions = [
+    () => plan("Прочитать источник"),
+    (obs) => progress(obs, "running"),
+    () => ({ kind: "work_switch", environment: "browser" }),
+    () => ({ kind: "browser_read" }),
+    () => ({ kind: "browser_tabs" }),
+    () => plan("Сохранить отчёт"),
+    (obs) => progress(obs, "running"),
+    () => ({ kind: "workspace_create", path: "report.md", content: "Verified source report" }),
+    () => plan("Проверить существующий отчёт"),
+    (obs) => progress(obs, "running"),
+    () => ({ kind: "workspace_read", path: "report.md" }),
+    (obs) => progress(obs, "checked"),
+    () => ({ kind: "done", summary: "Отчёт проверен" })
+  ];
+  const runner = new ComputerSession({
+    executionMode: "work",
+    driver: f.driver,
+    workspace: f.workspace,
+    history: f.history,
+    identity: async () => context,
+    notify() {},
+    confirm: async (value) => {
+      approvals.push(value);
+      return true;
+    },
+    planner: {
+      begin: async () => ({ id: "fixture" }),
+      authorize: async () => ({ authorized: true, valid_for_ms: 10000 }),
+      end: async () => {},
+      next: async ({ observation, previousResult }) => {
+        if (stage === 11)
+          assert.equal(JSON.parse(previousResult).content, "Verified source report");
+        return {
+          action: actions[stage++](observation),
+          message: "Scripted fixture",
+          requires_confirmation: false
+        };
+      }
+    }
+  });
+  assert.equal(
+    (
+      await runner.run({
+        project: "project",
+        goal: "Прочитать источник и проверить отчёт",
+        maxSteps: 25
+      })
+    ).status,
+    "completed"
+  );
+  assert.equal(stage, 13);
+  assert.deepEqual(
+    approvals.map((v) => (v.kind === "session" ? "session" : v.action.kind)),
+    ["session", "workspace_create", "work_plan"]
+  );
+  assert.deepEqual(f.grants, ["browser"]);
+  assert.equal(fs.readFileSync(path.join(f.folder, "report.md"), "utf8"), "Verified source report");
+});
+
+test("Work stop attempts both native cleanup paths even if one environment throws", async () => {
+  for (const failed of ["browser", "computer"]) {
+    const calls = [];
+    let failCleanup = false;
+    const child = (name) => ({
+      stop() {
+        calls.push(name);
+        if (failCleanup && failed === name) throw Error("fixture cleanup failure");
+      }
+    });
+    const driver = createWorkCycleDriver({
+      browser: child("browser"),
+      computer: child("computer"),
+      identity: async () => context,
+      confirmEnvironment: async () => true
+    });
+    driver.begin({ context, goal: "Fixture" });
+    const signal = new AbortController().signal;
+    let observation = await driver.observe(signal);
+    await driver.execute(
+      { kind: "work_plan", steps: [{ title: "Inspect", criteria: "Fresh state" }] },
+      observation,
+      signal
+    );
+    observation = await driver.observe(signal);
+    await driver.execute({ kind: "work_switch", environment: "browser" }, observation, signal);
+    assert.deepEqual(driver.state().permissions, ["browser"]);
+    calls.length = 0;
+    failCleanup = true;
+    assert.throws(() => driver.stop(), /COMPUTER_RECOVERY_RESTART_REQUIRED/);
+    assert.deepEqual(calls, ["browser", "computer"]);
+    assert.deepEqual(driver.state().permissions, []);
+    assert.equal(driver.state().environment, "none");
+    await assert.rejects(driver.observe(new AbortController().signal), /COMPUTER_SESSION_STOPPED/);
+    calls.length = 0;
+    assert.throws(
+      () => driver.begin({ context, goal: "Restart" }),
+      /COMPUTER_RECOVERY_RESTART_REQUIRED/
+    );
+    assert.deepEqual(calls, ["browser", "computer"]);
+    await assert.rejects(driver.observe(signal), /COMPUTER_SESSION_STOPPED/);
+  }
 });
 
 test("an owner-selected accepted example informs a fresh Work plan and creates a new real file", async (t) => {

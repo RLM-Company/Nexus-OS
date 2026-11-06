@@ -1,4 +1,5 @@
 "use strict";
+const { containsCredentialText } = require("./checkpoint-text.cjs");
 const states = ["pending", "running", "checked"];
 const text = (v, limit) =>
   typeof v === "string" && !!v.trim() && v.length <= limit && !/[\u0000-\u001f\u007f]/u.test(v);
@@ -29,10 +30,11 @@ function checkpoint(value) {
     true
   );
   if (
-    normalized.some((s) =>
-      /(?:password|парол|secret|api[_ -]?key|access[_ -]?token|bearer\s|gh[pousr]_|sk-[a-z0-9]{12})/i.test(
-        s.title + " " + s.criteria
-      )
+    normalized.some(
+      (s) =>
+        /(?:password|парол|secret|api[_ -]?key|access[_ -]?token|bearer\s|gh[pousr]_|sk-[a-z0-9]{12})/i.test(
+          s.title + " " + s.criteria
+        ) || containsCredentialText(s.title + " " + s.criteria)
     )
   )
     return null;

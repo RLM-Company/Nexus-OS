@@ -432,13 +432,25 @@ function createBrowserEngine({
     }
     return tab;
   }
+  function cancelDownloads(tabId = null) {
+    let failed = false;
+    for (const d of [...downloads]) {
+      if (!d.item || (tabId !== null && d.tab !== tabId)) continue;
+      try {
+        d.item.cancel();
+      } catch {
+        failed = true;
+      }
+    }
+    if (failed) throw Error("COMPUTER_RECOVERY_RESTART_REQUIRED");
+  }
   async function close(id, force = false, signal) {
     const tab = tabs.get(id);
     if (!tab) throw Error("BROWSER_STALE");
     if (!force && !(await canSleep(tab, true))) throw Error("BROWSER_DIRTY_TAB");
     tab.searchAbort?.abort();
     intents.delete(id);
-    for (const d of downloads) if (d.tab === id && d.item) d.item.cancel();
+    cancelDownloads(id);
     detach(tab);
     tabs.delete(id);
     if (active === id) {
@@ -1080,20 +1092,32 @@ function createBrowserEngine({
       pendingRecovery = null;
       wantImage = false;
       intents.clear();
-      for (const d of downloads) if (d.item) d.item.cancel();
+      cancelDownloads();
     },
     stop() {
       this.cancel();
     },
     dispose() {
       if (stopped) return;
-      this.cancel();
+      let failed = false;
+      try {
+        this.cancel();
+      } catch {
+        failed = true;
+      }
       stopped = true;
       clearInterval(timer);
       browserSession.removeListener("will-download", onDownload);
-      for (const tab of tabs.values()) detach(tab);
+      for (const tab of tabs.values()) {
+        try {
+          detach(tab);
+        } catch {
+          failed = true;
+        }
+      }
       tabs.clear();
       active = null;
+      if (failed) throw Error("COMPUTER_RECOVERY_RESTART_REQUIRED");
     }
   };
 }

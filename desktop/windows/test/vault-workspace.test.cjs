@@ -460,3 +460,605 @@ test("a bounded Koswork session searches the vault, writes a report and checks i
   assert.equal(f.workspace.vaultState(c), false);
   assert.ok(!f.workspace.snapshot(c).name.includes(P));
 });
+
+test("Vault wire responses stay bounded in UTF-8 across opaque continuation paths", async (t) => {
+  const f = fixture(t);
+  const text = '漢🚀\\"\t 00123; кроме доставки. '.repeat(700);
+  const item = f.vault.put(c, "source.txt", Buffer.from(text));
+  await f.grant();
+  let next = P + "/" + item.id + "/0",
+    joined = "";
+  while (next) {
+    const page = await f.execute({ kind: "workspace_read", path: next });
+    assert.ok(Buffer.byteLength(JSON.stringify(page), "utf8") <= 14000);
+    assert.equal(page.error, undefined);
+    assert.equal(page.sha256, item.id);
+    assert.ok(page.content.isWellFormed());
+    assert.ok(page.end_utf16 > page.offset_utf16);
+    joined += page.content;
+    next = page.next_path;
+  }
+  assert.equal(joined, text);
+  await assert.rejects(
+    f.execute({ kind: "workspace_read", path: P + "/" + item.id + "/2" }),
+    (e) => e.code === "WORKSPACE_PATH_TRAVERSAL"
+  );
+  f.workspace.revokeVault();
+  await assert.rejects(f.execute({ kind: "workspace_read", path: P + "/" + item.id + "/0" }));
+});
+
+test("Koswork discovers an outline, follows a source section and loses access after revocation", async (t) => {
+  const f = fixture(t);
+  const text =
+    "# Обзор\n" + "Вступление. ".repeat(900) + "\n## Условия 00123\nЦена 19 700 ₽, кроме доставки.";
+  const item = f.vault.put(c, "manual.md", Buffer.from(text));
+  await assert.rejects(f.execute({ kind: "workspace_read", path: P + "/" + item.id + "/outline" }));
+  await f.grant();
+  const listed = await f.execute({ kind: "workspace_list", path: P, cursor: 0 });
+  const source = listed.items.find((i) => i.sha256 === item.id);
+  assert.ok(source.outline_path.endsWith("/outline"));
+  const outline = await f.execute({ kind: "workspace_read", path: source.outline_path });
+  const section = outline.headings.find((h) => h.title === "Условия 00123");
+  const read = await f.execute({ kind: "workspace_read", path: section.path });
+  assert.equal(read.sha256, item.id);
+  assert.ok(read.content.startsWith("## Условия 00123"));
+  assert.ok(read.content.includes("19 700 ₽, кроме доставки"));
+  assert.ok(Buffer.byteLength(JSON.stringify(outline)) <= 14000);
+  f.workspace.revokeVault();
+  await assert.rejects(f.execute({ kind: "workspace_read", path: section.path }));
+});
+
+test("outline wire budget includes every section link and refuses foreign or deleted originals", async (t) => {
+  const f = fixture(t);
+  const item = f.vault.put(
+    c,
+    "sections.md",
+    Buffer.from(Array.from({ length: 100 }, () => "# " + "漢🚀".repeat(90)).join("\n"))
+  );
+  await f.grant();
+  const p = P + "/" + item.id + "/outline";
+  const outline = await f.execute({ kind: "workspace_read", path: p });
+  assert.equal(outline.error, undefined);
+  assert.equal(outline.truncated, true);
+  assert.ok(Buffer.byteLength(JSON.stringify(outline)) <= 14000);
+  await assert.rejects(
+    f.workspace.execute(
+      { kind: "workspace_read", path: p },
+      {
+        context: { ...c, owner: "other" },
+        workspaceId: f.workspace.snapshot(c).id,
+        signal: f.signal
+      }
+    )
+  );
+  f.vault.remove(c, item.id);
+  await assert.rejects(
+    f.execute({ kind: "workspace_read", path: p }),
+    (e) => e.code === "WORKSPACE_NOT_FOUND"
+  );
+});
+
+test("Koswork follows opaque outline pages to a late source section and rechecks grants", async (t) => {
+  const f = fixture(t);
+  const text = Array.from({ length: 95 }, (_, i) => `# Section ${i}\nValue 00123 ${i}\n`).join("");
+  const item = f.vault.put(c, "paginated.md", Buffer.from(text));
+  await f.grant();
+  let p = P + "/" + item.id + "/outline",
+    found = [],
+    last;
+  while (p) {
+    const r = await f.execute({ kind: "workspace_read", path: p });
+    assert.ok(Buffer.byteLength(JSON.stringify(r)) <= 14000);
+    found.push(...r.headings);
+    last = p;
+    p = r.next_outline_path;
+  }
+  assert.deepEqual(
+    found.map((h) => h.title),
+    Array.from({ length: 95 }, (_, i) => `Section ${i}`)
+  );
+  const read = await f.execute({ kind: "workspace_read", path: found[94].path });
+  assert.ok(read.content.startsWith("# Section 94\nValue 00123 94"));
+  await assert.rejects(
+    f.execute({ kind: "workspace_read", path: P + "/" + item.id + "/outline/2" }),
+    (e) => e.code === "WORKSPACE_PATH_TRAVERSAL"
+  );
+  f.workspace.revokeVault();
+  await assert.rejects(f.execute({ kind: "workspace_read", path: last }));
+});
+
+test("paginated Vault search reaches every match and binds continuation to query, sources and grant", async (t) => {
+  const f = fixture(t);
+  const ids = [];
+  for (let i = 0; i < 23; i++)
+    ids.push(
+      f.vault.put(c, `report-${i}.md`, Buffer.from(`needle ${i} 00123; кроме доставки.`)).id
+    );
+  await f.grant();
+  for (const mode of ["text", "name"]) {
+    const query = mode === "text" ? "needle" : "report-";
+    let p = P,
+      seen = [],
+      first;
+    do {
+      const r = await f.execute({ kind: "workspace_find", path: p, mode, query });
+      assert.ok(Buffer.byteLength(JSON.stringify(r)) <= 14000);
+      assert.ok(r.matches.length <= 8);
+      seen.push(...r.matches.map((i) => i.sha256));
+      first ??= r.next_search_path;
+      p = r.next_search_path;
+    } while (p);
+    assert.deepEqual(seen, ids);
+    await assert.rejects(
+      f.execute({ kind: "workspace_find", path: first, mode, query: query + "changed" }),
+      (e) => e.code === "WORKSPACE_VERSION_CONFLICT"
+    );
+    const old = first;
+    const newItem = f.vault.put(c, `unrelated-${mode}.txt`, Buffer.from(`other ${mode}`));
+    await assert.rejects(
+      f.execute({ kind: "workspace_find", path: old, mode, query }),
+      (e) => e.code === "WORKSPACE_VERSION_CONFLICT"
+    );
+    f.vault.remove(c, newItem.id);
+  }
+  const page = await f.execute({ kind: "workspace_find", path: P, mode: "text", query: "needle" });
+  const read = await f.execute({ kind: "workspace_read", path: page.matches[0].path });
+  assert.ok(read.content.includes("00123; кроме доставки"));
+  f.workspace.revokeVault();
+  await f.grant();
+  await assert.rejects(
+    f.execute({
+      kind: "workspace_find",
+      path: page.next_search_path,
+      mode: "text",
+      query: "needle"
+    }),
+    (e) => e.code === "WORKSPACE_VERSION_CONFLICT"
+  );
+});
+
+test("search page budgets include escaped multilingual snippets and expose their truncation", async (t) => {
+  const f = fixture(t);
+  for (let i = 0; i < 8; i++)
+    f.vault.put(
+      c,
+      `${i}-` + "漢".repeat(150) + ".md",
+      Buffer.from(`needle ${i} ` + "漢🚀".repeat(300))
+    );
+  await f.grant();
+  const r = await f.execute({ kind: "workspace_find", path: P, mode: "text", query: "needle" });
+  assert.equal(r.matches.length, 8);
+  assert.ok(Buffer.byteLength(JSON.stringify(r)) <= 14000);
+  assert.ok(r.matches.every((m) => m.snippet_truncated && m.snippet.isWellFormed()));
+});
+
+test("Vault listing pages are source-bound, complete and compatible with numeric cursors", async (t) => {
+  const f = fixture(t),
+    ids = [f.source.id];
+  for (let i = 0; i < 24; i++)
+    ids.push(f.vault.put(c, `source-${i}.txt`, Buffer.from(`original ${i}`)).id);
+  await f.grant();
+  let p = P,
+    seen = [],
+    first;
+  do {
+    const r = await f.execute({ kind: "workspace_list", path: p, cursor: 0 });
+    assert.ok(r.items.length <= 10);
+    assert.ok(Buffer.byteLength(JSON.stringify(r)) <= 14000);
+    seen.push(...r.items.map((i) => i.sha256));
+    first ??= r.next_list_path;
+    p = r.next_list_path;
+  } while (p);
+  assert.deepEqual(seen, ids);
+  const legacy = await f.execute({ kind: "workspace_list", path: P, cursor: 10 });
+  assert.deepEqual(
+    legacy.items.map((i) => i.sha256),
+    ids.slice(10, 20)
+  );
+  const added = f.vault.put(c, "new.txt", Buffer.from("new original"));
+  await assert.rejects(
+    f.execute({ kind: "workspace_list", path: first, cursor: 0 }),
+    (e) => e.code === "WORKSPACE_VERSION_CONFLICT"
+  );
+  await assert.rejects(
+    f.execute({ kind: "workspace_list", path: P, cursor: 10 }),
+    (e) => e.code === "WORKSPACE_VERSION_CONFLICT"
+  );
+  const fresh = await f.execute({ kind: "workspace_list", path: P, cursor: 0 });
+  assert.ok(fresh.next_list_path);
+  f.vault.remove(c, added.id);
+  await assert.rejects(
+    f.execute({ kind: "workspace_list", path: fresh.next_list_path, cursor: 0 }),
+    (e) => e.code === "WORKSPACE_VERSION_CONFLICT"
+  );
+  const page = await f.execute({ kind: "workspace_list", path: P, cursor: 0 });
+  f.workspace.revokeVault();
+  await f.grant();
+  await assert.rejects(
+    f.execute({ kind: "workspace_list", path: page.next_list_path, cursor: 0 }),
+    (e) => e.code === "WORKSPACE_VERSION_CONFLICT"
+  );
+  await assert.rejects(
+    f.execute({ kind: "workspace_list", path: P, cursor: 10 }),
+    (e) => e.code === "WORKSPACE_VERSION_CONFLICT"
+  );
+});
+
+test("real Work session navigates listing and outline pages before writing a verified report", async (t) => {
+  const f = fixture(t);
+  for (let i = 0; i < 23; i++) f.vault.put(c, `other-${i}.txt`, Buffer.from(`other document ${i}`));
+  const text = Array.from(
+    { length: 95 },
+    (_, i) =>
+      `# Section ${i}\n` + (i === 94 ? "00123: 19 700 ₽, кроме доставки." : "Reference section")
+  ).join("\n");
+  const target = f.vault.put(c, "target.md", Buffer.from(text));
+  await f.workspace.connect(c, f.signal);
+  await f.grant();
+  let state = "plan",
+    quote = "",
+    listPages = 0,
+    outlinePages = 0,
+    approvals = 0;
+  const driver = createWorkCycleDriver({
+    browser: { stop() {} },
+    computer: { stop() {} },
+    identity: async () => c,
+    confirmEnvironment: async () => {
+      throw Error("Unexpected device permission");
+    }
+  });
+  const runner = new ComputerSession({
+    executionMode: "work",
+    driver,
+    workspace: f.workspace,
+    identity: async () => c,
+    notify() {},
+    confirm: async () => {
+      approvals++;
+      return true;
+    },
+    planner: {
+      begin: async () => ({ id: "fixture" }),
+      authorize: async () => ({ authorized: true, valid_for_ms: 10000 }),
+      end: async () => {},
+      next: async ({ observation, previousResult }) => {
+        let action;
+        if (state === "plan") {
+          state = "start";
+          action = {
+            kind: "work_plan",
+            steps: [
+              {
+                title: "Read source and verify report",
+                criteria: "Exact late section and exception retained"
+              }
+            ]
+          };
+        } else if (state === "start") {
+          state = "list";
+          action = {
+            kind: "work_step",
+            step: 1,
+            state: "running",
+            evidence: "",
+            observation_id: observation.observation_id
+          };
+        } else if (state === "list") {
+          state = "listing";
+          action = { kind: "workspace_list", path: P, cursor: 0 };
+        } else if (state === "listing") {
+          listPages++;
+          const r = JSON.parse(previousResult),
+            item = r.items.find((i) => i.sha256 === target.id);
+          if (item) {
+            state = "outline";
+            action = { kind: "workspace_read", path: item.outline_path };
+          } else {
+            assert.ok(r.next_list_path);
+            action = { kind: "workspace_list", path: r.next_list_path, cursor: 0 };
+          }
+        } else if (state === "outline") {
+          outlinePages++;
+          const r = JSON.parse(previousResult),
+            h = r.headings.find((i) => i.title === "Section 94");
+          if (h) {
+            state = "source";
+            action = { kind: "workspace_read", path: h.path };
+          } else {
+            assert.ok(r.next_outline_path);
+            action = { kind: "workspace_read", path: r.next_outline_path };
+          }
+        } else if (state === "source") {
+          const r = JSON.parse(previousResult);
+          assert.equal(r.sha256, target.id);
+          quote = r.content;
+          assert.ok(quote.includes("00123: 19 700 ₽, кроме доставки."));
+          state = "written";
+          action = { kind: "workspace_create", path: "report.md", content: quote };
+        } else if (state === "written") {
+          state = "verify";
+          action = { kind: "workspace_read", path: "report.md" };
+        } else if (state === "verify") {
+          assert.equal(JSON.parse(previousResult).content, quote);
+          state = "done";
+          action = {
+            kind: "work_step",
+            step: 1,
+            state: "checked",
+            evidence: "Output read back against exact source",
+            observation_id: observation.observation_id
+          };
+        } else action = { kind: "done", summary: "Report verified" };
+        return { action, message: "Scripted planner fixture", requires_confirmation: false };
+      }
+    }
+  });
+  const result = await runner.run({
+    project: "project",
+    goal: "Find the final section and create a report",
+    maxSteps: 30
+  });
+  assert.equal(result.status, "completed");
+  assert.equal(listPages, 3);
+  assert.ok(outlinePages >= 3);
+  assert.ok(approvals > 0);
+  assert.equal(fs.readFileSync(path.join(f.folder, "report.md"), "utf8"), quote);
+  assert.equal(f.workspace.vaultState(c), false);
+});
+
+test("outline section paths cannot leak a neighbouring section through continuation", async (t) => {
+  const f = fixture(t);
+  const text =
+    "# First\n" +
+    "00123; кроме доставки. 🚀 ".repeat(1500) +
+    "\n# Neighbour\n99999; доставка включена.";
+  const item = f.vault.put(c, "scoped.md", Buffer.from(text));
+  await f.grant();
+  const outline = await f.execute({ kind: "workspace_read", path: P + "/" + item.id + "/outline" });
+  let p = outline.headings[0].path,
+    actual = "";
+  assert.ok(p.includes("/section/"));
+  while (p) {
+    const r = await f.execute({ kind: "workspace_read", path: p });
+    assert.equal(r.kind, "untrusted_markdown_section_excerpt");
+    assert.equal(r.sha256, item.id);
+    assert.equal(r.section_end_utf16, text.indexOf("# Neighbour"));
+    assert.ok(!r.content.includes("99999"));
+    assert.ok(Buffer.byteLength(JSON.stringify(r)) <= 14000);
+    actual += r.content;
+    p = r.next_path;
+  }
+  assert.equal(actual, text.slice(0, text.indexOf("# Neighbour")));
+  const next = await f.execute({ kind: "workspace_read", path: outline.headings[1].path });
+  assert.ok(next.content.includes("99999"));
+  f.vault.remove(c, item.id);
+  await assert.rejects(
+    f.execute({ kind: "workspace_read", path: outline.headings[0].path }),
+    (e) => e.code === "WORKSPACE_NOT_FOUND"
+  );
+});
+
+test("Koswork searches a selected section, follows matches and binds search pages to query/grant", async (t) => {
+  const f = fixture(t);
+  const text =
+    "# Selected\n" +
+    "19700 ₽, кроме доставки.\n".repeat(19) +
+    "# Other\n19700 ₽, доставка включена.";
+  const item = f.vault.put(c, "prices.md", Buffer.from(text));
+  await f.grant();
+  const o = await f.execute({ kind: "workspace_read", path: P + "/" + item.id + "/outline" });
+  const source = o.headings[0].path;
+  let p = source,
+    positions = [],
+    first;
+  while (p) {
+    const r = await f.execute({ kind: "workspace_find", path: p, mode: "text", query: "19700 ₽" });
+    assert.ok(Buffer.byteLength(JSON.stringify(r)) <= 14000);
+    positions.push(...r.matches.map((m) => m.offset_utf16));
+    first ??= r.next_search_path;
+    const read = await f.execute({ kind: "workspace_read", path: r.matches[0].path });
+    assert.ok(read.content.startsWith("19700 ₽"));
+    assert.ok(!read.content.includes("доставка включена"));
+    p = r.next_search_path;
+  }
+  assert.equal(positions.length, 19);
+  assert.equal(new Set(positions).size, 19);
+  await assert.rejects(
+    f.execute({ kind: "workspace_find", path: first, mode: "text", query: "other" }),
+    (e) => e.code === "WORKSPACE_VERSION_CONFLICT"
+  );
+  f.workspace.revokeVault();
+  await f.grant();
+  await assert.rejects(
+    f.execute({ kind: "workspace_find", path: first, mode: "text", query: "19700 ₽" }),
+    (e) => e.code === "WORKSPACE_VERSION_CONFLICT"
+  );
+});
+
+test("section search fits escaped source snippets and resumes before every omitted match", async (t) => {
+  const f = fixture(t);
+  const query = String.fromCharCode(1).repeat(159) + "Q";
+  const row = String.fromCharCode(2).repeat(80) + query + String.fromCharCode(3).repeat(80);
+  const text = "# Selected\n" + (row + "\n").repeat(19) + "# Other\n" + query;
+  const item = f.vault.put(c, "escaped.md", Buffer.from(text));
+  await f.grant();
+  let p = P + "/" + item.id + "/section/0/0",
+    positions = [],
+    pages = 0;
+  while (p) {
+    const r = await f.execute({ kind: "workspace_find", path: p, mode: "text", query });
+    assert.equal(r.error, undefined);
+    assert.ok(Buffer.byteLength(JSON.stringify(r), "utf8") <= 14000);
+    assert.ok(r.matches.length > 0);
+    for (const m of r.matches) {
+      assert.equal(text.slice(m.offset_utf16, m.end_utf16), query);
+      assert.equal(
+        m.snippet,
+        text.slice(m.snippet_offset_utf16, m.snippet_offset_utf16 + m.snippet.length)
+      );
+      positions.push(m.offset_utf16);
+    }
+    p = r.next_search_path;
+    assert.ok(++pages < 20);
+  }
+  assert.ok(pages > 3, "actual JSON bytes must determine page size");
+  const expected = [...text.slice(0, text.indexOf("# Other")).matchAll(new RegExp(query, "g"))].map(
+    (m) => m.index
+  );
+  assert.deepEqual(positions, expected);
+});
+
+test("real Work session continues empty and populated section-search pages before verifying a report", async (t) => {
+  const f = fixture(t);
+  const clause = "00123: 19 700 ₽, кроме доставки.";
+  const text =
+    "# Selected\n" +
+    "Reference 🚀. ".repeat(21000) +
+    "\n" +
+    Array.from({ length: 19 }, (_, i) => (i === 18 ? clause : `00123: reference row ${i}.`)).join(
+      "\n"
+    ) +
+    "\n# Other\n00123: 99 999 ₽, доставка включена.";
+  const target = f.vault.put(c, "contract.md", Buffer.from(text));
+  await f.workspace.connect(c, f.signal);
+  await f.grant();
+  let state = "plan",
+    section,
+    quote,
+    report,
+    searchPages = 0,
+    emptyPages = 0,
+    approvals = 0;
+  const observedPositions = [];
+  const driver = createWorkCycleDriver({
+    browser: { stop() {} },
+    computer: { stop() {} },
+    identity: async () => c,
+    confirmEnvironment: async () => {
+      throw Error("Unexpected device permission");
+    }
+  });
+  const runner = new ComputerSession({
+    executionMode: "work",
+    driver,
+    workspace: f.workspace,
+    identity: async () => c,
+    notify() {},
+    confirm: async () => {
+      approvals++;
+      return true;
+    },
+    planner: {
+      begin: async () => ({ id: "section-search-fixture" }),
+      authorize: async () => ({ authorized: true, valid_for_ms: 10000 }),
+      end: async () => {},
+      next: async ({ observation, previousResult }) => {
+        let action;
+        if (state === "plan") {
+          state = "start";
+          action = {
+            kind: "work_plan",
+            steps: [
+              {
+                title: "Verify contract clause",
+                criteria: "Preserve price, identifier and delivery exception"
+              }
+            ]
+          };
+        } else if (state === "start") {
+          state = "find-file";
+          action = {
+            kind: "work_step",
+            step: 1,
+            state: "running",
+            evidence: "",
+            observation_id: observation.observation_id
+          };
+        } else if (state === "find-file") {
+          state = "outline";
+          action = { kind: "workspace_find", path: P, mode: "name", query: "contract.md" };
+        } else if (state === "outline") {
+          const found = JSON.parse(previousResult).matches;
+          assert.equal(found.length, 1);
+          assert.equal(found[0].sha256, target.id);
+          state = "section";
+          action = { kind: "workspace_read", path: found[0].outline_path };
+        } else if (state === "section") {
+          section = JSON.parse(previousResult).headings.find((h) => h.title === "Selected").path;
+          state = "begin-search";
+          action = { kind: "workspace_read", path: section };
+        } else if (state === "begin-search") {
+          const r = JSON.parse(previousResult);
+          assert.ok(!r.content.includes("00123"));
+          assert.ok(r.next_path, "first excerpt alone cannot answer this task");
+          state = "search";
+          action = { kind: "workspace_find", path: section, mode: "text", query: "00123" };
+        } else if (state === "search") {
+          const r = JSON.parse(previousResult);
+          assert.equal(r.sha256, target.id);
+          assert.equal(r.match_mode, "exact_case_sensitive_literal");
+          assert.ok(Buffer.byteLength(previousResult, "utf8") <= 14000);
+          searchPages++;
+          if (!r.matches.length) emptyPages++;
+          observedPositions.push(...r.matches.map((m) => m.offset_utf16));
+          const match = r.matches.find((m) => m.offset_utf16 === text.indexOf(clause));
+          if (match) {
+            assert.ok(match.snippet.includes(clause));
+            state = "source";
+            action = { kind: "workspace_read", path: match.path };
+          } else {
+            assert.ok(r.next_search_path, "an empty window is not absence from the full section");
+            action = {
+              kind: "workspace_find",
+              path: r.next_search_path,
+              mode: "text",
+              query: "00123"
+            };
+          }
+        } else if (state === "source") {
+          const r = JSON.parse(previousResult);
+          assert.equal(r.sha256, target.id);
+          assert.equal(r.section_end_utf16, text.indexOf("# Other"));
+          quote = r.content;
+          assert.equal(quote.trim(), clause);
+          assert.equal(r.next_path, null);
+          report = `Источник SHA256: ${r.sha256}\n\n${quote}`;
+          state = "written";
+          action = { kind: "workspace_create", path: "contract-report.md", content: report };
+        } else if (state === "written") {
+          state = "verify";
+          action = { kind: "workspace_read", path: "contract-report.md" };
+        } else if (state === "verify") {
+          assert.equal(JSON.parse(previousResult).content, report);
+          state = "done";
+          action = {
+            kind: "work_step",
+            step: 1,
+            state: "checked",
+            evidence: "Report bytes read back against the selected source clause and hash",
+            observation_id: observation.observation_id
+          };
+        } else action = { kind: "done", summary: "Clause and report verified" };
+        return { action, message: "Scripted planner fixture", requires_confirmation: false };
+      }
+    }
+  });
+  const result = await runner.run({
+    project: "project",
+    goal: "Find clause 00123 within Selected and create a verified report",
+    maxSteps: 30
+  });
+  assert.equal(result.status, "completed");
+  assert.equal(emptyPages, 1);
+  assert.equal(searchPages, 4);
+  assert.equal(observedPositions.length, 19);
+  assert.equal(new Set(observedPositions).size, 19);
+  assert.ok(approvals > 0);
+  assert.equal(fs.readFileSync(path.join(f.folder, "contract-report.md"), "utf8"), report);
+  assert.ok(!report.includes("99 999") && !report.includes("доставка включена"));
+  assert.equal(f.workspace.vaultState(c), false);
+  await assert.rejects(
+    f.execute({ kind: "workspace_find", path: section, mode: "text", query: "00123" })
+  );
+});

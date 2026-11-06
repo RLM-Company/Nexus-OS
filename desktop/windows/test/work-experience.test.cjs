@@ -71,7 +71,9 @@ test("only owner-accepted completed Work plans become bounded data examples", (t
     { state: "pending" },
     { status: "failed" },
     { goal: "password=do-not-transfer" },
-    { criteria: "Ввести пароль" }
+    { criteria: "Ввести пароль" },
+    { criteria: "PIN: 1234" },
+    { goal: "код: 123456" }
   ]) {
     const id = f.source(opts);
     assert.equal(f.history.list(context).find((r) => r.id === id).reusable, false);

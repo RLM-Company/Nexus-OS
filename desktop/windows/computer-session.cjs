@@ -483,6 +483,9 @@ class ComputerSession {
               signal: state.controller.signal
             });
           } else response = await this.driver.execute(action, observation, state.controller.signal);
+          // A native adapter can finish after stop/revocation, even on the last
+          // step. Do not accept that reply into results or the recovery journal.
+          await this.assertLive(state);
           // This top-level error is created by the trusted workspace adapter.
           // Read payloads (including JSON-looking file content) are not inspected.
           if (
@@ -530,6 +533,9 @@ class ComputerSession {
             ].includes(error?.message)
           )
             throw error;
+          // Revocation takes precedence over a late known adapter rejection.
+          // Preserve uncertain dispatch; unexpected journal errors still fail closed.
+          await this.assertLive(state);
           state.journal?.mark(step + 1, "not_executed");
           const retry = retryGuard?.recordFailure(
             action,
@@ -604,11 +610,13 @@ class ComputerSession {
   stop() {
     this.gate.stop();
     this.active?.controller.abort();
-    this.workspace?.cancel();
-    try {
-      this.driver.stop?.();
-    } catch {
-      this.poisoned = true;
+    // A broken workspace cancel must not skip native input cleanup (or vice versa).
+    for (const cleanup of [() => this.workspace?.cancel(), () => this.driver.stop?.()]) {
+      try {
+        cleanup();
+      } catch {
+        this.poisoned = true;
+      }
     }
   }
   resume() {

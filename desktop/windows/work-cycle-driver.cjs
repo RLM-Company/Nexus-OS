@@ -1,6 +1,16 @@
 "use strict";
 const { randomUUID } = require("node:crypto");
 const policy = require("./work-cycle-policy.cjs");
+// Definite observations only. Unknown/native input actions remain conservative.
+const observationsOnly = new Set([
+  "observe",
+  "wait",
+  "list_apps",
+  "find_apps",
+  "browser_read",
+  "browser_tabs",
+  "browser_screenshot"
+]);
 function createWorkCycleDriver({
   browser,
   computer,
@@ -29,6 +39,17 @@ function createWorkCycleDriver({
     last = null;
     notify(state());
   };
+  function stopEnvironments() {
+    let failed = false;
+    for (const driver of [browser, computer]) {
+      try {
+        driver.stop?.();
+      } catch {
+        failed = true;
+      }
+    }
+    if (failed) throw Error("COMPUTER_RECOVERY_RESTART_REQUIRED");
+  }
   async function live(signal) {
     if (!context || signal?.aborted) throw Error("COMPUTER_SESSION_STOPPED");
     const expected = context;
@@ -83,10 +104,11 @@ function createWorkCycleDriver({
   return {
     state,
     begin({ context: next, goal: nextGoal, recovery }) {
-      browser.stop?.();
-      computer.stop?.();
+      context = null;
       grants.clear();
       environment = "none";
+      last = null;
+      stopEnvironments();
       context = { owner: next.owner, origin: next.origin };
       goal = nextGoal;
       effects = false;
@@ -259,16 +281,18 @@ function createWorkCycleDriver({
           });
         return { observed: true };
       }
-      effects = true;
+      if (!observationsOnly.has(action.kind)) effects = true;
       return (environment === "browser" ? browser : computer).execute(action, last.inner, signal);
     },
     stop() {
       context = null;
       grants.clear();
       environment = "none";
-      browser.stop?.();
-      computer.stop?.();
-      changed();
+      try {
+        stopEnvironments();
+      } finally {
+        changed();
+      }
     }
   };
 }
