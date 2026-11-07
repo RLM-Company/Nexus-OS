@@ -13,7 +13,12 @@ const same = (a, b) => !!a && !!b && a.owner === b.owner && a.origin === b.origi
 function projectWorkOutcome(value) {
   const result = {
     source: "local_agent_report",
-    status: statuses.has(value?.status) ? value.status : "failed",
+    status:
+      value?.status === "needs_user"
+        ? "paused"
+        : statuses.has(value?.status)
+          ? value.status
+          : "failed",
     owner_accepted: false
   };
   if (result.status === "completed" && typeof value?.summary === "string" && value.summary.trim()) {

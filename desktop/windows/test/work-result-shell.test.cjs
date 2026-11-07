@@ -140,6 +140,11 @@ test("the real shell returns a matching task once and rejects unrelated result a
   assert.equal(f.delivered.length, 2);
   assert.equal(f.delivered[1].status, "cancelled");
   assert.equal(f.delivered[1].summary, undefined);
+  await f.show();
+  f.setRun(async () => ({ status: "needs_user", summary: "Private question" }));
+  await f.command("start", input);
+  assert.equal(f.delivered[2].status, "paused");
+  assert.equal(f.delivered[2].summary, undefined);
 });
 test("stop and emergency takeover discard late successful result reports", async (t) => {
   for (const method of ["stop", "hotkey"]) {
