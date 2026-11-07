@@ -59,8 +59,9 @@ export * from "./computer-control.js";
 export type { GoogleDriveConnectionView, GoogleDriveConnectStart } from "./google-drive.js";
 
 export {
+  OfficeCursorSchema,
   OfficeOperationSchema,
   OfficeOperationsSchema,
   OfficeVersionSchema
 } from "./office-workspace.js";
-export type { OfficeOperation } from "./office-workspace.js";
+export type { OfficeOperation, OfficeCursor } from "./office-workspace.js";

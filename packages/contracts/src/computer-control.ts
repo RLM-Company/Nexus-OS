@@ -254,6 +254,7 @@ export type ComputerDecision = Static<typeof ComputerDecisionSchema>;
 export const ComputerSessionAcceptanceSchema = object({
   supports_workspace_read_lines: Type.Optional(Type.Literal(true)),
   supports_workspace_text_reads: Type.Optional(Type.Literal(true)),
+  supports_workspace_office_pages: Type.Optional(Type.Literal(true)),
   supports_workspace_office_edits: Type.Optional(Type.Literal(true)),
   supports_workspace_documents: Type.Optional(Type.Literal(true)),
   supports_workspace_document_reads: Type.Optional(Type.Literal(true)),
@@ -297,6 +298,7 @@ export const ComputerObservationSchema = object({
       name: text(180),
       read_lines: Type.Optional(Type.Literal(true)),
       read_text_pages: Type.Optional(Type.Literal(true)),
+      office_pages: Type.Optional(Type.Literal(true)),
       edit_office: Type.Optional(Type.Literal(true)),
       create_documents: Type.Optional(Type.Literal(true)),
       read_documents: Type.Optional(Type.Literal(true)),

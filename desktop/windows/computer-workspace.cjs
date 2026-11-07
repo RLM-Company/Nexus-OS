@@ -43,6 +43,7 @@ function createComputerWorkspace({
   return {
     supportsLineReads: (context) => Boolean(snapshot(context)),
     supportsTextReads: (context) => Boolean(snapshot(context)),
+    supportsOfficePages: (context) => Boolean(snapshot(context)),
     supportsOfficeEdits: (context) => Boolean(snapshot(context)),
     supportsDocuments: (context) => Boolean(snapshot(context)),
     supportsDocumentReads: (context) => Boolean(snapshot(context)),
@@ -185,6 +186,13 @@ function createComputerWorkspace({
             offset: action.offset_utf16,
             expectedVersion: action.expected_version,
             expectedTextSha256: action.expected_text_sha256
+          });
+          break;
+        case "workspace_office_inspect_page":
+          result = service.inspectOfficeDocument({
+            ...args,
+            cursor: { target_offset: action.target_offset, content_offset: action.content_offset },
+            expectedVersion: action.expected_version
           });
           break;
         case "workspace_office_inspect":

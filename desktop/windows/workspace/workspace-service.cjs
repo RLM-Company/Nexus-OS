@@ -1384,6 +1384,7 @@ function createKosworkWorkspaceService({
 
   function verifyWritten(session, target, buffer, op) {
     try {
+      assertRootIdentity(session);
       const checked = resolveSafeWorkspaceTarget(session.canonicalRoot, target.relativePath, {
         mustExist: true,
         activeController: op.controller
@@ -1393,6 +1394,7 @@ function createKosworkWorkspaceService({
         activeController: op.controller
       });
       if (snapshot.sha256 !== computeBufferVersion(buffer).sha256) throw Error("changed");
+      assertRootIdentity(session);
       return snapshot;
     } catch {
       throw new KosworkWorkspaceError(
@@ -1526,6 +1528,7 @@ function createKosworkWorkspaceService({
             const written = fs.writeSync(fd, chunk, 0, chunk.byteLength, offset);
             offset += written;
           }
+          op.check();
           fs.fsyncSync(fd);
         } catch (error) {
           if (error && error.code === "EEXIST") {
@@ -1536,13 +1539,34 @@ function createKosworkWorkspaceService({
           }
           if (fd !== undefined) {
             try {
-              if (fd !== undefined) {
-                fs.closeSync(fd);
-                fd = undefined;
-              }
-              fs.unlinkSync(target.absolutePath);
+              const writtenStat = fs.fstatSync(fd, { bigint: true });
+              fs.closeSync(fd);
+              fd = undefined;
+              assertRootIdentity(session);
+              const cleanup = resolveSafeWorkspaceTarget(
+                session.canonicalRoot,
+                target.relativePath,
+                { mustExist: true }
+              );
+              const currentStat = fs.lstatSync(cleanup.absolutePath, { bigint: true });
+              if (
+                !currentStat.isFile() ||
+                currentStat.isSymbolicLink() ||
+                writtenStat.ino === 0n ||
+                currentStat.ino !== writtenStat.ino ||
+                currentStat.dev !== writtenStat.dev
+              )
+                throw Error("cleanup_identity_changed");
+              fs.unlinkSync(cleanup.absolutePath);
             } catch {
-              /* ignore cleanup error */
+              throw new KosworkWorkspaceError(
+                ERROR_CODES.WORKSPACE_RESULT_UNCERTAIN,
+                "Копия могла быть частично записана. Безопасный откат не подтверждён; проверьте файл после повторного выбора папки.",
+                {
+                  path: target.relativePath,
+                  cause: typeof error?.code === "string" ? error.code : "IO"
+                }
+              );
             }
           }
           throw error;

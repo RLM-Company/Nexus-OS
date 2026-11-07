@@ -57,6 +57,7 @@ const fields = {
     "expected_text_sha256",
     "expected_version"
   ],
+  workspace_office_inspect_page: ["path", "target_offset", "content_offset", "expected_version"],
   workspace_office_inspect: ["path"],
   workspace_office_preview: ["path", "output_path", "expected_version", "operations"],
   workspace_office_commit: ["path", "expected_version", "plan_id"],
@@ -174,8 +175,21 @@ function validateComputerAction(action) {
         if (action.kind.startsWith("workspace_office_")) {
           if (!/\.(docx|xlsx|pptx)$/i.test(action.path)) return false;
           if (
-            action.kind !== "workspace_office_inspect" &&
+            !["workspace_office_inspect", "workspace_office_inspect_page"].includes(action.kind) &&
             !/^sha256:[a-f0-9]{64}$/.test(action.expected_version)
+          )
+            return false;
+          if (
+            action.kind === "workspace_office_inspect_page" &&
+            (!Number.isSafeInteger(action.target_offset) ||
+              action.target_offset < 0 ||
+              action.target_offset > 200000 ||
+              !Number.isSafeInteger(action.content_offset) ||
+              action.content_offset < 0 ||
+              action.content_offset > 256000 ||
+              (action.expected_version === null
+                ? action.target_offset > 0 || action.content_offset > 0
+                : !/^sha256:[a-f0-9]{64}$/.test(action.expected_version)))
           )
             return false;
           if (action.kind === "workspace_office_preview") {

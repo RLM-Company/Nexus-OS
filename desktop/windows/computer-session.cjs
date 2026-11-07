@@ -233,6 +233,10 @@ class ComputerSession {
               this.workspace.supportsLineReads?.(state.grant) === true
                 ? { read_lines: true }
                 : {}),
+              ...(state.session?.supports_workspace_office_pages === true &&
+              this.workspace.supportsOfficePages?.(state.grant) === true
+                ? { office_pages: true }
+                : {}),
               ...(state.session?.supports_workspace_office_edits === true &&
               this.workspace.supportsOfficeEdits?.(state.grant) === true
                 ? { edit_office: true }
@@ -304,6 +308,11 @@ class ComputerSession {
         if (
           action.kind.startsWith("workspace_office_") &&
           observation.workspace?.edit_office !== true
+        )
+          throw Error("COMPUTER_ACTION_INVALID");
+        if (
+          action.kind === "workspace_office_inspect_page" &&
+          observation.workspace?.office_pages !== true
         )
           throw Error("COMPUTER_ACTION_INVALID");
         state.journal?.proposal(step + 1, action, proposal.decision_source);
