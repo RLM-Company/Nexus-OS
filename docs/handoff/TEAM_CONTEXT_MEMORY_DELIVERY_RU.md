@@ -51,17 +51,23 @@
    и из индекса.
 4. **`scripts/measure-memory-acceptance.mjs`** — воспроизводимые измерения на
    фикстурном корпусе (см. ниже).
+5. **Контрол «Забыть всю память этого чата/проекта»** в существующем разделе
+   «Записи памяти» (`apps/web/src/app/context-memory-settings.tsx`). Двухшаговое
+   подтверждение, затем `DELETE .../entries`; отчёт показывает, сколько записей,
+   версий и векторов удалено, и что исходная переписка сохранена. Внешний вид,
+   сайдбар и палитра не менялись — добавлен только функциональный контрол.
 
 ## Изменённые файлы
 
-| Файл                                      | Изменение                               |
-| ----------------------------------------- | --------------------------------------- |
-| `packages/db/src/context-memory-store.ts` | +`forgetScope` (34 строки)              |
-| `packages/db/test/context-memory.test.ts` | +3 теста: области, индекс, блокировки   |
-| `apps/api/src/context-memory-routes.ts`   | +маршрут `DELETE .../entries` (6 строк) |
-| `apps/api/test/context-memory.test.ts`    | +1 тест маршрута через `app.inject`     |
-| `apps/api/test/memory-acceptance.test.ts` | новый сквозной сценарий, 5 тестов       |
-| `scripts/measure-memory-acceptance.mjs`   | новый скрипт измерений                  |
+| Файл                                           | Изменение                               |
+| ---------------------------------------------- | --------------------------------------- |
+| `packages/db/src/context-memory-store.ts`      | +`forgetScope` (34 строки)              |
+| `packages/db/test/context-memory.test.ts`      | +3 теста: области, индекс, блокировки   |
+| `apps/api/src/context-memory-routes.ts`        | +маршрут `DELETE .../entries` (6 строк) |
+| `apps/api/test/context-memory.test.ts`         | +1 тест маршрута через `app.inject`     |
+| `apps/web/src/app/context-memory-settings.tsx` | +контрол «забыть всю память» области    |
+| `apps/api/test/memory-acceptance.test.ts`      | новый сквозной сценарий, 5 тестов       |
+| `scripts/measure-memory-acceptance.mjs`        | новый скрипт измерений                  |
 
 Миграции не добавлялись: новых таблиц нет, использована существующая схема 0056/0063.
 
@@ -165,8 +171,9 @@ node scripts/measure-memory-acceptance.mjs
   владельца по-прежнему идёт через `AccountCorePrivacyAdapter`, который уже
   охватывает `context_memory_entries`, `context_memory_versions`,
   `context_memory_usage`.
-- UI-контрол «Забыть всё в этом чате» не добавлен: это отдельное продуктовое
-  решение и визуальное изменение, требующее согласования по `apps/web/UI_RULES.md`.
+- UI-контрол «Забыть всё в этом чате» добавлен в существующий раздел записей.
+  Отдельного экрана, подтверждения по e-mail и корзины нет: удаление необратимо,
+  поэтому действие требует второго клика.
 - Новых миграций нет; при параллельных блоках номера не конфликтуют.
 - Сквозная приёмка первого этапа, VPS, Windows-приёмка и Jarvis остаются
   незакрытыми, как и было предписано.
