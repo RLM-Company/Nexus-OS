@@ -41,6 +41,12 @@ if (window.location.protocol === "https:" || window.location.protocol === "http:
     open: (input) => ipcRenderer.invoke("koswork:computer-open", input)
   });
   contextBridge.exposeInMainWorld("kosmoraDesktopWork", {
-    open: (input) => ipcRenderer.invoke("koswork:work-open", input)
+    open: (input) => ipcRenderer.invoke("koswork:work-open", input),
+    onResult: (listener) => {
+      if (typeof listener !== "function") return () => {};
+      const handler = (_event, value) => listener(value);
+      ipcRenderer.on("koswork:work-result", handler);
+      return () => ipcRenderer.removeListener("koswork:work-result", handler);
+    }
   });
 }

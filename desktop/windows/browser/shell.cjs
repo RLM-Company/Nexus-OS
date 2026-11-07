@@ -5,6 +5,7 @@ const { createBrowserEngine } = require("./engine.cjs");
 const { createComputerApiClient } = require("../computer-api-client.cjs");
 const { ComputerSession } = require("../computer-session.cjs");
 const { address, safeUrl } = require("./policy.cjs");
+const { createWorkResultRelay } = require("../work-result.cjs");
 function createKosworkBrowser({
   BrowserWindow,
   WebContentsView,
@@ -27,6 +28,8 @@ function createKosworkBrowser({
     throw Error("COMPUTER_ACTION_INVALID");
   const channel = executionMode === "work" ? "koswork:work" : "koswork:browser";
   const stepLimit = executionMode === "work" ? 90 : 30;
+  const resultRelay = createWorkResultRelay();
+  let showQueue = Promise.resolve();
   let shortcutHeld = false;
   function releaseShortcut() {
     if (shortcutHeld) {
@@ -104,6 +107,7 @@ function createKosworkBrowser({
       : "BROWSER_INTERRUPTED"
   });
   function stop() {
+    resultRelay.cancel();
     epoch++;
     selection?.abort();
     runner?.stop();
@@ -121,7 +125,21 @@ function createKosworkBrowser({
     void workspace.invalidate();
     if (old && !old.isDestroyed()) old.destroy();
   }
-  async function show(initial) {
+  function show(initial, onResult = null, expectedContext = null) {
+    const requestedEpoch = epoch;
+    const queued = showQueue.then(() => {
+      if (initial && requestedEpoch !== epoch) throw Error("COMPUTER_CANCELLED");
+      return showNow(initial, onResult, expectedContext);
+    });
+    showQueue = queued.then(
+      () => {},
+      () => {}
+    );
+    return queued;
+  }
+  async function showNow(initial, onResult, expectedContext) {
+    if (expectedContext && window && !same(bound, expectedContext))
+      throw Error("COMPUTER_IDENTITY_CHANGED");
     if (window && !window.isDestroyed()) {
       if (initial && (pending || runner?.active)) throw Error("COMPUTER_BUSY");
       if (initial) {
@@ -129,7 +147,8 @@ function createKosworkBrowser({
           revision = epoch,
           context = bound;
         const result = await planner.request("/api/v1/projects", { expected: context });
-        if (window !== ownedWindow || revision !== epoch || !same(context, await identity()))
+        const currentOwner = await identity();
+        if (window !== ownedWindow || revision !== epoch || !same(context, currentOwner))
           throw Error("COMPUTER_IDENTITY_CHANGED");
         if (pending || runner?.active) throw Error("COMPUTER_BUSY");
         projects = (result.items ?? [])
@@ -137,6 +156,7 @@ function createKosworkBrowser({
           .map((p) => ({ id: p.id, title: p.title }));
         if (!projects.some((p) => p.id === initial.project))
           throw Error("COMPUTER_PROJECT_UNAVAILABLE");
+        resultRelay.bind(context, initial, onResult);
         tell({ prefill: initial });
       }
       window.show();
@@ -146,12 +166,15 @@ function createKosworkBrowser({
     const revision = epoch,
       context = await identity();
     if (!context || revision !== epoch) throw Error("COMPUTER_OWNER_UNVERIFIED");
+    if (expectedContext && !same(context, expectedContext))
+      throw Error("COMPUTER_IDENTITY_CHANGED");
     const privacy = await planner.request("/api/v1/personal-settings/privacy", {
       expected: context
     });
     if (privacy.lifecycle !== "active") throw Error("COMPUTER_PRIVACY_BLOCKED");
     const session = await profiles.get(context);
-    if (revision !== epoch || !same(context, await identity()))
+    const currentOwner = await identity();
+    if (revision !== epoch || !same(context, currentOwner))
       throw Error("COMPUTER_IDENTITY_CHANGED");
     if (window && !window.isDestroyed()) {
       window.show();
@@ -190,7 +213,7 @@ function createKosworkBrowser({
       context,
       takeover: () => {
         if (window === ownedWindow && runner?.active) {
-          runner.stop();
+          stop();
           notice = "Управление у вас. Для новой задачи потребуется новое разрешение.";
           tell();
         }
@@ -302,7 +325,8 @@ function createKosworkBrowser({
         ["l", "t", "w", "r"].includes(input.key?.toLowerCase())
       ) {
         event.preventDefault();
-        ownedRunner.stop();
+        if (window === ownedWindow) stop();
+        else ownedRunner.stop();
         ownedWindow.webContents.send(channel + "-shortcut", input.key.toLowerCase());
       }
     });
@@ -334,9 +358,15 @@ function createKosworkBrowser({
       notice =
         "Проекты недоступны. Можно просматривать сайты вручную; для агента требуется подключение.";
     }
+    const finalOwner = await identity();
+    if (window !== ownedWindow || revision !== epoch || !same(context, finalOwner))
+      throw Error("COMPUTER_IDENTITY_CHANGED");
     if (initial && !projects.some((p) => p.id === initial.project))
       throw Error("COMPUTER_PROJECT_UNAVAILABLE");
-    if (window === ownedWindow) tell({ prefill: initial });
+    if (window === ownedWindow) {
+      if (initial) resultRelay.bind(context, initial, onResult);
+      tell({ prefill: initial });
+    }
     return true;
   }
   ipcMain.handle(channel + "-command", async (e, command, input) => {
@@ -460,6 +490,7 @@ function createKosworkBrowser({
     if (command === "start" || command === "recover") {
       if (pending || runner?.active) return { error: "COMPUTER_BUSY" };
       pending = true;
+      let completion = null;
       try {
         const context = await authorize(e);
         let value;
@@ -488,8 +519,14 @@ function createKosworkBrowser({
           };
         }
         if (taskGate?.busy) throw Error("COMPUTER_BUSY");
+        completion = resultRelay.claim(context, value.project, value.goal);
         const ownedRunner = runner;
-        if (!globalShortcut.register("CommandOrControl+Alt+Shift+K", () => ownedRunner.stop()))
+        if (
+          !globalShortcut.register("CommandOrControl+Alt+Shift+K", () => {
+            if (runner === ownedRunner) stop();
+            else ownedRunner.stop();
+          })
+        )
           throw Error("COMPUTER_STOP_SHORTCUT_UNAVAILABLE");
         shortcutHeld = true;
         const result = await ownedRunner.run({
@@ -497,9 +534,17 @@ function createKosworkBrowser({
           maxSteps: stepLimit,
           expectedContext: context
         });
+        resultRelay.finish(completion, result);
         tell();
         return result;
       } catch (error) {
+        resultRelay.finish(completion, {
+          status:
+            ["COMPUTER_CANCELLED", "COMPUTER_SESSION_STOPPED"].includes(error?.message) ||
+            error?.name === "AbortError"
+              ? "cancelled"
+              : "failed"
+        });
         return failure(error);
       } finally {
         pending = false;
@@ -548,6 +593,31 @@ function createKosworkBrowser({
   });
   return {
     show,
+    async canReturnResult(context, project) {
+      const owned = window,
+        revision = epoch;
+      if (!owned || owned.isDestroyed() || !same(bound, context)) return false;
+      try {
+        if (!same(await identity(), context)) return false;
+        const privacy = await planner.request("/api/v1/personal-settings/privacy", {
+          expected: context
+        });
+        const found = await planner.request("/api/v1/projects", { expected: context });
+        const finalOwner = await identity();
+        return (
+          privacy.lifecycle === "active" &&
+          (found.items ?? []).some(
+            (p) => p.id === project && ["ACTIVE", "DRAFT"].includes(p.status)
+          ) &&
+          window === owned &&
+          revision === epoch &&
+          same(bound, context) &&
+          same(finalOwner, context)
+        );
+      } catch {
+        return false;
+      }
+    },
     stop,
     invalidate,
     forget() {

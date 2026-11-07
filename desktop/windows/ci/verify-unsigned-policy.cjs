@@ -27,6 +27,7 @@ function verify() {
   for (const file of [
     "main.cjs",
     "work-experience.cjs",
+    "work-result.cjs",
     "tool-result.cjs",
     "document-reader/host.cjs",
     "document-reader/reader.js",

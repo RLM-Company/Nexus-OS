@@ -1,5 +1,86 @@
 import { expect, test } from "@playwright/test";
 
+for (const early of [false, true]) {
+  test(`local Work result returns to the originating request${early ? " before acknowledgement" : " after acknowledgement"}`, async ({
+    page,
+    request
+  }) => {
+    const created = await request.post("/api/v1/projects", {
+      data: {
+        initial_message: "Возврат результата Koswork",
+        client_message_id: crypto.randomUUID()
+      }
+    });
+    expect(created.status()).toBe(201);
+    const { project } = (await created.json()) as { project: { id: string } };
+    await request.put(`/api/v1/projects/${project.id}/autonomy-profile`, {
+      data: { base_level: "A2", overrides: [], expected_version: 1 }
+    });
+    await page.addInitScript(
+      ({ projectId, early }) => {
+        let listener: ((value: unknown) => void) | null = null;
+        const receipt = "8d199edd-1b74-445e-bc6b-6fe26039c326";
+        const summary = '<img src=x onerror="window.injected=true"> ' + "Результат".repeat(100);
+        const emit = (requestId = receipt, project = projectId) =>
+          listener?.({
+            request_id: requestId,
+            project,
+            result: { source: "local_agent_report", status: "completed", summary }
+          });
+        Object.assign(window, {
+          emitWorkResult: emit,
+          kosmoraDesktopWork: {
+            onResult: (callback: (value: unknown) => void) => {
+              listener = callback;
+              return () => {
+                listener = null;
+              };
+            },
+            open: () => {
+              if (early) emit();
+              return Promise.resolve({ ok: true, request_id: receipt });
+            }
+          }
+        });
+      },
+      { projectId: project.id, early }
+    );
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto(`/?project=${project.id}&view=plan`);
+    const panel = page.getByRole("region", { name: "Выполнение задачи Manager" });
+    const goal = panel.getByLabel("Задача для выполнения");
+    const outcome = panel.getByRole("status", { name: "Результат локальной задачи" });
+    await goal.fill("Подготовь итог задачи");
+    await panel.getByRole("button", { name: "Выполнить в Koswork", exact: true }).click();
+    if (!early) {
+      await expect(outcome).toHaveCount(0);
+      await page.evaluate(() => {
+        const target = window as Window & {
+          emitWorkResult: (id?: string, project?: string) => void;
+        };
+        target.emitWorkResult("f841cc73-b83f-4e5a-88cf-55cf722a9d74");
+        target.emitWorkResult(undefined, "another-project");
+      });
+      await expect(outcome).toHaveCount(0);
+      await page.evaluate(() =>
+        (window as Window & { emitWorkResult: () => void }).emitWorkResult()
+      );
+    }
+    await expect(outcome).toContainText("Получен результат локальной задачи.");
+    await expect(outcome).toContainText('<img src=x onerror="window.injected=true">');
+    await expect(outcome.locator("img")).toHaveCount(0);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+      true
+    );
+    await goal.fill("Другая задача");
+    await expect(outcome).toHaveCount(0);
+    await page.evaluate(() => (window as Window & { emitWorkResult: () => void }).emitWorkResult());
+    await expect(outcome).toHaveCount(0);
+    const work = await request.get(`/api/v1/projects/${project.id}/work`);
+    expect(((await work.json()) as { items: unknown[] }).items).toHaveLength(0);
+  });
+}
+
 test("desktop Work entry prefers the unified native task and only transfers its goal", async ({
   page,
   request

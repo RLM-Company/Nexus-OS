@@ -2,6 +2,7 @@
 
 const fs = require("node:fs");
 const { randomUUID } = require("node:crypto");
+const { deliverWorkResult } = require("./work-result.cjs");
 const path = require("node:path");
 const { pathToFileURL } = require("node:url");
 const {
@@ -1326,8 +1327,36 @@ ipcMain.handle("koswork:work-open", async (event, input) => {
   const epoch = identityEpoch,
     owner = await verifiedOwner();
   if (!owner || epoch !== identityEpoch || !isTrustedRemoteEvent(event)) return { ok: false };
-  await kosworkWorkCycle.show(input);
-  return { ok: true };
+  const origin = currentOrigin,
+    documentVersion = draftSessionGate.documentVersion(),
+    requestId = randomUUID();
+  await kosworkWorkCycle.show(
+    input,
+    (result) =>
+      deliverWorkResult({
+        isCurrent: () =>
+          epoch === identityEpoch &&
+          origin === currentOrigin &&
+          documentVersion === draftSessionGate.documentVersion() &&
+          isTrustedRemoteEvent(event),
+        verifyOwner: () => verifiedOwner(),
+        expectedOwner: owner,
+        allowSummary: () => kosworkWorkCycle.canReturnResult({ owner, origin }, input.project),
+        send: (payload) => event.sender.send("koswork:work-result", payload),
+        requestId,
+        project: input.project,
+        result
+      }),
+    { owner, origin }
+  );
+  if (
+    epoch !== identityEpoch ||
+    origin !== currentOrigin ||
+    documentVersion !== draftSessionGate.documentVersion() ||
+    !isTrustedRemoteEvent(event)
+  )
+    return { ok: false };
+  return { ok: true, request_id: requestId };
 });
 
 ipcMain.handle("cosmora:draft-load", async (event, scope) => {
