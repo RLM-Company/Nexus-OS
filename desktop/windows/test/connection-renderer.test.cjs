@@ -33,6 +33,11 @@ function renderer() {
       const request = deferred();
       pending.push(request);
       return request.promise;
+    },
+    cancel: () => {
+      const request = deferred();
+      pending.push(request);
+      return request.promise;
     }
   };
   const document = {
@@ -116,5 +121,71 @@ test("an old asynchronous state read cannot overwrite the newer state", async ()
   old.resolve({ origin: "https://old.example", mode: "offline", connecting: false });
   await tick();
   assert.equal(r.nodes.get("#origin").value, "https://new.example");
+  assert.equal(r.nodes.get("#connect").disabled, true);
+});
+
+test("cancel wins over a late submit answer and clears the busy latch", async () => {
+  const r = renderer();
+  await tick();
+  const submit = r.nodes.get("#connection-form").handlers.submit({ preventDefault() {} });
+  await tick();
+  assert.equal(r.nodes.get("#connect").disabled, true);
+  assert.equal(r.nodes.get("#cancel").hidden, false);
+  const cancelClick = r.nodes.get("#cancel").handlers.click();
+  const submitIndex = 0,
+    cancelIndex = 1;
+  // The main process publishes the cancelled state, same as the real flow.
+  r.changeState({
+    origin: "https://saved.example",
+    mode: "offline",
+    connecting: false,
+    message: "Проверка подключения отменена. Сохранённый адрес не изменён."
+  });
+  r.pending[cancelIndex].resolve({
+    ok: true,
+    message: "Проверка подключения отменена. Сохранённый адрес не изменён."
+  });
+  await cancelClick;
+  await tick();
+  assert.equal(r.nodes.get("#connect").disabled, false);
+  assert.equal(r.nodes.get("#cancel").hidden, true);
+  assert.equal(
+    r.nodes.get("#error").textContent,
+    "Проверка подключения отменена. Сохранённый адрес не изменён."
+  );
+  // A stale submit answer arrives only after cancel: it may not restore the
+  // error text, the busy state or the canceled request semantics.
+  r.pending[submitIndex].resolve({ ok: false, message: "Late server failure" });
+  await submit;
+  await tick();
+  assert.equal(r.nodes.get("#connect").disabled, false);
+  assert.equal(
+    r.nodes.get("#error").textContent,
+    "Проверка подключения отменена. Сохранённый адрес не изменён."
+  );
+});
+
+test("a completed check can never leave the connection screen busy forever", async () => {
+  const r = renderer();
+  await tick();
+  const submit = r.nodes.get("#connection-form").handlers.submit({ preventDefault() {} });
+  await tick();
+  r.pending[0].resolve({ ok: false, message: "Сервер Kosmora не ответил за 6 секунд." });
+  await submit;
+  assert.equal(r.nodes.get("#connect").disabled, false);
+  assert.equal(r.nodes.get("#retry").disabled, false);
+  assert.equal(r.nodes.get("#error").textContent, "Сервер Kosmora не ответил за 6 секунд.");
+});
+
+test("refused cancel keeps the existing decision visible and stays busy", async () => {
+  const r = renderer();
+  await tick();
+  const refusal = "Проверка уже завершилась или выполняется смена сервера — дождитесь результата.";
+  r.changeState({ origin: "https://saved.example", mode: "offline", connecting: true, message: refusal });
+  const cancelClick = r.nodes.get("#cancel").handlers.click();
+  r.pending[0].resolve({ ok: false, stale: true, message: refusal });
+  await cancelClick;
+  await tick();
+  assert.equal(r.nodes.get("#error").textContent, refusal);
   assert.equal(r.nodes.get("#connect").disabled, true);
 });

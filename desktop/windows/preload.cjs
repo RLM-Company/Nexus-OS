@@ -7,6 +7,7 @@ if (window.location.protocol === "file:") {
     getConnectionState: () => ipcRenderer.invoke("cosmora:connection-state"),
     connect: (payload) => ipcRenderer.invoke("cosmora:connect", payload),
     retry: () => ipcRenderer.invoke("cosmora:retry"),
+    cancel: () => ipcRenderer.invoke("cosmora:cancel-connect"),
     onConnectionStateChanged: (listener) => {
       const handler = () => listener();
       ipcRenderer.on("cosmora:connection-state-changed", handler);
