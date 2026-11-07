@@ -170,7 +170,7 @@ function entities(value) {
 }
 // Small fail-closed event reader for XML data, not an entity-resolving parser.
 // Prefixes resolve by namespace URI. Unknown encodings/declarations are refused.
-function xml(bytes, visit) {
+function xml(bytes, visit, { preserveSource = false } = {}) {
   if (!bytes) invalid();
   const encoding =
     bytes[0] === 0xff && bytes[1] === 0xfe
@@ -184,7 +184,7 @@ function xml(bytes, visit) {
   } catch {
     invalid();
   }
-  let source = decoded.replace(/^\uFEFF/, "").replace(/\r\n?/g, "\n"),
+  let source = preserveSource ? decoded : decoded.replace(/^\uFEFF/, "").replace(/\r\n?/g, "\n"),
     at = 0,
     events = 0,
     roots = 0;
@@ -243,6 +243,7 @@ function xml(bytes, visit) {
       continue;
     }
     if (source.startsWith("<!", at)) invalid();
+    const tagStart = at;
     let end = at + 1,
       quote = "";
     for (; end < source.length; end++) {
@@ -259,7 +260,7 @@ function xml(bytes, visit) {
       const name = body.slice(1).trim(),
         e = stack.at(-1);
       if (!e || name !== e.qname) invalid();
-      visit({ ...e, event: "close" }, stack);
+      visit({ ...e, event: "close", tagStart, tagEnd: at }, stack);
       stack.pop();
       continue;
     }
@@ -298,7 +299,7 @@ function xml(bytes, visit) {
       attrs.set(key, v);
     }
     if (!stack.length && ++roots !== 1) invalid();
-    const e = { qname, ...expanded, attrs, namespaces };
+    const e = { qname, ...expanded, attrs, namespaces, tagStart, tagEnd: at, self };
     stack.push(e);
     visit({ ...e, event: "open" }, stack);
     if (self) {
@@ -478,4 +479,4 @@ function extractOfficeText(name, bytes, { workLimit = 16 * 1024 * 1024 } = {}) {
     }
   };
 }
-module.exports = { extractOfficeText };
+module.exports = { extractOfficeText, unpack, xml, attr };
