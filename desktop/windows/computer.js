@@ -174,6 +174,45 @@ window.kosworkComputer
     connection.textContent = "Не удалось подключиться. Войдите в Kosmora и откройте окно повторно.";
   });
 
+// Predictable availability: a passive snapshot the console can show before the
+// first confirmation. This never performs desktop actions and never starts tasks.
+const availabilityNote = document.getElementById("availability");
+const availabilityObstacles = {
+  COMPUTER_OWNER_UNVERIFIED: "вход в Kosmora не подтверждён",
+  COMPUTER_HELPER_UNAVAILABLE: "нативный помощник управления недоступен в этой установке",
+  COMPUTER_WINDOWS_REQUIRED: "управление работает только в Windows",
+  COMPUTER_IDENTITY_CHANGED: "аккаунт изменился, переоткройте это окно",
+  COMPUTER_WORKSPACE_UNAVAILABLE: "рабочая папка недоступна",
+  COMPUTER_WORKSPACE_CHANGED: "рабочая папка изменилась, выберите её заново",
+  COMPUTER_WORKSPACE_NOT_CONNECTED: "рабочая папка не выбрана",
+  COMPUTER_BUSY: "интерфейс занят другой задачей",
+  COMPUTER_POLICY_BLOCKED: "политика запрещает управление сейчас"
+};
+void window.kosworkComputer
+  .availability()
+  .then((snapshot) => {
+    if (!availabilityNote) return;
+    if (!snapshot || snapshot.error) {
+      availabilityNote.textContent = "Доступность управления неизвестна.";
+      return;
+    }
+    const obstacles = [];
+    if (!snapshot.idle || snapshot.gateBusy) obstacles.push("задача уже выполняется или завершается");
+    if (!snapshot.ownerVerified) obstacles.push(availabilityObstacles.COMPUTER_OWNER_UNVERIFIED);
+    if (!snapshot.helperReady)
+      obstacles.push(availabilityObstacles[snapshot.helperReason] || availabilityObstacles.COMPUTER_HELPER_UNAVAILABLE);
+    if (snapshot.reason && !obstacles.length)
+      obstacles.push(availabilityObstacles[snapshot.reason] || snapshot.reason);
+    availabilityNote.textContent = obstacles.length
+      ? `Управление сейчас недоступно: ${obstacles.join("; ")}.`
+      : snapshot.workspaceFolder
+        ? `Управление готово к работе; рабочая папка: ${snapshot.workspaceFolder}.`
+        : "Управление готово к работе после выбора проекта.";
+  })
+  .catch(() => {
+    if (availabilityNote) availabilityNote.textContent = "Доступность управления неизвестна.";
+  });
+
 const states = {
   running: "Выполняется",
   paused: "Ожидает владельца",

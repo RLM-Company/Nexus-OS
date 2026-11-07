@@ -1,5 +1,6 @@
 "use strict";
 
+const fs = require("node:fs");
 const path = require("node:path");
 const { pathToFileURL } = require("node:url");
 const { createComputerApiClient } = require("./computer-api-client.cjs");
@@ -22,8 +23,7 @@ function createComputerConsole({
   openBrowser = null,
   createRunner = (options) => new ComputerSession(options)
 }) {
-  if (!history) throw Error("COMPUTER_HISTORY_UNAVAILABLE");
-  let window = null;
+  if (!history) throw Error("COMPUTER_HISTORY_UNAVAILABLE");  let window = null;
   let prefill = null;
   let pending = false;
   let epoch = 0;
@@ -232,8 +232,61 @@ function createComputerConsole({
       return failure(error);
     }
   });
-  ipcMain.handle("koswork:computer-projects", async (event) => {
+  // Predictable availability for the pinned local executor: a passive snapshot
+  // of identity, workspace, stop-state and the native helper. It never spawns
+  // processes, never asks for confirmations, and never takes desktop actions.
+  const helperLocation = () =>
+    path.join(
+      __dirname.replace(/app\.asar(?=$|[\\/])/, "app.asar.unpacked"),
+      "computer-helper.ps1"
+    );
+  const helperReady = () => {
+    if (process.platform !== "win32")
+      return { ready: false, reason: "COMPUTER_WINDOWS_REQUIRED" };
+    try {
+      if (fs.statSync(helperLocation()).isFile()) return { ready: true, reason: null };
+      return { ready: false, reason: "COMPUTER_HELPER_UNAVAILABLE" };
+    } catch {
+      return { ready: false, reason: "COMPUTER_HELPER_UNAVAILABLE" };
+    }
+  };
+  ipcMain.handle("koswork:computer-availability", async (event) => {
     if (!trusted(event)) return { error: "Недоверенный источник." };
+    const snapshot = {
+      idle: !pending && !runner.active,
+      gateBusy: Boolean(taskGate && taskGate.busy),
+      helperReady: true,
+      helperReason: null,
+      ownerVerified: false,
+      workspaceFolder: null,
+      reason: null
+    };
+    const helper = helperReady();
+    snapshot.helperReady = helper.ready;
+    snapshot.helperReason = helper.reason;
+    if (helper.reason) snapshot.reason = helper.reason;
+    try {
+      const current = await identity();
+      snapshot.ownerVerified = Boolean(current);
+      if (!current) snapshot.reason = snapshot.reason ?? "COMPUTER_OWNER_UNVERIFIED";
+      else if (workspace) {
+        try {
+          snapshot.workspaceFolder = workspace.snapshot(current)?.name ?? null;
+        } catch (cause) {
+          snapshot.reason = /^COMPUTER_[A-Z_]+$/.test(cause?.message)
+            ? cause.message
+            : "COMPUTER_WORKSPACE_UNAVAILABLE";
+        }
+      }
+    } catch (cause) {
+      snapshot.ownerVerified = false;
+      snapshot.reason = /^COMPUTER_[A-Z_]+$/.test(cause?.message)
+        ? cause.message
+        : "COMPUTER_IDENTITY_CHANGED";
+    }
+    return snapshot;
+  });
+  ipcMain.handle("koswork:computer-projects", async (event) => {    if (!trusted(event)) return { error: "Недоверенный источник." };
     try {
       const current = await checkedContext(event);
       const result = await planner.request("/api/v1/projects", { expected: current });
