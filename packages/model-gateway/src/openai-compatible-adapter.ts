@@ -13,6 +13,7 @@ export interface OpenAICompatibleAdapterOptions {
   baseUrl: string;
   apiKey: string;
   model: string;
+  responseModelAliases?: readonly string[];
   fetchImplementation?: typeof fetch;
 }
 
@@ -41,6 +42,7 @@ interface CompletionChunk {
 export class OpenAICompatibleAdapter implements ModelProviderAdapter {
   readonly id: string;
   readonly modelId: string;
+  readonly responseModelAliases: readonly string[];
   readonly #baseUrl: string;
   readonly #apiKey: string;
   readonly #model: string;
@@ -49,6 +51,13 @@ export class OpenAICompatibleAdapter implements ModelProviderAdapter {
   constructor(options: OpenAICompatibleAdapterOptions) {
     this.id = options.id;
     this.modelId = options.model;
+    const aliases = options.responseModelAliases ?? [];
+    if (
+      aliases.length > 8 ||
+      aliases.some((v) => typeof v !== "string" || !/^[a-zA-Z0-9._:/-]{1,200}$/.test(v))
+    )
+      throw new Error("Invalid response model aliases");
+    this.responseModelAliases = Object.freeze([...new Set(aliases)]);
     this.#baseUrl = options.baseUrl.replace(/\/+$/, "");
     this.#apiKey = options.apiKey;
     this.#model = options.model;

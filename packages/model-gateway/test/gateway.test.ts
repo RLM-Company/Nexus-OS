@@ -104,6 +104,64 @@ const collectProvider = async (
 };
 
 describe("ModelGateway", () => {
+  it("accepts only an explicitly reviewed response alias and retains the reported identity", async () => {
+    for (const scenario of [
+      "allowed",
+      "not configured",
+      "other model",
+      "other provider"
+    ] as const) {
+      const adapter: ModelProviderAdapter = {
+        id: "mock",
+        modelId: "manager-b0.1",
+        ...(scenario === "not configured" ? {} : { responseModelAliases: ["reviewed-alias"] }),
+        async *stream() {
+          await Promise.resolve();
+          yield {
+            type: "response.completed",
+            provider: scenario === "other provider" ? "foreign" : "mock",
+            model: scenario === "other model" ? "unreviewed" : "reviewed-alias",
+            finishReason: "stop",
+            usage: { inputTokens: 1, outputTokens: 2 }
+          };
+        }
+      };
+      const result = collectGateway(
+        new ModelGateway([adapter], router([entry()])).stream(request())
+      );
+      if (scenario === "allowed")
+        expect((await result).at(-1)).toMatchObject({
+          type: "response.completed",
+          model: "reviewed-alias",
+          route: { model_id: "manager-b0.1" }
+        });
+      else await expect(result).rejects.toMatchObject({ code: "PROVIDER_ERROR", retryable: false });
+    }
+  });
+
+  it("copies and freezes adapter response aliases instead of trusting a mutable caller list", () => {
+    const aliases = ["hy4-free"];
+    const adapter = new OpenAICompatibleAdapter({
+      id: "cheapvibecode",
+      baseUrl: "https://example.test/v1",
+      apiKey: "fixture",
+      model: "hy4",
+      responseModelAliases: aliases
+    });
+    aliases.push("unreviewed");
+    expect(adapter.responseModelAliases).toEqual(["hy4-free"]);
+    expect(Object.isFrozen(adapter.responseModelAliases)).toBe(true);
+    expect(
+      () =>
+        new OpenAICompatibleAdapter({
+          id: "test",
+          baseUrl: "https://example.test/v1",
+          apiKey: "fixture",
+          model: "hy4",
+          responseModelAliases: ["*"]
+        })
+    ).toThrow("Invalid response model aliases");
+  });
   it("refreshes the clock on a permitted retry without duplicating context or reservation", async () => {
     let wall = Date.parse("2026-10-25T20:59:59Z"),
       monotonic = 0;
