@@ -1,4 +1,5 @@
 import { getDocument, GlobalWorkerOptions } from "./vendor/pdf/pdf.mjs";
+import { layoutFromWords, collectOcrWords } from "./ocr-layout.mjs";
 GlobalWorkerOptions.workerSrc = new URL("./vendor/pdf/pdf.worker.mjs", import.meta.url).href;
 const base = new URL("./vendor/", import.meta.url).href;
 const MAX_TEXT = 180000,
@@ -77,13 +78,24 @@ window.kosmoraReadPdf = async function ({ base64, pageIndex, mode }) {
         gzip: true,
         workerBlobURL: true
       });
-      const result = await worker.recognize(canvas);
+      const result = await worker.recognize(canvas, {}, { text: true, blocks: true });
       textClipped = result.data.text.length > MAX_TEXT;
       text = result.data.text.slice(0, MAX_TEXT).trim();
       method = "ocr";
       confidence = Number.isFinite(result.data.confidence) ? result.data.confidence : null;
       needsOcr = false;
       canvas.width = canvas.height = 1;
+      // Positional table recovery: rows/columns from word coordinates only.
+      // Words are never dropped or rewritten; geometry that does not verify a
+      // grid keeps the engine's plain text. It is still not semantic reading,
+      // not handwriting or diagram understanding and not a guaranteed table.
+      const layout = layoutFromWords(collectOcrWords(result.data.blocks), {
+        maxText: MAX_TEXT
+      });
+      if (layout) {
+        textClipped = layout.text.length > MAX_TEXT;
+        text = layout.text.slice(0, MAX_TEXT).trimEnd();
+      }
     }
     return {
       text,
@@ -98,7 +110,12 @@ window.kosmoraReadPdf = async function ({ base64, pageIndex, mode }) {
         "One page only; no guarantee of complete layout, table structure, handwriting or image understanding.",
         ...(method === "ocr"
           ? [
-              "OCR can misread characters and numbers; confidence is the engine's score, not factual accuracy."
+              "OCR can misread characters and numbers; confidence is the engine's score, not factual accuracy.",
+              ...(layout
+                ? [
+                    "Table rows below were rebuilt from word coordinates; misreads can merge or split cells, and this is not a verified table structure."
+                  ]
+                : [])
             ]
           : [])
       ]
