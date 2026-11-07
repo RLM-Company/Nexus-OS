@@ -108,6 +108,38 @@ export function registerManagerWorkRoutes(options: {
       throw error;
     }
   });
+  // Owner acceptance of the finished result. Separate from plan approval.
+  app.post<{ Params: Params; Body: { expected_version: number } }>(
+    base + "/:id/result/accept",
+    {
+      validatorCompiler: TypeBoxValidatorCompiler,
+      schema: {
+        params,
+        body: Type.Object(
+          { expected_version: Type.Integer({ minimum: 1, maximum: 1_000_000 }) },
+          { additionalProperties: false }
+        )
+      }
+    },
+    (request, reply) => {
+      if (!get(request)) return reply.code(404).send({ error: "WORK_NOT_FOUND" });
+      const identity = identityFor(request);
+      try {
+        return store.acceptResult(
+          request.params.id,
+          identity.owner_id,
+          identity.actor_id,
+          request.body.expected_version
+        );
+      } catch (error) {
+        if (error instanceof ManagerWorkConflict)
+          return reply
+            .code(error.message === "WORK_NOT_FOUND" ? 404 : 409)
+            .send({ error: error.message });
+        throw error;
+      }
+    }
+  );
   app.get<{ Params: Params }>(
     base + "/:id/files/:name",
     { schema: { params } },

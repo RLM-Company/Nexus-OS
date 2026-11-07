@@ -24,6 +24,7 @@ type Work = {
   plan: { summary: string; instructions: string; complexity: string; needs_critic: boolean } | null;
   draft: { files: { name: string; content: string }[] } | null;
   review: { verdict: string; reason: string } | null;
+  result_accepted_at?: string | null;
   events: { sequence: number; message: string; at: string }[];
 };
 const isActive = (item: Work) => !["completed", "failed", "cancelled"].includes(item.status);
@@ -209,6 +210,35 @@ export function ManagerWorkPanel({
             ? cause.message
             : "Не удалось выполнить действие"
       );
+    } finally {
+      lock.current = false;
+      setBusy(false);
+    }
+  };
+  const acceptResult = async () => {
+    if (!work || lock.current || executionGate !== "clear") return;
+    mutationEpoch.current++;
+    lock.current = true;
+    setBusy(true);
+    setError("");
+    try {
+      const updated = await json<Work>(
+        base + "/" + encodeURIComponent(work.id) + "/result/accept",
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ expected_version: work.version })
+        }
+      );
+      setSelectedWorkId(updated.id);
+      setWork(updated);
+      setWorks((current) =>
+        current.some((item) => item.id === updated.id)
+          ? current.map((item) => (item.id === updated.id ? updated : item))
+          : [updated, ...current].slice(0, 80)
+      );
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Не удалось принять результат");
     } finally {
       lock.current = false;
       setBusy(false);
@@ -427,24 +457,40 @@ export function ManagerWorkPanel({
             </Link>
           )}
           {work.status === "completed" && (
-            <ul className="manager-work-files" aria-label="Готовые файлы">
-              {work.draft?.files.map((file) => (
-                <li key={file.name}>
-                  <a
-                    download
-                    href={
-                      base +
-                      "/" +
-                      encodeURIComponent(work.id) +
-                      "/files/" +
-                      encodeURIComponent(file.name)
-                    }
-                  >
-                    {file.name}
-                  </a>
-                </li>
-              ))}
-            </ul>
+            <>
+              <ul className="manager-work-files" aria-label="Готовые файлы">
+                {work.draft?.files.map((file) => (
+                  <li key={file.name}>
+                    <a
+                      download
+                      href={
+                        base +
+                        "/" +
+                        encodeURIComponent(work.id) +
+                        "/files/" +
+                        encodeURIComponent(file.name)
+                      }
+                    >
+                      {file.name}
+                    </a>
+                  </li>
+                ))}
+              </ul>
+              {work.result_accepted_at ? (
+                <p className="manager-work-accepted" role="status">
+                  Результат принят владельцем{" "}
+                  {new Date(work.result_accepted_at).toLocaleString("ru-RU")}.
+                </p>
+              ) : (
+                <button
+                  className="manager-work-action primary"
+                  disabled={busy || executionGate !== "clear"}
+                  onClick={() => void acceptResult()}
+                >
+                  Принять результат
+                </button>
+              )}
+            </>
           )}
         </>
       )}

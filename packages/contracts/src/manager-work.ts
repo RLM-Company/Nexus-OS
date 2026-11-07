@@ -119,6 +119,10 @@ export interface ManagerWork {
   version: number;
   pause_requested: boolean;
   approved: boolean;
+  /** Owner acceptance of the finished result. Set once; repeats are idempotent and
+   * never move the timestamp or author. Separate from plan approval. */
+  result_accepted_at?: string | null;
+  result_accepted_by?: string | null;
   inflight_run_id: string | null;
   /** Bounded recovery text, never a validated artifact, plan or publication grant. */
   output_checkpoint?: ModelOutputCheckpoint;

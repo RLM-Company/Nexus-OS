@@ -410,6 +410,26 @@ export class ManagerWorkStore {
     }
   }
 
+  /** Owner acceptance of a finished result. One immutable record, separate from
+   * plan approval. Acceptance changes no file and publishes nothing. */
+  acceptResult(id: string, ownerId: string, actorId: string, expectedVersion: number): ManagerWork {
+    return this.transaction(() => {
+      this.assertWritable(ownerId);
+      const state = this.get(id, ownerId);
+      if (!state) throw new ManagerWorkConflict("WORK_NOT_FOUND");
+      if (!Number.isSafeInteger(expectedVersion) || state.version !== expectedVersion)
+        throw new ManagerWorkConflict("STALE_WORK");
+      if (state.status !== "completed" || state.stage !== "done")
+        throw new ManagerWorkConflict("WORK_RESULT_NOT_READY");
+      // Repeat acceptance returns the stored record without a second event or version.
+      if (state.result_accepted_at) return state;
+      const next = structuredClone(state);
+      next.result_accepted_at = new Date().toISOString();
+      next.result_accepted_by = actorId;
+      return this.persist(next, "Результат принят владельцем");
+    });
+  }
+
   file(id: string, ownerId: string, name: string): string | null {
     if (this.get(id, ownerId)?.status !== "completed") return null;
     const row = this.sqlite
