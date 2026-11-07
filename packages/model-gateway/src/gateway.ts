@@ -223,7 +223,11 @@ export class ModelGateway {
                 false
               );
             }
-            if (event.provider !== route.provider_id || event.model !== route.model_id) {
+            if (
+              event.provider !== route.provider_id ||
+              (event.model !== route.model_id &&
+                !adapter.responseModelAliases?.includes(event.model))
+            ) {
               throw new GatewayRunError(
                 "PROVIDER_ERROR",
                 providerId,

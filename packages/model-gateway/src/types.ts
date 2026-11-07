@@ -27,6 +27,8 @@ export type ProviderStreamEvent =
 export interface ModelProviderAdapter {
   readonly id: string;
   readonly modelId: string;
+  /** Operator-reviewed response identifiers for this exact configured route. */
+  readonly responseModelAliases?: readonly string[];
   stream(request: ModelRequest, signal: AbortSignal): AsyncIterable<ProviderStreamEvent>;
 }
 

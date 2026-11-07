@@ -97,7 +97,12 @@ export const buildModelRuntime = async (
           id: preferredProvider,
           baseUrl: config.modelBaseUrl,
           apiKey,
-          model: config.modelName
+          model: config.modelName,
+          ...(preferredProvider === "cheapvibecode" &&
+          config.modelBaseUrl.replace(/\/+$/, "") === "https://ru.cheapvibecode.ru/v1" &&
+          config.modelName === "hy4"
+            ? { responseModelAliases: ["hy4-free"] }
+            : {})
         })
       );
     } else {

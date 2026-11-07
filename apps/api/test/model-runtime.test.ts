@@ -61,6 +61,61 @@ const externalConfig = () =>
   });
 
 describe("buildModelRuntime", () => {
+  it.each([
+    ["cheapvibecode", "https://ru.cheapvibecode.ru/v1", "hy4", true],
+    ["other", "https://ru.cheapvibecode.ru/v1", "hy4", false],
+    ["cheapvibecode", "https://other.example/v1", "hy4", false],
+    ["cheapvibecode", "https://ru.cheapvibecode.ru/v1", "another-model", false]
+  ] as const)(
+    "scopes the reviewed Hy4 response alias to %s / %s / %s",
+    async (provider, url, model, allowed) => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(
+          async () =>
+            new Response(
+              `data: ${JSON.stringify({ model: "hy4-free", choices: [{ index: 0, delta: { content: "OK" }, finish_reason: "stop" }], usage: { prompt_tokens: 1, completion_tokens: 1 } })}\n\ndata: [DONE]\n\n`,
+              { headers: { "content-type": "text/event-stream" } }
+            )
+        )
+      );
+      try {
+        const config = loadServerConfig({
+          NODE_ENV: "test",
+          MODEL_PROVIDER: "openai-compatible",
+          MODEL_PROVIDER_ID: provider,
+          MODEL_BASE_URL: url,
+          MODEL_API_KEY: "fixture-only",
+          MODEL_NAME: model,
+          MODEL_MAX_ATTEMPTS_PER_ROUTE: "1"
+        });
+        const runtime = await buildModelRuntime(config, {
+          secretResolver,
+          registryDocument: registry([
+            externalEntry({ provider_id: provider, model_id: model, aliases: ["manager", model] })
+          ])
+        });
+        const run = async () => {
+          const events = [];
+          for await (const event of runtime.gateway.stream(
+            runtime.manager.buildRequest({ projectId: "fixture", runId: "fixture", messages: [] })
+          ))
+            events.push(event);
+          return events;
+        };
+        if (allowed)
+          expect((await run()).at(-1)).toMatchObject({
+            type: "response.completed",
+            model: "hy4-free",
+            route: { model_id: "hy4" }
+          });
+        else
+          await expect(run()).rejects.toMatchObject({ code: "PROVIDER_ERROR", retryable: false });
+      } finally {
+        vi.unstubAllGlobals();
+      }
+    }
+  );
   it("propagates the selected route context window into Chat and Manager, including model aliases", async () => {
     const config = loadServerConfig({ NODE_ENV: "test", MODEL_NAME: "manager" });
     const document = loadModelRegistryDocument("config/model-registry.v1.json");
