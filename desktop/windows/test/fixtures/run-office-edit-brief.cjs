@@ -54,7 +54,10 @@ async function main() {
         part,
         changed: !before.get(part)?.equals(bytes)
       }));
-      fs.writeFileSync(path.join(directory, `${format}.readback.txt`), text);
+      fs.writeFileSync(
+        path.join(directory, `${format}.readback.json`),
+        JSON.stringify({ text }, null, 2) + "\n"
+      );
       results.push({
         format,
         source_version: opened.version,
