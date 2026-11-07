@@ -80,12 +80,13 @@ else { process.stdout.write('transport fixture only'); process.exit(0); }
       if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
       throw error;
     }
-    return data
-      .trim()
-      .split("\n")
-      .map((line) => JSON.parse(line) as { args: string[]; env: Record<string, string> });
+    // A concurrent read can observe the file after creation but before append completes.
+    // Only a newline commits a record; malformed complete records must still fail.
+    const lines = data.split("\n");
+    lines.pop();
+    return lines.map((line) => JSON.parse(line) as { args: string[]; env: Record<string, string> });
   };
-  return { executable, calls };
+  return { executable, record, calls };
 }
 
 async function waitForStart(transport: Awaited<ReturnType<typeof fixture>>): Promise<void> {
@@ -129,6 +130,22 @@ async function runWithStartedDeadline(
 }
 
 describe("CodeAgent workspace boundary", () => {
+  it("waits for complete transport journal records without hiding malformed records", async () => {
+    const transport = await fixture("success");
+    const first = { args: ["create"], env: { TEST: "fixture" } };
+    const second = { args: ["start"], env: { TEST: "fixture" } };
+    await writeFile(transport.record, "");
+    expect(await transport.calls()).toEqual([]);
+    await writeFile(transport.record, '{"args":');
+    expect(await transport.calls()).toEqual([]);
+    await writeFile(transport.record, JSON.stringify(first) + '\n{"args":');
+    expect(await transport.calls()).toEqual([first]);
+    await writeFile(transport.record, JSON.stringify(first) + "\n" + JSON.stringify(second) + "\n");
+    expect(await transport.calls()).toEqual([first, second]);
+    await writeFile(transport.record, "malformed\n");
+    await expect(transport.calls()).rejects.toBeInstanceOf(SyntaxError);
+  });
+
   it("binds content and paths in an order-independent digest", () => {
     const a = [
       { path: "a.js", content: "ab" },

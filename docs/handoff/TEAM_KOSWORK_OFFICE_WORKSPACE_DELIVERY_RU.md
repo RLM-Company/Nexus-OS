@@ -231,3 +231,38 @@ API build должен копировать Office assets, web собирает�
 маршруты и вызовы), затем коммитов реализации в обратном порядке. При откате всех
 коммитов одновременно конфликтов промежуточной типизации не будет. Файлы пользователя
 не удалять: источники не заменялись, новые копии — самостоятельные результаты.
+
+## Продолжение: устранение отказа CI
+
+Для `abb10017812cf882f2e69ab6f70985fdbf4183d6` фактический GitHub CI:
+
+- API identity boundary — success, run `42413993689`.
+- Browser acceptance и Code sandbox isolation — success в run `42413993866`.
+- Verify monorepo — failure в run `42413993866`, job `128528007009`:
+  `packages/tool-runtime/test/code-agent-workspace.test.ts:86`,
+  `SyntaxError: Unexpected end of JSON input` в `calls()` при ожидании start.
+- Windows desktop, run `42413993662` — cancelled во время fresh installer lifecycle.
+  Syntax/policy checks и обе сборки installer завершились success. Лимит job —
+  35 минут; журнал заканчивается `The operation was canceled`. Конкретный инициатор
+  отмены из полученных данных не установлен. Windows lifecycle остаётся неподтверждённым.
+
+Обнаружена гонка чтения тестового JSONL: файл уже создан, но очередная запись ещё
+не завершена. Читатель разбирал пустую строку либо незавершённый JSON. Исправление
+ограничено тестовой фикстурой: запись считается законченной только после `\n`.
+Полностью записанный некорректный JSON продолжает вызывать ошибку. Регрессионный
+тест воспроизводит пустой файл, незавершённую первую/следующую запись и повреждённую
+завершённую строку. Проверки production timeout/cleanup не ослаблялись.
+
+Запущено после изменения:
+
+```sh
+pnpm --filter @cosmora/tool-runtime test
+pnpm --filter @cosmora/tool-runtime typecheck
+pnpm --filter @cosmora/tool-runtime lint
+pnpm exec prettier --check packages/tool-runtime/test/code-agent-workspace.test.ts
+```
+
+Результат: **64 passed, 4 skipped**; typecheck/lint/format — PASS.
+Четыре локально пропущенных теста требуют отдельного OCI-стенда; их локальный
+запуск не заявляется. Первое падение CI не выдаётся за успешный запуск и не
+маскируется повтором прежнего SHA. Новый коммит должен пройти собственный CI.
