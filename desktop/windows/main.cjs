@@ -764,11 +764,11 @@ async function restoreAfterAuthentication() {
 function isTrustedRemoteEvent(event) {
   return Boolean(
     mainWindow &&
-      !mainWindow.isDestroyed() &&
-      event?.sender === mainWindow.webContents &&
-      event.senderFrame === mainWindow.webContents.mainFrame &&
-      isAllowedRemoteNavigation(event.senderFrame.url, currentOrigin) &&
-      !isLoginOrLogout(event.senderFrame.url, currentOrigin)
+    !mainWindow.isDestroyed() &&
+    event?.sender === mainWindow.webContents &&
+    event.senderFrame === mainWindow.webContents.mainFrame &&
+    isAllowedRemoteNavigation(event.senderFrame.url, currentOrigin) &&
+    !isLoginOrLogout(event.senderFrame.url, currentOrigin)
   );
 }
 
