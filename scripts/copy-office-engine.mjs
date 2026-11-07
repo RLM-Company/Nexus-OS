@@ -3,6 +3,7 @@ const destination = new URL("../apps/api/dist/document-workspace/", import.meta.
 await mkdir(destination, { recursive: true });
 for (const name of [
   "office-edit",
+  "office-view",
   "office-document",
   "office-text",
   "version-backup",

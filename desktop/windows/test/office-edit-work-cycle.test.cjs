@@ -9,7 +9,7 @@ const { createComputerWorkspace } = require("../computer-workspace.cjs");
 const { createWorkCycleDriver } = require("../work-cycle-driver.cjs");
 const { ComputerSession } = require("../computer-session.cjs");
 const { docxFixture, ops } = require("./fixtures/office-edit-brief.cjs");
-for (const mode of ["approved", "declined", "legacy"])
+for (const mode of ["approved", "declined", "legacy", "paged", "legacy_pages"])
   test(`real Work Office edit ${mode}`, async (t) => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "office-work-"));
     t.after(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -65,7 +65,8 @@ for (const mode of ["approved", "declined", "legacy"])
       planner: {
         begin: async () => ({
           id: "fixture",
-          ...(mode !== "legacy" ? { supports_workspace_office_edits: true } : {})
+          ...(mode !== "legacy" ? { supports_workspace_office_edits: true } : {}),
+          ...(mode === "paged" ? { supports_workspace_office_pages: true } : {})
         }),
         authorize: async () => ({ authorized: true, valid_for_ms: 10000 }),
         end: async () => {},
@@ -92,7 +93,16 @@ for (const mode of ["approved", "declined", "legacy"])
               break;
             case 2:
               assert.equal(observation.workspace.edit_office, mode !== "legacy" ? true : undefined);
-              action = { kind: "workspace_office_inspect", path: "offer.docx" };
+              assert.equal(observation.workspace.office_pages, mode === "paged" ? true : undefined);
+              action = ["paged", "legacy_pages"].includes(mode)
+                ? {
+                    kind: "workspace_office_inspect_page",
+                    path: "offer.docx",
+                    target_offset: 0,
+                    content_offset: 0,
+                    expected_version: null
+                  }
+                : { kind: "workspace_office_inspect", path: "offer.docx" };
               break;
             case 3:
               version = prior.version;
@@ -141,9 +151,16 @@ for (const mode of ["approved", "declined", "legacy"])
       goal: "Обновить реквизиты и таблицу",
       maxSteps: 9
     });
-    if (mode === "approved") assert.equal((await run).status, "completed");
-    else await assert.rejects(run, mode === "legacy" ? /ACTION_INVALID/ : /CANCELLED/);
-    assert.equal(confirmations, mode === "legacy" ? 0 : 1);
-    assert.equal(fs.existsSync(path.join(folder, "result.docx")), mode === "approved");
+    if (["approved", "paged"].includes(mode)) assert.equal((await run).status, "completed");
+    else
+      await assert.rejects(
+        run,
+        ["legacy", "legacy_pages"].includes(mode) ? /ACTION_INVALID/ : /CANCELLED/
+      );
+    assert.equal(confirmations, ["legacy", "legacy_pages"].includes(mode) ? 0 : 1);
+    assert.equal(
+      fs.existsSync(path.join(folder, "result.docx")),
+      ["approved", "paged"].includes(mode)
+    );
     assert.deepEqual(fs.readFileSync(path.join(folder, "offer.docx")), source);
   });

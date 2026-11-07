@@ -243,3 +243,89 @@ test("independent python Office fixtures retain package structure and declared s
     assert.ok(text.includes(format === "xlsx" ? "00123" : "кроме доставки"));
   }
 });
+test("a root swapped during a binary write cannot redirect rollback to an unrelated file", async (t) => {
+  const { service: s, auth, folder } = await setup(t);
+  const { zip } = require("../workspace/office-document.cjs"),
+    { randomBytes } = require("node:crypto");
+  const entries = unpack(docxFixture(), 16000000).entries;
+  entries.set("word/media/fixture-padding.bin", randomBytes(150000));
+  const source = zip([...entries]);
+  fs.writeFileSync(path.join(folder, "offer.docx"), source);
+  const args = {
+    ...auth,
+    relativePath: "offer.docx",
+    outputPath: "result.docx",
+    expectedVersion: s.inspectOfficeDocument({ ...auth, relativePath: "offer.docx" }).version,
+    operations: ops.docx
+  };
+  const preview = s.previewOfficeDocument(args),
+    moved = folder + "-moved",
+    target = path.join(folder, "result.docx");
+  const originalWrite = fs.writeSync;
+  let swapped = false,
+    error;
+  fs.writeSync = function (fd, ...rest) {
+    const written = originalWrite.call(this, fd, ...rest);
+    if (!swapped && fs.existsSync(target) && fs.fstatSync(fd).ino === fs.statSync(target).ino) {
+      swapped = true;
+      fs.renameSync(folder, moved);
+      fs.mkdirSync(folder);
+      fs.writeFileSync(target, "UNRELATED FILE MUST SURVIVE");
+    }
+    return written;
+  };
+  try {
+    await s.commitOfficeDocument({ ...args, planId: preview.plan_id });
+  } catch (e) {
+    error = e;
+  } finally {
+    fs.writeSync = originalWrite;
+  }
+  assert.equal(swapped, true);
+  assert.ok(error);
+  assert.equal(
+    fs.existsSync(target),
+    true,
+    "rollback must not delete a file in the replacement root"
+  );
+  assert.equal(fs.readFileSync(target, "utf8"), "UNRELATED FILE MUST SURVIVE");
+  assert.equal(error.code, "WORKSPACE_RESULT_UNCERTAIN");
+  assert.deepEqual(fs.readFileSync(path.join(moved, "offer.docx")), source);
+});
+test("cancellation after the last binary block rolls back only the file created by this write", async (t) => {
+  const { service: s, auth, folder } = await setup(t);
+  const source = docxFixture();
+  fs.writeFileSync(path.join(folder, "offer.docx"), source);
+  const args = {
+    ...auth,
+    relativePath: "offer.docx",
+    outputPath: "result.docx",
+    expectedVersion: s.inspectOfficeDocument({ ...auth, relativePath: "offer.docx" }).version,
+    operations: ops.docx
+  };
+  const preview = s.previewOfficeDocument(args),
+    controller = new AbortController(),
+    originalWrite = fs.writeSync;
+  let triggered = false,
+    error;
+  fs.writeSync = function (fd, ...rest) {
+    const written = originalWrite.call(this, fd, ...rest);
+    const target = path.join(folder, "result.docx");
+    if (!triggered && fs.existsSync(target) && fs.fstatSync(fd).ino === fs.statSync(target).ino) {
+      triggered = true;
+      controller.abort();
+    }
+    return written;
+  };
+  try {
+    await s.commitOfficeDocument({ ...args, planId: preview.plan_id, signal: controller.signal });
+  } catch (e) {
+    error = e;
+  } finally {
+    fs.writeSync = originalWrite;
+  }
+  assert.equal(triggered, true);
+  assert.equal(error.code, "WORKSPACE_OPERATION_CANCELLED");
+  assert.equal(fs.existsSync(path.join(folder, "result.docx")), false);
+  assert.deepEqual(fs.readFileSync(path.join(folder, "offer.docx")), source);
+});

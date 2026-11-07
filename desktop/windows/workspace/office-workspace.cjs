@@ -21,10 +21,17 @@ function createOfficeWorkspace({ read, create, identity }) {
     },
     inspect(options) {
       const snapshot = read(options);
-      return {
-        path: options.relativePath,
-        ...inspectOffice(options.relativePath, snapshot.buffer)
-      };
+      if (
+        options.expectedVersion != null ||
+        options.cursor?.target_offset > 0 ||
+        options.cursor?.content_offset > 0
+      )
+        checkVersion(snapshot, options.expectedVersion);
+      return inspectOffice(options.relativePath, snapshot.buffer, {
+        cursor: options.cursor,
+        expectedVersion: options.expectedVersion ?? null,
+        path: options.relativePath
+      });
     },
     preview(options) {
       for (const file of [options.relativePath, options.outputPath]) {
@@ -61,6 +68,8 @@ function createOfficeWorkspace({ read, create, identity }) {
         rejected_changes: [],
         representation: result.representation
       };
+      if (Buffer.byteLength(JSON.stringify(receipt)) > 14000)
+        throw Error("WORKSPACE_OFFICE_VIEW_LIMIT");
       plans.set(id, {
         receipt,
         buffer: result.buffer,
@@ -113,7 +122,14 @@ function createOfficeWorkspace({ read, create, identity }) {
         source_version: plan.receipt.source_version,
         executed_changes: plan.receipt.diff,
         rejected_changes: [],
-        readback: inspectOffice(saved.path, reread.buffer)
+        readback: {
+          version: reread.version,
+          sha256: reread.sha256,
+          representation: inspectOffice(saved.path, reread.buffer).representation,
+          verified: true,
+          content_not_included: true
+        },
+        next_read_required: true
       };
     }
   };

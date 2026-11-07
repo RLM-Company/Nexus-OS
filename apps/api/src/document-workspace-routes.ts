@@ -1,10 +1,13 @@
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { createRequire } from "node:module";
+import { fileURLToPath } from "node:url";
 import { existsSync } from "node:fs";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import type { IdentityContext } from "@cosmora/contracts";
 import { Type } from "typebox";
 import {
+  OfficeCursorSchema,
+  type OfficeCursor,
   OfficeOperationsSchema,
   OfficeVersionSchema,
   type OfficeOperation
@@ -22,8 +25,12 @@ type Edited = {
   sha256: string;
   representation: unknown;
 };
-const engine = require(enginePath.pathname) as {
-  inspectOffice: (name: string, bytes: Buffer) => View;
+const engine = require(fileURLToPath(enginePath)) as {
+  inspectOffice: (
+    name: string,
+    bytes: Buffer,
+    options?: { cursor?: OfficeCursor; expectedVersion?: string | null }
+  ) => View;
   editOffice: (name: string, bytes: Buffer, operations: OfficeOperation[]) => Edited;
 };
 // Stateless web adapter: explicitly selected File bytes only, exported copy, no new store.
@@ -34,13 +41,18 @@ export function registerDocumentWorkspaceRoutes(
 ) {
   const key = randomBytes(32);
   const common = {
-    name: Type.String({ minLength: 1, maxLength: 180, pattern: "^[^/\\\\]+\\.(docx|xlsx|pptx)$" }),
+    name: Type.String({
+      minLength: 1,
+      maxLength: 180,
+      pattern: "^[^/\\\\]+\\.([dD][oO][cC][xX]|[xX][lL][sS][xX]|[pP][pP][tT][xX])$"
+    }),
     bytes: Type.String({ minLength: 4, maxLength: 2796204, pattern: "^[A-Za-z0-9+/]+={0,2}$" })
   };
   type Input = {
     name: string;
     bytes: string;
-    expected_version: string;
+    cursor?: OfficeCursor;
+    expected_version: string | null;
     operations: OfficeOperation[];
     expires?: number;
     preview_token?: string;
@@ -63,7 +75,16 @@ export function registerDocumentWorkspaceRoutes(
       const bytes = Buffer.from(body.bytes, "base64");
       if (bytes.length > 2 * 1024 * 1024 || bytes.toString("base64") !== body.bytes)
         return reply.code(400).send({ error: { code: "INVALID_FILE" } });
-      const opened = engine.inspectOffice(body.name, bytes);
+      const opened = engine.inspectOffice(
+        body.name,
+        bytes,
+        mode === "inspect"
+          ? {
+              ...(body.cursor ? { cursor: body.cursor } : {}),
+              expectedVersion: body.expected_version ?? null
+            }
+          : undefined
+      );
       if (mode === "inspect") return opened;
       if (opened.version !== body.expected_version)
         return reply.code(409).send({ error: { code: "VERSION_CONFLICT" } });
@@ -99,14 +120,20 @@ export function registerDocumentWorkspaceRoutes(
         };
       }
       return { ...receipt, bytes: edited.buffer.toString("base64"), readback };
-    } catch {
+    } catch (error) {
+      if (error instanceof Error && error.message === "WORKSPACE_OFFICE_VERSION_CONFLICT")
+        return reply.code(409).send({ error: { code: "VERSION_CONFLICT" } });
       return reply.code(422).send({ error: { code: "OFFICE_UNSUPPORTED_OR_INVALID" } });
     }
   };
   for (const mode of ["inspect", "preview", "commit"]) {
     const properties =
       mode === "inspect"
-        ? common
+        ? {
+            ...common,
+            cursor: Type.Optional(OfficeCursorSchema),
+            expected_version: Type.Optional(Type.Union([Type.Null(), OfficeVersionSchema]))
+          }
         : {
             ...common,
             expected_version: OfficeVersionSchema,

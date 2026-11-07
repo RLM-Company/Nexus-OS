@@ -1,8 +1,12 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
-import type { OfficeOperation } from "@cosmora/contracts";
+import type { OfficeOperation, OfficeCursor } from "@cosmora/contracts";
 type View = {
   version: string;
+  cursor?: OfficeCursor;
+  next_cursor?: OfficeCursor | null;
+  total_targets?: number;
+  targets_excerpt_only?: boolean;
   targets: Array<{
     id: string;
     text?: string;
@@ -16,6 +20,10 @@ type View = {
     }>;
     cells_excerpt_only?: boolean;
     total_cells?: number;
+    cells_offset?: number;
+    text_offset?: number;
+    total_text_utf16?: number;
+    text_excerpt_only?: boolean;
   }>;
   representation: { limitations: string[] };
 };
@@ -64,6 +72,7 @@ function displayValue(value: unknown): string {
 export function OfficeDocumentWorkspace() {
   const [source, setSource] = useState<{ name: string; bytes: string } | null>(null);
   const [view, setView] = useState<View | null>(null);
+  const [pageHistory, setPageHistory] = useState<OfficeCursor[]>([]);
   const [operations, setOperations] = useState<OfficeOperation[]>([]);
   const [target, setTarget] = useState("");
   const [find, setFind] = useState("");
@@ -124,8 +133,31 @@ export function OfficeDocumentWorkspace() {
     ...(view?.targets ?? []),
     ...operations
       .filter((op) => op.kind === "add_sheet")
-      .map((op, i) => ({ id: `sheet:${(view?.targets.length ?? 0) + i + 1}`, name: op.name }))
+      .map((op, i) => ({
+        id: `sheet:${(view?.total_targets ?? view?.targets.length ?? 0) + i + 1}`,
+        name: op.name
+      }))
   ];
+  const loadPage = (cursor: OfficeCursor, previous: boolean) => {
+    if (!source || !view) return;
+    void run(async (signal, current) => {
+      const opened = await request<View>(
+        "inspect",
+        { ...source, cursor, expected_version: view.version },
+        signal
+      );
+      if (current()) {
+        setPageHistory(
+          previous
+            ? pageHistory.slice(0, -1)
+            : [...pageHistory, view.cursor ?? { target_offset: 0, content_offset: 0 }]
+        );
+        setView(opened);
+        setTarget(opened.targets[0]?.id ?? "");
+        setPreview(null);
+      }
+    });
+  };
   const xlsx = source?.name.toLowerCase().endsWith(".xlsx");
   return (
     <section aria-label="Рабочие документы Koswork">
@@ -146,6 +178,7 @@ export function OfficeDocumentWorkspace() {
             reset();
             setView(null);
             setSource(null);
+            setPageHistory([]);
             if (!file) return;
             void run(async (signal, current) => {
               if (file.size > 2 * 1024 * 1024) throw Error("Максимум 2 МиБ");
@@ -173,6 +206,32 @@ export function OfficeDocumentWorkspace() {
             Текстовое представление. Визуальная корректность не проверена; формулы не вычисляются.
             Экспорт относится к выбранному снимку файла.
           </p>
+          {(view.next_cursor || pageHistory.length > 0) && (
+            <nav aria-label="Страницы Office">
+              <button
+                type="button"
+                disabled={busy || !pageHistory.length}
+                onClick={() => {
+                  const cursor = pageHistory.at(-1);
+                  if (cursor) loadPage(cursor, true);
+                }}
+              >
+                Предыдущая часть
+              </button>
+              <button
+                type="button"
+                disabled={busy || !view.next_cursor}
+                onClick={() => {
+                  if (view.next_cursor) loadPage(view.next_cursor, false);
+                }}
+              >
+                Следующая часть
+              </button>
+              <p>
+                Часть {pageHistory.length + 1}. Всего объектов: {view.total_targets}.
+              </p>
+            </nav>
+          )}
           <details>
             <summary>Содержимое и адреса</summary>
             {view.targets.map((item) => (
@@ -195,10 +254,22 @@ export function OfficeDocumentWorkspace() {
                         {item.cells.map((cell) => (
                           <tr key={cell.address}>
                             <td>{cell.address}</td>
-                            <td>{cell.type}</td>
+                            <td>
+                              {(
+                                {
+                                  n: "Число",
+                                  b: "Логическое",
+                                  inlineStr: "Текст",
+                                  s: "Текст",
+                                  str: "Текст",
+                                  d: "Дата",
+                                  e: "Ошибка"
+                                } as Record<string, string>
+                              )[cell.type] ?? cell.type}
+                            </td>
                             <td>
                               {cell.formula !== null
-                                ? `Формула: ${cell.formula}; сохранённый кеш: ${cell.cached_value ?? "отсутствует"} (не вычислен здесь)`
+                                ? `Формула: ${cell.formula}; сохранённое значение: ${cell.cached_value ?? "отсутствует"} (не вычислен здесь)`
                                 : cell.text}
                             </td>
                           </tr>
@@ -206,11 +277,23 @@ export function OfficeDocumentWorkspace() {
                       </tbody>
                     </table>
                     {item.cells_excerpt_only && (
-                      <p>Показаны первые 100 из {item.total_cells} ячеек.</p>
+                      <p>
+                        Показаны ячейки {(item.cells_offset ?? 0) + 1}–
+                        {(item.cells_offset ?? 0) + item.cells.length} из {item.total_cells}.
+                      </p>
                     )}
                   </>
                 ) : (
-                  <p style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{item.text}</p>
+                  <div>
+                    {item.text_excerpt_only && (
+                      <p>
+                        Часть текста: {(item.text_offset ?? 0) + 1}–
+                        {(item.text_offset ?? 0) + (item.text?.length ?? 0)} из{" "}
+                        {item.total_text_utf16}.
+                      </p>
+                    )}
+                    <p style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{item.text}</p>
+                  </div>
                 )}
               </article>
             ))}
@@ -241,6 +324,7 @@ export function OfficeDocumentWorkspace() {
                   >
                     <option value="string">Текст (сохраняет ведущие нули)</option>
                     <option value="number">Число</option>
+                    <option value="boolean">Логическое (true/false)</option>
                     <option value="formula">Формула без вычисления</option>
                     <option value="null">Очистить</option>
                   </select>
@@ -258,6 +342,10 @@ export function OfficeDocumentWorkspace() {
                       setError("Введите конечное число");
                       return;
                     }
+                    if (valueType === "boolean" && !/^(true|false)$/.test(replace.trim())) {
+                      setError("Введите true или false");
+                      return;
+                    }
                     queue({
                       kind: "set_cell",
                       target,
@@ -265,11 +353,13 @@ export function OfficeDocumentWorkspace() {
                       value:
                         valueType === "number"
                           ? Number(replace)
-                          : valueType === "formula"
-                            ? { formula: replace }
-                            : valueType === "null"
-                              ? null
-                              : replace
+                          : valueType === "boolean"
+                            ? replace.trim() === "true"
+                            : valueType === "formula"
+                              ? { formula: replace }
+                              : valueType === "null"
+                                ? null
+                                : replace
                     });
                   }}
                 >

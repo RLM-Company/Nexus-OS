@@ -46,7 +46,19 @@ export const OfficeOperationsSchema = Type.Array(OfficeOperationSchema, {
   maxItems: 40
 });
 export const OfficeVersionSchema = Type.String({ pattern: "^sha256:[a-f0-9]{64}$" });
+export const OfficeCursorSchema = object({
+  target_offset: Type.Integer({ minimum: 0, maximum: 200000 }),
+  content_offset: Type.Integer({ minimum: 0, maximum: 256000 })
+});
+export type OfficeCursor = Static<typeof OfficeCursorSchema>;
 export const OfficeWorkspaceActions = [
+  object({
+    kind: Type.Literal("workspace_office_inspect_page"),
+    path: text(512),
+    target_offset: Type.Integer({ minimum: 0, maximum: 200000 }),
+    content_offset: Type.Integer({ minimum: 0, maximum: 256000 }),
+    expected_version: Type.Union([Type.Null(), OfficeVersionSchema])
+  }),
   object({ kind: Type.Literal("workspace_office_inspect"), path: text(512) }),
   object({
     kind: Type.Literal("workspace_office_preview"),
