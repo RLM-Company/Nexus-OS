@@ -13,7 +13,8 @@ import { SemanticHistoryIndex } from "../apps/api/dist/semantic-memory/index-ser
 
 const at = "2026-11-02T09:00:00.000Z";
 const target = { kind: "chat", id: "work" };
-const filler = (n) => ("Подробное описание визуального варианта оформления, часть " + n + ". ").repeat(24);
+const filler = (n) =>
+  ("Подробное описание визуального варианта оформления, часть " + n + ". ").repeat(24);
 const turns = [
   ["user", "Проект «Логистика». Заявка 00123, бюджет 17 350 ₽. Доставка не входит."],
   ["assistant", filler(1)],
@@ -51,12 +52,14 @@ await runMigrations(db);
 const insert = db.sqlite.prepare(
   "INSERT INTO general_chat_messages(id,chat_id,owner_id,role,content_type,content,status,created_at,updated_at) VALUES(?,?,?,?,'text',?,'completed',?,?)"
 );
-for (const [id, owner] of [["work", "a"], ["archive", "a"]])
+for (const [id, owner] of [
+  ["work", "a"],
+  ["archive", "a"]
+])
   db.sqlite
     .prepare("INSERT INTO general_chats(id,owner_id,title,created_at,updated_at) VALUES(?,?,?,?,?)")
     .run(id, owner, id, at, at);
-for (const m of corpus)
-  insert.run(m.id, m.chat_id, "a", m.role, m.content, m.created_at, at);
+for (const m of corpus) insert.run(m.id, m.chat_id, "a", m.role, m.content, m.created_at, at);
 
 const memory = new ContextMemoryStore(db.sqlite, () => Date.parse(at));
 const settings = (extra) =>
@@ -159,7 +162,9 @@ const report = {
     messages: corpus.length,
     source_bytes: compacted.report.source_bytes,
     capsule_bytes: compacted.report.capsule_bytes,
-    ratio: Number(((compacted.report.capsule_bytes / compacted.report.source_bytes) * 100).toFixed(1)),
+    ratio: Number(
+      ((compacted.report.capsule_bytes / compacted.report.source_bytes) * 100).toFixed(1)
+    ),
     protected_spans: compacted.report.protected_spans,
     protected_kept: compacted.report.protected_kept,
     omitted_spans: compacted.report.omitted_spans,

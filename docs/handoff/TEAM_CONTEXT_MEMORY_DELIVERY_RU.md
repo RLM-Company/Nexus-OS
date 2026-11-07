@@ -1,7 +1,7 @@
 # Блок памяти Kosmora/Koswork — поставка
 
 - **Ветка:** `deepseek/context-memory-completion`
-- **База:** `338536ee5946f96dcd18768143cc41af998c476a` (*main после PR №463 от 7 ноября 2026*)
+- **База:** `338536ee5946f96dcd18768143cc41af998c476a` (_main после PR №463 от 7 ноября 2026_)
 - **Владелец реализации:** DeepSeek
 - **PR:** без самостоятельного merge/deploy
 
@@ -54,14 +54,14 @@
 
 ## Изменённые файлы
 
-| Файл | Изменение |
-| --- | --- |
-| `packages/db/src/context-memory-store.ts` | +`forgetScope` (34 строки) |
-| `packages/db/test/context-memory.test.ts` | +3 теста: области, индекс, блокировки |
-| `apps/api/src/context-memory-routes.ts` | +маршрут `DELETE .../entries` (6 строк) |
-| `apps/api/test/context-memory.test.ts` | +1 тест маршрута через `app.inject` |
-| `apps/api/test/memory-acceptance.test.ts` | новый сквозной сценарий, 5 тестов |
-| `scripts/measure-memory-acceptance.mjs` | новый скрипт измерений |
+| Файл                                      | Изменение                               |
+| ----------------------------------------- | --------------------------------------- |
+| `packages/db/src/context-memory-store.ts` | +`forgetScope` (34 строки)              |
+| `packages/db/test/context-memory.test.ts` | +3 теста: области, индекс, блокировки   |
+| `apps/api/src/context-memory-routes.ts`   | +маршрут `DELETE .../entries` (6 строк) |
+| `apps/api/test/context-memory.test.ts`    | +1 тест маршрута через `app.inject`     |
+| `apps/api/test/memory-acceptance.test.ts` | новый сквозной сценарий, 5 тестов       |
+| `scripts/measure-memory-acceptance.mjs`   | новый скрипт измерений                  |
 
 Миграции не добавлялись: новых таблиц нет, использована существующая схема 0056/0063.
 
@@ -97,23 +97,49 @@ node scripts/measure-memory-acceptance.mjs
 
 ```json
 {
-  "corpus": { "messages": 17, "source_bytes": 11280, "capsule_bytes": 5443,
-              "ratio": 48.3, "protected_spans": 8, "protected_kept": 8,
-              "omitted_spans": 0, "duplicate_spans": 92, "compaction_ms": 6.99 },
-  "coverage": { "required_facts": 4, "extracted_facts": 4, "missing": [],
-                "superseded_kept_in_capsule": 1 },
-  "recall": { "memory_hits": 1, "correct_entry": true, "stale_hits_user_role": 1,
-              "retrieval": "lexical", "bundle_bytes": 2573 },
-  "index": { "builds": 21, "build_ms": 52.7, "indexed_sources": 18,
-             "indexed_chunks": 32, "paraphrase_hybrid": true },
-  "revocation": { "history_items_after_revoke": 0, "index_rows_left": 0,
-                  "forgotten_entries": 1, "items_after_forget": 0 }
+  "corpus": {
+    "messages": 17,
+    "source_bytes": 11280,
+    "capsule_bytes": 5443,
+    "ratio": 48.3,
+    "protected_spans": 8,
+    "protected_kept": 8,
+    "omitted_spans": 0,
+    "duplicate_spans": 92,
+    "compaction_ms": 6.99
+  },
+  "coverage": {
+    "required_facts": 4,
+    "extracted_facts": 4,
+    "missing": [],
+    "superseded_kept_in_capsule": 1
+  },
+  "recall": {
+    "memory_hits": 1,
+    "correct_entry": true,
+    "stale_hits_user_role": 1,
+    "retrieval": "lexical",
+    "bundle_bytes": 2573
+  },
+  "index": {
+    "builds": 21,
+    "build_ms": 52.7,
+    "indexed_sources": 18,
+    "indexed_chunks": 32,
+    "paraphrase_hybrid": true
+  },
+  "revocation": {
+    "history_items_after_revoke": 0,
+    "index_rows_left": 0,
+    "forgotten_entries": 1,
+    "items_after_forget": 0
+  }
 }
 ```
 
 Как читать эти числа честно:
 
-- `ratio: 48.3` — это *байты капсулы от байт сжатого префикса*, а не «экономия
+- `ratio: 48.3` — это _байты капсулы от байт сжатого префикса_, а не «экономия
   токенов» и не заявление о качестве. Токены не измерялись: токенизатора для
   этого маршрута в репозитории нет, байты — единственная честная граница.
 - `extracted_facts: 4/4` — все четыре обязательных значения корпуса

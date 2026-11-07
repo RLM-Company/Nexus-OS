@@ -1,14 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import type {
-  ContextMemoryEncoder,
-  GeneralChatMessage,
-  MemoryTarget
-} from "@cosmora/contracts";
-import {
-  ContextMemoryStore,
-  openDatabase,
-  runMigrations
-} from "@cosmora/db";
+import type { ContextMemoryEncoder, GeneralChatMessage, MemoryTarget } from "@cosmora/contracts";
+import { ContextMemoryStore, openDatabase, runMigrations } from "@cosmora/db";
 import { compactChatHistory, verifyHistoryCompaction } from "@cosmora/core";
 import { SemanticHistoryIndex } from "../src/semantic-memory/index-service.js";
 
@@ -97,7 +89,9 @@ describe("memory acceptance: long work, versions, correction and revocation", ()
       ["foreign", "b"]
     ])
       db.sqlite
-        .prepare("INSERT INTO general_chats(id,owner_id,title,created_at,updated_at) VALUES(?,?,?,?,?)")
+        .prepare(
+          "INSERT INTO general_chats(id,owner_id,title,created_at,updated_at) VALUES(?,?,?,?,?)"
+        )
         .run(id!, owner!, id!, at, at);
     seed();
   });
@@ -235,9 +229,9 @@ describe("memory acceptance: long work, versions, correction and revocation", ()
     );
     const revoked = await memory.resolveAsync(target, "a", "какая сумма по перевозке груза");
     expect(revoked.items).toEqual([]);
-    expect(
-      db.sqlite.prepare("SELECT count(*) n FROM semantic_index_sources").get()
-    ).toEqual({ n: 0 });
+    expect(db.sqlite.prepare("SELECT count(*) n FROM semantic_index_sources").get()).toEqual({
+      n: 0
+    });
   });
 
   it("erases a chat's memory through the existing store and leaves originals intact", async () => {
@@ -259,16 +253,18 @@ describe("memory acceptance: long work, versions, correction and revocation", ()
     const result = memory.forgetScope(target, "a");
     expect(result.forgotten_entries).toBe(1);
     expect(result.original_messages_deleted).toBe(false);
-    expect(
-      db.sqlite.prepare("SELECT count(*) n FROM general_chat_messages").get()
-    ).toEqual({ n: msgs.length });
+    expect(db.sqlite.prepare("SELECT count(*) n FROM general_chat_messages").get()).toEqual({
+      n: msgs.length
+    });
     const after = await memory.resolveAsync(target, "a", "код заявки");
     expect(after.items.some((e) => e.kind === "memory")).toBe(false);
   });
 
   it("keeps another project's closed data out of a scoped recall", async () => {
     db.sqlite
-      .prepare("INSERT INTO projects(id,owner_id,title,status,created_at,updated_at) VALUES('p1','a','P1','ACTIVE',?,?)")
+      .prepare(
+        "INSERT INTO projects(id,owner_id,title,status,created_at,updated_at) VALUES('p1','a','P1','ACTIVE',?,?)"
+      )
       .run(at, at);
     db.sqlite
       .prepare("INSERT INTO chats(id,project_id,kind,created_at) VALUES('c-p1','p1','main',?)")

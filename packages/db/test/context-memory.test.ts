@@ -485,10 +485,12 @@ describe("source-backed context memory", () => {
       .run(Buffer.alloc(1536));
     enable({ use_personal: true, source_chat_ids: ["old"] });
     expect((await memory.resolveAsync(target, "a", "сколько согласовали")).items.length).toBe(2);
-    expect(memory.forgetScope({ kind: "chat", id: "old" }, "a").removed_memory_index_chunks).toBe(1);
-    expect(
-      db.sqlite.prepare("SELECT count(*) n FROM semantic_index_sources").get()
-    ).toEqual({ n: 0 });
+    expect(memory.forgetScope({ kind: "chat", id: "old" }, "a").removed_memory_index_chunks).toBe(
+      1
+    );
+    expect(db.sqlite.prepare("SELECT count(*) n FROM semantic_index_sources").get()).toEqual({
+      n: 0
+    });
     expect(db.sqlite.prepare("SELECT count(*) n FROM semantic_index_chunks").get()).toEqual({
       n: 0
     });
