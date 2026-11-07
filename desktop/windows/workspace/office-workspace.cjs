@@ -3,7 +3,12 @@ const { randomBytes } = require("node:crypto");
 const { inspectOffice, editOffice } = require("./office-edit.cjs");
 const { validateRelativePath } = require("./path-guard.cjs");
 const { ERROR_CODES, KosworkWorkspaceError } = require("./errors.cjs");
-const conflict = () => { throw new KosworkWorkspaceError(ERROR_CODES.WORKSPACE_VERSION_CONFLICT, "Документ или план изменился. Откройте документ и подготовьте новый preview."); };
+const conflict = () => {
+  throw new KosworkWorkspaceError(
+    ERROR_CODES.WORKSPACE_VERSION_CONFLICT,
+    "Документ или план изменился. Откройте документ и подготовьте новый preview."
+  );
+};
 // Ephemeral proposals only; files, grants, versions and writes remain in workspace-service.
 function createOfficeWorkspace({ read, create, identity }) {
   const plans = new Map();
@@ -11,35 +16,105 @@ function createOfficeWorkspace({ read, create, identity }) {
     if (!/^sha256:[a-f0-9]{64}$/.test(expected) || snapshot.version !== expected) conflict();
   };
   return {
-    clear() { plans.clear(); },
+    clear() {
+      plans.clear();
+    },
     inspect(options) {
       const snapshot = read(options);
-      return { path: options.relativePath, ...inspectOffice(options.relativePath, snapshot.buffer) };
+      return {
+        path: options.relativePath,
+        ...inspectOffice(options.relativePath, snapshot.buffer)
+      };
     },
     preview(options) {
-      validateRelativePath(options.outputPath);
-      if (options.outputPath.toLowerCase() === options.relativePath.toLowerCase() || !/\.(docx|xlsx|pptx)$/i.test(options.relativePath) || options.outputPath.split(".").at(-1).toLowerCase() !== options.relativePath.split(".").at(-1).toLowerCase()) throw Error("WORKSPACE_OFFICE_INVALID");
-      const snapshot = read(options); checkVersion(snapshot, options.expectedVersion);
+      for (const file of [options.relativePath, options.outputPath]) {
+        if (validateRelativePath(file).segments[0].toLowerCase() === ".kosmora-vault")
+          throw new KosworkWorkspaceError(
+            ERROR_CODES.WORKSPACE_PROTECTED_PATH,
+            "Виртуальное хранилище доступно только для чтения."
+          );
+      }
+      if (
+        options.outputPath.toLowerCase() === options.relativePath.toLowerCase() ||
+        !/\.(docx|xlsx|pptx)$/i.test(options.relativePath) ||
+        options.outputPath.split(".").at(-1).toLowerCase() !==
+          options.relativePath.split(".").at(-1).toLowerCase()
+      )
+        throw Error("WORKSPACE_OFFICE_INVALID");
+      const snapshot = read(options);
+      checkVersion(snapshot, options.expectedVersion);
       const result = editOffice(options.relativePath, snapshot.buffer, options.operations);
-      if (Buffer.byteLength(JSON.stringify(result.diff)) > 10000) throw Error("WORKSPACE_OFFICE_VIEW_LIMIT");
+      if (Buffer.byteLength(JSON.stringify(result.diff)) > 10000)
+        throw Error("WORKSPACE_OFFICE_VIEW_LIMIT");
       const id = randomBytes(16).toString("hex");
       for (const [key, value] of plans) if (value.expires < Date.now()) plans.delete(key);
       if (plans.size >= 8) plans.delete(plans.keys().next().value);
-      const receipt = { plan_id: id, path: options.relativePath, output_path: options.outputPath, source_version: snapshot.version, proposed_version: result.version, sha256: result.sha256, diff: result.diff, rejected_changes: [], representation: result.representation };
-      plans.set(id, { receipt, buffer: result.buffer, identity: identity(options), expires: Date.now() + 10 * 60 * 1000 });
+      inspectOffice(options.outputPath, result.buffer);
+      const receipt = {
+        plan_id: id,
+        path: options.relativePath,
+        output_path: options.outputPath,
+        source_version: snapshot.version,
+        proposed_version: result.version,
+        sha256: result.sha256,
+        diff: result.diff,
+        rejected_changes: [],
+        representation: result.representation
+      };
+      plans.set(id, {
+        receipt,
+        buffer: result.buffer,
+        identity: identity(options),
+        expires: Date.now() + 10 * 60 * 1000
+      });
       return receipt;
+    },
+    describe(options) {
+      const plan = plans.get(options.planId);
+      if (
+        !plan ||
+        plan.expires < Date.now() ||
+        plan.identity !== identity(options) ||
+        options.relativePath !== plan.receipt.path ||
+        options.expectedVersion !== plan.receipt.source_version
+      )
+        conflict();
+      checkVersion(read(options), options.expectedVersion);
+      return structuredClone(plan.receipt);
     },
     async commit(options) {
       const plan = plans.get(options.planId);
-      if (!plan || plan.expires < Date.now() || plan.identity !== identity(options) || options.relativePath !== plan.receipt.path || options.expectedVersion !== plan.receipt.source_version) conflict();
+      if (
+        !plan ||
+        plan.expires < Date.now() ||
+        plan.identity !== identity(options) ||
+        options.relativePath !== plan.receipt.path ||
+        options.expectedVersion !== plan.receipt.source_version
+      )
+        conflict();
       // Consume once, including on errors. A cancelled/failed write needs a fresh preview.
       plans.delete(options.planId);
-      const recheck = () => { if (plan.identity !== identity(options)) conflict(); checkVersion(read(options), options.expectedVersion); };
+      const recheck = () => {
+        if (plan.identity !== identity(options)) conflict();
+        checkVersion(read(options), options.expectedVersion);
+      };
       recheck();
-      const saved = await create({ ...options, relativePath: plan.receipt.output_path, buffer: plan.buffer, _beforeWriteCheck: recheck });
+      const saved = await create({
+        ...options,
+        relativePath: plan.receipt.output_path,
+        buffer: plan.buffer,
+        _beforeWriteCheck: recheck
+      });
       const reread = read({ ...options, relativePath: saved.path });
-      if (reread.version !== plan.receipt.proposed_version) throw Error("WORKSPACE_RESULT_UNCERTAIN");
-      return { ...saved, source_version: plan.receipt.source_version, executed_changes: plan.receipt.diff, rejected_changes: [], readback: inspectOffice(saved.path, reread.buffer) };
+      if (reread.version !== plan.receipt.proposed_version)
+        throw Error("WORKSPACE_RESULT_UNCERTAIN");
+      return {
+        ...saved,
+        source_version: plan.receipt.source_version,
+        executed_changes: plan.receipt.diff,
+        rejected_changes: [],
+        readback: inspectOffice(saved.path, reread.buffer)
+      };
     }
   };
 }
