@@ -43,6 +43,7 @@ function createComputerWorkspace({
   return {
     supportsLineReads: (context) => Boolean(snapshot(context)),
     supportsTextReads: (context) => Boolean(snapshot(context)),
+    supportsOfficeEdits: (context) => Boolean(snapshot(context)),
     supportsDocuments: (context) => Boolean(snapshot(context)),
     supportsDocumentReads: (context) => Boolean(snapshot(context)),
     supportsPdfReads: (context) => Boolean(snapshot(context) && pdfReader?.available()),
@@ -121,6 +122,16 @@ function createComputerWorkspace({
       return { id: value.workspaceId, name: value.rootName.slice(0, 180) };
     },
     invalidate,
+    endSession: () => service.discardOfficePlans(),
+    describeOfficePlan(action, context) {
+      snapshot(context);
+      return service.describeOfficePlan({
+        ...owner(context),
+        relativePath: action.path,
+        expectedVersion: action.expected_version,
+        planId: action.plan_id
+      });
+    },
     cancel: () => service.cancelAllOperations("native_stop"),
     forget() {
       void invalidate();
@@ -174,6 +185,24 @@ function createComputerWorkspace({
             offset: action.offset_utf16,
             expectedVersion: action.expected_version,
             expectedTextSha256: action.expected_text_sha256
+          });
+          break;
+        case "workspace_office_inspect":
+          result = service.inspectOfficeDocument(args);
+          break;
+        case "workspace_office_preview":
+          result = service.previewOfficeDocument({
+            ...args,
+            outputPath: action.output_path,
+            expectedVersion: action.expected_version,
+            operations: action.operations
+          });
+          break;
+        case "workspace_office_commit":
+          result = await service.commitOfficeDocument({
+            ...args,
+            expectedVersion: action.expected_version,
+            planId: action.plan_id
           });
           break;
         case "workspace_read_document":

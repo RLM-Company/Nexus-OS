@@ -57,6 +57,9 @@ const fields = {
     "expected_text_sha256",
     "expected_version"
   ],
+  workspace_office_inspect: ["path"],
+  workspace_office_preview: ["path", "output_path", "expected_version", "operations"],
+  workspace_office_commit: ["path", "expected_version", "plan_id"],
   workspace_read_document: ["path", "offset_utf16", "expected_version"],
   workspace_read_lines: ["path", "start_line", "end_line", "expected_version"],
   workspace_mkdir: ["path"],
@@ -168,6 +171,21 @@ function validateComputerAction(action) {
     }
     if (action.kind.startsWith("workspace_")) {
       try {
+        if (action.kind.startsWith("workspace_office_")) {
+          if (!/\.(docx|xlsx|pptx)$/i.test(action.path)) return false;
+          if (
+            action.kind !== "workspace_office_inspect" &&
+            !/^sha256:[a-f0-9]{64}$/.test(action.expected_version)
+          )
+            return false;
+          if (action.kind === "workspace_office_preview") {
+            require("./workspace/path-guard.cjs").validateRelativePath(action.output_path);
+            require("./workspace/office-edit.cjs").validateEdits(action.operations);
+          }
+          if (action.kind === "workspace_office_commit" && !/^[a-f0-9]{32}$/.test(action.plan_id))
+            return false;
+        }
+
         if (
           action.kind === "workspace_read_text" &&
           (!Number.isSafeInteger(action.offset_utf16) ||
@@ -414,6 +432,7 @@ const recoveryWriteActions = new Set([
   "browser_forward",
   "browser_reload",
   "workspace_create",
+  "workspace_office_commit",
   "workspace_create_docx",
   "workspace_create_xlsx",
   "workspace_create_pptx",

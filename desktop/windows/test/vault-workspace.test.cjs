@@ -1093,3 +1093,40 @@ test("text-page capability belongs to the selected folder and never opens a vaul
   assert.equal(result.content, "Exact selected-folder source 00123");
   assert.equal(result.excerpt_only, false);
 });
+test("Office edit capability passes through the production vault wrapper only for an ordinary folder", async (t) => {
+  const f = fixture(t);
+  const { docxFixture, ops } = require("./fixtures/office-edit-brief.cjs");
+  assert.equal(f.workspace.supportsOfficeEdits(c), false);
+  await f.grant();
+  assert.equal(f.workspace.supportsOfficeEdits(c), false);
+  await assert.rejects(
+    f.execute({ kind: "workspace_office_inspect", path: P + "/source.docx" }),
+    (e) => e.code === "WORKSPACE_PROTECTED_PATH"
+  );
+  await f.workspace.connect(c, f.signal);
+  fs.writeFileSync(path.join(f.folder, "offer.docx"), docxFixture());
+  assert.equal(f.workspace.supportsOfficeEdits(c), true);
+  const opened = await f.execute({ kind: "workspace_office_inspect", path: "offer.docx" });
+  const action = {
+    kind: "workspace_office_preview",
+    path: "offer.docx",
+    output_path: "result.docx",
+    expected_version: opened.version,
+    operations: ops.docx
+  };
+  await assert.rejects(
+    f.execute({ ...action, output_path: P + "/result.docx" }),
+    (e) => e.code === "WORKSPACE_PROTECTED_PATH"
+  );
+  const preview = await f.execute(action);
+  const commit = {
+    kind: "workspace_office_commit",
+    path: "offer.docx",
+    expected_version: opened.version,
+    plan_id: preview.plan_id
+  };
+  assert.equal(f.workspace.describeOfficePlan(commit, c).source_version, opened.version);
+  f.workspace.endSession();
+  await assert.rejects(f.execute(commit));
+  assert.equal(fs.existsSync(path.join(f.folder, "result.docx")), false);
+});

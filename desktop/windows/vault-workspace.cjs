@@ -72,6 +72,7 @@ function createVaultWorkspace({ base, vault, now = Date.now }) {
     snapshot,
     supportsLineReads: (context) => Boolean(base.snapshot(context)),
     supportsTextReads: (context) => base.supportsTextReads?.(context) === true,
+    supportsOfficeEdits: (context) => base.supportsOfficeEdits?.(context) === true,
     supportsDocuments: (context) => Boolean(base.snapshot(context)),
     supportsDocumentReads: (context) => Boolean(base.snapshot(context)),
     supportsPdfReads: (context) => base.supportsPdfReads?.(context) === true,
@@ -100,7 +101,15 @@ function createVaultWorkspace({ base, vault, now = Date.now }) {
       return snapshot(c);
     },
     revokeVault: revoke,
-    endSession: revoke,
+    endSession() {
+      revoke();
+      base.endSession?.();
+    },
+    describeOfficePlan(action, context) {
+      snapshot(context);
+      if (virtual(action.path)) throw error("WORKSPACE_PROTECTED_PATH");
+      return base.describeOfficePlan(action, context);
+    },
     cancel() {
       revoke();
       base.cancel();
@@ -131,6 +140,8 @@ function createVaultWorkspace({ base, vault, now = Date.now }) {
       check(c, id, signal);
       // Even paths inside this namespace are relative opaque identifiers, never disk paths.
       const p = action.path ?? "";
+      if (action.kind === "workspace_office_preview" && virtual(action.output_path))
+        throw error("WORKSPACE_PROTECTED_PATH");
       if (action.kind !== "workspace_restore")
         validateRelativePath(p, {
           allowEmpty: ["workspace_list", "workspace_find"].includes(action.kind)

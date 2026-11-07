@@ -716,6 +716,22 @@ describe("owner-bound computer proposals", () => {
     value.observation.workspace = { id: "a".repeat(24), name: "Folder", read_pdf: true };
     await expect(f.next(value)).rejects.toMatchObject({ code: "COMPUTER_OUTPUT_INVALID" });
   });
+  it("only returns Office edit tools after capability negotiation", async () => {
+    for (const capable of [false, true]) {
+      const a = { kind: "workspace_office_inspect", path: "offer.docx" };
+      const f = await fixture({ output: { ...action, action: a } });
+      await f.create();
+      const value = structuredClone(step);
+      value.observation.workspace = {
+        id: "a".repeat(24),
+        name: "Folder",
+        ...(capable ? { edit_office: true as const } : {})
+      };
+      if (capable) expect(await f.next(value)).toMatchObject({ action: a });
+      else await expect(f.next(value)).rejects.toMatchObject({ code: "COMPUTER_OUTPUT_INVALID" });
+      expect(f.calls[0]!.messages[0]!.content.includes("workspace_office_inspect")).toBe(capable);
+    }
+  });
   it("only offers document readback to negotiated clients and never sends it to a legacy client", async () => {
     for (const capable of [false, true]) {
       const a = {

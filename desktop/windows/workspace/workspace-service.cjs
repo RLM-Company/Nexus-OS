@@ -380,6 +380,7 @@ function createKosworkWorkspaceService({
   }
 
   function cancelAllOperations(reason = "cancelled_by_owner") {
+    officeWorkspace.clear();
     let cancelledCount = 0;
     for (const ctrl of activeOperationControllers) {
       if (!ctrl.signal.aborted) {
@@ -1419,6 +1420,32 @@ function createKosworkWorkspaceService({
     return createDataFile({ ...options, buffer });
   }
 
+  const officeWorkspace = require("./office-workspace.cjs").createOfficeWorkspace({
+    identity(options) {
+      return verifyCallerOwner(options);
+    },
+    read(options) {
+      const session = verifyCallerOwner(options),
+        op = beginOperation(options.signal);
+      try {
+        op.check();
+        const target = resolveSafeWorkspaceTarget(session.canonicalRoot, options.relativePath, {
+          mustExist: true,
+          signal: options.signal,
+          activeController: op.controller
+        });
+        return readBoundedFileSnapshot(target.absolutePath, {
+          maxBytes: limits.maxReadBytes,
+          signal: options.signal,
+          activeController: op.controller
+        });
+      } finally {
+        op.end();
+      }
+    },
+    create: (options) => createDataFile(options)
+  });
+
   async function createDocument(options = {}) {
     verifyCallerOwner(options);
     const { format, buffer } = buildOfficeDocument(options.document);
@@ -1437,7 +1464,8 @@ function createKosworkWorkspaceService({
     ownerId = null,
     origin = null,
     signal = null,
-    ipcEvent = null
+    ipcEvent = null,
+    _beforeWriteCheck = null
   } = {}) {
     const session = verifyCallerOwner({ ownerId, origin, ipcEvent });
     const op = beginOperation(signal);
@@ -1489,6 +1517,7 @@ function createKosworkWorkspaceService({
 
         let fd;
         try {
+          _beforeWriteCheck?.();
           fd = fs.openSync(target.absolutePath, "wx", 0o600);
           let offset = 0;
           while (offset < buffer.byteLength) {
@@ -1505,7 +1534,7 @@ function createKosworkWorkspaceService({
               `Файл "${target.relativePath}" был создан конкурентным запросом.`
             );
           }
-          if (error instanceof KosworkWorkspaceError) {
+          if (fd !== undefined) {
             try {
               if (fd !== undefined) {
                 fs.closeSync(fd);
@@ -1813,6 +1842,11 @@ function createKosworkWorkspaceService({
     createDirectory,
     createFile,
     createDocument,
+    describeOfficePlan: officeWorkspace.describe,
+    discardOfficePlans: officeWorkspace.clear,
+    inspectOfficeDocument: officeWorkspace.inspect,
+    previewOfficeDocument: officeWorkspace.preview,
+    commitOfficeDocument: officeWorkspace.commit,
     updateFile,
     listBackups,
     restoreBackup
