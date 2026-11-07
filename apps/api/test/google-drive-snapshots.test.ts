@@ -451,7 +451,8 @@ describe("complete Drive snapshots and restore", () => {
     expect(restored.statusCode, restored.body).toBe(200);
     expect(restored.json<{ files: { id: string }[] }>().files).toHaveLength(3);
     const one = runtime.bundleStore.files(owner).find((f) => f.name === "large-one.txt")!;
-    const download = await get(`/restored-files/${one.id}`);
+    expect(typeof one.id).toBe("string");
+    const download = await get(`/restored-files/${String(one.id)}`);
     expect(download.body).toContain("large-one-marker");
     expect(google.urls.every((u) => !new URL(u).searchParams.has("q"))).toBe(true);
   });
