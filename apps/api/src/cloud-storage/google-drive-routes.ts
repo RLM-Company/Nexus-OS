@@ -50,6 +50,22 @@ export function registerGoogleDriveRoutes(
       const e = error instanceof DriveStorageError ? error : null;
       const validation = typeof error === "object" && error !== null && "validation" in error;
       const code = e?.code ?? (validation ? "DRIVE_INVALID_REQUEST" : "DRIVE_REQUEST_FAILED");
+      const conflict = new Set([
+        "OWNER_DATA_FENCED",
+        "DRIVE_CONNECTION_CHANGED",
+        "DRIVE_GRANT_CHANGED",
+        "RESTORE_STALE",
+        "BACKUP_INCOMPLETE",
+        "BACKUP_CACHE_UNAVAILABLE",
+        "BACKUP_INVALID_PART",
+        "DRIVE_FOLDER_NOT_READY",
+        "DRIVE_OPERATION_CONFLICT",
+        "DRIVE_ARCHIVE_CHANGED",
+        "DRIVE_FOLDER_CHANGED",
+        "DRIVE_LEASE_CHANGED",
+        "DRIVE_ARCHIVE_BUSY",
+        "DRIVE_FOLDER_BUSY"
+      ]).has(code);
       const status =
         code === "BACKUP_NOT_FOUND"
           ? 404
@@ -59,7 +75,7 @@ export function registerGoogleDriveRoutes(
               ? 429
               : ["BACKUP_INVALID", "BACKUP_INVALID_SELECTION", "BACKUP_EMPTY"].includes(code)
                 ? 400
-                : ["RESTORE_STALE", "BACKUP_INCOMPLETE", "BACKUP_CACHE_UNAVAILABLE"].includes(code)
+                : conflict
                   ? 409
                   : validation
                     ? 400
@@ -67,15 +83,9 @@ export function registerGoogleDriveRoutes(
                       ? 503
                       : ["DRIVE_AUTH_BUSY", "DRIVE_OWNER_BUSY", "DRIVE_BUSY"].includes(code)
                         ? 429
-                        : [
-                              "OWNER_DATA_FENCED",
-                              "DRIVE_CONNECTION_CHANGED",
-                              "DRIVE_GRANT_CHANGED"
-                            ].includes(code)
-                          ? 409
-                          : ["DRIVE_AUTH_FAILED", "DRIVE_AUTH_INVALID_GRANT"].includes(code)
-                            ? 400
-                            : 502;
+                        : ["DRIVE_AUTH_FAILED", "DRIVE_AUTH_INVALID_GRANT"].includes(code)
+                          ? 400
+                          : 502;
       return reply.code(status).send({ error: { code } });
     });
     const connection = () => {
@@ -88,6 +98,19 @@ export function registerGoogleDriveRoutes(
     };
     const empty = { schema: { body: Type.Object({}, { additionalProperties: false }) } };
     routes.get(DRIVE_ROUTE, (r) => view(identityFor(r).owner_id));
+    routes.get(DRIVE_ROUTE + "/link", (r) => {
+      if (!runtime) throw new DriveStorageError("DRIVE_NOT_CONFIGURED");
+      const row = runtime.store.status(identityFor(r).owner_id);
+      if (
+        !row?.folder_id ||
+        row.folder_state !== "ready" ||
+        !/^[A-Za-z0-9_-]{5,200}$/.test(row.folder_id)
+      )
+        throw new DriveStorageError("DRIVE_FOLDER_NOT_READY");
+      return {
+        url: `https://drive.google.com/drive/folders/${encodeURIComponent(row.folder_id)}`
+      };
+    });
     routes.post(DRIVE_ROUTE + "/connect", empty, (r) => connection().begin(identityFor(r)));
     routes.get<{ Querystring: { state?: string; code?: string; error?: string } }>(
       DRIVE_ROUTE + "/callback",
@@ -167,10 +190,24 @@ export function registerGoogleDriveRoutes(
         return { items, has_more: items.length === 100 };
       }
     );
-    routes.get(DRIVE_ROUTE + "/sources", (r) => ({
-      items: runtime?.bundleStore.sources(identityFor(r).owner_id) ?? []
-    }));
-    routes.post<{ Body: { operation_id: string; chat_ids?: string[]; include_results: boolean } }>(
+    routes.get(
+      DRIVE_ROUTE + "/sources",
+      (r) =>
+        runtime?.bundleStore.sources(identityFor(r).owner_id) ?? {
+          items: [],
+          chats: [],
+          files: [],
+          file_selection: false
+        }
+    );
+    routes.post<{
+      Body: {
+        operation_id: string;
+        chat_ids?: string[];
+        file_ids?: string[];
+        include_results: boolean;
+      };
+    }>(
       DRIVE_ROUTE + "/backups",
       {
         schema: {
@@ -179,6 +216,11 @@ export function registerGoogleDriveRoutes(
               operation_id: uuid,
               chat_ids: Type.Optional(
                 Type.Array(Type.String({ minLength: 1, maxLength: 128 }), { maxItems: 2000 })
+              ),
+              file_ids: Type.Optional(
+                Type.Array(Type.String({ pattern: "^(kosmora|user)_[a-f0-9]{32}$" }), {
+                  maxItems: 2000
+                })
               ),
               include_results: Type.Boolean()
             },
@@ -189,7 +231,8 @@ export function registerGoogleDriveRoutes(
       (r) =>
         bundles().save(identityFor(r).owner_id, r.body.operation_id, {
           include_results: r.body.include_results,
-          ...(r.body.chat_ids ? { chat_ids: r.body.chat_ids } : {})
+          ...(r.body.chat_ids ? { chat_ids: r.body.chat_ids } : {}),
+          ...(r.body.file_ids ? { file_ids: r.body.file_ids } : {})
         })
     );
     for (const action of ["retry", "preview", "discard", "cancel-preview"] as const)

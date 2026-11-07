@@ -12,3 +12,19 @@ export interface GoogleDriveConnectStart {
   proof: string;
   expires_at: number;
 }
+
+export interface GoogleDriveSourceList {
+  /** Legacy chat list retained for already loaded clients. */
+  items: { id: string; title: string; mode: string }[];
+  chats?: GoogleDriveSourceList["items"];
+  file_selection?: boolean;
+  files?: {
+    id: string;
+    name: string;
+    project: string;
+    version: number;
+    bytes: number;
+    sha256: string | null;
+    kind: "kosmora" | "user";
+  }[];
+}

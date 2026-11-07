@@ -187,3 +187,78 @@ test("saves a complete copy, previews and restores into new chat/file links", as
     token: "t".repeat(43)
   });
 });
+
+test("selects exact result versions, reports conflicts and exposes only the managed Drive folder", async ({
+  page
+}, testInfo) => {
+  const first = "kosmora_" + "a".repeat(32),
+    second = "user_" + "b".repeat(32);
+  let connected = true;
+  const saved: Record<string, unknown>[] = [];
+  await page.route("**/api/v1/storage/drive**", async (route) => {
+    const request = route.request(),
+      path = new URL(request.url()).pathname;
+    let result: object = view(connected);
+    if (path.endsWith("/sources"))
+      result = {
+        items: [],
+        chats: [],
+        file_selection: true,
+        files: [
+          {
+            id: first,
+            name: "proposal.md",
+            project: "Клиент",
+            version: 3,
+            bytes: 1000,
+            sha256: "a".repeat(64),
+            kind: "kosmora"
+          },
+          {
+            id: second,
+            name: "notes.txt",
+            project: "Клиент",
+            version: 2,
+            bytes: 200,
+            sha256: null,
+            kind: "user"
+          }
+        ]
+      };
+    if (path.endsWith("/link"))
+      result = { url: "https://drive.google.com/drive/folders/managed_folder" };
+    if (
+      path.endsWith("/restored-files") ||
+      (path.endsWith("/backups") && request.method() === "GET")
+    )
+      result = { items: [] };
+    if (path.endsWith("/backups") && request.method() === "POST") {
+      saved.push(request.postDataJSON() as Record<string, unknown>);
+      await route.fulfill({ status: 409, json: { error: { code: "DRIVE_OPERATION_CONFLICT" } } });
+      return;
+    }
+    if (path.endsWith("/disconnect")) {
+      connected = false;
+      result = view(false);
+    }
+    await route.fulfill({ json: result });
+  });
+  await page.goto("/personal-settings#drive-storage");
+  const panel = page.locator("#drive-storage");
+  await expect(panel.getByRole("link", { name: "Открыть папку Kosmora" })).toHaveAttribute(
+    "href",
+    "https://drive.google.com/drive/folders/managed_folder"
+  );
+  await panel.getByText("Что сохранить", { exact: true }).click();
+  await panel.getByRole("checkbox", { name: "Выбрать файлы по отдельности" }).check();
+  await panel.getByRole("checkbox", { name: /proposal.md/ }).check();
+  await expect(panel.getByRole("checkbox", { name: /notes.txt/ })).not.toBeChecked();
+  await panel.getByRole("button", { name: "Сохранить копию на Drive" }).click();
+  await expect(panel.getByRole("alert")).toContainText("Выбранный файл изменился");
+  expect(saved).toHaveLength(1);
+  expect(saved[0]).toMatchObject({ include_results: false, file_ids: [first] });
+  await expect(panel.getByText("Все части копии сохранены и проверены.")).toHaveCount(0);
+  await panel.screenshot({ path: testInfo.outputPath("drive-file-selection.png") });
+  await panel.getByRole("button", { name: "Отключить Google Drive", exact: true }).click();
+  await expect(panel.getByRole("link", { name: "Открыть папку Kosmora" })).toHaveCount(0);
+});
