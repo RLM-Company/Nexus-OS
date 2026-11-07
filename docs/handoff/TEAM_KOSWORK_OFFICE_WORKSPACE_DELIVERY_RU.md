@@ -124,10 +124,13 @@ node scripts/check-secrets.mjs
 git diff --check
 ```
 
-Результат: 81 native тест, 80 API-тестов, 3 Chromium e2e — PASS.
+Актуальный результат: 101 native тест, 87 API-тестов, 4 Chromium e2e — PASS (retries=0).
+Полный `pnpm --dir desktop/windows check`: 365 passed, 1 skipped; пропуск —
+Windows-only защита installer lifecycle на Linux, Windows acceptance не заявляется.
 Сборки, typecheck и package lint выше — PASS; secret scan и diff check — PASS.
 Изменённые файлы проверены Prettier без переформатирования общих файлов целиком.
-Полный корневой `pnpm check` и Windows/production acceptance не запускались.
+Windows/production acceptance не завершены. Статус полного корневого gate указан
+ниже отдельно от модульных проверок.
 
 Проверены успешная запись/receipt/readback, неизвестный объект/unsafe formula,
 устаревшая версия, повтор commit, отказ владельца, отмена, отзыв папки, смена owner,
@@ -190,17 +193,24 @@ ZIP: прежние ограничения 1000 записей, 8 МиБ на ч
 отказ symlink/traversal/duplicate names/encryption. XML: без DTD, внешних сущностей и сетевых запросов,
 ограничения глубины/числа событий. Никакого ослабления file grants.
 
-Адресный viewer — до 300 targets и 10000 байт JSON; на листе показаны первые 100
-ячеек с явным cells_excerpt_only/total_cells. План — до 40 операций/16000 байт,
+Адресный viewer — страницы до 10000 UTF-8 байт JSON, включая native path;
+до 100 объектов/ячеек на странице. Ограничение 300 targets снято. next_cursor
+содержит target_offset/content_offset; продолжение привязано к expected_version.
+Длинный текст выдаётся без разрыва Unicode; ячейки не режутся. Объект, который
+не помещается даже один, отклоняется с VIEW_LIMIT. Метаданные total_targets,
+cells_offset/total_cells, text_offset/total_text_utf16 явно показывают неполноту. План — до 40 операций/16000 байт,
 до 100 раскрытых ячеек диапазонов, diff до 10000 байт. Больший план отклоняется,
 не обрезается. Текстовая замена требует единственного совпадения и не принимает
-переносы строк/табуляцию в замене. Редактируемые XML-части — UTF-8; существующий
-текстовый readback продолжает поддерживать UTF-16.
+переносы строк/табуляцию в замене. Редактируемые XML-части сохраняют UTF-8 (включая BOM), UTF-16LE и UTF-16BE,
+исходную декларацию и BOM. Сохранение не переводит весь пакет в plain text.
 
 Сложные fields/revisions/content controls в выбранном DOCX-объекте, распознанные
 макросы/ActiveX/embedded objects, подписанные пакеты и calcChain отклоняются. XLSX merged
 cells/table parts/extensions/shared/array formulas отклоняются при изменении;
-добавление ячейки за существующую dimension без её корректировки не поддержано.
+существующая dimension корректируется при расширении области ячеек.
+Пустые самозакрывающиеся sheetData/row поддержаны. Невалидные либо повторяющиеся
+координаты отклоняются. Comments/CDATA внутри выбранного текстового узла
+отклоняются до записи, чтобы не терять нетронутую разметку.
 Формулы — только прежний безопасный whitelist SUM/AVERAGE/MIN/MAX/COUNT с локальными
 адресами; строка, начинающаяся с '=', остаётся строкой. Чтение не равно полному
 рендеру: изображения/диаграммы/notes/headers не представлены текстом. Авто-исправления
@@ -209,7 +219,7 @@ cells/table parts/extensions/shared/array formulas отклоняются при
 ## Изменённые файлы, интеграция и откат
 
 Новые engine/transaction modules: `desktop/windows/workspace/office-edit.cjs`,
-`office-workspace.cjs`; сохранённые primitives дополнены в `office-document.cjs`
+`office-workspace.cjs`, `office-view.cjs`; сохранённые primitives дополнены в `office-document.cjs`
 и `office-text.cjs`. Новые web/API/contract файлы: `apps/web/src/app/office-document-workspace.tsx`,
 `apps/api/src/document-workspace-routes.ts`, `packages/contracts/src/office-workspace.ts`.
 Production assets копирует `scripts/copy-office-engine.mjs` из единственных исходников,
@@ -219,7 +229,11 @@ Production assets копирует `scripts/copy-office-engine.mjs` из еди�
 computer-session, computer-api-client, work-cycle-driver, vault-workspace;
 `packages/contracts/src/{computer-control,index}.ts`, `apps/api/src/{app.ts,computer-control/service.ts}`,
 `apps/api/package.json`, `apps/web/src/app/studio-files.tsx`. Их diff минимален и
-содержится в отдельном коммите `847fce7`. Windows main/installer и browser/** не менялись.
+содержится в отдельном коммите `847fce7` и отдельном интеграционном продолжении.
+Windows main/installer logic и browser/** не менялись. В `desktop/windows/package.json`
+добавлены только три runtime-файла в существующий build.files; без них установленный
+клиент не мог бы загрузить Office engine. В apps/web/package.json typecheck
+дополнен отдельной проверкой Office e2e через tsconfig.office-e2e.json.
 Тесты: office-edit, office-edit-work-cycle, fixtures/office-edit-brief/run-office-edit-brief,
 существующие vault-workspace/computer-control тесты, API document-workspace-api,
 web office-workspace e2e и playwright.office.config.ts. Новый вид отложен в VISUAL_WAITLIST.md.
@@ -266,3 +280,77 @@ pnpm exec prettier --check packages/tool-runtime/test/code-agent-workspace.test.
 Четыре локально пропущенных теста требуют отдельного OCI-стенда; их локальный
 запуск не заявляется. Первое падение CI не выдаётся за успешный запуск и не
 маскируется повтором прежнего SHA. Новый коммит должен пройти собственный CI.
+
+## Продолжение: совместимость, страницы и безопасный откат
+
+Коммит `c7ef3a2799f3e186240330eb9bce909141954887` получил GitHub CI success
+(run `42417062414`) и API identity boundary success (`42417062436`). Windows run
+`42417062426` cancelled; успешный Windows lifecycle этим не подтверждён.
+
+Добавлен negotiated tool `workspace_office_inspect_page`: отдельная capability
+`supports_workspace_office_pages` и observation `office_pages`. Legacy клиент
+не получает эту команду. Первая страница допускает null expected_version только
+для offset 0/0; каждая следующая требует точную версию. API inspect принимает
+cursor/expected_version, конфликт возвращает 409. Web показывает номер части,
+переход вперёд/назад и адреса; план сохраняется между страницами. Выбранные boolean
+значения строго проверяются. Имена с верхним/смешанным регистром расширения работают.
+API загружает engine через fileURLToPath (включая Windows и пробелы в пути).
+
+Native commit возвращает компактный readback: verified:true, version, sha256,
+representation, content_not_included:true; next_read_required:true. Байты реально
+повторно прочитаны/хешированы и разобраны. Полный текст не встраивается в receipt,
+чтобы успешная запись не потерялась из-за лимита транспортного ответа. Путь результата
+находится в saved.path; следующий inspect читает сохранённую копию. Preview ограничен
+14000 байт целиком, diff — 10000 байт, не обрезается и не создаёт план при превышении.
+
+Найдено и исправлено отсутствие Office engine в явном Windows build.files.
+Новый packaging-тест переносит только объявленные runtime-файлы в чистый каталог
+с пробелами и выполняет open/preview/save/readback всех трёх форматов. Это проверка
+состава поставки, а не подтверждение установки Windows на ПК владельца.
+
+Регрессия подмены корня папки при записи первоначально упала: прежний rollback мог
+удалить одноимённый посторонний файл в заменённой папке. Теперь удаление разрешено
+только после проверки исходного root identity, guarded path и совпадения bigint
+inode/device с открытым файлом. При невозможности доказать безопасный откат возвращается
+WORKSPACE_RESULT_UNCERTAIN; частичная копия может остаться в перемещённой исходной
+папке. Требуется повторно выбрать папку и проверить её, а не считать откат успешным.
+Посторонний файл в подменённом корне сохраняется. Отмена на последнем блоке проверяется
+до fsync; readback проверяет root identity до и после чтения. Права не ослаблялись.
+
+Новые тесты: office-edit-compatibility, office-edit-pages, office-edit-packaging;
+расширены office-edit, office-edit-work-cycle, API document-workspace-api и
+computer-control, web Office e2e. Существующие исходные acceptance outputs
+повторно воспроизведены byte-for-byte. Помимо ошибок из истории выше:
+
+- Начальная реализация добавляла лишний namespace во все XLSX cells; точный XML-тест
+  упал. Namespace теперь добавляется только при shadowing, исходные outputs совпадают.
+- Новый API cursor сначала не прошёл strict TypeScript из-за optional undefined;
+  исправлен conditional spread, последующий typecheck прошёл.
+- Первый прогон четвёртого e2e упал из-за отсутствующего параметра info в тесте;
+  исправлен callback, добавлен отдельный e2e typecheck в стандартную web-команду.
+  Итоговый прогон — все 4 passed без retries.
+- Тест безопасного отката реально воспроизвёл удаление чужого файла до исправления;
+  после исправления обе регрессии (root swap и last-block cancel) проходят.
+
+## Дополнительный воспроизводимый бриф и открытие
+
+```sh
+node desktop/windows/test/fixtures/run-office-expanded-brief.cjs work/office-expanded-acceptance
+pnpm --dir desktop/windows check
+```
+
+Входы/настоящие выходы: `docs/handoff/fixtures/koswork-office-expanded/`.
+UTF-16BE DOCX/XLSX, UTF-16LE PPTX, отдельный большой DOCX с 421 адресуемым объектом
+и длинным Unicode-текстом. results.json содержит версии/хеши/diff/проверку страниц;
+страницы восстанавливают полный текст, максимальный ответ — ровно 10000 байт.
+XLSX из пустого sheetData получает реальные строки/ячейки, типы, формулу и dimension.
+Ширины колонок заданы только исходной fixture, модуль не объявляет редактор вёрстки.
+Повтор в новом каталоге воспроизвёл те же выходные байты. Настоящая модель не вызывалась.
+
+Отдельный LibreOffice fixture-стенд открыл все три UTF-16 результата и экспортировал
+PDF: exit 0, pdftotext exit 0, stderr пустой (отдельный XDG_CACHE_HOME). В каждом
+текстовом выводе присутствуют 00123, 07.11.2026 и полное «кроме доставки»;
+Office SHA до/после рендера совпадает. PDF и lossless rendered.json лежат в
+render/{docx,xlsx,pptx}, команды и результаты — render/results.json.
+Это дополнение к первому рендеру с исходными узкими колонками, а не сокрытие
+его ограничения. Полная проверка Microsoft Office/Windows и реального HY4 не заявляется.
