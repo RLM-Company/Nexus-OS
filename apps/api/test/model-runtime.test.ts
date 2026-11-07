@@ -71,12 +71,13 @@ describe("buildModelRuntime", () => {
     async (provider, url, model, allowed) => {
       vi.stubGlobal(
         "fetch",
-        vi.fn(
-          async () =>
+        vi.fn(() =>
+          Promise.resolve(
             new Response(
               `data: ${JSON.stringify({ model: "hy4-free", choices: [{ index: 0, delta: { content: "OK" }, finish_reason: "stop" }], usage: { prompt_tokens: 1, completion_tokens: 1 } })}\n\ndata: [DONE]\n\n`,
               { headers: { "content-type": "text/event-stream" } }
             )
+          )
         )
       );
       try {
