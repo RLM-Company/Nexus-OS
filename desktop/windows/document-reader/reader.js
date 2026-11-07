@@ -37,7 +37,8 @@ window.kosmoraReadPdf = async function ({ base64, pageIndex, mode }) {
     const page = await doc.getPage(pageIndex + 1),
       content = await page.getTextContent();
     let text = "",
-      textClipped = false;
+      textClipped = false,
+      layout = null;
     for (const item of content.items) {
       if (!Object.hasOwn(item, "str")) continue;
       const chunk = item.str + (item.hasEOL ? "\n" : " ");
@@ -89,10 +90,11 @@ window.kosmoraReadPdf = async function ({ base64, pageIndex, mode }) {
       // Words are never dropped or rewritten; geometry that does not verify a
       // grid keeps the engine's plain text. It is still not semantic reading,
       // not handwriting or diagram understanding and not a guaranteed table.
-      const layout = layoutFromWords(collectOcrWords(result.data.blocks), {
+      const detected = layoutFromWords(collectOcrWords(result.data.blocks), {
         maxText: MAX_TEXT
       });
-      if (layout) {
+      if (detected) {
+        layout = detected;
         textClipped = layout.text.length > MAX_TEXT;
         text = layout.text.slice(0, MAX_TEXT).trimEnd();
       }
