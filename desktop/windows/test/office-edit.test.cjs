@@ -262,15 +262,24 @@ test("a root swapped during a binary write cannot redirect rollback to an unrela
     moved = folder + "-moved",
     target = path.join(folder, "result.docx");
   const originalWrite = fs.writeSync;
-  let swapped = false,
+  let attempted = false,
+    swapped = false,
+    renameBlocked,
     error;
   fs.writeSync = function (fd, ...rest) {
     const written = originalWrite.call(this, fd, ...rest);
-    if (!swapped && fs.existsSync(target) && fs.fstatSync(fd).ino === fs.statSync(target).ino) {
-      swapped = true;
-      fs.renameSync(folder, moved);
+    if (!attempted && fs.existsSync(target) && fs.fstatSync(fd).ino === fs.statSync(target).ino) {
+      attempted = true;
+      try {
+        fs.renameSync(folder, moved);
+      } catch (e) {
+        if (process.platform === "win32" && ["EPERM", "EACCES", "EBUSY"].includes(e.code))
+          renameBlocked = e;
+        throw e;
+      }
       fs.mkdirSync(folder);
       fs.writeFileSync(target, "UNRELATED FILE MUST SURVIVE");
+      swapped = true;
     }
     return written;
   };
@@ -281,8 +290,25 @@ test("a root swapped during a binary write cannot redirect rollback to an unrela
   } finally {
     fs.writeSync = originalWrite;
   }
-  assert.equal(swapped, true);
+  assert.equal(attempted, true);
   assert.ok(error);
+  if (renameBlocked) {
+    assert.equal(process.platform, "win32");
+    assert.equal(error, renameBlocked);
+    assert.equal(swapped, false);
+    assert.equal(fs.existsSync(moved), false);
+    assert.equal(
+      fs.existsSync(target),
+      false,
+      "the blocked rename rolls back its own partial copy"
+    );
+    assert.deepEqual(fs.readFileSync(path.join(folder, "offer.docx")), source);
+    t.diagnostic(
+      "Windows denied moving the open-file directory; original folder/source and safe rollback verified. Actual root replacement is covered on systems allowing the rename."
+    );
+    return;
+  }
+  assert.equal(swapped, true);
   assert.equal(
     fs.existsSync(target),
     true,
