@@ -142,27 +142,23 @@ export function layoutFromWords(rawWords, { maxText = 180000 } = {}) {
   if (tableLines.length < Math.max(MIN_TABLE_ROWS, Math.ceil(kRows * 0.6))) return null;
   const isTable = new Set(tableLines);
   const partsFor = new Map();
-  let used = 0;
   for (const entry of candidates) {
     const parts =
       isTable.has(entry.line) && matchesGrid(entry.cells)
         ? entry.cells.map((cell) => cellText(cell))
         : [cellText({ words: entry.line.words })];
     partsFor.set(entry.line, parts);
-    used += parts.join("\t").length + 1;
   }
   for (const line of lines) {
     if (partsFor.has(line)) continue;
-    const parts = [cellText({ words: line.words })];
-    partsFor.set(line, parts);
-    used += parts.join("\t").length + 1;
+    partsFor.set(line, [cellText({ words: line.words })]);
   }
   const text =
     [...lines]
       .sort((a, b) => a.top - b.top || a.words[0].bbox.x0 - b.words[0].bbox.x0)
       .map((line) => partsFor.get(line).join("\t"))
       .join("\n") + "\n";
-  if (used > maxText + lines.length && text.length > maxText) return null;
+  if (text.length > maxText) return null;
   return { kind: "table", text, rows: tableLines.length, columns: k };
 }
 
