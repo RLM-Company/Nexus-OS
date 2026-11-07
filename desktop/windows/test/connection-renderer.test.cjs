@@ -181,7 +181,12 @@ test("refused cancel keeps the existing decision visible and stays busy", async 
   const r = renderer();
   await tick();
   const refusal = "Проверка уже завершилась или выполняется смена сервера — дождитесь результата.";
-  r.changeState({ origin: "https://saved.example", mode: "offline", connecting: true, message: refusal });
+  r.changeState({
+    origin: "https://saved.example",
+    mode: "offline",
+    connecting: true,
+    message: refusal
+  });
   const cancelClick = r.nodes.get("#cancel").handlers.click();
   r.pending[0].resolve({ ok: false, stale: true, message: refusal });
   await cancelClick;

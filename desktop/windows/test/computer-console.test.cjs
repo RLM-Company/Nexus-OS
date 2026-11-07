@@ -125,7 +125,8 @@ async function fixture(options = {}) {
   };
 }
 
-test("only the exact packaged main frame can resume a human checkpoint", async () => {  const f = await fixture();
+test("only the exact packaged main frame can resume a human checkpoint", async () => {
+  const f = await fixture();
   const resume = f.handlers.get("koswork:computer-resume");
   for (const event of [
     { ...f.trusted, sender: {} },

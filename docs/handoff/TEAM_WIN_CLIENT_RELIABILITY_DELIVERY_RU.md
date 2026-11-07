@@ -3,7 +3,7 @@
 Дата: 2026-11-07 · Ветка: `desc/win-client-reliability` · База реализации:
 `338536ee5946f96dcd…` (main после PR №463). Фактический SHA первого коммита
 блока — см. раздел «Коммиты». Multi-Agent, Jarvis и облачный компьютер не
-затрагивались; browser/**, work-cycle/computer-session и Office-реализация не
+затрагивались; browser/\*\*, work-cycle/computer-session и Office-реализация не
 менялись, кроме вынесенных точечных дополнений к already-existing консоли.
 
 ## Что было

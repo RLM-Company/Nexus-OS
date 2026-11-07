@@ -197,10 +197,14 @@ void window.kosworkComputer
       return;
     }
     const obstacles = [];
-    if (!snapshot.idle || snapshot.gateBusy) obstacles.push("задача уже выполняется или завершается");
+    if (!snapshot.idle || snapshot.gateBusy)
+      obstacles.push("задача уже выполняется или завершается");
     if (!snapshot.ownerVerified) obstacles.push(availabilityObstacles.COMPUTER_OWNER_UNVERIFIED);
     if (!snapshot.helperReady)
-      obstacles.push(availabilityObstacles[snapshot.helperReason] || availabilityObstacles.COMPUTER_HELPER_UNAVAILABLE);
+      obstacles.push(
+        availabilityObstacles[snapshot.helperReason] ||
+          availabilityObstacles.COMPUTER_HELPER_UNAVAILABLE
+      );
     if (snapshot.reason && !obstacles.length)
       obstacles.push(availabilityObstacles[snapshot.reason] || snapshot.reason);
     availabilityNote.textContent = obstacles.length

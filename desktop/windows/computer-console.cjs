@@ -23,7 +23,8 @@ function createComputerConsole({
   openBrowser = null,
   createRunner = (options) => new ComputerSession(options)
 }) {
-  if (!history) throw Error("COMPUTER_HISTORY_UNAVAILABLE");  let window = null;
+  if (!history) throw Error("COMPUTER_HISTORY_UNAVAILABLE");
+  let window = null;
   let prefill = null;
   let pending = false;
   let epoch = 0;
@@ -241,8 +242,7 @@ function createComputerConsole({
       "computer-helper.ps1"
     );
   const helperReady = () => {
-    if (process.platform !== "win32")
-      return { ready: false, reason: "COMPUTER_WINDOWS_REQUIRED" };
+    if (process.platform !== "win32") return { ready: false, reason: "COMPUTER_WINDOWS_REQUIRED" };
     try {
       if (fs.statSync(helperLocation()).isFile()) return { ready: true, reason: null };
       return { ready: false, reason: "COMPUTER_HELPER_UNAVAILABLE" };
@@ -286,7 +286,8 @@ function createComputerConsole({
     }
     return snapshot;
   });
-  ipcMain.handle("koswork:computer-projects", async (event) => {    if (!trusted(event)) return { error: "Недоверенный источник." };
+  ipcMain.handle("koswork:computer-projects", async (event) => {
+    if (!trusted(event)) return { error: "Недоверенный источник." };
     try {
       const current = await checkedContext(event);
       const result = await planner.request("/api/v1/projects", { expected: current });

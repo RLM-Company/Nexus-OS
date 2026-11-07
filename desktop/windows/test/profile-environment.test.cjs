@@ -5,7 +5,11 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const test = require("node:test");
-const { evaluateProfile, isRedirectedDirectory, profileStatusText } = require("../profile-environment.cjs");
+const {
+  evaluateProfile,
+  isRedirectedDirectory,
+  profileStatusText
+} = require("../profile-environment.cjs");
 
 test("an ordinary writable profile passes with no faults", () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "kosmora-profile-ok-"));
@@ -69,7 +73,12 @@ test("profile status text lists directory, redirection and faults", () => {
   assert.match(text, /недоступен/);
   assert.match(text, /VAULT_REFUSED/);
   // A redirected-but-working profile stays explanatory and non-blocking.
-  const redirected = profileStatusText({ profileDirectory: "C:\\X", redirected: true, ok: true, reason: "" });
+  const redirected = profileStatusText({
+    profileDirectory: "C:\\X",
+    redirected: true,
+    ok: true,
+    reason: ""
+  });
   assert.doesNotMatch(redirected, /проблема/i);
   assert.match(redirected, /профиль/i);
 });

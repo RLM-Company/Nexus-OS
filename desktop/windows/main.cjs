@@ -764,11 +764,11 @@ async function restoreAfterAuthentication() {
 function isTrustedRemoteEvent(event) {
   return Boolean(
     mainWindow &&
-    !mainWindow.isDestroyed() &&
-    event?.sender === mainWindow.webContents &&
-    event.senderFrame === mainWindow.webContents.mainFrame &&
-    isAllowedRemoteNavigation(event.senderFrame.url, currentOrigin) &&
-    !isLoginOrLogout(event.senderFrame.url, currentOrigin)
+      !mainWindow.isDestroyed() &&
+      event?.sender === mainWindow.webContents &&
+      event.senderFrame === mainWindow.webContents.mainFrame &&
+      isAllowedRemoteNavigation(event.senderFrame.url, currentOrigin) &&
+      !isLoginOrLogout(event.senderFrame.url, currentOrigin)
   );
 }
 
@@ -835,7 +835,12 @@ async function showProfileStatus() {
   await dialog.showMessageBox(mainWindow, {
     type: "info",
     title: "Состояние локального профиля Kosmora",
-    message: status.ok && status.faults.length ? "Профиль работает с ограничениями." : status.ok ? "Профиль работает." : "Профиль работает с ограничениями.",
+    message:
+      status.ok && status.faults.length
+        ? "Профиль работает с ограничениями."
+        : status.ok
+          ? "Профиль работает."
+          : "Профиль работает с ограничениями.",
     detail: profileStatusText(status)
   });
 }
@@ -856,7 +861,8 @@ async function showGettingStarted() {
   });
 }
 
-function startConnectivityMonitor() {  clearInterval(connectivityTimer);
+function startConnectivityMonitor() {
+  clearInterval(connectivityTimer);
   connectivityTimer = setInterval(async () => {
     if (
       !mainWindow ||
@@ -1588,7 +1594,8 @@ ipcMain.handle("cosmora:retry", async (event) => {
 });
 
 ipcMain.handle("cosmora:cancel-connect", (event) => {
-  if (!isTrustedConnectionEvent(event)) return { ok: false, message: "Недоверенный источник запроса." };
+  if (!isTrustedConnectionEvent(event))
+    return { ok: false, message: "Недоверенный источник запроса." };
   // Cancellation only fences the health-check stage. Once the switch has
   // started mutating local data, the attempt runs to completion to keep the
   // profile consistent; the user sees that result instead.
