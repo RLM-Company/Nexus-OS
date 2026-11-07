@@ -124,12 +124,13 @@ node scripts/check-secrets.mjs
 git diff --check
 ```
 
-Актуальный результат: 101 native тест, 87 API-тестов, 4 Chromium e2e — PASS (retries=0).
-Полный `pnpm --dir desktop/windows check`: 365 passed, 1 skipped; пропуск —
+Актуальный результат: 102 native теста, 87 API-тестов, 4 Chromium e2e — PASS (retries=0).
+Полный `pnpm --dir desktop/windows check`: 366 passed, 1 skipped; пропуск —
 Windows-only защита installer lifecycle на Linux, Windows acceptance не заявляется.
 Сборки, typecheck и package lint выше — PASS; secret scan и diff check — PASS.
 Изменённые файлы проверены Prettier без переформатирования общих файлов целиком.
-Windows/production acceptance не завершены. Статус полного корневого gate указан
+Production и приёмка на ПК владельца не выполнялись; результат GitHub Windows VM
+указан отдельно ниже. Статус полного корневого gate указан
 ниже отдельно от модульных проверок.
 
 Проверены успешная запись/receipt/readback, неизвестный объект/unsafe formula,
@@ -201,7 +202,7 @@ ZIP: прежние ограничения 1000 записей, 8 МиБ на ч
 cells_offset/total_cells, text_offset/total_text_utf16 явно показывают неполноту. План — до 40 операций/16000 байт,
 до 100 раскрытых ячеек диапазонов, diff до 10000 байт. Больший план отклоняется,
 не обрезается. Текстовая замена требует единственного совпадения и не принимает
-переносы строк/табуляцию в замене. Редактируемые XML-части сохраняют UTF-8 (включая BOM), UTF-16LE и UTF-16BE,
+переносы строк/табуляцию в замене. Редактируемые XML-части сохраняют UTF-8 (включая BOM), UTF-16LE и UTF-16BE с BOM,
 исходную декларацию и BOM. Сохранение не переводит весь пакет в plain text.
 
 Сложные fields/revisions/content controls в выбранном DOCX-объекте, распознанные
@@ -239,9 +240,11 @@ Windows main/installer logic и browser/** не менялись. В `desktop/wi
 web office-workspace e2e и playwright.office.config.ts. Новый вид отложен в VISUAL_WAITLIST.md.
 
 Миграций нет: новые постоянные таблицы/хранилища не создавались. Для интеграции
-нужны все три коммита реализации; отдельно engine без integration не поставка.
+нужна вся серия реализации с обоими интеграционными коммитами и продолжениями,
+перечисленными ниже; отдельно engine без integration не поставка.
 API build должен копировать Office assets, web собирается после contracts.
-Для отката сначала revert интеграционного коммита (скрывает контролы/capabilities/
+Для отката сначала revert продолжений в обратном порядке, затем исходного
+интеграционного коммита (скрывает контролы/capabilities/
 маршруты и вызовы), затем коммитов реализации в обратном порядке. При откате всех
 коммитов одновременно конфликтов промежуточной типизации не будет. Файлы пользователя
 не удалять: источники не заменялись, новые копии — самостоятельные результаты.
@@ -367,3 +370,62 @@ Windows EPERM/EACCES/EBUSY. При запрете ОС проверяются и
 перемещённой папки/частичной копии и исходная ошибка; это не skip. Если rename
 разрешён, по-прежнему обязательны реальная подмена, сохранение постороннего файла
 и WORKSPACE_RESULT_UNCERTAIN. Произвольная ошибка rename тест не проходит.
+
+## Полный локальный gate итоговых исходников
+
+Опубликованные продолжения:
+
+- `fb53a6ddeb284aa1815b22113381db74be674458` — UTF-16/структурные правки, страницы и UI/API.
+- `fd935de44f0f0b7145c2cc239d32df7fb323f5e8` — отдельная минимальная интеграция capability,
+  runtime packaging и безопасного отката.
+- `914ae14861274e30ae6d38733d7272ffe7facc5d` — входы/выходы/рендер и handoff.
+- `48f0f2de9d4f812cf897b423c1d84cac4365f19e` — Windows semantics нового rollback-теста.
+
+В отдельном чистом checkout `/workspace/work/Nexus-OS-quality` установлен frozen
+lockfile с ignore-scripts (отдельные PNPM_HOME/XDG_DATA_HOME/store-dir). Выполнен
+`pnpm check:core` с exit 0 сначала на дереве `914ae148`, затем на точном `48f0f2de`.
+Второй запуск использовал Turbo cache для неизменённых package tasks; format,
+secret scan и отдельные корневые сценарии выполнялись самой командой.
+Это полный core gate: format, secrets, lint, typecheck, package tests, deploy/
+connection/live-acceptance guards, secret/media tests, builds, privacy и profile.
+Модельных/внешних paid-запросов не было. Package test totals: API 912, core 386,
+web 263, contracts 206, db 148, model-gateway 151, policy-engine 43, tool-runtime
+64 passed/4 OCI skipped; OCI локально не заявляется. Конфигурационный пакет также
+прошёл (см. команды gate). Полный `pnpm check` с общим browser suite локально не
+выдаётся за запущенный: отдельно выполнены 4 Office Chromium e2e без retries.
+
+После test-only уточнения дополнительной границы viewer отдельно снова запущены
+полный desktop check (366 passed/1 Windows-only skipped) и Office/workspace suite
+(102 passed), format и diff. Большая целая XLSX-ячейка (>10000 байт с метаданными)
+честно отклоняет preview до записи даже при правке другой ячейки. Исходник цел.
+Первоначальный эксперимент ожидал успешную правку такого листа, но показал, что
+существующая preview-проверка уже запрещает план до записи. Production-ошибки
+после сохранения он не обнаружил; регрессия закрепляет фактическую границу.
+
+## Успешная Windows-поставка на отдельной VM
+
+Для `48f0f2de9d4f812cf897b423c1d84cac4365f19e` Windows workflow
+[42424320827](https://github.com/RLM-Company/Nexus-OS/actions/runs/42424320827),
+job `128559222738`, завершён **success**. В журнале: 366 tests passed, 0 failed,
+0 skipped; Windows действительно запретил rename открытого каталога, тест подтвердил
+исходник и безопасный rollback. Пройдены syntax/policy checks, текущий и baseline
+installer build, fresh install/packaged GUI, upgrade/uninstall с сохранением данных,
+проверка и загрузка installer artifact. Это существующий изолированный GitHub-hosted
+стенд; ПК владельца/production не затрагивались.
+
+Артефакт `Kosmora-Setup-0.23.0-x64.exe`, SHA256:
+`912789a7968bf4bcd64235ce40d81c8d4d6073aeb2bd4df46b2ea6a16966c340`.
+Packaged GUI receipt ok:true проверил relaunch/recovery, сохранение draft/route,
+second-instance deep link, offline recovery, owner B isolation и очистку при logout.
+Это общая GUI/lifecycle-проверка приложения; визуальная приёмка Office-документов
+в Microsoft Office не выполнялась. Неподтверждённые предыдущие cancelled запуски
+не переименованы в успешные.
+
+На том же SHA GitHub Verify monorepo и Code sandbox isolation — success в
+[42424320707](https://github.com/RLM-Company/Nexus-OS/actions/runs/42424320707),
+API identity boundary — success в
+[42424320752](https://github.com/RLM-Company/Nexus-OS/actions/runs/42424320752).
+На момент подготовки этого дополнения общий browser job ещё выполнялся;
+окончательный статус текущего HEAD смотрите в checks PR №466. Последующее изменение
+содержит только дополнительный тест отказа oversized cell и этот отчёт;
+production-исходники совпадают с проверенным `48f0f2de`.

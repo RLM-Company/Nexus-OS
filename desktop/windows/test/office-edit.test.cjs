@@ -355,3 +355,34 @@ test("cancellation after the last binary block rolls back only the file created 
   assert.equal(fs.existsSync(path.join(folder, "result.docx")), false);
   assert.deepEqual(fs.readFileSync(path.join(folder, "offer.docx")), source);
 });
+test("a whole cell beyond the viewer budget rejects the plan before writing", async (t) => {
+  const { service: s, auth, folder } = await setup(t);
+  const { zip } = require("../workspace/office-document.cjs");
+  const entries = unpack(input("xlsx"), 16000000).entries;
+  entries.set(
+    "xl/worksheets/sheet1.xml",
+    Buffer.from(
+      entries
+        .get("xl/worksheets/sheet1.xml")
+        .toString()
+        .replace(">00123<", ">" + "Д".repeat(6000) + "<")
+    )
+  );
+  const source = zip([...entries]);
+  fs.writeFileSync(path.join(folder, "offer.xlsx"), source);
+  assert.throws(
+    () => s.inspectOfficeDocument({ ...auth, relativePath: "offer.xlsx" }),
+    /VIEW_LIMIT/
+  );
+  const opened = await s.readDocumentFile({ ...auth, relativePath: "offer.xlsx" });
+  const args = {
+    ...auth,
+    relativePath: "offer.xlsx",
+    outputPath: "result.xlsx",
+    expectedVersion: opened.version,
+    operations: [{ kind: "set_cell", target: "sheet:1", address: "B1", value: 19800 }]
+  };
+  assert.throws(() => s.previewOfficeDocument(args), /VIEW_LIMIT/);
+  assert.equal(fs.existsSync(path.join(folder, "result.xlsx")), false);
+  assert.deepEqual(fs.readFileSync(path.join(folder, "offer.xlsx")), source);
+});
