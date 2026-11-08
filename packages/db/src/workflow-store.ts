@@ -222,6 +222,19 @@ export class WorkflowStore {
         .all(id, project, owner) as RunRow[]
     ).map(runView);
   }
+  /** Exact lookup for an explicitly selected run. Unrelated or very old runs
+   * return null through the same owner/project/workflow predicate, with no leak.
+   */
+  run(project: string, owner: string, workflowId: string, runId: string): WorkflowRun | null {
+    const row = this.sql
+      .prepare(
+        `SELECT r.* FROM kosmora_workflow_runs r
+         JOIN projects p ON p.id=r.project_id AND p.owner_id=r.owner_id
+         WHERE r.id=? AND r.workflow_id=? AND r.project_id=? AND r.owner_id=?`
+      )
+      .get(runId, workflowId, project, owner) as RunRow | undefined;
+    return row ? runView(row) : null;
+  }
   start(
     project: string,
     owner: string,
