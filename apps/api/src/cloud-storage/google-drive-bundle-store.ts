@@ -4,6 +4,7 @@ import type { DriveContext } from "./google-drive-store.js";
 import type { DrivePayloadCipher } from "./google-drive-payload-cipher.js";
 import { DriveStorageError } from "./google-drive.js";
 import {
+  listDriveResultSources,
   parseSnapshot,
   SNAPSHOT_CHUNK_BYTES,
   snapshotHash,
@@ -40,9 +41,20 @@ export type RestoreResult = {
 const hash = (s: string) => createHash("sha256").update(s).digest("hex");
 const columns =
   "id,owner_id,connection_id,operation_id,selection_sha,bytes,sha256,part_count,parts_json,preview_json,state,preview_token,preview_until,preview_epoch,preview_connection,created_at,updated_at";
+/** Legacy rows without file_ids keep the previous hash. A new explicit file
+ * selection is part of the operation identity and cannot reuse another bundle.
+ */
 export const selectionHash = (s: SnapshotSelection) =>
   hash(
-    JSON.stringify({ ids: s.chat_ids ? [...s.chat_ids].sort() : null, results: s.include_results })
+    JSON.stringify(
+      s.file_ids === undefined
+        ? { ids: s.chat_ids ? [...s.chat_ids].sort() : null, results: s.include_results }
+        : {
+            ids: s.chat_ids ? [...s.chat_ids].sort() : null,
+            files: [...s.file_ids].sort(),
+            results: s.include_results
+          }
+    )
   );
 export const bundleView = (r: BundleRow) => ({
   id: r.id,
@@ -116,11 +128,22 @@ export class GoogleDriveBundleStore {
     ).map(bundleView);
   }
   sources(owner: string) {
-    return this.db
+    const chats = this.db
       .prepare(
         "SELECT id,title,mode FROM general_chats WHERE owner_id=? AND mode IN ('kosmora','work') ORDER BY updated_at DESC LIMIT 2000"
       )
       .all(owner);
+    const files = listDriveResultSources(this.db, owner, false).map((s) => ({
+      id: s.id,
+      name: s.name,
+      project: s.project,
+      version: s.version,
+      bytes: s.bytes,
+      sha256: s.sha256,
+      kind: s.kind
+    }));
+    // Keep the legacy chat list for clients already loaded before this update.
+    return { items: chats, chats, files, file_selection: true };
   }
   counts(owner: string): { total: number; pending: number } {
     return this.db

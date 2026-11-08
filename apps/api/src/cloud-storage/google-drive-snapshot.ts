@@ -8,7 +8,8 @@ import { DriveStorageError } from "./google-drive.js";
 
 export const SNAPSHOT_MAX_BYTES = 32 * 1024 * 1024;
 export const SNAPSHOT_CHUNK_BYTES = 2 * 1024 * 1024;
-export const snapshotHash = (b: Uint8Array) => createHash("sha256").update(b).digest("hex");
+export const snapshotHash = (b: Uint8Array | string) =>
+  createHash("sha256").update(b).digest("hex");
 const strict = { additionalProperties: false };
 const id = Type.String({ minLength: 1, maxLength: 128 });
 const date = Type.String({ minLength: 20, maxLength: 35 });
@@ -84,7 +85,182 @@ const schema = Type.Object(
   strict
 );
 export type DriveSnapshot = Static<typeof schema>;
-export type SnapshotSelection = { chat_ids?: string[]; include_results: boolean };
+export type SnapshotSelection = {
+  chat_ids?: string[];
+  file_ids?: string[];
+  include_results: boolean;
+};
+
+/** Metadata-only, owner-bound local Work results. Published Kosmora artifacts
+ * carry a stored checksum/version. Completed legacy Work files carry the Work
+ * version and byte length as their available immutable identity. No Drive list,
+ * cloud model context, credentials or unselected file bodies are read here.
+ * The legacy no-file_ids include_results=true selection keeps all completed Work
+ * results; a request that supplies file_ids is a distinct explicit selection.
+ */
+const RESULT_METADATA_SQL = `
+  SELECT 'kosmora' AS kind, a.id AS source_key, a.name AS name,
+         CAST(a.version AS INTEGER) AS version, p.title AS project,
+         a.sha256 AS sha256, length(CAST(a.content AS BLOB)) AS bytes
+    FROM work_artifact_versions a
+    JOIN projects p ON p.id=a.project_id
+    JOIN manager_work w ON w.id=a.work_id AND w.project_id=a.project_id
+   WHERE p.owner_id=? AND w.owner_id=? AND a.published=1
+   UNION ALL
+  SELECT 'user' AS kind,
+         f.execution_id || char(31) || f.name || char(31) || coalesce(CAST(w.version AS TEXT),'') AS source_key,
+         f.name AS name, CAST(coalesce(w.version,1) AS INTEGER) AS version,
+         p.title AS project, NULL AS sha256,
+         length(CAST(f.content AS BLOB)) AS bytes
+    FROM manager_work_files f
+    JOIN manager_work w ON w.id=f.execution_id
+    JOIN projects p ON p.id=w.project_id
+   WHERE p.owner_id=? AND w.owner_id=?
+     AND json_extract(w.state_json,'$.status')='completed'
+     AND NOT EXISTS(SELECT 1 FROM work_artifact_versions a
+                    WHERE a.work_id=w.id AND a.name=f.name AND a.published=1)
+`;
+export type DriveResultSource = {
+  id: string;
+  kind: "kosmora" | "user";
+  name: string;
+  content: string | null;
+  sha256: string | null;
+  version: number;
+  project: string;
+  bytes: number;
+  sourceKey: string;
+  fingerprint: string;
+};
+type ResultSourceRow = {
+  kind: unknown;
+  source_key: unknown;
+  name: unknown;
+  version: unknown;
+  project: unknown;
+  sha256: unknown;
+  bytes: unknown;
+};
+type SourceBase = Omit<DriveResultSource, "id" | "content" | "fingerprint">;
+const fingerprintOf = (r: SourceBase) =>
+  snapshotHash(
+    [r.kind, r.sourceKey, String(r.version), String(r.bytes), r.sha256 ?? ""].join("\0")
+  );
+const resultSourceId = (r: SourceBase) => `${r.kind}_${fingerprintOf(r).slice(0, 32)}`;
+
+function loadResultMetadata(db: DatabaseSync, owner: string): DriveResultSource[] {
+  const rows = db
+    .prepare(`${RESULT_METADATA_SQL} ORDER BY name, kind, project, source_key LIMIT 2001`)
+    .all(owner, owner, owner, owner) as ResultSourceRow[];
+  return rows.map((r) => {
+    if (
+      (r.kind !== "kosmora" && r.kind !== "user") ||
+      typeof r.source_key !== "string" ||
+      !r.source_key.length ||
+      r.source_key.length > 1024 ||
+      typeof r.name !== "string" ||
+      !r.name.length ||
+      r.name.length > 160 ||
+      typeof r.project !== "string" ||
+      r.project.length > 200
+    )
+      throw new DriveStorageError("BACKUP_INVALID");
+    const bytes = Number(r.bytes),
+      version = Number(r.version);
+    if (!Number.isSafeInteger(bytes) || bytes < 0 || !Number.isSafeInteger(version) || version < 1)
+      throw new DriveStorageError("BACKUP_INVALID");
+    const base: SourceBase = {
+      kind: r.kind,
+      sourceKey: r.source_key,
+      name: r.name,
+      version,
+      project: r.project,
+      bytes,
+      sha256: typeof r.sha256 === "string" ? r.sha256 : null
+    };
+    const fingerprint = fingerprintOf(base);
+    return { ...base, id: resultSourceId(base), content: null, fingerprint };
+  });
+}
+
+type ResultBody = { content: string; sha256: string; bytes: number; version: number };
+function readSelectedResultBody(
+  db: DatabaseSync,
+  owner: string,
+  source: DriveResultSource
+): ResultBody {
+  // Compare the exact owner-bound row, without rescanning every other source.
+  const current = source;
+  const row = (
+    source.kind === "kosmora"
+      ? db
+          .prepare(
+            `SELECT a.content AS content, CAST(a.version AS INTEGER) AS version,
+                  a.sha256 AS sha256, length(CAST(a.content AS BLOB)) AS bytes
+             FROM work_artifact_versions a
+             JOIN projects p ON p.id=a.project_id
+             JOIN manager_work w ON w.id=a.work_id AND w.project_id=a.project_id
+            WHERE p.owner_id=? AND w.owner_id=? AND a.published=1 AND a.id=? LIMIT 1`
+          )
+          .get(owner, owner, source.sourceKey)
+      : db
+          .prepare(
+            `SELECT f.content AS content, CAST(coalesce(w.version,1) AS INTEGER) AS version,
+                  NULL AS sha256, length(CAST(f.content AS BLOB)) AS bytes
+             FROM manager_work_files f
+             JOIN manager_work w ON w.id=f.execution_id
+             JOIN projects p ON p.id=w.project_id
+            WHERE p.owner_id=? AND w.owner_id=?
+              AND json_extract(w.state_json,'$.status')='completed'
+              AND f.execution_id || char(31) || f.name || char(31) || coalesce(CAST(w.version AS TEXT),'')=?
+              AND NOT EXISTS(SELECT 1 FROM work_artifact_versions a
+                             WHERE a.work_id=w.id AND a.name=f.name AND a.published=1) LIMIT 1`
+          )
+          .get(owner, owner, source.sourceKey)
+  ) as { content: unknown; version: unknown; sha256: unknown; bytes: unknown } | undefined;
+  if (!row) throw new DriveStorageError("DRIVE_OPERATION_CONFLICT");
+  const version = Number(row.version),
+    bytes = Number(row.bytes);
+  if (
+    version !== current.version ||
+    bytes !== current.bytes ||
+    (current.sha256 !== null && row.sha256 !== current.sha256)
+  )
+    throw new DriveStorageError("DRIVE_OPERATION_CONFLICT");
+  const content =
+    typeof row.content === "string"
+      ? row.content
+      : row.content instanceof Uint8Array
+        ? Buffer.from(row.content).toString("utf8")
+        : null;
+  if (content === null || Buffer.byteLength(content, "utf8") !== bytes)
+    throw new DriveStorageError("BACKUP_INVALID");
+  const computed = snapshotHash(Buffer.from(content, "utf8"));
+  let sha256 = typeof row.sha256 === "string" ? row.sha256 : null;
+  if (sha256 !== null) {
+    if (!/^[a-f0-9]{64}$/.test(sha256)) throw new DriveStorageError("BACKUP_INVALID");
+  } else {
+    sha256 = computed;
+  }
+  if (sha256 !== computed) throw new DriveStorageError("BACKUP_INVALID");
+  return { content, sha256, bytes, version };
+}
+
+export function listDriveResultSources(
+  db: DatabaseSync,
+  owner: string,
+  withContent = false
+): DriveResultSource[] {
+  const sources = loadResultMetadata(db, owner);
+  if (sources.length > 2000) throw new DriveStorageError("BACKUP_TOO_LARGE");
+  if (!withContent) return sources.map((s) => ({ ...s, content: null }));
+  if (sources.reduce((bytes, s) => bytes + s.bytes, 0) > SNAPSHOT_MAX_BYTES)
+    throw new DriveStorageError("BACKUP_TOO_LARGE");
+  return sources.map((s) => {
+    const body = readSelectedResultBody(db, owner, s);
+    return { ...s, content: body.content, sha256: body.sha256 };
+  });
+}
 
 export function parseSnapshot(bytes: Uint8Array): DriveSnapshot {
   if (!bytes.length || bytes.length > SNAPSHOT_MAX_BYTES)
@@ -139,6 +315,7 @@ export function snapshotPreview(s: DriveSnapshot) {
     filenames: s.files.slice(0, 30).map((f) => `${f.project} · ${f.name} · v${f.version}`)
   };
 }
+
 export function captureSnapshot(
   db: DatabaseSync,
   owner: string,
@@ -146,34 +323,78 @@ export function captureSnapshot(
 ): Buffer {
   db.exec("BEGIN IMMEDIATE");
   try {
-    if ((selection.chat_ids?.length ?? 0) > 2000) throw new DriveStorageError("BACKUP_TOO_LARGE");
-    const filter = selection.chat_ids
-      ? selection.chat_ids.length
-        ? ` AND id IN (${selection.chat_ids.map(() => "?").join(",")})`
+    if (
+      !selection ||
+      typeof selection.include_results !== "boolean" ||
+      (selection.chat_ids?.length ?? 0) > 2000 ||
+      (selection.file_ids?.length ?? 0) > 2000
+    )
+      throw new DriveStorageError("BACKUP_INVALID_SELECTION");
+    const chatIds = selection.chat_ids ?? [];
+    const chatFilter = selection.chat_ids
+      ? chatIds.length
+        ? ` AND c.id IN (${chatIds.map(() => "?").join(",")})`
         : " AND 0"
       : "";
     const chats = db
       .prepare(
-        "SELECT id,title,mode FROM general_chats WHERE owner_id=? AND mode IN ('kosmora','work')" +
-          filter +
-          " ORDER BY created_at,rowid LIMIT 2001"
+        `SELECT c.id AS id,c.title AS title,c.mode AS mode
+           FROM general_chats c
+          WHERE c.owner_id=? AND c.mode IN ('kosmora','work')${chatFilter}
+          ORDER BY c.created_at,c.rowid LIMIT 2001`
       )
-      .all(owner, ...(selection.chat_ids ?? [])) as {
-      id: string;
-      title: string;
-      mode: "kosmora" | "work";
-    }[];
+      .all(owner, ...chatIds) as { id: string; title: string; mode: "kosmora" | "work" }[];
     if (chats.length > 2000) throw new DriveStorageError("BACKUP_TOO_LARGE");
-    const selected = selection.chat_ids ? new Set(selection.chat_ids) : null;
+    const selectedChats = selection.chat_ids ? new Set(chatIds) : null;
     if (
-      selected &&
-      (selected.size !== selection.chat_ids!.length ||
-        [...selected].some((x) => !chats.some((c) => c.id === x)))
+      selectedChats &&
+      (selectedChats.size !== chatIds.length ||
+        [...selectedChats].some((x) => !chats.some((c) => c.id === x)))
     )
       throw new DriveStorageError("BACKUP_INVALID_SELECTION");
-    let size = 0,
-      count = 0,
-      encoded = 256;
+    const explicitFiles = selection.file_ids ? new Set(selection.file_ids) : null;
+    if (
+      explicitFiles &&
+      (explicitFiles.size !== selection.file_ids!.length ||
+        selection.file_ids!.some((v) => !/^(kosmora|user)_[a-f0-9]{32}$/.test(v)))
+    )
+      throw new DriveStorageError("BACKUP_INVALID_SELECTION");
+    const needsFiles = Boolean(explicitFiles) || selection.include_results;
+    const sources = needsFiles ? loadResultMetadata(db, owner) : [];
+    if (needsFiles && sources.length > 2000) throw new DriveStorageError("BACKUP_TOO_LARGE");
+    if (explicitFiles) {
+      const found = new Set(sources.filter((s) => explicitFiles.has(s.id)).map((s) => s.id));
+      if (found.size !== explicitFiles.size)
+        throw new DriveStorageError("DRIVE_OPERATION_CONFLICT");
+    }
+    const selectedFiles = needsFiles
+      ? sources.filter((s) =>
+          explicitFiles
+            ? explicitFiles.has(s.id) || (selection.include_results && s.kind === "kosmora")
+            : selection.include_results
+        )
+      : [];
+    const fileTotal = selectedFiles.reduce((n, s) => n + s.bytes, 0);
+    if (selectedFiles.length > 2000 || fileTotal > SNAPSHOT_MAX_BYTES)
+      throw new DriveStorageError("BACKUP_TOO_LARGE");
+    const totals = db
+      .prepare(
+        `SELECT coalesce(sum(length(CAST(m.content AS BLOB))+length(CAST(m.attachments_json AS BLOB))),0) AS bytes,
+                count(*) AS n
+           FROM general_chat_messages m
+           JOIN general_chats c ON c.id=m.chat_id AND c.owner_id=m.owner_id
+          WHERE c.owner_id=? AND c.mode IN ('kosmora','work')${chatFilter}`
+      )
+      .get(owner, ...chatIds) as { bytes: number | null; n: number | null } | undefined;
+    const chatBytes = Number(totals?.bytes ?? 0),
+      messageCount = Number(totals?.n ?? 0);
+    if (
+      !Number.isSafeInteger(chatBytes) ||
+      !Number.isSafeInteger(messageCount) ||
+      messageCount > 50000 ||
+      chatBytes + fileTotal > SNAPSHOT_MAX_BYTES
+    )
+      throw new DriveStorageError("BACKUP_TOO_LARGE");
     const out: DriveSnapshot = {
       format: "kosmora-chat-backup",
       version: 1,
@@ -181,21 +402,21 @@ export function captureSnapshot(
       chats: [],
       files: []
     };
-    for (const chat of chats.filter((c) => !selected || selected.has(c.id))) {
-      const total = db
-        .prepare(
-          "SELECT coalesce(sum(length(CAST(content AS BLOB))+length(CAST(attachments_json AS BLOB))),0) AS bytes,count(*) AS n FROM general_chat_messages WHERE chat_id=? AND owner_id=?"
-        )
-        .get(chat.id, owner) as { bytes: number; n: number };
-      size += total.bytes;
-      count += total.n;
-      if (size > SNAPSHOT_MAX_BYTES || count > 50000)
-        throw new DriveStorageError("BACKUP_TOO_LARGE");
-      const rows = db
-        .prepare(
-          "SELECT role,content,status,created_at,updated_at,attachments_json FROM general_chat_messages WHERE chat_id=? AND owner_id=? ORDER BY created_at,rowid"
-        )
-        .all(chat.id, owner);
+    let encoded = 256;
+    for (const s of selectedFiles) {
+      const body = readSelectedResultBody(db, owner, s);
+      const file = {
+        name: s.name,
+        content: body.content,
+        sha256: body.sha256,
+        version: body.version,
+        project: s.project
+      };
+      encoded += Buffer.byteLength(JSON.stringify(file)) + 1;
+      if (encoded > SNAPSHOT_MAX_BYTES) throw new DriveStorageError("BACKUP_TOO_LARGE");
+      out.files.push(file);
+    }
+    for (const chat of chats) {
       const saved = {
         source_id: chat.id,
         title: chat.title,
@@ -203,6 +424,15 @@ export function captureSnapshot(
         messages: [] as DriveSnapshot["chats"][number]["messages"]
       };
       encoded += Buffer.byteLength(JSON.stringify(saved)) + 1;
+      if (encoded > SNAPSHOT_MAX_BYTES) throw new DriveStorageError("BACKUP_TOO_LARGE");
+      const rows = db
+        .prepare(
+          `SELECT role,content,status,created_at,updated_at,attachments_json
+             FROM general_chat_messages
+            WHERE chat_id=? AND owner_id=?
+            ORDER BY created_at,rowid`
+        )
+        .all(chat.id, owner);
       for (const r of rows) {
         const m = {
           role: r.role,
@@ -218,31 +448,8 @@ export function captureSnapshot(
       }
       out.chats.push(saved);
     }
-    if (selection.include_results) {
-      const fileQuery =
-        "SELECT a.name,a.content,a.sha256,a.version,p.title AS project FROM work_artifact_versions a JOIN projects p ON p.id=a.project_id JOIN manager_work w ON w.id=a.work_id AND w.project_id=a.project_id WHERE p.owner_id=? AND w.owner_id=? AND a.published=1 UNION ALL SELECT f.name,f.content,NULL AS sha256,1 AS version,p.title AS project FROM manager_work_files f JOIN manager_work w ON w.id=f.execution_id JOIN projects p ON p.id=w.project_id WHERE p.owner_id=? AND w.owner_id=? AND json_extract(w.state_json,'$.status')='completed' AND NOT EXISTS(SELECT 1 FROM work_artifact_versions a WHERE a.work_id=w.id AND a.name=f.name AND a.published=1)";
-      const totals = db
-        .prepare(
-          "SELECT count(*) AS n,coalesce(sum(length(CAST(content AS BLOB))),0) AS bytes FROM (" +
-            fileQuery +
-            ")"
-        )
-        .get(owner, owner, owner, owner) as { n: number; bytes: number };
-      if (totals.n > 2000 || totals.bytes + size > SNAPSHOT_MAX_BYTES)
-        throw new DriveStorageError("BACKUP_TOO_LARGE");
-      const rows = db.prepare(fileQuery + " LIMIT 2001").all(owner, owner, owner, owner);
-      if (rows.length > 2000) throw new DriveStorageError("BACKUP_TOO_LARGE");
-      out.files = rows.map((r) => ({
-        ...r,
-        sha256: r.sha256 ?? snapshotHash(Buffer.from(r.content as string))
-      })) as DriveSnapshot["files"];
-      for (const f of out.files) {
-        encoded += Buffer.byteLength(JSON.stringify(f)) + 1;
-        if (encoded > SNAPSHOT_MAX_BYTES) throw new DriveStorageError("BACKUP_TOO_LARGE");
-      }
-    }
     const bytes = Buffer.from(JSON.stringify(out));
-    parseSnapshot(bytes); // Fail whole capture on malformed/overlarge data; never clip silently.
+    parseSnapshot(bytes);
     if (!out.chats.length && !out.files.length) throw new DriveStorageError("BACKUP_EMPTY");
     db.exec("COMMIT");
     return bytes;
