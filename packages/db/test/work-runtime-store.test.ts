@@ -30,6 +30,78 @@ async function setup(path = ":memory:") {
 }
 
 describe("project memory and durable work records", () => {
+  it.each(["work-fence", "quiescing", "paused", "cancelled", "unbound"] as const)(
+    "does not let 50 %s entries hide a runnable task beyond the queue window",
+    async (block) => {
+      const f = await setup();
+      try {
+        const graph =
+          block === "unbound"
+            ? f.store.dag.create(f.a.id, "owner-a", "owner-a", {
+                client_request_id: "unbound-plan",
+                title: "Unbound plan",
+                nodes: [{ id: "step", title: "Step", goal: "Create result.md", depends_on: [] }]
+              })
+            : null;
+        for (let i = 0; i < 50; i++) {
+          f.store.create(
+            f.a.id,
+            "owner-a",
+            "owner-a",
+            { ...request, client_request_id: `blocked-${i}` },
+            false,
+            graph ? { graph_id: graph.id, node_id: "step", attempt: 1, bound: false } : undefined
+          );
+        }
+        const ready = f.store.create(f.c.id, "owner-b", "owner-b", request)!;
+        if (block === "work-fence")
+          f.db.sqlite
+            .prepare("INSERT INTO work_owner_fences(owner_id,epoch,fenced) VALUES (?,1,1)")
+            .run("owner-a");
+        if (block === "quiescing")
+          f.db.sqlite
+            .prepare(
+              `INSERT INTO kosmora_owner_data_lifecycle
+          (owner_id,state,epoch,operation_id,started_at,updated_at) VALUES (?,'quiescing',1,'queue-test',datetime('now'),datetime('now'))`
+            )
+            .run("owner-a");
+        if (block === "paused" || block === "cancelled")
+          f.store.dag.setProjectMode(f.a.id, "owner-a", block);
+        const snapshot = () =>
+          f.db.sqlite.prepare("SELECT state_json FROM manager_work ORDER BY rowid").all();
+        const before = snapshot();
+        expect(f.store.pending().map((w) => w.id)).toEqual([ready.id]);
+        expect(f.store.pending().map((w) => w.id)).toEqual([ready.id]);
+        expect(snapshot()).toEqual(before);
+      } finally {
+        f.db.close();
+      }
+    }
+  );
+  it("preserves the 50-item bound, queue order and one running work per project", async () => {
+    const f = await setup();
+    try {
+      for (const project of [f.a, f.b]) {
+        for (let i = 0; i < 50; i++)
+          f.store.create(project.id, "owner-a", "owner-a", {
+            ...request,
+            client_request_id: `${project.id}-${i}`
+          });
+      }
+      const first = f.store.pending();
+      expect(first).toHaveLength(50);
+      expect(first.every((w) => w.project_id === f.a.id)).toBe(true);
+      expect(first.map((w) => w.request.client_request_id)).toEqual(
+        Array.from({ length: 50 }, (_, i) => `${f.a.id}-${i}`)
+      );
+      expect(f.store.claim(first[0]!)?.status).toBe("running");
+      const next = f.store.pending();
+      expect(next).toHaveLength(50);
+      expect(next.every((w) => w.project_id === f.b.id)).toBe(true);
+    } finally {
+      f.db.close();
+    }
+  });
   it.each(["work-fence", "quiescing", "deleting", "deleted", "error"] as const)(
     "leaves %s owner records untouched while recovering another owner",
     async (fence) => {
