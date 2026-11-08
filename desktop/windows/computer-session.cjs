@@ -66,7 +66,8 @@ class ComputerSession {
     maxSteps = 20,
     recovery = null,
     expectedContext = null,
-    reference = null
+    reference = null,
+    resultTicket = null
   }) {
     if (this.poisoned) throw Error("COMPUTER_RECOVERY_RESTART_REQUIRED");
     if (this.active) throw Error("COMPUTER_BUSY");
@@ -336,7 +337,26 @@ class ComputerSession {
             throw Error("WORK_RESULT_UNCHECKED");
           state.journal?.mark(step + 1, "not_executed");
           outcome = "completed";
-          return result({ status: "completed", summary: action.summary, steps: step + 1 });
+          const nativeReceipt =
+            this.executionMode === "work" && resultTicket
+              ? this.driver.completionReceipt?.(observation)
+              : undefined;
+          const receipt = nativeReceipt
+            ? {
+                ...nativeReceipt,
+                task_id: resultTicket.task_id,
+                request_id: resultTicket.request_id,
+                nonce: resultTicket.nonce,
+                project: resultTicket.project,
+                document: resultTicket.document
+              }
+            : undefined;
+          return result({
+            status: "completed",
+            summary: action.summary,
+            steps: step + 1,
+            ...(receipt ? { receipt } : {})
+          });
         }
         if (this.driver.validateAction) {
           try {

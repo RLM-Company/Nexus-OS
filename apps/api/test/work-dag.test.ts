@@ -998,6 +998,16 @@ describe("executable durable Work DAG", () => {
       ).toBe(404);
       await autoTick(f, graph.id);
       expect(f.calls).toHaveLength(6);
+      const artifact = graph.nodes[0]!.artifacts[0]!;
+      f.db.sqlite
+        .prepare("UPDATE work_artifact_versions SET bytes = bytes + 1 WHERE id = ?")
+        .run(artifact.id);
+      expect((await app.inject({ url: base + "/results" })).statusCode).toBe(409);
+      expect((await app.inject({ url: base + "/results.zip" })).statusCode).toBe(409);
+      f.db.sqlite
+        .prepare("UPDATE work_artifact_versions SET bytes = ? WHERE id = ?")
+        .run(artifact.bytes, artifact.id);
+      expect((await app.inject({ url: base + "/results" })).statusCode).toBe(200);
       f.db.sqlite
         .prepare("UPDATE work_artifact_versions SET content = 'corrupt' WHERE id = ?")
         .run(graph.nodes[0]!.artifacts[0]!.id);

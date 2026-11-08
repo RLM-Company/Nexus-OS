@@ -125,11 +125,16 @@ function createKosworkBrowser({
     void workspace.invalidate();
     if (old && !old.isDestroyed()) old.destroy();
   }
-  function show(initial, onResult = null, expectedContext = null) {
+  /**
+   * `bindingOptions.requestId` and `bindingOptions.document` are supplied by the
+   * trusted originating-window callback, not generated here. The relay checks
+   * their shape and binds the native completion receipt to this exact request.
+   */
+  function show(initial, onResult = null, expectedContext = null, bindingOptions = null) {
     const requestedEpoch = epoch;
     const queued = showQueue.then(() => {
       if (initial && requestedEpoch !== epoch) throw Error("COMPUTER_CANCELLED");
-      return showNow(initial, onResult, expectedContext);
+      return showNow(initial, onResult, expectedContext, bindingOptions);
     });
     showQueue = queued.then(
       () => {},
@@ -137,7 +142,7 @@ function createKosworkBrowser({
     );
     return queued;
   }
-  async function showNow(initial, onResult, expectedContext) {
+  async function showNow(initial, onResult, expectedContext, bindingOptions) {
     if (expectedContext && window && !same(bound, expectedContext))
       throw Error("COMPUTER_IDENTITY_CHANGED");
     if (window && !window.isDestroyed()) {
@@ -156,7 +161,7 @@ function createKosworkBrowser({
           .map((p) => ({ id: p.id, title: p.title }));
         if (!projects.some((p) => p.id === initial.project))
           throw Error("COMPUTER_PROJECT_UNAVAILABLE");
-        resultRelay.bind(context, initial, onResult);
+        resultRelay.bind(context, initial, onResult, bindingOptions);
         tell({ prefill: initial });
       }
       window.show();
@@ -364,7 +369,7 @@ function createKosworkBrowser({
     if (initial && !projects.some((p) => p.id === initial.project))
       throw Error("COMPUTER_PROJECT_UNAVAILABLE");
     if (window === ownedWindow) {
-      if (initial) resultRelay.bind(context, initial, onResult);
+      if (initial) resultRelay.bind(context, initial, onResult, bindingOptions);
       tell({ prefill: initial });
     }
     return true;
@@ -520,6 +525,19 @@ function createKosworkBrowser({
         }
         if (taskGate?.busy) throw Error("COMPUTER_BUSY");
         completion = resultRelay.claim(context, value.project, value.goal);
+        // Native-only one-shot receipt identity comes from the actual relay
+        // ticket. It grants no file, model, screen or owner-acceptance authority
+        // and carries no private paths. A model cannot invent its binding.
+        const binding = completion ? resultRelay.ticketFor(completion) : null;
+        const resultTicket = binding
+          ? {
+              task_id: binding.taskId,
+              request_id: binding.requestId,
+              nonce: binding.nonce,
+              project: binding.project,
+              document: binding.document
+            }
+          : null;
         const ownedRunner = runner;
         if (
           !globalShortcut.register("CommandOrControl+Alt+Shift+K", () => {
@@ -532,7 +550,8 @@ function createKosworkBrowser({
         const result = await ownedRunner.run({
           ...value,
           maxSteps: stepLimit,
-          expectedContext: context
+          expectedContext: context,
+          ...(resultTicket ? { resultTicket } : {})
         });
         resultRelay.finish(completion, result);
         tell();
