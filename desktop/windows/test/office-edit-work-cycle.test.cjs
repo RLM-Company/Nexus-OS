@@ -3,7 +3,8 @@ const test = require("node:test"),
   assert = require("node:assert/strict");
 const fs = require("node:fs"),
   os = require("node:os"),
-  path = require("node:path");
+  path = require("node:path"),
+  crypto = require("node:crypto");
 const { createVaultWorkspace } = require("../vault-workspace.cjs");
 const { createComputerWorkspace } = require("../computer-workspace.cjs");
 const { createWorkCycleDriver } = require("../work-cycle-driver.cjs");
@@ -127,6 +128,8 @@ for (const mode of ["approved", "declined", "legacy", "paged", "legacy_pages"])
             case 5:
               assert.equal(prior.source_version, version);
               assert.equal(prior.readback.version, prior.version);
+              const bytes = fs.readFileSync(path.join(folder, "result.docx"));
+              assert.equal(crypto.createHash("sha256").update(bytes).digest("hex"), prior.sha256);
               action = { kind: "workspace_list", path: "", cursor: 0 };
               break;
             case 6:
@@ -146,13 +149,32 @@ for (const mode of ["approved", "declined", "legacy", "paged", "legacy_pages"])
         }
       }
     });
+    const ticket = {
+      task_id: crypto.randomUUID(),
+      request_id: crypto.randomUUID(),
+      nonce: crypto.randomUUID(),
+      project: "project",
+      document: "window:1"
+    };
     const run = runner.run({
       project: "project",
       goal: "Обновить реквизиты и таблицу",
-      maxSteps: 9
+      maxSteps: 9,
+      resultTicket: ticket
     });
-    if (["approved", "paged"].includes(mode)) assert.equal((await run).status, "completed");
-    else
+    if (["approved", "paged"].includes(mode)) {
+      const result = await run;
+      assert.equal(result.status, "completed");
+      assert.equal(result.receipt.receipt_version, 1);
+      assert.deepEqual(result.receipt.checked, { count: 1, status: "checked" });
+      // Files use the existing none environment without a desktop/browser grant.
+      assert.equal(result.receipt.environment, "none");
+      for (const [field, value] of Object.entries(ticket))
+        assert.equal(result.receipt[field], value);
+      const receipt = JSON.stringify(result.receipt);
+      for (const privateText of ["offer.docx", "result.docx", "Компания Б", "19 700"])
+        assert.equal(receipt.includes(privateText), false);
+    } else
       await assert.rejects(
         run,
         ["legacy", "legacy_pages"].includes(mode) ? /ACTION_INVALID/ : /CANCELLED/
