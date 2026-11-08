@@ -566,3 +566,84 @@ Read-only merge-tree обнаружил единственную коллизи�
 синхронизация main в feature branch; PR №466 в main не слит, deploy не выполнялся.
 До синхронизации GitHub сообщал mergeable=false и не возвращал PR workflow runs.
 Окончательные checks синхронизированной ветки отражены в PR №466.
+
+### Совместная интеграция Office и composer — 9 ноября 2026 (Москва)
+
+Реализация Office сохранена; продолжение устраняет несовместимость рабочих веток
+и проверяет Office на обновлённом Work. Ветка по-прежнему
+`developer/koswork-office-workspace`, PR #466. Контрольный прежний head:
+`616bb9287923a6544d43059d424f79512f550628`.
+
+1. Коммит `b7afd00297aeb49c66c9088c0256616cc8a96f9a` синхронизирует feature-ветку с
+   main `08f865f6362d3045438d6ca7f93be8e9e56e1e6c` (PR #475). Git совместил изменения
+   автоматически. Сохранены новые workflow results/recovery, результат Work,
+   версия desktop 0.24.0 и все исходники других разработчиков. Собственные правки
+   логики Windows main/installer и browser/** в этом продолжении не добавлялись.
+2. `28bd46f7464cc9a869164f8b5cf98128229aee9f` усиливает существующий
+   `office-edit-work-cycle.test.cjs`: после настоящей записи DOCX сверяется SHA256
+   прочитанных байтов; квитанция нового Work привязана к исходным task/request/nonce,
+   project/document, содержит один checked step и не раскрывает имена файлов,
+   реквизиты или сумму документа. Legacy и отказ записи по-прежнему не создают файл.
+   Квитанция сообщает состояние плана; она не заменяет Office readback и не означает
+   подтверждение содержания владельцем.
+3. `9aafa8e93ae91aaf13b06373aac3870a05d43555` совмещает согласованную поставку
+   composer PR #478 (`c69fc86efb360960c971e2357577641b3ed2b1f6`) с Office.
+   Read-only merge-tree обнаружил одну реальную коллизию — `apps/web/package.json`:
+   каждая ветка добавляла свой E2E typecheck. В отдельном интеграционном merge-коммите
+   сохранены обе проверки и команда composer. Добавлены
+   `playwright.office-composer.config.ts`, её typecheck в `tsconfig.office-e2e.json`
+   и команда `test:e2e:office-composer`. Остальная интеграция выполнена Git автоматически.
+
+PR #478 остаётся отдельным PR для обзора изменений composer; его коммиты уже входят
+в Office-ветку. Не нужно повторно переносить его файлы вручную. Объединение рабочих
+веток не является merge PR в main; merge/deploy исполнителем не выполнялись.
+
+Повторные реальные проверки:
+
+- `pnpm --dir desktop/windows check`: 382 PASS, 1 Windows-only skipped, 0 FAIL.
+- Независимый Office production E2E после main sync: 9/9 PASS, retries=0.
+- Совместный production E2E после объединения composer: **34/34 PASS**, retries=0,
+  1 worker, 2,5 минуты. Проверены все прежние 9 Office и 25 composer сценариев на
+  одной сборке: реальные загрузки/скачивание, отказы, отмена и поздние ответы.
+- Оба fixture runner заново записали DOCX/XLSX/PPTX и расширенные UTF-16/большие
+  примеры. Три итоговых файла и расширенные контейнеры побайтно совпали с уже
+  приложенными fixtures. Их исходные тексты, `00123`, дата, `19 700`/`19700` и
+  «кроме доставки» проверены реальным readback. Новые изображения/PDF-рендеры не
+  создавались; прежние render artifacts относятся к тем же совпавшим байтам.
+- Совместный `pnpm check:core`: **PASS, exit 0**. API: 927; web: 266;
+  contracts: 206; core: 386; db: 160; model-gateway: 151; policy-engine: 43;
+  config: 17; tool-runtime: 64 PASS/4 OCI skipped. Прошли format, secrets,
+  lint/typecheck, package tests, корневые guards, production builds и privacy/profile
+  fixture smoke. Четыре OCI tests локально не заявляются прошедшими.
+- Семь `apps/api/dist/document-workspace/*.cjs` после настоящей сборки побайтно
+  совпали с canonical workspace modules. Из 31 изменённого upstream-файла 28
+  сохранены побайтно; остальные три общих файла содержат изменения обеих веток.
+
+Команды совместного воспроизведения (из корня; выходные fixture-каталоги должны
+быть новыми, в этом прогоне они находились вне checkout):
+
+```sh
+pnpm --dir desktop/windows check
+PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium KOSMORA_E2E_PRODUCTION=1 \
+  pnpm --filter @cosmora/web test:e2e:office-composer
+pnpm check:core
+node desktop/windows/test/fixtures/run-office-edit-brief.cjs /tmp/office-integration-brief
+node desktop/windows/test/fixtures/run-office-expanded-brief.cjs /tmp/office-integration-expanded
+```
+
+Linux-стенд: Node v24.22.1, pnpm 11.25.0, frozen lockfile, install scripts отключены.
+CI использует закреплённый в workflow pnpm. В целевом и первоначальном desktop-прогонах два сценария
+(approved/paged) упали на моей неверной метке `environment: workspace`; действующий driver использует
+`none` для работы с файлами без browser/desktop grant. Исправлено ожидание теста,
+логика/разрешения driver не менялись. Исходный неуспешный лог сохранён.
+Предварительный `check:core` на Office-only дереве остановлен вручную (exit 143)
+перед совмещением веток; shutdown/ELIFECYCLE в его логе не скрываются и этот прогон
+не заявляется успешным. Итоговый gate выше относится к совместному дереву.
+
+Новых зависимостей, схем хранения и миграций нет. Реальный провайдер HY4 не
+вызывался, модель заменена локальными fixtures. Windows на ПК владельца,
+Microsoft Office и production не проверялись. Прежние ограничения формул,
+представления и криптографических подписей сохраняются. Для отката Office
+применяется инструкция модуля выше; нельзя откатывать целиком чужие изменения
+из main или удалять принятый composer. Новые проверки не изменяют документы
+пользователя. Точный опубликованный head и внешний CI/installer результат — в PR #466.
