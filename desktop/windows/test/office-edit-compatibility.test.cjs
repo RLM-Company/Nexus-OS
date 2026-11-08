@@ -219,3 +219,39 @@ test("selected text containing comments or CDATA is refused instead of deleting 
     assert.deepEqual(source, original);
   }
 });
+test("signature declarations protect a package even under custom part names", () => {
+  for (const declaration of ["content-type", "relationship"]) {
+    const entries = unpack(docxFixture(), 16000000).entries;
+    if (declaration === "content-type") {
+      const part = "[Content_Types].xml";
+      entries.set(
+        part,
+        Buffer.from(
+          entries
+            .get(part)
+            .toString()
+            .replace(
+              "</Types>",
+              '<Override PartName="/proof/custom.xml" ContentType="application/vnd.openxmlformats-package.digital-signature-xmlsignature+xml"/></Types>'
+            )
+        )
+      );
+    } else {
+      entries.set(
+        "_rels/.rels",
+        Buffer.from(
+          '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="proof" Type="http://schemas.openxmlformats.org/package/2006/relationships/digital-signature/origin" Target="proof/custom.sigs"/></Relationships>'
+        )
+      );
+      entries.set("proof/custom.sigs", Buffer.alloc(0));
+    }
+    entries.set(
+      "proof/custom.xml",
+      Buffer.from('<Signature xmlns="http://www.w3.org/2000/09/xmldsig#"/>')
+    );
+    const source = zip([...entries]),
+      before = Buffer.from(source);
+    assert.throws(() => editOffice("offer.docx", source, ops.docx), /WORKSPACE_OFFICE_UNSUPPORTED/);
+    assert.deepEqual(source, before);
+  }
+});

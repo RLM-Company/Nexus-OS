@@ -17,7 +17,9 @@ function pageOfficeView(base, items, cursor = { target_offset: 0, content_offset
     cursor.target_offset > 200000 ||
     cursor.content_offset < 0 ||
     cursor.content_offset > 256000 ||
-    cursor.target_offset >= items.length
+    (items.length > 0
+      ? cursor.target_offset >= items.length
+      : cursor.target_offset !== 0 || cursor.content_offset !== 0)
   )
     invalid();
   const targets = [];
@@ -29,6 +31,12 @@ function pageOfficeView(base, items, cursor = { target_offset: 0, content_offset
     next_cursor: next,
     targets_excerpt_only: cursor.target_offset > 0 || cursor.content_offset > 0 || next !== null
   });
+  if (items.length === 0) {
+    const empty = result(null);
+    if (Buffer.byteLength(JSON.stringify(empty)) > 10000)
+      throw Error("WORKSPACE_OFFICE_VIEW_LIMIT");
+    return empty;
+  }
   const fits = (item, next) =>
     Buffer.byteLength(JSON.stringify({ ...result(next), targets: [...targets, item] })) <= 10000;
   const nextTarget = (i) =>

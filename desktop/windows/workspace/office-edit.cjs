@@ -77,14 +77,31 @@ const descendants = (n, uri, local) => {
 };
 const children = (n, uri, local) => n.children.filter((c) => c.uri === uri && c.local === local);
 function packageView(name, bytes) {
-  const representation = extractOfficeText(name, bytes).representation;
+  const representation = extractOfficeText(name, bytes, { allowEmpty: true }).representation;
   const { entries } = unpack(bytes, 16 * 1024 * 1024);
+  let signed = false;
   // Validate even XML parts outside the text representation; never resolve resources.
   for (const [part, data] of entries) {
     if (/vbaProject|activeX|embeddings\//i.test(part)) fail();
-    if (/\.(xml|rels)$/i.test(part)) xml(data, () => {});
+    if (/\.(xml|rels)$/i.test(part))
+      xml(data, (e) => {
+        if (e.event !== "open") return;
+        if (
+          (part === "[Content_Types].xml" &&
+            e.uri === "http://schemas.openxmlformats.org/package/2006/content-types" &&
+            ["Default", "Override"].includes(e.local) &&
+            (attr(e, "ContentType") || "").startsWith(
+              "application/vnd.openxmlformats-package.digital-signature-"
+            )) ||
+          (/\.rels$/i.test(part) &&
+            e.uri === REL &&
+            e.local === "Relationship" &&
+            (attr(e, "Type") || "").startsWith(REL + "/digital-signature/"))
+        )
+          signed = true;
+      });
   }
-  return { entries, representation };
+  return { entries, representation, signed };
 }
 function ordered(entries, format) {
   const base = format === "xlsx" ? "xl" : "ppt";
@@ -627,11 +644,12 @@ function addSheet(entries, name) {
 }
 function editOffice(name, bytes, operations) {
   validateEdits(operations);
-  const { entries, representation } = packageView(name, bytes),
+  const { entries, representation, signed } = packageView(name, bytes),
     format = representation.format;
   if (
+    signed ||
     entries.has("xl/calcChain.xml") ||
-    [...entries.keys()].some((p) => p.startsWith("_xmlsignatures/"))
+    [...entries.keys()].some((p) => p.toLowerCase().startsWith("_xmlsignatures/"))
   )
     fail();
   const diff = [];

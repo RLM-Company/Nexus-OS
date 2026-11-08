@@ -199,3 +199,43 @@ test("large native edit receipts retain verified hashes instead of overflowing a
   );
   assert.deepEqual(fs.readFileSync(path.join(folder, "brief.docx")), bytes);
 });
+test("an empty Word body or slide opens as an explicit empty view", () => {
+  const { input } = require("./fixtures/office-edit-brief.cjs");
+  const { zip } = require("../workspace/office-document.cjs");
+  const { unpack } = require("../workspace/office-text.cjs");
+  for (const format of ["docx", "pptx"]) {
+    const entries = unpack(input(format), 16000000).entries;
+    if (format === "docx")
+      entries.set(
+        "word/document.xml",
+        Buffer.from(
+          '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body/></w:document>'
+        )
+      );
+    else
+      for (const part of ["ppt/slides/slide1.xml", "ppt/slides/slide2.xml"])
+        entries.set(
+          part,
+          Buffer.from(
+            '<p:sld xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"><p:cSld><p:spTree/></p:cSld></p:sld>'
+          )
+        );
+    const bytes = zip([...entries]);
+    if (format === "docx")
+      assert.throws(() => extractOfficeText("empty.docx", bytes), /VAULT_DOCUMENT_NO_TEXT/);
+    const page = inspectOffice("empty." + format, bytes);
+    assert.deepEqual(page.targets, []);
+    assert.equal(page.total_targets, 0);
+    assert.equal(page.next_cursor, null);
+    assert.equal(page.targets_excerpt_only, false);
+    assert.ok(Buffer.byteLength(JSON.stringify(page)) <= 10000);
+    for (const cursor of [
+      { target_offset: 0, content_offset: 1 },
+      { target_offset: 1, content_offset: 0 }
+    ])
+      assert.throws(
+        () => inspectOffice("empty." + format, bytes, { cursor, expectedVersion: page.version }),
+        /CURSOR_INVALID/
+      );
+  }
+});

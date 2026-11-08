@@ -92,10 +92,14 @@ export function OfficeDocumentWorkspace() {
   const [busy, setBusy] = useState(false);
   const abort = useRef<AbortController | null>(null);
   const generation = useRef(0);
-  const reset = () => {
+  const cancel = () => {
     generation.current++;
     abort.current?.abort();
     setBusy(false);
+    setError("");
+  };
+  const reset = () => {
+    cancel();
     setPreview(null);
     setOperations([]);
     setResult(null);
@@ -202,6 +206,12 @@ export function OfficeDocumentWorkspace() {
           <p>
             {source.name} · {view.version}
           </p>
+          {view.total_targets === 0 && (
+            <p>
+              Нет поддерживаемых текстовых объектов для редактирования. Изображения и другие
+              нетекстовые элементы могут присутствовать.
+            </p>
+          )}
           <p>
             Текстовое представление. Визуальная корректность не проверена; формулы не вычисляются.
             Экспорт относится к выбранному снимку файла.
@@ -387,7 +397,7 @@ export function OfficeDocumentWorkspace() {
                 </label>
                 <button
                   type="button"
-                  disabled={!find}
+                  disabled={!find || !target}
                   onClick={() => queue({ kind: "replace_text", target, find, replace })}
                 >
                   Добавить замену в план
@@ -464,6 +474,25 @@ export function OfficeDocumentWorkspace() {
                     if (!current()) return;
                     const binary = atob(saved.bytes);
                     const bytes = Uint8Array.from(binary, (c) => c.charCodeAt(0));
+                    if (!globalThis.crypto?.subtle)
+                      throw Error(
+                        "Проверка новой копии не пройдена: требуется HTTPS или localhost."
+                      );
+                    const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", bytes));
+                    const sha256 = Array.from(digest, (value) =>
+                      value.toString(16).padStart(2, "0")
+                    ).join("");
+                    if (
+                      saved.source_version !== view.version ||
+                      saved.version !== preview.version ||
+                      saved.sha256 !== preview.sha256 ||
+                      saved.sha256 !== sha256 ||
+                      saved.version !== "sha256:" + sha256
+                    )
+                      throw Error(
+                        "Проверка новой копии не пройдена: байты или версия не совпадают с preview."
+                      );
+                    if (!current()) return;
                     setResult({
                       url: URL.createObjectURL(
                         new Blob([bytes], { type: "application/octet-stream" })
@@ -484,12 +513,7 @@ export function OfficeDocumentWorkspace() {
         </>
       )}
       {busy && (
-        <button
-          type="button"
-          onClick={() => {
-            reset();
-          }}
-        >
+        <button type="button" onClick={cancel}>
           Отменить
         </button>
       )}

@@ -310,7 +310,7 @@ function xml(bytes, visit, { preserveSource = false } = {}) {
   if (stack.length || roots !== 1) invalid();
 }
 const attr = (e, name, uri = "") => e.attrs.get("{" + uri + "}" + name);
-function extractOfficeText(name, bytes, { workLimit = 16 * 1024 * 1024 } = {}) {
+function extractOfficeText(name, bytes, { workLimit = 16 * 1024 * 1024, allowEmpty = false } = {}) {
   if (!Number.isSafeInteger(workLimit) || workLimit < 0) invalid();
   const format = String(name).toLowerCase().split(".").at(-1);
   if (!["docx", "xlsx", "pptx"].includes(format)) invalid();
@@ -463,7 +463,7 @@ function extractOfficeText(name, bytes, { workLimit = 16 * 1024 * 1024 } = {}) {
       });
     }
   }
-  if (!output.trim()) throw Error("VAULT_DOCUMENT_NO_TEXT");
+  if (!output.trim() && !allowEmpty) throw Error("VAULT_DOCUMENT_NO_TEXT");
   return {
     text: output,
     expanded_bytes: expanded,

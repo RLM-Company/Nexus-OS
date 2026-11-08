@@ -143,3 +143,129 @@ test("file panel pages a large DOCX and edits its last paragraph without losing 
   expect(text).toContain("00123");
   expect(text).toContain("кроме доставки");
 });
+
+async function prepareWordPlan(page: import("@playwright/test").Page) {
+  await page.goto("/?surface=files");
+  const editor = page.getByRole("region", { name: "Рабочие документы Koswork", exact: true });
+  await editor
+    .locator('input[type="file"]')
+    .setInputFiles("../../docs/handoff/fixtures/koswork-office/offer.docx");
+  await expect(editor).toContainText("sha256:");
+  await editor.getByLabel("Адрес", { exact: true }).selectOption("paragraph:3");
+  await editor.getByLabel("Найти точный текст").fill("Компания А");
+  await editor.getByLabel("Заменить на").fill("Компания Б");
+  await editor.getByRole("button", { name: "Добавить замену в план" }).click();
+  return editor;
+}
+test("cancelling a delayed preview preserves the queued plan and ignores its late response", async ({
+  page
+}) => {
+  const editor = await prepareWordPlan(page);
+  let release!: () => void, arrived!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const received = new Promise<void>((resolve) => {
+    arrived = resolve;
+  });
+  let delayed = true;
+  await page.route("**/api/v1/document-workspace/preview", async (route) => {
+    if (!delayed) return route.continue();
+    delayed = false;
+    const response = await route.fetch();
+    arrived();
+    await gate;
+    await route.fulfill({ response });
+  });
+  try {
+    await editor.getByRole("button", { name: "Посмотреть изменения" }).click();
+    await received;
+    await editor.getByRole("button", { name: "Отменить", exact: true }).click();
+    await expect(
+      editor.getByRole("list", { name: "План правок" }).getByRole("listitem")
+    ).toHaveCount(1);
+  } finally {
+    release();
+  }
+  await expect(editor.getByRole("heading", { name: "Предлагаемые изменения" })).toHaveCount(0);
+  await expect(editor.getByRole("link", { name: "Скачать новую копию" })).toHaveCount(0);
+  await editor.getByRole("button", { name: "Посмотреть изменения" }).click();
+  await expect(editor.getByRole("heading", { name: "Предлагаемые изменения" })).toBeVisible();
+});
+for (const corruption of ["bytes", "version"] as const)
+  test(`a ${corruption} mismatch cannot become a downloadable verified copy`, async ({ page }) => {
+    const editor = await prepareWordPlan(page);
+    await page.route("**/api/v1/document-workspace/commit", async (route) => {
+      const response = await route.fetch();
+      const body = (await response.json()) as { bytes: string; version: string };
+      if (corruption === "bytes") {
+        const bytes = Buffer.from(body.bytes, "base64");
+        bytes[40] = bytes[40]! ^ 1;
+        body.bytes = bytes.toString("base64");
+      } else body.version = "sha256:" + "0".repeat(64);
+      await route.fulfill({ response, json: body });
+    });
+    await editor.getByRole("button", { name: "Посмотреть изменения" }).click();
+    await editor.getByRole("button", { name: "Подтвердить подготовку новой копии" }).click();
+    await expect(editor.getByRole("alert")).toContainText("Проверка новой копии не пройдена");
+    await expect(editor.getByRole("link", { name: "Скачать новую копию" })).toHaveCount(0);
+  });
+
+test("an empty Word document is shown without offering an invalid text edit", async ({ page }) => {
+  const { zipSync, strToU8 } = await import("fflate");
+  const parts = unzipSync(await readFile("../../docs/handoff/fixtures/koswork-office/offer.docx"));
+  parts["word/document.xml"] = strToU8(
+    '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body/></w:document>'
+  );
+  await page.goto("/?surface=files");
+  const editor = page.getByRole("region", { name: "Рабочие документы Koswork", exact: true });
+  await editor.locator('input[type="file"]').setInputFiles({
+    name: "empty.docx",
+    mimeType: "application/octet-stream",
+    buffer: Buffer.from(zipSync(parts))
+  });
+  await expect(editor).toContainText("sha256:");
+  await expect(editor).toContainText("Нет поддерживаемых текстовых объектов для редактирования");
+  await editor.getByLabel("Найти точный текст").fill("Компания А");
+  await expect(editor.getByRole("button", { name: "Добавить замену в план" })).toBeDisabled();
+  await expect(editor.getByRole("alert")).toHaveCount(0);
+});
+
+test("cancelling a delayed commit offers no download and permits a new explicit confirmation", async ({
+  page
+}) => {
+  const editor = await prepareWordPlan(page);
+  await editor.getByRole("button", { name: "Посмотреть изменения" }).click();
+  const confirm = editor.getByRole("button", { name: "Подтвердить подготовку новой копии" });
+  await expect(confirm).toBeVisible();
+  let release!: () => void, arrived!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const received = new Promise<void>((resolve) => {
+    arrived = resolve;
+  });
+  let delayed = true;
+  await page.route("**/api/v1/document-workspace/commit", async (route) => {
+    if (!delayed) return route.continue();
+    delayed = false;
+    const response = await route.fetch();
+    arrived();
+    await gate;
+    await route.fulfill({ response });
+  });
+  try {
+    await confirm.click();
+    await received;
+    await editor.getByRole("button", { name: "Отменить", exact: true }).click();
+    await expect(
+      editor.getByRole("list", { name: "План правок" }).getByRole("listitem")
+    ).toHaveCount(1);
+  } finally {
+    release();
+  }
+  await expect(editor.getByRole("link", { name: "Скачать новую копию" })).toHaveCount(0);
+  await expect(confirm).toBeEnabled();
+  await confirm.click();
+  await expect(editor.getByRole("link", { name: "Скачать новую копию" })).toBeVisible();
+});
