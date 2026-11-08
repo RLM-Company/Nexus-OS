@@ -431,7 +431,11 @@ export class ManagerWorkStore {
           "SELECT state_json FROM manager_work WHERE json_extract(state_json, '$.status') = 'running'"
         )
         .all() as { state_json: string }[]
-    ).map((row) => JSON.parse(row.state_json) as ManagerWork);
+    )
+      .map((row) => JSON.parse(row.state_json) as ManagerWork)
+      // Privacy recovery owns fenced records. Do not mutate them or prevent
+      // unrelated owners from recovering after a process restart.
+      .filter((state) => this.ownerWritable(state.owner_id));
     for (const state of states) {
       // Publication commits files and immutable version flags together. A crash
       // after that commit may leave the work running; finish from durable proof,
