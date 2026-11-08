@@ -40,6 +40,23 @@ export function readComposerDraft(storage: Storage, key: string) {
   }
 }
 
+// Compare both canonical records before clearing a submitted draft. A newer tab owns
+// its records even when the submitted text happens to be identical.
+export function captureComposerDraft(storage: Storage, key: string) {
+  return { text: storage.getItem(key), materials: storage.getItem(materialsKey(key)) };
+}
+
+export function clearComposerDraftIfUnchanged(
+  storage: Storage,
+  key: string,
+  expected: ReturnType<typeof captureComposerDraft>
+): boolean {
+  const actual = captureComposerDraft(storage, key);
+  if (actual.text !== expected.text || actual.materials !== expected.materials) return false;
+  clearComposerDraft(storage, key);
+  return true;
+}
+
 export function clearComposerDraft(storage: Storage, key: string): void {
   storage.removeItem(key);
   storage.removeItem(materialsKey(key));

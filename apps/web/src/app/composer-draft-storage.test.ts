@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   clearComposerDraft,
+  captureComposerDraft,
+  clearComposerDraftIfUnchanged,
   DRAFT_LIMITS,
   DRAFT_PREFIX,
   readComposerDraft,
@@ -103,5 +105,31 @@ describe("bounded composer drafts", () => {
     expect(readComposerDraft(storage, key).text).toBe("");
     expect(storage.length).toBe(0);
     expect(saveComposerDraft(storage, key, "x".repeat(DRAFT_LIMITS.text + 1), [])).toBeTruthy();
+  });
+});
+
+describe("submitted draft acknowledgement", () => {
+  it("clears only the exact submitted pair of records", () => {
+    const storage = new MemoryStorage();
+    saveComposerDraft(storage, key, "submitted", files);
+    const submitted = captureComposerDraft(storage, key);
+    expect(clearComposerDraftIfUnchanged(storage, key, submitted)).toBe(true);
+    expect(storage.length).toBe(0);
+  });
+  it("preserves newer text from another tab", () => {
+    const storage = new MemoryStorage();
+    saveComposerDraft(storage, key, "submitted", files);
+    const submitted = captureComposerDraft(storage, key);
+    saveComposerDraft(storage, key, "newer", files);
+    expect(clearComposerDraftIfUnchanged(storage, key, submitted)).toBe(false);
+    expect(readComposerDraft(storage, key).text).toBe("newer");
+  });
+  it("preserves attachment-only changes with identical text", () => {
+    const storage = new MemoryStorage();
+    saveComposerDraft(storage, key, "submitted", files);
+    const submitted = captureComposerDraft(storage, key);
+    saveComposerDraft(storage, key, "submitted", []);
+    expect(clearComposerDraftIfUnchanged(storage, key, submitted)).toBe(false);
+    expect(readComposerDraft(storage, key)).toMatchObject({ text: "submitted", files: [] });
   });
 });
