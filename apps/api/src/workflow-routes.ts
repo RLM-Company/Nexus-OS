@@ -22,6 +22,7 @@ import {
   type ProjectStore
 } from "@cosmora/db";
 import type { ManagerWorkCoordinator } from "./manager-work-coordinator.js";
+import { getScopedWorkflowResults } from "./workflow-results.js";
 
 export const WORKFLOW_TEMPLATES: { id: string; definition: WorkflowDefinitionInput }[] = [
   {
@@ -119,22 +120,27 @@ export function registerWorkflowRoutes(options: {
     { projectId: Type.String({ minLength: 1 }), id: Type.Optional(Type.String({ minLength: 1 })) },
     { additionalProperties: false }
   );
+  const runParams = Type.Object(
+    {
+      projectId: Type.String({ minLength: 1 }),
+      id: Type.String({ minLength: 1 }),
+      runId: Type.String({ minLength: 1 })
+    },
+    { additionalProperties: false }
+  );
   type Params = { projectId: string; id: string };
-  const scope = (r: FastifyRequest<{ Params: Params }>) => ({
-    project: r.params.projectId,
-    owner: identityFor(r).owner_id,
-    actor: identityFor(r).actor_id
-  });
+  type RunParams = { projectId: string; id: string; runId: string };
   const safe = (
-    r: FastifyRequest<{ Params: Params }>,
+    r: FastifyRequest<{ Params: { projectId: string } }>,
     reply: {
       header: (name: string, value: string) => unknown;
       code: (code: number) => { send: (v: unknown) => unknown };
     },
-    fn: (s: ReturnType<typeof scope>) => unknown
+    fn: (s: { project: string; owner: string; actor: string }) => unknown
   ) => {
     reply.header("Cache-Control", "private, no-store");
-    const s = scope(r);
+    const identity = identityFor(r);
+    const s = { project: r.params.projectId, owner: identity.owner_id, actor: identity.actor_id };
     if (!projects.getProject(s.project, s.owner))
       return reply.code(404).send({ error: "PROJECT_NOT_FOUND" });
     try {
@@ -159,7 +165,8 @@ export function registerWorkflowRoutes(options: {
   app.get<{ Params: Params }>(base, { schema: { params } }, (r, reply) =>
     safe(r, reply, (s) => ({
       items: workflows.list(s.project, s.owner),
-      templates: WORKFLOW_TEMPLATES
+      templates: WORKFLOW_TEMPLATES,
+      capabilities: ["workflow_run_results.v1"]
     }))
   );
   app.post<{
@@ -350,5 +357,20 @@ export function registerWorkflowRoutes(options: {
         );
         return reply.code(201).send({ run, graph: coordinator.dag.get(run.dag_id, s.owner) });
       })
+  );
+  app.get<{ Params: RunParams }>(
+    base + "/:id/runs/:runId/results",
+    { schema: { params: runParams } },
+    (r, reply) =>
+      safe(r, reply, (s) =>
+        getScopedWorkflowResults({
+          projectId: s.project,
+          owner: s.owner,
+          workflowId: r.params.id,
+          runId: r.params.runId,
+          workflows,
+          coordinator
+        })
+      )
   );
 }

@@ -1,5 +1,75 @@
 import { expect, test } from "@playwright/test";
 import type { WorkflowDefinition } from "@cosmora/contracts";
+
+test("late result response cannot replace the selected scenario", async ({ page, request }) => {
+  const created = await request.post("/api/v1/projects", {
+    data: {
+      initial_message: "Late workflow result",
+      client_message_id: crypto.randomUUID()
+    }
+  });
+  const project = (await created.json()).project.id as string;
+  const base = `/api/v1/projects/${project}/workflows`;
+  const library = await (await request.get(base)).json();
+  for (const name of ["First scenario", "Second scenario"]) {
+    const response = await request.post(base, {
+      data: {
+        client_creation_id: crypto.randomUUID(),
+        definition: { ...library.templates[1].definition, name }
+      }
+    });
+    expect(response.status()).toBe(201);
+    const workflow = await response.json();
+    expect(
+      (
+        await request.post(`${base}/${workflow.id}/runs`, {
+          data: {
+            client_request_id: crypto.randomUUID(),
+            expected_version: 1,
+            inputs: { text: name },
+            auto_start: false
+          }
+        })
+      ).status()
+    ).toBe(201);
+  }
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let intercepted!: () => void;
+  const started = new Promise<void>((resolve) => {
+    intercepted = resolve;
+  });
+  await page.route("**/runs/*/results", async (route) => {
+    const response = await route.fetch();
+    intercepted();
+    await held;
+    try {
+      await route.fulfill({ response });
+    } catch {
+      /* The old request was aborted on unmount. */
+    }
+  });
+  try {
+    await page.goto(`/?project=${project}&view=plan`);
+    await page.getByText("Сценарии Koswork", { exact: true }).click();
+    const panel = page.getByRole("region", { name: "Сохранённые сценарии Koswork", exact: true });
+    await panel.getByRole("button", { name: /First scenario · v1/ }).click();
+    await panel.getByRole("button", { name: "Проверить результаты", exact: true }).click();
+    await started;
+    await panel.getByRole("button", { name: /Second scenario · v1/ }).click();
+    await expect(
+      panel.getByRole("button", { name: "Проверить результаты", exact: true })
+    ).toBeEnabled();
+    release();
+    await expect(panel.getByText("Результаты запуска", { exact: false })).toHaveCount(0);
+    await expect(panel.getByRole("alert")).toHaveCount(0);
+  } finally {
+    release();
+  }
+});
+
 test("document scenario captures a real project file, restores a version and imports a portable copy", async ({
   page,
   request
@@ -161,6 +231,14 @@ test("reusable scenario survives lost save/run responses, executes with real HTT
   );
   expect(download.status()).toBe(200);
   expect((await download.body()).subarray(0, 2).toString()).toBe("PK");
+  await scenarios
+    .getByRole("button", { name: "Проверить результаты", exact: true })
+    .first()
+    .click();
+  await expect(scenarios.getByText("Проверены размер и SHA-256", { exact: false })).toBeVisible();
+  await expect(
+    scenarios.getByRole("link", { name: "Скачать архив результатов", exact: true })
+  ).toBeVisible();
   await scenarios.getByRole("button", { name: "Архивировать сценарий", exact: true }).click();
   await expect(
     scenarios
@@ -178,4 +256,53 @@ test("reusable scenario survives lost save/run responses, executes with real HTT
     scenarios.getByRole("link", { name: "Скачать результаты", exact: true })
   ).toBeVisible();
   expect(pageErrors).toEqual([]);
+});
+
+test("old API without results capability keeps its history and never calls the new endpoint", async ({
+  page,
+  request
+}) => {
+  const created = await request.post("/api/v1/projects", {
+    data: { initial_message: "Compatibility", client_message_id: crypto.randomUUID() }
+  });
+  const project = (await created.json()).project.id as string;
+  const base = `/api/v1/projects/${project}/workflows`;
+  const library = await (await request.get(base)).json();
+  const saved = await request.post(base, {
+    data: { client_creation_id: crypto.randomUUID(), definition: library.templates[1].definition }
+  });
+  const workflow = await saved.json();
+  expect(saved.status()).toBe(201);
+  expect(
+    (
+      await request.post(`${base}/${workflow.id}/runs`, {
+        data: {
+          client_request_id: crypto.randomUUID(),
+          expected_version: 1,
+          inputs: { text: "Compatibility source" },
+          auto_start: false
+        }
+      })
+    ).status()
+  ).toBe(201);
+  let resultRequests = 0;
+  await page.route("**/runs/*/results", (route) => {
+    resultRequests++;
+    return route.abort();
+  });
+  await page.route(`**${base}`, async (route) => {
+    const response = await route.fetch();
+    const value = await response.json();
+    delete value.capabilities;
+    await route.fulfill({ response, json: value });
+  });
+  await page.goto(`/?project=${project}&view=plan`);
+  await page.getByText("Сценарии Koswork", { exact: true }).click();
+  const panel = page.getByRole("region", { name: "Сохранённые сценарии Koswork", exact: true });
+  await panel.getByRole("button", { name: new RegExp(`${workflow.name} · v1`) }).click();
+  await expect(panel.getByText("Версия 1", { exact: true })).toBeVisible();
+  await expect(
+    panel.getByRole("button", { name: "Проверить результаты", exact: true })
+  ).toHaveCount(0);
+  expect(resultRequests).toBe(0);
 });
