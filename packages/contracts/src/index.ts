@@ -56,7 +56,11 @@ export * from "./intelligence-graph-package.js";
 export type { IntelligenceGraphEvidenceAudit } from "./intelligence-graph-audit.js";
 export * from "./project-automation.js";
 export * from "./computer-control.js";
-export type { GoogleDriveConnectionView, GoogleDriveConnectStart } from "./google-drive.js";
+export type {
+  GoogleDriveConnectionView,
+  GoogleDriveConnectStart,
+  GoogleDriveSourceList
+} from "./google-drive.js";
 
 export {
   OfficeCursorSchema,

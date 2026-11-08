@@ -554,3 +554,15 @@ Tool-runtime: 64 passed/4 OCI skipped — эти четыре теста лок�
 относятся к предыдущей поставке. Последнее изменение после полного gate — только
 этот отчёт; окончательный HEAD и внешний статус доступны в PR №466. Merge/deploy
 не выполнялись.
+
+### Согласование с обновившимся main
+
+Во время финальной проверки main продвинулся до
+`e8663f2e5efd4b26ca540dd316052e6a65ed58be` (PR №467, Google Drive result selection).
+Read-only merge-tree обнаружил единственную коллизию в общем contracts/index.ts:
+новый GoogleDriveSourceList export и добавленные Office exports. В отдельном
+интеграционном merge-коммите рабочей ветки сохранены обе группы экспортов и все
+новые Drive-файлы из main. Никакие Drive-реализации не переписывались. Это
+синхронизация main в feature branch; PR №466 в main не слит, deploy не выполнялся.
+До синхронизации GitHub сообщал mergeable=false и не возвращал PR workflow runs.
+Окончательные checks синхронизированной ветки отражены в PR №466.
