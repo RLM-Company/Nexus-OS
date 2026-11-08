@@ -17,7 +17,7 @@ const metadata = (row: Omit<ArtifactRow, "content">): WorkArtifactVersion => ({
 export class WorkRuntimeStore {
   constructor(private readonly sqlite: DatabaseSync) {}
   /** Called in the same transaction as work state saves. No provider replay/permission restoration. */
-  checkpoint(work: ManagerWork): void {
+  checkpoint(work: ManagerWork, options: { includeDraft?: boolean } = {}): void {
     const checkpoint: WorkCheckpointRecord = {
       work_id: work.id,
       version: work.version,
@@ -35,6 +35,8 @@ export class WorkRuntimeStore {
     this.sqlite
       .prepare("INSERT INTO work_checkpoints (work_id, version, state_json) VALUES (?, ?, ?)")
       .run(work.id, work.version, JSON.stringify(checkpoint));
+    // Crash recovery records the decision, never recreates or repairs evidence.
+    if (options.includeDraft === false) return;
     for (const file of work.draft?.files ?? []) {
       const previous = this.sqlite
         .prepare("SELECT sha256 FROM work_artifact_versions WHERE work_id = ? AND name = ?")

@@ -1,7 +1,7 @@
 import { WorkSkillStore } from "./work-skill-store.js";
 import { WorkflowStore } from "./workflow-store.js";
 import { WorkDagStore } from "./work-dag-store.js";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
 import type { CreateManagerWork, ManagerWork, ManagerWorkFiles } from "@cosmora/contracts";
 import { ProjectMemoryStore } from "./project-memory-store.js";
@@ -141,7 +141,9 @@ export class ManagerWorkStore {
         const state = JSON.parse(record.state_json) as ManagerWork;
         state.status = "cancelled";
         state.error_code = "OWNER_QUIESCED";
-        this.persist(state, "Остановлено для операции над данными владельца", true);
+        this.persist(state, "Остановлено для операции над данными владельца", {
+          fencedCancellation: true
+        });
       }
       this.dag.quiesce(ownerId);
       return row.epoch;
@@ -324,8 +326,12 @@ export class ManagerWorkStore {
     return this.transaction(() => this.persist(state, message));
   }
 
-  private persist(state: ManagerWork, message?: string, fencedCancellation = false): ManagerWork {
-    if (!fencedCancellation) this.assertWritable(state.owner_id);
+  private persist(
+    state: ManagerWork,
+    message?: string,
+    options: { fencedCancellation?: boolean; includeDraft?: boolean } = {}
+  ): ManagerWork {
+    if (!options.fencedCancellation) this.assertWritable(state.owner_id);
     const next = structuredClone(state);
     next.version++;
     next.updated_at = new Date().toISOString();
@@ -342,7 +348,7 @@ export class ManagerWorkStore {
       )
       .run(next.version, JSON.stringify(next), state.id, state.owner_id, state.version);
     if (Number(result.changes) !== 1) throw new ManagerWorkConflict("STALE_EXECUTION");
-    this.runtime.checkpoint(next);
+    this.runtime.checkpoint(next, options);
     return next;
   }
 
@@ -436,10 +442,15 @@ export class ManagerWorkStore {
         state.draft.files.every((file) => {
           const record = this.sqlite
             .prepare(
-              "SELECT f.content FROM manager_work_files f JOIN work_artifact_versions a ON a.work_id = f.execution_id AND a.name = f.name WHERE f.execution_id = ? AND f.name = ? AND a.published = 1 AND a.content = f.content"
+              "SELECT f.content, a.sha256, a.bytes FROM manager_work_files f JOIN work_artifact_versions a ON a.work_id = f.execution_id AND a.name = f.name WHERE f.execution_id = ? AND f.name = ? AND a.project_id = ? AND a.published = 1 AND a.content = f.content"
             )
-            .get(state.id, file.name) as { content: string } | undefined;
-          return record?.content === file.content;
+            .get(state.id, file.name, state.project_id) as
+            { content: string; sha256: string; bytes: number } | undefined;
+          return (
+            record?.content === file.content &&
+            record.bytes === Buffer.byteLength(file.content, "utf8") &&
+            record.sha256 === createHash("sha256").update(file.content, "utf8").digest("hex")
+          );
         });
       if (published) {
         state.status = "completed";
@@ -453,7 +464,13 @@ export class ManagerWorkStore {
           state.task_graph.waiting_decision = null;
           state.task_graph.next_task_id = null;
         }
-        this.save(state, "Завершено по подтверждённым сохранённым файлам; повтор не выполнялся");
+        this.transaction(() =>
+          this.persist(
+            state,
+            "Завершено по подтверждённым сохранённым файлам; повтор не выполнялся",
+            { includeDraft: false }
+          )
+        );
         continue;
       }
       // An interrupted provider/tool operation must never be submitted twice.
@@ -468,7 +485,11 @@ export class ManagerWorkStore {
         state.task_graph.next_task_id =
           state.status === "failed" ? null : state.id + ":" + state.stage;
       }
-      this.save(state, "Процесс был прерван; автоматический повтор отключён");
+      this.transaction(() =>
+        this.persist(state, "Процесс был прерван; автоматический повтор отключён", {
+          includeDraft: false
+        })
+      );
     }
     return states.length;
   }
