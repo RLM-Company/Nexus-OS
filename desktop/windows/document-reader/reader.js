@@ -115,7 +115,7 @@ window.kosmoraReadPdf = async function ({ base64, pageIndex, mode }) {
               "OCR can misread characters and numbers; confidence is the engine's score, not factual accuracy.",
               ...(layout
                 ? [
-                    "Table rows below were rebuilt from word coordinates; misreads can merge or split cells, and this is not a verified table structure."
+                    "Table rows below were rebuilt from word coordinates; misreads can merge or split cells, empty columns may hold missed or empty cells, colspan/rowspan merges are not reconstructed, and this is not a verified table structure."
                   ]
                 : [])
             ]

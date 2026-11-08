@@ -99,6 +99,104 @@ test("rows that miss a cell fall out of the grid and stay plain", async () => {
   assert.equal(rows2[3].split("\t").length, 1, "mismatched row stays plain");
 });
 
+test("a row missing one anchored column keeps empty column slots", async () => {
+  const { collectOcrWords, layoutFromWords } = await module();
+  // Three exact rows of four cells plus one row whose third column produced
+  // no word: its remaining runs anchor to boundaries 150/290/430, so the row
+  // keeps its slots with one empty column. Nothing is merged or invented.
+  const gridRows = [
+    ["Дата Свидетельство", "Счёт Номер", "Сумма Рублей", "Поставка Условие"],
+    ["01.11.2026 хозяйственный", "00123 ординарный", "19700 ноль", "кроме доставки"],
+    ["02.11.2026 хозяйственный", "00124 ординарный", "0900 ноль", "предоплата товара"]
+  ].map((row, rowIndex) =>
+    row
+      .map((cell, index) => {
+        const [first, second] = cell.split(" ");
+        return [
+          makeWord(first, 10 + index * 140, 40 + rowIndex * 20, 50),
+          makeWord(second, 68 + index * 140, 40 + rowIndex * 20, 40)
+        ];
+      })
+      .flat()
+  );
+  const sparse = [
+    makeWord("Итог", 10, 100, 60),
+    makeWord("Счёт", 150, 100, 60),
+    makeWord("Доставка", 430, 100, 60)
+  ];
+  const flat = collectOcrWords(toBlocks([...gridRows, sparse]));
+  const layout = layoutFromWords(flat, { maxText: 180000 });
+  assert.ok(layout, "an anchored sparse row must stay in the grid");
+  assert.equal(layout.rows, 4);
+  const rows = layout.text.split("\n").filter((line) => line);
+  assert.equal(rows.length, 4);
+  const sparseCells = rows[3].split("\t");
+  assert.deepEqual(sparseCells.slice(0, 2), ["Итог", "Счёт"]);
+  assert.equal(sparseCells[2], "", "unobserved column stays empty");
+  assert.equal(sparseCells[3], "Доставка");
+  // No word is lost: every token of the input appears in the rebuilt text.
+  for (const token of flat.map((word) => word.text)) assert.ok(layout.text.includes(token), token);
+});
+
+test("unanchored or too sparse rows fall back to plain line text", async () => {
+  const { collectOcrWords, layoutFromWords } = await module();
+  // Six-column grid of four exact rows plus two odd lines: one with a single
+  // distant pair (too sparse for k=6) and one whose middle run anchors to no
+  // boundary. Both must keep plain text.
+  const gridRows = [
+    ["Дата Число", "Счёт Номер", "Сумма Валюта", "Срок Дата", "Код Марка", "Прим Итог"],
+    [
+      "01.11.2026 осень",
+      "00123 ординарный",
+      "19700 ноль",
+      "05.12.2026 зима",
+      "К01 марка",
+      "кроме доставки"
+    ],
+    [
+      "02.11.2026 осень",
+      "00124 ординарный",
+      "0900 ноль",
+      "06.12.2026 зима",
+      "К02 марка",
+      "предоплата товара"
+    ],
+    [
+      "03.11.2026 осень",
+      "00125 ординарный",
+      "19700 ноль",
+      "07.12.2026 зима",
+      "К03 марка",
+      "кроме доставки"
+    ]
+  ].map((row, rowIndex) =>
+    row
+      .map((cell, index) => {
+        const [first, second] = cell.split(" ");
+        return [
+          makeWord(first, 10 + index * 140, 40 + rowIndex * 20, 50),
+          makeWord(second, 68 + index * 140, 40 + rowIndex * 20, 40)
+        ];
+      })
+      .flat()
+  );
+  const distant = [makeWord("А", 10, 120, 50), makeWord("Я", 710, 120, 50)];
+  const unanchored = [
+    makeWord("А", 10, 140, 50),
+    makeWord("Б", 200, 140, 50),
+    makeWord("Г", 430, 140, 50)
+  ];
+  const flat = collectOcrWords(toBlocks([...gridRows, distant, unanchored]));
+  const layout = layoutFromWords(flat, { maxText: 180000 });
+  assert.ok(layout, "exact rows alone must build the table");
+  assert.equal(layout.columns, 6);
+  assert.equal(layout.rows, 4, "sparse guesses must not count as grid rows");
+  const rows = layout.text.split("\n").filter((line) => line);
+  assert.equal(rows.length, 6);
+  assert.ok(!rows[4].includes("\t"), "too sparse line stays plain");
+  assert.ok(!rows[5].includes("\t"), "unanchored line stays plain");
+});
+
 test("collectOcrWords drops invalid entries and keeps x order", async () => {
   const { collectOcrWords, layoutFromWords } = await module();
   const blocks = [

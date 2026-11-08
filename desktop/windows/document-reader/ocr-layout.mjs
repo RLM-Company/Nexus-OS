@@ -2,7 +2,10 @@
 // no network, no second engine: the caller still owns the OCR engine, and
 // words are only rearranged, never dropped or rewritten. Limits mirror the
 // page reader contract (180000 UTF-16 units); oversize or ambiguous layouts
-// return null so the caller keeps the engine's plain text.
+// return null so the caller keeps the engine's plain text. Rows that lost
+// runs to OCR may keep their column slots when every remaining run anchors
+// to the verified grid; colspan/rowspan merges are never claimed, because
+// word coordinates cannot verify them.
 export function collectOcrWords(blocks) {
   const words = [];
   if (!Array.isArray(blocks)) return words;
@@ -141,13 +144,45 @@ export function layoutFromWords(rawWords, { maxText = 180000 } = {}) {
     .map((entry) => entry.line);
   if (tableLines.length < Math.max(MIN_TABLE_ROWS, Math.ceil(kRows * 0.6))) return null;
   const isTable = new Set(tableLines);
+  // Sparse alignment: rows that lost runs to OCR keep column slots when every
+  // remaining run anchors to the verified grid. Unobserved slots stay empty.
+  const denseEnough = (cells) => cells.length >= 2 && cells.length >= Math.ceil(k / 2);
+  const assignColumns = (cells) => {
+    const columns = [];
+    let next = 0;
+    for (const cell of cells) {
+      const start = cell.words[0].bbox.x0;
+      let column = -1;
+      for (let c = next; c < k && column < 0; c++)
+        if (
+          c === 0
+            ? start <= boundaries[0] - tolerance
+            : Math.abs(start - boundaries[c - 1]) <= tolerance
+        )
+          column = c;
+      if (column < 0) return null;
+      columns.push(column);
+      next = column + 1;
+    }
+    return columns;
+  };
   const partsFor = new Map();
+  let extendedRows = 0;
   for (const entry of candidates) {
-    const parts =
-      isTable.has(entry.line) && matchesGrid(entry.cells)
-        ? entry.cells.map((cell) => cellText(cell))
-        : [cellText({ words: entry.line.words })];
-    partsFor.set(entry.line, parts);
+    let parts = null;
+    if (isTable.has(entry.line) && matchesGrid(entry.cells)) {
+      parts = entry.cells.map((cell) => cellText(cell));
+    } else if (denseEnough(entry.cells)) {
+      const columns = assignColumns(entry.cells);
+      if (columns) {
+        parts = Array.from({ length: k }, () => "");
+        entry.cells.forEach((cell, index) => {
+          parts[columns[index]] = cellText(cell);
+        });
+        extendedRows++;
+      }
+    }
+    partsFor.set(entry.line, parts ?? [cellText({ words: entry.line.words })]);
   }
   for (const line of lines) {
     if (partsFor.has(line)) continue;
@@ -159,7 +194,7 @@ export function layoutFromWords(rawWords, { maxText = 180000 } = {}) {
       .map((line) => partsFor.get(line).join("\t"))
       .join("\n") + "\n";
   if (text.length > maxText) return null;
-  return { kind: "table", text, rows: tableLines.length, columns: k };
+  return { kind: "table", text, rows: tableLines.length + extendedRows, columns: k };
 }
 
 function medianGapOf(lines) {
