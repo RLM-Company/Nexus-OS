@@ -429,3 +429,76 @@ API identity boundary — success в
 окончательный статус текущего HEAD смотрите в checks PR №466. Последующее изменение
 содержит только дополнительный тест отказа oversized cell и этот отчёт;
 production-исходники совпадают с проверенным `48f0f2de`.
+
+## Закрытие недоработок после поставки 9458804c
+
+База этого продолжения: `9458804cab84675f609b606fb8fcf79fa83d99ee`, та же ветка и PR №466.
+Main по fetch остаётся `338536ee5946f96dcd18768143cc41af998c476a`.
+Для базы все GitHub workflow завершились success: CI `42424895377`, Windows desktop
+`42424895392`, API identity boundary `42424895383`; основной browser suite —
+368 passed, Windows — 367 passed без skips. Это результат предыдущего SHA,
+не заявление об автоматическом успехе нового продолжения.
+
+Исправлены четыре границы в существующем пользовательском пути:
+
+1. Пустой Word body и слайды без текстовых shapes теперь открываются с пустым
+   `targets`, total_targets=0, next_cursor=null. Ненулевой cursor отклоняется,
+   лимит ответа 10000 байт сохранён. UI явно сообщает об отсутствии поддерживаемых
+   текстовых объектов и не предлагает замену по пустому адресу. Обычный
+   `workspace_read_document`/vault extractor сохраняет прежний отказ NO_TEXT;
+   allowEmpty=true используется только адресным Office engine.
+2. «Отменить» останавливает текущий запрос и сохраняет набранный план. Поздние
+   preview/commit ответы игнорируются; download не появляется. Очистка плана
+   остаётся отдельным явным действием. Повтор commit в web требует нового клика
+   подтверждения; web API не сохраняет файл на диске. Native одноразовые планы
+   и поведение неопределённой записи не менялись.
+3. Перед созданием ссылки скачивания браузер вычисляет SHA256 реальных выходных
+   байтов и сверяет его с receipt, version, source_version и подтверждённым preview.
+   Несовпадение не выдаётся за проверенную копию. После асинхронного digest снова
+   проверяется актуальность запроса. WebCrypto требует HTTPS или localhost;
+   при отсутствии WebCrypto показывается явный отказ, проверка не пропускается.
+4. Редактирование пакета с декларацией цифровой подписи отклоняется и при
+   нестандартных путях частей: проверяются Content Types и signature relationships,
+   а не только имя `_xmlsignatures/`. Чтение подписанного источника не запрещено.
+   Тест использует синтетические декларации, не заявляет криптографическую проверку
+   подлинности подписи. Подпись не удаляется и не выдаётся за действительную после правок.
+
+Изменены только Office-owned файлы: `desktop/windows/workspace/{office-edit,office-text,office-view}.cjs`,
+`desktop/windows/test/{office-edit-compatibility,office-edit-pages}.test.cjs`,
+`apps/web/src/app/office-document-workspace.tsx`, `apps/web/e2e/office-workspace.spec.ts`
+и этот handoff. Новых маршрутов, контрактов, миграций, зависимостей и общих
+интеграционных файлов нет. Откат — revert коммита этого продолжения;
+сохранённые пользователем копии не удалять.
+
+Проверки на исходниках продолжения:
+
+```sh
+node --test desktop/windows/test/office-edit*.test.cjs desktop/windows/test/office-text.test.cjs desktop/windows/test/office-document.test.cjs desktop/windows/test/work-document-cycle.test.cjs desktop/windows/test/computer-workspace.test.cjs desktop/windows/test/vault-workspace.test.cjs desktop/windows/test/work-cycle.test.cjs
+pnpm --dir desktop/windows check
+pnpm --filter @cosmora/api exec vitest run test/document-workspace-api.test.ts test/computer-control.test.ts --maxWorkers=2
+pnpm --filter @cosmora/web typecheck
+pnpm --filter @cosmora/web lint
+pnpm --filter @cosmora/api build
+KOSMORA_E2E_PRODUCTION=1 PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium pnpm --filter @cosmora/web exec playwright test -c playwright.office.config.ts
+node desktop/windows/test/fixtures/run-office-edit-brief.cjs work/office-gaps-brief
+node scripts/check-secrets.mjs
+git diff --check
+```
+
+Результаты: 104 native passed; 87 API passed; desktop 368 passed/1 Windows-only
+skipped на Linux. Web typecheck (включая e2e) и lint — PASS, API build — PASS.
+Development e2e: 8 passed; финальный production e2e после добавления commit-cancel:
+9 passed, retries=0, 44.9 s (включает production build и next start).
+Все три `offer.updated.{docx,xlsx,pptx}` из повторного брифа побайтно совпали с
+поставленными fixtures. Prettier, secret scan и diff check — PASS.
+
+История ошибок: до исправления две native-регрессии упали (NO_TEXT/CURSOR для
+пустого документа и отсутствие отказа для signature declaration). Три новых
+браузерных регрессии на исходном UI упали: отмена удаляла план, bytes/version
+mismatch не показывал отказ и предлагал download. Исправлены причины, после чего
+пройдены существующие и новые сценарии; retries выключены. Полный общий gate
+нового SHA проверяется GitHub CI; окончательный статус — в checks PR №466.
+
+Границы исходного задания сохраняются: WYSIWYG/новый визуальный макет не внедрялись,
+формулы не вычисляются engine, сложные объекты отклоняются. HY4 не вызывался,
+ПК владельца и production не затрагивались. Эти ограничения не названы закрытыми.
