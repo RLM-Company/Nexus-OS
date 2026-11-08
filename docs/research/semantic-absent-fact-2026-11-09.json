@@ -1,0 +1,682 @@
+{
+  "fixture_sha256": "036ea87fdde79f379a1275cbe49aa3c7fffc64c2a4e62bfcd584f40b236809f9",
+  "noise_generator": "v2-240-three-fixed-templates",
+  "documents": 359,
+  "present_queries": 36,
+  "absent_queries": 12,
+  "encoder": "multilingual-e5-small:761b726:q8:mean:l2:384:v1",
+  "runtime_profile": {
+    "batchSize": 4,
+    "intraThreads": 2
+  },
+  "build_batches": 362,
+  "build_ms": 11712.203300000001,
+  "present": {
+    "bounded": {
+      "top1": 25,
+      "top3": 27,
+      "mrr": 0.7175925925925926
+    },
+    "indexed": {
+      "top1": 33,
+      "top3": 35,
+      "mrr": 0.9398148148148149
+    },
+    "median_bounded_ms": 714.9706000000006,
+    "median_indexed_ms": 57.72439999999915,
+    "best_cosine_mirror": {
+      "p50": 0.8504060023551779,
+      "max": 0.9366176146902281,
+      "over_gate": 36
+    }
+  },
+  "absent": {
+    "gate": 0.72,
+    "false_positive_count": 12,
+    "over_gate_count": 12,
+    "best_cosine_mirror": {
+      "p50": 0.7998921129036629,
+      "max": 0.8123919390761319,
+      "over_gate": 12
+    }
+  },
+  "rss_snapshot_mib": 183.171875,
+  "present_cases": [
+    {
+      "query": "Сколько денег выделено на инструменты в квартале?",
+      "gold": "budget-tools",
+      "bounded_rank": 1,
+      "indexed_rank": 1,
+      "best_cosine_mirror": 0.8592943405582031,
+      "bounded_ms": 686.7047999999995,
+      "indexed_ms": 73.05529999999999
+    },
+    {
+      "query": "Каким артикулом заказывают тонер для принтера?",
+      "gold": "laser-toner",
+      "bounded_rank": 1,
+      "indexed_rank": 1,
+      "best_cosine_mirror": 0.858628188411604,
+      "bounded_ms": 659.3710000000028,
+      "indexed_ms": 57.818499999997584
+    },
+    {
+      "query": "Кто согласовывает заявку на закупку в первую очередь?",
+      "gold": "purchase-form",
+      "bounded_rank": 1,
+      "indexed_rank": 1,
+      "best_cosine_mirror": 0.834729804657778,
+      "bounded_ms": 687.7782000000007,
+      "indexed_ms": 54.647899999999936
+    },
+    {
+      "query": "На какой срок заключаются договоры с подрядчиками?",
+      "gold": "contract-terms",
+      "bounded_rank": 1,
+      "indexed_rank": 1,
+      "best_cosine_mirror": 0.8962020720439612,
+      "bounded_ms": 668.7266000000018,
+      "indexed_ms": 51.692699999999604
+    },
+    {
+      "query": "Какой ИНН у компании, чтобы сверить документы?",
+      "gold": "tax-id",
+      "bounded_rank": 1,
+      "indexed_rank": 1,
+      "best_cosine_mirror": 0.8506688466184096,
+      "bounded_ms": 794.0479000000014,
+      "indexed_ms": 70.49170000000231
+    },
+    {
+      "query": "Во сколько начинается ежедневный стендап?",
+      "gold": "standup-time",
+      "bounded_rank": 1,
+      "indexed_rank": 1,
+      "best_cosine_mirror": 0.9366176146902281,
+      "bounded_ms": 693.7122000000018,
+      "indexed_ms": 49.947299999999814
+    },
+    {
+      "query": "Как часто меняется гостевой пароль от Wi-Fi?",
+      "gold": "wifi-pass",
+      "bounded_rank": 1,
+      "indexed_rank": 1,
+      "best_cosine_mirror": 0.8668680950555949,
+      "bounded_ms": 710.1391000000003,
+      "indexed_ms": 51.96240000000034
+    },
+    {
+      "query": "When does the backup of databases start?",
+      "gold": "backup-night",
+      "bounded_rank": null,
+      "indexed_rank": 1,
+      "best_cosine_mirror": 0.7855319597005583,
+      "bounded_ms": 837.5796000000009,
+      "indexed_ms": 49.889100000000326
+    },
+    {
+      "query": "Какая повседневная повестка у команд по пятницам?",
+      "gold": "retro-pace",
+      "bounded_rank": 1,
+      "indexed_rank": 1,
+      "best_cosine_mirror": 0.8356861377469713,
+      "bounded_ms": 812.8804999999993,
+      "indexed_ms": 72.02590000000055
+    },
+    {
+      "query": "What does the visitor need to do with the badge after the meeting?",
+      "gold": "visitor-pass",
+      "bounded_rank": null,
+      "indexed_rank": 1,
+      "best_cosine_mirror": 0.7938844100377278,
+      "bounded_ms": 815.508600000001,
+      "indexed_ms": 61.0099999999984
+    },
+    {
+      "query": "Сколько страниц печати в месяц доступно сотруднику?",
+      "gold": "printer-quota",
+      "bounded_rank": 1,
+      "indexed_rank": 1,
+      "best_cosine_mirror": 0.883433631442988,
+      "bounded_ms": 766.0103000000017,
+      "indexed_ms": 60.27140000000145
+    },
+    {
+      "query": "В какие дни разрешена удалённая работа?",
+      "gold": "remote-days",
+      "bounded_rank": 1,
+      "indexed_rank": 1,
+      "best_cosine_mirror": 0.8811497344750087,
+      "bounded_ms": 692.2813999999998,
+      "indexed_ms": 53.19130000000223
+    },
+    {
+      "query": "Что происходит с письмами в архиве через два года?",
+      "gold": "mail-retention",
+      "bounded_rank": 1,
+      "indexed_rank": 1,
+      "best_cosine_mirror": 0.8603915281238601,
+      "bounded_ms": 731.8384000000005,
+      "indexed_ms": 74.23620000000301
+    },
+    {
+      "query": "Как кодируются проекты в монорепозитории?",
+      "gold": "project-codes",
+      "bounded_rank": 1,
+      "indexed_rank": 1,
+      "best_cosine_mirror": 0.8145575536040024,
+      "bounded_ms": 2346.946200000002,
+      "indexed_ms": 60.52669999999853
+    },
+    {
+      "query": "Who reviews a pull request and how fast?",
+      "gold": "review-window",
+      "bounded_rank": null,
+      "indexed_rank": 1,
+      "best_cosine_mirror": 0.7921217599829358,
+      "bounded_ms": 1886.0136999999995,
+      "indexed_ms": 59.26690000000235
+    },
+    {
+      "query": "Середина месяца, к какой дате привязаны расчёты расходов?",
+      "gold": "budget-report",
+      "bounded_rank": null,
+      "indexed_rank": 1,
+      "best_cosine_mirror": 0.842435193216575,
+      "bounded_ms": 729.8940999999977,
+      "indexed_ms": 69.47439999999915
+    },
+    {
+      "query": "Какой срок восстановления базы фигурирует в отчёте?",
+      "gold": "db-replica",
+      "bounded_rank": 1,
+      "indexed_rank": 1,
+      "best_cosine_mirror": 0.8785783075685093,
+      "bounded_ms": 702.8070000000007,
+      "indexed_ms": 60.61619999999675
+    },
+    {
+      "query": "Do automatic production deployments exist?",
+      "gold": "deploy-approval",
+      "bounded_rank": null,
+      "indexed_rank": 1,
+      "best_cosine_mirror": 0.7976443301006626,
+      "bounded_ms": 923.7085000000006,
+      "indexed_ms": 52.22899999999936
+    },
+    {
+      "query": "Как отмечается день рождения компании?",
+      "gold": "holiday-cake",
+      "bounded_rank": 1,
+      "indexed_rank": 1,
+      "best_cosine_mirror": 0.8718469180779262,
+      "bounded_ms": 816.7082000000009,
+      "indexed_ms": 56.5083999999988
+    },
+    {
+      "query": "По какому расписанию ходит корпоративный шаттл утром?",
+      "gold": "bus-shuttle",
+      "bounded_rank": 1,
+      "indexed_rank": 1,
+      "best_cosine_mirror": 0.8875295504981159,
+      "bounded_ms": 665.5741000000053,
+      "indexed_ms": 60.25220000000263
+    },
+    {
+      "query": "Когда следующая плановая пожарная тренировка?",
+      "gold": "fire-drill",
+      "bounded_rank": 1,
+      "indexed_rank": 1,
+      "best_cosine_mirror": 0.8609117275233351,
+      "bounded_ms": 679.4136999999973,
+      "indexed_ms": 55.07820000000356
+    },
+    {
+      "query": "Какое требование по двухфакторной защите внешних сервисов?",
+      "gold": "2fa-rule",
+      "bounded_rank": 1,
+      "indexed_rank": 1,
+      "best_cosine_mirror": 0.885664842277069,
+      "bounded_ms": 771.4279000000024,
+      "indexed_ms": 48.61149999999907
+    },
+    {
+      "query": "Какая периодичность планового обслуживания 1С?",
+      "gold": "stock-service",
+      "bounded_rank": null,
+      "indexed_rank": 1,
+      "best_cosine_mirror": 0.8504060023551779,
+      "bounded_ms": 662.9530999999988,
+      "indexed_ms": 52.79450000000361
+    },
+    {
+      "query": "What is expected from the incident duty response time?",
+      "gold": "incident-duty",
+      "bounded_rank": null,
+      "indexed_rank": 1,
+      "best_cosine_mirror": 0.7716043587290866,
+      "bounded_ms": 690.6198000000004,
+      "indexed_ms": 51.284099999997125
+    },
+    {
+      "query": "Где хранятся секреты и какие правила вокруг них?",
+      "gold": "access-secret",
+      "bounded_rank": 3,
+      "indexed_rank": 1,
+      "best_cosine_mirror": 0.842607659422792,
+      "bounded_ms": 679.3340000000026,
+      "indexed_ms": 61.175900000002
+    },
+    {
+      "query": "Какие документы прикладываются к возмещению затрат?",
+      "gold": "expense-docs",
+      "bounded_rank": 1,
+      "indexed_rank": 1,
+      "best_cosine_mirror": 0.8458101592563788,
+      "bounded_ms": 729.2095000000045,
+      "indexed_ms": 57.72439999999915
+    },
+    {
+      "query": "Какая модель по подписке обновляется 30 апреля?",
+      "gold": "license-renew",
+      "bounded_rank": 1,
+      "indexed_rank": 1,
+      "best_cosine_mirror": 0.8278683127037095,
+      "bounded_ms": 680.2546000000002,
+      "indexed_ms": 67.71579999999813
+    },
+    {
+      "query": "Через какой канал идет внутренний звонок?",
+      "gold": "phone-hub",
+      "bounded_rank": null,
+      "indexed_rank": 2,
+      "best_cosine_mirror": 0.8373973503861339,
+      "bounded_ms": 725.9188999999969,
+      "indexed_ms": 58.62199999999575
+    },
+    {
+      "query": "Сколько сотрудников одной команды может быть одновременно в отпуске?",
+      "gold": "vacation-solo",
+      "bounded_rank": 1,
+      "indexed_rank": 1,
+      "best_cosine_mirror": 0.8723036157420943,
+      "bounded_ms": 732.1451000000015,
+      "indexed_ms": 52.24699999999575
+    },
+    {
+      "query": "84 200 какие расходы покрывает?",
+      "gold": "budget-tools",
+      "bounded_rank": 2,
+      "indexed_rank": 1,
+      "best_cosine_mirror": 0.864694416719814,
+      "bounded_ms": 700.8897999999972,
+      "indexed_ms": 53.99069999999483
+    },
+    {
+      "query": "CE285A что это?",
+      "gold": "laser-toner",
+      "bounded_rank": 1,
+      "indexed_rank": 1,
+      "best_cosine_mirror": 0.8501561677983764,
+      "bounded_ms": 702.6135000000068,
+      "indexed_ms": 44.28489999999874
+    },
+    {
+      "query": "5027134585 что за номер?",
+      "gold": "tax-id",
+      "bounded_rank": 1,
+      "indexed_rank": 1,
+      "best_cosine_mirror": 0.8698589691286969,
+      "bounded_ms": 755.6596000000063,
+      "indexed_ms": 55.154200000004494
+    },
+    {
+      "query": "02:20 выгрузка чего?",
+      "gold": "backup-night",
+      "bounded_rank": 1,
+      "indexed_rank": 1,
+      "best_cosine_mirror": 0.8671152331316678,
+      "bounded_ms": 717.4472999999998,
+      "indexed_ms": 64.221000000005
+    },
+    {
+      "query": "10:47 что начинается?",
+      "gold": "standup-time",
+      "bounded_rank": 1,
+      "indexed_rank": 3,
+      "best_cosine_mirror": 0.8368615777383275,
+      "bounded_ms": 700.7143999999971,
+      "indexed_ms": 62.953199999996286
+    },
+    {
+      "query": "What happens if the conference room is left booked?",
+      "gold": "meeting-room",
+      "bounded_rank": null,
+      "indexed_rank": null,
+      "best_cosine_mirror": 0.7895070355469962,
+      "bounded_ms": 714.9706000000006,
+      "indexed_ms": 51.89110000000073
+    },
+    {
+      "query": "Пятипроцентный контроль чего применяется?",
+      "gold": "quality-check",
+      "bounded_rank": 1,
+      "indexed_rank": 1,
+      "best_cosine_mirror": 0.8475704124273351,
+      "bounded_ms": 667.7137999999977,
+      "indexed_ms": 49.45759999999427
+    }
+  ],
+  "absent_cases": [
+    {
+      "query": "Какой выделен бюджет на юристов в квартал?",
+      "added_semantic_references": ["H:g:contract-terms", "H:g:invoice-flow", "H:g:budget-report"],
+      "best_cosine_mirror": 0.7972889040922071,
+      "top_references": [
+        {
+          "reference": "H:g:budget-tools",
+          "cosine": 0.7972889040922071
+        },
+        {
+          "reference": "H:g:contract-terms",
+          "cosine": 0.7875954037169002
+        },
+        {
+          "reference": "H:g:invoice-flow",
+          "cosine": 0.7871591635788097
+        }
+      ],
+      "bounded_ms": 704.9891999999963,
+      "indexed_ms": 47.68319999999949
+    },
+    {
+      "query": "Когда мы открываем второй офис в Казани?",
+      "added_semantic_references": [
+        "H:g:office-lease",
+        "H:g:patch-window",
+        "H:g:job-postings",
+        "H:g:safe-opening"
+      ],
+      "best_cosine_mirror": 0.8041972160285696,
+      "top_references": [
+        {
+          "reference": "H:g:office-lease",
+          "cosine": 0.8041972160285696
+        },
+        {
+          "reference": "H:g:patch-window",
+          "cosine": 0.7937253402288782
+        },
+        {
+          "reference": "H:g:incident-duty",
+          "cosine": 0.7935490701458425
+        }
+      ],
+      "bounded_ms": 706.0183000000034,
+      "indexed_ms": 51.049299999998766
+    },
+    {
+      "query": "Сколько у нас каналов поддержки в телеграме?",
+      "added_semantic_references": [
+        "H:g:job-postings",
+        "H:g:news-slack",
+        "H:g:server-metrics",
+        "H:g:standup-time",
+        "H:g:zz-noise-181",
+        "H:g:zz-noise-13",
+        "H:g:contract-terms",
+        "H:g:meetings-day"
+      ],
+      "best_cosine_mirror": 0.8072885647821578,
+      "top_references": [
+        {
+          "reference": "H:g:job-postings",
+          "cosine": 0.8072885647821578
+        },
+        {
+          "reference": "H:g:news-slack",
+          "cosine": 0.7797666254118047
+        },
+        {
+          "reference": "H:g:server-metrics",
+          "cosine": 0.7778159208907492
+        }
+      ],
+      "bounded_ms": 718.0364000000045,
+      "indexed_ms": 44.21500000000378
+    },
+    {
+      "query": "What is our official policy on cryptocurrency payments?",
+      "added_semantic_references": [
+        "H:g:zz-noise-208",
+        "H:g:zz-noise-205",
+        "H:g:zz-noise-190",
+        "H:g:zz-noise-214",
+        "H:g:zz-noise-10",
+        "H:g:zz-noise-43",
+        "H:g:zz-noise-133"
+      ],
+      "best_cosine_mirror": 0.7699555011339019,
+      "top_references": [
+        {
+          "reference": "H:g:zz-noise-208",
+          "cosine": 0.7699555011339019
+        },
+        {
+          "reference": "H:g:zz-noise-205",
+          "cosine": 0.768252430739758
+        },
+        {
+          "reference": "H:g:zz-noise-190",
+          "cosine": 0.7667814619946405
+        }
+      ],
+      "bounded_ms": 680.4687999999951,
+      "indexed_ms": 48.002800000002026
+    },
+    {
+      "query": "Кто ведёт YouTube-канал компании?",
+      "added_semantic_references": ["H:g:news-slack", "H:g:zz-noise-217", "H:g:zz-noise-181"],
+      "best_cosine_mirror": 0.7915706990669447,
+      "top_references": [
+        {
+          "reference": "H:g:holiday-cake",
+          "cosine": 0.7915706990669447
+        },
+        {
+          "reference": "H:g:job-postings",
+          "cosine": 0.7873974340776373
+        },
+        {
+          "reference": "H:g:news-slack",
+          "cosine": 0.776101302870007
+        }
+      ],
+      "bounded_ms": 691.9184999999998,
+      "indexed_ms": 47.58690000000206
+    },
+    {
+      "query": "Каким сервисом мы отслеживаем курьеров на карте?",
+      "added_semantic_references": [
+        "H:g:courier-codes",
+        "H:g:purchase-form",
+        "H:g:data-export",
+        "H:g:zz-noise-107",
+        "H:g:server-metrics",
+        "H:g:zz-noise-101"
+      ],
+      "best_cosine_mirror": 0.8115749253160682,
+      "top_references": [
+        {
+          "reference": "H:g:courier-codes",
+          "cosine": 0.8115749253160682
+        },
+        {
+          "reference": "H:g:purchase-form",
+          "cosine": 0.805454708869402
+        },
+        {
+          "reference": "H:g:data-export",
+          "cosine": 0.8027039245415983
+        }
+      ],
+      "bounded_ms": 741.1080999999976,
+      "indexed_ms": 51.23210000000108
+    },
+    {
+      "query": "Какой у нас договор с гидропонной фермой?",
+      "added_semantic_references": ["H:g:zz-noise-217", "H:g:zz-noise-226", "H:g:contract-terms"],
+      "best_cosine_mirror": 0.8045790914328818,
+      "top_references": [
+        {
+          "reference": "H:g:contract-terms",
+          "cosine": 0.8045790914328818
+        },
+        {
+          "reference": "H:g:zz-noise-229",
+          "cosine": 0.797281985757403
+        },
+        {
+          "reference": "H:g:zz-noise-217",
+          "cosine": 0.7963809639637556
+        }
+      ],
+      "bounded_ms": 709.2387000000017,
+      "indexed_ms": 87.46829999999318
+    },
+    {
+      "query": "Сколько налоговых вычетов закрыл финанс-отдел за прошлый год?",
+      "added_semantic_references": ["H:g:budget-report", "H:g:income-date", "H:g:zz-noise-236"],
+      "best_cosine_mirror": 0.792736974624513,
+      "top_references": [
+        {
+          "reference": "H:g:budget-report",
+          "cosine": 0.792736974624513
+        },
+        {
+          "reference": "H:g:income-date",
+          "cosine": 0.7914166582751615
+        },
+        {
+          "reference": "H:g:zz-noise-236",
+          "cosine": 0.7877003909540669
+        }
+      ],
+      "bounded_ms": 721.1995999999999,
+      "indexed_ms": 67.46830000000045
+    },
+    {
+      "query": "Что записано про оклад стажёра в Питере?",
+      "added_semantic_references": [
+        "H:g:canteen-card",
+        "H:g:zz-noise-10",
+        "H:g:zz-noise-40",
+        "H:g:zz-noise-139"
+      ],
+      "best_cosine_mirror": 0.8075235533142385,
+      "top_references": [
+        {
+          "reference": "H:g:canteen-card",
+          "cosine": 0.8075235533142385
+        },
+        {
+          "reference": "H:g:zz-noise-10",
+          "cosine": 0.8052295442237422
+        },
+        {
+          "reference": "H:g:zz-noise-40",
+          "cosine": 0.8044425175494637
+        }
+      ],
+      "bounded_ms": 851.2918999999965,
+      "indexed_ms": 90.07220000000234
+    },
+    {
+      "query": "Когда запускать собственный телефонный бот?",
+      "added_semantic_references": [
+        "H:g:phone-forward",
+        "H:g:meeting-room",
+        "H:g:wifi-pass",
+        "H:g:coworking-hours",
+        "H:g:stock-service",
+        "H:g:corporate-sims",
+        "H:g:cleaning-day",
+        "H:g:password-rotate"
+      ],
+      "best_cosine_mirror": 0.7998921129036629,
+      "top_references": [
+        {
+          "reference": "H:g:phone-forward",
+          "cosine": 0.7998921129036629
+        },
+        {
+          "reference": "H:g:meeting-room",
+          "cosine": 0.7987571458102584
+        },
+        {
+          "reference": "H:g:wifi-pass",
+          "cosine": 0.793641645420313
+        }
+      ],
+      "bounded_ms": 660.3974999999991,
+      "indexed_ms": 55.64549999999872
+    },
+    {
+      "query": "Какой процент зарплаты уходит в корпоративный фонд?",
+      "added_semantic_references": [
+        "H:g:salary-day",
+        "H:g:canteen-card",
+        "H:g:train-budget",
+        "H:g:income-date",
+        "H:g:zz-noise-193",
+        "H:g:budget-report"
+      ],
+      "best_cosine_mirror": 0.8123919390761319,
+      "top_references": [
+        {
+          "reference": "H:g:salary-day",
+          "cosine": 0.8123919390761319
+        },
+        {
+          "reference": "H:g:canteen-card",
+          "cosine": 0.7997628409939106
+        },
+        {
+          "reference": "H:g:train-budget",
+          "cosine": 0.7947209287000916
+        }
+      ],
+      "bounded_ms": 775.7180000000008,
+      "indexed_ms": 50.452400000001944
+    },
+    {
+      "query": "Do we sponsor English courses for employees' children?",
+      "added_semantic_references": [
+        "H:g:train-budget",
+        "H:g:trial-check",
+        "H:g:interview-window",
+        "H:g:zz-noise-4",
+        "H:g:zz-noise-1",
+        "H:g:template-brand",
+        "H:g:zz-noise-25"
+      ],
+      "best_cosine_mirror": 0.7649959705709114,
+      "top_references": [
+        {
+          "reference": "H:g:train-budget",
+          "cosine": 0.7649959705709114
+        },
+        {
+          "reference": "H:g:trial-check",
+          "cosine": 0.7587408430046391
+        },
+        {
+          "reference": "H:g:interview-window",
+          "cosine": 0.7561579490503468
+        }
+      ],
+      "bounded_ms": 862.4372000000003,
+      "indexed_ms": 58.929500000005646
+    }
+  ]
+}

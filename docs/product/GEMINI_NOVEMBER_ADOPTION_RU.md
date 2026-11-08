@@ -73,7 +73,12 @@
   [поставка и границы](../handoff/KOSMORA_SEMANTIC_MEMORY_2026-11-03_RU.md).
   Исходные hash-векторы не использованы. Постоянный scoped index и privacy lifecycle реализованы в
   [следующем пакете](../handoff/KOSMORA_SEMANTIC_HISTORY_INDEX_2026-11-03_RU.md).
-  HNSW/PQ и большая независимая оценка остаются далее.
+  Scan 100k измерен отдельным measurement-only пакетом (PR #474); крупная оценка
+  с absent-fact случаями тоже measurement-only:
+  [поставка и вывод](../handoff/KOSMORA_SEMANTIC_ABSENT_FACT_2026-11-09_RU.md) —
+  retrieval-порог не защищает честность отсутствующих фактов, sources остаются
+  кандидатами для LLM-оценки, а не подтверждением. HNSW/PQ остаются
+  исследовательской очередью.
 - Подтверждённый опыт выполнения: реализован явный выбор принятого владельцем
   локального Work-примера, ревизия, scope/lifecycle и новый план:
   [поставка](../handoff/KOSWORK_ACCEPTED_EXPERIENCE_2026-11-04_RU.md). Произвольный текст
