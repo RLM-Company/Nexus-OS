@@ -190,6 +190,47 @@ async function fixture(
 }
 
 describe("durable Manager work", () => {
+  it.each(["work-fence", "quiescing"] as const)(
+    "starts after a crash with a %s owner and executes only another owner's task",
+    async (fence) => {
+      const f = await fixture();
+      const protectedWork = f.store.claim(f.get())!;
+      const otherOwner = "healthy-owner";
+      const other = f.projects.createProject("Healthy owner", "healthy-start", otherOwner).project;
+      f.policy.ensureProfile(other.id);
+      f.policy.updateProfile({
+        projectId: other.id,
+        baseLevel: "A2",
+        overrides: [],
+        expectedVersion: 1
+      });
+      const healthy = f.store.create(other.id, otherOwner, otherOwner, request)!;
+      if (fence === "work-fence") {
+        f.database.sqlite
+          .prepare("INSERT INTO work_owner_fences(owner_id,epoch,fenced) VALUES (?,1,1)")
+          .run("local-owner");
+      } else {
+        f.database.sqlite
+          .prepare(
+            `INSERT INTO kosmora_owner_data_lifecycle
+          (owner_id,state,epoch,operation_id,started_at,updated_at) VALUES (?,'quiescing',1,'restart-test',datetime('now'),datetime('now'))`
+          )
+          .run("local-owner");
+      }
+      try {
+        expect(() => f.coordinator.start()).not.toThrow();
+        await vi.waitFor(
+          () => expect(f.store.get(healthy.id, otherOwner)?.status).toBe("completed"),
+          { timeout: 5000 }
+        );
+        expect(f.get()).toEqual(protectedWork);
+        expect(f.calls).toEqual(["manager_work_plan", "manager_work_draft"]);
+        expect(f.store.ownerWritable("local-owner")).toBe(false);
+      } finally {
+        await f.coordinator.stop();
+      }
+    }
+  );
   const recalled =
     (required = false) =>
     (store: ManagerWorkStore, projectId: string) => {

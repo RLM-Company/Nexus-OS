@@ -30,6 +30,54 @@ async function setup(path = ":memory:") {
 }
 
 describe("project memory and durable work records", () => {
+  it.each(["work-fence", "quiescing", "deleting", "deleted", "error"] as const)(
+    "leaves %s owner records untouched while recovering another owner",
+    async (fence) => {
+      const f = await setup();
+      try {
+        let protectedWork = f.store.claim(f.store.create(f.a.id, "owner-a", "owner-a", request)!)!;
+        protectedWork.stage = "publish";
+        protectedWork.draft = {
+          files: [{ name: "private.md", content: "Private committed bytes" }]
+        };
+        protectedWork = f.store.save(protectedWork);
+        f.store.publish(protectedWork.id, "owner-a", protectedWork.draft!);
+        const healthy = f.store.claim(f.store.create(f.c.id, "owner-b", "owner-b", request)!)!;
+        const protectedState = f.store.get(protectedWork.id, "owner-a");
+        const checkpoints = f.store.runtime.checkpoints(f.a.id, "owner-a", protectedWork.id);
+        const artifacts = f.store.runtime.artifacts(f.a.id, "owner-a", protectedWork.id);
+        if (fence === "work-fence") {
+          f.db.sqlite
+            .prepare("INSERT INTO work_owner_fences(owner_id,epoch,fenced) VALUES (?,1,1)")
+            .run("owner-a");
+        } else {
+          f.db.sqlite
+            .prepare(
+              `INSERT INTO kosmora_owner_data_lifecycle
+            (owner_id,state,epoch,operation_id,started_at,updated_at) VALUES (?,?,1,'privacy-test',datetime('now'),datetime('now'))`
+            )
+            .run("owner-a", fence);
+        }
+        const reopenedStore = new ManagerWorkStore(f.db.sqlite);
+        expect(reopenedStore.recover()).toBe(1);
+        expect(reopenedStore.get(protectedWork.id, "owner-a")).toEqual(protectedState);
+        expect(reopenedStore.runtime.checkpoints(f.a.id, "owner-a", protectedWork.id)).toEqual(
+          checkpoints
+        );
+        expect(reopenedStore.runtime.artifacts(f.a.id, "owner-a", protectedWork.id)).toEqual(
+          artifacts
+        );
+        expect(reopenedStore.get(healthy.id, "owner-b")).toMatchObject({
+          status: "paused",
+          inflight_run_id: null
+        });
+        expect(reopenedStore.ownerWritable("owner-a")).toBe(false);
+        expect(reopenedStore.recover()).toBe(0);
+      } finally {
+        f.db.close();
+      }
+    }
+  );
   it("finishes a committed multi-file publication after reopening SQLite without recreating versions", async () => {
     const directory = mkdtempSync(join(tmpdir(), "koswork-publication-recovery-"));
     const path = join(directory, "state.db");
