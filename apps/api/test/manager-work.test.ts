@@ -1,6 +1,6 @@
 import { loadServerConfig } from "@cosmora/config";
 import { createHash } from "node:crypto";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import type {
@@ -35,6 +35,8 @@ import { AccountStore } from "../src/account-settings/account-store.js";
 import { GAME_FIXTURES } from "./fixtures/game-packages.js";
 import type { GameGenre } from "@cosmora/contracts/game-package";
 import { GAME_SOURCE_FILES } from "./fixtures/game-source.js";
+
+import { admissionBrief, admissionProbe } from "./fixtures/manager-admission.js";
 
 const resources: (() => void)[] = [];
 afterEach(() => {
@@ -1692,5 +1694,163 @@ describe("durable Manager work", () => {
     } finally {
       await app.close();
     }
+  });
+});
+
+describe("Work admission startup", () => {
+  it("reserves the single slot before a graph callback can reenter another project", async () => {
+    let secondRun: Promise<void> | undefined;
+    const probe = admissionProbe(() => {
+      secondRun = f.coordinator.execute(second.id, "local-owner");
+    });
+    const f = await fixture({
+      graph: probe.graph,
+      request: { ...request, goal: admissionBrief.goal },
+      draft: { files: [{ name: "result.md", content: admissionBrief.content }] }
+    });
+    const project = f.projects.createProject("Independent", "admission-second").project;
+    f.policy.ensureProfile(project.id);
+    f.policy.updateProfile({
+      projectId: project.id,
+      baseLevel: "A2",
+      overrides: [],
+      expectedVersion: 1
+    });
+    const second = f.store.create(project.id, "local-owner", "local-owner", {
+      ...request,
+      client_request_id: "admission-second",
+      goal: admissionBrief.goal
+    })!;
+    const running = f.coordinator.execute(f.work.id, "local-owner");
+    try {
+      expect(probe.stats()).toEqual({ reads: 1, active: 1, peak: 1 });
+      expect(f.coordinator.hasActiveExecution(f.work.id)).toBe(true);
+      expect(f.coordinator.hasActiveExecution(second.id)).toBe(false);
+      expect(f.store.get(second.id, "local-owner")?.status).toBe("queued");
+      expect(f.calls).toHaveLength(0);
+    } finally {
+      probe.release();
+      await Promise.allSettled([running, secondRun]);
+    }
+    await f.coordinator.execute(second.id, "local-owner");
+    const app = buildApp({
+      config: f.config,
+      database: f.database,
+      projectStore: f.projects,
+      managerWorkStore: f.store,
+      managerWorkCoordinator: f.coordinator
+    });
+    try {
+      const artifacts = [];
+      for (const [projectId, id] of [
+        [f.project.id, f.work.id],
+        [project.id, second.id]
+      ]) {
+        expect(f.store.get(id!, "local-owner")?.status).toBe("completed");
+        const result = await app.inject({
+          url: `/api/v1/projects/${projectId}/work/${id}/files/result.md`
+        });
+        expect(result.statusCode).toBe(200);
+        expect(result.body).toBe(admissionBrief.content);
+        const metadata = f.store.runtime.artifacts(projectId!, "local-owner", id!)[0]!;
+        expect(metadata.sha256).toBe(createHash("sha256").update(result.body).digest("hex"));
+        artifacts.push({
+          content: result.body,
+          sha256: metadata.sha256,
+          version: metadata.version
+        });
+      }
+      expect(probe.stats().peak).toBe(1);
+      expect(f.calls).toHaveLength(4);
+      const directory = process.env.KOSWORK_ADMISSION_REPORT_DIR;
+      if (directory) {
+        mkdirSync(directory, { recursive: true });
+        writeFileSync(
+          join(directory, "result.json"),
+          JSON.stringify(
+            {
+              input: admissionBrief,
+              peak_context_reads: probe.stats().peak,
+              provider: "local fixture",
+              real_model_called: false,
+              model_requests: f.calls.length,
+              artifacts
+            },
+            null,
+            2
+          ) + "\n",
+          { flag: "wx" }
+        );
+      }
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("keeps a startup privacy drain pending until the graph read settles", async () => {
+    let drain: Promise<void> | undefined,
+      settled = false;
+    let contextSignal: AbortSignal | undefined;
+    const probe = admissionProbe((signal) => {
+      contextSignal = signal;
+      f.database.sqlite
+        .prepare(
+          "INSERT INTO kosmora_owner_data_lifecycle(owner_id,state,epoch,operation_id,started_at,updated_at) VALUES('local-owner','quiescing',1,'admission-test','now','now')"
+        )
+        .run();
+      drain = f.coordinator.quiesceOwner("local-owner");
+      void drain.then(() => {
+        settled = true;
+      });
+    });
+    const f = await fixture({ graph: probe.graph });
+    const running = f.coordinator.execute(f.work.id, "local-owner");
+    try {
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      expect(settled).toBe(false);
+      expect(contextSignal?.aborted).toBe(true);
+      expect(f.coordinator.hasActiveExecution(f.work.id)).toBe(true);
+      expect(f.calls).toHaveLength(0);
+    } finally {
+      probe.release();
+      await running;
+      await drain;
+      f.database.sqlite
+        .prepare(
+          "UPDATE kosmora_owner_data_lifecycle SET state='active' WHERE owner_id='local-owner'"
+        )
+        .run();
+      f.coordinator.resumeOwner("local-owner");
+    }
+    expect(f.calls).toHaveLength(0);
+    expect(f.store.file(f.work.id, "local-owner", "result.md")).toBeNull();
+    expect(f.coordinator.hasActiveExecution(f.work.id)).toBe(false);
+  });
+
+  it("keeps startup shutdown pending and aborts before any provider request", async () => {
+    let stopping: Promise<void> | undefined,
+      stopped = false;
+    let contextSignal: AbortSignal | undefined;
+    const probe = admissionProbe((signal) => {
+      contextSignal = signal;
+      stopping = f.coordinator.stop();
+      void stopping.then(() => {
+        stopped = true;
+      });
+    });
+    const f = await fixture({ graph: probe.graph });
+    const running = f.coordinator.execute(f.work.id, "local-owner");
+    try {
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      expect(stopped).toBe(false);
+      expect(contextSignal?.aborted).toBe(true);
+    } finally {
+      probe.release();
+      await running;
+      await stopping;
+    }
+    expect(f.calls).toHaveLength(0);
+    expect(f.store.file(f.work.id, "local-owner", "result.md")).toBeNull();
+    expect(f.coordinator.hasActiveExecution(f.work.id)).toBe(false);
   });
 });
