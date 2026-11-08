@@ -29,7 +29,14 @@ import { ChatSearchTrigger } from "./chat-search-trigger";
 import { ProjectTitleEditor } from "./project-title-editor";
 import { QuickSwitcher } from "./quick-switcher";
 import { pinsFirst } from "./pinned-navigation";
-import { clearComposerDraft, readComposerDraft, saveComposerDraft } from "./composer-draft-storage";
+import {
+  captureComposerDraft,
+  clearComposerDraft,
+  clearComposerDraftIfUnchanged,
+  readComposerDraft
+} from "./composer-draft-storage";
+import { useLiveComposerText } from "./use-live-composer-text";
+import { useBrowserComposerDraft } from "./use-browser-composer-draft";
 import {
   desktopDraftBridge,
   nativeDraftScope,
@@ -532,7 +539,7 @@ export default function Home() {
   const [policySignals, setPolicySignals] = useState<PolicySignals>(EMPTY_POLICY_SIGNALS);
   const [demoRuns, setDemoRuns] = useState<DemoManagerRun[]>([]);
   const [demoActionPending, setDemoActionPending] = useState(false);
-  const [draft, setDraft] = useState("");
+  const [draft, setDraft, latestDraftRef] = useLiveComposerText();
   const [draftStorageReadyKey, setDraftStorageReadyKey] = useState<string | null>(null);
   const [draftNotice, setDraftNotice] = useState<string | null>(null);
   const [draftRecoveryNotice, setDraftRecoveryNotice] = useState<string | null>(null);
@@ -622,10 +629,44 @@ export default function Home() {
   );
   const chatAttachments = useChatAttachments(`${composerDraftKey}:${viewEpochRef.current}`);
   const pendingComposeRef = useRef<{ prompt: string; files: ChatAttachment[] } | null>(null);
-  const acceptedDraftRef = useRef<{ key: string; text: string } | null>(null);
+  const acceptedDraftRef = useRef<{
+    key: string;
+    text: string;
+    revision: number;
+    files: ChatAttachment[];
+  } | null>(null);
   const pendingComposerFocusRef = useRef(false);
   const draftRecoveryKeyRef = useRef<string | null>(null);
   const attachmentScope = `${composerDraftKey}:${viewEpochRef.current}`;
+  const draftEpoch = viewEpochRef.current;
+  const saveBrowserDraft = useBrowserComposerDraft(() => {
+    if (
+      desktopDraftBridge(window) ||
+      draftStorageReadyKey !== attachmentScope ||
+      viewEpochRef.current !== draftEpoch
+    )
+      return null;
+    const latest = latestDraftRef.current;
+    if (
+      acceptedDraftRef.current?.key === composerDraftKey &&
+      acceptedDraftRef.current.revision === latest.revision &&
+      acceptedDraftRef.current.text === latest.text &&
+      acceptedDraftRef.current.files === chatAttachments.snapshotFiles()
+    )
+      return null;
+    return {
+      key: composerDraftKey,
+      text: latest.text,
+      revision: latest.revision,
+      files: chatAttachments.snapshotFiles()
+    };
+  }, setDraftNotice);
+  const updateDraftFromInput = (event: FormEvent<HTMLTextAreaElement>) => {
+    setDraftRecoveryNotice(null);
+    const value = event.currentTarget.value;
+    if (latestDraftRef.current.text !== value) setDraft(value);
+    saveBrowserDraft();
+  };
 
   useEffect(() => {
     const field = composerRef.current;
@@ -703,6 +744,7 @@ export default function Home() {
   useLocalVaultContext(
     initialRouteReady &&
       !loading &&
+      !sending &&
       surface === "manager" &&
       draftStorageReadyKey === attachmentScope,
     draft,
@@ -748,10 +790,12 @@ export default function Home() {
         // before React has committed the empty composer after acceptance.
         if (
           acceptedDraftRef.current?.key === composerDraftKey &&
-          acceptedDraftRef.current.text === draft
+          acceptedDraftRef.current.revision === latestDraftRef.current.revision &&
+          acceptedDraftRef.current.text === latestDraftRef.current.text &&
+          acceptedDraftRef.current.files === chatAttachments.snapshotFiles()
         )
           return;
-        native.flush(scope, draft);
+        if (viewEpochRef.current === draftEpoch) native.flush(scope, latestDraftRef.current.text);
       };
       window.addEventListener("pagehide", flush);
       let cancelled = false;
@@ -759,14 +803,17 @@ export default function Home() {
         // A POST still in flight can have been accepted even if its HTTP response was lost.
         // Do not race a delayed autosave against a server-acknowledged clear.
         if (
+          viewEpochRef.current !== draftEpoch ||
           submitPendingRef.current ||
           (acceptedDraftRef.current?.key === composerDraftKey &&
-            acceptedDraftRef.current.text === draft)
+            acceptedDraftRef.current.revision === latestDraftRef.current.revision &&
+            acceptedDraftRef.current.text === latestDraftRef.current.text &&
+            acceptedDraftRef.current.files === chatAttachments.snapshotFiles())
         )
           return;
-        if (!draft) acceptedDraftRef.current = null;
+        if (!latestDraftRef.current.text) acceptedDraftRef.current = null;
         void native
-          .save(scope, draft)
+          .save(scope, latestDraftRef.current.text)
           .then((result) => {
             if (!cancelled)
               setDraftNotice(
@@ -783,14 +830,17 @@ export default function Home() {
         window.removeEventListener("pagehide", flush);
       };
     }
-    try {
-      setDraftNotice(
-        saveComposerDraft(window.localStorage, composerDraftKey, draft, chatAttachments.files)
-      );
-    } catch {
-      setDraftNotice("Сохранение черновика в этом браузере недоступно.");
-    }
-  }, [attachmentScope, composerDraftKey, draft, draftStorageReadyKey, chatAttachments.files]);
+    saveBrowserDraft();
+  }, [
+    attachmentScope,
+    composerDraftKey,
+    draft,
+    draftStorageReadyKey,
+    chatAttachments.files,
+    saveBrowserDraft,
+    draftEpoch,
+    latestDraftRef
+  ]);
 
   useEffect(() => {
     try {
@@ -1729,7 +1779,9 @@ export default function Home() {
 
   const submit = async (event?: FormEvent, voiceContent?: string): Promise<void> => {
     event?.preventDefault();
-    const content = (voiceContent ?? draft).trim();
+    const submitted = { ...latestDraftRef.current, files: chatAttachments.snapshotFiles() };
+    const recoverableDraft = voiceContent ?? submitted.text;
+    const content = recoverableDraft.trim();
     if (
       !content ||
       sending ||
@@ -1742,6 +1794,50 @@ export default function Home() {
     )
       return;
     submitPendingRef.current = true;
+    const submittedEpoch = viewEpochRef.current;
+    saveBrowserDraft();
+    let stored: ReturnType<typeof captureComposerDraft> | null = null;
+    try {
+      if (!desktopDraftBridge(window))
+        stored = captureComposerDraft(window.localStorage, composerDraftKey);
+    } catch {
+      /* Unavailable storage must not block sending. */
+    }
+    const acknowledgeDraft = (): boolean => {
+      acceptedDraftRef.current = { key: composerDraftKey, ...submitted };
+      const changed =
+        submittedEpoch === viewEpochRef.current &&
+        (submitted.revision !== latestDraftRef.current.revision ||
+          submitted.files !== chatAttachments.snapshotFiles());
+      const native = desktopDraftBridge(window);
+      const scope = nativeDraftScope(composerDraftKey);
+      if (changed) {
+        if (native && scope)
+          void native.save(scope, latestDraftRef.current.text).catch(() => undefined);
+        else saveBrowserDraft();
+        return false;
+      }
+      if (native && scope) void native.clear(scope).catch(() => undefined);
+      try {
+        if (stored)
+          return clearComposerDraftIfUnchanged(window.localStorage, composerDraftKey, stored);
+      } catch {
+        /* Acceptance is authoritative when storage is unavailable. */
+      }
+      return true;
+    };
+    const restoreRejectedDraft = () => {
+      if (
+        submitted.revision === latestDraftRef.current.revision &&
+        latestDraftRef.current.text !== recoverableDraft
+      )
+        setDraft(recoverableDraft);
+      const scope = nativeDraftScope(composerDraftKey);
+      if (scope)
+        void desktopDraftBridge(window)
+          ?.save(scope, latestDraftRef.current.text)
+          .catch(() => undefined);
+    };
     try {
       if (!activeProject) {
         const assessment = assessTaskComplexity(content);
@@ -1759,7 +1855,7 @@ export default function Home() {
                   body: JSON.stringify({
                     content,
                     client_message_id: clientId(),
-                    attachments: chatAttachments.files
+                    attachments: submitted.files
                   })
                 }
               )
@@ -1769,26 +1865,18 @@ export default function Home() {
                   initial_message: content,
                   mode: chatMode,
                   client_message_id: clientId(),
-                  attachments: chatAttachments.files
+                  attachments: submitted.files
                 })
               });
-          acceptedDraftRef.current = { key: composerDraftKey, text: draft };
-          const acceptedScope = nativeDraftScope(composerDraftKey);
-          if (acceptedScope)
-            void desktopDraftBridge(window)
-              ?.clear(acceptedScope)
-              .catch(() => undefined);
-          try {
-            clearComposerDraft(window.localStorage, composerDraftKey);
-          } catch {
-            /* Acceptance is authoritative. */
-          }
+          const clearedDraft = acknowledgeDraft();
           if (epoch !== viewEpochRef.current) {
             void loadGeneralChats().catch(() => undefined);
             return;
           }
-          chatAttachments.replace([]);
-          setDraft("");
+          if (clearedDraft) {
+            chatAttachments.replace([]);
+            setDraft("");
+          }
           viewRequestRef.current += 1;
           const materials = [
             ...localChatMessages
@@ -1815,11 +1903,6 @@ export default function Home() {
             };
             return [updated, ...current.filter((chat) => chat.id !== accepted.chat.id)];
           });
-          try {
-            clearComposerDraft(window.localStorage, composerDraftKey);
-          } catch {
-            // Server acceptance is authoritative even when local draft cleanup is unavailable.
-          }
           setActiveLocalChatId(accepted.chat.id);
           replaceConsoleRoute(null, "chat", accepted.chat.id);
           followGeneralChatStream(accepted);
@@ -1830,12 +1913,7 @@ export default function Home() {
           });
         } catch (cause) {
           if (epoch !== viewEpochRef.current) return;
-          setDraft(content);
-          const scope = nativeDraftScope(composerDraftKey);
-          if (scope)
-            void desktopDraftBridge(window)
-              ?.save(scope, content)
-              .catch(() => undefined);
+          restoreRejectedDraft();
           setSending(false);
           setRunPhase("failed");
           setError(
@@ -1861,29 +1939,21 @@ export default function Home() {
             body: JSON.stringify({
               content,
               client_message_id: clientId(),
-              attachments: chatAttachments.files
+              attachments: submitted.files
             })
           }
         );
 
-        acceptedDraftRef.current = { key: composerDraftKey, text: draft };
-        const acceptedScope = nativeDraftScope(composerDraftKey);
-        if (acceptedScope)
-          void desktopDraftBridge(window)
-            ?.clear(acceptedScope)
-            .catch(() => undefined);
-        try {
-          clearComposerDraft(window.localStorage, composerDraftKey);
-        } catch {
-          /* Acceptance is authoritative. */
-        }
+        const clearedDraft = acknowledgeDraft();
         if (epoch !== viewEpochRef.current) {
           void loadProjects().catch(() => undefined);
           return;
         }
         selectedProjectRef.current = accepted.project.id;
-        chatAttachments.replace([]);
-        setDraft("");
+        if (clearedDraft) {
+          chatAttachments.replace([]);
+          setDraft("");
+        }
         replaceConsoleRoute(accepted.project.id, "chat");
         // Invalidate snapshots fetched before server acceptance of this run.
         viewRequestRef.current += 1;
@@ -1907,12 +1977,7 @@ export default function Home() {
         });
       } catch (cause) {
         if (epoch !== viewEpochRef.current) return;
-        setDraft(content);
-        const scope = nativeDraftScope(composerDraftKey);
-        if (scope)
-          void desktopDraftBridge(window)
-            ?.save(scope, content)
-            .catch(() => undefined);
+        restoreRejectedDraft();
         setSending(false);
         setRunPhase("failed");
         setError(
@@ -3220,10 +3285,8 @@ export default function Home() {
             id="task"
             ref={composerRef}
             value={draft}
-            onChange={(event) => {
-              setDraftRecoveryNotice(null);
-              setDraft(event.target.value);
-            }}
+            onInput={updateDraftFromInput}
+            onChange={updateDraftFromInput}
             onKeyDown={(event) => {
               if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
                 event.preventDefault();
