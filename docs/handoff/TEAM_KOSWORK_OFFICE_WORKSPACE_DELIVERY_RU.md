@@ -524,3 +524,33 @@ hash после восстановления и неизменность web has
 (исправления viewer/cancel/download/signature), если откатывается всё продолжение.
 Публикация первоначального продолжения: a39f06bf1920f838c8ef8840305443d1938917b5
 и ffeca93cbb7d6303c3e173195a2f6c6eaa271139. Точный текущий HEAD — в PR №466.
+
+### Итог полного gate продолжения
+
+Функциональные исходники опубликованы в a39f06bf1920f838c8ef8840305443d1938917b5,
+интеграция cache inputs — 89708e16ae214267a2b8efaf7a994d9cedb985b7; полный checkout
+с отчётом — 5619fab0e5e7d6d1d1a0d59f0bd481505f5dfa35. Все опубликованные деревья
+проверены на совпадение с локальными после fetch настоящего GitHub remote.
+
+В чистом `/workspace/work/Nexus-OS-quality` выполнен `pnpm check:core`, exit **0**.
+Дерево checkout перед проверкой совпало с опубликованным деревом. Пройдены format,
+secrets, lint/typecheck всех пакетов, package tests, корневые deploy/connection/
+live-acceptance guards/media tests, production builds, privacy и profile fixtures.
+API: **913 passed** (включая regression build cache, 1296 ms); web: 263; contracts:
+206; core: 386; db: 148; model-gateway: 151; policy-engine: 43; config: 17.
+Tool-runtime: 64 passed/4 OCI skipped — эти четыре теста локально не запускались.
+Неизменённые package tasks могли использовать Turbo cache; изменённые API/web
+проверки выполнялись заново. Не было внешних модельных/платных запросов.
+
+После настоящей сборки все семь `apps/api/dist/document-workspace/*.cjs` сверены
+побайтно с соответствующими canonical workspace sources — PASS. Именно собранный
+`office-edit.cjs` отдельно вызван с реальными ZIP-байтами: empty Word возвращает
+0 targets, declaration подписанного пакета получает UNSUPPORTED. Это проверка
+конечного build artifact, а не только JSON-конфигурации кеша.
+
+Коннектор на момент завершения вернул пустой список pull_request workflow runs
+для нового SHA. Поэтому GitHub CI и Windows VM acceptance этого продолжения
+**не объявляются успешными**. Все зелёные GitHub/Windows результаты 9458804c выше
+относятся к предыдущей поставке. Последнее изменение после полного gate — только
+этот отчёт; окончательный HEAD и внешний статус доступны в PR №466. Merge/deploy
+не выполнялись.
