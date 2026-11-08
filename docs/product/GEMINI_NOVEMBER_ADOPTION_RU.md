@@ -73,7 +73,12 @@
   [поставка и границы](../handoff/KOSMORA_SEMANTIC_MEMORY_2026-11-03_RU.md).
   Исходные hash-векторы не использованы. Постоянный scoped index и privacy lifecycle реализованы в
   [следующем пакете](../handoff/KOSMORA_SEMANTIC_HISTORY_INDEX_2026-11-03_RU.md).
-  HNSW/PQ и большая независимая оценка остаются далее.
+  Масштабная оценка vector scan и кандидатов int8/PQ/HNSW проведена measurement-only
+  ([измерения](../research/vector-scan-scale-2026-11-08.json),
+  [handoff](../handoff/KOSMORA_VECTOR_SCAN_SCALE_2026-11-08_RU.md)); поведение продукта не менялось.
+  На full-прогоне int8 сохранил recall@32 = 1.0 при −74% памяти; PQ без refine и HNSW-прототип
+  на подмножестве показали честные, но непригодные для замены значения. Внедрение — решение владельца;
+  absent-fact случаи остаются отдельной очередью.
 - Подтверждённый опыт выполнения: реализован явный выбор принятого владельцем
   локального Work-примера, ревизия, scope/lifecycle и новый план:
   [поставка](../handoff/KOSWORK_ACCEPTED_EXPERIENCE_2026-11-04_RU.md). Произвольный текст
