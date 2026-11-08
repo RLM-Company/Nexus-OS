@@ -128,6 +128,40 @@ function createWorkCycleDriver({
       changed();
     },
     checkpoint: () => (steps.length ? policy.checkpoint(steps) : null),
+    /**
+     * PR462 candidate, produced only from the same fresh observation that
+     * authorizes `done`. It reports bounded native plan IDs/counts/status,
+     * never criteria text, file bytes, code execution, model content judgement
+     * or owner acceptance. Caller fills task_id/project/document/nonce from its
+     * existing one-shot result ticket; trusted host binding is enforced there.
+     */
+    completionReceipt(obs) {
+      try {
+        current(obs);
+      } catch {
+        return undefined;
+      }
+      if (
+        !context ||
+        !steps.length ||
+        steps.some((s) => s.state !== "checked") ||
+        policy.checkpoint(steps) === null
+      )
+        return undefined;
+      return {
+        receipt_version: 1,
+        observation_id: String(obs.observation_id),
+        owner: context.owner,
+        origin: context.origin,
+        environment,
+        generation,
+        steps: steps.length,
+        checked: {
+          count: steps.length,
+          status: "checked"
+        }
+      };
+    },
     async observe(signal) {
       await live(signal);
       const revision = generation,

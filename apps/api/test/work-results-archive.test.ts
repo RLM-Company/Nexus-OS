@@ -73,6 +73,39 @@ function fixture(content = "Привет, мир!\r\nТочные байты ✅
 }
 
 describe("Work results ZIP", () => {
+  it("derives verification from bytes and review without exporting private optional fields", () => {
+    const { graph, files } = fixture();
+    const decorated = files.map((file) => ({
+      ...file,
+      integrity: {
+        published: true,
+        readback: "sha256_and_bytes_match",
+        sha256: file.sha256,
+        bytes: file.bytes,
+        owner_id: graph.owner_id,
+        project_id: graph.project_id,
+        work_id: file.work_id,
+        version: file.version,
+        private_note: "PRIVATE_BINDING"
+      },
+      verification: {
+        file_created: true,
+        file_bytes: "verified",
+        content_review: "untrusted_label",
+        code_executed: false,
+        owner_accepted: false,
+        private_note: "PRIVATE_DETAIL"
+      }
+    }));
+    const zip = buildWorkResultsArchive(graph, decorated);
+    expect(zip.includes(Buffer.from("PRIVATE_"))).toBe(false);
+    const manifest = JSON.parse(unzip(zip).get("manifest.json")!.toString()) as {
+      files: { verification: { content_review: string }; integrity: Record<string, unknown> }[];
+    };
+    expect(manifest.files[0]!.verification.content_review).toBe("model_critic_pass");
+    expect(manifest.files[0]!.integrity).not.toHaveProperty("owner_id");
+    expect(manifest.files[0]!.integrity).not.toHaveProperty("private_note");
+  });
   it("preserves exact UTF-8 bytes, duplicate basenames, versions and source provenance with deterministic output", () => {
     const { graph, files, content } = fixture();
     const zip = buildWorkResultsArchive(graph, files),
