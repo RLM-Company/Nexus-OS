@@ -9,6 +9,24 @@ type File = WorkArtifactVersion & {
   content: string;
   review: NonNullable<WorkDagNode["result"]>["review"];
   sources: NonNullable<WorkDagNode["result"]>["sources"];
+  integrity?: {
+    published: boolean;
+    readback: string;
+    sha256: string;
+    bytes: number;
+    owner_id?: string;
+    project_id: string;
+    work_id: string;
+    attempt?: number;
+    version: number;
+  };
+  verification?: {
+    file_created: boolean;
+    file_bytes: string;
+    content_review: string;
+    code_executed: boolean;
+    owner_accepted: boolean;
+  };
 };
 const maxArchiveBytes = 4_000_000;
 const statusLabels: Record<WorkDagNode["status"], string> = {
@@ -21,6 +39,38 @@ const statusLabels: Record<WorkDagNode["status"], string> = {
 };
 const markdown = (value: string) =>
   value.replace(/[\r\n]/g, " ").replace(/[\\`*_{}[\]<>()#+\-.!|]/g, "\\$&");
+const assertOptionalIntegrity = (
+  integrity: File["integrity"],
+  graph: WorkDag,
+  file: File,
+  digest: string,
+  byteLength: number,
+  attempt: number | undefined
+) => {
+  if (!integrity) return;
+  if (
+    integrity.published !== true ||
+    integrity.readback !== "sha256_and_bytes_match" ||
+    integrity.sha256 !== digest ||
+    integrity.bytes !== byteLength ||
+    (integrity.owner_id !== undefined && integrity.owner_id !== graph.owner_id) ||
+    integrity.project_id !== graph.project_id ||
+    integrity.work_id !== file.work_id ||
+    (integrity.attempt !== undefined && integrity.attempt !== attempt) ||
+    integrity.version !== file.version
+  )
+    throw new WorkDagConflict("DEPENDENCY_ARTIFACT_MISSING");
+};
+const assertOptionalVerification = (verification: File["verification"]) => {
+  if (!verification) return;
+  if (
+    verification.file_created !== true ||
+    verification.file_bytes !== "verified" ||
+    verification.code_executed !== false ||
+    verification.owner_accepted !== false
+  )
+    throw new WorkDagConflict("DEPENDENCY_ARTIFACT_MISSING");
+};
 
 /** Deterministic, inert ZIP download from one reconciled graph; no model or filesystem writes. */
 export function buildWorkResultsArchive(graph: WorkDag, files: File[]): Buffer {
@@ -36,6 +86,8 @@ export function buildWorkResultsArchive(graph: WorkDag, files: File[]): Buffer {
     const node = graph.nodes[nodeIndex]!;
     const declared = node.artifacts.find((artifact) => artifact.id === file.id);
     const bytes = Buffer.from(file.content, "utf8");
+    const digest = createHash("sha256").update(bytes).digest("hex");
+    const attempt = node.attempts.find((a) => a.work_id === file.work_id)?.number;
     if (
       node.status !== "completed" ||
       !declared ||
@@ -47,12 +99,34 @@ export function buildWorkResultsArchive(graph: WorkDag, files: File[]): Buffer {
       declared.sha256 !== file.sha256 ||
       declared.bytes !== file.bytes ||
       bytes.length !== file.bytes ||
-      createHash("sha256").update(bytes).digest("hex") !== file.sha256
+      digest !== file.sha256 ||
+      digest !== declared.sha256
     )
       throw new WorkDagConflict("DEPENDENCY_ARTIFACT_MISSING");
+    // Optional assertions from newer callers are checked, never required. Legacy
+    // valid exports intentionally have no attempts or decorative status objects.
+    assertOptionalIntegrity(file.integrity, graph, file, digest, bytes.length, attempt);
+    assertOptionalVerification(file.verification);
     // Numeric folders/prefixes isolate duplicate names and exclude untrusted IDs/titles from paths.
     const path = `steps/${String(nodeIndex + 1).padStart(2, "0")}/${String(index + 1).padStart(3, "0")}-${file.name}`;
     entries.push({ path, bytes });
+    const publicIntegrity = {
+      published: true,
+      readback: "sha256_and_bytes_match",
+      sha256: digest,
+      bytes: bytes.length,
+      project_id: graph.project_id,
+      work_id: file.work_id,
+      version: file.version,
+      ...(attempt === undefined ? {} : { attempt })
+    };
+    const publicVerification = {
+      file_created: true,
+      file_bytes: "verified",
+      content_review: file.review?.verdict === "PASS" ? "model_critic_pass" : "not_passed",
+      code_executed: false,
+      owner_accepted: false
+    };
     return {
       path,
       node_id: file.node_id,
@@ -61,10 +135,12 @@ export function buildWorkResultsArchive(graph: WorkDag, files: File[]): Buffer {
       work_id: file.work_id,
       original_name: file.name,
       version: file.version,
-      sha256: file.sha256,
-      bytes: file.bytes,
+      sha256: digest,
+      bytes: bytes.length,
       review: file.review,
-      sources: file.sources
+      sources: file.sources,
+      integrity: publicIntegrity,
+      verification: publicVerification
     };
   });
   const completed = graph.nodes.filter((node) => node.status === "completed").length;
@@ -78,6 +154,14 @@ export function buildWorkResultsArchive(graph: WorkDag, files: File[]): Buffer {
     complete: completed === graph.nodes.length,
     completed_steps: completed,
     total_steps: graph.nodes.length,
+    verification_legend: {
+      file_created: "Published immutable artifact record exists and was read back.",
+      file_bytes: "SHA-256 and byte length match the published version.",
+      content_review:
+        "Model/Critic verdict; not byte validation, code execution or owner acceptance.",
+      code_executed: "No code from these artifacts is executed by this archive.",
+      owner_accepted: "Owner has not accepted these server results through this archive."
+    },
     steps: graph.nodes.map((node) => ({
       id: node.id,
       title: node.title,
@@ -98,7 +182,9 @@ export function buildWorkResultsArchive(graph: WorkDag, files: File[]): Buffer {
       : "Это частичный результат: незавершённые шаги перечислены ниже.",
     "",
     "В архив включены только опубликованные файлы завершённых шагов.",
-    "Контрольные суммы SHA-256, версии, источники модели и решения Критика сохранены в manifest.json.",
+    "SHA-256, длина в байтах, версия, проект, работа и попытка повторно сверены в manifest.json.",
+    "Решение Критика — оценка содержания моделью, а не проверка байтов, запуск кода или подтверждение владельца.",
+    "Архив не выполняет код из файлов и не подтверждает физическое действие.",
     "Тексты личных Skills, разрешения и неопубликованные черновики в этот пакет не включены.",
     "",
     "| Шаг | Состояние | Файлы |",

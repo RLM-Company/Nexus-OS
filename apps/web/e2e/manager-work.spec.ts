@@ -25,7 +25,19 @@ for (const early of [false, true]) {
           listener?.({
             request_id: requestId,
             project,
-            result: { source: "local_agent_report", status: "completed", summary }
+            result: {
+              source: "local_agent_report",
+              status: "completed",
+              summary,
+              receipt: {
+                receipt_version: 1,
+                kind: "native_work_plan_observed",
+                source: "local_agent_report",
+                owner_accepted: false,
+                steps: 2,
+                checked: { count: 2, status: "checked" }
+              }
+            }
           });
         Object.assign(window, {
           emitWorkResult: emit,
@@ -67,6 +79,7 @@ for (const early of [false, true]) {
       );
     }
     await expect(outcome).toContainText("Получен результат локальной задачи.");
+    await expect(outcome).toContainText("По отчёту агента: 2 из 2 шагов.");
     await expect(outcome).toContainText('<img src=x onerror="window.injected=true">');
     await expect(outcome.locator("img")).toHaveCount(0);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
