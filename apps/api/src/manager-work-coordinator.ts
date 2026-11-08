@@ -633,11 +633,19 @@ export class ManagerWorkCoordinator {
       }
     }, this.operationTimeoutMs);
     deadline.unref?.();
-    const done = this.run(id, ownerId, AbortSignal.any([controller.signal, signal])).finally(() => {
+    // Graph/provider hooks can synchronously reenter Work or its lifecycle controls.
+    // Publish the real settlement promise before calling any execution dependency.
+    let complete!: () => void;
+    let fail!: (reason: unknown) => void;
+    const done = new Promise<void>((resolve, reject) => {
+      complete = resolve;
+      fail = reject;
+    }).finally(() => {
       clearTimeout(deadline);
       this.active.delete(id);
     });
     this.active.set(id, { ownerId, controller, done });
+    void this.run(id, ownerId, AbortSignal.any([controller.signal, signal])).then(complete, fail);
     await done;
   }
 
