@@ -1480,6 +1480,7 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
       modelGateway: dependencies.modelGateway,
       chat: dependencies.chat,
       ...(dependencies.accountStore ? { accountStore: dependencies.accountStore } : {}),
+      search: dependencies.webSearch ?? new WebSearch(),
       runtimeMetrics,
       activeRuns,
       runObservers,

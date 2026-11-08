@@ -452,6 +452,38 @@
   min-width: 0;
   gap: 5px;
 }
+/* Functional controls only; typography and icon sizes stay as documented in UI_RULES.md. */
+.product-shell .kosmora-composer-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.product-shell .kosmora-composer-actions .kosmora-action-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+.product-shell .kosmora-composer-actions details {
+  position: relative;
+}
+.product-shell .kosmora-composer-actions summary {
+  cursor: pointer;
+  white-space: nowrap;
+}
+.product-shell .kosmora-composer-actions ul {
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  z-index: 5;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+}
+.product-shell .kosmora-composer-actions li button {
+  white-space: nowrap;
+}
 .product-shell .composer-footer {
   flex: 0 0 auto;
   align-items: center;

@@ -47,6 +47,10 @@ import {
   ChatMessageAttachments,
   useChatAttachments
 } from "./chat-attachments";
+import {
+  KosmoraComposerActions,
+  type KosmoraComposerActionsValue
+} from "./kosmora-composer-actions";
 import { isValidChatAttachments, type ChatAttachment } from "@cosmora/contracts/chat-attachments";
 import {
   WorkspaceSections,
@@ -533,6 +537,11 @@ export default function Home() {
   const [demoRuns, setDemoRuns] = useState<DemoManagerRun[]>([]);
   const [demoActionPending, setDemoActionPending] = useState(false);
   const [draft, setDraft] = useState("");
+  const [composerActions, setComposerActions] = useState<KosmoraComposerActionsValue>({
+    web_search: false,
+    text_action: null
+  });
+  const [composerSelection, setComposerSelection] = useState("");
   const [draftStorageReadyKey, setDraftStorageReadyKey] = useState<string | null>(null);
   const [draftNotice, setDraftNotice] = useState<string | null>(null);
   const [draftRecoveryNotice, setDraftRecoveryNotice] = useState<string | null>(null);
@@ -1759,7 +1768,11 @@ export default function Home() {
                   body: JSON.stringify({
                     content,
                     client_message_id: clientId(),
-                    attachments: chatAttachments.files
+                    attachments: chatAttachments.files,
+                    ...(composerActions.web_search ? { web_search: true } : {}),
+                    ...(composerActions.text_action
+                      ? { text_action: composerActions.text_action }
+                      : {})
                   })
                 }
               )
@@ -1769,7 +1782,11 @@ export default function Home() {
                   initial_message: content,
                   mode: chatMode,
                   client_message_id: clientId(),
-                  attachments: chatAttachments.files
+                  attachments: chatAttachments.files,
+                  ...(composerActions.web_search ? { web_search: true } : {}),
+                  ...(composerActions.text_action
+                    ? { text_action: composerActions.text_action }
+                    : {})
                 })
               });
           acceptedDraftRef.current = { key: composerDraftKey, text: draft };
@@ -1789,6 +1806,8 @@ export default function Home() {
           }
           chatAttachments.replace([]);
           setDraft("");
+          setComposerActions({ web_search: false, text_action: null });
+          setComposerSelection("");
           viewRequestRef.current += 1;
           const materials = [
             ...localChatMessages
@@ -3224,6 +3243,10 @@ export default function Home() {
               setDraftRecoveryNotice(null);
               setDraft(event.target.value);
             }}
+            onSelect={(event) => {
+              const area = event.currentTarget;
+              setComposerSelection(area.value.slice(area.selectionStart, area.selectionEnd));
+            }}
             onKeyDown={(event) => {
               if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
                 event.preventDefault();
@@ -3259,6 +3282,14 @@ export default function Home() {
                 />
               }
               <ModelPicker disabled={sending || loading || !initialRouteReady} />
+              {!activeProject && (
+                <KosmoraComposerActions
+                  disabled={sending || loading || !initialRouteReady}
+                  value={composerActions}
+                  onChange={setComposerActions}
+                  selection={composerSelection}
+                />
+              )}
             </div>
             <div className="composer-footer">
               <VoiceComposer

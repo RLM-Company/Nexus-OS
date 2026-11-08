@@ -19,6 +19,8 @@ import type {
 import { EmergencyStopActivatedError, type RuntimeMetrics } from "./operations.js";
 import type { AccountStore } from "./account-settings/account-store.js";
 import { imageCreationPrompt, ChatImageError } from "./media/chat-images.js";
+import type { WebSearch } from "./web-search.js";
+import { applyKosmoraActions, ChatActionError } from "./kosmora-actions.js";
 import {
   QuotaExceededError,
   RelayExecution,
@@ -37,6 +39,8 @@ export interface GeneralChatBackgroundRunCoordinatorOptions {
   controlPollIntervalMs?: number;
   maxConcurrentRuns?: number;
   accountStore?: AccountStore;
+  /** Explicit web search action support; absent means the run fails with SEARCH_UNAVAILABLE. */
+  search?: WebSearch;
   imageGeneration?: (
     ownerId: string,
     prompt: string,
@@ -63,6 +67,7 @@ export class GeneralChatBackgroundRunCoordinator {
   readonly #chat: ChatService;
   readonly #runtimeMetrics: RuntimeMetrics;
   readonly #emergencyStopStore: EmergencyStopStore | undefined;
+  readonly #search: WebSearch | undefined;
   readonly #logger: Pick<FastifyBaseLogger, "info" | "warn" | "error"> | undefined;
   readonly #pollIntervalMs: number;
   readonly #controlPollIntervalMs: number;
@@ -83,10 +88,19 @@ export class GeneralChatBackgroundRunCoordinator {
     this.#chat = options.chat;
     this.#runtimeMetrics = options.runtimeMetrics;
     this.#emergencyStopStore = options.emergencyStopStore;
+    this.#search = options.search;
     this.#logger = options.logger;
     this.#pollIntervalMs = positiveInteger(options.pollIntervalMs, 100);
     this.#controlPollIntervalMs = positiveInteger(options.controlPollIntervalMs, 50);
     this.#maxConcurrentRuns = positiveInteger(options.maxConcurrentRuns, 4);
+  }
+
+  /** Dispatch-time rendering for the owner's explicit actions, shared with the stream path. */
+  #applyKosmoraActions(
+    conversation: StoredGeneralChatMessage[],
+    signal: AbortSignal
+  ): Promise<StoredGeneralChatMessage[]> {
+    return applyKosmoraActions(conversation, this.#search, signal);
   }
 
   get activeRunCount(): number {
@@ -224,7 +238,7 @@ export class GeneralChatBackgroundRunCoordinator {
       let modelRequest = this.#chat.buildRequest({
         chatId: queued.chat_id,
         runId: queued.run_id,
-        messages: conversation,
+        messages: await this.#applyKosmoraActions(conversation, controller.signal),
         historyCompaction: this.#store.historyCompactionForRun(queued.run_id, queued.owner_id),
         recalledMemory: await this.#store.recallForRunAsync(
           queued.run_id,
@@ -422,6 +436,15 @@ export class GeneralChatBackgroundRunCoordinator {
       if (error instanceof ChatImageError) {
         this.#store.failRun(queued.run_id, error.code);
         this.#runtimeMetrics.runFailed("PROVIDER_ERROR");
+        return;
+      }
+      if (error instanceof ChatActionError) {
+        this.#store.failRun(queued.run_id, error.code);
+        this.#runtimeMetrics.runFailed("PROVIDER_ERROR");
+        this.#logger?.warn(
+          { runId: queued.run_id, chatId: queued.chat_id, code: error.code },
+          "Kosmora action failed closed before dispatch"
+        );
         return;
       }
       if (controller.signal.reason instanceof EmergencyStopActivatedError) {
