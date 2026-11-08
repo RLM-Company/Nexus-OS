@@ -1745,14 +1745,14 @@ describe("Work admission startup", () => {
       for (const [projectId, id] of [
         [f.project.id, f.work.id],
         [project.id, second.id]
-      ]) {
-        expect(f.store.get(id!, "local-owner")?.status).toBe("completed");
+      ] as const) {
+        expect(f.store.get(id, "local-owner")?.status).toBe("completed");
         const result = await app.inject({
           url: `/api/v1/projects/${projectId}/work/${id}/files/result.md`
         });
         expect(result.statusCode).toBe(200);
         expect(result.body).toBe(admissionBrief.content);
-        const metadata = f.store.runtime.artifacts(projectId!, "local-owner", id!)[0]!;
+        const metadata = f.store.runtime.artifacts(projectId, "local-owner", id)[0]!;
         expect(metadata.sha256).toBe(createHash("sha256").update(result.body).digest("hex"));
         artifacts.push({
           content: result.body,
