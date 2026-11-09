@@ -4,6 +4,12 @@
 - **База:** `338536ee5946f96dcd18768143cc41af998c476a`
 - **Согласованный объём:** `docs/product/KOSWORK_FIRST_TASK_RESULT_PROPOSAL_RU.md`
 - **Владелец реализации:** DeepSeek
+- **Синхронизация:** 9 ноября в ветку влит актуальный `origin/main`
+  (`7bb246bef2ed8e9f47ae93260384e560a9d6065c`, 18 коммитов после базы).
+  `main` менял `manager-work-routes.ts`, `manager-work-store.ts` и
+  `manager-work.test.ts`; конфликтов при слиянии не было, `acceptResult`,
+  маршрут и тесты сохранились. Проверено: `manager-work.test.ts` 70 passed,
+  `manager-work-result-acceptance.test.ts` 3 passed.
 
 ## Что было
 
@@ -113,3 +119,16 @@ store.acceptResult(workId, ownerId, actorId, expectedVersion);
 `git revert <commit>` убирает метод, маршрут, поля, тесты и контрол. Так как
 миграций нет, данные не деградируют: лишние поля в `state_json` останутся
 инертными и не читаются старым кодом.
+
+## Финальный CI после синхронизации с main
+
+На коммите `47c2d46` (merge `7bb246be`):
+
+```
+Verify monorepo     pass  6m11s
+Browser acceptance  pass  11m49s
+Code sandbox isolation pass
+identity-tests      pass
+```
+
+Все четыре проверки зелёные.
