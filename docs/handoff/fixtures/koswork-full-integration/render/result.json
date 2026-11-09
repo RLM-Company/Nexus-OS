@@ -1,0 +1,35 @@
+{
+  "source_commit": "92179395ecb4598171eb49da0edbdf6c90a633c2",
+  "renderer": "LibreOfficeDev 26.8.0.0.alpha0 2c87e51eeaa2b413ff4ae097b2705eea1995d8e5",
+  "command": [
+    "soffice",
+    "-env:UserInstallation=file://<isolated-temporary-profile>",
+    "--headless",
+    "--convert-to",
+    "pdf",
+    "--outdir",
+    "docs/handoff/fixtures/koswork-full-integration/render",
+    "docs/handoff/fixtures/koswork-full-integration/offer.koswork.docx"
+  ],
+  "exit_code": 0,
+  "stdout": "convert docs/handoff/fixtures/koswork-full-integration/offer.koswork.docx as a Writer document -> docs/handoff/fixtures/koswork-full-integration/render/offer.koswork.pdf using filter : writer_pdf_Export\n",
+  "stderr": "Fontconfig error: No writable cache directories\nFontconfig error: No writable cache directories\nFontconfig error: No writable cache directories\n",
+  "source_sha256_before": "dec2527a43b56061ff2a39909bae34564b66c9eec4ec38da27ac43af2e81891b",
+  "source_sha256_after": "dec2527a43b56061ff2a39909bae34564b66c9eec4ec38da27ac43af2e81891b",
+  "pdf_sha256": "44f3310793311fda463dfbf41fc8592cc02cc3ac3cfd78148ca6626e5a1fbed7",
+  "pdftotext_exit_code": 0,
+  "pdftotext_stderr": "",
+  "rendered_text": "Предложение\nРеквизиты\nКомпания Б — 19 700 ₽; 00123; 07.11.2026; кроме доставки\n 00123                                           19 700 ₽\n\f",
+  "required_literals": {
+    "Компания Б": true,
+    "19 700": true,
+    "00123": true,
+    "07.11.2026": true,
+    "кроме доставки": true
+  },
+  "real_model_called": false,
+  "microsoft_office_checked": false,
+  "visual_inspection_completed": true,
+  "visual_inspection_scope": "Первая и единственная страница PDF, полученного из точных скачанных DOCX-байтов: читаемы реквизиты и строка таблицы, обязательные литералы видимы, обрезания не наблюдаются. Не является проверкой Microsoft Office или иных документов.",
+  "pages": 1
+}

@@ -107,9 +107,11 @@ Playwright browser переменную executable path можно не зада
 ## Границы, интеграция и откат
 
 Настоящий HY4/другая модель не вызывались, provider заменён локальными fixtures.
-Новая копия проверена по bytes/ZIP/XML/readback; визуальный рендер именно этой копии
-не проверялся (`visual_render_verified=false`). Microsoft Office, ПК владельца
-и production не использовались. Формулы engine не вычисляет, WYSIWYG не добавлялся;
+Новая копия проверена по bytes/ZIP/XML/readback и отдельно открыта/отрендерена
+на облачном LibreOffice-стенде, как описано ниже. `visual_render_verified=false`
+в исходном browser result остаётся историческим результатом того прогона:
+сам engine рендер не выполняет. Microsoft Office, ПК владельца и production
+не использовались. Формулы engine не вычисляет, WYSIWYG не добавлялся;
 сложные объекты/подписанные пакеты сохраняют прежний отказ до записи.
 
 Для интеграции достаточно текущего PR #466; его точный опубликованный SHA и внешние
@@ -118,3 +120,47 @@ checks зафиксированы в описании PR. Самостоятел
 65d714b; после принятия нельзя слепо откатывать весь merge вместе с уже принятыми
 исправлениями соседних пакетов. Точечный откат Office/Work описан в их handoff:
 он не требует удаления документов или accounting rows и не меняет схему данных.
+
+## Дополнительная проверка открытия итоговой DOCX-копии
+
+9 ноября 2026 года на отдельном облачном fixture-стенде уже установленный
+LibreOfficeDev 26.8.0.0.alpha0 (`2c87e51eeaa2b413ff4ae097b2705eea1995d8e5`)
+открыл именно `offer.koswork.docx`, скачанный общим browser-сценарием на source
+commit `92179395ecb4598171eb49da0edbdf6c90a633c2`. Новые программы не устанавливались.
+
+```sh
+# Из корня checkout; использовать новый отдельный профиль и каталог вывода:
+mkdir -p /tmp/koswork-final-render
+soffice -env:UserInstallation=file:///tmp/koswork-final-render-profile \
+  --headless --convert-to pdf --outdir /tmp/koswork-final-render \
+  docs/handoff/fixtures/koswork-full-integration/offer.koswork.docx
+pdftotext -layout /tmp/koswork-final-render/offer.koswork.pdf -
+pdftoppm -f 1 -singlefile -scale-to 1400 -png \
+  /tmp/koswork-final-render/offer.koswork.pdf /tmp/koswork-final-render/page-1
+```
+
+В `fixtures/koswork-full-integration/render/` сохранены настоящий PDF,
+изображение единственной страницы и `result.json` с командой, версией renderer,
+выводом, хешами до/после и извлечённым PDF-текстом. Export и pdftotext — exit 0.
+Предупреждения `Fontconfig error: No writable cache directories` сохранены в JSON;
+PDF при этом создан. SHA256 DOCX до/после совпал с receipt:
+`dec2527a43b56061ff2a39909bae34564b66c9eec4ec38da27ac43af2e81891b`.
+SHA256 PDF: `44f3310793311fda463dfbf41fc8592cc02cc3ac3cfd78148ca6626e5a1fbed7`.
+
+«Компания Б», `19 700`, `00123`, `07.11.2026`, «кроме доставки» присутствуют
+в PDF-тексте и видимы на просмотренной странице. Реквизиты и строка таблицы
+читаемы, обрезания в этом документе не обнаружены. Это проверка конкретной
+копии в LibreOffice, а не гарантия полной совместимости всех Office-документов.
+
+Результаты внешних checks source commit 9217939: CI #1667 и API identity #91 —
+success, browser — 401 PASS. Windows #226: две попытки завершились HTTP 504
+при упаковке; в каждой native tests 383 PASS, 0 FAIL/skipped. В логе отсутствует
+URL неудачного запроса, поэтому точный недоступный ресурс не установлен.
+Installer lifecycle не подтверждён. Исходники Windows main/installer/CI не
+менялись ради обхода сбоя; слепых повторов после второй ошибки не выполнялось.
+Актуальные checks следующего документационного коммита смотреть отдельно в PR;
+результаты source commit не выдаются за проверки нового SHA.
+
+Этот дополнительный коммит содержит только handoff и render artifacts.
+Логика приложения, тестовые assertions и исходный DOCX не меняются; откат
+дополнения не затрагивает файлы пользователя, схему или provider accounting.
