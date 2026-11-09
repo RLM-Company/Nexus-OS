@@ -5,7 +5,11 @@ const test = require("node:test"),
   { pathToFileURL } = require("node:url");
 const { createKosworkBrowser } = require("../browser/shell.cjs");
 const context = { owner: "A", origin: "https://example.test" },
-  input = { project: "project-A", goal: "Exact task" };
+  input = { project: "project-A", goal: "Exact task" },
+  requestId = "44444444-4444-4444-8444-444444444444",
+  document = "brief-prices-csv-v7",
+  binding = { requestId, document },
+  uuid = /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i;
 function fixture(t) {
   const windows = [],
     handlers = new Map(),
@@ -99,7 +103,7 @@ function fixture(t) {
     shell,
     windows,
     delivered,
-    show: () => shell.show(input, (v) => delivered.push(v), context),
+    show: (options = binding) => shell.show(input, (v) => delivered.push(v), context, options),
     command: (command, value) => {
       const web = windows.at(-1).webContents;
       return handlers.get("koswork:work-command")(
@@ -126,6 +130,24 @@ function fixture(t) {
     hotkey: () => hotkey()
   };
 }
+function boundedReceipt(ticket, overrides = {}) {
+  return {
+    receipt_version: 1,
+    task_id: ticket.task_id,
+    request_id: ticket.request_id,
+    observation_id: "22222222-2222-4222-8222-222222222222",
+    nonce: ticket.nonce,
+    owner: context.owner,
+    origin: context.origin,
+    project: ticket.project,
+    document: ticket.document,
+    environment: "none",
+    generation: 7,
+    steps: 2,
+    checked: { count: 2, status: "checked" },
+    ...overrides
+  };
+}
 test("the real shell returns a matching task once and rejects unrelated result attribution", async (t) => {
   const f = fixture(t);
   await f.show();
@@ -146,7 +168,162 @@ test("the real shell returns a matching task once and rejects unrelated result a
   assert.equal(f.delivered[2].status, "paused");
   assert.equal(f.delivered[2].summary, undefined);
 });
-test("stop and emergency takeover discard late successful result reports", async (t) => {
+test("real start supplies the originating ticket and delivers a bounded checked-plan receipt", async (t) => {
+  const f = fixture(t),
+    tickets = [];
+  f.setRun(async (value) => {
+    const ticket = value.resultTicket;
+    tickets.push(ticket);
+    assert.equal(value.executionMode, undefined);
+    assert.equal(value.expectedContext, context);
+    assert.equal(value.maxSteps, 90);
+    assert.equal(ticket.project, input.project);
+    assert.equal(ticket.request_id, requestId);
+    assert.equal(ticket.document, document);
+    assert.match(ticket.task_id, uuid);
+    assert.match(ticket.nonce, uuid);
+    assert.notEqual(ticket.request_id, ticket.task_id);
+    assert.notEqual(ticket.request_id, ticket.nonce);
+    return {
+      status: "completed",
+      summary: "Exact result 00123",
+      steps: 3,
+      receipt: {
+        ...boundedReceipt(ticket),
+        local_path: "C:\\private\\brief.csv",
+        screenshot: "base64",
+        owner_accepted: true,
+        verified: true,
+        source: "server_attestation"
+      }
+    };
+  });
+  await f.show();
+  assert.equal((await f.command("start", input)).status, "completed");
+  assert.equal(tickets.length, 1);
+  const outcome = f.delivered[0];
+  assert.equal(outcome.source, "local_agent_report");
+  assert.equal(outcome.status, "completed");
+  assert.equal(outcome.owner_accepted, false);
+  assert.equal(outcome.receipt_omitted, undefined);
+  assert.equal(outcome.receipt.receipt_version, 1);
+  assert.equal(outcome.receipt.kind, "native_work_plan_observed");
+  assert.equal(outcome.receipt.task_id, tickets[0].task_id);
+  assert.equal(outcome.receipt.nonce, tickets[0].nonce);
+  assert.equal(outcome.receipt.project, input.project);
+  assert.equal(outcome.receipt.document, document);
+  assert.equal(outcome.receipt.owner, context.owner);
+  assert.equal(outcome.receipt.origin, context.origin);
+  assert.equal(outcome.receipt.generation, 7);
+  assert.deepEqual(outcome.receipt.checked, { count: 2, status: "checked" });
+  assert.equal(outcome.receipt.checked.criteria, undefined);
+  assert.equal(outcome.receipt.owner_accepted, false);
+  assert.equal(outcome.receipt.local_path, undefined);
+  assert.equal(outcome.receipt.screenshot, undefined);
+  assert.equal(outcome.receipt.verified, undefined);
+  assert.equal(outcome.receipt.source, "local_agent_report");
+  assert.ok(JSON.stringify(outcome.receipt).length <= 2400);
+  for (const forbidden of [
+    "private",
+    "brief.csv",
+    "base64",
+    "server_attestation",
+    "CSV readback",
+    "Exact total"
+  ])
+    assert.equal(JSON.stringify(outcome.receipt).includes(forbidden), false);
+});
+test("a receipt cannot be bound to a different originating request or document", async (t) => {
+  for (const options of [
+    { requestId: "55555555-5555-4555-8555-555555555555", document },
+    { requestId, document: "different-source-document" },
+    {}
+  ]) {
+    const f = fixture(t);
+    const open = f.show(options);
+    if (options && options.requestId && options.document) await open;
+    else await assert.rejects(open, /COMPUTER_PROPOSAL_INVALID/);
+    if (!options || !options.requestId || !options.document) continue;
+    f.setRun(async (value) => ({
+      status: "completed",
+      summary: "Done",
+      receipt: boundedReceipt(value.resultTicket, { request_id: requestId, document })
+    }));
+    await f.command("start", input);
+    const outcome = f.delivered.at(-1);
+    assert.equal(outcome.status, "completed");
+    assert.equal(outcome.receipt, undefined);
+    assert.equal(outcome.receipt_omitted, true);
+    assert.equal(outcome.owner_accepted, false);
+  }
+});
+test("legacy show without receipt binding still delivers its bounded summary", async (t) => {
+  const f = fixture(t);
+  await f.show(null);
+  await f.command("start", input);
+  assert.equal(f.delivered[0].status, "completed");
+  assert.equal(f.delivered[0].summary, "Exact result 🌙");
+  assert.equal(f.delivered[0].receipt, undefined);
+});
+test("raw checked criteria are rejected even when the trusted one-shot ticket is real", async (t) => {
+  const f = fixture(t);
+  f.setRun(async (value) => ({
+    status: "completed",
+    summary: "Done",
+    receipt: boundedReceipt(value.resultTicket, {
+      checked: { count: 2, criteria: ["CSV readback matches 00123", "Exact total 42"] }
+    })
+  }));
+  await f.show();
+  await f.command("start", input);
+  const outcome = f.delivered[0];
+  assert.equal(outcome.status, "completed");
+  assert.equal(outcome.receipt, undefined);
+  assert.equal(outcome.receipt_omitted, true);
+  assert.equal(outcome.owner_accepted, false);
+  assert.equal(JSON.stringify(outcome).includes("CSV readback"), false);
+});
+test("incomplete, unknown-version and mismatched receipts cannot raise a completed local report", async (t) => {
+  for (const mutate of [
+    () => undefined,
+    () => ({}),
+    () => ({ receipt_version: 2 }),
+    () => ({ receipt_version: 1, task_id: "not-a-uuid" }),
+    (ticket) =>
+      boundedReceipt(ticket, {
+        task_id: "11111111-1111-4111-8111-111111111111",
+        project: "different-project",
+        checked: { count: 1, status: "checked" }
+      }),
+    (ticket) =>
+      boundedReceipt(ticket, {
+        document: "C:\\private\\brief.csv",
+        environment: "shell",
+        checked: { count: 2, status: "verified" }
+      }),
+    (ticket) =>
+      boundedReceipt(ticket, {
+        checked: { count: 2, status: "checked", criteria: ["Private plan text"] }
+      })
+  ]) {
+    const f = fixture(t);
+    let rawReceipt;
+    f.setRun(async (value) => {
+      rawReceipt = mutate(value.resultTicket);
+      return { status: "completed", summary: "Done", receipt: rawReceipt };
+    });
+    await f.show();
+    await f.command("start", input);
+    const outcome = f.delivered[0];
+    assert.equal(outcome.status, "completed");
+    assert.equal(outcome.receipt, undefined);
+    assert.equal(outcome.owner_accepted, false);
+    assert.equal(outcome.source, "local_agent_report");
+    assert.equal(outcome.receipt_omitted, rawReceipt === undefined ? undefined : true);
+    assert.equal(JSON.stringify(outcome).includes("Private plan text"), false);
+  }
+});
+test("stop and emergency takeover discard late successful result reports and their receipts", async (t) => {
   for (const method of ["stop", "hotkey"]) {
     const f = fixture(t);
     await f.show();
@@ -154,18 +331,27 @@ test("stop and emergency takeover discard late successful result reports", async
     const ready = new Promise((r) => {
       enter = r;
     });
-    f.setRun(async () => {
+    f.setRun(async (value) => {
       enter();
       await new Promise((r) => {
         release = r;
       });
-      return { status: "completed", summary: "Late private" };
+      return {
+        status: "completed",
+        summary: "Late private",
+        receipt: boundedReceipt(value.resultTicket, {
+          steps: 1,
+          checked: { count: 1, status: "checked" }
+        })
+      };
     });
     const pending = f.command("start", input);
     await ready;
     if (method === "stop") f.shell.stop();
     else f.hotkey();
     assert.equal(f.delivered[0].status, "cancelled");
+    assert.equal(f.delivered[0].receipt, undefined);
+    assert.equal(f.delivered[0].owner_accepted, false);
     release();
     await pending;
     assert.equal(f.delivered.length, 1);
@@ -212,6 +398,7 @@ test("stopping during the final identity await never binds a stale result recipi
   await assert.rejects(f.show(), /IDENTITY_CHANGED/);
   assert.equal(f.delivered.length, 1);
   assert.equal(f.delivered[0].status, "cancelled");
+  assert.equal(f.delivered[0].receipt, undefined);
   f.onIdentity(null);
   await f.command("start", input);
   assert.equal(f.delivered.length, 1);
