@@ -313,10 +313,20 @@ export class ManagerWorkStore {
   }
 
   pending(): ManagerWork[] {
+    // Apply admission boundaries before the bounded window. Otherwise a full
+    // window of tasks claim() must reject can hide all eligible work forever.
     return (
       this.sqlite
         .prepare(
-          "SELECT state_json FROM manager_work WHERE json_extract(state_json, '$.status') = 'queued' AND NOT EXISTS (SELECT 1 FROM manager_work r WHERE r.project_id = manager_work.project_id AND json_extract(r.state_json, '$.status') = 'running') ORDER BY rowid LIMIT 50"
+          `SELECT w.state_json FROM manager_work w
+           WHERE json_extract(w.state_json, '$.status') = 'queued'
+           AND NOT EXISTS (SELECT 1 FROM manager_work r WHERE r.project_id = w.project_id
+             AND json_extract(r.state_json, '$.status') = 'running')
+           AND NOT EXISTS (SELECT 1 FROM work_owner_fences f WHERE f.owner_id = w.owner_id AND f.fenced = 1)
+           AND NOT EXISTS (SELECT 1 FROM kosmora_owner_data_lifecycle l WHERE l.owner_id = w.owner_id AND l.state <> 'active')
+           AND NOT EXISTS (SELECT 1 FROM work_project_controls c WHERE c.project_id = w.project_id AND c.owner_id = w.owner_id AND c.mode <> 'active')
+           AND (json_extract(w.state_json, '$.dag_binding') IS NULL OR json_extract(w.state_json, '$.dag_binding.bound') = 1)
+           ORDER BY w.rowid LIMIT 50`
         )
         .all() as { state_json: string }[]
     ).map((row) => JSON.parse(row.state_json) as ManagerWork);
