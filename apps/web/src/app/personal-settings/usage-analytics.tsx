@@ -55,6 +55,10 @@ export function UsageMetrics({ summary }: { summary?: Summary | undefined }) {
             max={summary.max_total_tokens}
             value={Math.min(summary.total_counted_tokens, summary.max_total_tokens)}
           />
+          <span>
+            Осталось {number(Math.max(0, summary.max_total_tokens - summary.total_counted_tokens))}{" "}
+            токенов · период обновления не задан
+          </span>
         </div>
       )}
     </div>

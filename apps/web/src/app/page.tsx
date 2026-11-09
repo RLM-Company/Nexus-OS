@@ -1544,13 +1544,36 @@ export default function Home() {
         setSending(false);
         setActiveRunId(null);
         setRunPhase("failed");
-        setError(
-          failure.data.error_code === "RELAY_UNAVAILABLE"
-            ? "Перевод не выполнен. Запрос не отправлен без English Relay. Можно выключить перевод и отправить исходный запрос вручную."
-            : failure.data.error_code === "USAGE_LIMIT_EXCEEDED"
-              ? "Лимит токенов достигнут. Измените квоту в персональных настройках."
+        const code = failure.data.error_code;
+        if (code === "USAGE_LIMIT_EXCEEDED") {
+          // The quota is a cumulative owner setting without a reset period.
+          // Report the real counted numbers from the existing usage endpoint,
+          // point at the breakdown, and never invent a renewal date.
+          setError("Лимит токенов достигнут. Прогон остановлен; текст сохранён в поле ввода.");
+          void api<{
+            summary: { total_counted_tokens: number; max_total_tokens: number | null };
+          }>("/api/v1/personal-settings/usage")
+            .then((usage) => {
+              const used = usage.summary.total_counted_tokens;
+              const limit = usage.summary.max_total_tokens;
+              const counted =
+                limit === null
+                  ? `Учтено ${used.toLocaleString("ru-RU")} токенов.`
+                  : `Учтено ${used.toLocaleString("ru-RU")} из ${limit.toLocaleString("ru-RU")} токенов.`;
+              setError(
+                `Лимит токенов достигнут. Прогон остановлен; текст сохранён в поле ввода. ${counted} Разбивка по запросам — в личных настройках, раздел «Использование». Период обновления лимита не задан.`
+              );
+            })
+            .catch(() => {
+              /* Keep the honest fallback above when usage is unavailable. */
+            });
+        } else {
+          setError(
+            code === "RELAY_UNAVAILABLE"
+              ? "Перевод не выполнен. Запрос не отправлен без English Relay. Можно выключить перевод и отправить исходный запрос вручную."
               : "Ответ завершился с ошибкой. Внутренние детали скрыты."
-        );
+          );
+        }
         void refreshGeneralChat(chatIdForRun).catch(() => undefined);
       });
       source.addEventListener("run.cancelled", () => {
