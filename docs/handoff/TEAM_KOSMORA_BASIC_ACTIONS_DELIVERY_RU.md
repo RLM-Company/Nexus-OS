@@ -4,6 +4,13 @@
 - **База:** `338536ee5946f96dcd18768143cc41af998c476a`
 - **Согласованный объём:** [KOSMORA_BASIC_SCENARIOS_AUDIT_RU.md](../product/KOSMORA_BASIC_SCENARIOS_AUDIT_RU.md)
 - **Владелец реализации:** DeepSeek
+- **Синхронизация:** 9 ноября в ветку влит актуальный `origin/main`
+  (`7bb246bef2ed8e9f47ae93260384e560a9d6065c`, 18 коммитов после базы),
+  конфликтов не было. С `main` пришла правка `c6a03f0` теста
+  `model-runtime.test.ts` (исторические часы), поэтому описанная ниже
+  проблема `Model Registry evidence has expired` устранена и `Verify monorepo`
+  стал зелёным. Миграция 0064 остаётся уникальной: ни `main`, ни соседние
+  ветки её не добавляли.
 
 ## Что было
 
@@ -110,26 +117,21 @@ build @cosmora/api... @cosmora/web...        Done (включая Next.js)
    но это самостоятельная оптимизация, не причина падения.
 
 Оба исправления содержательные, а не повторный запуск того же кода.
-`Model Registry evidence has expired: tokenshop:claude-fable-5` в джобе
-`Verify monorepo` падает **также на `main`** (run `42646967679`, 15:40 UTC) и
-на соседней ветке `desc/semantic-absent-fact-20261109`; локально
-`test/model-runtime.test.ts` даёт ту же ошибку на этом коммите. Причина —
-`valid_until: 2026-11-09T09:46:39.765Z` в
-`config/model-registry.tokenshop.fable.v1.json`, который этот блок не менял и
-не должен править (провайдер/модель/тарифы/квоты вне объёма). Остальные
-929 тестов `Verify monorepo` проходят, включая все тесты этого модуля.
-Это не выдаётся за пройденную проверку.
 
-### Итог CI на финальном коммите `9b40ad1`
+### Итог CI на финальном коммите `1b5a726` (после merge `7bb246be`)
 
 ```
-Verify monorepo     fail  — только Model Registry expiry (общее для main)
-Browser acceptance  pass  9m20s  (366+ сценариев, chat-reliability прошёл)
+Verify monorepo     pass  6m22s
+Browser acceptance  pass  9m16s
 Code sandbox isolation pass
 identity-tests      pass
 ```
 
-`chat-skills` и `chat-reliability`, падавшие в первом прогоне, зелёные.
+Все четыре проверки зелёные. `chat-skills` и `chat-reliability`, падавшие в
+первых прогонах, проходят. Прежняя ошибка `Model Registry evidence has expired`
+была общей для `main` (run `42646967679`) и устранена там коммитом `c6a03f0`
+(зафиксированы исторические часы в `model-runtime.test.ts`); этот блок не
+менял провайдер, модель, тарифы и квоты.
 
 ## Ограничения
 
