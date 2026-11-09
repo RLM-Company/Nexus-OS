@@ -187,26 +187,27 @@ export function registerWorkDagRoutes(options: {
   );
   app.get<{ Params: Params }>(base + "/:id/results", { schema: { params } }, (r, reply) =>
     safe(() => {
+      reply.header("cache-control", "private, no-store");
       const owner = identityFor(r).owner_id;
       if (!coordinator.owns(r.params.id, owner, r.params.projectId))
         return reply.code(404).send({ error: "DAG_NOT_FOUND" });
+      const result = coordinator.results(r.params.id, owner);
       return reply
         .header("content-disposition", 'attachment; filename="work-results.json"')
-        .header("cache-control", "private, no-store")
         .header("x-content-type-options", "nosniff")
         .type("application/json; charset=utf-8")
-        .send(coordinator.results(r.params.id, owner));
+        .send(result);
     }, reply)
   );
   app.get<{ Params: Params }>(base + "/:id/results.zip", { schema: { params } }, (r, reply) =>
     safe(() => {
+      reply.header("cache-control", "private, no-store");
       const owner = identityFor(r).owner_id;
       if (!coordinator.owns(r.params.id, owner, r.params.projectId))
         return reply.code(404).send({ error: "DAG_NOT_FOUND" });
       const archive = coordinator.resultsArchive(r.params.id, owner);
       return reply
         .header("content-disposition", 'attachment; filename="work-results.zip"')
-        .header("cache-control", "private, no-store")
         .header("x-content-type-options", "nosniff")
         .header("content-length", String(archive.byteLength))
         .type("application/zip")

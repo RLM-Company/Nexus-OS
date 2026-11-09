@@ -175,12 +175,48 @@ describe("buildModelRuntime", () => {
       MANAGER_MAX_OUTPUT_TOKENS: "100000",
       MODEL_REGISTRY_PATH: "config/model-registry.tokenshop.fable.v1.json"
     });
-    const runtime = await buildModelRuntime(config, {
-      secretResolver: { resolve: () => Promise.resolve("fixture-only") }
+    // Historical adapter construction is independent of today's date. Keep
+    // production evidence expiry intact; no live readiness is asserted here.
+    const clock = vi.spyOn(Date, "now").mockReturnValue(Date.parse("2026-11-03T00:00:00.000Z"));
+    try {
+      const runtime = await buildModelRuntime(config, {
+        secretResolver: { resolve: () => Promise.resolve("fixture-only") }
+      });
+      expect(runtime.contextWindowTokens).toBe(1_000_000);
+      expect(runtime.registryVersion).toBe("tokenshop-fable-live-2026-11-02");
+      expect(config.modelFallbackToMock).toBe(false);
+    } finally {
+      clock.mockRestore();
+    }
+  });
+  it("rejects expired Fable evidence at its boundary before resolving credentials", async () => {
+    const config = loadServerConfig({
+      NODE_ENV: "test",
+      MODEL_PROVIDER: "openai-compatible",
+      MODEL_PROVIDER_ID: "tokenshop",
+      MODEL_BASE_URL: "https://token-shop.online/v1",
+      MODEL_API_KEY: "fixture-only",
+      MODEL_NAME: "claude-fable-5",
+      MODEL_FALLBACK_TO_MOCK: "false",
+      MODEL_REGISTRY_PATH: "config/model-registry.tokenshop.fable.v1.json"
     });
-    expect(runtime.contextWindowTokens).toBe(1_000_000);
-    expect(runtime.registryVersion).toBe("tokenshop-fable-live-2026-11-02");
-    expect(config.modelFallbackToMock).toBe(false);
+    const document = loadModelRegistryDocument(config.modelRegistryPath!);
+    const expiry = Date.parse(
+      document.entries.find((e) => e.provider_id === "tokenshop")!.source.valid_until!
+    );
+    const clock = vi.spyOn(Date, "now");
+    const resolve = vi.fn(() => Promise.resolve("fixture-only"));
+    try {
+      for (const at of [expiry, expiry + 1]) {
+        clock.mockReturnValue(at);
+        await expect(buildModelRuntime(config, { secretResolver: { resolve } })).rejects.toThrow(
+          "evidence has expired: tokenshop:claude-fable-5"
+        );
+      }
+      expect(resolve).not.toHaveBeenCalled();
+    } finally {
+      clock.mockRestore();
+    }
   });
   it("loads a repository-relative registry path independently of process cwd", () => {
     const document = loadModelRegistryDocument("config/model-registry.v1.json");

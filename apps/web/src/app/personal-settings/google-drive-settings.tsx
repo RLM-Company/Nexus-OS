@@ -36,6 +36,25 @@ export function GoogleDriveSettings() {
     [notice, setNotice] = useState(""),
     [error, setError] = useState("");
   const started = useRef(false);
+  const [folderLink, setFolderLink] = useState<string | null>(null);
+  useEffect(() => {
+    let current = true;
+    setFolderLink(null);
+    if (status?.state === "connected")
+      void request<{ url?: string }>("/link")
+        .then((data) => {
+          if (
+            current &&
+            typeof data.url === "string" &&
+            /^https:\/\/drive\.google\.com\/drive\/folders\/[A-Za-z0-9_-]{5,200}$/.test(data.url)
+          )
+            setFolderLink(data.url);
+        })
+        .catch(() => {});
+    return () => {
+      current = false;
+    };
+  }, [status]);
   const reload = useCallback(async () => {
     const next = await request<GoogleDriveConnectionView>();
     setStatus(next);
@@ -103,6 +122,12 @@ export function GoogleDriveSettings() {
         Копии чатов и результатов в вашей папке Kosmora. Подключение не переносит текущие данные и
         не открывает доступ ко всему диску.
       </p>
+      <p>Хранилище на Drive не меняет обработку запросов выбранной облачной моделью.</p>
+      {folderLink && (
+        <a href={folderLink} target="_blank" rel="noreferrer">
+          Открыть папку Kosmora
+        </a>
+      )}
       {!status ? (
         <p>Проверяем подключение…</p>
       ) : (

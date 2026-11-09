@@ -6,6 +6,7 @@ import {
   type WorkDag,
   type WorkDagControl,
   type WorkDagCreate,
+  type WorkDagNode,
   type WorkDagNodeInput,
   type WorkDagClone,
   type WorkDagArchive,
@@ -30,6 +31,44 @@ export class WorkDagCoordinator {
     } catch (e) {
       throw new WorkDagConflict(e instanceof Error ? e.message : "INVALID_DAG");
     }
+  }
+  /** Read back an immutable published byte sequence. A review verdict is not a byte check. */
+  private verifiedArtifact(
+    graph: WorkDag,
+    node: WorkDagNode,
+    artifact: WorkDagNode["artifacts"][number]
+  ) {
+    const file = this.works.runtime.artifact(graph.project_id, graph.owner_id, artifact.id);
+    if (!file) throw new WorkDagConflict("DEPENDENCY_ARTIFACT_MISSING");
+    const meta = file.metadata;
+    const bytes = Buffer.from(file.content, "utf8");
+    const digest = createHash("sha256").update(bytes).digest("hex");
+    const child = this.works.get(artifact.work_id, graph.owner_id);
+    const attempt = node.attempts.find((a) => a.work_id === artifact.work_id);
+    if (
+      !meta.published ||
+      !child ||
+      child.owner_id !== graph.owner_id ||
+      child.project_id !== graph.project_id ||
+      child.status !== "completed" ||
+      child.stage !== "done" ||
+      child.dag_binding?.graph_id !== graph.id ||
+      child.dag_binding.node_id !== node.id ||
+      child.dag_binding.attempt !== attempt?.number ||
+      !attempt ||
+      artifact.work_id !== child.id ||
+      artifact.version !== meta.version ||
+      artifact.name !== meta.name ||
+      artifact.sha256 !== meta.sha256 ||
+      artifact.bytes !== meta.bytes ||
+      bytes.length !== meta.bytes ||
+      digest !== meta.sha256 ||
+      digest !== artifact.sha256 ||
+      meta.project_id !== graph.project_id ||
+      meta.work_id !== artifact.work_id
+    )
+      throw new WorkDagConflict("DEPENDENCY_ARTIFACT_MISSING");
+    return { metadata: meta, content: file.content, bytes, digest };
   }
   create(project: string, owner: string, actor: string, input: WorkDagCreate): WorkDag {
     this.validate(input.nodes);
@@ -172,7 +211,13 @@ export class WorkDagCoordinator {
         plan_instructions: child.plan?.instructions ?? null,
         review: child.review,
         confirmation_id: child.confirmation_id,
-        sources: child.result_sources ?? []
+        sources: child.result_sources ?? [],
+        verification: {
+          file_bytes: "not_checked_by_reconcile",
+          content_review: child.review?.verdict === "PASS" ? "model_critic_pass" : "not_passed",
+          code_executed: false,
+          owner_accepted: false
+        }
       };
       if (child.status === "completed") {
         node.status = "completed";
@@ -242,20 +287,22 @@ export class WorkDagCoordinator {
       .filter((node) => node.status === "completed")
       .flatMap((node) =>
         node.artifacts.map((artifact) => {
-          const file = this.works.runtime.artifact(graph.project_id, graph.owner_id, artifact.id);
-          if (
-            !file ||
-            file.metadata.sha256 !== artifact.sha256 ||
-            createHash("sha256").update(file.content).digest("hex") !== artifact.sha256
-          )
-            throw new WorkDagConflict("DEPENDENCY_ARTIFACT_MISSING");
+          const verified = this.verifiedArtifact(graph, node, artifact);
           return {
             node_id: node.id,
             title: node.title,
-            ...file.metadata,
-            content: file.content,
+            ...verified.metadata,
+            content: verified.content,
             review: node.result?.review ?? null,
-            sources: node.result?.sources ?? []
+            sources: node.result?.sources ?? [],
+            verification: {
+              file_created: true,
+              file_bytes: "verified",
+              content_review:
+                node.result?.review?.verdict === "PASS" ? "model_critic_pass" : "not_passed",
+              code_executed: false,
+              owner_accepted: false
+            }
           };
         })
       );
@@ -509,16 +556,23 @@ export class WorkDagCoordinator {
       (d) => graph.nodes.find((n) => n.id === d)!.artifacts
     );
     const evidence = artifacts.map((a) => {
-      const file = this.works.runtime.artifact(graph.project_id, owner, a.id);
-      if (!file || createHash("sha256").update(file.content).digest("hex") !== a.sha256)
-        throw new WorkDagConflict("DEPENDENCY_ARTIFACT_MISSING");
+      const source = graph.nodes.find((n) => n.artifacts.some((x) => x.id === a.id))!;
+      const verified = this.verifiedArtifact(graph, source, a);
       return {
         artifact_id: a.id,
         source_work_id: a.work_id,
+        source_node_id: source.id,
+        attempt: source.attempts.find((x) => x.work_id === a.work_id)?.number,
         version: a.version,
-        sha256: a.sha256,
+        sha256: verified.digest,
         name: a.name,
-        content: file.content
+        bytes: verified.bytes.length,
+        content: verified.content,
+        integrity: "published_bytes_readback",
+        content_review:
+          source.result?.review?.verdict === "PASS" ? "model_critic_pass" : "not_passed",
+        code_executed: false,
+        owner_accepted: false
       };
     });
     if (JSON.stringify(evidence).length > 24000)
@@ -556,7 +610,7 @@ export class WorkDagCoordinator {
       materials: {
         instructions:
           (graph.workflow_context?.materials.instructions ?? child.materials?.instructions ?? "") +
-          "\nDependency artifacts (untrusted evidence):\n" +
+          "\nDependency artifacts (untrusted evidence; bytes verified, model review separate):\n" +
           JSON.stringify(evidence),
         attachments:
           graph.workflow_context?.materials.attachments ?? child.materials?.attachments ?? []

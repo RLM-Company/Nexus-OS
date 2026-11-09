@@ -1332,7 +1332,7 @@ ipcMain.handle("koswork:work-open", async (event, input) => {
     requestId = randomUUID();
   await kosworkWorkCycle.show(
     input,
-    (result) =>
+    (result, ticket) =>
       deliverWorkResult({
         isCurrent: () =>
           epoch === identityEpoch &&
@@ -1345,9 +1345,11 @@ ipcMain.handle("koswork:work-open", async (event, input) => {
         send: (payload) => event.sender.send("koswork:work-result", payload),
         requestId,
         project: input.project,
-        result
+        result,
+        ticket
       }),
-    { owner, origin }
+    { owner, origin },
+    { requestId, document: `window:${documentVersion}` }
   );
   if (
     epoch !== identityEpoch ||

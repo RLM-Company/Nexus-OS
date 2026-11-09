@@ -11,7 +11,7 @@ const resultLabels = {
   expired: "Ожидание результата истекло. Проверьте окно Koswork.",
   unavailable: "Не удалось передать результат. Проверьте окно Koswork."
 } as const;
-type LocalResult = { status: keyof typeof resultLabels; summary?: string };
+type LocalResult = { status: keyof typeof resultLabels; summary?: string; planSteps?: number };
 type ResultMessage = { request_id: string; project: string; result: LocalResult };
 type ComputerOpener = {
   open(input: { project: string; goal: string }): Promise<{ ok: boolean; request_id?: string }>;
@@ -36,11 +36,28 @@ function resultMessage(value: unknown): ResultMessage | null {
     !Object.hasOwn(resultLabels, result.status)
   )
     return null;
+  const receipt = result.receipt as Record<string, unknown> | null | undefined;
+  const checked = receipt?.checked as Record<string, unknown> | null | undefined;
+  const planSteps =
+    result.status === "completed" &&
+    receipt?.receipt_version === 1 &&
+    receipt.kind === "native_work_plan_observed" &&
+    receipt.source === "local_agent_report" &&
+    receipt.owner_accepted === false &&
+    typeof receipt.steps === "number" &&
+    Number.isInteger(receipt.steps) &&
+    receipt.steps >= 1 &&
+    receipt.steps <= 8 &&
+    checked?.status === "checked" &&
+    checked.count === receipt.steps
+      ? receipt.steps
+      : undefined;
   return {
     request_id: data.request_id,
     project: data.project,
     result: {
       status: result.status as LocalResult["status"],
+      ...(planSteps === undefined ? {} : { planSteps }),
       ...(result.status === "completed" &&
       typeof result.summary === "string" &&
       result.summary.length <= 3000
@@ -170,6 +187,12 @@ export function DesktopComputerButton({
         >
           {resultLabels[outcome.status]}
           {outcome.summary && <> {outcome.summary}</>}
+          {outcome.planSteps && (
+            <>
+              {" "}
+              По отчёту агента: {outcome.planSteps} из {outcome.planSteps} шагов.
+            </>
+          )}
         </p>
       )}
       {error && <p role="alert">{error}</p>}

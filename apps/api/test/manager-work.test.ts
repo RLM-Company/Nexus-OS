@@ -190,6 +190,128 @@ async function fixture(
 }
 
 describe("durable Manager work", () => {
+  it("verifies both single-file download paths and refuses a missing modern version without model replay", async () => {
+    const f = await fixture();
+    const app = buildApp({
+      config: f.config,
+      database: f.database,
+      projectStore: f.projects,
+      managerWorkStore: f.store,
+      managerWorkCoordinator: f.coordinator
+    });
+    try {
+      await f.coordinator.execute(f.work.id, "local-owner");
+      const artifact = f.store.runtime.artifacts(f.project.id, "local-owner", f.work.id)[0]!;
+      const plain = `/api/v1/projects/${f.project.id}/work/${f.work.id}/files/${artifact.name}`;
+      const versioned = `/api/v1/projects/${f.project.id}/work-artifacts/${artifact.id}/download`;
+      const original = await app.inject(plain);
+      expect(original.statusCode).toBe(200);
+      expect(original.headers["cache-control"]).toBe("private, no-store");
+      expect((await app.inject(versioned)).body).toBe(original.body);
+      const calls = f.calls.length;
+      f.database.sqlite
+        .prepare("UPDATE manager_work_files SET content='corrupt' WHERE execution_id=?")
+        .run(f.work.id);
+      const brokenCopy = await app.inject(plain);
+      expect(brokenCopy.statusCode).toBe(409);
+      expect(brokenCopy.json()).toEqual({ error: "ARTIFACT_INTEGRITY_MISMATCH" });
+      expect(brokenCopy.headers["content-disposition"]).toBeUndefined();
+      expect(brokenCopy.headers["cache-control"]).toBe("private, no-store");
+      expect((await app.inject(versioned)).body).toBe(original.body);
+      f.database.sqlite
+        .prepare("UPDATE manager_work_files SET content=? WHERE execution_id=?")
+        .run(original.body, f.work.id);
+      f.database.sqlite
+        .prepare("UPDATE work_artifact_versions SET sha256=? WHERE id=?")
+        .run("0".repeat(64), artifact.id);
+      expect((await app.inject(plain)).statusCode).toBe(409);
+      expect((await app.inject(versioned)).statusCode).toBe(404);
+      f.database.sqlite.prepare("DELETE FROM work_artifact_versions WHERE id=?").run(artifact.id);
+      expect((await app.inject(plain)).statusCode).toBe(409);
+      expect(f.get().status).toBe("completed");
+      expect(f.calls).toHaveLength(calls);
+    } finally {
+      await app.close();
+    }
+  });
+  it("executes a healthy owner's task beyond 50 privacy-fenced queue entries without touching them", async () => {
+    const f = await fixture();
+    for (let i = 0; i < 49; i++)
+      f.store.create(f.project.id, "local-owner", "local-owner", {
+        ...request,
+        client_request_id: `frozen-${i}`
+      });
+    const healthyOwner = "ready-owner";
+    const project = f.projects.createProject("Ready owner", "ready-source", healthyOwner).project;
+    f.policy.ensureProfile(project.id);
+    f.policy.updateProfile({
+      projectId: project.id,
+      baseLevel: "A2",
+      overrides: [],
+      expectedVersion: 1
+    });
+    const work = f.store.create(project.id, healthyOwner, healthyOwner, request)!;
+    f.database.sqlite
+      .prepare(
+        `INSERT INTO kosmora_owner_data_lifecycle
+      (owner_id,state,epoch,operation_id,started_at,updated_at) VALUES (?,'quiescing',1,'queue-test',datetime('now'),datetime('now'))`
+      )
+      .run("local-owner");
+    const frozen = f.store.list(f.project.id, "local-owner");
+    expect(frozen).toHaveLength(50);
+    try {
+      f.coordinator.start();
+      await vi.waitFor(() => expect(f.store.get(work.id, healthyOwner)?.status).toBe("completed"), {
+        timeout: 5000
+      });
+      expect(f.store.list(f.project.id, "local-owner")).toEqual(frozen);
+      expect(f.store.ownerWritable("local-owner")).toBe(false);
+      expect(f.calls).toEqual(["manager_work_plan", "manager_work_draft"]);
+    } finally {
+      await f.coordinator.stop();
+    }
+  });
+  it.each(["work-fence", "quiescing"] as const)(
+    "starts after a crash with a %s owner and executes only another owner's task",
+    async (fence) => {
+      const f = await fixture();
+      const protectedWork = f.store.claim(f.get())!;
+      const otherOwner = "healthy-owner";
+      const other = f.projects.createProject("Healthy owner", "healthy-start", otherOwner).project;
+      f.policy.ensureProfile(other.id);
+      f.policy.updateProfile({
+        projectId: other.id,
+        baseLevel: "A2",
+        overrides: [],
+        expectedVersion: 1
+      });
+      const healthy = f.store.create(other.id, otherOwner, otherOwner, request)!;
+      if (fence === "work-fence") {
+        f.database.sqlite
+          .prepare("INSERT INTO work_owner_fences(owner_id,epoch,fenced) VALUES (?,1,1)")
+          .run("local-owner");
+      } else {
+        f.database.sqlite
+          .prepare(
+            `INSERT INTO kosmora_owner_data_lifecycle
+          (owner_id,state,epoch,operation_id,started_at,updated_at) VALUES (?,'quiescing',1,'restart-test',datetime('now'),datetime('now'))`
+          )
+          .run("local-owner");
+      }
+      try {
+        expect(() => f.coordinator.start()).not.toThrow();
+        await vi.waitFor(
+          () => expect(f.store.get(healthy.id, otherOwner)?.status).toBe("completed"),
+          { timeout: 5000 }
+        );
+        expect(f.get()).toEqual(protectedWork);
+        expect(f.calls).toEqual(["manager_work_plan", "manager_work_draft"]);
+        expect(f.store.ownerWritable("local-owner")).toBe(false);
+      } finally {
+        await f.coordinator.stop();
+      }
+    }
+  );
   const recalled =
     (required = false) =>
     (store: ManagerWorkStore, projectId: string) => {

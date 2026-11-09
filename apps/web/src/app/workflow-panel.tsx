@@ -12,12 +12,14 @@ import {
 } from "@cosmora/contracts/workflows";
 import type { WorkDag } from "@cosmora/contracts";
 import styles from "./work-manager.module.css";
+import { WorkflowRunResults } from "./workflow-run-results";
 
 type RunGraph = Pick<WorkDag, "id" | "mode" | "execution"> & {
   nodes: Pick<WorkDag["nodes"][number], "id" | "status">[];
 };
 type Run = WorkflowRun & { graph: RunGraph | null };
 type Library = {
+  capabilities?: string[];
   items: WorkflowDefinition[];
   templates: { id: string; definition: WorkflowDefinitionInput }[];
 };
@@ -134,6 +136,7 @@ export function WorkflowPanel({ projectId }: { projectId: string }) {
     pendingRun = useRef<{ key: string; id: string } | null>(null),
     lock = useRef(false);
   const [refresh, setRefresh] = useState(0);
+  const [libraryProject, setLibraryProject] = useState<string | null>(null);
   const current = library.items.find((d) => d.id === selected) ?? null;
   useEffect(() => {
     if (!open) return;
@@ -150,6 +153,7 @@ export function WorkflowPanel({ projectId }: { projectId: string }) {
       .then(([next, docs]) => {
         if (!controller.signal.aborted) {
           setLibrary(next);
+          setLibraryProject(projectId);
           setFiles(docs.files);
         }
       })
@@ -836,6 +840,17 @@ export function WorkflowPanel({ projectId }: { projectId: string }) {
                     <strong>Версия {r.definition_version}</strong> ·{" "}
                     {new Date(r.created_at).toLocaleString("ru-RU")}
                     <p>{runState(r.graph)}</p>
+                    {libraryProject === projectId &&
+                      r.workflow_id === current.id &&
+                      library.capabilities?.includes("workflow_run_results.v1") && (
+                        <WorkflowRunResults
+                          key={`${projectId}:${current.id}:${r.id}`}
+                          projectId={projectId}
+                          workflowId={current.id}
+                          runId={r.id}
+                          dagId={r.dag_id}
+                        />
+                      )}
                     <details>
                       <summary>Входные данные запуска</summary>
                       <dl>
