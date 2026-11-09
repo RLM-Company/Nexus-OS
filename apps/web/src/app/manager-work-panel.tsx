@@ -9,6 +9,7 @@ import { WorkManagerProgress } from "./work-manager-progress";
 import { WorkManagerMemory } from "./work-manager-memory";
 import { DesktopComputerButton } from "./desktop-computer-button";
 import { useEffect, useRef, useState } from "react";
+import { startVisibleReadPolling } from "./visible-read-poller";
 import { executionGateLabels, useExecutionGate } from "./use-execution-gate";
 
 type Work = {
@@ -112,18 +113,16 @@ export function ManagerWorkPanel({
     ? Math.max(256, Math.min(300_000, runtime.max_output_tokens * 3))
     : 6000;
   useEffect(() => {
-    const controller = new AbortController();
-    let timer: ReturnType<typeof setTimeout>;
-    const refresh = async () => {
-      const epoch = mutationEpoch.current;
-      try {
+    return startVisibleReadPolling(
+      async (signal) => {
+        const epoch = mutationEpoch.current;
         const [list, model] = await Promise.all([
-          json<{ items: Work[] }>(base, { signal: controller.signal }),
+          json<{ items: Work[] }>(base, { signal }),
           json<{ mode: string; model: string }>("/api/v1/model-runtime", {
-            signal: controller.signal
+            signal
           })
         ]);
-        if (!controller.signal.aborted && epoch === mutationEpoch.current && !lock.current) {
+        if (!signal.aborted && epoch === mutationEpoch.current && !lock.current) {
           const latest = selectedWorkId
             ? (list.items.find((item) => item.id === selectedWorkId) ?? list.items[0] ?? null)
             : (list.items[0] ?? null);
@@ -143,18 +142,12 @@ export function ManagerWorkPanel({
           setRuntime(model);
           setHistoryLoaded(true);
         }
-      } catch {
-        if (!controller.signal.aborted)
-          setError("Состояние временно недоступно. Работа сохраняется на сервере.");
-      } finally {
-        if (!controller.signal.aborted) timer = setTimeout(() => void refresh(), 750);
+      },
+      {
+        intervalMs: 750,
+        onError: () => setError("Состояние временно недоступно. Работа сохраняется на сервере.")
       }
-    };
-    void refresh();
-    return () => {
-      controller.abort();
-      clearTimeout(timer);
-    };
+    );
   }, [base, selectedWorkId]);
   const act = async (action?: "pause" | "resume" | "approve" | "cancel") => {
     if ((!action || action === "resume" || action === "approve") && executionGate !== "clear")
