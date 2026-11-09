@@ -112,8 +112,24 @@ build @cosmora/api... @cosmora/web...        Done (включая Next.js)
 Оба исправления содержательные, а не повторный запуск того же кода.
 `Model Registry evidence has expired: tokenshop:claude-fable-5` в джобе
 `Verify monorepo` падает **также на `main`** (run `42646967679`, 15:40 UTC) и
-на соседней ветке `desc/semantic-absent-fact-20261109` — это общее состояние
-репозитория, не изменение этого блока; в отчёте не выдаётся за пройденное.
+на соседней ветке `desc/semantic-absent-fact-20261109`; локально
+`test/model-runtime.test.ts` даёт ту же ошибку на этом коммите. Причина —
+`valid_until: 2026-11-09T09:46:39.765Z` в
+`config/model-registry.tokenshop.fable.v1.json`, который этот блок не менял и
+не должен править (провайдер/модель/тарифы/квоты вне объёма). Остальные
+929 тестов `Verify monorepo` проходят, включая все тесты этого модуля.
+Это не выдаётся за пройденную проверку.
+
+### Итог CI на финальном коммите `9b40ad1`
+
+```
+Verify monorepo     fail  — только Model Registry expiry (общее для main)
+Browser acceptance  pass  9m20s  (366+ сценариев, chat-reliability прошёл)
+Code sandbox isolation pass
+identity-tests      pass
+```
+
+`chat-skills` и `chat-reliability`, падавшие в первом прогоне, зелёные.
 
 ## Ограничения
 
