@@ -107,6 +107,7 @@ export class WorkRuntimeStore {
         .all(projectId, ownerId, ownerId) as Omit<ArtifactRow, "content">[]
     ).map(metadata);
   }
+  /** Scoped read for consumers that apply their own source/version contracts. */
   artifact(
     projectId: string,
     ownerId: string,
@@ -114,9 +115,25 @@ export class WorkRuntimeStore {
   ): { metadata: WorkArtifactVersion; content: string } | null {
     const row = this.sqlite
       .prepare(
-        "SELECT a.* FROM work_artifact_versions a JOIN manager_work w ON w.id = a.work_id JOIN projects p ON p.id = a.project_id WHERE a.id = ? AND a.project_id = ? AND w.owner_id = ? AND p.owner_id = ? AND a.published = 1 AND json_extract(w.state_json, '$.status') = 'completed'"
+        "SELECT a.* FROM work_artifact_versions a JOIN manager_work w ON w.id = a.work_id AND w.project_id = a.project_id JOIN projects p ON p.id = a.project_id WHERE a.id = ? AND a.project_id = ? AND w.owner_id = ? AND p.owner_id = ? AND a.published = 1 AND json_extract(w.state_json, '$.status') = 'completed'"
       )
       .get(id, projectId, ownerId, ownerId) as ArtifactRow | undefined;
     return row ? { metadata: metadata(row), content: row.content } : null;
+  }
+  /** Byte-verified read for downloads; does not replace consumer-specific checks. */
+  verifiedArtifact(
+    projectId: string,
+    ownerId: string,
+    id: string
+  ): { metadata: WorkArtifactVersion; content: string } | null {
+    const file = this.artifact(projectId, ownerId, id);
+    if (
+      !file ||
+      typeof file.content !== "string" ||
+      Buffer.byteLength(file.content, "utf8") !== file.metadata.bytes ||
+      createHash("sha256").update(file.content, "utf8").digest("hex") !== file.metadata.sha256
+    )
+      return null;
+    return file;
   }
 }

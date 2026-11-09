@@ -30,6 +30,73 @@ async function setup(path = ":memory:") {
 }
 
 describe("project memory and durable work records", () => {
+  it.each([
+    "body",
+    "bytes",
+    "hash",
+    "project",
+    "unpublished",
+    "missing",
+    "published-copy"
+  ] as const)(
+    "refuses a modern single-file download with %s damage without changing stored evidence",
+    async (damage) => {
+      const f = await setup();
+      try {
+        let work = f.store.claim(f.store.create(f.a.id, "owner-a", "owner-a", request)!)!;
+        work.stage = "publish";
+        work.draft = { files: [{ name: "result.md", content: "Точный результат 🚀" }] };
+        work = f.store.save(work);
+        f.store.publish(work.id, "owner-a", work.draft!);
+        work = f.store.save({ ...work, status: "completed", stage: "done" });
+        const artifact = f.store.runtime.artifacts(f.a.id, "owner-a", work.id)[0]!;
+        expect(f.store.file(work.id, "owner-a", "result.md")).toBe("Точный результат 🚀");
+        if (damage === "body")
+          f.db.sqlite
+            .prepare("UPDATE work_artifact_versions SET content='corrupt' WHERE id=?")
+            .run(artifact.id);
+        if (damage === "bytes")
+          f.db.sqlite
+            .prepare("UPDATE work_artifact_versions SET bytes=bytes+1 WHERE id=?")
+            .run(artifact.id);
+        if (damage === "hash")
+          f.db.sqlite
+            .prepare("UPDATE work_artifact_versions SET sha256=? WHERE id=?")
+            .run("0".repeat(64), artifact.id);
+        if (damage === "project")
+          f.db.sqlite
+            .prepare("UPDATE work_artifact_versions SET project_id=? WHERE id=?")
+            .run(f.b.id, artifact.id);
+        if (damage === "unpublished")
+          f.db.sqlite
+            .prepare("UPDATE work_artifact_versions SET published=0 WHERE id=?")
+            .run(artifact.id);
+        if (damage === "missing")
+          f.db.sqlite.prepare("DELETE FROM work_artifact_versions WHERE id=?").run(artifact.id);
+        if (damage === "published-copy")
+          f.db.sqlite
+            .prepare("UPDATE manager_work_files SET content='corrupt' WHERE execution_id=?")
+            .run(work.id);
+        const evidence = f.db.sqlite
+          .prepare("SELECT * FROM work_artifact_versions WHERE work_id=?")
+          .all(work.id);
+        expect(() => f.store.file(work.id, "owner-a", "result.md")).toThrow(
+          "ARTIFACT_INTEGRITY_MISMATCH"
+        );
+        const readback = f.store.runtime.verifiedArtifact(f.a.id, "owner-a", artifact.id);
+        if (damage === "published-copy") expect(readback?.content).toBe("Точный результат 🚀");
+        else expect(readback).toBeNull();
+        expect(f.store.runtime.verifiedArtifact(f.b.id, "owner-a", artifact.id)).toBeNull();
+        expect(f.store.file(work.id, "owner-b", "result.md")).toBeNull();
+        expect(
+          f.db.sqlite.prepare("SELECT * FROM work_artifact_versions WHERE work_id=?").all(work.id)
+        ).toEqual(evidence);
+        expect(f.store.get(work.id, "owner-a")).toEqual(work);
+      } finally {
+        f.db.close();
+      }
+    }
+  );
   it.each(["work-fence", "quiescing", "paused", "cancelled", "unbound"] as const)(
     "does not let 50 %s entries hide a runnable task beyond the queue window",
     async (block) => {

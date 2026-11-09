@@ -427,11 +427,27 @@ export class ManagerWorkStore {
   }
 
   file(id: string, ownerId: string, name: string): string | null {
-    if (this.get(id, ownerId)?.status !== "completed") return null;
+    const work = this.get(id, ownerId);
+    if (work?.status !== "completed") return null;
     const row = this.sqlite
       .prepare("SELECT content FROM manager_work_files WHERE execution_id = ? AND name = ?")
       .get(id, name) as { content: string } | undefined;
-    return row?.content ?? null;
+    if (!row) return null;
+    const version = this.sqlite
+      .prepare("SELECT id FROM work_artifact_versions WHERE work_id = ? AND name = ?")
+      .get(id, name) as { id: string } | undefined;
+    if (version) {
+      const artifact = this.runtime.verifiedArtifact(work.project_id, ownerId, version.id);
+      if (!artifact || artifact.content !== row.content)
+        throw new ManagerWorkConflict("ARTIFACT_INTEGRITY_MISMATCH");
+      return artifact.content;
+    }
+    // Migration 26 deliberately did not invent versions/checkpoints for old
+    // downloads. Modern work always has checkpoints: a missing version is not
+    // permission to silently downgrade it to an unverified historical file.
+    if (this.sqlite.prepare("SELECT 1 FROM work_checkpoints WHERE work_id = ? LIMIT 1").get(id))
+      throw new ManagerWorkConflict("ARTIFACT_INTEGRITY_MISMATCH");
+    return row.content;
   }
 
   recover(): number {
