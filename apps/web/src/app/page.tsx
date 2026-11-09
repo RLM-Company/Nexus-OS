@@ -621,7 +621,11 @@ export default function Home() {
     activeLocalChatId
   );
   const chatAttachments = useChatAttachments(`${composerDraftKey}:${viewEpochRef.current}`);
-  const pendingComposeRef = useRef<{ prompt: string; files: ChatAttachment[] } | null>(null);
+  const pendingComposeRef = useRef<{
+    prompt: string;
+    files: ChatAttachment[];
+    epoch: number;
+  } | null>(null);
   const acceptedDraftRef = useRef<{ key: string; text: string } | null>(null);
   const pendingComposerFocusRef = useRef(false);
   const draftRecoveryKeyRef = useRef<string | null>(null);
@@ -711,13 +715,19 @@ export default function Home() {
 
   useEffect(() => {
     const pending = pendingComposeRef.current;
-    if (!pending || draftStorageReadyKey !== attachmentScope) return;
+    if (
+      !pending ||
+      pending.epoch !== viewEpochRef.current ||
+      attachmentScope !== `${composerDraftKey}:${pending.epoch}` ||
+      draftStorageReadyKey !== attachmentScope
+    )
+      return;
     pendingComposeRef.current = null;
     setDraft(pending.prompt);
     chatAttachments.replace(pending.files);
     pendingComposerFocusRef.current = true;
     // Consume only after the new chat scope and its draft hydration have settled.
-  }, [attachmentScope, chatAttachments, draftStorageReadyKey]);
+  }, [attachmentScope, chatAttachments, composerDraftKey, draftStorageReadyKey]);
 
   useEffect(() => {
     if (
@@ -1996,6 +2006,7 @@ export default function Home() {
   };
 
   const resetToLocalChat = (chatId: string | null, rotate = false): void => {
+    pendingComposeRef.current = null;
     viewEpochRef.current += 1;
     // An explicit navigation replaces a still-pending initial route selection.
     setInitialRouteReady(true);
@@ -3382,8 +3393,8 @@ export default function Home() {
             }}
             onNavigate={selectSurface}
             onCompose={(prompt, files = []) => {
-              pendingComposeRef.current = { prompt, files };
               newChat();
+              pendingComposeRef.current = { prompt, files, epoch: viewEpochRef.current };
             }}
             preferences={preferences}
             onPreferences={updatePreferences}
