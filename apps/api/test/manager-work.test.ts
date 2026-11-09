@@ -1,6 +1,6 @@
 import { loadServerConfig } from "@cosmora/config";
 import { createHash } from "node:crypto";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import type {
@@ -36,6 +36,8 @@ import { GAME_FIXTURES } from "./fixtures/game-packages.js";
 import type { GameGenre } from "@cosmora/contracts/game-package";
 import { GAME_SOURCE_FILES } from "./fixtures/game-source.js";
 
+import { admissionBrief, admissionProbe } from "./fixtures/manager-admission.js";
+
 const resources: (() => void)[] = [];
 afterEach(() => {
   for (const close of resources.splice(0)) close();
@@ -69,6 +71,8 @@ async function fixture(
     ownerBudget?: WorkOwnerBudget;
     onCall?: (request: ModelRequest, signal: AbortSignal) => Promise<void>;
     chunks?: string[];
+    chunksFor?: (request: ModelRequest) => string[] | undefined;
+    usage?: Extract<ProviderStreamEvent, { type: "response.completed" }>["usage"];
     wrapOutput?: boolean;
     afterChunk?: (request: ModelRequest, signal: AbortSignal, index: number) => Promise<void>;
     operationTimeoutMs?: number;
@@ -115,9 +119,8 @@ async function fixture(
               })
             : (options.review ?? { verdict: "PASS", reason: "Complete and consistent" });
       const serialized = JSON.stringify(result);
-      const chunks = options.chunks ?? [
-        options.wrapOutput ? `<escape>${serialized}</escape>` : serialized
-      ];
+      const chunks = options.chunksFor?.(req) ??
+        options.chunks ?? [options.wrapOutput ? `<escape>${serialized}</escape>` : serialized];
       for (const [index, delta] of chunks.entries()) {
         yield { type: "text.delta", delta };
         await options.afterChunk?.(req, signal, index);
@@ -127,7 +130,7 @@ async function fixture(
         provider: "mock",
         model: "manager-b0.1",
         finishReason: "stop",
-        usage: { inputTokens: 100, outputTokens: 100 }
+        usage: options.usage ?? { inputTokens: 100, outputTokens: 100 }
       };
     }
   };
@@ -1693,4 +1696,308 @@ describe("durable Manager work", () => {
       await app.close();
     }
   });
+});
+
+describe("Work admission startup", () => {
+  it("reserves the single slot before a graph callback can reenter another project", async () => {
+    let secondRun: Promise<void> | undefined;
+    const probe = admissionProbe(() => {
+      secondRun = f.coordinator.execute(second.id, "local-owner");
+    });
+    const f = await fixture({
+      graph: probe.graph,
+      request: { ...request, goal: admissionBrief.goal },
+      draft: { files: [{ name: "result.md", content: admissionBrief.content }] }
+    });
+    const project = f.projects.createProject("Independent", "admission-second").project;
+    f.policy.ensureProfile(project.id);
+    f.policy.updateProfile({
+      projectId: project.id,
+      baseLevel: "A2",
+      overrides: [],
+      expectedVersion: 1
+    });
+    const second = f.store.create(project.id, "local-owner", "local-owner", {
+      ...request,
+      client_request_id: "admission-second",
+      goal: admissionBrief.goal
+    })!;
+    const running = f.coordinator.execute(f.work.id, "local-owner");
+    try {
+      expect(probe.stats()).toEqual({ reads: 1, active: 1, peak: 1 });
+      expect(f.coordinator.hasActiveExecution(f.work.id)).toBe(true);
+      expect(f.coordinator.hasActiveExecution(second.id)).toBe(false);
+      expect(f.store.get(second.id, "local-owner")?.status).toBe("queued");
+      expect(f.calls).toHaveLength(0);
+    } finally {
+      probe.release();
+      await Promise.allSettled([running, secondRun]);
+    }
+    await f.coordinator.execute(second.id, "local-owner");
+    const app = buildApp({
+      config: f.config,
+      database: f.database,
+      projectStore: f.projects,
+      managerWorkStore: f.store,
+      managerWorkCoordinator: f.coordinator
+    });
+    try {
+      const artifacts = [];
+      for (const [projectId, id] of [
+        [f.project.id, f.work.id],
+        [project.id, second.id]
+      ] as const) {
+        expect(f.store.get(id, "local-owner")?.status).toBe("completed");
+        const result = await app.inject({
+          url: `/api/v1/projects/${projectId}/work/${id}/files/result.md`
+        });
+        expect(result.statusCode).toBe(200);
+        expect(result.body).toBe(admissionBrief.content);
+        const metadata = f.store.runtime.artifacts(projectId, "local-owner", id)[0]!;
+        expect(metadata.sha256).toBe(createHash("sha256").update(result.body).digest("hex"));
+        artifacts.push({
+          content: result.body,
+          sha256: metadata.sha256,
+          version: metadata.version
+        });
+      }
+      expect(probe.stats().peak).toBe(1);
+      expect(f.calls).toHaveLength(4);
+      const directory = process.env.KOSWORK_ADMISSION_REPORT_DIR;
+      if (directory) {
+        mkdirSync(directory, { recursive: true });
+        writeFileSync(
+          join(directory, "result.json"),
+          JSON.stringify(
+            {
+              input: admissionBrief,
+              peak_context_reads: probe.stats().peak,
+              provider: "local fixture",
+              real_model_called: false,
+              model_requests: f.calls.length,
+              artifacts
+            },
+            null,
+            2
+          ) + "\n",
+          { flag: "wx" }
+        );
+      }
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("keeps a startup privacy drain pending until the graph read settles", async () => {
+    let drain: Promise<void> | undefined,
+      settled = false;
+    let contextSignal: AbortSignal | undefined;
+    const probe = admissionProbe((signal) => {
+      contextSignal = signal;
+      f.database.sqlite
+        .prepare(
+          "INSERT INTO kosmora_owner_data_lifecycle(owner_id,state,epoch,operation_id,started_at,updated_at) VALUES('local-owner','quiescing',1,'admission-test','now','now')"
+        )
+        .run();
+      drain = f.coordinator.quiesceOwner("local-owner");
+      void drain.then(() => {
+        settled = true;
+      });
+    });
+    const f = await fixture({ graph: probe.graph });
+    const running = f.coordinator.execute(f.work.id, "local-owner");
+    try {
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      expect(settled).toBe(false);
+      expect(contextSignal?.aborted).toBe(true);
+      expect(f.coordinator.hasActiveExecution(f.work.id)).toBe(true);
+      expect(f.calls).toHaveLength(0);
+    } finally {
+      probe.release();
+      await running;
+      await drain;
+      f.database.sqlite
+        .prepare(
+          "UPDATE kosmora_owner_data_lifecycle SET state='active' WHERE owner_id='local-owner'"
+        )
+        .run();
+      f.coordinator.resumeOwner("local-owner");
+    }
+    expect(f.calls).toHaveLength(0);
+    expect(f.store.file(f.work.id, "local-owner", "result.md")).toBeNull();
+    expect(f.coordinator.hasActiveExecution(f.work.id)).toBe(false);
+  });
+
+  it("keeps startup shutdown pending and aborts before any provider request", async () => {
+    let stopping: Promise<void> | undefined,
+      stopped = false;
+    let contextSignal: AbortSignal | undefined;
+    const probe = admissionProbe((signal) => {
+      contextSignal = signal;
+      stopping = f.coordinator.stop();
+      void stopping.then(() => {
+        stopped = true;
+      });
+    });
+    const f = await fixture({ graph: probe.graph });
+    const running = f.coordinator.execute(f.work.id, "local-owner");
+    try {
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      expect(stopped).toBe(false);
+      expect(contextSignal?.aborted).toBe(true);
+    } finally {
+      probe.release();
+      await running;
+      await stopping;
+    }
+    expect(f.calls).toHaveLength(0);
+    expect(f.store.file(f.work.id, "local-owner", "result.md")).toBeNull();
+    expect(f.coordinator.hasActiveExecution(f.work.id)).toBe(false);
+  });
+});
+
+describe("Work metered invalid replies", () => {
+  it.each([
+    ["plan", "manager_work_plan", 1],
+    ["draft", "manager_work_draft", 2],
+    ["review", "manager_work_review", 3]
+  ] as const)(
+    "keeps known usage for a blank %s without publishing or retrying",
+    async (stage, taskType, calls) => {
+      const blank = " \n\t ";
+      const f = await fixture({
+        request: { ...request, goal: admissionBrief.goal, require_critic: stage === "review" },
+        chunksFor: (req) => (req.task_type === taskType ? [blank] : undefined)
+      });
+      const ceiling = f.accountStore.get("local-owner").max_total_tokens;
+      await f.coordinator.execute(f.work.id, "local-owner");
+      const state = f.get();
+      expect(state).toMatchObject({
+        status: "failed",
+        error_code: "INVALID_MODEL_OUTPUT",
+        stage,
+        model_requests: calls
+      });
+      expect(f.calls).toHaveLength(calls);
+      expect(f.store.file(f.work.id, "local-owner", "result.md")).toBeNull();
+      const runId = state.inflight_run_id!;
+      const usage = f.projects.getModelUsageForRun(runId)[0]!;
+      expect(usage).toMatchObject({
+        status: "committed",
+        actual_input_tokens: 100,
+        actual_output_tokens: 100
+      });
+      expect(f.projects.getRun(runId)?.status).toBe("succeeded");
+      expect(f.accountStore.summary("local-owner")).toMatchObject({
+        total_counted_tokens: calls * 200,
+        model_tokens_or_upper_bound: calls * 200,
+        in_flight_or_uncertain_holds: 0,
+        max_total_tokens: ceiling
+      });
+      expect(state.owner_budget_hold_id).toBeNull();
+      await f.coordinator.execute(f.work.id, "local-owner");
+      expect(f.calls).toHaveLength(calls);
+      const app = buildApp({
+        config: f.config,
+        database: f.database,
+        projectStore: f.projects,
+        managerWorkStore: f.store,
+        managerWorkCoordinator: f.coordinator
+      });
+      try {
+        const base = `/api/v1/projects/${f.project.id}/work/${f.work.id}`;
+        const response = await app.inject({ url: base });
+        expect(response.statusCode).toBe(200);
+        expect(response.json()).toMatchObject({
+          status: "failed",
+          error_code: "INVALID_MODEL_OUTPUT"
+        });
+        const download = await app.inject({ url: base + "/files/result.md" });
+        expect(download.statusCode).toBe(404);
+        if (stage === "plan" && process.env.KOSWORK_METERED_REPORT_DIR) {
+          const directory = process.env.KOSWORK_METERED_REPORT_DIR;
+          mkdirSync(directory, { recursive: true });
+          writeFileSync(
+            join(directory, "result.json"),
+            JSON.stringify(
+              {
+                input: {
+                  goal: admissionBrief.goal,
+                  provider_reply: blank,
+                  usage: { inputTokens: 100, outputTokens: 100 }
+                },
+                real_model_called: false,
+                provider: "local fixture",
+                model_requests: f.calls.length,
+                work: { status: state.status, stage: state.stage, error_code: state.error_code },
+                ledger: {
+                  status: usage.status,
+                  input_tokens: usage.actual_input_tokens,
+                  output_tokens: usage.actual_output_tokens
+                },
+                account: f.accountStore.summary("local-owner"),
+                file_download_status: download.statusCode
+              },
+              null,
+              2
+            ) + "\n",
+            { flag: "wx" }
+          );
+        }
+      } finally {
+        await app.close();
+      }
+    }
+  );
+
+  it.each([
+    { inputTokens: 0, outputTokens: 0 },
+    { inputTokens: 100, outputTokens: 0 }
+  ])(
+    "settles fully reported zero counts $inputTokens/$outputTokens on an empty reply",
+    async (usage) => {
+      const f = await fixture({ chunks: [""], usage });
+      await f.coordinator.execute(f.work.id, "local-owner");
+      expect(f.get()).toMatchObject({ status: "failed", error_code: "INVALID_MODEL_OUTPUT" });
+      expect(f.accountStore.summary("local-owner").total_counted_tokens).toBe(
+        usage.inputTokens + usage.outputTokens
+      );
+      expect(f.get().owner_budget_hold_id).toBeNull();
+      expect(f.store.file(f.work.id, "local-owner", "result.md")).toBeNull();
+      expect(f.calls).toHaveLength(1);
+    }
+  );
+
+  it.each([
+    { inputTokens: null, outputTokens: null },
+    { inputTokens: null, outputTokens: 100 },
+    { inputTokens: 100, outputTokens: null }
+  ])(
+    "preserves unknown usage $inputTokens/$outputTokens without turning it into free output",
+    async (usage) => {
+      const f = await fixture({ chunks: [""], usage });
+      await f.coordinator.execute(f.work.id, "local-owner");
+      const state = f.get();
+      expect(state).toMatchObject({ status: "failed", error_code: "INVALID_MODEL_OUTPUT" });
+      const ledger = f.projects.getModelUsageForRun(state.inflight_run_id!)[0]!;
+      expect(ledger).toMatchObject({
+        status: "committed",
+        actual_input_tokens: usage.inputTokens,
+        actual_output_tokens: usage.outputTokens
+      });
+      expect(ledger.calculated_cost_amount).toBeNull();
+      expect(f.accountStore.summary("local-owner").total_counted_tokens).toBe(
+        ledger.estimated_input_tokens + ledger.max_output_tokens
+      );
+      const holds = f.database.sqlite
+        .prepare("SELECT status FROM kosmora_usage_holds WHERE owner_id=?")
+        .all("local-owner");
+      expect(holds).toEqual([{ status: "uncertain" }]);
+      expect(new AccountStore(f.database.sqlite).summary("local-owner")).toEqual(
+        f.accountStore.summary("local-owner")
+      );
+      expect(f.calls).toHaveLength(1);
+      expect(f.store.file(f.work.id, "local-owner", "result.md")).toBeNull();
+    }
+  );
 });
