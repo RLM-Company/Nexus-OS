@@ -9,6 +9,7 @@ export default defineConfig({
     "**/chat-reliability.spec.ts",
     "**/composer-draft-races.spec.ts",
     "**/csv-composer-transfer.spec.ts",
-    "**/studio-files.spec.ts"
+    "**/studio-files.spec.ts",
+    "**/document-upload-queue.spec.ts"
   ]
 });
