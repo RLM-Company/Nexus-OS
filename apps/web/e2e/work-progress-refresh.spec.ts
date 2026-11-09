@@ -68,6 +68,77 @@ test("unchanged completed progress does not refetch on a timer", async ({ page, 
   expect(reads).toBe(initial);
 });
 
+test("a lost create acknowledgement keeps its complete request across model budget refresh", async ({
+  page,
+  request
+}) => {
+  const work = await preparedWork(request);
+  const list = `/api/v1/projects/${work.project}/work`;
+  let changed = false;
+  const payloads: {
+    client_request_id: string;
+    goal: string;
+    max_input_tokens: number;
+    max_output_tokens: number;
+  }[] = [];
+  let accepted = "";
+  await page.route("**/api/v1/model-runtime", async (route) => {
+    const response = await route.fetch();
+    const metadata = (await response.json()) as Record<string, unknown>;
+    await route.fulfill({
+      response,
+      json: {
+        ...metadata,
+        mode: "openai-compatible",
+        model: changed ? "fixture-window-B" : "fixture-window-A",
+        context_window_tokens: changed ? 256000 : 128000,
+        max_output_tokens: changed ? 8000 : 4000
+      }
+    });
+  });
+  await page.route(`**${list}`, async (route) => {
+    if (route.request().method() !== "POST") return route.continue();
+    payloads.push(route.request().postDataJSON() as (typeof payloads)[number]);
+    if (payloads.length !== 1) return route.continue();
+    const response = await route.fetch();
+    expect(response.status()).toBe(201);
+    accepted = ((await response.json()) as { id: string }).id;
+    changed = true;
+    await route.fulfill({ status: 503, json: { error: "Lost create acknowledgement" } });
+  });
+  await page.goto(`/?project=${work.project}&view=plan`);
+  const manager = page.getByRole("region", { name: "Выполнение задачи Manager", exact: true });
+  await expect(manager.locator(".manager-work-runtime")).toContainText("fixture-window-A");
+  const goal = "Keep this accepted request identical after the response is lost";
+  await manager.getByLabel("Задача для выполнения", { exact: true }).fill(goal);
+  await manager.getByRole("button", { name: "Создать файлы", exact: true }).click();
+  await expect(
+    manager.getByText("Не удалось выполнить запрос. Проверьте соединение.", { exact: true })
+  ).toBeVisible();
+  await expect(manager.locator(".manager-work-runtime")).toContainText("fixture-window-B");
+  await expect(manager.locator(".manager-work-limits")).toContainText(/384\s*000/);
+  const retry = page.waitForResponse(
+    (r) => r.url().endsWith(list) && r.request().method() === "POST"
+  );
+  await manager.getByRole("button", { name: "Создать файлы", exact: true }).click();
+  expect((await retry).status()).toBe(201);
+  expect(payloads[1]).toEqual(payloads[0]);
+  const history = (await (await request.get(list)).json()) as {
+    items: { id: string; request: { goal: string } }[];
+  };
+  expect(history.items.filter((item) => item.request.goal === goal).map((item) => item.id)).toEqual(
+    [accepted]
+  );
+  await expect(manager.locator(".manager-work-limits")).toContainText(/768\s*000/);
+  const next = page.waitForResponse(
+    (r) => r.url().endsWith(list) && r.request().method() === "POST"
+  );
+  await manager.getByRole("button", { name: "Создать файлы", exact: true }).click();
+  expect((await next).status()).toBe(201);
+  expect(payloads[2]!.client_request_id).not.toBe(payloads[0]!.client_request_id);
+  expect(payloads[2]).toMatchObject({ max_input_tokens: 768000, max_output_tokens: 24000 });
+});
+
 test("successful reads clear network warnings but do not erase failed owner commands", async ({
   page,
   request
