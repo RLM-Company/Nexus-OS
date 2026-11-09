@@ -6,6 +6,11 @@
 - **Решение владельца:** период обновления лимита **не вводить**; реализовать
   предложенный срез без изменения тарифов/квот/провайдера HY4.
 - **Владелец реализации:** DeepSeek
+- **PR:** [#492](https://github.com/RLM-Company/Nexus-OS/pull/492), без
+  самостоятельного merge/deploy
+- **Финальный CI** (run `42684250579`): `Verify monorepo` pass 5m48s,
+  `Browser acceptance` pass 8m19s, `Code sandbox isolation` pass,
+  `identity-tests` pass — все четыре проверки зелёные.
 
 ## Что было
 
