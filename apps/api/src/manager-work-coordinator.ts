@@ -544,7 +544,7 @@ export class ManagerWorkCoordinator {
           writer.update(content);
         } else if (event.type === "response.completed") completion = event;
       }
-      if (!completion || !content.trim()) throw new Error("INVALID_MODEL_OUTPUT");
+      if (!completion) throw new Error("INVALID_MODEL_OUTPUT");
       writer.update(content, true);
       projects.completeRun(runId, completion.provider, completion.model, completion.usage, {
         attempt: completion.route.attempt,
@@ -552,15 +552,18 @@ export class ManagerWorkCoordinator {
       });
       runCommitted = true;
       memoryUsage(completion.route.attempt, "provider_completed");
-      if (ownerReservation)
+      if (ownerReservation) {
         this.dependencies.ownerBudget?.completeReservation(
           ownerReservation,
           "main",
           completion.usage.inputTokens,
           completion.usage.outputTokens
         );
+        // Canonical accounting owns this receipt, including any unknown-usage hold.
+        ownerReservation = undefined;
+      }
       work = this.current(work.id, work.owner_id);
-      // Cancellation retains a conservative hold if it raced with a late result.
+      // Account for a completed call without accepting output after cancellation.
       if (signal.aborted || work.status === "cancelled") throw new Error("EMERGENCY_STOP");
       this.checkpoint({
         ...work,
@@ -575,6 +578,8 @@ export class ManagerWorkCoordinator {
           }
         ]
       });
+      // Empty/invalid output can fail Work without discarding verified provider usage.
+      if (!content.trim()) throw new Error("INVALID_MODEL_OUTPUT");
       return content;
     } catch (error) {
       if (!runCommitted)
