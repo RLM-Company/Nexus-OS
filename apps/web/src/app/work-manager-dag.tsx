@@ -158,6 +158,7 @@ export function WorkManagerDag({ projectId }: { projectId: string }) {
   const [requestLimit, setRequestLimit] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [readError, setReadError] = useState("");
   const [checkpoints, setCheckpoints] = useState<{ version: number; at: string }[]>([]);
   const lock = useRef(false),
     epoch = useRef(0);
@@ -283,6 +284,7 @@ export function WorkManagerDag({ projectId }: { projectId: string }) {
         const data = await request<{ items: WorkDag[] }>(base, { signal });
         if (!signal.aborted && before === epoch.current && !lock.current) {
           setGraphs(data.items);
+          setReadError("");
           if (linkedPlan) {
             const linked = data.items.find((item) => item.id === linkedPlan);
             if (linked) {
@@ -297,7 +299,7 @@ export function WorkManagerDag({ projectId }: { projectId: string }) {
       },
       {
         intervalMs: 1000,
-        onError: () => setError("Не удалось обновить план. Состояние сохранено на сервере")
+        onError: () => setReadError("Не удалось обновить план. Состояние сохранено на сервере")
       }
     );
   }, [base]);
@@ -710,9 +712,9 @@ export function WorkManagerDag({ projectId }: { projectId: string }) {
           </form>
         )}
       </details>
-      {error && (
+      {(error || readError) && (
         <p role="alert" className={styles.error}>
-          {error}
+          {error || readError}
         </p>
       )}
       {copiedElsewhere && (

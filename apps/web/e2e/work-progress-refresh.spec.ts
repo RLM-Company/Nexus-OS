@@ -68,6 +68,69 @@ test("unchanged completed progress does not refetch on a timer", async ({ page, 
   expect(reads).toBe(initial);
 });
 
+test("successful reads clear network warnings but do not erase failed owner commands", async ({
+  page,
+  request
+}) => {
+  const work = await preparedWork(request);
+  const base = `/api/v1/projects/${work.project}`;
+  const title = "Read recovery plan";
+  const created = await request.post(`${base}/work-dags`, {
+    data: {
+      client_request_id: crypto.randomUUID(),
+      title,
+      nodes: [{ id: "step", title: "Step", goal: "Create result.md", depends_on: [] }]
+    }
+  });
+  expect(created.status()).toBe(201);
+  const graph = (await created.json()) as { id: string };
+  let unavailable = false;
+  for (const path of [`${base}/work`, `${base}/work-dags`]) {
+    await page.route(`**${path}`, (route) =>
+      unavailable
+        ? route.fulfill({ status: 503, json: { error: "temporary read failure" } })
+        : route.continue()
+    );
+  }
+  await page.route(`**${base}/work-dags/${graph.id}/title`, (route) =>
+    route.fulfill({ status: 409, json: { error: "STALE_DAG" } })
+  );
+  await page.clock.install();
+  await page.goto(`/?project=${work.project}&view=plan`);
+  const manager = page.getByRole("region", { name: "Выполнение задачи Manager", exact: true });
+  const plans = page.getByRole("region", { name: "План с зависимостями", exact: true });
+  await expect(page.getByRole("heading", { name: title, exact: true })).toBeVisible();
+  await expect(page.getByText("Завершено этапов: 4 / 4", { exact: true })).toBeVisible();
+  unavailable = true;
+  await page.clock.fastForward(1500);
+  const managerWarning = manager.getByText(
+    "Состояние временно недоступно. Работа сохраняется на сервере.",
+    { exact: true }
+  );
+  await expect(managerWarning).toBeVisible();
+  await expect(plans.getByRole("alert")).toContainText("Не удалось обновить план");
+  unavailable = false;
+  await page.clock.fastForward(1500);
+  await expect(managerWarning).toHaveCount(0);
+  await expect(plans.getByRole("alert")).toHaveCount(0);
+  await plans.getByRole("button", { name: "Переименовать план", exact: true }).click();
+  await plans.getByLabel("Новое название плана", { exact: true }).fill("Rejected rename");
+  await plans.getByRole("button", { name: "Сохранить название", exact: true }).click();
+  await expect(plans.getByRole("alert")).toBeVisible();
+  const commandError = await plans.getByRole("alert").textContent();
+  await page.clock.fastForward(3000);
+  await expect(plans.getByRole("alert")).toHaveText(commandError!);
+  unavailable = true;
+  await page.clock.fastForward(1500);
+  await expect(managerWarning).toBeVisible();
+  await expect(plans.getByRole("alert")).toHaveText(commandError!);
+  unavailable = false;
+  await page.clock.fastForward(1500);
+  await expect(managerWarning).toHaveCount(0);
+  await expect(plans.getByRole("alert")).toHaveText(commandError!);
+  await expect(page.getByRole("heading", { name: title, exact: true })).toBeVisible();
+});
+
 test("runtime read recovers after a temporary failure without a new work version", async ({
   page,
   request

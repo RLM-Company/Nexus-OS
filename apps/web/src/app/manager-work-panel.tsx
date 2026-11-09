@@ -102,6 +102,7 @@ export function ManagerWorkPanel({
   const executionGate = useExecutionGate(projectId);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [readError, setReadError] = useState("");
   const lock = useRef(false);
   const mutationEpoch = useRef(0);
   const pending = useRef<{ goal: string; role: string; critic: boolean; id: string } | null>(null);
@@ -141,11 +142,12 @@ export function ManagerWorkPanel({
           );
           setRuntime(model);
           setHistoryLoaded(true);
+          setReadError("");
         }
       },
       {
         intervalMs: 750,
-        onError: () => setError("Состояние временно недоступно. Работа сохраняется на сервере.")
+        onError: () => setReadError("Состояние временно недоступно. Работа сохраняется на сервере.")
       }
     );
   }, [base, selectedWorkId]);
@@ -302,7 +304,7 @@ export function ManagerWorkPanel({
         disabled={busy || executionGate !== "clear"}
       />
       {!historyLoaded && <p className="manager-work-usage">Загружаем задачи проекта…</p>}
-      {error && <p role="alert">{error}</p>}
+      {(error || readError) && <p role="alert">{error || readError}</p>}
       {works.length > 0 && (
         <div className="manager-work-history">
           <strong>Задачи проекта</strong>
