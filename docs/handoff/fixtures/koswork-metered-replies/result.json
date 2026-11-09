@@ -1,0 +1,32 @@
+{
+  "input": {
+    "goal": "Сохранить предложение: сумма 19 700 ₽, артикул 00123, кроме доставки.",
+    "provider_reply": " \n\t ",
+    "usage": {
+      "inputTokens": 100,
+      "outputTokens": 100
+    }
+  },
+  "real_model_called": false,
+  "provider": "local fixture",
+  "model_requests": 1,
+  "work": {
+    "status": "failed",
+    "stage": "plan",
+    "error_code": "INVALID_MODEL_OUTPUT"
+  },
+  "ledger": {
+    "status": "committed",
+    "input_tokens": 100,
+    "output_tokens": 100
+  },
+  "account": {
+    "model_tokens_or_upper_bound": 200,
+    "translation_tokens_or_upper_bound": 0,
+    "in_flight_or_uncertain_holds": 0,
+    "total_counted_tokens": 200,
+    "max_total_tokens": null,
+    "currency_cost": "unknown"
+  },
+  "file_download_status": 404
+}
