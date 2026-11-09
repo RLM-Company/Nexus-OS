@@ -1088,3 +1088,115 @@ test("Work finds a late file clause, reads it by exact version/offset and writes
   assert.equal(fs.readFileSync(path.join(f.folder, "report.md"), "utf8"), clause);
   assert.equal(confirmations.filter((x) => x.action?.kind === "workspace_create").length, 1);
 });
+
+for (const pause of [false, true]) {
+  test(
+    `brief/CSV produces a real read-back result${pause ? " after explicit resume" : ""}`,
+    { timeout: 5000 },
+    async (t) => {
+      const f = await fixture(t),
+        brief = "Сложить суммы из amounts.csv. Сохранить итог в report.md.",
+        csv = "name,amount\r\nBase,19700\r\nDelivery,4300\r\n";
+      fs.writeFileSync(path.join(f.folder, "brief.txt"), brief);
+      fs.writeFileSync(path.join(f.folder, "amounts.csv"), csv);
+      let report = "",
+        index = 0,
+        pauses = 0,
+        writes = 0;
+      const mark = (step, state, obs) => ({
+        kind: "work_step",
+        step,
+        state,
+        evidence: state === "checked" ? "Прочитанные данные совпадают" : "",
+        observation_id: obs.observation_id
+      });
+      const actions = [
+        () => ({
+          kind: "work_plan",
+          steps: [
+            { title: "Прочитать исходники", criteria: "Бриф и суммы прочитаны" },
+            { title: "Сохранить результат", criteria: "Содержимое файла прочитано обратно" }
+          ]
+        }),
+        ({ observation }) => mark(1, "running", observation),
+        () => ({ kind: "workspace_read", path: "brief.txt" }),
+        ({ previousResult }) => {
+          assert.equal(JSON.parse(previousResult).content, brief);
+          return { kind: "workspace_read", path: "amounts.csv" };
+        },
+        ({ observation, previousResult }) => {
+          const rows = JSON.parse(previousResult).content.trim().split(/\r?\n/).slice(1);
+          const total = rows.reduce((sum, row) => sum + Number(row.split(",")[1]), 0);
+          assert.equal(total, 24000);
+          report = `Итог: ${total} RUB; источник amounts.csv`;
+          return mark(1, "checked", observation);
+        },
+        ({ observation }) => mark(2, "running", observation),
+        ...(pause ? [() => ({ kind: "ask_user", question: "Продолжить сохранение?" })] : []),
+        () => ({ kind: "workspace_create", path: "report.md", content: report }),
+        () => ({ kind: "workspace_read", path: "report.md" }),
+        ({ observation, previousResult }) => {
+          assert.equal(JSON.parse(previousResult).content, report);
+          return mark(2, "checked", observation);
+        },
+        () => ({ kind: "done", summary: report })
+      ];
+      const runner = new ComputerSession({
+        driver: f.driver,
+        executionMode: "work",
+        identity: async () => context,
+        workspace: f.workspace,
+        history: f.history,
+        allowHumanResume: pause,
+        confirm: async (value) => {
+          if (value.action?.kind === "workspace_create") writes++;
+          return true;
+        },
+        notify(value) {
+          if (value.phase === "awaiting_user") {
+            pauses++;
+            assert.equal(fs.existsSync(path.join(f.folder, "report.md")), false);
+            queueMicrotask(() => runner.resume());
+          }
+        },
+        planner: {
+          begin: async () => ({ id: "brief-csv-fixture" }),
+          authorize: async () => ({ authorized: true, valid_for_ms: 10000 }),
+          end: async () => {},
+          next: async (value) => {
+            assert.ok(index < actions.length);
+            return {
+              action: actions[index++](value),
+              message: "Synthetic fixture",
+              requires_confirmation: false
+            };
+          }
+        }
+      });
+      t.after(() => runner.stop());
+      const result = await runner.run({
+        project: "project",
+        goal: "Свести бриф и CSV",
+        maxSteps: 20,
+        resultTicket: {
+          task_id: crypto.randomUUID(),
+          nonce: crypto.randomUUID(),
+          project: "project",
+          document: "window:1"
+        }
+      });
+      assert.equal(result.status, "completed");
+      assert.equal(index, actions.length);
+      assert.equal(pauses, pause ? 1 : 0);
+      assert.equal(writes, 1);
+      assert.equal(fs.readFileSync(path.join(f.folder, "report.md"), "utf8"), report);
+      assert.equal(result.summary, report);
+      assert.equal(fs.readFileSync(path.join(f.folder, "amounts.csv"), "utf8"), csv);
+      assert.deepEqual(result.receipt.checked, { count: 2, status: "checked" });
+      assert.equal(JSON.stringify(result.receipt).includes(brief), false);
+      assert.equal(f.history.list(context)[0].status, "completed");
+      assert.ok(f.history.list(context)[0].workPlan.every((step) => step.state === "checked"));
+      assert.deepEqual(f.grants, []);
+    }
+  );
+}

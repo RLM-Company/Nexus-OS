@@ -144,12 +144,16 @@ export function registerManagerWorkRoutes(options: {
     base + "/:id/files/:name",
     { schema: { params } },
     (request, reply) => {
+      reply.header("cache-control", "private, no-store");
       if (!get(request)) return reply.code(404).send({ error: "WORK_NOT_FOUND" });
-      const content = store.file(
-        request.params.id,
-        identityFor(request).owner_id,
-        request.params.name
-      );
+      let content: string | null;
+      try {
+        content = store.file(request.params.id, identityFor(request).owner_id, request.params.name);
+      } catch (error) {
+        if (error instanceof ManagerWorkConflict)
+          return reply.code(409).send({ error: error.message });
+        throw error;
+      }
       if (content === null) return reply.code(404).send({ error: "FILE_NOT_FOUND" });
       return reply
         .header(

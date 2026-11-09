@@ -1,5 +1,6 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { GoogleDriveSourceList } from "@cosmora/contracts";
 type Summary = {
   chats: number;
   messages: number;
@@ -51,6 +52,10 @@ const failure = (e: unknown) => {
     return "Предпросмотр истёк или состояние аккаунта изменилось. Откройте предпросмотр заново.";
   if (code === "BACKUP_EMPTY")
     return "В выбранной области пока нет чатов или опубликованных результатов.";
+  if (code === "DRIVE_OPERATION_CONFLICT")
+    return "Выбранный файл изменился или больше недоступен. Обновите список и выберите его заново.";
+  if (code === "BACKUP_INVALID_SELECTION")
+    return "Проверьте выбранные чаты и файлы: часть источников больше недоступна.";
   if (["BACKUP_BUSY", "DRIVE_OWNER_BUSY", "DRIVE_BUSY"].includes(code))
     return "Другая операция ещё выполняется. Повторите чуть позже.";
   if (["DRIVE_CONNECTION_CHANGED", "OWNER_DATA_FENCED"].includes(code))
@@ -74,6 +79,10 @@ export function GoogleDriveBackupControls({
   const [selected, setSelected] = useState<string[]>([]),
     [preview, setPreview] = useState<Preview | null>(null),
     [restored, setRestored] = useState<Restored | null>(null);
+  const [fileSources, setFileSources] = useState<NonNullable<GoogleDriveSourceList["files"]>>([]),
+    [fileSelection, setFileSelection] = useState(false),
+    [customFiles, setCustomFiles] = useState(false),
+    [selectedFiles, setSelectedFiles] = useState<string[]>([]);
   const [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
     [notice, setNotice] = useState("");
@@ -83,11 +92,13 @@ export function GoogleDriveBackupControls({
   const reload = useCallback(async () => {
     const [a, b, c] = await Promise.all([
       api<{ items: Backup[]; has_more?: boolean }>("/backups"),
-      api<{ items: typeof sources }>("/sources"),
+      api<GoogleDriveSourceList>("/sources"),
       api<{ items: typeof files; has_more?: boolean }>("/restored-files")
     ]);
     setItems(a.items ?? []);
     setSources(b.items ?? []);
+    setFileSelection(b.file_selection === true);
+    setFileSources(b.file_selection === true ? (b.files ?? []) : []);
     setFiles(c.items ?? []);
     setMoreBackups(Boolean(a.has_more));
     setMoreFiles(Boolean(c.has_more));
@@ -160,7 +171,7 @@ export function GoogleDriveBackupControls({
           <input
             type="checkbox"
             checked={results}
-            disabled={busy}
+            disabled={busy || customFiles}
             onChange={(e) => {
               setResults(e.target.checked);
               operation.current = null;
@@ -168,16 +179,61 @@ export function GoogleDriveBackupControls({
           />{" "}
           Опубликованные результаты Work
         </label>
+        {(fileSelection || customFiles) && (
+          <>
+            <label>
+              <input
+                type="checkbox"
+                checked={customFiles}
+                disabled={busy}
+                onChange={(e) => {
+                  setCustomFiles(e.target.checked);
+                  operation.current = null;
+                }}
+              />{" "}
+              Выбрать файлы по отдельности
+            </label>
+            {customFiles && (
+              <fieldset disabled={busy}>
+                <legend>Сохранить только отмеченные файлы</legend>
+                {fileSources.length === 0 && <p>Доступных результатов пока нет.</p>}
+                {fileSources.map((file) => (
+                  <label key={file.id}>
+                    <input
+                      type="checkbox"
+                      checked={selectedFiles.includes(file.id)}
+                      onChange={(e) => {
+                        setSelectedFiles((old) =>
+                          e.target.checked ? [...old, file.id] : old.filter((id) => id !== file.id)
+                        );
+                        operation.current = null;
+                      }}
+                    />{" "}
+                    {file.name} · {file.project} · v{file.version} ·{" "}
+                    {(file.bytes / 1024).toFixed(1)} КиБ
+                  </label>
+                ))}
+              </fieldset>
+            )}
+          </>
+        )}
       </details>
       <button
         type="button"
         disabled={busy || !connected}
         onClick={() =>
           void run(async () => {
+            if (
+              customFiles &&
+              (!fileSelection ||
+                selectedFiles.some((id) => !fileSources.some((file) => file.id === id)))
+            )
+              throw Error("DRIVE_OPERATION_CONFLICT");
             operation.current ??= crypto.randomUUID();
             await api("/backups", {
               operation_id: operation.current,
-              include_results: results,
+              include_results: customFiles ? false : results,
+              ...(customFiles ? { file_ids: selectedFiles } : {}),
               ...(!all ? { chat_ids: selected } : {})
             });
             operation.current = null;

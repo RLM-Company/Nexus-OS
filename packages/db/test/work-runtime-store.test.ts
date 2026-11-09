@@ -30,6 +30,299 @@ async function setup(path = ":memory:") {
 }
 
 describe("project memory and durable work records", () => {
+  it.each([
+    "body",
+    "bytes",
+    "hash",
+    "project",
+    "unpublished",
+    "missing",
+    "published-copy"
+  ] as const)(
+    "refuses a modern single-file download with %s damage without changing stored evidence",
+    async (damage) => {
+      const f = await setup();
+      try {
+        let work = f.store.claim(f.store.create(f.a.id, "owner-a", "owner-a", request)!)!;
+        work.stage = "publish";
+        work.draft = { files: [{ name: "result.md", content: "Точный результат 🚀" }] };
+        work = f.store.save(work);
+        f.store.publish(work.id, "owner-a", work.draft!);
+        work = f.store.save({ ...work, status: "completed", stage: "done" });
+        const artifact = f.store.runtime.artifacts(f.a.id, "owner-a", work.id)[0]!;
+        expect(f.store.file(work.id, "owner-a", "result.md")).toBe("Точный результат 🚀");
+        if (damage === "body")
+          f.db.sqlite
+            .prepare("UPDATE work_artifact_versions SET content='corrupt' WHERE id=?")
+            .run(artifact.id);
+        if (damage === "bytes")
+          f.db.sqlite
+            .prepare("UPDATE work_artifact_versions SET bytes=bytes+1 WHERE id=?")
+            .run(artifact.id);
+        if (damage === "hash")
+          f.db.sqlite
+            .prepare("UPDATE work_artifact_versions SET sha256=? WHERE id=?")
+            .run("0".repeat(64), artifact.id);
+        if (damage === "project")
+          f.db.sqlite
+            .prepare("UPDATE work_artifact_versions SET project_id=? WHERE id=?")
+            .run(f.b.id, artifact.id);
+        if (damage === "unpublished")
+          f.db.sqlite
+            .prepare("UPDATE work_artifact_versions SET published=0 WHERE id=?")
+            .run(artifact.id);
+        if (damage === "missing")
+          f.db.sqlite.prepare("DELETE FROM work_artifact_versions WHERE id=?").run(artifact.id);
+        if (damage === "published-copy")
+          f.db.sqlite
+            .prepare("UPDATE manager_work_files SET content='corrupt' WHERE execution_id=?")
+            .run(work.id);
+        const evidence = f.db.sqlite
+          .prepare("SELECT * FROM work_artifact_versions WHERE work_id=?")
+          .all(work.id);
+        expect(() => f.store.file(work.id, "owner-a", "result.md")).toThrow(
+          "ARTIFACT_INTEGRITY_MISMATCH"
+        );
+        const readback = f.store.runtime.verifiedArtifact(f.a.id, "owner-a", artifact.id);
+        if (damage === "published-copy") expect(readback?.content).toBe("Точный результат 🚀");
+        else expect(readback).toBeNull();
+        expect(f.store.runtime.verifiedArtifact(f.b.id, "owner-a", artifact.id)).toBeNull();
+        expect(f.store.file(work.id, "owner-b", "result.md")).toBeNull();
+        expect(
+          f.db.sqlite.prepare("SELECT * FROM work_artifact_versions WHERE work_id=?").all(work.id)
+        ).toEqual(evidence);
+        expect(f.store.get(work.id, "owner-a")).toEqual(work);
+      } finally {
+        f.db.close();
+      }
+    }
+  );
+  it.each(["work-fence", "quiescing", "paused", "cancelled", "unbound"] as const)(
+    "does not let 50 %s entries hide a runnable task beyond the queue window",
+    async (block) => {
+      const f = await setup();
+      try {
+        const graph =
+          block === "unbound"
+            ? f.store.dag.create(f.a.id, "owner-a", "owner-a", {
+                client_request_id: "unbound-plan",
+                title: "Unbound plan",
+                nodes: [{ id: "step", title: "Step", goal: "Create result.md", depends_on: [] }]
+              })
+            : null;
+        for (let i = 0; i < 50; i++) {
+          f.store.create(
+            f.a.id,
+            "owner-a",
+            "owner-a",
+            { ...request, client_request_id: `blocked-${i}` },
+            false,
+            graph ? { graph_id: graph.id, node_id: "step", attempt: 1, bound: false } : undefined
+          );
+        }
+        const ready = f.store.create(f.c.id, "owner-b", "owner-b", request)!;
+        if (block === "work-fence")
+          f.db.sqlite
+            .prepare("INSERT INTO work_owner_fences(owner_id,epoch,fenced) VALUES (?,1,1)")
+            .run("owner-a");
+        if (block === "quiescing")
+          f.db.sqlite
+            .prepare(
+              `INSERT INTO kosmora_owner_data_lifecycle
+          (owner_id,state,epoch,operation_id,started_at,updated_at) VALUES (?,'quiescing',1,'queue-test',datetime('now'),datetime('now'))`
+            )
+            .run("owner-a");
+        if (block === "paused" || block === "cancelled")
+          f.store.dag.setProjectMode(f.a.id, "owner-a", block);
+        const snapshot = () =>
+          f.db.sqlite.prepare("SELECT state_json FROM manager_work ORDER BY rowid").all();
+        const before = snapshot();
+        expect(f.store.pending().map((w) => w.id)).toEqual([ready.id]);
+        expect(f.store.pending().map((w) => w.id)).toEqual([ready.id]);
+        expect(snapshot()).toEqual(before);
+      } finally {
+        f.db.close();
+      }
+    }
+  );
+  it("preserves the 50-item bound, queue order and one running work per project", async () => {
+    const f = await setup();
+    try {
+      for (const project of [f.a, f.b]) {
+        for (let i = 0; i < 50; i++)
+          f.store.create(project.id, "owner-a", "owner-a", {
+            ...request,
+            client_request_id: `${project.id}-${i}`
+          });
+      }
+      const first = f.store.pending();
+      expect(first).toHaveLength(50);
+      expect(first.every((w) => w.project_id === f.a.id)).toBe(true);
+      expect(first.map((w) => w.request.client_request_id)).toEqual(
+        Array.from({ length: 50 }, (_, i) => `${f.a.id}-${i}`)
+      );
+      expect(f.store.claim(first[0]!)?.status).toBe("running");
+      const next = f.store.pending();
+      expect(next).toHaveLength(50);
+      expect(next.every((w) => w.project_id === f.b.id)).toBe(true);
+    } finally {
+      f.db.close();
+    }
+  });
+  it.each(["work-fence", "quiescing", "deleting", "deleted", "error"] as const)(
+    "leaves %s owner records untouched while recovering another owner",
+    async (fence) => {
+      const f = await setup();
+      try {
+        let protectedWork = f.store.claim(f.store.create(f.a.id, "owner-a", "owner-a", request)!)!;
+        protectedWork.stage = "publish";
+        protectedWork.draft = {
+          files: [{ name: "private.md", content: "Private committed bytes" }]
+        };
+        protectedWork = f.store.save(protectedWork);
+        f.store.publish(protectedWork.id, "owner-a", protectedWork.draft!);
+        const healthy = f.store.claim(f.store.create(f.c.id, "owner-b", "owner-b", request)!)!;
+        const protectedState = f.store.get(protectedWork.id, "owner-a");
+        const checkpoints = f.store.runtime.checkpoints(f.a.id, "owner-a", protectedWork.id);
+        const artifacts = f.store.runtime.artifacts(f.a.id, "owner-a", protectedWork.id);
+        if (fence === "work-fence") {
+          f.db.sqlite
+            .prepare("INSERT INTO work_owner_fences(owner_id,epoch,fenced) VALUES (?,1,1)")
+            .run("owner-a");
+        } else {
+          f.db.sqlite
+            .prepare(
+              `INSERT INTO kosmora_owner_data_lifecycle
+            (owner_id,state,epoch,operation_id,started_at,updated_at) VALUES (?,?,1,'privacy-test',datetime('now'),datetime('now'))`
+            )
+            .run("owner-a", fence);
+        }
+        const reopenedStore = new ManagerWorkStore(f.db.sqlite);
+        expect(reopenedStore.recover()).toBe(1);
+        expect(reopenedStore.get(protectedWork.id, "owner-a")).toEqual(protectedState);
+        expect(reopenedStore.runtime.checkpoints(f.a.id, "owner-a", protectedWork.id)).toEqual(
+          checkpoints
+        );
+        expect(reopenedStore.runtime.artifacts(f.a.id, "owner-a", protectedWork.id)).toEqual(
+          artifacts
+        );
+        expect(reopenedStore.get(healthy.id, "owner-b")).toMatchObject({
+          status: "paused",
+          inflight_run_id: null
+        });
+        expect(reopenedStore.ownerWritable("owner-a")).toBe(false);
+        expect(reopenedStore.recover()).toBe(0);
+      } finally {
+        f.db.close();
+      }
+    }
+  );
+  it("finishes a committed multi-file publication after reopening SQLite without recreating versions", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "koswork-publication-recovery-"));
+    const path = join(directory, "state.db");
+    const f = await setup(path);
+    let reopened: ReturnType<typeof openDatabase> | undefined;
+    let closed = false;
+    try {
+      let work = f.store.claim(f.store.create(f.a.id, "owner-a", "owner-a", request)!)!;
+      work.stage = "publish";
+      work.draft = {
+        files: [
+          { name: "report.md", content: "Русский отчёт 🚀" },
+          { name: "data.csv", content: "name,value\nfirst,42\n" }
+        ]
+      };
+      work = f.store.save(work);
+      f.store.publish(work.id, "owner-a", work.draft!);
+      const published = f.store.runtime.artifacts(f.a.id, "owner-a", work.id);
+      const checkpoints = f.store.runtime.checkpoints(f.a.id, "owner-a", work.id).length;
+      f.db.close();
+      closed = true;
+      reopened = openDatabase(path);
+      const store = new ManagerWorkStore(reopened.sqlite);
+      expect(store.recover()).toBe(1);
+      expect(store.get(work.id, "owner-a")).toMatchObject({
+        status: "completed",
+        stage: "done",
+        inflight_run_id: null,
+        error_code: null
+      });
+      expect(store.file(work.id, "owner-a", "report.md")).toBe("Русский отчёт 🚀");
+      expect(store.runtime.artifacts(f.a.id, "owner-a", work.id)).toEqual(published);
+      expect(store.runtime.checkpoints(f.a.id, "owner-a", work.id)).toHaveLength(checkpoints + 1);
+      expect(store.recover()).toBe(0);
+      expect(store.pending()).toEqual([]);
+    } finally {
+      if (!closed) f.db.close();
+      reopened?.close();
+      rmSync(directory, { recursive: true });
+    }
+  });
+  it.each(["bytes", "hash", "content", "project", "unpublished", "missing"] as const)(
+    "does not finish a crashed publication with %s damage or block another valid recovery",
+    async (damage) => {
+      const f = await setup();
+      try {
+        const publish = (project: string, key: string) => {
+          let work = f.store.claim(
+            f.store.create(project, "owner-a", "owner-a", { ...request, client_request_id: key })!
+          )!;
+          work.stage = "publish";
+          work.draft = { files: [{ name: "report.md", content: "Русский отчёт 🚀" }] };
+          work = f.store.save(work);
+          f.store.publish(work.id, "owner-a", work.draft!);
+          return work;
+        };
+        const broken = publish(f.a.id, "broken");
+        const healthy = publish(f.b.id, "healthy");
+        const artifact = f.store.runtime.artifacts(f.a.id, "owner-a", broken.id)[0]!;
+        if (damage === "bytes")
+          f.db.sqlite
+            .prepare("UPDATE work_artifact_versions SET bytes=bytes+1 WHERE id=?")
+            .run(artifact.id);
+        if (damage === "hash")
+          f.db.sqlite
+            .prepare("UPDATE work_artifact_versions SET sha256=? WHERE id=?")
+            .run("0".repeat(64), artifact.id);
+        if (damage === "content")
+          f.db.sqlite
+            .prepare("UPDATE work_artifact_versions SET content='corrupt' WHERE id=?")
+            .run(artifact.id);
+        if (damage === "project")
+          f.db.sqlite
+            .prepare("UPDATE work_artifact_versions SET project_id=? WHERE id=?")
+            .run(f.c.id, artifact.id);
+        if (damage === "unpublished")
+          f.db.sqlite
+            .prepare("UPDATE work_artifact_versions SET published=0 WHERE id=?")
+            .run(artifact.id);
+        if (damage === "missing")
+          f.db.sqlite.prepare("DELETE FROM work_artifact_versions WHERE id=?").run(artifact.id);
+        const readArtifacts = () =>
+          f.db.sqlite
+            .prepare("SELECT * FROM work_artifact_versions WHERE work_id=?")
+            .all(broken.id);
+        const evidence = readArtifacts();
+        expect(f.store.recover()).toBe(2);
+        expect(f.store.get(broken.id, "owner-a")).toMatchObject({
+          status: "failed",
+          error_code: "RECOVERY_REQUIRED",
+          draft: broken.draft
+        });
+        expect(f.store.get(healthy.id, "owner-a")).toMatchObject({
+          status: "completed",
+          stage: "done"
+        });
+        expect(f.store.file(broken.id, "owner-a", "report.md")).toBeNull();
+        expect(f.store.file(healthy.id, "owner-a", "report.md")).toBe("Русский отчёт 🚀");
+        expect(readArtifacts()).toEqual(evidence);
+        expect(f.store.pending()).toEqual([]);
+        expect(f.store.recover()).toBe(0);
+      } finally {
+        f.db.close();
+      }
+    }
+  );
   it("isolates two projects with one owner and another owner; rejects stale updates", async () => {
     const f = await setup();
     try {

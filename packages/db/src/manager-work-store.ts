@@ -1,7 +1,7 @@
 import { WorkSkillStore } from "./work-skill-store.js";
 import { WorkflowStore } from "./workflow-store.js";
 import { WorkDagStore } from "./work-dag-store.js";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
 import type { CreateManagerWork, ManagerWork, ManagerWorkFiles } from "@cosmora/contracts";
 import { ProjectMemoryStore } from "./project-memory-store.js";
@@ -141,7 +141,9 @@ export class ManagerWorkStore {
         const state = JSON.parse(record.state_json) as ManagerWork;
         state.status = "cancelled";
         state.error_code = "OWNER_QUIESCED";
-        this.persist(state, "Остановлено для операции над данными владельца", true);
+        this.persist(state, "Остановлено для операции над данными владельца", {
+          fencedCancellation: true
+        });
       }
       this.dag.quiesce(ownerId);
       return row.epoch;
@@ -311,10 +313,20 @@ export class ManagerWorkStore {
   }
 
   pending(): ManagerWork[] {
+    // Apply admission boundaries before the bounded window. Otherwise a full
+    // window of tasks claim() must reject can hide all eligible work forever.
     return (
       this.sqlite
         .prepare(
-          "SELECT state_json FROM manager_work WHERE json_extract(state_json, '$.status') = 'queued' AND NOT EXISTS (SELECT 1 FROM manager_work r WHERE r.project_id = manager_work.project_id AND json_extract(r.state_json, '$.status') = 'running') ORDER BY rowid LIMIT 50"
+          `SELECT w.state_json FROM manager_work w
+           WHERE json_extract(w.state_json, '$.status') = 'queued'
+           AND NOT EXISTS (SELECT 1 FROM manager_work r WHERE r.project_id = w.project_id
+             AND json_extract(r.state_json, '$.status') = 'running')
+           AND NOT EXISTS (SELECT 1 FROM work_owner_fences f WHERE f.owner_id = w.owner_id AND f.fenced = 1)
+           AND NOT EXISTS (SELECT 1 FROM kosmora_owner_data_lifecycle l WHERE l.owner_id = w.owner_id AND l.state <> 'active')
+           AND NOT EXISTS (SELECT 1 FROM work_project_controls c WHERE c.project_id = w.project_id AND c.owner_id = w.owner_id AND c.mode <> 'active')
+           AND (json_extract(w.state_json, '$.dag_binding') IS NULL OR json_extract(w.state_json, '$.dag_binding.bound') = 1)
+           ORDER BY w.rowid LIMIT 50`
         )
         .all() as { state_json: string }[]
     ).map((row) => JSON.parse(row.state_json) as ManagerWork);
@@ -324,8 +336,12 @@ export class ManagerWorkStore {
     return this.transaction(() => this.persist(state, message));
   }
 
-  private persist(state: ManagerWork, message?: string, fencedCancellation = false): ManagerWork {
-    if (!fencedCancellation) this.assertWritable(state.owner_id);
+  private persist(
+    state: ManagerWork,
+    message?: string,
+    options: { fencedCancellation?: boolean; includeDraft?: boolean } = {}
+  ): ManagerWork {
+    if (!options.fencedCancellation) this.assertWritable(state.owner_id);
     const next = structuredClone(state);
     next.version++;
     next.updated_at = new Date().toISOString();
@@ -342,7 +358,7 @@ export class ManagerWorkStore {
       )
       .run(next.version, JSON.stringify(next), state.id, state.owner_id, state.version);
     if (Number(result.changes) !== 1) throw new ManagerWorkConflict("STALE_EXECUTION");
-    this.runtime.checkpoint(next);
+    this.runtime.checkpoint(next, options);
     return next;
   }
 
@@ -431,11 +447,27 @@ export class ManagerWorkStore {
   }
 
   file(id: string, ownerId: string, name: string): string | null {
-    if (this.get(id, ownerId)?.status !== "completed") return null;
+    const work = this.get(id, ownerId);
+    if (work?.status !== "completed") return null;
     const row = this.sqlite
       .prepare("SELECT content FROM manager_work_files WHERE execution_id = ? AND name = ?")
       .get(id, name) as { content: string } | undefined;
-    return row?.content ?? null;
+    if (!row) return null;
+    const version = this.sqlite
+      .prepare("SELECT id FROM work_artifact_versions WHERE work_id = ? AND name = ?")
+      .get(id, name) as { id: string } | undefined;
+    if (version) {
+      const artifact = this.runtime.verifiedArtifact(work.project_id, ownerId, version.id);
+      if (!artifact || artifact.content !== row.content)
+        throw new ManagerWorkConflict("ARTIFACT_INTEGRITY_MISMATCH");
+      return artifact.content;
+    }
+    // Migration 26 deliberately did not invent versions/checkpoints for old
+    // downloads. Modern work always has checkpoints: a missing version is not
+    // permission to silently downgrade it to an unverified historical file.
+    if (this.sqlite.prepare("SELECT 1 FROM work_checkpoints WHERE work_id = ? LIMIT 1").get(id))
+      throw new ManagerWorkConflict("ARTIFACT_INTEGRITY_MISMATCH");
+    return row.content;
   }
 
   recover(): number {
@@ -445,7 +477,11 @@ export class ManagerWorkStore {
           "SELECT state_json FROM manager_work WHERE json_extract(state_json, '$.status') = 'running'"
         )
         .all() as { state_json: string }[]
-    ).map((row) => JSON.parse(row.state_json) as ManagerWork);
+    )
+      .map((row) => JSON.parse(row.state_json) as ManagerWork)
+      // Privacy recovery owns fenced records. Do not mutate them or prevent
+      // unrelated owners from recovering after a process restart.
+      .filter((state) => this.ownerWritable(state.owner_id));
     for (const state of states) {
       // Publication commits files and immutable version flags together. A crash
       // after that commit may leave the work running; finish from durable proof,
@@ -456,10 +492,15 @@ export class ManagerWorkStore {
         state.draft.files.every((file) => {
           const record = this.sqlite
             .prepare(
-              "SELECT f.content FROM manager_work_files f JOIN work_artifact_versions a ON a.work_id = f.execution_id AND a.name = f.name WHERE f.execution_id = ? AND f.name = ? AND a.published = 1 AND a.content = f.content"
+              "SELECT f.content, a.sha256, a.bytes FROM manager_work_files f JOIN work_artifact_versions a ON a.work_id = f.execution_id AND a.name = f.name WHERE f.execution_id = ? AND f.name = ? AND a.project_id = ? AND a.published = 1 AND a.content = f.content"
             )
-            .get(state.id, file.name) as { content: string } | undefined;
-          return record?.content === file.content;
+            .get(state.id, file.name, state.project_id) as
+            { content: string; sha256: string; bytes: number } | undefined;
+          return (
+            record?.content === file.content &&
+            record.bytes === Buffer.byteLength(file.content, "utf8") &&
+            record.sha256 === createHash("sha256").update(file.content, "utf8").digest("hex")
+          );
         });
       if (published) {
         state.status = "completed";
@@ -473,7 +514,13 @@ export class ManagerWorkStore {
           state.task_graph.waiting_decision = null;
           state.task_graph.next_task_id = null;
         }
-        this.save(state, "Завершено по подтверждённым сохранённым файлам; повтор не выполнялся");
+        this.transaction(() =>
+          this.persist(
+            state,
+            "Завершено по подтверждённым сохранённым файлам; повтор не выполнялся",
+            { includeDraft: false }
+          )
+        );
         continue;
       }
       // An interrupted provider/tool operation must never be submitted twice.
@@ -488,7 +535,11 @@ export class ManagerWorkStore {
         state.task_graph.next_task_id =
           state.status === "failed" ? null : state.id + ":" + state.stage;
       }
-      this.save(state, "Процесс был прерван; автоматический повтор отключён");
+      this.transaction(() =>
+        this.persist(state, "Процесс был прерван; автоматический повтор отключён", {
+          includeDraft: false
+        })
+      );
     }
     return states.length;
   }

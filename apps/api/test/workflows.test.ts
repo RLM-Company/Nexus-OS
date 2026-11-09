@@ -22,6 +22,8 @@ import { buildModelRuntime, loadModelRegistryDocument } from "../src/model-runti
 import { AccountStore } from "../src/account-settings/account-store.js";
 import type { WorkflowDefinition, WorkflowDefinitionInput, WorkflowRun } from "@cosmora/contracts";
 import { WorkPrivacyAdapter } from "../src/account-settings/privacy/integrated-adapters.js";
+import type { workflowResultsView } from "../src/workflow-results.js";
+type WorkflowResults = ReturnType<typeof workflowResultsView>;
 
 const cleanups: (() => void)[] = [];
 afterEach(() => {
@@ -191,6 +193,85 @@ async function workflowFixture() {
   const base = `/api/v1/projects/${f.project.id}/workflows`;
   return { ...f, app, base };
 }
+
+describe("Scoped workflow output acceptance", () => {
+  it("keeps duplicate file versions, manual conditions and empty expectations honest; rejects corrupt bytes", async () => {
+    const f = await workflowFixture();
+    try {
+      const workflow = f.store.workflows.create(
+        f.project.id,
+        owner,
+        { ...definition(), expected_results: ["result.md", "Проверить факты"] },
+        "results-acceptance"
+      );
+      const started = await f.app.inject({
+        method: "POST",
+        url: `${f.base}/${workflow.id}/runs`,
+        payload: {
+          client_request_id: "results-run",
+          expected_version: 1,
+          inputs: { topic: "Private topic" },
+          auto_start: false
+        }
+      });
+      expect(started.statusCode).toBe(201);
+      const { run, graph } = started.json<{ run: WorkflowRun; graph: WorkDag }>();
+      const url = `${f.base}/${workflow.id}/runs/${run.id}/results`;
+      expect(f.store.workflows.run(f.project.id, "another-owner", workflow.id, run.id)).toBeNull();
+      const pending = (await f.app.inject(url)).json<WorkflowResults>();
+      expect(pending.graph.state).toBe("pending");
+      expect(pending.files).toEqual([]);
+      expect(pending.expected.missing).toEqual(["result.md"]);
+      for (const id of ["brief", "report"]) await f.execute(graph, id);
+      f.store.workflows.edit(f.project.id, owner, workflow.id, 1, {
+        ...definition(),
+        expected_results: []
+      });
+      const result = (await f.app.inject(url)).json<WorkflowResults>();
+      expect(result.expected.matched).toHaveLength(1);
+      expect(result.expected.matched[0]!.artifacts).toHaveLength(2);
+      expect(result.expected.missing).toEqual([]);
+      expect(result.expected.manual_review).toEqual([
+        {
+          condition: "Проверить факты",
+          reason: "Descriptive expected result; no filename was guessed."
+        }
+      ]);
+      expect(result.verification.human_review_required).toBe(true);
+      expect(result.verification.verdict).toBe("incomplete");
+      expect(result.definition_version).toBe(1);
+      const emptyRun = await f.app.inject({
+        method: "POST",
+        url: `${f.base}/${workflow.id}/runs`,
+        payload: {
+          client_request_id: "empty-expectations",
+          expected_version: 2,
+          inputs: { topic: "Private topic" },
+          auto_start: false
+        }
+      });
+      const emptyId = emptyRun.json<{ run: WorkflowRun }>().run.id;
+      const empty = (
+        await f.app.inject(`${f.base}/${workflow.id}/runs/${emptyId}/results`)
+      ).json<WorkflowResults>();
+      expect(empty.expected.empty).toBe(true);
+      expect(empty.verification).toMatchObject({
+        human_review_required: true,
+        verdict: "incomplete"
+      });
+      const calls = f.calls.length;
+      f.db.sqlite
+        .prepare("UPDATE work_artifact_versions SET content='corrupt' WHERE id=?")
+        .run(result.files[0]!.id);
+      const broken = await f.app.inject(url);
+      expect(broken.statusCode).toBe(409);
+      expect(broken.json()).toEqual({ error: "DEPENDENCY_ARTIFACT_MISSING" });
+      expect(f.calls).toHaveLength(calls);
+    } finally {
+      await f.app.close();
+    }
+  });
+});
 describe("Reusable Koswork scenarios through HTTP and the real Work executor", () => {
   it("saves/replays creation, imports portable definitions and isolates owners without model calls", async () => {
     const f = await workflowFixture();
@@ -373,6 +454,50 @@ describe("Reusable Koswork scenarios through HTTP and the real Work executor", (
       }>();
       expect(history.items).toHaveLength(1);
       expect(history.items[0]!.definition.name).toBe("Repeatable report");
+      const callsBeforeResults = f.calls.length;
+      const resultsUrl = `${f.base}/${d.id}/runs/${result.run.id}/results`;
+      const results = await f.app.inject(resultsUrl);
+      expect(results.statusCode).toBe(200);
+      expect(results.headers["cache-control"]).toBe("private, no-store");
+      const verified = results.json<WorkflowResults>();
+      expect(verified.definition_version).toBe(1);
+      expect(verified.graph.state).toBe("completed");
+      // The fixture produced result.md, not report.md: completed execution
+      // must not be confused with satisfying expected output names.
+      expect(verified.expected.missing).toEqual(["report.md"]);
+      expect(verified.verification.verdict).toBe("incomplete");
+      expect(verified.files).toHaveLength(2);
+      expect(verified.files[0]!.byte_verification).toMatchObject({
+        code_executed: false,
+        owner_accepted: false
+      });
+      expect(verified.files[0]!.sha256).toMatch(/^[a-f0-9]{64}$/);
+      expect(results.body).not.toContain("ORIGINAL FACTS");
+      expect(results.body).not.toContain("Original topic");
+      expect(results.body).not.toContain("Dependency evidence in a real file");
+      expect(results.body).not.toContain('"owner_id"');
+      expect((await f.app.inject(verified.archive_url)).statusCode).toBe(200);
+      expect((await f.app.inject(resultsUrl.replace(d.id, "wrong-workflow"))).statusCode).toBe(404);
+      expect((await f.app.inject(resultsUrl.replace(result.run.id, "wrong-run"))).statusCode).toBe(
+        404
+      );
+      const other = f.projects.createProject("Other project", "other-source").project;
+      expect((await f.app.inject(resultsUrl.replace(f.project.id, other.id))).statusCode).toBe(404);
+      expect(f.calls).toHaveLength(callsBeforeResults);
+      // Exact lookup must keep working after the run falls out of the 100-row
+      // history window. Clones are history fixtures, not fresh model runs.
+      const clone = f.db.sqlite.prepare(`INSERT INTO kosmora_workflow_runs
+        SELECT ?, workflow_id, project_id, owner_id, ?, request_json,
+        definition_version, definition_json, inputs_json, dag_id, '2099-01-01'
+        FROM kosmora_workflow_runs WHERE id=?`);
+      for (let i = 0; i < 100; i++)
+        clone.run(`history-${i}`, `history-request-${i}`, result.run.id);
+      const limited = (await f.app.inject(`${f.base}/${d.id}/runs`)).json<{
+        items: WorkflowRun[];
+      }>();
+      expect(limited.items).toHaveLength(100);
+      expect(limited.items.some((r) => r.id === result.run.id)).toBe(false);
+      expect((await f.app.inject(resultsUrl)).statusCode).toBe(200);
     } finally {
       await f.app.close();
     }

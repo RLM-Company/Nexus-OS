@@ -17,7 +17,7 @@ const metadata = (row: Omit<ArtifactRow, "content">): WorkArtifactVersion => ({
 export class WorkRuntimeStore {
   constructor(private readonly sqlite: DatabaseSync) {}
   /** Called in the same transaction as work state saves. No provider replay/permission restoration. */
-  checkpoint(work: ManagerWork): void {
+  checkpoint(work: ManagerWork, options: { includeDraft?: boolean } = {}): void {
     const checkpoint: WorkCheckpointRecord = {
       work_id: work.id,
       version: work.version,
@@ -35,6 +35,8 @@ export class WorkRuntimeStore {
     this.sqlite
       .prepare("INSERT INTO work_checkpoints (work_id, version, state_json) VALUES (?, ?, ?)")
       .run(work.id, work.version, JSON.stringify(checkpoint));
+    // Crash recovery records the decision, never recreates or repairs evidence.
+    if (options.includeDraft === false) return;
     for (const file of work.draft?.files ?? []) {
       const previous = this.sqlite
         .prepare("SELECT sha256 FROM work_artifact_versions WHERE work_id = ? AND name = ?")
@@ -105,6 +107,7 @@ export class WorkRuntimeStore {
         .all(projectId, ownerId, ownerId) as Omit<ArtifactRow, "content">[]
     ).map(metadata);
   }
+  /** Scoped read for consumers that apply their own source/version contracts. */
   artifact(
     projectId: string,
     ownerId: string,
@@ -112,9 +115,25 @@ export class WorkRuntimeStore {
   ): { metadata: WorkArtifactVersion; content: string } | null {
     const row = this.sqlite
       .prepare(
-        "SELECT a.* FROM work_artifact_versions a JOIN manager_work w ON w.id = a.work_id JOIN projects p ON p.id = a.project_id WHERE a.id = ? AND a.project_id = ? AND w.owner_id = ? AND p.owner_id = ? AND a.published = 1 AND json_extract(w.state_json, '$.status') = 'completed'"
+        "SELECT a.* FROM work_artifact_versions a JOIN manager_work w ON w.id = a.work_id AND w.project_id = a.project_id JOIN projects p ON p.id = a.project_id WHERE a.id = ? AND a.project_id = ? AND w.owner_id = ? AND p.owner_id = ? AND a.published = 1 AND json_extract(w.state_json, '$.status') = 'completed'"
       )
       .get(id, projectId, ownerId, ownerId) as ArtifactRow | undefined;
     return row ? { metadata: metadata(row), content: row.content } : null;
+  }
+  /** Byte-verified read for downloads; does not replace consumer-specific checks. */
+  verifiedArtifact(
+    projectId: string,
+    ownerId: string,
+    id: string
+  ): { metadata: WorkArtifactVersion; content: string } | null {
+    const file = this.artifact(projectId, ownerId, id);
+    if (
+      !file ||
+      typeof file.content !== "string" ||
+      Buffer.byteLength(file.content, "utf8") !== file.metadata.bytes ||
+      createHash("sha256").update(file.content, "utf8").digest("hex") !== file.metadata.sha256
+    )
+      return null;
+    return file;
   }
 }

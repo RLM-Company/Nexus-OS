@@ -5,7 +5,10 @@ import { loadServerConfig } from "@cosmora/config";
 import { buildApp } from "../src/app.js";
 import { configuredGoogleDrive } from "../src/cloud-storage/google-drive-runtime.js";
 import { DRIVE_FILE_SCOPE } from "../src/cloud-storage/google-drive.js";
+import { selectionHash } from "../src/cloud-storage/google-drive-bundle-store.js";
 import {
+  SNAPSHOT_MAX_BYTES,
+  captureSnapshot,
   parseSnapshot,
   readSnapshotPart,
   snapshotHash,
@@ -32,6 +35,18 @@ type View = {
   saved_parts: number;
   preview: { chats: number; files: number };
 };
+type Sources = {
+  chats: { id: string; title: string; mode: string }[];
+  files: {
+    id: string;
+    name: string;
+    project: string;
+    version: number;
+    bytes: number;
+    sha256: string | null;
+    kind: "kosmora" | "user";
+  }[];
+};
 class GoogleFixture {
   files = new Map<string, { metadata: object; bytes: Buffer }>();
   folders = new Map<string, object>();
@@ -39,6 +54,7 @@ class GoogleFixture {
   ids = 0;
   failUpload = 0;
   methods: string[] = [];
+  urls: string[] = [];
   request = vi.fn<typeof fetch>((input, init) => {
     const url = new URL(
       typeof input === "string" ? input : input instanceof URL ? input.href : input.url
@@ -46,6 +62,7 @@ class GoogleFixture {
     const json = (v: unknown, status = 200) =>
       Promise.resolve(new Response(JSON.stringify(v), { status }));
     this.methods.push(init?.method ?? "GET");
+    this.urls.push(url.href);
     if (url.pathname.endsWith("generateIds")) return json({ ids: [`google_file_${++this.ids}`] });
     if (init?.method === "POST" && url.pathname === "/drive/v3/files") {
       const m = JSON.parse(init.body as string) as { id: string };
@@ -55,13 +72,15 @@ class GoogleFixture {
     if (init?.method === "POST") {
       this.uploads++;
       const b = Buffer.from(init.body as Uint8Array),
-        start = b.indexOf("\r\n\r\n") + 4;
-      const m = JSON.parse(b.subarray(start, b.indexOf("\r\n--", start)).toString()) as {
-        id: string;
-      };
+        doubleCrlf = Buffer.from([13, 10, 13, 10]),
+        boundaryMark = Buffer.from([13, 10, 45, 45]),
+        start = b.indexOf(doubleCrlf) + 4,
+        end = b.indexOf(boundaryMark, start);
+      const m = JSON.parse(b.subarray(start, end).toString()) as { id: string };
       if (this.files.has(m.id)) return json({}, 409);
-      const marker = "Content-Type: application/zip\r\n\r\n",
-        bytes = Buffer.from(b.subarray(b.indexOf(marker) + marker.length, b.lastIndexOf("\r\n--")));
+      const marker = Buffer.concat([Buffer.from("Content-Type: application/zip"), doubleCrlf]),
+        markerAt = b.indexOf(marker),
+        bytes = Buffer.from(b.subarray(markerAt + marker.length, b.lastIndexOf(boundaryMark)));
       this.files.set(m.id, {
         metadata: { ...m, size: String(bytes.length), trashed: false },
         bytes
@@ -120,23 +139,26 @@ describe("complete Drive snapshots and restore", () => {
     );
     chats.cancelRun(source.run.id);
     chatId = source.chat.id;
-    const other = chats.createChat("other owner's secret", randomUUID(), "other-owner");
+    const other = chats.createChat("other owner secret", randomUUID(), "other-owner");
     chats.cancelRun(other.run.id);
     const t = new Date().toISOString();
     db.sqlite
       .prepare(
-        "INSERT INTO projects(id,owner_id,title,status,created_at,updated_at) VALUES('source-project',?,'Original project','active',?,?)"
+        `INSERT INTO projects(id,owner_id,title,status,created_at,updated_at)
+         VALUES('source-project',?,'Original project','active',?,?)`
       )
       .run(owner, t, t);
     db.sqlite
       .prepare(
-        "INSERT INTO manager_work(id,project_id,owner_id,client_request_id,version,state_json) VALUES('source-work','source-project',?,'source',1,?)"
+        `INSERT INTO manager_work(id,project_id,owner_id,client_request_id,version,state_json)
+         VALUES('source-work','source-project',?,'source',1,?)`
       )
       .run(owner, JSON.stringify({ status: "completed" }));
     const content = "<script>not executed</script>";
     db.sqlite
       .prepare(
-        "INSERT INTO work_artifact_versions(id,project_id,work_id,name,version,content,sha256,bytes,published,created_at) VALUES('artifact','source-project','source-work','report.html',1,?,?,?,1,?)"
+        `INSERT INTO work_artifact_versions(id,project_id,work_id,name,version,content,sha256,bytes,published,created_at)
+         VALUES('artifact','source-project','source-work','report.html',1,?,?,?,1,?)`
       )
       .run(content, snapshotHash(Buffer.from(content)), Buffer.byteLength(content), t);
     app = build();
@@ -147,6 +169,12 @@ describe("complete Drive snapshots and restore", () => {
   });
   const post = (path: string, payload: object = {}) =>
     app.inject({ method: "POST", url: base + path, payload, headers: { origin } });
+  const get = (path: string) => app.inject({ url: base + path });
+  const loadSources = async () => {
+    const r = await get("/sources");
+    expect(r.statusCode, r.body).toBe(200);
+    return r.json<Sources>();
+  };
   const save = async (extra: object = {}, operation = randomUUID()) => {
     const r = await post("/backups", { operation_id: operation, include_results: true, ...extra });
     expect(r.statusCode, r.body).toBe(200);
@@ -156,6 +184,20 @@ describe("complete Drive snapshots and restore", () => {
     const r = await post(`/backups/${id}/preview`);
     expect(r.statusCode, r.body).toBe(200);
     return r.json<{ token: string; chats: number; messages: number; files: number }>();
+  };
+  const insertLegacy = () => {
+    db.sqlite
+      .prepare(
+        `INSERT INTO manager_work_files(execution_id,name,content)
+         VALUES('source-work','report.html','legacy duplicate')`
+      )
+      .run();
+    db.sqlite
+      .prepare(
+        `INSERT INTO manager_work_files(execution_id,name,content)
+         VALUES('source-work','legacy.txt','legacy result')`
+      )
+      .run();
   };
 
   it("saves chat text/attachments/results and restores new objects atomically without recreating jobs", async () => {
@@ -214,10 +256,10 @@ describe("complete Drive snapshots and restore", () => {
     normal.cancelRun(next!.run.id);
   });
 
-  it("rejects foreign selections and never uploads another owner's content", async () => {
+  it("rejects foreign selections and never uploads another owner content", async () => {
     const other = db.sqlite
-      .prepare("SELECT id FROM general_chats WHERE owner_id='other-owner'")
-      .get() as { id: string };
+      .prepare("SELECT id FROM general_chats WHERE owner_id=?")
+      .get("other-owner") as { id: string };
     expect(
       (
         await post("/backups", {
@@ -233,29 +275,215 @@ describe("complete Drive snapshots and restore", () => {
   });
 
   it("includes completed legacy Work files without duplicating published versions", async () => {
-    db.sqlite
-      .prepare(
-        "INSERT INTO manager_work_files(execution_id,name,content) VALUES('source-work','report.html','legacy duplicate')"
-      )
-      .run();
-    db.sqlite
-      .prepare(
-        "INSERT INTO manager_work_files(execution_id,name,content) VALUES('source-work','legacy.txt','legacy result')"
-      )
-      .run();
-    const item = await save();
+    insertLegacy();
+    const list = await loadSources();
+    expect(list.files.filter((f) => f.name === "report.html")).toHaveLength(1);
+    expect(list.files.find((f) => f.name === "legacy.txt")?.kind).toBe("user");
+    const item = await save({ chat_ids: [], include_results: true });
     expect(item.preview.files).toBe(2);
+    const p = await preview(item.id),
+      r = await post(`/backups/${item.id}/restore`, {
+        token: p.token,
+        operation_id: randomUUID()
+      });
+    expect(r.statusCode, r.body).toBe(200);
+    const result = r.json<{ files: { id: string; name: string }[] }>();
+    expect(result.files.map((f) => f.name)).toEqual(["legacy.txt", "report.html"]);
+    const legacy = result.files.find((f) => f.name === "legacy.txt")!,
+      published = result.files.find((f) => f.name === "report.html")!;
+    expect((await get(`/restored-files/${legacy.id}`)).body).toBe("legacy result");
+    expect((await get(`/restored-files/${published.id}`)).body).toBe(
+      "<script>not executed</script>"
+    );
+    expect(google.urls.every((u) => !new URL(u).searchParams.has("q"))).toBe(true);
+  });
+
+  it("keeps stored legacy hashes and treats explicit file selections as a distinct operation identity", async () => {
+    insertLegacy();
+    expect(selectionHash({ include_results: true, chat_ids: ["b", "a"] })).toBe(
+      selectionHash({ include_results: true, chat_ids: ["a", "b"] })
+    );
+    expect(selectionHash({ include_results: true })).not.toBe(
+      selectionHash({ include_results: true, file_ids: [] })
+    );
+    const list = await loadSources(),
+      legacy = list.files.find((f) => f.name === "legacy.txt")!;
+    const selected = await save({
+      chat_ids: [],
+      include_results: false,
+      file_ids: [legacy.id]
+    });
+    expect(selected.preview.files).toBe(1);
+    const p = await preview(selected.id),
+      r = await post(`/backups/${selected.id}/restore`, {
+        token: p.token,
+        operation_id: randomUUID()
+      });
+    expect(r.statusCode, r.body).toBe(200);
+    const result = r.json<{ files: { id: string; name: string }[] }>();
+    expect(result.files.map((f) => f.name)).toEqual(["legacy.txt"]);
+    expect((await get(`/restored-files/${result.files[0]!.id}`)).body).toBe("legacy result");
+  });
+
+  it("succeeds chat-only backup when an EXCLUDED artifact has an invalid stored checksum", async () => {
+    db.sqlite
+      .prepare("UPDATE work_artifact_versions SET sha256=? WHERE id=?")
+      .run("invalid-checksum", "artifact");
+    const r = await post("/backups", { operation_id: randomUUID(), include_results: false });
+    expect(r.statusCode, r.body).toBe(200);
+    expect(r.json<View>().preview).toMatchObject({ chats: 1, files: 0 });
+    expect(google.uploads).toBe(1);
+  });
+
+  it("fails an explicitly selected artifact with an invalid stored checksum instead of claiming success", async () => {
+    db.sqlite
+      .prepare("UPDATE work_artifact_versions SET sha256=? WHERE id=?")
+      .run("invalid-checksum", "artifact");
+    const list = await loadSources(),
+      artifact = list.files.find((f) => f.kind === "kosmora")!;
+    const r = await post("/backups", {
+      operation_id: randomUUID(),
+      chat_ids: [],
+      include_results: false,
+      file_ids: [artifact.id]
+    });
+    expect(r.statusCode, r.body).toBe(400);
+    expect(r.json()).toMatchObject({ error: { code: "BACKUP_INVALID" } });
+    expect(google.uploads).toBe(0);
+  });
+
+  it("rejects a stale explicit source version instead of silently substituting changed Work output", async () => {
+    insertLegacy();
+    const list = await loadSources(),
+      legacy = list.files.find((f) => f.name === "legacy.txt")!;
+    db.sqlite.prepare("UPDATE manager_work SET version=2 WHERE id=?").run("source-work");
+    const r = await post("/backups", {
+      operation_id: randomUUID(),
+      chat_ids: [],
+      include_results: false,
+      file_ids: [legacy.id]
+    });
+    expect(r.statusCode, r.body).toBe(409);
+    expect(r.json()).toMatchObject({ error: { code: "DRIVE_OPERATION_CONFLICT" } });
+    expect(google.uploads).toBe(0);
+  });
+
+  it("rejects oversized selected aggregate bytes BEFORE reading file bodies", async () => {
+    const huge = "x".repeat(SNAPSHOT_MAX_BYTES + 1024),
+      t = new Date().toISOString();
+    db.sqlite
+      .prepare(
+        `INSERT INTO work_artifact_versions(id,project_id,work_id,name,version,content,sha256,bytes,published,created_at)
+         VALUES('huge-artifact','source-project','source-work','huge.txt',1,?,?,?,1,?)`
+      )
+      .run(huge, "0".repeat(64), Buffer.byteLength(huge), t);
+    const r = await post("/backups", {
+      operation_id: randomUUID(),
+      chat_ids: [],
+      include_results: true
+    });
+    expect(r.statusCode, r.body).toBe(413);
+    expect(r.json()).toMatchObject({ error: { code: "BACKUP_TOO_LARGE" } });
+    expect(google.uploads).toBe(0);
+  });
+
+  it("saves three selected results through /sources and /link, survives a lost second part on restart", async () => {
+    const t = new Date().toISOString();
+    const insert = db.sqlite.prepare(
+      `INSERT INTO work_artifact_versions(id,project_id,work_id,name,version,content,sha256,bytes,published,created_at)
+       VALUES(?,?,?,?,?,?,?,?,1,?)`
+    );
+    for (const [artifactId, name, marker] of [
+      ["artifact-one", "large-one.txt", "large-one-marker"],
+      ["artifact-two", "large-two.txt", "large-two-marker"],
+      ["artifact-three", "large-three.txt", "large-three-marker"]
+    ] as const) {
+      const content = `${marker}${"x".repeat(900000)}`;
+      insert.run(
+        artifactId,
+        "source-project",
+        "source-work",
+        name,
+        1,
+        content,
+        snapshotHash(Buffer.from(content)),
+        Buffer.byteLength(content),
+        t
+      );
+    }
+    const list = await loadSources();
+    expect(list.chats.length).toBe(1);
+    const ids = list.files
+      .filter((f) => ["large-one.txt", "large-two.txt", "large-three.txt"].includes(f.name))
+      .map((f) => f.id);
+    expect(ids).toHaveLength(3);
+    const status = await get("");
+    expect(status.json()).toMatchObject({ state: "connected" });
+    const link = await get("/link");
+    expect(link.statusCode, link.body).toBe(200);
+    expect(link.json<{ url: string }>().url).toContain("/drive/folders/folder_seed");
+    expect(google.urls.some((u) => new URL(u).searchParams.has("q"))).toBe(false);
+    google.failUpload = 2;
+    const first = await post("/backups", {
+      operation_id: randomUUID(),
+      chat_ids: [],
+      include_results: false,
+      file_ids: ids
+    });
+    expect(first.statusCode, first.body).toBe(502);
+    const item = runtime.bundleStore.list(owner)[0]!;
+    expect(item.parts).toBe(2);
+    expect(item.state).toBe("uncertain");
+    await app.close();
+    runtime = configuredGoogleDrive(db.sqlite, origin, env, google.request);
+    app = build();
+    const retry = await post(`/backups/${item.id}/retry`);
+    expect(retry.statusCode, retry.body).toBe(200);
+    expect(retry.json()).toMatchObject({ state: "verified", saved_parts: 2 });
+    expect(google.files.size).toBe(2);
+    expect(google.ids).toBe(2);
     const p = await preview(item.id);
-    const r = await post(`/backups/${item.id}/restore`, {
+    expect(p.files).toBe(3);
+    const restored = await post(`/backups/${item.id}/restore`, {
       token: p.token,
       operation_id: randomUUID()
     });
-    expect(r.statusCode).toBe(200);
-    const names = runtime.bundleStore.files(owner).map((f) => f.name);
-    expect(names.sort()).toEqual(["legacy.txt", "report.html"]);
+    expect(restored.statusCode, restored.body).toBe(200);
+    expect(restored.json<{ files: { id: string }[] }>().files).toHaveLength(3);
+    const one = runtime.bundleStore.files(owner).find((f) => f.name === "large-one.txt")!;
+    expect(typeof one.id).toBe("string");
+    const download = await get(`/restored-files/${String(one.id)}`);
+    expect(download.body).toContain("large-one-marker");
+    expect(google.urls.every((u) => !new URL(u).searchParams.has("q"))).toBe(true);
   });
 
-  it("deletes local snapshots, cache and restored files with the owner's privacy operation, retaining remote copies", async () => {
+  it("rejects a reused operation whose file selection changed", async () => {
+    const operation = randomUUID(),
+      list = await loadSources(),
+      artifact = list.files.find((f) => f.kind === "kosmora")!;
+    await save({ chat_ids: [], include_results: false, file_ids: [artifact.id] }, operation);
+    const conflict = await post("/backups", {
+      operation_id: operation,
+      chat_ids: [],
+      include_results: true
+    });
+    expect(conflict.statusCode, conflict.body).toBe(409);
+    expect(conflict.json()).toMatchObject({ error: { code: "DRIVE_OPERATION_CONFLICT" } });
+    expect(google.uploads).toBe(1);
+  });
+
+  it("marks a corrupt remote part as a conflict, not a verified backup", async () => {
+    const item = await save();
+    const fileId = [...google.files.keys()][0]!;
+    const bytes = google.files.get(fileId)!.bytes;
+    bytes[0] = bytes[0]! ^ 1;
+    const r = await post(`/backups/${item.id}/preview`, {});
+    expect(r.statusCode, r.body).toBe(409);
+    expect(r.json()).toMatchObject({ error: { code: "DRIVE_ARCHIVE_CHANGED" } });
+    expect(runtime.bundleStore.get(owner, item.id).state).toBe("uncertain");
+  });
+
+  it("deletes local snapshots, cache and restored files with the owner privacy operation, retaining remote copies", async () => {
     const item = await save(),
       p = await preview(item.id);
     expect(
@@ -279,7 +507,8 @@ describe("complete Drive snapshots and restore", () => {
     const token = "fixture-delete-confirmation-token";
     db.sqlite
       .prepare(
-        "INSERT INTO kosmora_data_delete_challenges(owner_id,digest,expires_at) VALUES(?,?,?)"
+        `INSERT INTO kosmora_data_delete_challenges(owner_id,digest,expires_at)
+         VALUES(?,?,?)`
       )
       .run(owner, snapshotHash(Buffer.from(token)), new Date(Date.now() + 60000).toISOString());
     expect((await privacy.delete(owner, token, "УДАЛИТЬ МОИ ДАННЫЕ")).deleted).toBe(true);
@@ -294,7 +523,8 @@ describe("complete Drive snapshots and restore", () => {
 
   it("keeps an immutable multi-part snapshot across worker restart and lost ACK, then resumes with the same remote IDs", async () => {
     const insert = db.sqlite.prepare(
-      "INSERT INTO general_chat_messages(id,chat_id,owner_id,role,content_type,content,status,attachments_json,created_at,updated_at) VALUES(?,?,?,'assistant','text',?,'completed','[]',?,?)"
+      `INSERT INTO general_chat_messages(id,chat_id,owner_id,role,content_type,content,status,attachments_json,created_at,updated_at)
+       VALUES(?,?,?,'assistant','text',?,'completed','[]',?,?)`
     );
     for (let i = 0; i < 24; i++) {
       const at = new Date().toISOString();
@@ -312,7 +542,8 @@ describe("complete Drive snapshots and restore", () => {
     expect(Buffer.from(raw.payload).includes(Buffer.from("original message"))).toBe(false);
     db.sqlite
       .prepare(
-        "UPDATE general_chat_messages SET content='changed after snapshot' WHERE chat_id=? AND role='user'"
+        `UPDATE general_chat_messages SET content='changed after snapshot'
+          WHERE chat_id=? AND role='user'`
       )
       .run(chatId);
     await app.close();
@@ -335,8 +566,8 @@ describe("complete Drive snapshots and restore", () => {
     const newId = restored.json<{ chats: { id: string }[] }>().chats[0]!.id;
     expect(
       db.sqlite
-        .prepare("SELECT content FROM general_chat_messages WHERE chat_id=? AND role='user'")
-        .get(newId)
+        .prepare("SELECT content FROM general_chat_messages WHERE chat_id=? AND role=?")
+        .get(newId, "user")
     ).toMatchObject({ content: "original message" });
   });
 
@@ -352,7 +583,8 @@ describe("complete Drive snapshots and restore", () => {
       p = await preview(item.id),
       op = randomUUID();
     db.sqlite.exec(
-      "CREATE TRIGGER fixture_reject_restore BEFORE INSERT ON general_chat_messages BEGIN SELECT RAISE(ABORT,'fixture restore failure'); END;"
+      `CREATE TRIGGER fixture_reject_restore BEFORE INSERT ON general_chat_messages
+       BEGIN SELECT RAISE(ABORT,'fixture restore failure'); END;`
     );
     expect(
       (await post(`/backups/${item.id}/restore`, { token: p.token, operation_id: op })).statusCode
@@ -400,7 +632,7 @@ describe("complete Drive snapshots and restore", () => {
     expect(binary?.original.sha256).toBe(section.originals[0]!.sha256);
   });
 
-  it("never restores running work or accepts extra privileged archive fields", async () => {
+  it("never restores running work, incompatible versions or extra privileged archive fields", async () => {
     const item = await save(),
       bytes = Buffer.from(
         JSON.stringify({
@@ -413,6 +645,16 @@ describe("complete Drive snapshots and restore", () => {
         })
       );
     expect(() => parseSnapshot(bytes)).toThrow("BACKUP_INVALID");
+    const incompatible = Buffer.from(
+      JSON.stringify({
+        format: "kosmora-chat-backup",
+        version: 2,
+        exported_at: new Date().toISOString(),
+        chats: [],
+        files: []
+      })
+    );
+    expect(() => parseSnapshot(incompatible)).toThrow("BACKUP_INVALID");
     const p = await preview(item.id);
     await post(`/backups/${item.id}/cancel-preview`);
     expect(
@@ -453,5 +695,35 @@ describe("complete Drive snapshots and restore", () => {
     const page = await app.inject({ url: base + "/backups?offset=1" });
     expect(page.statusCode).toBe(200);
     expect(page.json()).toMatchObject({ items: [], has_more: false });
+  });
+  it("accepts selected file bytes above 16 MiB while the canonical snapshot stays below 32 MiB", () => {
+    const content = "x".repeat(1_900_000),
+      at = new Date().toISOString();
+    const insert = db.sqlite.prepare(
+      "INSERT INTO work_artifact_versions(id,project_id,work_id,name,version,content,sha256,bytes,published,created_at) VALUES(?,'source-project','source-work',?,1,?,?,?,1,?)"
+    );
+    for (let n = 0; n < 9; n++)
+      insert.run(
+        `bulk-${n}`,
+        `bulk-${n}.txt`,
+        content,
+        snapshotHash(content),
+        Buffer.byteLength(content),
+        at
+      );
+    const bytes = captureSnapshot(db.sqlite, owner, { chat_ids: [], include_results: true });
+    expect(bytes.byteLength).toBeGreaterThan(16 * 1024 * 1024);
+    expect(bytes.byteLength).toBeLessThan(32 * 1024 * 1024);
+    expect(parseSnapshot(bytes).files).toHaveLength(10);
+  });
+
+  it("preserves the legacy sources.items chat list alongside additive file sources", async () => {
+    const r = await app.inject({ url: base + "/sources" });
+    expect(r.statusCode, r.body).toBe(200);
+    const data = r.json<{ items: unknown[]; chats: unknown[]; files: unknown[] }>();
+    expect(data.items).toEqual(data.chats);
+    expect(data.items).toEqual([expect.objectContaining({ id: chatId, mode: "work" })]);
+    expect(data.files).toHaveLength(1);
+    expect(JSON.stringify(data)).not.toContain("other owner's secret");
   });
 });

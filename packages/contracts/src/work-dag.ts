@@ -109,6 +109,13 @@ export interface WorkDagNode extends WorkDagNodeInput {
     review: { verdict: string; reason: string } | null;
     confirmation_id: string | null;
     sources: { run_id: string; provider: string; model: string; stage: string }[];
+    /** Optional for old graphs. Reconcile never claims byte verification. */
+    verification?: {
+      file_bytes: "not_checked_by_reconcile" | "verified";
+      content_review: "model_critic_pass" | "not_passed";
+      code_executed: false;
+      owner_accepted: false;
+    };
   };
 }
 export interface WorkDag {
