@@ -2,7 +2,7 @@
 
 9 ноября 2026, Москва. Ветка `developer/koswork-admission-reliability`, существующий
 PR #479. Продолжение после Work head `e5b0aec4fc79a32222757f10752831a6d390a7b5`.
-Фактический main сохранён: `08f865f6362d3045438d6ca7f93be8e9e56e1e6c`.
+Main на старте пакета: `08f865f6362d3045438d6ca7f93be8e9e56e1e6c`.
 
 ## Что было и что работает
 
@@ -120,3 +120,41 @@ Git ancestry, не перетирать page.tsx из старой ветки. �
 При откате — вернуть только source integration diff этого transfer, сохранив
 прежние Work accounting/admission исправления. Черновики/CSV/ledger rows не удалять:
 схема хранения не менялась. Исполнитель не выполняет merge PR/deploy.
+
+## Синхронизация после обновления main
+
+После публикации head `e31b509b6b5466f2014988b178b71f0747d0afdb` main обновился
+до `f3799c8a65f5b7ccab1e1d9e6a9440f95ea9632a` (принят PR #477). Прежний
+предел очереди и все новые admission/usage/CSV исправления сохранены.
+Синхронизация рабочей ветки — `faa25bc029ac5328da0835de0397ffd29f3fb727`,
+с родителями e31b509 и f3799c8; это не merge PR в main и не deploy.
+
+Исходники совместились автоматически. Единственный конфликт — добавленные
+в конец `docs/product/RUFLO_ADOPTION_SCOPE_RU.md` разделы: оставлены оба блока.
+SQL-фильтр очереди, DB tests и queue handoff побайтно совпадают с новым main;
+upstream Manager Work regression сохранена в общем test file. Других
+изменений реализации при синхронизации нет.
+
+На совместном дереве повторно выполнено:
+
+- `pnpm check:core` — **exit 0**, **935 API PASS** (85 Manager Work),
+  **166 DB PASS**, web 263 и остальные package tests/lint/typecheck/build/
+  root guards/privacy/profile — PASS; 4 OCI локально skipped.
+- После завершения build production CSV/Studio-набор отдельно — **13/13 PASS**,
+  retries=0, 26,0 с. Использована уже собранная production .next и отдельная
+  temporary API SQLite. Одновременных сборок не было.
+- Report после этой синхронизации побайтно совпал с сохранённым result.json;
+  выбранный CSV совпал с selection.csv. Scope/cancel regressions прошли.
+
+Внешний CI предшествующего e31b509: CI #1670 и API identity #94 — success,
+но browser не чистый: **381 PASS + 1 flaky**. Новый CSV и прежний CSV-сценарий
+прошли без retry; flaky был в `document-upload-queue.spec.ts:138` —
+`route.fetch: socket hang up` при имитации потерянного POST response, затем
+первичная проверка uncertain row не нашла запись. Автоматический retry прошёл.
+Эта ошибка не объявляется исправленной CSV scope patch или синхронизацией main.
+Workflow вручную не повторялся. Окончательные checks нового joint SHA — в PR.
+
+Сырые новые логи: `/tmp/koswork-csv-main-sync-core.log`,
+`/tmp/koswork-csv-main-sync-browser.log`. При откате не откатывать весь merge
+с уже принятым исправлением #477: откат CSV относится только к source diff
+4359fa2; данные/схема/правила quota и privacy остаются прежними.
