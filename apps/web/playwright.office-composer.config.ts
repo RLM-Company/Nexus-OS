@@ -5,6 +5,7 @@ export default defineConfig({
   ...base,
   testMatch: [
     "**/office-workspace.spec.ts",
+    "**/office-composer-integration.spec.ts",
     "**/chat-reliability.spec.ts",
     "**/composer-draft-races.spec.ts"
   ]

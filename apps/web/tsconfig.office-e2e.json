@@ -4,6 +4,10 @@
     "incremental": false,
     "noEmit": true
   },
-  "include": ["e2e/office-workspace.spec.ts", "playwright.office-composer.config.ts"],
+  "include": [
+    "e2e/office-workspace.spec.ts",
+    "playwright.office-composer.config.ts",
+    "e2e/office-composer-integration.spec.ts"
+  ],
   "exclude": ["node_modules"]
 }
