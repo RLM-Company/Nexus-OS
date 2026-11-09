@@ -117,6 +117,12 @@ test("a verified Office copy preserves the prepared message and attachment acros
     real_model_called: false,
     visual_render_verified: false
   };
+  const copyPath = info.outputPath("offer.koswork.docx");
+  await writeFile(copyPath, bytes, { flag: "wx" });
+  await info.attach("verified-office-copy", {
+    path: copyPath,
+    contentType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+  });
   const reportPath = info.outputPath("office-composer-integration.json");
   await writeFile(reportPath, JSON.stringify(report, null, 2) + "\n", { flag: "wx" });
   await info.attach("office-composer-integration", {
