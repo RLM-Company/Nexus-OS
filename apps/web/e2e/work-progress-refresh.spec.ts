@@ -149,6 +149,15 @@ test("hidden progress waits for visibility and reads a changed work version on r
 }) => {
   const work = await preparedWork(request, "A1");
   let reads = 0;
+  const base = `/api/v1/projects/${work.project}`;
+  const listUrls = [`${base}/work`, `${base}/work-dags`, "/api/v1/model-runtime"];
+  const listReads = new Map(listUrls.map((url) => [url, 0]));
+  for (const url of listUrls) {
+    await page.route(`**${url}`, (route) => {
+      listReads.set(url, listReads.get(url)! + 1);
+      return route.continue();
+    });
+  }
   await page.route(`**${work.runtime}`, (route) => {
     reads++;
     return route.continue();
@@ -159,11 +168,18 @@ test("hidden progress waits for visibility and reads a changed work version on r
   await expect(
     progress.getByText("Подтвердите план ниже, чтобы начать создание файлов.", { exact: true })
   ).toBeVisible();
+  const foreground = Promise.all(
+    listUrls.map((url) => page.waitForResponse((r) => r.url().endsWith(url)))
+  );
+  await page.clock.fastForward(1500);
+  await foreground;
+  expect([...listReads.values()].every((count) => count > 1)).toBe(true);
   await page.evaluate(() => {
     Object.defineProperty(document, "visibilityState", { configurable: true, get: () => "hidden" });
     document.dispatchEvent(new Event("visibilitychange"));
   });
   const hiddenReads = reads;
+  const hiddenLists = [...listReads.entries()];
   const current = (await (await request.get(work.work)).json()) as { version: number };
   expect(
     (
@@ -182,14 +198,22 @@ test("hidden progress waits for visibility and reads a changed work version on r
     )
     .toBe(true);
   const latest = (await (await request.get(work.work)).json()) as { status: string };
-  await page.clock.fastForward(1500);
+  const title = "Plan created while its view was hidden";
+  expect(
+    (
+      await request.post(`${base}/work-dags`, {
+        data: {
+          client_request_id: crypto.randomUUID(),
+          title,
+          nodes: [{ id: "step", title: "Step", goal: "Create result.md", depends_on: [] }]
+        }
+      })
+    ).status()
+  ).toBe(201);
+  await page.clock.fastForward(7000);
   const manager = page.getByRole("region", { name: "Выполнение задачи Manager", exact: true });
-  await expect(
-    manager
-      .getByText(latest.status === "completed" ? "Готово" : "Нужно разрешение", { exact: true })
-      .first()
-  ).toBeVisible();
   expect(reads).toBe(hiddenReads);
+  expect([...listReads.entries()]).toEqual(hiddenLists);
   await page.evaluate(() => {
     Object.defineProperty(document, "visibilityState", {
       configurable: true,
@@ -197,6 +221,12 @@ test("hidden progress waits for visibility and reads a changed work version on r
     });
     document.dispatchEvent(new Event("visibilitychange"));
   });
+  await expect(
+    manager
+      .getByText(latest.status === "completed" ? "Готово" : "Нужно разрешение", { exact: true })
+      .first()
+  ).toBeVisible();
+  await expect(page.getByRole("heading", { name: title, exact: true })).toBeVisible();
   await expect(
     progress.getByText(
       latest.status === "completed"
