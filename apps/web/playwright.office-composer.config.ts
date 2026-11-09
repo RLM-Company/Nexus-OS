@@ -7,6 +7,8 @@ export default defineConfig({
     "**/office-workspace.spec.ts",
     "**/office-composer-integration.spec.ts",
     "**/chat-reliability.spec.ts",
-    "**/composer-draft-races.spec.ts"
+    "**/composer-draft-races.spec.ts",
+    "**/csv-composer-transfer.spec.ts",
+    "**/studio-files.spec.ts"
   ]
 });
