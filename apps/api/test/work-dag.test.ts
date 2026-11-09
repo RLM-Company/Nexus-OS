@@ -996,13 +996,25 @@ describe("executable durable Work DAG", () => {
           })
         ).statusCode
       ).toBe(404);
+      for (const suffix of ["results", "results.zip"]) {
+        const missing = await app.inject(
+          `/api/v1/projects/${other.id}/work-dags/${graph.id}/${suffix}`
+        );
+        expect(missing.statusCode).toBe(404);
+        expect(missing.headers["cache-control"]).toBe("private, no-store");
+        expect(missing.headers["content-disposition"]).toBeUndefined();
+      }
       await autoTick(f, graph.id);
       expect(f.calls).toHaveLength(6);
       const artifact = graph.nodes[0]!.artifacts[0]!;
       f.db.sqlite
         .prepare("UPDATE work_artifact_versions SET bytes = bytes + 1 WHERE id = ?")
         .run(artifact.id);
-      expect((await app.inject({ url: base + "/results" })).statusCode).toBe(409);
+      const failedJson = await app.inject({ url: base + "/results" });
+      expect(failedJson.statusCode).toBe(409);
+      expect(failedJson.headers["content-disposition"]).toBeUndefined();
+      expect(failedJson.headers["cache-control"]).toBe("private, no-store");
+      expect(failedJson.json()).toEqual({ error: "DEPENDENCY_ARTIFACT_MISSING" });
       expect((await app.inject({ url: base + "/results.zip" })).statusCode).toBe(409);
       f.db.sqlite
         .prepare("UPDATE work_artifact_versions SET bytes = ? WHERE id = ?")
@@ -1014,6 +1026,8 @@ describe("executable durable Work DAG", () => {
       expect((await app.inject({ url: base + "/results" })).statusCode).toBe(409);
       const brokenZip = await app.inject({ url: base + "/results.zip" });
       expect(brokenZip.statusCode).toBe(409);
+      expect(brokenZip.headers["content-disposition"]).toBeUndefined();
+      expect(brokenZip.headers["cache-control"]).toBe("private, no-store");
       expect(brokenZip.headers["content-type"]).toContain("application/json");
       expect(brokenZip.json()).toEqual({ error: "DEPENDENCY_ARTIFACT_MISSING" });
     } finally {

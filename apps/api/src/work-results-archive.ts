@@ -74,8 +74,16 @@ const assertOptionalVerification = (verification: File["verification"]) => {
 
 /** Deterministic, inert ZIP download from one reconciled graph; no model or filesystem writes. */
 export function buildWorkResultsArchive(graph: WorkDag, files: File[]): Buffer {
+  const declaredIds = graph.nodes
+    .filter((node) => node.status === "completed")
+    .flatMap((node) => node.artifacts.map((artifact) => artifact.id));
+  if (files.length !== declaredIds.length || new Set(declaredIds).size !== declaredIds.length)
+    throw new WorkDagConflict("DEPENDENCY_ARTIFACT_MISSING");
+  const emitted = new Set<string>();
   const entries: { path: string; bytes: Buffer }[] = [];
   const manifestFiles = files.map((file, index) => {
+    if (emitted.has(file.id)) throw new WorkDagConflict("DEPENDENCY_ARTIFACT_MISSING");
+    emitted.add(file.id);
     const nodeIndex = graph.nodes.findIndex((node) => node.id === file.node_id);
     if (
       nodeIndex < 0 ||
