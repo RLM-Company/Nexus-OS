@@ -454,10 +454,12 @@
 }
 /* Functional controls only; typography and icon sizes stay as documented in UI_RULES.md. */
 .product-shell .kosmora-composer-actions {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 6px;
   min-width: 0;
+  flex: 0 0 auto;
 }
 .product-shell .kosmora-composer-actions .kosmora-action-toggle {
   display: inline-flex;
@@ -465,21 +467,21 @@
   gap: 4px;
   white-space: nowrap;
 }
-.product-shell .kosmora-composer-actions details {
-  position: relative;
-}
-.product-shell .kosmora-composer-actions summary {
-  cursor: pointer;
+.product-shell .kosmora-composer-actions .kosmora-actions-trigger {
   white-space: nowrap;
+  max-width: min(150px, 30vw);
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
-.product-shell .kosmora-composer-actions ul {
+.product-shell .kosmora-composer-actions .kosmora-actions-menu {
   position: absolute;
   bottom: 100%;
-  left: 0;
+  right: 0;
   z-index: 5;
   margin: 0;
   padding: 4px;
   list-style: none;
+  pointer-events: auto;
 }
 .product-shell .kosmora-composer-actions li button {
   white-space: nowrap;
@@ -541,10 +543,9 @@
   .product-shell .kosmora-composer-actions {
     min-width: 0;
     max-width: 100%;
-    overflow: hidden;
   }
   .product-shell .kosmora-composer-actions .kosmora-action-toggle,
-  .product-shell .kosmora-composer-actions summary {
+  .product-shell .kosmora-composer-actions .kosmora-actions-trigger {
     white-space: normal;
     overflow: hidden;
     text-overflow: ellipsis;

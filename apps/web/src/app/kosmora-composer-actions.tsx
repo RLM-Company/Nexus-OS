@@ -15,7 +15,11 @@ const TEXT_ACTIONS: { kind: ChatTextAction["kind"]; label: string }[] = [
   { kind: "rewrite", label: "Переписать текст" }
 ];
 
-/** Functional controls in the existing composer row. No layout/styling redesign. */
+/**
+ * Functional controls in the existing composer row. Uses a plain button + a
+ * conditionally rendered menu: a native <details>/<summary> expands to the full
+ * row width and intercepts pointer events on the neighbouring send/stop buttons.
+ */
 export function KosmoraComposerActions({
   disabled,
   value,
@@ -31,7 +35,12 @@ export function KosmoraComposerActions({
   const [open, setOpen] = useState(false);
   const active = value.text_action?.kind;
   return (
-    <div className="kosmora-composer-actions">
+    <div
+      className="kosmora-composer-actions"
+      onKeyDown={(event) => {
+        if (event.key === "Escape") setOpen(false);
+      }}
+    >
       <label className="kosmora-action-toggle">
         <input
           type="checkbox"
@@ -41,15 +50,23 @@ export function KosmoraComposerActions({
         />
         Искать в интернете
       </label>
-      <details open={open} onToggle={(event) => setOpen(event.currentTarget.open)}>
-        <summary aria-label="Действия с текстом">
-          {active ? TEXT_ACTIONS.find((a) => a.kind === active)?.label : "Действие с текстом"}
-        </summary>
-        <ul>
+      <button
+        type="button"
+        className="kosmora-actions-trigger"
+        aria-expanded={open}
+        aria-haspopup="menu"
+        disabled={disabled}
+        onClick={() => setOpen((current) => !current)}
+      >
+        {active ? TEXT_ACTIONS.find((a) => a.kind === active)?.label : "Действие с текстом"}
+      </button>
+      {open && (
+        <ul className="kosmora-actions-menu" role="menu">
           {TEXT_ACTIONS.map((action) => (
             <li key={action.kind}>
               <button
                 type="button"
+                role="menuitem"
                 disabled={disabled}
                 aria-pressed={active === action.kind}
                 onClick={() => {
@@ -79,7 +96,7 @@ export function KosmoraComposerActions({
             </li>
           ))}
         </ul>
-      </details>
+      )}
     </div>
   );
 }
