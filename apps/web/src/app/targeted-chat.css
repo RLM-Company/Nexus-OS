@@ -537,4 +537,16 @@
     max-width: min(160px, 39vw);
     padding: 5px 4px;
   }
+  /* Keep the functional controls inside the narrow composer instead of widening it. */
+  .product-shell .kosmora-composer-actions {
+    min-width: 0;
+    max-width: 100%;
+    overflow: hidden;
+  }
+  .product-shell .kosmora-composer-actions .kosmora-action-toggle,
+  .product-shell .kosmora-composer-actions summary {
+    white-space: normal;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
 }

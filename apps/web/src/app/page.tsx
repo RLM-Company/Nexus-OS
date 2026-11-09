@@ -541,7 +541,6 @@ export default function Home() {
     web_search: false,
     text_action: null
   });
-  const [composerSelection, setComposerSelection] = useState("");
   const [draftStorageReadyKey, setDraftStorageReadyKey] = useState<string | null>(null);
   const [draftNotice, setDraftNotice] = useState<string | null>(null);
   const [draftRecoveryNotice, setDraftRecoveryNotice] = useState<string | null>(null);
@@ -1807,7 +1806,6 @@ export default function Home() {
           chatAttachments.replace([]);
           setDraft("");
           setComposerActions({ web_search: false, text_action: null });
-          setComposerSelection("");
           viewRequestRef.current += 1;
           const materials = [
             ...localChatMessages
@@ -3243,10 +3241,6 @@ export default function Home() {
               setDraftRecoveryNotice(null);
               setDraft(event.target.value);
             }}
-            onSelect={(event) => {
-              const area = event.currentTarget;
-              setComposerSelection(area.value.slice(area.selectionStart, area.selectionEnd));
-            }}
             onKeyDown={(event) => {
               if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
                 event.preventDefault();
@@ -3287,7 +3281,7 @@ export default function Home() {
                   disabled={sending || loading || !initialRouteReady}
                   value={composerActions}
                   onChange={setComposerActions}
-                  selection={composerSelection}
+                  composerRef={composerRef}
                 />
               )}
             </div>

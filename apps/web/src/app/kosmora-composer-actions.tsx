@@ -1,6 +1,6 @@
 "use client";
 import type { ChatTextAction } from "@cosmora/contracts";
-import { useState } from "react";
+import { useState, type RefObject } from "react";
 
 export type KosmoraComposerActionsValue = {
   web_search: boolean;
@@ -20,12 +20,13 @@ export function KosmoraComposerActions({
   disabled,
   value,
   onChange,
-  selection
+  composerRef
 }: {
   disabled: boolean;
   value: KosmoraComposerActionsValue;
   onChange: (next: KosmoraComposerActionsValue) => void;
-  selection: string;
+  /** Read the live selection only when an action is chosen, not on every cursor move. */
+  composerRef: RefObject<HTMLTextAreaElement | null>;
 }) {
   const [open, setOpen] = useState(false);
   const active = value.text_action?.kind;
@@ -52,6 +53,10 @@ export function KosmoraComposerActions({
                 disabled={disabled}
                 aria-pressed={active === action.kind}
                 onClick={() => {
+                  const area = composerRef.current;
+                  const selection = area
+                    ? area.value.slice(area.selectionStart, area.selectionEnd)
+                    : "";
                   const next: KosmoraComposerActionsValue = {
                     ...value,
                     text_action:
