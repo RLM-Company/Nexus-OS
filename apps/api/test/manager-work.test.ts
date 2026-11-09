@@ -190,6 +190,43 @@ async function fixture(
 }
 
 describe("durable Manager work", () => {
+  it("executes a healthy owner's task beyond 50 privacy-fenced queue entries without touching them", async () => {
+    const f = await fixture();
+    for (let i = 0; i < 49; i++)
+      f.store.create(f.project.id, "local-owner", "local-owner", {
+        ...request,
+        client_request_id: `frozen-${i}`
+      });
+    const healthyOwner = "ready-owner";
+    const project = f.projects.createProject("Ready owner", "ready-source", healthyOwner).project;
+    f.policy.ensureProfile(project.id);
+    f.policy.updateProfile({
+      projectId: project.id,
+      baseLevel: "A2",
+      overrides: [],
+      expectedVersion: 1
+    });
+    const work = f.store.create(project.id, healthyOwner, healthyOwner, request)!;
+    f.database.sqlite
+      .prepare(
+        `INSERT INTO kosmora_owner_data_lifecycle
+      (owner_id,state,epoch,operation_id,started_at,updated_at) VALUES (?,'quiescing',1,'queue-test',datetime('now'),datetime('now'))`
+      )
+      .run("local-owner");
+    const frozen = f.store.list(f.project.id, "local-owner");
+    expect(frozen).toHaveLength(50);
+    try {
+      f.coordinator.start();
+      await vi.waitFor(() => expect(f.store.get(work.id, healthyOwner)?.status).toBe("completed"), {
+        timeout: 5000
+      });
+      expect(f.store.list(f.project.id, "local-owner")).toEqual(frozen);
+      expect(f.store.ownerWritable("local-owner")).toBe(false);
+      expect(f.calls).toEqual(["manager_work_plan", "manager_work_draft"]);
+    } finally {
+      await f.coordinator.stop();
+    }
+  });
   it.each(["work-fence", "quiescing"] as const)(
     "starts after a crash with a %s owner and executes only another owner's task",
     async (fence) => {
