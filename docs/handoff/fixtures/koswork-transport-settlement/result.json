@@ -1,0 +1,36 @@
+{
+  "input": {
+    "goal": "Create a useful document",
+    "stage": "plan",
+    "provider_usage": {
+      "inputTokens": 100,
+      "outputTokens": 100
+    },
+    "transport_failure": "after accepted response.completed"
+  },
+  "real_model_called": false,
+  "provider": "local fixture",
+  "model_requests": 1,
+  "work": {
+    "status": "failed",
+    "stage": "plan",
+    "error_code": "PROVIDER_ERROR",
+    "owner_budget_hold_id": null
+  },
+  "ledger": {
+    "status": "committed",
+    "input_tokens": 100,
+    "output_tokens": 100
+  },
+  "account": {
+    "model_tokens_or_upper_bound": 200,
+    "translation_tokens_or_upper_bound": 0,
+    "in_flight_or_uncertain_holds": 0,
+    "total_counted_tokens": 200,
+    "max_total_tokens": null,
+    "currency_cost": "unknown"
+  },
+  "work_http_status": 200,
+  "file_download_status": 404,
+  "recovery_replayed_provider": false
+}
