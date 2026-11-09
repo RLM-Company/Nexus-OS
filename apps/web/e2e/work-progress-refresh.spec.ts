@@ -1,5 +1,10 @@
 import { expect, test, type APIRequestContext } from "@playwright/test";
 
+test.afterEach(async ({ page }) => {
+  // Drain read interceptors before closing the page and starting the next test.
+  await page.unrouteAll({ behavior: "wait" });
+});
+
 async function preparedWork(request: APIRequestContext, autonomy: "A1" | "A2" = "A2") {
   const created = await request.post("/api/v1/projects", {
     data: {
@@ -66,6 +71,84 @@ test("unchanged completed progress does not refetch on a timer", async ({ page, 
     page.getByRole("region", { name: "Выполнение задачи Manager", exact: true })
   ).toBeVisible();
   expect(reads).toBe(initial);
+});
+
+test("selected work stays open outside the history window and keeps control commands scoped", async ({
+  page,
+  request
+}) => {
+  const work = await preparedWork(request, "A1");
+  const list = `/api/v1/projects/${work.project}/work`;
+  const selectedId = work.work.split("/").at(-1);
+  const other = await request.post(list, {
+    data: {
+      client_request_id: crypto.randomUUID(),
+      goal: "Another task in the recent history window",
+      worker_role: "analyst",
+      max_model_requests: 3,
+      max_input_tokens: 32000,
+      max_output_tokens: 6000
+    }
+  });
+  expect(other.status()).toBe(201);
+  const otherId = ((await other.json()) as { id: string }).id;
+  await expect
+    .poll(
+      async () =>
+        ((await (await request.get(`${list}/${otherId}`)).json()) as { status: string }).status
+    )
+    .toBe("awaiting_approval");
+  let outsideWindow = false;
+  let unavailable = false;
+  let detailReads = 0;
+  await page.route(`**${list}`, async (route) => {
+    if (route.request().method() !== "GET") return route.continue();
+    const response = await route.fetch();
+    const data = (await response.json()) as { items: { id: string }[] };
+    await route.fulfill({
+      response,
+      json: {
+        items: outsideWindow ? data.items.filter((item) => item.id !== selectedId) : data.items
+      }
+    });
+  });
+  await page.route(`**${work.work}`, async (route) => {
+    detailReads++;
+    if (unavailable)
+      return route.fulfill({ status: 503, json: { error: "Temporarily unavailable" } });
+    return route.continue();
+  });
+  await page.goto(`/?project=${work.project}&view=plan`);
+  const manager = page.getByRole("region", { name: "Выполнение задачи Manager", exact: true });
+  const history = manager.getByRole("group", { name: "История задач Manager", exact: true });
+  const selected = history.getByRole("button", {
+    name: /Create result.md with a short complete report/
+  });
+  await selected.click();
+  await expect(selected).toHaveAttribute("aria-pressed", "true");
+  outsideWindow = true;
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await expect.poll(() => detailReads).toBeGreaterThan(0);
+  await expect(selected).toHaveAttribute("aria-pressed", "true");
+  unavailable = true;
+  const warning = manager.getByText(
+    "Состояние временно недоступно. Работа сохраняется на сервере.",
+    { exact: true }
+  );
+  await expect(warning).toBeVisible();
+  await expect(selected).toHaveAttribute("aria-pressed", "true");
+  unavailable = false;
+  await expect(warning).toBeHidden();
+  const control = page.waitForResponse(
+    (response) => response.url().endsWith("/control") && response.request().method() === "POST"
+  );
+  await manager.getByRole("button", { name: "Подтвердить план", exact: true }).click();
+  const response = await control;
+  expect(response.url()).toContain(`${work.work}/control`);
+  expect(response.status()).toBe(200);
+  expect(
+    ((await (await request.get(`${list}/${otherId}`)).json()) as { status: string }).status
+  ).toBe("awaiting_approval");
 });
 
 test("a lost create acknowledgement keeps its complete request across model budget refresh", async ({

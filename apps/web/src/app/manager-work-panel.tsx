@@ -136,14 +136,19 @@ export function ManagerWorkPanel({
             signal
           })
         ]);
+        // History is bounded. Its window moving is not a change of selection.
+        const selected = selectedWorkId
+          ? (list.items.find((item) => item.id === selectedWorkId) ??
+            (await json<Work>(base + "/" + encodeURIComponent(selectedWorkId), { signal })))
+          : null;
+        const items =
+          selected && !list.items.some((item) => item.id === selected.id)
+            ? [...list.items, selected]
+            : list.items;
         if (!signal.aborted && epoch === mutationEpoch.current && !lock.current) {
-          const latest = selectedWorkId
-            ? (list.items.find((item) => item.id === selectedWorkId) ?? list.items[0] ?? null)
-            : (list.items[0] ?? null);
-          if (selectedWorkId && !list.items.some((item) => item.id === selectedWorkId))
-            setSelectedWorkId(null);
+          const latest = selected ?? items[0] ?? null;
           setWorks((current) =>
-            list.items.map((item) => {
+            items.map((item) => {
               const previous = current.find((candidate) => candidate.id === item.id);
               return previous && previous.version > item.version ? previous : item;
             })
