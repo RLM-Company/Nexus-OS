@@ -42,7 +42,8 @@ export function registerWorkRuntimeRoutes(options: {
     base + "/work-artifacts/:id/download",
     { schema: { params } },
     (req, reply) => {
-      const artifact = store.runtime.artifact(
+      reply.header("cache-control", "private, no-store");
+      const artifact = store.runtime.verifiedArtifact(
         req.params.projectId,
         identityFor(req).owner_id,
         req.params.id
@@ -54,7 +55,6 @@ export function registerWorkRuntimeRoutes(options: {
           `attachment; filename="${encodeURIComponent(artifact.metadata.name)}"`
         )
         .header("x-content-type-options", "nosniff")
-        .header("cache-control", "no-store")
         .type("text/plain; charset=utf-8")
         .send(artifact.content);
     }
