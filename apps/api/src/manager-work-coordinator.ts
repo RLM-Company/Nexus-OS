@@ -542,26 +542,33 @@ export class ManagerWorkCoordinator {
           content += event.delta;
           if (content.length > 256000) throw new Error("INVALID_MODEL_OUTPUT");
           writer.update(content);
-        } else if (event.type === "response.completed") completion = event;
+        } else if (event.type === "response.completed") {
+          completion = event;
+          // The gateway has validated this receipt. Settle it before awaiting
+          // transport closure, which can still fail without undoing the usage.
+          projects.completeRun(runId, completion.provider, completion.model, completion.usage, {
+            attempt: completion.route.attempt,
+            calculatedCost: completion.calculatedCost
+          });
+          runCommitted = true;
+          memoryUsage(completion.route.attempt, "provider_completed");
+          if (ownerReservation) {
+            this.dependencies.ownerBudget?.completeReservation(
+              ownerReservation,
+              "main",
+              completion.usage.inputTokens,
+              completion.usage.outputTokens
+            );
+            // Canonical accounting owns this receipt, including any unknown-usage hold.
+            ownerReservation = undefined;
+          }
+          work = this.current(work.id, work.owner_id);
+          if (!signal.aborted && work.status === "running" && !this.isStopped(work))
+            work = this.checkpoint({ ...work, owner_budget_hold_id: null });
+        }
       }
       if (!completion) throw new Error("INVALID_MODEL_OUTPUT");
       writer.update(content, true);
-      projects.completeRun(runId, completion.provider, completion.model, completion.usage, {
-        attempt: completion.route.attempt,
-        calculatedCost: completion.calculatedCost
-      });
-      runCommitted = true;
-      memoryUsage(completion.route.attempt, "provider_completed");
-      if (ownerReservation) {
-        this.dependencies.ownerBudget?.completeReservation(
-          ownerReservation,
-          "main",
-          completion.usage.inputTokens,
-          completion.usage.outputTokens
-        );
-        // Canonical accounting owns this receipt, including any unknown-usage hold.
-        ownerReservation = undefined;
-      }
       work = this.current(work.id, work.owner_id);
       // Account for a completed call without accepting output after cancellation.
       if (signal.aborted || work.status === "cancelled") throw new Error("EMERGENCY_STOP");
