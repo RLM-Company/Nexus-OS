@@ -163,7 +163,7 @@ describe("buildModelRuntime", () => {
       document.entries.find((e) => e.provider_id === "cheapvibecode")!.context_window_tokens
     ).toBe(1050000);
   });
-  it("constructs the owner-selected Fable route without dispatch or mock fallback", async () => {
+  it("constructs the historical Fable route within its evidence window without dispatch", async () => {
     const config = loadServerConfig({
       NODE_ENV: "test",
       MODEL_PROVIDER: "openai-compatible",
@@ -175,12 +175,24 @@ describe("buildModelRuntime", () => {
       MANAGER_MAX_OUTPUT_TOKENS: "100000",
       MODEL_REGISTRY_PATH: "config/model-registry.tokenshop.fable.v1.json"
     });
-    const runtime = await buildModelRuntime(config, {
-      secretResolver: { resolve: () => Promise.resolve("fixture-only") }
-    });
-    expect(runtime.contextWindowTokens).toBe(1_000_000);
-    expect(runtime.registryVersion).toBe("tokenshop-fable-live-2026-11-02");
-    expect(config.modelFallbackToMock).toBe(false);
+    // Historical construction fixture; this does not renew provider evidence.
+    const clock = vi.spyOn(Date, "now").mockReturnValue(Date.parse("2026-11-03T00:00:00.000Z"));
+    try {
+      const runtime = await buildModelRuntime(config, {
+        secretResolver: { resolve: () => Promise.resolve("fixture-only") }
+      });
+      expect(runtime.contextWindowTokens).toBe(1_000_000);
+      expect(runtime.registryVersion).toBe("tokenshop-fable-live-2026-11-02");
+      expect(config.modelFallbackToMock).toBe(false);
+      // The checked-in evidence expires at this exact boundary. Real runtime
+      // validation must continue to refuse it, with no provider dispatch.
+      clock.mockReturnValue(Date.parse("2026-11-09T09:46:39.765Z"));
+      await expect(buildModelRuntime(config, { secretResolver })).rejects.toThrow(
+        "Model Registry evidence has expired: tokenshop:claude-fable-5"
+      );
+    } finally {
+      clock.mockRestore();
+    }
   });
   it("loads a repository-relative registry path independently of process cwd", () => {
     const document = loadModelRegistryDocument("config/model-registry.v1.json");

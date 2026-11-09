@@ -75,6 +75,7 @@ async function fixture(
     usage?: Extract<ProviderStreamEvent, { type: "response.completed" }>["usage"];
     wrapOutput?: boolean;
     afterChunk?: (request: ModelRequest, signal: AbortSignal, index: number) => Promise<void>;
+    afterCompletion?: (request: ModelRequest) => void | Promise<void>;
     operationTimeoutMs?: number;
     managerContextWindow?: number;
     prepareMemory?: (store: ManagerWorkStore, projectId: string) => void;
@@ -132,6 +133,7 @@ async function fixture(
         finishReason: "stop",
         usage: options.usage ?? { inputTokens: 100, outputTokens: 100 }
       };
+      await options.afterCompletion?.(req);
     }
   };
   const config = loadServerConfig({ NODE_ENV: "test" });
@@ -193,6 +195,43 @@ async function fixture(
 }
 
 describe("durable Manager work", () => {
+  it("executes a healthy owner's task beyond 50 privacy-fenced queue entries without touching them", async () => {
+    const f = await fixture();
+    for (let i = 0; i < 49; i++)
+      f.store.create(f.project.id, "local-owner", "local-owner", {
+        ...request,
+        client_request_id: `frozen-${i}`
+      });
+    const healthyOwner = "ready-owner";
+    const project = f.projects.createProject("Ready owner", "ready-source", healthyOwner).project;
+    f.policy.ensureProfile(project.id);
+    f.policy.updateProfile({
+      projectId: project.id,
+      baseLevel: "A2",
+      overrides: [],
+      expectedVersion: 1
+    });
+    const work = f.store.create(project.id, healthyOwner, healthyOwner, request)!;
+    f.database.sqlite
+      .prepare(
+        `INSERT INTO kosmora_owner_data_lifecycle
+      (owner_id,state,epoch,operation_id,started_at,updated_at) VALUES (?,'quiescing',1,'queue-test',datetime('now'),datetime('now'))`
+      )
+      .run("local-owner");
+    const frozen = f.store.list(f.project.id, "local-owner");
+    expect(frozen).toHaveLength(50);
+    try {
+      f.coordinator.start();
+      await vi.waitFor(() => expect(f.store.get(work.id, healthyOwner)?.status).toBe("completed"), {
+        timeout: 5000
+      });
+      expect(f.store.list(f.project.id, "local-owner")).toEqual(frozen);
+      expect(f.store.ownerWritable("local-owner")).toBe(false);
+      expect(f.calls).toEqual(["manager_work_plan", "manager_work_draft"]);
+    } finally {
+      await f.coordinator.stop();
+    }
+  });
   it.each(["work-fence", "quiescing"] as const)(
     "starts after a crash with a %s owner and executes only another owner's task",
     async (fence) => {
@@ -2000,4 +2039,173 @@ describe("Work metered invalid replies", () => {
       expect(f.store.file(f.work.id, "local-owner", "result.md")).toBeNull();
     }
   );
+});
+
+describe("Work completion accounting before transport settlement", () => {
+  it.each([
+    {
+      stage: "plan",
+      task: "manager_work_plan",
+      calls: 1,
+      usage: { inputTokens: 100, outputTokens: 100 }
+    },
+    {
+      stage: "draft",
+      task: "manager_work_draft",
+      calls: 2,
+      usage: { inputTokens: 100, outputTokens: 100 }
+    },
+    {
+      stage: "review",
+      task: "manager_work_review",
+      calls: 3,
+      usage: { inputTokens: 100, outputTokens: 100 }
+    },
+    {
+      stage: "plan",
+      task: "manager_work_plan",
+      calls: 1,
+      usage: { inputTokens: 0, outputTokens: 0 }
+    },
+    {
+      stage: "plan",
+      task: "manager_work_plan",
+      calls: 1,
+      usage: { inputTokens: null, outputTokens: 100 }
+    }
+  ])(
+    "retains accepted $stage usage $usage after a trailing transport failure",
+    async ({ stage, task, calls, usage }) => {
+      const f = await fixture({
+        request: { ...request, require_critic: stage === "review" },
+        usage,
+        afterCompletion: (req) => {
+          if (req.task_type === task)
+            throw new GatewayRunError(
+              "PROVIDER_ERROR",
+              "mock",
+              "fixture transport failed after completion",
+              false
+            );
+        }
+      });
+      await f.coordinator.execute(f.work.id, "local-owner");
+      const state = f.get();
+      expect(state).toMatchObject({
+        status: "failed",
+        stage,
+        error_code: "PROVIDER_ERROR",
+        model_requests: calls
+      });
+      const ledger = f.projects.getModelUsageForRun(state.inflight_run_id!)[0]!;
+      expect(ledger).toMatchObject({
+        status: "committed",
+        actual_input_tokens: usage.inputTokens,
+        actual_output_tokens: usage.outputTokens
+      });
+      expect(state.owner_budget_hold_id).toBeNull();
+      expect(f.projects.getRun(state.inflight_run_id!)?.status).toBe("succeeded");
+      const account = f.accountStore.summary("local-owner");
+      expect(account.total_counted_tokens).toBe(
+        calls *
+          (usage.inputTokens === null
+            ? ledger.estimated_input_tokens + ledger.max_output_tokens
+            : usage.inputTokens + usage.outputTokens)
+      );
+      // Canonical committed attempts already contribute to the total; the summary
+      // excludes their hold to avoid counting the same upper bound twice.
+      expect(account.in_flight_or_uncertain_holds).toBe(0);
+      const holds = f.database.sqlite
+        .prepare("SELECT status FROM kosmora_usage_holds WHERE owner_id=?")
+        .all("local-owner");
+      expect(holds).toEqual(usage.inputTokens === null ? [{ status: "uncertain" }] : []);
+      expect(f.store.file(f.work.id, "local-owner", "result.md")).toBeNull();
+      expect(f.calls).toHaveLength(calls);
+      expect(f.store.recover()).toBe(0);
+      await new ManagerWorkCoordinator(f.dependencies).execute(f.work.id, "local-owner");
+      expect(f.calls).toHaveLength(calls);
+      const app = buildApp({
+        config: f.config,
+        database: f.database,
+        projectStore: f.projects,
+        managerWorkStore: f.store,
+        managerWorkCoordinator: f.coordinator
+      });
+      try {
+        const base = `/api/v1/projects/${f.project.id}/work/${f.work.id}`;
+        const response = await app.inject({ url: base });
+        const download = await app.inject({ url: base + "/files/result.md" });
+        expect(response.statusCode).toBe(200);
+        expect(response.json()).toMatchObject({ status: "failed", error_code: "PROVIDER_ERROR" });
+        expect(download.statusCode).toBe(404);
+        if (
+          stage === "plan" &&
+          usage.inputTokens === 100 &&
+          process.env.KOSWORK_TRAILING_REPORT_DIR
+        ) {
+          const directory = process.env.KOSWORK_TRAILING_REPORT_DIR;
+          mkdirSync(directory, { recursive: true });
+          writeFileSync(
+            join(directory, "result.json"),
+            JSON.stringify(
+              {
+                input: {
+                  goal: request.goal,
+                  stage,
+                  provider_usage: usage,
+                  transport_failure: "after accepted response.completed"
+                },
+                real_model_called: false,
+                provider: "local fixture",
+                model_requests: f.calls.length,
+                work: {
+                  status: state.status,
+                  stage: state.stage,
+                  error_code: state.error_code,
+                  owner_budget_hold_id: state.owner_budget_hold_id
+                },
+                ledger: {
+                  status: ledger.status,
+                  input_tokens: ledger.actual_input_tokens,
+                  output_tokens: ledger.actual_output_tokens
+                },
+                account,
+                work_http_status: response.statusCode,
+                file_download_status: download.statusCode,
+                recovery_replayed_provider: false
+              },
+              null,
+              2
+            ) + "\n",
+            { flag: "wx" }
+          );
+        }
+      } finally {
+        await app.close();
+      }
+    }
+  );
+
+  it("keeps known usage when cancellation follows the completion event without publishing", async () => {
+    const f = await fixture({
+      afterCompletion: () => {
+        f.coordinator.control(f.work.id, "local-owner", f.get().version, "cancel");
+      }
+    });
+    await f.coordinator.execute(f.work.id, "local-owner");
+    const state = f.get();
+    expect(state.status).toBe("cancelled");
+    expect(f.projects.getModelUsageForRun(state.inflight_run_id!)[0]).toMatchObject({
+      status: "committed",
+      actual_input_tokens: 100,
+      actual_output_tokens: 100
+    });
+    expect(f.accountStore.summary("local-owner")).toMatchObject({
+      total_counted_tokens: 200,
+      in_flight_or_uncertain_holds: 0
+    });
+    expect(f.store.file(f.work.id, "local-owner", "result.md")).toBeNull();
+    await f.coordinator.execute(f.work.id, "local-owner");
+    expect(f.calls).toHaveLength(1);
+  });
 });
