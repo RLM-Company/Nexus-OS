@@ -1,166 +1,184 @@
-# Совместная поставка Office, composer и Work reliability
+# Итоговая интеграция рабочих документов Koswork
 
-9 ноября 2026, Москва. Ветка: `developer/koswork-office-workspace`, PR #466.
-Предыдущий Office head: `65d714be439ba1fea93ff92b9947123975e80781`.
-Сохранённый main: `08f865f6362d3045438d6ca7f93be8e9e56e1e6c`.
+9 ноября 2026, Москва. Ветка `developer/koswork-office-workspace`, PR #466.
+Предыдущий проверенный Office head: `c3431b31621025d39af9bd055b3d1a6c9b0531b9`.
+Актуальный main при начале этой интеграции:
+`7bb246bef2ed8e9f47ae93260384e560a9d6065c` (после PR #483).
+Контрольная база исходного плана: `338536ee5946f96dcd18768143cc41af998c476a`.
 
-## Состав и действующий путь
+## Что объединено и действующий пользовательский путь
 
-Office и composer уже проверялись вместе, а последние startup/usage исправления
-Work находились в отдельном PR #479. Теперь его проверенный head
-`0a26359969086eaae30cf28a3b040eca8efdc003` входит в Office-ветку.
-Git совместил все девять пришедших файлов автоматически, без ручных конфликтов.
+Office уже открывал DOCX/XLSX/PPTX, применял адресуемые операции через preview и
+отдельное подтверждение, сохранял новую копию с версиями/SHA256/readback.
+В composer уже были исправления сохранения текста/вложений и поздних ответов.
+Последние Work accounting и отмена CSV transfer оставались в отдельном PR #479.
+Теперь их точный проверенный head `9d2b1f3692034a3c0132fbf7a54bf5d58c813803`
+входит в эту Office-поставку вместе с composer head
+`c69fc86efb360960c971e2357577641b3ed2b1f6` и указанным новым main.
 
-- DOCX/XLSX/PPTX используют прежний путь открытия, адресуемых правок, preview,
-  отдельного подтверждения, новой копии, SHA256/version/readback. Оригинал сохраняется;
-  неподдержанные объекты, stale version, отмена и отзыв доступа отклоняются.
-- Composer сохраняет текст/вложения и защищает новый черновик от поздних ответов.
-- Work регистрирует занятый слот до startup callbacks; privacy/shutdown ожидают
-  settlement. Предел остаётся 1 Work на процесс.
-- Принятый provider completion учитывается до отказа в пустом содержимом.
-  Work остаётся failed без файла/автоповтора. Null usage сохраняет консервативный
-  учёт; тарифы, лимиты и права прежние.
+- Область файлов → открыть разрешённый Office → прочитать адресуемое содержимое →
+  подготовить правки → увидеть diff → отдельно подтвердить → новая копия →
+  скачать и повторно прочитать. Источник сохранён, bytes/version/hash проверяются.
+- DOCX: абзацы, таблицы/ячейки и точная замена между runs; XLSX: листы,
+  типизированные ячейки/диапазоны и формулы без вычисления; PPTX: существующий
+  текст выбранного слайда/placeholder. Нетронутые элементы/медиа сохраняются.
+- Stale version, отмена/отзыв папки и неподдержанные объекты останавливают запись.
+  ZIP/XML/CRC, ограничения размеров и file grants сохранены. Новые агентские
+  Office tools доступны только после capability negotiation.
+- Возврат в composer/reload сохраняет точный текст и attachment bytes. Pending
+  CSV transfer связан с destination epoch; второй «Новый чат» отменяет его,
+  поздняя hydration не заполняет следующий чат прежним материалом.
+- Work занимает существующий слот до startup callbacks; privacy/shutdown ждут
+  settlement. Проверенный completion usage учитывается до закрытия транспорта,
+  включая пустой ответ и последующую ошибку. Work при ошибке остаётся failed,
+  файл не публикуется, автоповтора нет. Null usage не превращается в ноль.
+- Из main сохранены принятые фильтр очереди, byte-verified индивидуальные
+  скачивания Work и проверка полноты export sets. Их не заменяем старым store.
 
-Это совмещение существующих реализаций. Нового чата, исполнителя, API, хранилища,
-маршрутов, миграций или зависимостей нет. Дизайн/контролы не менялись.
-Коммиты PR #478 и #479 уже входят в этот head: повторно накладывать их файлы не нужно.
-Оба отдельных PR остаются для обзора своих изменений; main исполнителем не изменялся.
+В этой интеграции нет нового чата, исполнителя, журнала денег, хранилища,
+миграций, модельных маршрутов или прав. UI layout, sidebar, branding, typography
+и styles не менялись. Устройство модуля и полный первоначальный перечень файлов —
+[Office handoff](TEAM_KOSWORK_OFFICE_WORKSPACE_DELIVERY_RU.md).
 
-## Интеграционные файлы и коммиты
+## Коммиты и разрешение коллизий
 
-- `56418cba035c54fe28ea61d5462113e1d3c46cfa`: merge Work reliability в Office,
-  родители — прежний Office и проверенный PR #479. Общая логика скопирована из
-  уже проверенной ветки без переписывания; Windows main/installer/browser/** сохранены.
-- `87f25efa484dcca413f05b2ce9ff427851f50858`:
-  `apps/web/e2e/office-composer-integration.spec.ts` — общий пользовательский сценарий.
-- `3fc161ba342af8be10724902662e72651f3f2778`: минимальная регистрация сценария в
-  `playwright.office-composer.config.ts` и `tsconfig.office-e2e.json`.
-- `c39917f2d5cbf72643c895e819c1c09246d0c342`: сохранение настоящего browser download
-  и readback в `docs/handoff/fixtures/koswork-full-integration`.
+- `4c9c9a01b997f12e226f86419b0ebfa63e0b1e03`: branch integration Office +
+  проверенный Work/CSV head 9d2b1f3. Единственный конфликт — соседние ref types
+  в page.tsx. Сохранены **оба** изменения: pending epoch и accepted revision/files.
+- `736a04fa1cff396b4f76c75aee18cddaf436227a`: branch integration нового main.
+  В model-runtime test принят более строгий вариант main: expiry и expiry+1
+  отклоняются до вызова secret resolver. Production registry/expiry не менялись.
+- `ca8f23d5b226e43bdf371f704023f6e5857e36ae`: отдельная минимальная регистрация
+  CSV и Studio-files в `apps/web/playwright.office-composer.config.ts`.
 
-## Новый сквозной сценарий и артефакты
+Это коммиты рабочей ветки; PR в main исполнителем не сливались, deploy не было.
+Коммиты точных heads PR #478 и #479 уже входят в эту цепочку. Не нужно повторно
+копировать их файлы или накладывать поверх неё старые snapshots.
 
-В одной browser context: набрать сообщение с точными пробелами/переносом, приложить
-brief.txt → открыть область файлов → выбрать исходный DOCX → заменить «Компания А»
-на «Компания Б» по paragraph:3 → preview → отдельное подтверждение → скачать копию
-→ сравнить bytes/receipt SHA256 и обе версии → вернуться к composer → reload →
-проверить точный текст/вложение и его SHA256. Наблюдаемых browser model POST — 0.
+Основные пришедшие файлы: `manager-work-coordinator.ts`, его tests и Work/CSV
+handoff/fixtures; минимальный scope fix page.tsx; отдельные CSV Playwright config,
+scoped tsconfig и e2e. Из main пришли `manager-work-routes.ts`, `work-dag-routes.ts`,
+`work-runtime-routes.ts`, `work-results-archive.ts`, `manager-work-store.ts`,
+`work-runtime-store.ts`, их tests и handoff. Новая конфликтная логика поверх них
+не добавлялась. Полный diff для обзора:
 
-Входы остаются прежними:
+```sh
+git diff --stat c3431b31621025d39af9bd055b3d1a6c9b0531b9...HEAD
+git diff c3431b31621025d39af9bd055b3d1a6c9b0531b9...HEAD -- apps/web/src/app/page.tsx
+```
 
-- `docs/handoff/fixtures/koswork-office/offer.docx`;
-- `docs/handoff/fixtures/kosmora-composer/input.json`.
+## Сквозная приёмка и реальные артефакты
 
-Выходы этого прогона:
+В одной browser context: текст с точными пробелами/переносом + brief.txt → область
+файлов → исходный DOCX → «Компания А» на «Компания Б» по paragraph:3 → preview →
+отдельное подтверждение → настоящий download → bytes/receipt/source/new version/SHA
+→ возврат к composer → reload → точный текст/вложение и его SHA. Model POST = 0.
+Отдельные сценарии проверяют XLSX/PPTX, cancel, несовпадение bytes/version,
+пагинацию, CSV transfer, delayed native hydration и отмену переходом в новый чат.
 
-- `docs/handoff/fixtures/koswork-full-integration/offer.koswork.docx` — **скачанный
-  браузером файл**, не пересозданная позднее имитация;
-- `docs/handoff/fixtures/koswork-full-integration/result.json` — реальные source/new
-  version, SHA256, извлечённый Office-текст, восстановленные message/file и счётчик POST.
+Входы/выходы прежних независимых Office briefs сохраняются в
+`fixtures/koswork-office` и `fixtures/koswork-office-expanded`.
+Последний общий прогон **снова скачал** DOCX и записал JSON в Playwright test-results.
+Они совпали с сохранёнными файлами в `fixtures/koswork-full-integration`:
 
-SHA256 новой копии:
-`dec2527a43b56061ff2a39909bae34564b66c9eec4ec38da27ac43af2e81891b`.
-Байты совпали с backend receipt и его base64; source version соответствует
-исходным байтам, а сам исходник не изменился. Отдельная проверка ZIP CRC прошла.
-По реальному XML и readback проверены «Компания Б», `19 700`, `00123`,
-`07.11.2026` и «кроме доставки». Текст черновика и файл совпали со входом побайтно
-в их UTF-8 представлении. Preview tokens и внутренние пути в report не сохранялись.
+- `offer.koswork.docx`: SHA256
+  `dec2527a43b56061ff2a39909bae34564b66c9eec4ec38da27ac43af2e81891b`;
+- `result.json`: настоящие source/result version, Office readback, восстановленные
+  draft/file и hash, source_preserved=true, real_model_called=false;
+- `joint-verification.json`: результаты сопоставления новых артефактов, hashes,
+  source heads, tested tree, фактические package/test counts и ограничения.
+
+«Компания Б», `19 700`, `00123`, `07.11.2026`, «кроме доставки» проверены по
+настоящему XML/readback. Исходник не изменился. CSV report и выбранные байты
+также совпали с `fixtures/kosmora-csv-transfer`; selected SHA256:
+`3196cdfc942753d8f3896420374b03d479297c9ee91c1bae0b4857c6bd6b6594`.
+Полная CSV-строка, включая multiline cell и leading zeros, проверяется до/после reload.
 
 ## Выполненные проверки и команды
 
 ```sh
 KOSMORA_E2E_PRODUCTION=1 PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium \
   pnpm --filter @cosmora/web test:e2e:office-composer
-pnpm --filter @cosmora/web typecheck
+pnpm --filter @cosmora/web exec tsc -p tsconfig.office-e2e.json
+pnpm --filter @cosmora/web exec tsc -p tsconfig.csv-e2e.json
 pnpm --dir desktop/windows check
 pnpm check:core
 ```
 
-Сценарий сам сохраняет JSON и DOCX в Playwright test-results. Для установленного
-Playwright browser переменную executable path можно не задавать. Backend стенда
-использует временную SQLite и MODEL_PROVIDER=mock, существующий сервер не переиспользуется.
+Для установленного Playwright Chromium executable path можно не задавать.
+Production browser suite и следующий полный gate запускались последовательно;
+next build не пересекался с сервером, использующим ту же .next. API стенда —
+отдельная temporary SQLite и MODEL_PROVIDER=mock, старый сервер не переиспользуется.
 
-- Совместный production web + API fixture набор: **35/35 PASS**, retries=0,
-  1 worker, 3,0 минуты: 25 composer, 9 Office, 1 общий сценарий.
-- После добавления сохранения бинарного артефакта общий сценарий отдельно прошёл
-  **1/1 PASS**, 7,4 секунды, на production-сборке полного gate; его assertions
-  сохранены. Scoped E2E typecheck после добавления artifact attach: exit 0.
-- Полный `pnpm check:core`: **exit 0**. API: **938 PASS**, включая 78 Manager Work;
-  web: 266; contracts: 206; core: 386; db: 160; model-gateway: 151;
-  policy-engine: 43; config: 17; tool-runtime: 64 PASS/4 OCI skipped.
-  Format, secrets, lint/typecheck, package tests, корневые guards, builds и
-  privacy/profile fixture smoke прошли. Локальные OCI skipped не называются PASS.
-- Native desktop check: **382 PASS, 1 Windows-only skipped, 0 FAIL** в Linux.
-- API build выполнялся заново, cache miss; скомпилированный coordinator содержит
-  оба Work исправления. Все семь Office runtime assets в dist побайтно совпали
-  с canonical workspace sources.
-- Report и бинарник отдельно перепроверены: версии/хеши, source preservation,
-  ZIP CRC, точный draft/file, нулевые browser model POST — PASS.
+- Production browser: **48/48 PASS**, retries=0, workers=1, 2,5 мин.
+  25 composer, 9 Office, 1 общий Office/composer, 3 CSV transfer и 10 Studio-files.
+- Оба scoped e2e typecheck — **exit 0**.
+- Native Linux: **382 PASS / 1 Windows-only skipped / 0 FAIL**, 383 всего.
+- Полный `pnpm check:core` — **exit 0**: **952 API PASS** (86 Manager Work,
+  14 model-runtime); web 266, DB 173, contracts 206, core 386, gateway 151,
+  policy 43, config 17, tool-runtime 64 PASS / 4 OCI skipped локально.
+  Format, secrets, lint/typecheck, package tests, root guards, builds и
+  privacy/profile fixture smoke прошли. Skipped не называются PASS.
+- API build — cache miss; все семь runtime CJS assets в dist побайтно совпали
+  с canonical desktop workspace sources.
+- Новый DOCX/JSON и CSV report совпали с сохранёнными readback/bytes.
+- Финальные format, diff и secret scan выполнены перед публикацией.
 
-Один дополнительный capture-run первоначально не стартовал: временная конфигурация
-в /tmp оставляла неявный cwd, и pnpm искал /api (ENOENT). Тесты в нём не исполнялись.
-После явного cwd обоих webServer capture-run прошёл; исходный failed log сохранён.
-Основной 35-сценарный прогон не повторялся для скрытия ошибок и прошёл с первого раза.
-Временная capture-конфигурация не является исходником продукта и в поставку не входит;
-обычная команда выше собирает и запускает весь набор в корректном repo cwd.
+Локальные логи этой интеграции: `/tmp/koswork-office-joint-browser.log`,
+`/tmp/koswork-office-joint-desktop.log`, `/tmp/koswork-office-joint-core.log`.
+Внешние checks точного опубликованного SHA фиксируются в PR; статусы прежних
+голов не приписываются новому head.
 
-## Границы, интеграция и откат
+## Открытие/рендер и честные границы
 
-Настоящий HY4/другая модель не вызывались, provider заменён локальными fixtures.
-Новая копия проверена по bytes/ZIP/XML/readback и отдельно открыта/отрендерена
-на облачном LibreOffice-стенде, как описано ниже. `visual_render_verified=false`
-в исходном browser result остаётся историческим результатом того прогона:
-сам engine рендер не выполняет. Microsoft Office, ПК владельца и production
-не использовались. Формулы engine не вычисляет, WYSIWYG не добавлялся;
-сложные объекты/подписанные пакеты сохраняют прежний отказ до записи.
+Сохранённый `render/offer.koswork.pdf` получен из **этих же DOCX-байтов** отдельным
+облачным LibreOfficeDev 26.8.0.0.alpha0, commit
+`2c87e51eeaa2b413ff4ae097b2705eea1995d8e5`. PDF SHA256:
+`44f3310793311fda463dfbf41fc8592cc02cc3ac3cfd78148ca6626e5a1fbed7`.
+Export/pdftotext exit 0, единственная страница просмотрена, обязательные литералы
+читаемы без обнаруженного обрезания. Команда, stderr и Fontconfig cache warnings
+сохранены в render/result.json; page-1.png сохранена рядом. Новый renderer в этой
+интеграции не вызывался: byte comparison доказывает совпадение с прежним источником
+рендера. Engine по-прежнему не делает visual acceptance, поэтому его raw report
+содержит visual_render_verified=false. Microsoft Office не проверялся.
 
-Для интеграции достаточно текущего PR #466; его точный опубликованный SHA и внешние
-checks зафиксированы в описании PR. Самостоятельного merge PR/deploy не было.
-При откате feature-интеграции до принятия можно использовать прежний Office head
-65d714b; после принятия нельзя слепо откатывать весь merge вместе с уже принятыми
-исправлениями соседних пакетов. Точечный откат Office/Work описан в их handoff:
-он не требует удаления документов или accounting rows и не меняет схему данных.
+Настоящий HY4/другая платная модель не вызывались. Native bridge в CSV browser
+сценариях — fixture; это не новая Windows IPC/disk acceptance или тест ПК владельца.
+В native suite реальные временные файлы/версии/отказы проверяются CJS-модулем.
+Формулы engine не вычисляет; WYSIWYG и неподдержанные объекты не добавлялись.
+Предел Work process-local; защита composer между вкладками не является distributed CAS.
 
-## Дополнительная проверка открытия итоговой DOCX-копии
+## История ошибок, интеграция и откат
 
-9 ноября 2026 года на отдельном облачном fixture-стенде уже установленный
-LibreOfficeDev 26.8.0.0.alpha0 (`2c87e51eeaa2b413ff4ae097b2705eea1995d8e5`)
-открыл именно `offer.koswork.docx`, скачанный общим browser-сценарием на source
-commit `92179395ecb4598171eb49da0edbdf6c90a633c2`. Новые программы не устанавливались.
+В этой совместной интеграции тесты не падали. Две текстовые коллизии при
+объединении разрешены явно выше; ни одна работающая защита не удалена.
+История прежних ошибок не скрывается:
 
-```sh
-# Из корня checkout; использовать новый отдельный профиль и каталог вывода:
-mkdir -p /tmp/koswork-final-render
-soffice -env:UserInstallation=file:///tmp/koswork-final-render-profile \
-  --headless --convert-to pdf --outdir /tmp/koswork-final-render \
-  docs/handoff/fixtures/koswork-full-integration/offer.koswork.docx
-pdftotext -layout /tmp/koswork-final-render/offer.koswork.pdf -
-pdftoppm -f 1 -singlefile -scale-to 1400 -png \
-  /tmp/koswork-final-render/offer.koswork.pdf /tmp/koswork-final-render/page-1
-```
+- первоначальный temporary capture-run не стартовал из-за cwd /api (ENOENT);
+  после явного cwd прошёл; он не считается прошедшим тестом;
+- Windows #226 получил HTTP 504 в двух попытках упаковки; на более позднем
+  c3431b3 Windows #227 build/installer lifecycle прошли. Новый installer head
+  проверяется отдельным новым CI, старый EXE не называется новым;
+- CSV до scope fix: controlled cancel — 1 FAIL/2 PASS. До fix обычная серия
+  30/30 прошла, поэтому причина исходного intermittent CSV-timeout не доказана;
+- один CSV repeat ошибочно пересёкся с build: 29 PASS/1 FAIL, 16 asset HTTP 500;
+  затем последовательная серия 30/30. Логовые выдержки сохранены, полный trace
+  был очищен Playwright, что отмечено в failure-evidence;
+- e31b509 имел 381 browser PASS + 1 flaky upload-response fixture (socket hang up);
+  следующий 9d2b1f3 имел 382 PASS без flaky. Это не доказательство исправления
+  всех причин intermittent отказов. Work/registry lint/test история — в их handoff.
 
-В `fixtures/koswork-full-integration/render/` сохранены настоящий PDF,
-изображение единственной страницы и `result.json` с командой, версией renderer,
-выводом, хешами до/после и извлечённым PDF-текстом. Export и pdftotext — exit 0.
-Предупреждения `Fontconfig error: No writable cache directories` сохранены в JSON;
-PDF при этом создан. SHA256 DOCX до/после совпал с receipt:
-`dec2527a43b56061ff2a39909bae34564b66c9eec4ec38da27ac43af2e81891b`.
-SHA256 PDF: `44f3310793311fda463dfbf41fc8592cc02cc3ac3cfd78148ca6626e5a1fbed7`.
+[Work transport handoff](TEAM_KOSWORK_TRANSPORT_SETTLEMENT_DELIVERY_RU.md),
+[CSV handoff](TEAM_KOSMORA_CSV_TRANSFER_DELIVERY_RU.md),
+[первоначальный Office handoff](TEAM_KOSWORK_OFFICE_WORKSPACE_DELIVERY_RU.md)
+содержат отдельные fixtures, команды, ошибки и ограничения.
 
-«Компания Б», `19 700`, `00123`, `07.11.2026`, «кроме доставки» присутствуют
-в PDF-тексте и видимы на просмотренной странице. Реквизиты и строка таблицы
-читаемы, обрезания в этом документе не обнаружены. Это проверка конкретной
-копии в LibreOffice, а не гарантия полной совместимости всех Office-документов.
-
-Результаты внешних checks source commit 9217939: CI #1667 и API identity #91 —
-success, browser — 401 PASS. Windows #226: две попытки завершились HTTP 504
-при упаковке; в каждой native tests 383 PASS, 0 FAIL/skipped. В логе отсутствует
-URL неудачного запроса, поэтому точный недоступный ресурс не установлен.
-Installer lifecycle не подтверждён. Исходники Windows main/installer/CI не
-менялись ради обхода сбоя; слепых повторов после второй ошибки не выполнялось.
-Актуальные checks следующего документационного коммита смотреть отдельно в PR;
-результаты source commit не выдаются за проверки нового SHA.
-
-Этот дополнительный коммит содержит только handoff и render artifacts.
-Логика приложения, тестовые assertions и исходный DOCX не меняются; откат
-дополнения не затрагивает файлы пользователя, схему или provider accounting.
+Для общей интеграции использовать итоговый head PR #466; PR #478/#479 остаются
+отдельными историями обзора и не сливались/не закрывались исполнителем.
+Откат не требует удаления документов/черновиков/ledger rows или схемных миграций.
+Не откатывать весь merge вместе с уже принятыми main #477/#481/#483.
+Точечный revert owned source changes 4359fa2 (CSV scope) или 5b13f29 (transport
+settlement) требует сохранить accepted revision/files composer и проверки нового
+main. Office feature rollback описан в исходном handoff. Сравнение с прежним c3431b3
+делать в отдельном checkout, без force-push общей ветки и без удаления данных.
+Самостоятельных merge PR/deploy или управления ПК владельца не было.
