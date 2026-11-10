@@ -128,14 +128,14 @@ test("Studio submits one explicit image request and displays its PNG without an 
             model: "fixture-image",
             reason: null,
             constraints: {
-            sizes: ["1024x1024", "1536x1024", "1024x1536"],
-            aspectRatios: ["1:1", "3:2", "2:3"],
-            qualities: ["low", "medium", "high", "auto"],
-            formats: ["png", "jpeg", "webp"],
-            maxCount: 1,
-            maxPromptLength: 2000,
-            supportsReferenceImage: false
-          }
+              sizes: ["1024x1024", "1536x1024", "1024x1536"],
+              aspectRatios: ["1:1", "3:2", "2:3"],
+              qualities: ["low", "medium", "high", "auto"],
+              formats: ["png", "jpeg", "webp"],
+              maxCount: 1,
+              maxPromptLength: 2000,
+              supportsReferenceImage: false
+            }
           }
         }
       }

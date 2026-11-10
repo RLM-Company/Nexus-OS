@@ -22,7 +22,9 @@ const capabilityResponse = {
   }
 };
 
-test("lost image POST response restores owned job without another paid request", async ({ page }) => {
+test("lost image POST response restores owned job without another paid request", async ({
+  page
+}) => {
   let posts = 0;
   let accepted: Record<string, unknown> | null = null;
   page.on("dialog", (dialog) => void dialog.accept());
@@ -32,9 +34,7 @@ test("lost image POST response restores owned job without another paid request",
   await page.route("**/api/v1/media/jobs", (route) =>
     route.fulfill({ json: { items: accepted ? [accepted] : [] } })
   );
-  await page.route(`**/api/v1/media/jobs/${jobId}`, (route) =>
-    route.fulfill({ json: accepted })
-  );
+  await page.route(`**/api/v1/media/jobs/${jobId}`, (route) => route.fulfill({ json: accepted }));
   const png = Buffer.from(
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/5d8AAAAASUVORK5CYII=",
     "base64"
@@ -110,9 +110,7 @@ test("an explicitly cancelled image is never silently restarted", async ({ page 
   await page.route("**/api/v1/media/capabilities", (route) =>
     route.fulfill({ json: capabilityResponse })
   );
-  await page.route("**/api/v1/media/jobs", (route) =>
-    route.fulfill({ json: { items: [] } })
-  );
+  await page.route("**/api/v1/media/jobs", (route) => route.fulfill({ json: { items: [] } }));
   await page.route(`**/api/v1/media/jobs/${jobId}`, (route) => {
     if (route.request().method() === "DELETE") {
       cancels++;

@@ -364,9 +364,7 @@ export function MediaWorkbench({ surface }: { surface: "images" | "video" | "sou
             <div className={styles.empty}>
               <WorkspaceIcon name="video" />
               <h3>Здесь появится видео</h3>
-              <p>
-                Видеогенерация не подключена. Здесь можно сохранить описание сцены.
-              </p>
+              <p>Видеогенерация не подключена. Здесь можно сохранить описание сцены.</p>
               <button type="button" disabled>
                 Сгенерировать видео
               </button>

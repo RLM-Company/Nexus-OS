@@ -97,14 +97,14 @@ test("media uses generator workspaces, local references and no fake prompt resul
             model: "gpt-image-1",
             reason: null,
             constraints: {
-            sizes: ["1024x1024", "1536x1024", "1024x1536"],
-            aspectRatios: ["1:1", "3:2", "2:3"],
-            qualities: ["low", "medium", "high", "auto"],
-            formats: ["png", "jpeg", "webp"],
-            maxCount: 1,
-            maxPromptLength: 2000,
-            supportsReferenceImage: false
-          }
+              sizes: ["1024x1024", "1536x1024", "1024x1536"],
+              aspectRatios: ["1:1", "3:2", "2:3"],
+              qualities: ["low", "medium", "high", "auto"],
+              formats: ["png", "jpeg", "webp"],
+              maxCount: 1,
+              maxPromptLength: 2000,
+              supportsReferenceImage: false
+            }
           },
           speech: { ready: false },
           transcription: { ready: false }
