@@ -3,6 +3,8 @@
 Status: **в работе** (not integrated; integration/acceptance only by Codex).
 Base: `9d972e8ba447f681fbfb49253b73d9f02dd1d325`; main was identical to base at initial inspection.
 Branch: `ops/free-studio-media`.
+PR: https://github.com/RLM-Company/Nexus-OS/pull/504
+Last code SHA: `9aa140d1d48a59e614b4e26f32a43ece364dc4ea`.
 
 ## Current slice
 
@@ -10,11 +12,11 @@ Image workbench follows exact server-advertised image constraints. It sends aspe
 
 ## Remaining checks / next execution
 
-1. Inspect PR CI quality gate, browser fixtures and test summary; fix within media scope if failing.
-2. Add focused UI integration coverage for lost response, reload, cross-owner session storage, status polling, cancel, editing with PNG/JPEG and unsupported WebP re-edit. Verify no duplicate provider call on an ambiguous response.
+1. Inspect CI run `42878802008` and the next run for this report commit. Correct media-only failures.
+2. Browser fixtures now cover lost POST response, reload, no second POST, cancellation and download. Add owner-switch isolation and PNG/JPEG/WebP editing error cases after current checks.
 3. Continue independent media-only slices: speech job restoration, history ergonomics. Do not touch gateway, global navigation or billing.
-4. Ask Codex to integrate; do not merge, deploy, spend provider funds or claim live media acceptance.
+4. Hand draft PR #504 to Codex after verified checks; do not merge, deploy, spend provider funds or claim live media acceptance.
 
 ## Environment constraints
 
-This chat can inspect and write GitHub through the connected GitHub API; container Git checkout cannot reach github.com (DNS/network unavailable). No local monorepo dependencies, therefore no honest local `pnpm`/Next test result; rely on PR CI and mark that distinctly from live acceptance.
+This chat can inspect and write GitHub through the connected GitHub API; container Git checkout cannot reach github.com (DNS/network unavailable). No local monorepo checkout or dependencies. Temporary runner `42878536101` passed Prettier + web typecheck; PR CI and browser acceptance are separate from live provider acceptance.
