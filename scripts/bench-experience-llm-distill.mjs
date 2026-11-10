@@ -15,7 +15,7 @@
 // exits with MODEL_REQUIRED instead of reporting fabricated results.
 // Results are one-machine observations on synthetic data, not SLA or
 // intelligence claims.
-import { readFile, writeFile, stat, readdir } from "node:fs/promises";
+import { readFile, writeFile, stat, readdir, rm } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { Buffer } from "node:buffer";
 import { Worker } from "node:worker_threads";
@@ -372,9 +372,59 @@ function answerShape(answer) {
   return "no_json:" + answer.slice(0, 60);
 }
 
+// Long real-model runs must survive process restarts: after every completed
+// case the partial checkpoint next to the output records the cases finished so
+// far and is removed once the final report is written. Each run keeps its own
+// partial (the double-run comparison reads the finished report of the other
+// run), and a reused partial must match the same fixture and installed model
+// directory, otherwise it is ignored and the run starts from scratch.
+const partialPath = output ? output + ".partial.json" : null;
 const cases = [];
-for (const c of fixture.cases) cases.push(await evaluateCase(c));
+if (partialPath) {
+  const partial = await readFile(partialPath, "utf8")
+    .then((raw) => JSON.parse(raw))
+    .catch(() => null);
+  if (
+    partial &&
+    partial.bench === "experience-llm-distill" &&
+    partial.fixture_sha256 === fixtureSha &&
+    partial.model_dir === modelDir &&
+    Array.isArray(partial.cases) &&
+    partial.cases.every((entry) => typeof entry?.id === "string")
+  ) {
+    const resumed = new Map(partial.cases.map((entry) => [entry.id, entry]));
+    for (const c of fixture.cases) if (resumed.has(c.id)) cases.push(resumed.get(c.id));
+    console.log(`RESUME ${cases.length}/${fixture.cases.length} cases from ${partialPath}`);
+  }
+}
+const completedIds = new Set(cases.map((entry) => entry.id));
+for (const c of fixture.cases) {
+  if (completedIds.has(c.id)) continue;
+  cases.push(await evaluateCase(c));
+  if (partialPath)
+    await writeFile(
+      partialPath,
+      JSON.stringify(
+        {
+          bench: "experience-llm-distill",
+          fixture_sha256: fixtureSha,
+          model_dir: modelDir,
+          cases
+        },
+        null,
+        2
+      ) + "\n"
+    );
+}
+// Restore fixture-case order after resuming so the final report (and the
+// double-run comparison) does not depend on where a restart happened.
+const entryById = new Map(cases.map((entry) => [entry.id, entry]));
+if (entryById.size === cases.length) {
+  cases.length = 0;
+  for (const c of fixture.cases) if (entryById.has(c.id)) cases.push(entryById.get(c.id));
+}
 await worker.terminate();
+if (partialPath) await rm(partialPath, { force: true });
 
 const parseOkCases = cases.filter((c) => c.parse_ok);
 const report = {
