@@ -2,7 +2,7 @@
 
 - **Статус:** готово к интеграции (дальнейшие статусы подтверждает Codex).
 - **BASE_SHA:** `9d972e8ba447f681fbfb49253b73d9f02dd1d325` (совпадает с `main` на начало работ).
-- **HEAD_SHA:** см. `git rev-parse HEAD` после коммита; фиксируется в CHECKPOINT.
+- **HEAD_SHA:** `93f4f8ccef9c7d4af51958a4dff261c557ef2dfb`.
 - **Branch / PR:** `ops/deepseek-memory` → PR в `main` (без merge/deploy).
 - **ID отчётов:** `04_DEEPSEEK`.
 
