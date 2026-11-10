@@ -37,6 +37,7 @@ const fields = {
   browser_reload: [],
   browser_read: [],
   browser_read_text: ["offset_utf16", "expected_version"],
+  browser_find_text: ["query", "case_sensitive", "offset_utf16", "expected_version"],
   browser_screenshot: [],
   browser_click: ["ref"],
   browser_fill: ["ref", "text"],
@@ -128,8 +129,13 @@ function validateComputerAction(action) {
       );
     if (action.kind.startsWith("browser_")) {
       try {
-        if (action.kind === "browser_read_text")
+        if (action.kind === "browser_read_text" || action.kind === "browser_find_text")
           return (
+            (action.kind !== "browser_find_text" ||
+              (string(action.query, 160) &&
+                action.query.trim().length > 0 &&
+                action.query.isWellFormed() &&
+                typeof action.case_sensitive === "boolean")) &&
             Number.isSafeInteger(action.offset_utf16) &&
             action.offset_utf16 >= 0 &&
             action.offset_utf16 <= 256000 &&

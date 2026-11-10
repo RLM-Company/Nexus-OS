@@ -57,6 +57,13 @@ export const ComputerActionSchema = Type.Union([
     offset_utf16: Type.Integer({ minimum: 0, maximum: 256000 }),
     expected_version: Type.Union([Type.Null(), Type.String({ pattern: "^sha256:[a-f0-9]{64}$" })])
   }),
+  object({
+    kind: Type.Literal("browser_find_text"),
+    query: Type.String({ minLength: 1, maxLength: 160, pattern: "\\S" }),
+    case_sensitive: Type.Boolean(),
+    offset_utf16: Type.Integer({ minimum: 0, maximum: 256000 }),
+    expected_version: Type.Union([Type.Null(), Type.String({ pattern: "^sha256:[a-f0-9]{64}$" })])
+  }),
   object({ kind: Type.Literal("browser_screenshot") }),
   object({ kind: Type.Literal("browser_open"), url: text(4096) }),
   object({ kind: Type.Literal("browser_search"), query: text(240) }),
@@ -290,7 +297,8 @@ export const ComputerObservationSchema = object({
     object({
       tab_id: Type.String({ pattern: "^[a-f0-9]{12}$" }),
       generation: Type.Integer({ minimum: 0 }),
-      read_text: Type.Optional(Type.Literal(true))
+      read_text: Type.Optional(Type.Literal(true)),
+      find_text: Type.Optional(Type.Literal(true))
     })
   ),
   workspace: Type.Optional(

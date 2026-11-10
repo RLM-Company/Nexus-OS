@@ -1129,31 +1129,114 @@ test("long browser text is paged with version/source hashes and rejects mixed pa
   }
 });
 
-test("a page-text reply arriving after cancellation is discarded", async (t) => {
+test("find uses the current reader version, exact offsets and fresh observations", async (t) => {
   const f = fixture(t),
-    controller = new AbortController();
+    signal = new AbortController().signal;
   await f.engine.open("https://example.test");
-  const obs = await f.engine.observe(controller.signal);
-  let enter, release;
-  const ready = new Promise((resolve) => {
-    enter = resolve;
-  });
-  f.views[0].webContents.readerHook = async () => {
-    enter();
-    await new Promise((resolve) => {
-      release = resolve;
-    });
-  };
-  const pending = f.engine.execute(
-    { kind: "browser_read_text", offset_utf16: 0, expected_version: null },
-    obs,
-    controller.signal
+  const source = "İ 🌙 Цена 19 700 ₽, кроме доставки; 00123.\n".repeat(45);
+  f.views[0].webContents.readerText = source;
+  let offset = 0,
+    version = null,
+    first,
+    total = 0;
+  do {
+    const observation = await f.engine.observe(signal);
+    assert.equal(observation.browser.find_text, true);
+    const action = {
+      kind: "browser_find_text",
+      query: "00123",
+      case_sensitive: false,
+      offset_utf16: offset,
+      expected_version: version
+    };
+    assert.deepEqual(validateComputerAction(action), action);
+    const result = await f.engine.execute(action, observation, signal);
+    first ??= result;
+    assert.equal(result.version, first.version);
+    assert.equal(result.complete_document, false);
+    for (const match of result.matches)
+      assert.equal(source.slice(match.start_utf16, match.end_utf16), match.quote);
+    total += result.matches.length;
+    offset = result.next_offset;
+    version = result.version;
+  } while (offset !== null);
+  assert.equal(total, 45);
+  const read = await f.engine.execute(
+    {
+      kind: "browser_read_text",
+      offset_utf16: first.matches[0].start_utf16,
+      expected_version: version
+    },
+    await f.engine.observe(signal),
+    signal
   );
-  await ready;
-  controller.abort();
-  release();
-  await assert.rejects(pending, /COMPUTER_SESSION_STOPPED/);
+  assert.ok(read.content.startsWith("00123"));
+  for (const patch of [
+    { query: " " },
+    { query: "\ud800" },
+    { offset_utf16: 1, expected_version: null },
+    { case_sensitive: "true" }
+  ])
+    assert.throws(
+      () =>
+        validateComputerAction({
+          kind: "browser_find_text",
+          query: "00123",
+          case_sensitive: true,
+          offset_utf16: 0,
+          expected_version: null,
+          ...patch
+        }),
+      /COMPUTER_ACTION_INVALID/
+    );
+  f.views[0].webContents.readerText += " changed";
+  await assert.rejects(
+    f.engine.execute(
+      {
+        kind: "browser_find_text",
+        query: "00123",
+        case_sensitive: true,
+        offset_utf16: 0,
+        expected_version: version
+      },
+      await f.engine.observe(signal),
+      signal
+    ),
+    /BROWSER_TEXT_CHANGED/
+  );
 });
+
+for (const kind of ["browser_read_text", "browser_find_text"])
+  test(`${kind} reply arriving after cancellation is discarded`, async (t) => {
+    const f = fixture(t),
+      controller = new AbortController();
+    await f.engine.open("https://example.test");
+    const obs = await f.engine.observe(controller.signal);
+    let enter, release;
+    const ready = new Promise((resolve) => {
+      enter = resolve;
+    });
+    f.views[0].webContents.readerHook = async () => {
+      enter();
+      await new Promise((resolve) => {
+        release = resolve;
+      });
+    };
+    const pending = f.engine.execute(
+      {
+        kind,
+        offset_utf16: 0,
+        expected_version: null,
+        ...(kind === "browser_find_text" ? { query: "text", case_sensitive: false } : {})
+      },
+      obs,
+      controller.signal
+    );
+    await ready;
+    controller.abort();
+    release();
+    await assert.rejects(pending, /COMPUTER_SESSION_STOPPED/);
+  });
 
 test("tab receipts preserve every tab ID with bounded, explicitly incomplete long URLs", async (t) => {
   const f = fixture(t),

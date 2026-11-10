@@ -9,6 +9,7 @@ const observationsOnly = new Set([
   "find_apps",
   "browser_read",
   "browser_read_text",
+  "browser_find_text",
   "browser_tabs",
   "browser_screenshot"
 ]);
