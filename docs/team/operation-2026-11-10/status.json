@@ -11,10 +11,11 @@
       "sphere": "Kosmora, Koswork и интеграция выпуска",
       "file": "01_CODEX.md",
       "branch_prefix": "ops/codex-kosmora-koswork",
-      "status": "prepared",
-      "dispatch_confirmed": false,
-      "head_sha": null,
-      "pr": null
+      "status": "integration_candidate",
+      "dispatch_confirmed": true,
+      "head_sha": "2281aa6763f32ba52322b8e93276bd34d9b05e94",
+      "pr": 503,
+      "current_slice": "O-001"
     },
     {
       "id": "02_DEVELOPER",
@@ -33,10 +34,10 @@
       "sphere": "Windows-приложение и локальная платформа",
       "file": "03_OPENCODE.md",
       "branch_prefix": "ops/opencode-windows",
-      "status": "prepared",
-      "dispatch_confirmed": false,
-      "head_sha": null,
-      "pr": null
+      "status": "integration_candidate",
+      "dispatch_confirmed": true,
+      "head_sha": "c0b1439b692834f80e6a806d56e4b2f515651578",
+      "pr": 502
     },
     {
       "id": "04_DEEPSEEK",
@@ -88,10 +89,12 @@
       "sphere": "Studio: сайты и разработка игр",
       "file": "08_FREE_BUILDERS.md",
       "branch_prefix": "ops/free-studio-builders",
-      "status": "prepared",
-      "dispatch_confirmed": false,
-      "head_sha": null,
-      "pr": null
+      "status": "integration_candidate",
+      "dispatch_confirmed": true,
+      "head_sha": "5c5f6e37e36a8a7ee4bdf240ac1c1d5d5d56b903",
+      "pr": 501
     }
-  ]
+  ],
+  "started_confirmed_by_owner": true,
+  "integration_candidate": "integration/operation-wave-1-20261110"
 }

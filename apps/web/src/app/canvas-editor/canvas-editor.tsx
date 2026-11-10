@@ -935,6 +935,7 @@ function ScopedCanvasEditor({
           {gameSource && draft.format === "code" ? (
             <GameSourceEditor
               content={draft.content}
+              baselineContent={loaded?.revision.content ?? initialDraft?.content ?? ""}
               disabled={working || loading}
               onChange={(content) => {
                 if (canvasBytes(content) > CANVAS_MAX_CONTENT_BYTES) {

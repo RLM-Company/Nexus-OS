@@ -1779,6 +1779,43 @@ describe("durable Manager work", () => {
       await app.close();
     }
   });
+  it.each(["missing", "changed"])(
+    "refuses owner acceptance when a published file is %s",
+    async (damage) => {
+      const f = await fixture();
+      await f.coordinator.execute(f.work.id, "local-owner");
+      expect(f.get().status).toBe("completed");
+      if (damage === "missing")
+        f.database.sqlite
+          .prepare("DELETE FROM manager_work_files WHERE execution_id = ?")
+          .run(f.work.id);
+      else
+        f.database.sqlite
+          .prepare("UPDATE manager_work_files SET content = 'damaged' WHERE execution_id = ?")
+          .run(f.work.id);
+      const before = f.get();
+      const app = buildApp({
+        config: f.config,
+        database: f.database,
+        projectStore: f.projects,
+        managerWorkStore: f.store,
+        managerWorkCoordinator: f.coordinator
+      });
+      try {
+        const response = await app.inject({
+          method: "POST",
+          url: `/api/v1/projects/${f.project.id}/work/${f.work.id}/result/accept`,
+          payload: { expected_version: before.version }
+        });
+        expect(response.statusCode).toBe(409);
+        expect(response.json()).toEqual({ error: "ARTIFACT_INTEGRITY_MISMATCH" });
+        expect(f.get()).toEqual(before);
+      } finally {
+        await app.close();
+      }
+    }
+  );
+
   it("accepts a finished result over HTTP exactly once and refuses it before completion", async () => {
     const f = await fixture();
     const app = buildApp({
@@ -1798,8 +1835,8 @@ describe("durable Manager work", () => {
       expect(notReady.statusCode).toBe(409);
       expect(notReady.json()).toEqual({ error: "WORK_RESULT_NOT_READY" });
 
-      const current = f.get();
-      f.store.save({ ...current, status: "completed", stage: "done" }, "Готово");
+      await f.coordinator.execute(f.work.id, "local-owner");
+      expect(f.get().status).toBe("completed");
       const accepted = await app.inject({
         method: "POST",
         url: path,
