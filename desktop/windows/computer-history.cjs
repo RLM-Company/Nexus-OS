@@ -5,7 +5,15 @@ const path = require("node:path");
 const { randomUUID, createHash } = require("node:crypto");
 const { normalizeServerOrigin } = require("./connection-policy.cjs");
 const { computerActionKinds, recoveryWriteActions } = require("./computer-policy.cjs");
-const { buildWorkReference, canReference } = require("./work-experience.cjs");
+const {
+  buildWorkReference,
+  canReference,
+  canCorrect,
+  correctionText,
+  cleanCorrection,
+  correctionDraft,
+  suggestCorrections
+} = require("./work-experience.cjs");
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const PROJECT = /^[a-zA-Z0-9_-]{1,160}$/;
 const PHASES = new Set(["planned", "not_executed", "dispatching", "requested", "observed"]);
@@ -62,6 +70,10 @@ function cleanRecord(r) {
     (r.referenceSource != null &&
       (!UUID.test(r.referenceSource.taskId) ||
         !/^[a-f0-9]{64}$/.test(r.referenceSource.revision))) ||
+    (r.correction &&
+      (!canCorrect(r) ||
+        r.correction.confirmed_at < r.createdAt ||
+        r.correction.confirmed_at > r.updatedAt)) ||
     !validTime(r.createdAt) ||
     !validTime(r.updatedAt) ||
     r.updatedAt < r.createdAt ||
@@ -106,6 +118,7 @@ function cleanRecord(r) {
         ? r.workspaceId
         : null,
     reviewRequired: r.reviewRequired === true,
+    ...(r.correction ? { correction: cleanCorrection(r.correction) } : {}),
     ...(r.referenceSource
       ? {
           referenceSource: {
@@ -241,7 +254,10 @@ function createComputerHistory(userData, { codec, now = Date.now, namespace = "c
         .sort((a, b) => b.updatedAt - a.updatedAt)
         .map((r) => ({
           ...r,
-          ...(r.executionMode === "work" ? { reusable: canReference(r) } : {}),
+          ...(r.executionMode === "work"
+            ? { reusable: canReference(r), correctable: canCorrect(r) }
+            : {}),
+          ...(r.correction ? { correctionRevision: buildWorkReference(r).revision } : {}),
           recoverable: RESTORABLE.has(r.status) && r.goal !== null,
           requiresReview: needsReview(r)
         }));
@@ -260,10 +276,41 @@ function createComputerHistory(userData, { codec, now = Date.now, namespace = "c
         throw error;
       }
       if (r.project !== project) throw Error("COMPUTER_REFERENCE_UNAVAILABLE");
-      const value = buildWorkReference(r);
+      let value;
+      try {
+        value = buildWorkReference(r);
+      } catch (error) {
+        if (expectedRevision !== null && error.message === "COMPUTER_REFERENCE_UNAVAILABLE")
+          throw Error("COMPUTER_REFERENCE_CHANGED");
+        throw error;
+      }
       if (expectedRevision !== null && value.revision !== expectedRevision)
         throw Error("COMPUTER_REFERENCE_CHANGED");
       return value;
+    },
+    correction(context, id) {
+      return correctionDraft(get(context, id));
+    },
+    saveCorrection(context, id, expectedRevision, input) {
+      const text = correctionText(input);
+      mutate(context, id, (r) => {
+        if (correctionDraft(r).revision !== expectedRevision)
+          throw Error("COMPUTER_REFERENCE_CHANGED");
+        r.correction = { ...text, confirmed_at: Math.max(now(), r.createdAt) };
+      });
+      return api.correction(context, id);
+    },
+    removeCorrection(context, id, expectedRevision) {
+      mutate(context, id, (r) => {
+        if (correctionDraft(r).revision !== expectedRevision)
+          throw Error("COMPUTER_REFERENCE_CHANGED");
+        if (!r.correction) throw Error("COMPUTER_REFERENCE_UNAVAILABLE");
+        delete r.correction;
+      });
+      return { removed: true };
+    },
+    suggestCorrections(context, project, goal) {
+      return suggestCorrections(read(context), project, goal);
     },
     recovery(context, id) {
       const r = get(context, id);
