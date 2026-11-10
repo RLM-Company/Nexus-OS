@@ -30,18 +30,29 @@ BASE_SHA: f9eb45285f3473bfd3fe9a73939c1903dc696b3b.
 - Production UI15PASS, type/lint/build. Только местные контролы и native unload;
   общая SPA-навигация требует канонической интеграции Codex.
 
+## Исправлено третьим срезом (готово к интеграции)
+
+- Deep link вне последних20: exact GET без подмены другой задачей, отказ для
+  недоступного project/run и несовпадающего ID; epoch guards поздних ответов.
+- Уход из patch editor блокирует поздний preview/invalidate-review и изменение новой задачи.
+- Production UI22PASS, web lint/types/build и strict E2E types; после main — см. DELIVERY.
+
 ## Не завершено / следующий приоритет
 
-- Finding по коду: deep link на run вне последних20 молча выбирает другую задачу.
-  Следующий срез — воспроизвести, exact GET +404 +epoch guard.
+- Большой repo: `service.ts:propose` отказывает при truncated tree или >20000,
+  до выборочного чтения. Исследовать текущий GitHub adapter и тестовый контракт
+  до выбора способа безопасного subtree/search; не обходить отсутствующий tree.
 
-- Сквозная приёмка на настоящем временном Git repo с несколькими файлами,
-  реальным OCI, ошибкой/исправлением/отменой и точным diff: выполнить и сохранить receipt.
+- Сквозная приёмка tmp Git выполнена первым срезом: input/output/patch/receipt
+  сохранены в fixtures/check-evidence. Локально4/5 OCI (старый setup timeout),
+  внешний CI на объединённом code head589eb31 —5/5 (job130077931797).
+  Неполный локальный запуск остаётся4/5; его failure сохранён.
 - Общий sidebar/router/back-forward dirty guard — не интегрирован.
   Raw diff не сохраняется автоматически; применить или явно отменить.
 - Проверить полноту контекста больших репозиториев и secret-path исключения.
-- GitHub adapter сценарии lost response/idempotency/чужие файлы проверить тестами,
-  не выполнять live push/PR в выбранный пользователем целевой репозиторий.
+- GitHub adapter: 23 fixture-теста прошли в объединённом root test, включая lost
+  PR response/read reconciliation без повторного publish, точный review, owner/base
+  fences и сохранение file mode. Live push/PR в целевой репозиторий не выполнялся.
 
 ## Требуется отдельное разрешение
 

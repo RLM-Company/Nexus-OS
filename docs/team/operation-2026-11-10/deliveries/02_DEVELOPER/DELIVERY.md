@@ -1,3 +1,93 @@
+# 02_DEVELOPER: третий срез — точная задача и изоляция поздних ответов
+
+Исполнитель: Разработчик + GPT Plus. 10 ноября 2026, Москва.
+Статус поставленных срезов: **готово к интеграции**. Вся автономная сфера ещё не завершена.
+
+- Branch `ops/developer-coscode`, [PR #507](https://github.com/RLM-Company/Nexus-OS/pull/507).
+- Исходный BASE_SHA `f9eb45285f3473bfd3fe9a73939c1903dc696b3b`, контрольный `9d972e8` — его предок.
+- BASE_SHA третьего среза `ab2c39d1df641cc8ae74f060e911e522403b09db`.
+- HEAD_SHA исходников третьего среза `30e19446989dae92ed692a60f593d67cbb716389`.
+- После просмотра общих DB/result-acceptance контрактов принят новый main
+  `f9da6e83c8764949d7a478649b8d680517f1c320`, без конфликтов и без правок чужого кода.
+- HEAD_SHA объединённого кода `589eb3110c6a123f6dcf612f666269b5bd56468e`;
+  tree `870f2aaeb5c7c882e2b919ac5a767c0a7afe6963` совпал локально и на GitHub.
+  Финальный commit только отчётов указывается в PR; самоссылочный SHA в файл не вставляется.
+
+## До / после и действующий entrypoint
+
+`/code-agent?project=…&run=…` раньше искал run лишь среди последних 20 записей,
+затем молча открывал последнюю чужую для этой ссылки задачу. Теперь точная запись
+догружается существующим owner/project-bound GET. При 404 или несовпавшем ID
+показан отказ, другая задача не выбирается. Недоступный project из ссылки также
+не подменяется первым собственным проектом и не вызывает scoped reads.
+
+Переключение проекта/задачи/нового запуска меняет epoch запросов. Поздние ответы
+не восстанавливают прежнюю задачу и не очищают ошибки новой. Unmount редактора
+и смена версии отменяют применимость старого preview/invalidate-review ответа;
+после ухода он не может начать новый preview или внести файлы в другую задачу.
+Сохраняется прежний серверный review/task checkpoint, второй store не создавался.
+
+Изменены `apps/web/src/app/code-agent/page.tsx`, `patch-editor.tsx` и
+`apps/web/e2e/code-agent.spec.ts`. Новых API/contracts/DB/dependencies нет.
+Входы/ответы UI сценариев — явные fixtures внутри E2E; реальная модель не вызывалась.
+Проверяются реальные production UI и запросы через существующие контракты,
+но не live GitHub publish. Прочие срезы и настоящий Git/OCI receipt описаны ниже.
+
+## Проверки третьего среза
+
+На исходниках `30e1944` последовательные web lint, typecheck, strict E2E types,
+production build и **22 browser PASS**, workers=1/retries=0; сохранён exit=0.
+Логи в `fixtures/linked-context/`. Дополнительные сценарии: старая deep link,
+недоступный project/run, неверный ID ответа, позднее завершение после выбора
+другой задачи и поздний invalidate-review при уходе из редактора.
+
+Первый strict E2E typecheck обнаружил TS2345 в двух Promise(requestAnimationFrame).
+Исправлены callbacks тестов, проверка повторена; исходный отказ не объявляется успехом.
+После этого прошли 21, затем с добавленным unavailable-project тестом 22 сценария.
+Проверки объединённого кода после нового main приводятся отдельным разделом ниже.
+
+## Приёмка после объединения с main
+
+На code HEAD `589eb3110c6a123f6dcf612f666269b5bd56468e`:
+
+- `pnpm check:core` **exit0**: format/secrets/lint/types, unit tests,
+  deploy/connection/live-guards/secrets/vector-scale/media-acceptance, build,
+  privacy и profile. Свежие API992/web290/runtime71/DB205 PASS; пять opt-in OCI
+  пропущены здесь и отдельно выполнены внешним job. Config17/contracts206/
+  policy43/gateway151/core387 — Turbo cache replay, не новые прогоны.
+- В свежем API-наборе `code-agent.test.ts`57 и `github-integration.test.ts`23 PASS.
+  Adapter fixtures покрывают lost PR response/reconciliation без дублирующего
+  publish, exact review/base/owner fences и сохранение режима файлов.
+- Production Chromium **22 PASS, exit0**, workers1/retries0, после завершения gate:
+  `KOSMORA_E2E_PRODUCTION=1 KOSMORA_E2E_CHROMIUM_EXECUTABLE=/usr/bin/chromium pnpm --filter @cosmora/web exec playwright test -c playwright.acceptance.config.ts e2e/code-agent.spec.ts --workers=1 --retries=0`.
+- Перед этим ошибочно запущен default Playwright config без executable override:
+  **22 launch failures, exit1**, отсутствовал bundled Chromium executable.
+  Тестовые действия не начинались. Сбой сохранён в coscode-merged-browser.log;
+  исправлены команда/config, браузер не устанавливался и проверки не отключались.
+- GitHub CI run [42886979305](https://github.com/RLM-Company/Nexus-OS/actions/runs/42886979305):
+  **Code sandbox isolation5/5 PASS** (job130077931797), **Verify monorepo success**.
+  API identity run42886979286 success. Общий Browser acceptance оставался in_progress
+  при последней проверке; не объявляется пройденным. Эти receipts относятся к code
+  HEAD589eb31, не к последующему commit только отчётов.
+- `git diff --check`, формат отчётов и secret scan прошли. `.log` дополнительно
+  проверены по шаблонам секретов, поскольку штатный scanner их не включает.
+
+Полные локальные логи и отдельные exit-файлы находятся в fixtures/linked-context.
+Скрипты pnpm в этой среде запускались с `pnpm_config_verify_deps_before_run=''`,
+чтобы не инициировать повторный install при готовых pinned dependencies; сами
+lint/types/tests/build не отключались. Зависимости/lockfile не менялись.
+
+## Интеграция, откат и оставшиеся границы
+
+Общий integration по-прежнему только CI commit `fcc183d`; подробности в INTEGRATION.
+Входящий main принят отдельным merge, DB/облако/другие команды сохранены как есть.
+Откат третьего среза: revert `30e1944`; не откатывать чужой main и не удалять runs.
+Миграций и изменения полномочий нет. Общая SPA-навигация, context больших repo,
+аудит secret-path фильтрации и ограниченное исправление по ошибкам остаются в BACKLOG.
+Live модель/foreign publish, стенд ПК владельца, merge/deploy не выполнялись.
+
+---
+
 # 02_DEVELOPER: второй срез — несохранённые правки Coscode
 
 10 ноября 2026, Москва. Статус срезов 1 и 2: **готово к интеграции**.
@@ -65,7 +155,7 @@ sidebar/router/back-forward не интегрирована; её канонич
 в выбранные изменения либо явно отменить; оставление страницы требует discard.
 Live foreign publish/модель/owner PC/VPS/merge/deploy не выполнялись.
 
-Следующий приоритет: ссылка на run вне последних 20 задач сейчас может выбрать
+Историческая точка продолжения второго среза (закрыта третьим): ссылка на run вне последних 20 задач могла выбрать
 list.items[0] вместо запрошенного run. Это замечено по коду initial load handler,
 отдельный сценарий ещё не прогонялся. Проверить exact linked lookup, owner/project
 404 и поздний ответ после смены проекта, затем внедрить через текущий GET/store.
