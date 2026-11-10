@@ -212,7 +212,7 @@
     цепочка check + наш `node --check session-cleanup.cjs` в той же позиции,
     их build.files + наш `"session-cleanup.cjs"`. Детерминированный резолвер
     в `tmp/` (не коммитится; никаких автопиков). Проверки после: `node --check
-    main.cjs`, package.json parse, prettier clean (оба файла), `npm run check`
+main.cjs`, package.json parse, prettier clean (оба файла), `npm run check`
     → exit 0, **443 теста / 0 fail**; PR #502 снова на CI.
 
 ## Что делать следующему запуску (в порядке приоритета)1. **Если фоновый прогон №2 завершится** (see shell-нотификация): проверь
