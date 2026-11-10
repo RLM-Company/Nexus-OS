@@ -1,6 +1,6 @@
 {
   "baseline": "f9eb45285f3473bfd3fe9a73939c1903dc696b3b",
-  "state": "candidate",
+  "state": "integrated",
   "sources": [
     {
       "pr": 503,
@@ -22,5 +22,12 @@
   "maintenance": ["Windows installer guard test shell fallback"],
   "owner_device_actions": false,
   "server_deploy": false,
-  "paid_model_calls": 0
+  "paid_model_calls": 0,
+  "tested_head": "5efc63cd276d48a25593224ec3f55325fdf72159",
+  "pr": 505,
+  "merge_sha": "6162163106156a8f3342824387afa7b8d59e1cc3",
+  "checks": "5/5 success",
+  "browser_scenarios_passed": 435,
+  "real_chromium_dom_smoke": "passed",
+  "flaky_browser_retries": 0
 }
