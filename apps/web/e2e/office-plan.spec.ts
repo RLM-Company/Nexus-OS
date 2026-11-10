@@ -390,7 +390,9 @@ test("deleting the final edit invalidates the old download without deleting an a
   const path = (await download.path())!,
     before = await readFile(path);
   await editor.getByRole("button", { name: "Удалить правку 1", exact: true }).click();
-  await expect(editor.getByRole("link", { name: "Скачать новая копию" })).toHaveCount(0);
+  await expect(editor.getByRole("link", { name: "Скачать новую копию", exact: true })).toHaveCount(
+    0
+  );
   await expect(
     editor.getByRole("button", { name: "Посмотреть изменения", exact: true })
   ).toBeDisabled();
