@@ -1,0 +1,13 @@
+{
+  "source_document": "https://docs.google.com/document/d/16FX_i08z0suKWfCEBl-AtNy2EcvZSmrPfsQ-qEcY3VA/edit",
+  "document_title": "05_GEMINI-ops-gemini-browser-research",
+  "patch_sha256": "19ca3686d3178fa81407cfe7b7b4f5bb6f19bb130fe35206d5cf17688a48fb1c",
+  "patch_paths": 31,
+  "full_new_files": 30,
+  "all_new_git_blob_prefixes_match": true,
+  "missing_baseline_for_modified_file": "desktop/windows/ci/unified-task-coordinator.cjs",
+  "reference_branch": "reference/gemini-operation-20261110",
+  "inspected_product_base": "619efe6a53b959f70fce43f993b128c9c23677b3",
+  "new_scripts_executed": false,
+  "tests_run": "Only reviewed pure evidence-verifier adverse probes; no Chromium/installer/Work hooks executed"
+}
