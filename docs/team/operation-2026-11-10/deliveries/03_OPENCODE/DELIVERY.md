@@ -1,12 +1,49 @@
 # DELIVERY — 03_OPENCODE · срез 1: восстановление базовой линии и приёмка guard'а installer lifecycle
 
 - Статус: **готово к интеграции** (дальнейшие статусы подтверждает Codex).
-- Ветка: `ops/opencode-windows` · PR: открывается этим же запуском (см. DIRECT-ссылку в конце).
+- Ветка: `ops/opencode-windows` · PR: **#502** https://github.com/RLM-Company/Nexus-OS/pull/502
 - BASE_SHA: `9d972e8ba447f681fbfb49253b73d9f02dd1d325` (= origin/main на 10.11.2026,
   сверено `git merge-base --is-ancestor` → true).
-- Код-коммит: `9e7c6c07` — fix(acceptance): verify installer guard refusal without pwsh.
+- Код-коммиты: `9e7c6c07` — fix(acceptance): verify installer guard refusal without pwsh;
+  `e3cbd1a8` — feat(diagnostics): honest native profile report without owner secrets.
 - HEAD_SHA: последний коммит ветки (docs-коммит этой передачи), точное значение — в
-  описании PR (вычисляется фактом коммита; содержательный код — 9e7c6c07).
+  описании PR.
+
+---
+
+## Срез 2 (добавление): вертикальный срез «встроенная диагностика» (очередь №6)
+
+Пользовательский путь: меню **Application → «Состояние локального профиля…»** →
+содержательный отчёт нативного диалога (без изменений web-UI и компоновки; пункт меню уже существовал).
+
+**Было**: диалог показывал только профиль (каталог/запись/MSIX-redirect) — версии,
+состояние подключения/владельца, активные загрузки и ключ обновлений вне диалога.
+
+**Стало**: тот же диалог содержит полный отчёт: версия/окружение (упаковка, secure
+storage, single-instance lock), активный сервер + подтверждение владельца в этой
+генерации identity, каталог профиля + причины, активные загрузки (счётчик), состояние
+ключа релизов, отдельный блок неисправностей и время отчёта.
+
+**Границы secret-безопасности** (покрыты тестами `test/diagnostics.test.cjs`):
+- никогда не включаются: id владельца, cookies, токены, имена/пути пользовательских
+  файлов и скачанных артефактов;
+- origin приводится к чистому `scheme://host[:port]` (query/`access_token=…` отбрасываются);
+- неизвестные поля входа игнорируются by-design; управляющие символы и длина
+  неисправностей ограничиваются (240/срез, max 8);
+- детерминированный текст при фиксированном времени (инъекция `now`).
+
+**Изменённые файлы**: `desktop/windows/diagnostics.cjs` (новый, чистый/инъекционный);
+`desktop/windows/test/diagnostics.test.cjs` (новый, 5 тестов);
+`desktop/windows/main.cjs` (require + `showProfileStatus`, message-инварианты прежние,
+`profileStatusText` для диалога больше не используется); `desktop/windows/package.json`
+(`node --check diagnostics.cjs` в check-цепочке).
+
+**Фактические проверки**: `node --test test/diagnostics.test.cjs` → 5 pass / 0 fail;
+`npm run check` → exit 0 (60 синтаксис-проверок + 438 тестов, 0 fail).
+
+---
+
+# Срез 1 (основная передача)
 
 ## Сценарий до/после (конкретный)
 
@@ -92,7 +129,8 @@ skip только если отсутствуют оба шелла (чисто 
 
 ## Следующий шаг (очередь владельца)
 
-Срез 2/3: вертикальная реализация по сфере downloads/local profile/credential storage
-(owner/origin isolation, версии, non-overwrite, контролируемая очистка logout) —
-начать с чтения `download-center.cjs`, `download-history.cjs`, `local-vault.cjs`,
-`profile-environment.cjs` и их тестов, затем добивать найденные gaps срезом с тестами.
+Аудиты очереди 1–4 завершены без найденных нарушений (детализация — CHECKPOINT.md);
+срез 6 (диагностика) реализован коммитом `e3cbd1a8`. Следующие шаги: если владелец
+одобрит — UI-идея «Повторить» в Центре загрузок записана в VISUAL_WAITLIST (не в
+этой петле); installer-проверки upgrade/uninstall и воспроизводимый сценарий
+приёмки — в VM/CI; при новых срочных gap'ах — вертикальные срезы по очереди.

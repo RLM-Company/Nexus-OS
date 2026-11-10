@@ -72,9 +72,47 @@
 - Правила пакета прежние: без фейковых чисел (exit 2/3), weights вне репо, bench не
   в CI, PR только с отчётом, решение о внедрении — за владельцем.
 
-## Что делать следующему запуску (в порядке приоритета)
+## Выполнено после первой записи CHECKPOINT (дополнение 10.11)
 
-1. **Если фоновый прогон №2 завершится** (see shell-нотификация): проверь
+9. **Страница PR: #502** https://github.com/RLM-Company/Nexus-OS/pull/502 —
+   MERGEABLE, CI 4 задачи запущены. Ветки: коммиты `9e7c6c07` (код),
+   `c0b1439b` (docs), затем `e3cbd1a8` (диагностика).
+10. **Аудит очереди №4 (downloads/local profile/credential storage) — нарушений нет**:
+    - `local-vault.cjs`: scope = sha256([origin, owner]) → отдельные `vault-<scope>.json`
+      и `Kosmora-vault-<scope24>`; non-overwrite через content-addressed id (sha256);
+      atomic temp+fsync+rename; anti-TOCTOU чтение (O_NOFOLLOW, nlink=1, ino/dev);
+      blob-первым-перед-manifest; изоляция owner/origin, dedupe, hardlink-защита и
+      tamper — покрыты local-vault.test.cjs (24 сценария);
+    - `download-history.cjs`: scope sha256(origin\0owner), v1-формат, active→interrupted
+      при рестарте (crash recovery), bounded 50 (active не выселяются),
+      credential-redaction в серверных именах файлов; download-center.test /
+      download-history.test — 13 сценариев (owner switch / server switch,
+      epoch-гонка, отказ без owner и др.);
+    - `main.cjs` logout-оркестрация (native menu 800s, hosted /logout 907s): identityEpoch++,
+      invalidate поверхностей, forget по owner+origin, clearStorageData/clearCache,
+      failure → honest dialog; смена origin — commit-phase без отмены (полная очистка
+      предыдущего сервера);
+    - `profile-environment.cjs`: probe-write отказа/MSIX/redirect, ничего не мигрирует.
+11. **Срез 6 — встроенная диагностика (вертикальный срез, реализован)**:
+    - новый `desktop/windows/diagnostics.cjs` (чистый, инъекционный): app-факты,
+      подключение (origin + владелец в генерации), профиль, активные загрузки,
+      pinned ключ релизов, неисправности; секреты (id владельца, cookies, токены,
+      имена/пути файлов) не собираются by-design; origin → чистый schema://host:port;
+      неизвестные поля входа игнорируются; ограничение неисправностей 240 симв./8 шт.;
+      детерминированный вывод при фиксированном now;
+    - `main.cjs`: require + `showProfileStatus` показывает отчёт в СУЩЕСТВУЮЩЕМ
+      нативном пункте меню (message-инварианты прежние; profileStatusText более
+      не используется диалогом; ownerVerified — строго ownerCache bound к origin и не
+      истёк);
+    - `test/diagnostics.test.cjs`: 5 тестов (стабильность формата, отсутствие утечек
+      секретов при «испачканном» входе, обрезка неисправностей, кривые типы без
+      выдуманных значений, прямое сообщение о непроверенном входе);
+    - `package.json`: `node --check diagnostics.cjs` в check-цепочке;
+    - **npm run check: exit 0, 438 тестов (0 fail)**.
+12. VISUAL_WAITLIST.md записан: идея «Повторить» в Центре загрузок — только решение
+    владельца.
+
+## Что делать следующему запуску (в порядке приоритета)1. **Если фоновый прогон №2 завершится** (see shell-нотификация): проверь
    `REPRODUCED true/false`. При true: коммит отчёта `-repeat.json` в
    desc-ветку, обнови строки очередей «Опыт выполнения» в
    `docs/product/RUFLO_ADOPTION_SCOPE_RU.md` и
