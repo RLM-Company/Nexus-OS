@@ -1,6 +1,7 @@
 "use strict";
 const { contextBridge, ipcRenderer } = require("electron");
 contextBridge.exposeInMainWorld("kosworkComputer", {
+  availability: () => ipcRenderer.invoke("koswork:computer-availability"),
   workspaceStatus: () => ipcRenderer.invoke("koswork:computer-workspace-status"),
   selectWorkspace: () => ipcRenderer.invoke("koswork:computer-workspace-select"),
   revokeWorkspace: () => ipcRenderer.invoke("koswork:computer-workspace-revoke"),

@@ -107,6 +107,15 @@ function createLatestAttemptGate() {
     finish(value) {
       if (value === generation) inFlight = false;
     },
+    // Cancels every in-flight attempt: they become stale, and the busy flag
+    // is cleared immediately. The old saved origin is not modified by this;
+    // a superseded attempt can neither persist nor load over the decision.
+    cancelPending() {
+      if (!inFlight) return false;
+      generation += 1;
+      inFlight = false;
+      return true;
+    },
     isCurrent(value) {
       return value === generation;
     },
