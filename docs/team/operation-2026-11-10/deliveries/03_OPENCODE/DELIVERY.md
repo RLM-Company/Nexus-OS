@@ -12,7 +12,7 @@
 
 ---
 
-## Срез 4 (добавление): guard полноты графика упаковки
+## Срез 4 (добавление): guard полноты графа упаковки
 
 **Найденный пробел**: мои новые модули `diagnostics.cjs` и `session-cleanup.cjs`
 (требуемые main.cjs) отсутствовали в `pkg.build.files` (include-набор electron-builder)
