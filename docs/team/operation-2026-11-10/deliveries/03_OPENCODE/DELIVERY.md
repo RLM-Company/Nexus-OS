@@ -35,15 +35,15 @@ skip только если отсутствуют оба шелла (чисто 
 
 ## Команды и фактические результаты
 
-| Команда | Результат |
-| --- | --- |
-| `npx.cmd -y pnpm@11.19.0 install --frozen-lockfile` | ✓ 359 пакетов, done 19.2s, exit 0 |
-| `npm run check` до фикса | ✗ exit 1: ERR_ASSERTION в lifecycle-guard (stderr undefined) |
+| Команда                                                                                                                                                                                   | Результат                                                                                                                           |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `npx.cmd -y pnpm@11.19.0 install --frozen-lockfile`                                                                                                                                       | ✓ 359 пакетов, done 19.2s, exit 0                                                                                                   |
+| `npm run check` до фикса                                                                                                                                                                  | ✗ exit 1: ERR_ASSERTION в lifecycle-guard (stderr undefined)                                                                        |
 | `powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File ci/nsis-lifecycle.ps1 -Mode Fresh -CurrentInstaller missing-installer.exe -CurrentVersion 0.9.0 -WorkRoot <tmp>` | exit 1 + `Installer lifecycle requires a disposable GitHub-hosted runner.` (nsis-lifecycle.ps1:24) — отказ dev-машине, как задумано |
-| `node --test test/lifecycle-guard.test.cjs` после фикса | ✓ 1 pass / 0 fail / 0 skipped |
-| `npm run check` после фикса | ✓ exit 0 (59 × node --check + весь node --test, 49 тестовых файлов) |
-| `npm ci` в `document-reader/deps` + `node prepare.cjs` | ✓ «Prepared offline document assets: 216 files» (exit 0) — документированный путь восстановления vendor-артефактов (gitignored) |
-| `node ci/verify-unsigned-policy.cjs` после prepare | ✓ «Unsigned policy OK: 0.26.0; updates OFF; NSIS x64; no auto-install.» (exit 0) |
+| `node --test test/lifecycle-guard.test.cjs` после фикса                                                                                                                                   | ✓ 1 pass / 0 fail / 0 skipped                                                                                                       |
+| `npm run check` после фикса                                                                                                                                                               | ✓ exit 0 (59 × node --check + весь node --test, 49 тестовых файлов)                                                                 |
+| `npm ci` в `document-reader/deps` + `node prepare.cjs`                                                                                                                                    | ✓ «Prepared offline document assets: 216 files» (exit 0) — документированный путь восстановления vendor-артефактов (gitignored)     |
+| `node ci/verify-unsigned-policy.cjs` после prepare                                                                                                                                        | ✓ «Unsigned policy OK: 0.26.0; updates OFF; NSIS x64; no auto-install.» (exit 0)                                                    |
 
 ## Аудиты (без правок кода — код зрелый, покрыт тестами)
 

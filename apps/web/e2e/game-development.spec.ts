@@ -187,7 +187,11 @@ test("compares a selected game file against its saved version and never restarts
   await canvas.getByRole("button", { name: "Скачать проект ZIP", exact: true }).click();
   const zip = unzipSync(await readFile(await (await zipDownload).path()));
   expect(strFromU8(zip["game.js"]!)).toBe(edited);
-  expect(JSON.parse(strFromU8(zip["project.json"]!)).files.find((f: { name: string }) => f.name === "game.js").content).toBe(edited);
+  expect(
+    JSON.parse(strFromU8(zip["project.json"]!)).files.find(
+      (f: { name: string }) => f.name === "game.js"
+    ).content
+  ).toBe(edited);
 
   await page.reload();
   await page.getByRole("combobox", { name: "Проект игры", exact: true }).selectOption(id);
