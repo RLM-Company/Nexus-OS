@@ -2,7 +2,14 @@
 import { useEffect, useRef, useState } from "react";
 import type { OfficeOperation, OfficeCursor } from "@cosmora/contracts";
 import { OfficeRangeEditor } from "./office-range-editor";
-import { officeCellValue, validateOfficePlan, type RangeType } from "./office-range";
+import { officeCellValue, type RangeType } from "./office-range";
+import { OfficePlanEditor } from "./office-plan-editor";
+import {
+  removeOfficeOperation,
+  officeTargetAfterRemoval,
+  replaceOfficeOperation,
+  validateEditableOfficePlan
+} from "./office-plan";
 type View = {
   version: string;
   cursor?: OfficeCursor;
@@ -76,6 +83,7 @@ export function OfficeDocumentWorkspace() {
   const [view, setView] = useState<View | null>(null);
   const [pageHistory, setPageHistory] = useState<OfficeCursor[]>([]);
   const [operations, setOperations] = useState<OfficeOperation[]>([]);
+  const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [target, setTarget] = useState("");
   const [find, setFind] = useState("");
   const [replace, setReplace] = useState("");
@@ -104,6 +112,7 @@ export function OfficeDocumentWorkspace() {
     cancel();
     setPreview(null);
     setOperations([]);
+    setEditingIndex(null);
     setResult(null);
     setError("");
   };
@@ -130,17 +139,29 @@ export function OfficeDocumentWorkspace() {
       if (current()) setBusy(false);
     }
   };
+  const existingSheets = source?.name.toLowerCase().endsWith(".xlsx")
+    ? (view?.total_targets ?? view?.targets.length ?? 0)
+    : 0;
+  const invalidatePlan = () => {
+    cancel();
+    setPreview(null);
+    setResult(null);
+  };
+  const applyPlan = (next: OfficeOperation[]) => {
+    validateEditableOfficePlan(next, existingSheets);
+    invalidatePlan();
+    setOperations(next);
+    setEditingIndex(null);
+  };
   const queue = (op: OfficeOperation) => {
     try {
-      validateOfficePlan([...operations, op]);
+      if (editingIndex !== null)
+        throw Error("Сначала сохраните или отмените редактирование правки.");
+      applyPlan([...operations, op]);
     } catch (error) {
       setError(error instanceof Error ? error.message : "План отклонён");
       return;
     }
-    setError("");
-    setOperations([...operations, op]);
-    setPreview(null);
-    setResult(null);
   };
   const selectableTargets = [
     ...(view?.targets ?? []),
@@ -353,6 +374,7 @@ export function OfficeDocumentWorkspace() {
                 </label>
                 <button
                   type="button"
+                  disabled={editingIndex !== null}
                   onClick={() => {
                     try {
                       queue({
@@ -368,12 +390,16 @@ export function OfficeDocumentWorkspace() {
                 >
                   Добавить правку ячейки
                 </button>
-                <OfficeRangeEditor target={target} onAdd={queue} />
+                <OfficeRangeEditor target={target} onAdd={queue} disabled={editingIndex !== null} />
                 <label>
                   Новый лист{" "}
                   <input value={sheetName} onChange={(e) => setSheetName(e.target.value)} />
                 </label>
-                <button type="button" onClick={() => queue({ kind: "add_sheet", name: sheetName })}>
+                <button
+                  type="button"
+                  disabled={editingIndex !== null}
+                  onClick={() => queue({ kind: "add_sheet", name: sheetName })}
+                >
                   Добавить лист в план
                 </button>
                 <p>
@@ -391,32 +417,51 @@ export function OfficeDocumentWorkspace() {
                 </label>
                 <button
                   type="button"
-                  disabled={!find || !target}
+                  disabled={!find || !target || editingIndex !== null}
                   onClick={() => queue({ kind: "replace_text", target, find, replace })}
                 >
                   Добавить замену в план
                 </button>
               </>
             )}
-            <ol aria-label="План правок">
-              {operations.map((op, i) => (
-                <li key={i}>
-                  {op.kind === "replace_text"
-                    ? `${op.target}: «${op.find}» → «${op.replace}»`
-                    : op.kind === "add_sheet"
-                      ? `Добавить лист «${op.name}»`
-                      : op.kind === "set_cell"
-                        ? `${op.target}/${op.address}: ${displayValue(op.value)}`
-                        : `${op.target}: диапазон ${op.start}, ${op.rows.length} × ${op.rows[0]?.length ?? 0}`}
-                </li>
-              ))}
-            </ol>
+            <OfficePlanEditor
+              operations={operations}
+              editingIndex={editingIndex}
+              onStart={(index) => {
+                invalidatePlan();
+                setEditingIndex(index);
+              }}
+              onCancel={() => {
+                invalidatePlan();
+                setEditingIndex(null);
+              }}
+              onSave={(index, replacement) => {
+                try {
+                  applyPlan(replaceOfficeOperation(operations, index, replacement, existingSheets));
+                } catch (error) {
+                  setError(error instanceof Error ? error.message : "Правка отклонена");
+                }
+              }}
+              onRemove={(index) => {
+                invalidatePlan();
+                try {
+                  applyPlan(removeOfficeOperation(operations, index, existingSheets));
+                  setTarget(officeTargetAfterRemoval(operations, index, existingSheets, target));
+                } catch (error) {
+                  setError(error instanceof Error ? error.message : "Удаление отклонено");
+                }
+              }}
+            />
+            <p>
+              Файл новой копии: {source.name.replace(/\.(docx|xlsx|pptx)$/i, ".koswork.$1")}. Папку
+              сохранения определяет браузер.
+            </p>
             <button type="button" onClick={reset}>
               Очистить план
             </button>
             <button
               type="button"
-              disabled={!operations.length}
+              disabled={!operations.length || editingIndex !== null}
               onClick={() => {
                 void run(async (signal, current) => {
                   const proposal = await request<Preview>(
@@ -437,6 +482,10 @@ export function OfficeDocumentWorkspace() {
           {preview && (
             <div>
               <h4>Предлагаемые изменения</h4>
+              <p>
+                Файл новой копии: {source.name.replace(/\.(docx|xlsx|pptx)$/i, ".koswork.$1")}.
+                Исходник сохраняется.
+              </p>
               <ul>
                 {preview.diff.map((change, i) => (
                   <li key={i}>
@@ -446,12 +495,26 @@ export function OfficeDocumentWorkspace() {
                     </p>
                     <p>Было: {displayValue(change.before)}</p>
                     <p>Будет: {displayValue(change.after)}</p>
+                    {change.kind === "set_cell" && (
+                      <p>
+                        Тип после:{" "}
+                        {change.after === null
+                          ? "Очистить"
+                          : typeof change.after === "object"
+                            ? "Формула без вычисления"
+                            : typeof change.after === "number"
+                              ? "Число"
+                              : typeof change.after === "boolean"
+                                ? "Логическое"
+                                : "Текст"}
+                      </p>
+                    )}
                   </li>
                 ))}
               </ul>
               <button
                 type="button"
-                disabled={busy}
+                disabled={busy || editingIndex !== null}
                 onClick={() => {
                   void run(async (signal, current) => {
                     const saved = await request<Preview & { bytes: string }>(

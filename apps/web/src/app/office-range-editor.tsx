@@ -12,10 +12,12 @@ const labels: Record<RangeType, string> = {
 };
 export function OfficeRangeEditor({
   target,
-  onAdd
+  onAdd,
+  disabled = false
 }: {
   target: string;
   onAdd: (op: OfficeOperation) => void;
+  disabled?: boolean;
 }) {
   const [source, setSource] = useState("");
   const [start, setStart] = useState("A1");
@@ -25,7 +27,7 @@ export function OfficeRangeEditor({
   return (
     <details>
       <summary>Диапазон ячеек XLSX</summary>
-      <fieldset style={{ minWidth: 0 }}>
+      <fieldset disabled={disabled} style={{ minWidth: 0 }}>
         <legend>Диапазон XLSX</legend>
         <p>
           Вставьте таблицу из Excel: столбцы разделены табуляцией, строки — переносом. До 10 × 10
