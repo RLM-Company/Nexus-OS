@@ -44,6 +44,13 @@ const render =
 const measure = estimateInputTokensUpperBound;
 
 describe("whole Work context packing", () => {
+  it("binds the absent-fact refusal rule into the memory instructions", () => {
+    // Product decision of 2026-11-09: semantic sources may be topical
+    // neighbors, so the answers side carries the honest-missing rule.
+    expect(CONTEXT_MEMORY_RULES).toContain("таких данных нет");
+    expect(CONTEXT_MEMORY_RULES).toContain("тематически близкий источник");
+    expect(CONTEXT_MEMORY_RULES).toContain("не ответ и не подтверждение");
+  });
   it("accounts the complete envelope and conditional rules at an exact boundary", () => {
     const draw = render('Материалы 😀 "\\\ud800');
     const full = fitContextMessages({
