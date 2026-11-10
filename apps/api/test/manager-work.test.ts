@@ -1779,6 +1779,68 @@ describe("durable Manager work", () => {
       await app.close();
     }
   });
+  it("accepts a finished result over HTTP exactly once and refuses it before completion", async () => {
+    const f = await fixture();
+    const app = buildApp({
+      config: f.config,
+      database: f.database,
+      projectStore: f.projects,
+      managerWorkStore: f.store,
+      managerWorkCoordinator: f.coordinator
+    });
+    try {
+      const path = `/api/v1/projects/${f.project.id}/work/${f.work.id}/result/accept`;
+      const notReady = await app.inject({
+        method: "POST",
+        url: path,
+        payload: { expected_version: f.get().version }
+      });
+      expect(notReady.statusCode).toBe(409);
+      expect(notReady.json()).toEqual({ error: "WORK_RESULT_NOT_READY" });
+
+      const current = f.get();
+      f.store.save({ ...current, status: "completed", stage: "done" }, "Готово");
+      const accepted = await app.inject({
+        method: "POST",
+        url: path,
+        payload: { expected_version: f.get().version }
+      });
+      expect(accepted.statusCode).toBe(200);
+      const body = accepted.json<{ result_accepted_at: string; result_accepted_by: string }>();
+      expect(body.result_accepted_at).toBeTruthy();
+      expect(body.result_accepted_by).toBe("local-owner");
+
+      const repeated = await app.inject({
+        method: "POST",
+        url: path,
+        payload: { expected_version: f.get().version }
+      });
+      expect(repeated.statusCode).toBe(200);
+      expect(repeated.json<{ result_accepted_at: string }>().result_accepted_at).toBe(
+        body.result_accepted_at
+      );
+      expect(
+        (
+          await app.inject({
+            method: "POST",
+            url: path,
+            payload: { expected_version: f.get().version + 99 }
+          })
+        ).statusCode
+      ).toBe(409);
+      expect(
+        (
+          await app.inject({
+            method: "POST",
+            url: path,
+            payload: { expected_version: 0 }
+          })
+        ).statusCode
+      ).toBe(400);
+    } finally {
+      await app.close();
+    }
+  });
 });
 
 describe("Work admission startup", () => {
