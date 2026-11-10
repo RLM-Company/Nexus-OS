@@ -1,0 +1,50 @@
+{
+  "state": "candidate",
+  "baseline": "f9da6e83c8764949d7a478649b8d680517f1c320",
+  "sources": [
+    {
+      "pr": 507,
+      "head": "5a5e2e4d3c5cd04c2556c2d065a0cdf8dd8ff62b",
+      "scope": "Coscode execution proof and dirty edit continuity",
+      "integration": "merge"
+    },
+    {
+      "pr": 501,
+      "head": "b18dd41d51655c06b92814af35d5ade5158ad787",
+      "scope": "Sites/Games unsaved edit protection beyond first wave",
+      "integration": "merge; retain stronger exact game diff count assertion"
+    },
+    {
+      "pr": 502,
+      "source_commit": "e3cbd1a87b90f646822711940e01601754e435e2",
+      "head_reviewed": "1a3f8a62390a9bf6f52adff245f3593c0cb2870d",
+      "scope": "native diagnostics only",
+      "integration": "cherry-pick; forward startup faults; format"
+    }
+  ],
+  "excluded": [
+    {
+      "pr": 502,
+      "scope": "asynchronous hosted logout storage clearing",
+      "reason": "requires separate rapid-login and overlapping-cleanup acceptance; not declared a reproduced product bug"
+    },
+    {
+      "pr": 502,
+      "scope": "new static package-graph guard",
+      "reason": "static missing-require and wildcard behavior need adversarial verification before promising full graph coverage"
+    },
+    {
+      "pr": 504,
+      "scope": "Media job restoration",
+      "reason": "separate review and browser acceptance pending"
+    },
+    {
+      "scope": "Gemini research delivery",
+      "reason": "incompatible base and reproduced false evidence; reference preserved, rework required"
+    }
+  ],
+  "windows_candidate": "0.27.0",
+  "server_deploy": false,
+  "owner_device_actions": false,
+  "paid_model_calls": 0
+}

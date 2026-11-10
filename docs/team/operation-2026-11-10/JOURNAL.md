@@ -98,3 +98,18 @@ Alpha vsцитатаBeta, несовпавшаяpageVersion. Подробнос�
 Подготовлены REWORK_TASK и current-base source subset; внешнему сервису не
 отправлены. Статус Gemini—rework_required,0новыхинтегрированных функций.
 Продукт/визуал не менялись; owner-PC/VPS/платныеcalls не выполнялись.
+
+## 2026-11-10 — вторая волна, кандидат
+
+Получены точные heads: Coscode #507 5a5e2e4d, Builders #501 b18dd41d.
+Включены проверка snapshot/exitCode/cleanup перед повторным использованием
+и публикацией, отмена OCI create с bounded acknowledgement, защита несохранённых
+правок Coscode и Sites/Games. При конфликте сохранена более строгая проверка
+1added/1removed в game e2e, принят типизированный разбор ZIP manifest.
+
+Из Windows #502 выбран только диагностический commit e3cbd1a8; отображение
+startup faults дополнительно подключено интегратором. Остальная async очистка
+и package-graph guard не объявляются принятыми. Причины в WAVE_2.json.
+Кандидат Windows0.27.0, без установки владельцу. Продуктовый визуал/навигация
+не переделывались, добавлены только элементы согласованных функций.
+Локально:5native diagnostics,37runtime tests passed. Полные CI ещё требуются.

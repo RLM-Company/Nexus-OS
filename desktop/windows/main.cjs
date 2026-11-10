@@ -847,11 +847,10 @@ async function showProfileStatus() {
       secureStorage: process.platform === "win32" && safeStorage.isEncryptionAvailable()
     },
     profile: status,
+    faults: status.faults,
     origin: currentOrigin,
     ownerVerified: Boolean(
-      ownerCache?.owner &&
-        ownerCache.origin === currentOrigin &&
-        Date.now() < ownerCache.expires
+      ownerCache?.owner && ownerCache.origin === currentOrigin && Date.now() < ownerCache.expires
     ),
     identityEpoch,
     downloads: { active: activeDownloads.size },
