@@ -119,6 +119,12 @@
     will-navigate, чтобы не удалить session cookie до ухода серверного /logout
     запроса; меню-выход и origin-switch переведены на тот же helper (устранено
     тройное дублирование). **npm run check: exit 0, 441 тестов (0 fail)**.
+14. **Срез 4 — guard полноты графика упаковки (реализован, коммит `2ee7079a`)**:
+    пропущенные из build.files модули (`diagnostics.cjs`, `session-cleanup.cjs`)
+    делали бы EXE неработоспособным; существующий preflight ловил только свой
+    список. Новый `ci/check-package-graph.cjs` обходит граф require'ов от main.cjs
+    (56 файлов) против build.files + тест package-graph (2 сценария) — теперь это
+    часть `npm run check`. **npm run check: exit 0, 443 теста (0 fail)**.
 
 ## Что делать следующему запуску (в порядке приоритета)1. **Если фоновый прогон №2 завершится** (see shell-нотификация): проверь
    `REPRODUCED true/false`. При true: коммит отчёта `-repeat.json` в

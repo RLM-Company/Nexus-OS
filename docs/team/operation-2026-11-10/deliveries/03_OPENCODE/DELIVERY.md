@@ -12,7 +12,35 @@
 
 ---
 
-## Срез 3 (добавление): паритет очистки браузерного сеанса при hosted-выходе
+## Срез 4 (добавление): guard полноты графика упаковки
+
+**Найденный пробел**: мои новые модули `diagnostics.cjs` и `session-cleanup.cjs`
+(требуемые main.cjs) отсутствовали в `pkg.build.files` (include-набор electron-builder)
+и в списке `ci/verify-unsigned-policy.cjs` — упакованный EXE падал бы на старте
+(`Cannot find module`). Существующий guard это не ловил: он проверяет только «свой»
+фиксированный список и не защищает от рассинхронизации его с реальным графом
+`require` из main.cjs.
+
+**Стало**:
+- оба файла добавлены в `package.json` (build.files) и в список
+  `ci/verify-unsigned-policy.cjs` (двойная фиксация, как у соседних модулей);
+- новый `ci/check-package-graph.cjs`: статический обход графа локальных
+  `require("./…")` от `main.cjs` (56 скриптов) против `build.files` + wildcard'ы,
+  double-use как CLI (`process.exitCode` при пропусках) и как модуль;
+- постоянный тест `test/package-graph.test.cjs`: (1) граф полный — каждый
+  достижимый require внутри build.files («упакованный EXE обязан находить все свои
+  модули»), (2) новые/исполнительные модули включены ЯВНО (не wildcard'ом).
+  Теперь пропавший из пакета модуль ловится в самом `npm run check`, а не в CI.
+
+**Изменённые файлы**: `desktop/windows/package.json`, `desktop/windows/ci/verify-unsigned-policy.cjs`,
+`desktop/windows/ci/check-package-graph.cjs` (новый), `desktop/windows/test/package-graph.test.cjs` (новый).
+
+**Фактические проверки**: `node ci/check-package-graph.cjs` → «files walked: 56; misses: 0»;
+`npm run check` → exit 0 (**443 теста, 0 fail**).
+
+---
+
+# Срез 3 (добавление): паритет очистки браузерного сеанса при hosted-выходе
 
 **Найденный пробел** (аудит.logout-оркестрации): native-меню «Выйти и удалить локальные
 данные…» выполняет `clearStorageData` + `clearCache`, а hosted-first-party `/logout`
