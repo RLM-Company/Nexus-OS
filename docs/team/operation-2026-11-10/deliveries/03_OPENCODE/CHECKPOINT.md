@@ -111,6 +111,14 @@
     - **npm run check: exit 0, 438 тестов (0 fail)**.
 12. VISUAL_WAITLIST.md записан: идея «Повторить» в Центре загрузок — только решение
     владельца.
+13. **Срез 3 — hosted-logout паритет очистки сеанса (реализован, коммит `dea0fb14`)**:
+    найденный пробел — меню-выход чистил `clearStorageData`+`clearCache`, hosted
+    first-party `/logout` — только черновики/историю. Новый `session-cleanup.cjs`
+    (фиксированный порядок, ошибки не гасятся, 3 теста), очистка подключена к
+    did-navigate (full-doc явный /logout) и did-navigate-in-page (SPA) — НИКОГДА из
+    will-navigate, чтобы не удалить session cookie до ухода серверного /logout
+    запроса; меню-выход и origin-switch переведены на тот же helper (устранено
+    тройное дублирование). **npm run check: exit 0, 441 тестов (0 fail)**.
 
 ## Что делать следующему запуску (в порядке приоритета)1. **Если фоновый прогон №2 завершится** (see shell-нотификация): проверь
    `REPRODUCED true/false`. При true: коммит отчёта `-repeat.json` в

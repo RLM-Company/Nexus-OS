@@ -3,15 +3,43 @@
 - Статус: **готово к интеграции** (дальнейшие статусы подтверждает Codex).
 - Ветка: `ops/opencode-windows` · PR: **#502** https://github.com/RLM-Company/Nexus-OS/pull/502
 - BASE_SHA: `9d972e8ba447f681fbfb49253b73d9f02dd1d325` (= origin/main на 10.11.2026,
-  сверено `git merge-base --is-ancestor` → true).
-- Код-коммиты: `9e7c6c07` — fix(acceptance): verify installer guard refusal without pwsh;
-  `e3cbd1a8` — feat(diagnostics): honest native profile report without owner secrets.
+  сверено `git merge-base --is-ancestor` → true; по факту 10.11 origin/main вырос до
+  `f9eb4528` — docs/operation-#500, сфера desktop/windows НЕ изменилась, конфликтов нет).
+- Код-коммиты: `9e7c6c07` guard-фикс; `e3cbd1a8` диагностика; `dea0fb14` hosted-logout
+  паритет очистки сеанса.
 - HEAD_SHA: последний коммит ветки (docs-коммит этой передачи), точное значение — в
   описании PR.
 
 ---
 
-## Срез 2 (добавление): вертикальный срез «встроенная диагностика» (очередь №6)
+## Срез 3 (добавление): паритет очистки браузерного сеанса при hosted-выходе
+
+**Найденный пробел** (аудит.logout-оркестрации): native-меню «Выйти и удалить локальные
+данные…» выполняет `clearStorageData` + `clearCache`, а hosted-first-party `/logout`
+(включая SPA-переходы) — только черновики/историю/владельца. Остатки
+localStorage/cache прежнего владельца могли доживать до следующего входа на тот же
+origin (partition привязан к origin, не к владельцу).
+
+**Стало**: новый `desktop/windows/session-cleanup.cjs` (`clearBrowserSessionData` —
+фиксированный порядок storage→cache, ошибки не гасятся, 3 теста на контракт) и
+включение очистки в обе пост-навигационные точки hosted-выхода
+(`did-navigate` full-doc по явному `/logout`, `did-navigate-in-page` по SPA-выходу)
+с честным предупреждением при неудаче. **Решённая проблема тайминга**: очистка
+ни при каких путях не отправляется из `will-navigate` — там она могла бы удалить
+session cookie ДО ухода запроса `/logout` на сервер и сервер не смог бы инвалидировать
+владельца. Меню-выход и origin-switch переведены на тот же helper (устранено
+тройное дублирование с риском дрифта).
+
+**Изменённые файлы**: `desktop/windows/session-cleanup.cjs` (новый),
+`desktop/windows/test/session-cleanup.test.cjs` (новый), `desktop/windows/main.cjs`
+(require + 4 точки очистки + `warnSessionResidueAfterLogout`), `desktop/windows/package.json` (check).
+
+**Фактические проверки**: `node --test test/session-cleanup.test.cjs` → 3 pass;
+`npm run check` → exit 0 (**441 тестов, 0 fail**).
+
+---
+
+# Срез 2 (добавление): вертикальный срез «встроенная диагностика» (очередь №6)
 
 Пользовательский путь: меню **Application → «Состояние локального профиля…»** →
 содержательный отчёт нативного диалога (без изменений web-UI и компоновки; пункт меню уже существовал).
