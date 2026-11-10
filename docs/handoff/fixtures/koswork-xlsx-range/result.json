@@ -1,0 +1,254 @@
+{
+  "source_version": "sha256:7018baf8963ea45fef2c021a1909e324dfd685737749d79e945856bcec0acb15",
+  "new_version": "sha256:e5adf0075ade775a7406ade4c5e0ad5456de28380d231de86967809b7c994fbb",
+  "sha256": "e5adf0075ade775a7406ade4c5e0ad5456de28380d231de86967809b7c994fbb",
+  "executed_changes": [
+    {
+      "kind": "add_sheet",
+      "name": "Диапазон",
+      "before": null,
+      "after": "Диапазон"
+    },
+    {
+      "kind": "set_cell",
+      "target": "sheet:2",
+      "address": "A2",
+      "value": "00123",
+      "before": null,
+      "after": "00123"
+    },
+    {
+      "kind": "set_cell",
+      "target": "sheet:2",
+      "address": "B2",
+      "value": 19700,
+      "before": null,
+      "after": 19700
+    },
+    {
+      "kind": "set_cell",
+      "target": "sheet:2",
+      "address": "C2",
+      "value": true,
+      "before": null,
+      "after": true
+    },
+    {
+      "kind": "set_cell",
+      "target": "sheet:2",
+      "address": "D2",
+      "value": {
+        "formula": "SUM(B2:B2)"
+      },
+      "before": null,
+      "after": {
+        "formula": "SUM(B2:B2)"
+      }
+    },
+    {
+      "kind": "set_cell",
+      "target": "sheet:2",
+      "address": "E2",
+      "value": "07.11.2026; кроме доставки; условие обязательно",
+      "before": null,
+      "after": "07.11.2026; кроме доставки; условие обязательно"
+    },
+    {
+      "kind": "set_cell",
+      "target": "sheet:2",
+      "address": "A3",
+      "value": "00456",
+      "before": null,
+      "after": "00456"
+    },
+    {
+      "kind": "set_cell",
+      "target": "sheet:2",
+      "address": "B3",
+      "value": -12.5,
+      "before": null,
+      "after": -12.5
+    },
+    {
+      "kind": "set_cell",
+      "target": "sheet:2",
+      "address": "C3",
+      "value": false,
+      "before": null,
+      "after": false
+    },
+    {
+      "kind": "set_cell",
+      "target": "sheet:2",
+      "address": "D3",
+      "value": {
+        "formula": "MIN(B2:B3)"
+      },
+      "before": null,
+      "after": {
+        "formula": "MIN(B2:B3)"
+      }
+    },
+    {
+      "kind": "set_cell",
+      "target": "sheet:2",
+      "address": "E3",
+      "value": "не включать доставку",
+      "before": null,
+      "after": "не включать доставку"
+    }
+  ],
+  "rejected_changes": [],
+  "changed_parts": [
+    "[Content_Types].xml",
+    "xl/_rels/workbook.xml.rels",
+    "xl/workbook.xml",
+    "xl/worksheets/sheet2.xml"
+  ],
+  "original_preserved": true,
+  "readback_verified": true,
+  "real_model_called": false,
+  "visual_render_verified": false,
+  "untouched_source_sheet_verified": true,
+  "formulas_calculated": false,
+  "readback": {
+    "sha256": "e5adf0075ade775a7406ade4c5e0ad5456de28380d231de86967809b7c994fbb",
+    "version": "sha256:e5adf0075ade775a7406ade4c5e0ad5456de28380d231de86967809b7c994fbb",
+    "size": 2244,
+    "representation": {
+      "kind": "office_text",
+      "format": "xlsx",
+      "version": "openxml-text-v1",
+      "complete_document": false,
+      "sha256": "48197e8d981d65c84950efbac4f7d83e599c23f5762177c993285c72e9a3f2b6",
+      "limitations": [
+        "Text extraction only; images, charts, formatting, notes and headers are not included. Formulas are not evaluated; numeric/date cells retain stored values."
+      ]
+    },
+    "cursor": {
+      "target_offset": 0,
+      "content_offset": 0
+    },
+    "total_targets": 2,
+    "targets": [
+      {
+        "id": "sheet:1",
+        "name": "Предложение",
+        "total_cells": 4,
+        "cells_excerpt_only": false,
+        "cells": [
+          {
+            "address": "A1",
+            "type": "inlineStr",
+            "text": "00123",
+            "cached_value": null,
+            "formula": null
+          },
+          {
+            "address": "B1",
+            "type": "n",
+            "text": "19700",
+            "cached_value": null,
+            "formula": null
+          },
+          {
+            "address": "C1",
+            "type": "inlineStr",
+            "text": "кроме доставки",
+            "cached_value": null,
+            "formula": null
+          },
+          {
+            "address": "D1",
+            "type": "inlineStr",
+            "text": "07.11.2026",
+            "cached_value": null,
+            "formula": null
+          }
+        ],
+        "cells_offset": 0
+      },
+      {
+        "id": "sheet:2",
+        "name": "Диапазон",
+        "total_cells": 10,
+        "cells_excerpt_only": false,
+        "cells": [
+          {
+            "address": "A2",
+            "type": "inlineStr",
+            "text": "00123",
+            "cached_value": null,
+            "formula": null
+          },
+          {
+            "address": "B2",
+            "type": "n",
+            "text": "19700",
+            "cached_value": null,
+            "formula": null
+          },
+          {
+            "address": "C2",
+            "type": "b",
+            "text": "1",
+            "cached_value": null,
+            "formula": null
+          },
+          {
+            "address": "D2",
+            "type": "n",
+            "text": "",
+            "cached_value": null,
+            "formula": "SUM(B2:B2)"
+          },
+          {
+            "address": "E2",
+            "type": "inlineStr",
+            "text": "07.11.2026; кроме доставки; условие обязательно",
+            "cached_value": null,
+            "formula": null
+          },
+          {
+            "address": "A3",
+            "type": "inlineStr",
+            "text": "00456",
+            "cached_value": null,
+            "formula": null
+          },
+          {
+            "address": "B3",
+            "type": "n",
+            "text": "-12.5",
+            "cached_value": null,
+            "formula": null
+          },
+          {
+            "address": "C3",
+            "type": "b",
+            "text": "0",
+            "cached_value": null,
+            "formula": null
+          },
+          {
+            "address": "D3",
+            "type": "n",
+            "text": "",
+            "cached_value": null,
+            "formula": "MIN(B2:B3)"
+          },
+          {
+            "address": "E3",
+            "type": "inlineStr",
+            "text": "не включать доставку",
+            "cached_value": null,
+            "formula": null
+          }
+        ],
+        "cells_offset": 0
+      }
+    ],
+    "next_cursor": null,
+    "targets_excerpt_only": false
+  }
+}
