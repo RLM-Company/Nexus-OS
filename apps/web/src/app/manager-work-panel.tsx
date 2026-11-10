@@ -9,6 +9,8 @@ import { WorkManagerProgress } from "./work-manager-progress";
 import { WorkManagerMemory } from "./work-manager-memory";
 import { DesktopComputerButton } from "./desktop-computer-button";
 import { useEffect, useRef, useState } from "react";
+import type { CreateManagerWork } from "@cosmora/contracts";
+import { startVisibleReadPolling } from "./visible-read-poller";
 import { executionGateLabels, useExecutionGate } from "./use-execution-gate";
 
 type Work = {
@@ -86,7 +88,7 @@ export function ManagerWorkPanel({
   initialGoal: string;
 }) {
   const [goal, setGoal] = useState(initialGoal);
-  const [role, setRole] = useState("analyst");
+  const [role, setRole] = useState<CreateManagerWork["worker_role"]>("analyst");
   const [critic, setCritic] = useState(true);
   const [work, setWork] = useState<Work | null>(null);
   const [works, setWorks] = useState<Work[]>([]);
@@ -101,36 +103,52 @@ export function ManagerWorkPanel({
   const executionGate = useExecutionGate(projectId);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [readError, setReadError] = useState("");
   const lock = useRef(false);
   const mutationEpoch = useRef(0);
-  const pending = useRef<{ goal: string; role: string; critic: boolean; id: string } | null>(null);
+  const pending = useRef<CreateManagerWork | null>(null);
   const base = "/api/v1/projects/" + encodeURIComponent(projectId) + "/work";
-  const taskInputBudget = runtime?.context_window_tokens
-    ? Math.min(3_000_000, runtime.context_window_tokens * 3)
-    : 32000;
-  const taskOutputBudget = runtime?.max_output_tokens
-    ? Math.max(256, Math.min(300_000, runtime.max_output_tokens * 3))
-    : 6000;
+  const draft = pending.current;
+  const pendingRequest =
+    draft &&
+    draft.goal === goal &&
+    draft.worker_role === role &&
+    Boolean(draft.require_critic) === critic
+      ? draft
+      : null;
+  const taskInputBudget =
+    pendingRequest?.max_input_tokens ??
+    (runtime?.context_window_tokens
+      ? Math.min(3_000_000, runtime.context_window_tokens * 3)
+      : 32000);
+  const taskOutputBudget =
+    pendingRequest?.max_output_tokens ??
+    (runtime?.max_output_tokens
+      ? Math.max(256, Math.min(300_000, runtime.max_output_tokens * 3))
+      : 6000);
   useEffect(() => {
-    const controller = new AbortController();
-    let timer: ReturnType<typeof setTimeout>;
-    const refresh = async () => {
-      const epoch = mutationEpoch.current;
-      try {
+    return startVisibleReadPolling(
+      async (signal) => {
+        const epoch = mutationEpoch.current;
         const [list, model] = await Promise.all([
-          json<{ items: Work[] }>(base, { signal: controller.signal }),
+          json<{ items: Work[] }>(base, { signal }),
           json<{ mode: string; model: string }>("/api/v1/model-runtime", {
-            signal: controller.signal
+            signal
           })
         ]);
-        if (!controller.signal.aborted && epoch === mutationEpoch.current && !lock.current) {
-          const latest = selectedWorkId
-            ? (list.items.find((item) => item.id === selectedWorkId) ?? list.items[0] ?? null)
-            : (list.items[0] ?? null);
-          if (selectedWorkId && !list.items.some((item) => item.id === selectedWorkId))
-            setSelectedWorkId(null);
+        // History is bounded. Its window moving is not a change of selection.
+        const selected = selectedWorkId
+          ? (list.items.find((item) => item.id === selectedWorkId) ??
+            (await json<Work>(base + "/" + encodeURIComponent(selectedWorkId), { signal })))
+          : null;
+        const items =
+          selected && !list.items.some((item) => item.id === selected.id)
+            ? [...list.items, selected]
+            : list.items;
+        if (!signal.aborted && epoch === mutationEpoch.current && !lock.current) {
+          const latest = selected ?? items[0] ?? null;
           setWorks((current) =>
-            list.items.map((item) => {
+            items.map((item) => {
               const previous = current.find((candidate) => candidate.id === item.id);
               return previous && previous.version > item.version ? previous : item;
             })
@@ -142,19 +160,14 @@ export function ManagerWorkPanel({
           );
           setRuntime(model);
           setHistoryLoaded(true);
+          setReadError("");
         }
-      } catch {
-        if (!controller.signal.aborted)
-          setError("Состояние временно недоступно. Работа сохраняется на сервере.");
-      } finally {
-        if (!controller.signal.aborted) timer = setTimeout(() => void refresh(), 750);
+      },
+      {
+        intervalMs: 750,
+        onError: () => setReadError("Состояние временно недоступно. Работа сохраняется на сервере.")
       }
-    };
-    void refresh();
-    return () => {
-      controller.abort();
-      clearTimeout(timer);
-    };
+    );
   }, [base, selectedWorkId]);
   const act = async (action?: "pause" | "resume" | "approve" | "cancel") => {
     if ((!action || action === "resume" || action === "approve") && executionGate !== "clear")
@@ -171,22 +184,17 @@ export function ManagerWorkPanel({
         url += "/" + encodeURIComponent(work.id) + "/control";
         body = { version: work.version, action };
       } else {
-        if (
-          !pending.current ||
-          pending.current.goal !== goal ||
-          pending.current.role !== role ||
-          pending.current.critic !== critic
-        )
-          pending.current = { goal, role, critic, id: crypto.randomUUID() };
-        body = {
-          client_request_id: pending.current.id,
-          goal,
-          worker_role: role,
-          require_critic: critic,
-          max_model_requests: 3,
-          max_input_tokens: taskInputBudget,
-          max_output_tokens: taskOutputBudget
-        };
+        if (!pendingRequest)
+          pending.current = {
+            client_request_id: crypto.randomUUID(),
+            goal,
+            worker_role: role,
+            require_critic: critic,
+            max_model_requests: 3,
+            max_input_tokens: taskInputBudget,
+            max_output_tokens: taskOutputBudget
+          };
+        body = pendingRequest ?? pending.current;
       }
       const updated = await json<Work>(url, {
         method: "POST",
@@ -273,7 +281,10 @@ export function ManagerWorkPanel({
         <select
           aria-label="Исполнитель задачи"
           value={role}
-          onChange={(e) => setRole(e.target.value)}
+          onChange={(e) => {
+            const value = e.target.value;
+            if (value === "analyst" || value === "architect") setRole(value);
+          }}
           disabled={busy || !historyLoaded}
         >
           <option value="analyst">Аналитик</option>
@@ -309,7 +320,7 @@ export function ManagerWorkPanel({
         disabled={busy || executionGate !== "clear"}
       />
       {!historyLoaded && <p className="manager-work-usage">Загружаем задачи проекта…</p>}
-      {error && <p role="alert">{error}</p>}
+      {(error || readError) && <p role="alert">{error || readError}</p>}
       {works.length > 0 && (
         <div className="manager-work-history">
           <strong>Задачи проекта</strong>

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { startVisibleReadPolling } from "./visible-read-poller";
 import { WorkflowPanel } from "./workflow-panel";
 import Link from "next/link";
 import { AcceptedSkillView } from "./accepted-skill-view";
@@ -157,6 +158,7 @@ export function WorkManagerDag({ projectId }: { projectId: string }) {
   const [requestLimit, setRequestLimit] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [readError, setReadError] = useState("");
   const [checkpoints, setCheckpoints] = useState<{ version: number; at: string }[]>([]);
   const lock = useRef(false),
     epoch = useRef(0);
@@ -275,15 +277,14 @@ export function WorkManagerDag({ projectId }: { projectId: string }) {
     setRequestLimit(null);
   }
   useEffect(() => {
-    const controller = new AbortController();
-    let timer: ReturnType<typeof setTimeout>;
     let linkedPlan = new URLSearchParams(window.location.search).get("plan");
-    async function refresh() {
-      const before = epoch.current;
-      try {
-        const data = await request<{ items: WorkDag[] }>(base, { signal: controller.signal });
-        if (!controller.signal.aborted && before === epoch.current && !lock.current) {
+    return startVisibleReadPolling(
+      async (signal) => {
+        const before = epoch.current;
+        const data = await request<{ items: WorkDag[] }>(base, { signal });
+        if (!signal.aborted && before === epoch.current && !lock.current) {
           setGraphs(data.items);
+          setReadError("");
           if (linkedPlan) {
             const linked = data.items.find((item) => item.id === linkedPlan);
             if (linked) {
@@ -295,18 +296,12 @@ export function WorkManagerDag({ projectId }: { projectId: string }) {
             linkedPlan = null;
           }
         }
-      } catch {
-        if (!controller.signal.aborted)
-          setError("Не удалось обновить план. Состояние сохранено на сервере");
-      } finally {
-        if (!controller.signal.aborted) timer = setTimeout(() => void refresh(), 1000);
+      },
+      {
+        intervalMs: 1000,
+        onError: () => setReadError("Не удалось обновить план. Состояние сохранено на сервере")
       }
-    }
-    void refresh();
-    return () => {
-      controller.abort();
-      clearTimeout(timer);
-    };
+    );
   }, [base]);
   useEffect(() => {
     const controller = new AbortController();
@@ -717,9 +712,9 @@ export function WorkManagerDag({ projectId }: { projectId: string }) {
           </form>
         )}
       </details>
-      {error && (
+      {(error || readError) && (
         <p role="alert" className={styles.error}>
-          {error}
+          {error || readError}
         </p>
       )}
       {copiedElsewhere && (

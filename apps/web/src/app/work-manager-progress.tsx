@@ -54,8 +54,15 @@ export function WorkManagerProgress({
   const base = "/api/v1/projects/" + encodeURIComponent(projectId);
   useEffect(() => {
     const controller = new AbortController();
-    let timer: ReturnType<typeof setTimeout>;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let reading = false;
+    let retryDelay = 2000;
+    const visible = () => document.visibilityState !== "hidden";
     const refresh = async () => {
+      if (reading || controller.signal.aborted || !visible()) return;
+      clearTimeout(timer);
+      reading = true;
+      let retry = false;
       try {
         const response = await fetch(base + "/work/" + encodeURIComponent(workId) + "/runtime", {
           cache: "no-store",
@@ -66,18 +73,37 @@ export function WorkManagerProgress({
         if (!controller.signal.aborted) {
           setState({ key, detail });
           setError("");
+          retryDelay = 2000;
         }
       } catch {
-        if (!controller.signal.aborted)
+        if (!controller.signal.aborted) {
           setError("Не удалось обновить этапы. Сохранённые данные могут быть устаревшими.");
+          retry = true;
+        }
       } finally {
-        if (!controller.signal.aborted) timer = setTimeout(() => void refresh(), 2000);
+        reading = false;
+        if (retry && !controller.signal.aborted && visible()) {
+          timer = setTimeout(() => void refresh(), retryDelay);
+          retryDelay = Math.min(30000, retryDelay * 2);
+        }
       }
     };
+    // Accepted versions drive successful reads through the parent. Resume a
+    // visible view immediately, and retry failures without polling stable data.
+    const wake = () => {
+      if (!visible()) clearTimeout(timer);
+      else void refresh();
+    };
+    document.addEventListener("visibilitychange", wake);
+    window.addEventListener("focus", wake);
+    window.addEventListener("online", wake);
     void refresh();
     return () => {
       controller.abort();
       clearTimeout(timer);
+      document.removeEventListener("visibilitychange", wake);
+      window.removeEventListener("focus", wake);
+      window.removeEventListener("online", wake);
     };
   }, [base, key, workId, version]);
   const detail = state?.key === key ? state.detail : null;

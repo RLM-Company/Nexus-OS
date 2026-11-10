@@ -1200,3 +1200,157 @@ for (const pause of [false, true]) {
     }
   );
 }
+
+test("a selected confirmed correction informs a new CSV task without reviving the failed outcome", async (t) => {
+  const f = await fixture(t);
+  const source = f.history.start(context, {
+    project: "project",
+    goal: "CSV отчёт по цене",
+    executionMode: "work"
+  });
+  source.plan([{ title: "Export CSV", criteria: "Leading zeros kept", state: "pending" }]);
+  source.state("failed");
+  const draft = f.history.correction(context, source.id);
+  const saved = f.history.saveCorrection(context, source.id, draft.revision, {
+    issue: "Leading zeros were lost",
+    guidance: "Keep 00123 as literal text and verify the saved CSV.",
+    applies_when: "CSV отчёт по цене"
+  });
+  let stage = 0;
+  const confirmations = [],
+    report = "id,price,delivery\n00123,19700,excluded\n";
+  const actions = [
+    () => ({
+      kind: "work_plan",
+      steps: [{ title: "Create CSV", criteria: "Exact identifier and price preserved" }]
+    }),
+    (obs) => ({
+      kind: "work_step",
+      step: 1,
+      state: "running",
+      evidence: "",
+      observation_id: obs.observation_id
+    }),
+    () => ({ kind: "workspace_create", path: "corrected.csv", content: report }),
+    () => ({ kind: "workspace_read", path: "corrected.csv" }),
+    (obs) => ({
+      kind: "work_step",
+      step: 1,
+      state: "checked",
+      evidence: "CSV read back with 00123",
+      observation_id: obs.observation_id
+    }),
+    () => ({ kind: "done", summary: "CSV verified" })
+  ];
+  const runner = new ComputerSession({
+    executionMode: "work",
+    driver: f.driver,
+    workspace: f.workspace,
+    history: f.history,
+    identity: async () => context,
+    notify() {},
+    confirm: async (value) => {
+      confirmations.push(value);
+      return true;
+    },
+    planner: {
+      begin: async () => ({
+        id: "fixture",
+        supports_work_reference: true,
+        supports_work_corrections: true
+      }),
+      authorize: async () => ({ authorized: true, valid_for_ms: 10000 }),
+      end: async () => {},
+      next: async ({ observation, workReference, previousResult }) => {
+        assert.equal(workReference.format, "koswork.confirmed-correction.v1");
+        assert.equal(workReference.source_outcome, "failed");
+        assert.match(workReference.guidance, /00123/);
+        if (stage === 0) assert.equal(observation.work.plan_steps, 0);
+        if (stage === 4) assert.equal(JSON.parse(previousResult).content, report);
+        return {
+          action: actions[stage++](observation),
+          message: "Scripted fixture",
+          requires_confirmation: false
+        };
+      }
+    }
+  });
+  const result = await runner.run({
+    project: "project",
+    goal: "New CSV report",
+    reference: { taskId: source.id, revision: saved.revision }
+  });
+  assert.equal(result.status, "completed");
+  assert.equal(fs.readFileSync(path.join(f.folder, "corrected.csv"), "utf8"), report);
+  assert.equal(confirmations[0].reference.revision, saved.revision);
+  assert.ok(confirmations.some((value) => value.action?.kind === "workspace_create"));
+  assert.deepEqual(f.grants, []);
+  assert.equal(f.history.list(context).find((record) => record.id === source.id).status, "failed");
+  assert.equal(
+    f.history.list(context).find((record) => record.id === result.task_id).referenceSource.revision,
+    saved.revision
+  );
+});
+
+test("withdrawn corrections and legacy servers stop before a new planner effect", async (t) => {
+  for (const kind of ["withdraw", "legacy"])
+    await t.test(kind, async (t) => {
+      const f = await fixture(t),
+        source = f.history.start(context, {
+          project: "project",
+          goal: "CSV report",
+          executionMode: "work"
+        });
+      source.state("failed");
+      const draft = f.history.correction(context, source.id);
+      const saved = f.history.saveCorrection(context, source.id, draft.revision, {
+        issue: "Wrong type",
+        guidance: "Keep literal IDs",
+        applies_when: "CSV"
+      });
+      let plannerCalls = 0,
+        authorized = 0;
+      const runner = new ComputerSession({
+        executionMode: "work",
+        driver: f.driver,
+        workspace: f.workspace,
+        history: f.history,
+        identity: async () => context,
+        confirm: async () => true,
+        notify() {},
+        planner: {
+          begin: async () => ({
+            id: "fixture",
+            supports_work_reference: true,
+            ...(kind === "withdraw" ? { supports_work_corrections: true } : {})
+          }),
+          end: async () => {},
+          authorize: async () => {
+            authorized++;
+            return { authorized: true, valid_for_ms: 10000 };
+          },
+          next: async ({ workReference }) => {
+            plannerCalls++;
+            assert.equal(workReference.guidance, "Keep literal IDs");
+            f.history.removeCorrection(context, source.id, saved.revision);
+            return {
+              action: { kind: "work_plan", steps: [{ title: "Create", criteria: "Check" }] },
+              message: "Late fixture",
+              requires_confirmation: false
+            };
+          }
+        }
+      });
+      await assert.rejects(
+        runner.run({
+          project: "project",
+          goal: "New CSV report",
+          reference: { taskId: source.id, revision: saved.revision }
+        }),
+        kind === "withdraw" ? /REFERENCE_CHANGED/ : /REFERENCE_UNSUPPORTED/
+      );
+      assert.equal(plannerCalls, kind === "withdraw" ? 1 : 0);
+      assert.equal(authorized, 0);
+      assert.equal(fs.existsSync(path.join(f.folder, "corrected.csv")), false);
+    });
+});

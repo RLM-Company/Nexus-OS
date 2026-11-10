@@ -4,10 +4,13 @@ const $ = (id) => document.getElementById(id),
 let current = { tabs: [], projects: [], downloads: [] },
   busy = false,
   historyBusy = false,
-  selectedReference = null;
+  selectedReference = null,
+  correctionDraft = null;
 const messages = {
+  COMPUTER_CORRECTION_INVALID:
+    "Исправление не сохранено: проверьте три поля и уберите пароли или ключи.",
   COMPUTER_REFERENCE_UNAVAILABLE:
-    "Пример недоступен: выберите завершённую задачу с принятым результатом и полным планом.",
+    "Источник опыта недоступен: проверьте задачу, проект и сохранённое исправление.",
   COMPUTER_REFERENCE_CHANGED:
     "Выбранный пример изменился или удалён. Выберите его заново либо начните без примера.",
   COMPUTER_REFERENCE_UNSUPPORTED:
@@ -71,6 +74,9 @@ async function command(name, input) {
 function render(value) {
   current = { ...current, ...value };
   $("work-plan").hidden = current.taskMode !== "work";
+  $("correction-suggestions").hidden = current.taskMode !== "work";
+  $("find-corrections").disabled = busy || current.running;
+  if (current.taskMode !== "work") $("correction-editor").hidden = true;
   if (current.taskMode === "work") {
     document.title = "Koswork · Рабочая задача";
     document.querySelector(".brand small").textContent = "Work";
@@ -249,6 +255,9 @@ async function run(name, input) {
 }
 $("project").addEventListener("change", () => {
   selectedReference = null;
+  correctionDraft = null;
+  $("correction-editor").hidden = true;
+  $("correction-matches").replaceChildren();
   void refreshHistory();
 });
 $("start").addEventListener("click", () => {
@@ -324,10 +333,76 @@ async function refreshHistory() {
         });
         row.append(button);
       }
+      if (current.taskMode === "work" && item.correctable) {
+        if (item.correction) {
+          const note = document.createElement("p");
+          note.className = "correction-text";
+          note.textContent =
+            "Исправление: " +
+            item.correction.guidance +
+            "\nКогда применять: " +
+            item.correction.applies_when;
+          row.append(note);
+        }
+        const edit = document.createElement("button");
+        edit.textContent = item.correction ? "Изменить исправление" : "Сохранить исправление";
+        edit.disabled = busy || current.running;
+        edit.addEventListener("click", async () => {
+          const project = $("project").value;
+          const value = await command("correction", { taskId: item.id });
+          if (value.error || project !== $("project").value || busy || current.running) return;
+          correctionDraft = value;
+          $("correction-source").textContent =
+            "Источник: " +
+            value.source_goal +
+            " · Проект: " +
+            (current.projects.find((project) => project.id === value.project)?.title ||
+              value.project);
+          for (const [id, field] of [
+            ["issue", "issue"],
+            ["guidance", "guidance"],
+            ["when", "applies_when"]
+          ])
+            $("correction-" + id).value = value.correction?.[field] || "";
+          $("correction-editor").hidden = false;
+          $("correction-issue").focus();
+        });
+        row.append(edit);
+        if (item.correction) {
+          const remove = document.createElement("button");
+          remove.textContent = "Удалить исправление";
+          remove.addEventListener("click", async () => {
+            remove.disabled = true;
+            try {
+              const value = await command("remove-correction", {
+                taskId: item.id,
+                revision: item.correctionRevision
+              });
+              if (value.error) return;
+              if (selectedReference?.taskId === item.id) selectedReference = null;
+              if (correctionDraft?.taskId === item.id) {
+                correctionDraft = null;
+                $("correction-editor").hidden = true;
+              }
+              $("correction-matches").replaceChildren();
+              await refreshHistory();
+            } finally {
+              remove.disabled = false;
+            }
+          });
+          row.append(remove);
+        }
+      }
       if (current.taskMode === "work" && item.reusable) {
         const button = document.createElement("button"),
           selected = selectedReference?.taskId === item.id;
-        button.textContent = selected ? "Не использовать пример" : "Использовать как пример";
+        button.textContent = item.correction
+          ? selected
+            ? "Не использовать исправление"
+            : "Использовать исправление"
+          : selected
+            ? "Не использовать пример"
+            : "Использовать как пример";
         button.disabled = busy || current.running;
         button.addEventListener("click", async () => {
           if (busy || current.running) return;
@@ -337,7 +412,10 @@ async function refreshHistory() {
           try {
             if (selected) selectedReference = null;
             else {
-              const value = await command("reference", item.id);
+              const value = await command(
+                "reference",
+                item.correction ? { taskId: item.id, revision: item.correctionRevision } : item.id
+              );
               if (value.error) return;
               selectedReference = value.reference;
               $("project").value = value.project;
@@ -391,3 +469,95 @@ if (bridge) {
   });
   void command("state").then(update);
 }
+
+$("correction-close").addEventListener("click", () => {
+  correctionDraft = null;
+  $("correction-editor").hidden = true;
+});
+$("correction-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  if (!correctionDraft || busy || current.running) return;
+  const draft = correctionDraft;
+  busy = true;
+  render({});
+  try {
+    const value = await command("save-correction", {
+      taskId: draft.taskId,
+      revision: draft.revision,
+      correction: {
+        issue: $("correction-issue").value,
+        guidance: $("correction-guidance").value,
+        applies_when: $("correction-when").value
+      }
+    });
+    if (value.error) return;
+    if (selectedReference?.taskId === draft.taskId) selectedReference = null;
+    correctionDraft = null;
+    $("correction-editor").hidden = true;
+    $("correction-matches").replaceChildren();
+  } finally {
+    busy = false;
+    render({});
+    await refreshHistory();
+  }
+});
+$("find-corrections").addEventListener("click", async () => {
+  if (busy || current.running || !$("goal").value.trim()) return;
+  const project = $("project").value,
+    goal = $("goal").value;
+  const value = await command("suggest-corrections", { project, goal });
+  if (
+    value.error ||
+    busy ||
+    current.running ||
+    project !== $("project").value ||
+    goal !== $("goal").value
+  )
+    return;
+  $("correction-matches").replaceChildren();
+  if (!value.items?.length) {
+    const text = document.createElement("p");
+    text.textContent = "Подтверждённых исправлений с совпадающими словами не найдено.";
+    $("correction-matches").append(text);
+  }
+  for (const item of value.items || []) {
+    const row = document.createElement("div"),
+      text = document.createElement("p"),
+      choose = document.createElement("button");
+    row.className = "history-item";
+    text.textContent =
+      "Источник: " +
+      item.source_goal +
+      "\nИсправление: " +
+      item.guidance +
+      "\nКогда применять: " +
+      item.applies_when +
+      "\nСовпали слова: " +
+      item.matched_terms.join(", ");
+    choose.textContent = "Выбрать для этой задачи";
+    choose.addEventListener("click", async () => {
+      if (busy || current.running || project !== $("project").value || goal !== $("goal").value)
+        return;
+      busy = true;
+      render({});
+      try {
+        const result = await command("reference", { taskId: item.taskId, revision: item.revision });
+        if (
+          result.error ||
+          current.running ||
+          project !== $("project").value ||
+          goal !== $("goal").value
+        )
+          return;
+        selectedReference = result.reference;
+        add("Выбрано подтверждённое исправление. Текущая задача сохранена.");
+      } finally {
+        busy = false;
+        render({});
+        await refreshHistory();
+      }
+    });
+    row.append(text, choose);
+    $("correction-matches").append(row);
+  }
+});

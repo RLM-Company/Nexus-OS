@@ -46,6 +46,7 @@ function createKosworkBrowser({
     bound = null,
     epoch = 0,
     pending = false,
+    correctionPending = false,
     selection = null,
     projects = [],
     notice = "",
@@ -87,14 +88,15 @@ function createKosworkBrowser({
       window.webContents.send(channel + "-state", { ...state(), ...value });
   };
   const same = (a, b) => !!a && !!b && a.origin === b.origin && a.owner === b.owner;
-  async function authorize(e) {
+  async function authorize(e, signal) {
     const revision = epoch,
       context = bound,
       current = await identity();
     if (!trusted(e) || revision !== epoch || !same(context, current))
       throw Error("COMPUTER_IDENTITY_CHANGED");
     const privacy = await planner.request("/api/v1/personal-settings/privacy", {
-      expected: context
+      expected: context,
+      ...(signal ? { signal } : {})
     });
     if (!trusted(e) || revision !== epoch || !same(context, await identity()))
       throw Error("COMPUTER_IDENTITY_CHANGED");
@@ -316,7 +318,7 @@ function createKosworkBrowser({
               : "Подтвердить действие на сайте?",
           detail:
             value.kind === "session"
-              ? `${value.goal}\n\n${value.reference ? "Пример из истории: " + value.reference.source_goal + "\nЕго план, выдержка цели и сводка инструментов будут переданы модели как данные. Старые разрешения и действия не переносятся.\n\n" : ""}${executionMode === "work" ? "Сначала агент составит план. Доступ к браузеру и управление ПК запрашиваются отдельно; разрешения не восстанавливаются после перезапуска." : "Агент получит текст и элементы активной страницы; по запросу — снимок только страницы."} Входы и CAPTCHA выполняются вами на паузе. ${value.workspace ? "Выбрана папка: " + value.workspace.name + ". Разрешённые файлы могут передаваться сайту или модели для задачи." : "Рабочая папка не подключена."} Сеанс — до 30 минут и ${stepLimit} шагов. Остановка: Ctrl+Alt+Shift+K или «Забрать управление».`
+              ? `${value.goal}\n\n${value.reference ? (value.reference.format === "koswork.confirmed-correction.v1" ? "Подтверждённое исправление: " + value.reference.guidance + "\nУсловие: " + value.reference.applies_when : "Пример из истории: " + value.reference.source_goal) + "\nВыбранные данные будут переданы модели. Старые разрешения и действия не переносятся.\n\n" : ""}${executionMode === "work" ? "Сначала агент составит план. Доступ к браузеру и управление ПК запрашиваются отдельно; разрешения не восстанавливаются после перезапуска." : "Агент получит текст и элементы активной страницы; по запросу — снимок только страницы."} Входы и CAPTCHA выполняются вами на паузе. ${value.workspace ? "Выбрана папка: " + value.workspace.name + ". Разрешённые файлы могут передаваться сайту или модели для задачи." : "Рабочая папка не подключена."} Сеанс — до 30 минут и ${stepLimit} шагов. Остановка: Ctrl+Alt+Shift+K или «Забрать управление».`
               : `${value.message}\n\n${JSON.stringify(value.evidence ?? {})}\n\n${JSON.stringify(value.action)}${value.recoveryReview ? "\nПрошлая попытка могла уже изменить данные. Сначала проверьте результат." : ""}`
         });
         return answer.response === 0;
@@ -376,6 +378,8 @@ function createKosworkBrowser({
   }
   ipcMain.handle(channel + "-command", async (e, command, input) => {
     if (!trusted(e) || typeof command !== "string") return { error: "BROWSER_UNTRUSTED" };
+    if (correctionPending && !["state", "stop", "history"].includes(command))
+      return { error: "COMPUTER_BUSY" };
     if (command === "state") {
       try {
         return state();
@@ -464,17 +468,122 @@ function createKosworkBrowser({
         return failure(error);
       }
     }
+    if (
+      ["correction", "save-correction", "remove-correction", "suggest-corrections"].includes(
+        command
+      )
+    ) {
+      let consent = null,
+        claimed = false;
+      try {
+        if (executionMode !== "work") throw Error("COMPUTER_REFERENCE_UNAVAILABLE");
+        if (["save-correction", "remove-correction"].includes(command)) {
+          if ((pending && !runner?.active) || (command === "save-correction" && runner?.active))
+            throw Error("COMPUTER_BUSY");
+          correctionPending = claimed = true;
+          consent = selection = new AbortController();
+        }
+        const generation = epoch,
+          context = await authorize(e, consent?.signal);
+        if (command === "suggest-corrections") {
+          if (
+            !input ||
+            Object.keys(input).length !== 2 ||
+            typeof input.goal !== "string" ||
+            input.goal.length > 8000 ||
+            !projects.some((p) => p.id === input.project)
+          )
+            throw Error("COMPUTER_REFERENCE_UNAVAILABLE");
+          return { items: history.suggestCorrections(context, input.project, input.goal) };
+        }
+        const keys =
+          command === "correction"
+            ? ["taskId"]
+            : command === "save-correction"
+              ? ["taskId", "revision", "correction"]
+              : ["taskId", "revision"];
+        if (
+          !input ||
+          Object.keys(input).length !== keys.length ||
+          keys.some((key) => !Object.hasOwn(input, key))
+        )
+          throw Error("COMPUTER_REFERENCE_UNAVAILABLE");
+        const item = history
+          .list(context)
+          .find(
+            (record) =>
+              record.id === input.taskId &&
+              record.correctable &&
+              projects.some((p) => p.id === record.project)
+          );
+        if (!item) throw Error("COMPUTER_REFERENCE_UNAVAILABLE");
+        const draft = history.correction(context, item.id);
+        if (command === "correction") return draft;
+        if ((pending && !runner?.active) || (command === "save-correction" && runner?.active))
+          throw Error("COMPUTER_BUSY");
+        if (draft.revision !== input.revision) throw Error("COMPUTER_REFERENCE_CHANGED");
+        if (command === "remove-correction" && !draft.correction)
+          throw Error("COMPUTER_REFERENCE_UNAVAILABLE");
+        const correction =
+          command === "save-correction"
+            ? require("../work-experience.cjs").correctionText(input.correction)
+            : null;
+        const answer = await dialog.showMessageBox(window, {
+          type: "question",
+          defaultId: 0,
+          cancelId: 0,
+          signal: consent.signal,
+          buttons: ["Отмена", correction ? "Подтвердить исправление" : "Удалить исправление"],
+          message: correction
+            ? "Сохранить исправление для похожих задач проекта?"
+            : "Удалить подтверждённое исправление?",
+          detail: correction
+            ? `Источник: ${draft.source_goal}\n\nОшибка: ${correction.issue}\nПравильный подход: ${correction.guidance}\nКогда применять: ${correction.applies_when}\n\nИсправление хранится локально и передаётся модели только после выбора для задачи. Оно не расширяет права агента.`
+            : "Исправление будет удалено из локальной истории. Задача, использующая его сейчас, будет остановлена. История исходной задачи останется."
+        });
+        if (answer.response !== 1) throw Error("COMPUTER_CANCELLED");
+        const after = await authorize(e, consent.signal);
+        if (generation !== epoch || consent.signal.aborted || !same(context, after))
+          throw Error("COMPUTER_SESSION_STOPPED");
+        if (history.correction(context, item.id).revision !== input.revision)
+          throw Error("COMPUTER_REFERENCE_CHANGED");
+        if (!correction && runner?.active?.reference?.taskId === item.id) stop();
+        return correction
+          ? history.saveCorrection(context, item.id, input.revision, correction)
+          : history.removeCorrection(context, item.id, input.revision);
+      } catch (error) {
+        return failure(consent?.signal.aborted ? Error("COMPUTER_SESSION_STOPPED") : error);
+      } finally {
+        if (claimed) {
+          if (selection === consent) selection = null;
+          correctionPending = false;
+        }
+      }
+    }
     if (command === "reference") {
       try {
         if (executionMode !== "work" || pending || runner?.active)
           throw Error("COMPUTER_REFERENCE_UNAVAILABLE");
         const context = await authorize(e),
+          requested = typeof input === "string" ? { taskId: input } : input,
           item = history
             .list(context)
-            .find((r) => r.id === input && r.reusable && r.executionMode === "work");
+            .find((r) => r.id === requested?.taskId && r.reusable && r.executionMode === "work");
         if (!item || !projects.some((p) => p.id === item.project))
           throw Error("COMPUTER_REFERENCE_UNAVAILABLE");
-        const source = history.reference(context, item.project, item.id);
+        if (
+          typeof input !== "string" &&
+          (!input || Object.keys(input).length !== 2 || !/^[a-f0-9]{64}$/.test(input.revision))
+        )
+          throw Error("COMPUTER_REFERENCE_UNAVAILABLE");
+        const source = history.reference(
+          context,
+          item.project,
+          item.id,
+          requested.revision ?? null
+        );
+        if (source.format === "koswork.confirmed-correction.v1" && !requested.revision)
+          throw Error("COMPUTER_REFERENCE_CHANGED");
         return {
           project: item.project,
           goal: item.goal,
