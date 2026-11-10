@@ -70,6 +70,8 @@ function verify() {
     "draft-store.cjs",
     "draft-session-gate.cjs",
     "owner-session.cjs",
+    "diagnostics.cjs",
+    "session-cleanup.cjs",
     "update-policy.cjs",
     "update-service.cjs",
     "update-trust.json",
