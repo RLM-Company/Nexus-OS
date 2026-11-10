@@ -1,0 +1,1 @@
+{"schema":1,"revision":"18f75e84-34d6-47f5-a982-da2bd94254e0","savedAt":1794310469791,"name":"offer.docx","source_version":"sha256:f35a111949d86f3f000ac9c3cd1da4d7ff2a10663e1e905c9862235a16b932fb","existingSheets":0,"operations":[{"kind":"replace_text","target":"paragraph:3","find":"Компания А","replace":"Компания В"}]}
