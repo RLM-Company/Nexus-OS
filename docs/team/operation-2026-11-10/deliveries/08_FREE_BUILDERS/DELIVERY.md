@@ -10,14 +10,17 @@
 - Назначение: полноценный редактируемый браузерный source-project, не каталог игр.
 
 ## Конкретное до → после
+
 До: сравнение сохранённых Canvas версий показывало изменения всего JSON; для `game.js` и `styles.css` не было diff выбранного файла. Возврат исходников к точному запущенному содержимому мог вновь показать прежнюю preview-сессию, так как сравнивался `session.source === content`.
 После: отдельная команда «Сравнить файл» показывает построчный ограниченный diff только выбранного исходника против `loaded.revision.content` (для несохранённого проекта — against Work seed), без изменений других файлов. При любой смене контента предыдущая сессия аннулируется; запуск повторно требует явного Play. Сохранение, optimistic version conflict и recovery выполняет существующий Canvas.
 
 ## Второй готовый в коде срез (ожидает CI)
+
 До: повторный `setSeed` того же Work результата создавал новый объект `initialDraft` и мог заново исполнить init-effect Canvas, подменяя несохранённый текст. При смене проекта и другого результата не было уведомления о несохранённых правках.
 После: повторное открытие того же источника no-op; Canvas сообщает builders dirty-state, а переход в другой проект / к другому seed требует подтверждения. Отказ не меняет редактор; при согласованном переходе черновик остаётся в owner/project-scoped browser storage (если доступно). Добавлены сценарии Playwright.
 
 ## Изменённые файлы
+
 1. `apps/web/src/app/games/game-source-editor.tsx` — diff выбранного файла, bounded comparator.
 2. `apps/web/src/app/games/game-source-preview.tsx` — инвалидация запуска при редактировании.
 3. `apps/web/e2e/game-development.spec.ts` — real UI regression (не fake unit example): edit/revert, diff sibling, v2, ZIP, reload.
@@ -26,6 +29,7 @@
 6. `apps/web/e2e/sites-workbench.spec.ts` — regression re-open текущего результата и проектное переключение с сохранением черновика.
 
 ## Проверки и фактические результаты
+
 - GitHub read API: найден и прочитан основной user path, runtime, sanitizer/CSP, тесты, contracts, AGENTS и UI rules. PASS (проверка статического кода).
 - GitHub `compare_commits(9d972e8..main)`: ahead 2, общие source/contracts без изменений на момент PR; diff содержит только `docs/product/STAGE_TWO_WORKFLOW_RU.md` и docs/team/operation files. PASS.
 - Создание ветки/двух коммитов/PR через GitHub connector: PASS, SHA указаны выше.

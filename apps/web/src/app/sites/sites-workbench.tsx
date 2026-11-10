@@ -462,7 +462,7 @@ function SiteProject({
                               )
                             : selected.draft!.files[0]!.content
                         });
-                      }
+                      }}
                     >
                       {game ? "Открыть игру в редакторе" : "Открыть сайт в редакторе"}
                     </button>
