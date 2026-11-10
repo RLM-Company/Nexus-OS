@@ -98,11 +98,24 @@ export const MessageSchema = Type.Object(
 );
 export type Message = Static<typeof MessageSchema>;
 
+/** Optional, explicitly selected Kosmora history carried into a new project.
+ * It is untrusted quoted data, never an instruction or a permission grant. */
+export const ProjectHistoryExcerptSchema = Type.Object(
+  {
+    role: Type.Union([Type.Literal("user"), Type.Literal("assistant")]),
+    content: Type.String({ minLength: 1, maxLength: 12_000 }),
+    created_at: Type.String({ minLength: 1, maxLength: 64 })
+  },
+  { additionalProperties: false }
+);
+export type ProjectHistoryExcerpt = Static<typeof ProjectHistoryExcerptSchema>;
+
 export const CreateProjectRequestSchema = Type.Object(
   {
     initial_message: Type.String({ minLength: 1, maxLength: 100_000, pattern: "\\S" }),
     client_message_id: EntityIdSchema,
-    attachments: Type.Optional(ChatAttachmentsSchema)
+    attachments: Type.Optional(ChatAttachmentsSchema),
+    history_excerpt: Type.Optional(Type.Array(ProjectHistoryExcerptSchema, { maxItems: 8 }))
   },
   { additionalProperties: false }
 );
