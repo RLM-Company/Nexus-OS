@@ -4,7 +4,7 @@ import {
   type CodeAgentWorkspaceRunner,
   type CodeAgentWorkspaceResult
 } from "./code-agent-workspace.js";
-import { redactCodeAgentOutput } from "./code-agent-snapshot.js";
+import { validateCodeAgentCheckResult } from "./code-agent-result.js";
 
 /** Fixed operator origin only. Never follow redirects or accept a job-supplied URL. */
 export function createCodeAgentHttpExecutor(options: {
@@ -80,25 +80,7 @@ export function createCodeAgentHttpExecutor(options: {
       if (input.signal?.aborted)
         return { ...unavailable(), status: "cancelled", cleanupVerified: true };
       const id = randomUUID();
-      const validate = (value: CodeAgentWorkspaceResult) => {
-        if (
-          !value ||
-          value.snapshotDigest !== digest ||
-          !["passed", "failed", "cancelled", "timed_out", "unavailable"].includes(value.status) ||
-          typeof value.stdout !== "string" ||
-          typeof value.stderr !== "string" ||
-          !Array.isArray(value.journal) ||
-          value.journal.length > 32 ||
-          Buffer.byteLength(value.stdout) + Buffer.byteLength(value.stderr) > 1024 * 1024 ||
-          (value.status === "passed" && value.cleanupVerified !== true)
-        )
-          throw new Error("INVALID_EXECUTOR_RESULT");
-        return {
-          ...value,
-          stdout: redactCodeAgentOutput(value.stdout),
-          stderr: redactCodeAgentOutput(value.stderr)
-        };
-      };
+      const validate = (value: unknown) => validateCodeAgentCheckResult(value, digest);
       try {
         const created = await call(id, "PUT", {
           files,

@@ -1,9 +1,9 @@
 # 08_FREE_BUILDERS — точка продолжения
 
-Дата: 2026-11-10. Статус: **в работе**, PR draft (не merge, не production).
+Дата: 2026-11-10. Статус: **готово к интеграции** (два ограниченных среза, не вся сфера), PR #501; не merge, не live, не production.
 Репозиторий: `RLM-Company/Nexus-OS`.
 BASE_SHA: `9d972e8ba447f681fbfb49253b73d9f02dd1d325`.
-CODE_HEAD_SHA: `c711591bc280128e951332510a225a8ebd4d0abf` (до документационного коммита).
+CODE_HEAD_SHA: `606ed1eb876073745cad941d688bf067b3de7e9f` (полностью проверенный code+test SHA; следующий коммит только с отчётами).
 Branch: `ops/free-studio-builders`.
 PR: https://github.com/RLM-Company/Nexus-OS/pull/501
 
@@ -11,14 +11,20 @@ PR: https://github.com/RLM-Company/Nexus-OS/pull/501
 
 - `43d929ab002eea11291afa5797dfb922d5162c39`: файловый diff и управление жизненным циклом игрового preview + браузерный regression.
 - `c711591bc280128e951332510a225a8ebd4d0abf`: отдельный узкий Canvas integration adapter (передача saved baseline).
+- `78db7d5c2170a65471679f8ab08dc08581d14800`: форматирование browser assertion после сбоя Prettier.
+- `99330d7ebb0cb0f548c5f25fb3b4e6d73051a525`: Sites/Games guarded switch + browser regressions.
+- `854274ef6847a261f7a42f3608069ba0e26d6d4e`: отдельный узкий Canvas adapter `onDirtyChange`.
+- `82c2135a0adf82493c52b79e88c7c36df7615723`: JSX closure и Prettier-форматирование отчётов.
+- `bc6e1b47bbea9895fb1632d5888d47a56d1b0e36`: exact optional props TypeScript adapter fix.
+- `606ed1eb876073745cad941d688bf067b3de7e9f`: исправлена регистрозависимая Playwright проверка подписи «удалено строк».
 - Документация в этом каталоге сохраняет границы, результаты и следующую задачу.
 
 ## Запуск следующего сеанса
 
 1. Перечитать этот checkpoint, затем `AGENTS.md`, `apps/web/AGENTS.md`, `apps/web/UI_RULES.md`, `docs/product/STAGE_TWO_WORKFLOW_RU.md` и Next docs установленной версии перед веб-кодом.
 2. Сверить `main`, ветку и PR #501. На момент создания PR `main` уже сместился с `9d972e8` на `f9eb45285f3473bfd3fe9a73939c1903dc696b3b`; сравнение показало только документы операции и stage-two scope. При следующем изменении main повторить compare, не выбирать ours/theirs автоматически.
-3. Посмотреть GitHub Actions CI #1734 (на момент сдачи `in_progress`); разобраться с тестовыми/TS/линт регрессиями. Локального checkout с node_modules у этого чата нет; GitHub API подключён, контейнер DNS github.com недоступен.
-4. Запустить/подтвердить e2e `game-development.spec.ts`, `sites-workbench.spec.ts`, `games-workbench.spec.ts`, затем сделать ручную проверку preview и стабильности ZIP. Если CI падает, сначала устранить конкретную причину; не имитировать «всё зелёное».
-5. Проверить risky scenario переключения seed при несохранённой правке; исправить без рефакторинга общего Canvas. Затем перейти к targeted update contract вместе с Codex.
+3. Проверка `CI run 42879624872` на `606ed1e`: **SUCCESS** (`Verify monorepo`, `Code sandbox isolation`, `Browser acceptance`). В Chromium 424/424 основных теста, затем 3/3 + 5/5 + 4/4 дополнительных. Предыдущие сбои были локальными тестовыми/JSX/TS ошибками, исправлены; живой paid-provider не проверен.
+4. Перед любым новым кодовым изменением перепроверить `main` и CI на актуальном head; не merge в этом исполнителе. Повторить ручную live-приёмку у владельца (preview, редактирование, reload и ZIP) без платных API, если будет отдельное разрешение.
+5. Следующая независимая задача: обсудить с Codex typed patch/version precondition для AI-итераций по одному файлу, сохранить существующие Canvas/Work/Coscode contracts; не копировать executor и не переписывать соседние файлы.
 
 Нет платных запросов, публикации, миграций, секретов и установки на ПК. Ветка предназначена только для интеграционной проверки Codex; не выполнять merge.

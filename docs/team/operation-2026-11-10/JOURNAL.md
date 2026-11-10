@@ -85,3 +85,31 @@ PR505 merged61621631, testedhead5efc63cd. Входит O-001, первый Games
 Итог:3продуктовых среза +1maintenance интегрированы,0live-приёмок,0выкладок
 и0платных model calls в этом проходе. Не суммировать повторные435прогоны как
 уникальные870тестов. Это не завершение целых режимов и не публичный запуск.
+
+## 2026-11-10 — Gemini: код получен, возврат на переработку
+
+Владелец сообщил о завершении. Найден GoogleDoc05_GEMINI-ops-gemini-browser-research:
+31путь,30полных файлов +patch к отсутствующему coordinator. Source сохранён в
+reference/gemini-operation-20261110, все30новых Gitblobprefixes совпадают.
+Патч не применим к текущему main:7существующих файлов объявлены новыми;
+свой browser/runtime и InMemoryResearchStore не заменяют действующие.
+Три adverse probes чистого verifier дали ложныйverified=true:50vs5000,
+Alpha vsцитатаBeta, несовпавшаяpageVersion. Подробности в аудите.
+Подготовлены REWORK_TASK и current-base source subset; внешнему сервису не
+отправлены. Статус Gemini—rework_required,0новыхинтегрированных функций.
+Продукт/визуал не менялись; owner-PC/VPS/платныеcalls не выполнялись.
+
+## 2026-11-10 — вторая волна, кандидат
+
+Получены точные heads: Coscode #507 5a5e2e4d, Builders #501 b18dd41d.
+Включены проверка snapshot/exitCode/cleanup перед повторным использованием
+и публикацией, отмена OCI create с bounded acknowledgement, защита несохранённых
+правок Coscode и Sites/Games. При конфликте сохранена более строгая проверка
+1added/1removed в game e2e, принят типизированный разбор ZIP manifest.
+
+Из Windows #502 выбран только диагностический commit e3cbd1a8; отображение
+startup faults дополнительно подключено интегратором. Остальная async очистка
+и package-graph guard не объявляются принятыми. Причины в WAVE_2.json.
+Кандидат Windows0.27.0, без установки владельцу. Продуктовый визуал/навигация
+не переделывались, добавлены только элементы согласованных функций.
+Локально:5native diagnostics,37runtime tests passed. Полные CI ещё требуются.

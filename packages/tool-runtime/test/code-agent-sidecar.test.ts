@@ -188,3 +188,27 @@ describe("authenticated executor HTTP protocol (transport only)", () => {
     ).toBe("api_key=[REDACTED] [REDACTED] [REDACTED] red");
   });
 });
+
+it("rejects contradictory HTTP success, cleans the same job and never retries execution", async () => {
+  for (const patch of [
+    { exitCode: 1 },
+    { exitCode: null },
+    { truncated: "false" },
+    { journal: [{ at: "bad", event: "finished", detail: "x" }] }
+  ]) {
+    const methods: string[] = [];
+    const client = createCodeAgentHttpExecutor({
+      url: "http://executor.invalid",
+      token,
+      fetchImplementation: async (_url, init) => {
+        methods.push(init!.method!);
+        return new Response(
+          JSON.stringify(init!.method === "PUT" ? { accepted: true } : { ...result(), ...patch }),
+          { status: init!.method === "PUT" ? 202 : 200 }
+        );
+      }
+    });
+    expect((await client.run({ files, check: "syntax" })).status).toBe("unavailable");
+    expect(methods).toEqual(["PUT", "GET", "DELETE"]);
+  }
+});

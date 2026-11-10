@@ -44,6 +44,9 @@ test("creates, previews, edits, downloads and restores a website without changin
   const edited = (await source.inputValue()).replace("Студия Альфа", "Студия Космора");
   await source.fill(edited);
   await expect(preview.getByRole("heading", { name: "Студия Космора" })).toBeVisible();
+  // Clicking the same Work result again must not reset an unsaved Canvas draft.
+  await page.getByRole("button", { name: "Открыть сайт в редакторе", exact: true }).click();
+  await expect(source).toHaveValue(edited);
   await canvas.getByRole("button", { name: "Сохранить версию", exact: true }).click();
   await expect(canvas.getByRole("status")).toContainText("Сохранена новая версия");
   const downloaded = page.waitForEvent("download");
@@ -122,4 +125,33 @@ test("a lost website creation response is recovered without creating a second pa
   ).items;
   expect(works.filter((work) => work.request.output_contract?.kind === "website")).toHaveLength(1);
   expect(posts).toBe(1);
+});
+
+test("warns before switching projects with an unsaved site draft and restores it on return", async ({
+  page,
+  request
+}) => {
+  const first = await project(request);
+  const second = await project(request);
+  await page.goto(`/?surface=sites&project=${first}`);
+  const picker = page.getByRole("combobox", { name: "Проект сайта", exact: true });
+  await picker.selectOption(first);
+  const source = page
+    .getByRole("region", { name: "Редактор Canvas", exact: true })
+    .getByRole("textbox", { name: "Содержимое", exact: true });
+  await expect(source).toBeEnabled();
+  const unsaved = "<h1>Не терять эту правку</h1>";
+  await source.fill(unsaved);
+  page.once("dialog", (dialog) => {
+    expect(dialog.message()).toContain("Несохранённые изменения");
+    void dialog.dismiss();
+  });
+  await picker.selectOption(second);
+  await expect(picker).toHaveValue(first);
+  await expect(source).toHaveValue(unsaved);
+  page.once("dialog", (dialog) => void dialog.accept());
+  await picker.selectOption(second);
+  await expect(picker).toHaveValue(second);
+  await picker.selectOption(first);
+  await expect(source).toHaveValue(unsaved);
 });
