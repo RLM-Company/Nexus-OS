@@ -208,8 +208,30 @@
       </section>
       <details id="history-details">
         <summary>Задачи и восстановление</summary>
+        <section id="correction-editor" hidden aria-label="Подтверждённое исправление">
+          <h3>Исправление для проекта</h3>
+          <p id="correction-source"></p>
+          <form id="correction-form">
+            <label for="correction-issue">Какая ошибка была в задаче</label>
+            <textarea id="correction-issue" maxlength="400" rows="2" required></textarea>
+            <label for="correction-guidance">Как нужно делать</label>
+            <textarea id="correction-guidance" maxlength="800" rows="3" required></textarea>
+            <label for="correction-when">Когда это применимо</label>
+            <textarea id="correction-when" maxlength="400" rows="2" required></textarea>
+            <p class="notice">
+              Хранится в локальной истории. Передаётся модели только после выбора для задачи. Не
+              указывайте пароли и ключи.
+            </p>
+            <button type="submit">Сохранить с подтверждением</button>
+            <button id="correction-close" type="button">Отмена</button>
+          </form>
+        </section>
         <div id="history"></div>
       </details>
+      <section id="correction-suggestions" hidden aria-label="Подсказки из исправлений">
+        <button id="find-corrections">Подобрать исправления для задачи</button>
+        <div id="correction-matches" aria-live="polite"></div>
+      </section>
       <details id="download-details">
         <summary>Загрузки <span id="download-count"></span></summary>
         <div id="downloads"></div>
