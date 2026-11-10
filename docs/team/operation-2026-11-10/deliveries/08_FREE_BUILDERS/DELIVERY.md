@@ -1,9 +1,9 @@
 # DELIVERY — 08_FREE_BUILDERS / game-source-diff
 
-**Статус:** в работе, ожидает CI и браузерную приёмку; **не** объявлено «принято в выпуск».
+**Статус:** готово к интеграции (два scoped среза; **не** «интегрировано», не живая приёмка и не принято в выпуск).
 
 - BASE_SHA: `9d972e8ba447f681fbfb49253b73d9f02dd1d325`.
-- HEAD_SHA (последний кодовый срез до обновления отчёта): `854274ef6847a261f7a42f3608069ba0e26d6d4e`.
+- CODE_HEAD_SHA (проверенный code/test commit): `606ed1eb876073745cad941d688bf067b3de7e9f`.
 - Ветка: `ops/free-studio-builders`.
 - PR: https://github.com/RLM-Company/Nexus-OS/pull/501 (draft).
 - Entrypoints: `/?surface=games&project=<id>` → `GamesWorkbench` → `SitesWorkbench(kind=game_project)` → `CanvasEditor` → `GameSourceEditor` / `GameSourcePreview`. Backend: существующие `/api/v1/projects/:id/work` и `/canvas`; не менялись.
@@ -32,15 +32,18 @@
 
 - GitHub read API: найден и прочитан основной user path, runtime, sanitizer/CSP, тесты, contracts, AGENTS и UI rules. PASS (проверка статического кода).
 - GitHub `compare_commits(9d972e8..main)`: ahead 2, общие source/contracts без изменений на момент PR; diff содержит только `docs/product/STAGE_TWO_WORKFLOW_RU.md` и docs/team/operation files. PASS.
-- Создание ветки/двух коммитов/PR через GitHub connector: PASS, SHA указаны выше.
-- `pnpm --filter @cosmora/web exec playwright test e2e/game-development.spec.ts`: **НЕ ЗАПУЩЕНО локально** — нет checkout/node_modules и сети в контейнере. Новый сценарий добавлен, результат ожидает CI.
-- `pnpm --filter @cosmora/web typecheck`, `pnpm --filter @cosmora/web lint`, `pnpm format:check`, `pnpm check:secrets`, full gates: **не запускались локально**; CI PR #501 требует отдельной оценки.
+- Создание ветки, scoped code commits, отдельных Canvas integration commits и PR #501 через GitHub connector: PASS. Финальный PR head после отчётного коммита проверить отдельно.
+- `pnpm test:e2e` GitHub Actions (Playwright Chromium): **PASS**, основной suite **424 passed**, дополнительные **3 + 5 + 4 passed**. Включены новые игровые и сайтовые сценарии, реальная браузерная фикстура без платной модели. Прямого локального запуска в чате не было.
+- `pnpm check:core` GitHub Actions: **PASS** (в том числе Prettier, secrets gate, lint, typecheck, тесты и build). Запускался CI, не локальный контейнер этого чата.
 - CI run `42874502490`: **FAIL** — Prettier нового Playwright теста, browser acceptance cancelled, sandbox isolation PASS. Длинный assertion переформатирован в `78db7d5`.
-- Следующий CI по `854274e`: `42876235421` — queued на момент обновления. Не заявлять PASS без результата.
+- Промежуточный CI `42877009866`: fail exact optional TypeScript callback, исправлено `bc6e1b4`.
+- CI `42877907171`: monorepo + sandbox PASS; Chromium **423 passed / 1 failed** из-за регистра слова в новом assertion, исправлено `606ed1e`.
+- **Финальный кодовый CI `42879624872`** (https://github.com/RLM-Company/Nexus-OS/actions/runs/42879624872): **SUCCESS** всех трёх jobs: Verify monorepo, Code sandbox isolation, Browser acceptance. Кодовый HEAD `606ed1e`.
+- Коммит этой документации не меняет runtime, tests или contracts; если он запускает новый CI, проверять его отдельно.
 - Live providers / actual owner project / owner browser / external hosting: **не проверено, не выполнялось**.
 
 Зависимости/миграции: **нет**. Оплата и side effects: **нет** (кроме кода, коммитов и PR). Источники private data/.env не открывались. Sandbox, CSP, owner isolation, existing Work accounting, policy gates, scope and cancel не менялись. Неподдерживаемые функции (Unity/Unreal, hosting, network/DOM game API, полноценные ассеты) не заявлены.
 
 Риски/ограничения: срез не добавляет AI-targeted patch API, standalone browser support по-прежнему требует OffscreenCanvas; baseline diff — визуальное сравнение, не автоматический merge. Сохранение в Canvas и ZIP в текущем коде существует, но фактический e2e нового среза требует CI.
 
-Следующее: подтвердить CI и browser acceptance seed/project-switch + ZIP, после этого согласовать с Codex patch/version precondition contract для AI-итерации по файлу, не копируя code-agent.
+Следующее: Codex review отдельных Canvas integration commits; затем согласовать с Codex patch/version precondition contract для AI-итерации по файлу, не копируя code-agent.
