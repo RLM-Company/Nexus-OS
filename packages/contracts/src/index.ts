@@ -61,3 +61,11 @@ export type {
   GoogleDriveConnectStart,
   GoogleDriveSourceList
 } from "./google-drive.js";
+
+export {
+  OfficeCursorSchema,
+  OfficeOperationSchema,
+  OfficeOperationsSchema,
+  OfficeVersionSchema
+} from "./office-workspace.js";
+export type { OfficeOperation, OfficeCursor } from "./office-workspace.js";

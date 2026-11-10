@@ -1,5 +1,45 @@
 import { expect, test } from "@playwright/test";
 
+// Optional diagnostic stress; never retries a failed case.
+if (process.env.DRAFT_STRESS_CPU === "1") {
+  test.beforeEach(async ({ page }) => {
+    const cdp = await page.context().newCDPSession(page);
+    await cdp.send("Emulation.setCPUThrottlingRate", { rate: 6 });
+    await page.addInitScript(() => {
+      const records: unknown[] = [];
+      (window as unknown as { draftProbe: unknown[] }).draftProbe = records;
+      const remember = (kind: string, key: string, value: string) => {
+        if (records.length < 250)
+          records.push({ kind, key, value, at: performance.now(), url: location.search });
+      };
+      const write = Storage.prototype.setItem;
+      Storage.prototype.setItem = function (key, value) {
+        if (key.startsWith("cosmora:composer-draft:")) remember("storage", key, value);
+        return write.call(this, key, value);
+      };
+      document.addEventListener(
+        "input",
+        (event) => {
+          if (event.target instanceof HTMLTextAreaElement)
+            remember("input", event.target.id, event.target.value);
+        },
+        true
+      );
+    });
+  });
+  test.afterEach(async ({ page }, info) => {
+    if (info.status !== info.expectedStatus && !page.isClosed()) {
+      const records = await page.evaluate(
+        () => (window as unknown as { draftProbe: unknown[] }).draftProbe
+      );
+      await info.attach("draft-probe", {
+        body: JSON.stringify(records, null, 2),
+        contentType: "application/json"
+      });
+    }
+  });
+}
+
 const draftFiles = [
   { name: "draft.ts", mimeType: "text/plain", buffer: Buffer.from("export const saved = true;") }
 ];

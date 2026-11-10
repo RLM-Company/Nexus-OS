@@ -132,6 +132,10 @@ function createComputerApiClient({ identity, getSession }) {
           session.supports_workspace_text_reads = true;
         if (result.supports_workspace_read_lines === true)
           session.supports_workspace_read_lines = true;
+        if (result.supports_workspace_office_pages === true)
+          session.supports_workspace_office_pages = true;
+        if (result.supports_workspace_office_edits === true)
+          session.supports_workspace_office_edits = true;
         if (result.supports_workspace_documents === true)
           session.supports_workspace_documents = true;
         if (result.supports_workspace_pdf_reads === true)

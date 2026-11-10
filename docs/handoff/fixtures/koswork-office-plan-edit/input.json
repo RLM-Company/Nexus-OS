@@ -1,0 +1,9 @@
+{
+  "fixture_only": true,
+  "company": "Компания В",
+  "price": "19 700 за комплект",
+  "sheet": "Готовый итог",
+  "amount": "19800",
+  "date": "09.11.2026",
+  "tsv": "00123\t19700\ttrue\t=SUM(B2:B2)\n00456\t-12.5\tfalse\t=MIN(B2:B3)"
+}

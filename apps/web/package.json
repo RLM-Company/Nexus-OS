@@ -15,7 +15,9 @@
     "test:e2e:compaction": "playwright test -c playwright.history-compaction.config.ts",
     "test:e2e": "pnpm test:e2e:main && pnpm test:e2e:issues && pnpm test:e2e:compaction && pnpm test:e2e:memory",
     "test:acceptance": "playwright test -c playwright.acceptance.config.ts",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc -p tsconfig.office-e2e.json && tsc -p tsconfig.composer-e2e.json",
+    "test:e2e:composer": "playwright test -c playwright.composer.config.ts",
+    "test:e2e:office-composer": "playwright test -c playwright.office-composer.config.ts",
     "test:e2e:memory": "playwright test --config=playwright.context-memory.config.ts"
   },
   "dependencies": {

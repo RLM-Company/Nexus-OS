@@ -235,6 +235,7 @@ function createWorkCycleDriver({
       if (
         [
           "workspace_create",
+          "workspace_office_commit",
           "workspace_create_docx",
           "workspace_create_xlsx",
           "workspace_create_pptx",

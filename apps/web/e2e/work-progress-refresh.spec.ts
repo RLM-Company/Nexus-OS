@@ -2,6 +2,7 @@ import { expect, test, type APIRequestContext } from "@playwright/test";
 
 test.afterEach(async ({ page }) => {
   // Drain read interceptors before closing the page and starting the next test.
+  // Keep handler errors visible; do not use ignoreErrors or retry requests.
   await page.unrouteAll({ behavior: "wait" });
 });
 

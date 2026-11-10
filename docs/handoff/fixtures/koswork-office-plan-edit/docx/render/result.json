@@ -1,0 +1,24 @@
+{
+  "format": "docx",
+  "command": [
+    "soffice",
+    "-env:UserInstallation=file:///tmp/koswork-plan-edit-render-docx-profile",
+    "--headless",
+    "--convert-to",
+    "pdf",
+    "--outdir",
+    "/tmp/koswork-plan-edit-render/docx",
+    "/tmp/koswork-plan-edit-first/docx/result.docx"
+  ],
+  "exit_code": 0,
+  "source_sha256": "2ff8c8b76132a4938a6318c0f426effa891ed0e0c45b1114622938f306fdd1c6",
+  "source_unchanged": true,
+  "pdf_sha256": "632ad563915d39e17c862f885165f818c30575577134ed39800c19fd6a8296ad",
+  "pages": 1,
+  "stdout": "convert /tmp/koswork-plan-edit-first/docx/result.docx as a Writer document -> /tmp/koswork-plan-edit-render/docx/result.pdf using filter : writer_pdf_Export\n",
+  "stderr": "Fontconfig error: No writable cache directories\nFontconfig error: No writable cache directories\nFontconfig error: No writable cache directories\n",
+  "model_called": false,
+  "visual_review_pending": false,
+  "pages_visually_inspected": [1],
+  "renderer": "LibreOfficeDev 26.8.0.0.alpha0 2c87e51eeaa2b413ff4ae097b2705eea1995d8e5"
+}

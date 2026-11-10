@@ -1,0 +1,22 @@
+{
+  "input": {
+    "goal": "Сохранить предложение: сумма 19 700 ₽, артикул 00123, кроме доставки.",
+    "content": "Предложение: 19 700 ₽; артикул 00123; кроме доставки.\n"
+  },
+  "peak_context_reads": 1,
+  "provider": "local fixture",
+  "real_model_called": false,
+  "model_requests": 4,
+  "artifacts": [
+    {
+      "content": "Предложение: 19 700 ₽; артикул 00123; кроме доставки.\n",
+      "sha256": "38533a99faf701682c8ae981f545f0cec13e719ae5d10413fe661b95e87be0d6",
+      "version": 1
+    },
+    {
+      "content": "Предложение: 19 700 ₽; артикул 00123; кроме доставки.\n",
+      "sha256": "38533a99faf701682c8ae981f545f0cec13e719ae5d10413fe661b95e87be0d6",
+      "version": 1
+    }
+  ]
+}

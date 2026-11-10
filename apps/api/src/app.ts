@@ -1,3 +1,4 @@
+import { registerDocumentWorkspaceRoutes } from "./document-workspace-routes.js";
 import { registerGithubIssueRoutes } from "./github-issue-routes.js";
 import type { ContextMemoryRanker } from "@cosmora/contracts";
 import type { IndexedMemoryRecall } from "@cosmora/db";
@@ -890,6 +891,7 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
     registerCodeAgentRoutes(app, code, identityFor);
     app.addHook("preClose", () => code.stop());
   }
+  registerDocumentWorkspaceRoutes(app, identityFor);
   if (dependencies.documentLibrary)
     registerDocumentLibraryRoutes(app, dependencies.documentLibrary, identityFor);
   if (dependencies.documentAnswerService)

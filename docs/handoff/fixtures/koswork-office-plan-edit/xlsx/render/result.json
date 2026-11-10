@@ -1,0 +1,25 @@
+{
+  "format": "xlsx",
+  "command": [
+    "soffice",
+    "-env:UserInstallation=file:///tmp/koswork-plan-edit-render-xlsx-profile",
+    "--headless",
+    "--convert-to",
+    "pdf",
+    "--outdir",
+    "/tmp/koswork-plan-edit-render/xlsx",
+    "/tmp/koswork-plan-edit-first/xlsx/result.xlsx"
+  ],
+  "exit_code": 0,
+  "source_sha256": "1764cda68d6cdf92d3c95ac689746c93729565eac00dcae5af76ee2055175002",
+  "source_unchanged": true,
+  "pdf_sha256": "ececd8946ebc1b32d272af3215c7cf2ea9718cccca4bf5e0117c13a5f561c801",
+  "pages": 2,
+  "stdout": "convert /tmp/koswork-plan-edit-first/xlsx/result.xlsx as a Calc document -> /tmp/koswork-plan-edit-render/xlsx/result.pdf using filter : calc_pdf_Export\n",
+  "stderr": "Fontconfig error: No writable cache directories\nFontconfig error: No writable cache directories\nFontconfig error: No writable cache directories\n",
+  "model_called": false,
+  "visual_review_pending": false,
+  "pages_visually_inspected": [1, 2],
+  "renderer": "LibreOfficeDev 26.8.0.0.alpha0 2c87e51eeaa2b413ff4ae097b2705eea1995d8e5",
+  "source_sheet_print_limitation": "Original narrow column C still clips the delivery condition; full text remains in XLSX/readback. Calc evaluates formulas only for this separate PDF."
+}

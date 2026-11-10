@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "tsc -p tsconfig.build.json && node ../../scripts/copy-api-semantic-assets.mjs",
+    "build": "tsc -p tsconfig.build.json && node ../../scripts/copy-api-semantic-assets.mjs && node ../../scripts/copy-office-engine.mjs",
     "demo": "node --env-file-if-exists=../../.env --require ../../scripts/windows-node-user.cjs --import tsx --conditions=development src/server.ts",
     "dev": "node --env-file-if-exists=../../.env --require ../../scripts/windows-node-user.cjs --import tsx --conditions=development --watch src/server.ts",
     "demo:lan": "node --env-file-if-exists=../../.env --require ../../scripts/windows-node-user.cjs --import tsx --conditions=development src/server.ts",

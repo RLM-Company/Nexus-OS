@@ -1,0 +1,9 @@
+{
+  "real_model_called": false,
+  "browser_model_posts": [],
+  "prompt": "Разбери локально отфильтрованную выборку CSV «offer.csv». Передано 1 из 1 строк текущего фильтра и 6 из 6 столбцов. Всего в исходном CSV 2 записей. Не выдавай эту выборку за анализ всех данных.\n\nСравни реквизиты: 00123, 19 700; кроме доставки",
+  "selected_csv": "name,article,amount,date,condition,note\nКомпания Б,00123,19 700,07.11.2026,кроме доставки,\"строка один\nстрока два\"",
+  "selected_sha256": "3196cdfc942753d8f3896420374b03d479297c9ee91c1bae0b4857c6bd6b6594",
+  "source_sha256": "087db33a0881090be6d1f2b7d303465d6a7a9bf2703fc37ef522dc2ae12ecc86",
+  "reload_verified": true
+}
