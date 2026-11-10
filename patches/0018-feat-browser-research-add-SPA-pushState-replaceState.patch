@@ -1,0 +1,675 @@
+From ad1249aa62a3fb04a5f8915fe77925245fbfcf05 Mon Sep 17 00:00:00 2001
+From: Kosmora Engineering <eng@kosmora.ai>
+Date: Mon, 9 Nov 2026 15:52:27 +0000
+Subject: [PATCH 18/32] feat(browser-research): add SPA pushState/replaceState
+ route observer, token/deprecation context boundary validator, and standalone
+ CLI runner
+
+---
+ .../browser/context-boundary-validator.cjs    | 119 ++++++++++++++
+ desktop/windows/browser/shell.cjs             |  35 ++++
+ .../windows/browser/spa-route-observer.cjs    | 144 ++++++++++++++++
+ .../test/browser-research-acceptance.test.cjs | 123 ++++++++++++++
+ scripts/run-koswork-browser-research-cli.mjs  | 154 ++++++++++++++++++
+ 5 files changed, 575 insertions(+)
+ create mode 100644 desktop/windows/browser/context-boundary-validator.cjs
+ create mode 100644 desktop/windows/browser/spa-route-observer.cjs
+ create mode 100644 scripts/run-koswork-browser-research-cli.mjs
+
+diff --git a/desktop/windows/browser/context-boundary-validator.cjs b/desktop/windows/browser/context-boundary-validator.cjs
+new file mode 100644
+index 0000000..8a5389c
+--- /dev/null
++++ b/desktop/windows/browser/context-boundary-validator.cjs
+@@ -0,0 +1,119 @@
++"use strict";
++
++/**
++ * Koswork Numeric/Token Boundary & Deprecation Context Validator
++ * (`desktop/windows/browser/context-boundary-validator.cjs`).
++ *
++ * Deepens Requirement #5:
++ * "Создавать отчёт MD/HTML/таблицу сравнения через существующие file APIs: цитата,
++ *  источник, что подтверждено, что неизвестно. Ссылка сама по себе не доказательство
++ *  утверждения; отметь конфликтующие/устаревшие данные и недоступные источники."
++ *
++ * Guards against three subtle citation-integrity errors:
++ * 1. `NUMERIC_OR_WORD_BOUNDARY_TRUNCATED`: e.g. slicing `"$49"` out of `"$490/мес"` or
++ *    `"99.9"` out of `"99.95%"` so the UTF-16 slice cuts a number or word mid-token.
++ * 2. `CONTEXT_DEPRECATION_MARKER`: when the surrounding sentence/block explicitly states
++ *    that the quoted figure is deprecated/archived (`"УСТАРЕЛО"`, `"не действует"`,
++ *    `"архивный тариф"`, `"deprecated"`).
++ * 3. `CONTEXT_NEGATION_MARKER`: when the immediate preceding context or block header
++ *    negates the quoted phrase (`"НЕ поддерживается:"`, `"миф о том, что"`).
++ */
++
++function isWordOrDigitChar(ch) {
++  if (!ch) return false;
++  return /[\p{L}\p{N}]/u.test(ch);
++}
++
++function validateExcerptContextAndBoundaries(snapshot, excerpt, options = {}) {
++  if (!snapshot || typeof snapshot.fullTextUtf16 !== "string") {
++    throw new Error("CONTEXT_VALIDATOR_REQUIRES_SNAPSHOT");
++  }
++  if (!excerpt || !Number.isInteger(excerpt.startUtf16) || !Number.isInteger(excerpt.endUtf16)) {
++    throw new Error("CONTEXT_VALIDATOR_REQUIRES_EXCERPT");
++  }
++
++  const fullText = snapshot.fullTextUtf16;
++  const start = excerpt.startUtf16;
++  const end = excerpt.endUtf16;
++  const actualSlice = fullText.slice(start, end);
++
++  const advisories = [];
++
++  // 1. Check exact slice match
++  if (actualSlice !== excerpt.quote) {
++    advisories.push({
++      code: "UTF16_SLICE_MISMATCH",
++      severity: "error",
++      message: "Срез [startUtf16..endUtf16] не совпадает с текстом выдержки."
++    });
++  }
++
++  // 2. Check left/right token & numeric boundaries
++  const charBefore = start > 0 ? fullText[start - 1] : "";
++  const firstChar = actualSlice[0] || "";
++  const lastChar = actualSlice[actualSlice.length - 1] || "";
++  const charAfter = end < fullText.length ? fullText[end] : "";
++
++  const leftTruncated = isWordOrDigitChar(charBefore) && isWordOrDigitChar(firstChar);
++  const rightTruncated =
++    (isWordOrDigitChar(lastChar) && isWordOrDigitChar(charAfter)) ||
++    (/\d/.test(lastChar) &&
++      (charAfter === "." || charAfter === ",") &&
++      /\d/.test(fullText[end + 1] || ""));
++
++  if (leftTruncated || rightTruncated) {
++    advisories.push({
++      code: "NUMERIC_OR_WORD_BOUNDARY_TRUNCATED",
++      severity: "error",
++      leftTruncated,
++      rightTruncated,
++      message: `Выдержка обрезает токен или число по границе («${charBefore}[${actualSlice}]${charAfter}»).`
++    });
++  }
++
++  // 3. Check surrounding context window (only within the same paragraph/block, stopping at \n\n)
++  const windowRadius = Number(options.contextWindowChars ?? 90);
++  const rawPre = fullText.slice(Math.max(0, start - windowRadius), start);
++  const rawPost = fullText.slice(end, Math.min(fullText.length, end + windowRadius));
++  const preBreakIdx = rawPre.lastIndexOf("\n\n");
++  const postBreakIdx = rawPost.indexOf("\n\n");
++  const preContext = preBreakIdx >= 0 ? rawPre.slice(preBreakIdx + 2) : rawPre;
++  const postContext = postBreakIdx >= 0 ? rawPost.slice(0, postBreakIdx) : rawPost;
++  const surroundingParagraph = `${preContext} ${actualSlice} ${postContext}`;
++
++  // Unicode-aware boundary check (since JS \b only matches ASCII word characters)
++  const deprecationRegex =
++    /(?:^|[^\p{L}\p{N}])(?:устарело|устаревш(?:ий|ая|ее|ие)|архивн(?:ый|ая|ое|ые)|не\s+действует|отменён|deprecated|obsolete|superseded)(?:$|[^\p{L}\p{N}])/iu;
++  if (deprecationRegex.test(surroundingParagraph)) {
++    advisories.push({
++      code: "CONTEXT_DEPRECATION_MARKER",
++      severity: "warning",
++      message: "Окружающий контекст выдержки содержит маркер устаревших/архивных данных."
++    });
++  }
++
++  const negationRegex =
++    /(?:^|[^\p{L}\p{N}])(?:не\s+поддерживается|не\s+предоставляется|отсутствует|неверно,\s+что|миф\s*[:—-]|never\s+supports|does\s+not\s+support)(?:$|[^\p{L}\p{N}])/iu;
++  if (negationRegex.test(`${preContext} ${actualSlice}`)) {
++    advisories.push({
++      code: "CONTEXT_NEGATION_MARKER",
++      severity: "error",
++      message: "Контекст выдержки содержит прямое отрицание утверждения."
++    });
++  }
++
++  const boundaryClean = !advisories.some((a) => a.severity === "error");
++
++  return {
++    validForConfirmation: boundaryClean,
++    boundaryClean,
++    hasDeprecationWarning: advisories.some((a) => a.code === "CONTEXT_DEPRECATION_MARKER"),
++    advisories,
++    preContext,
++    postContext
++  };
++}
++
++module.exports = {
++  validateExcerptContextAndBoundaries
++};
+diff --git a/desktop/windows/browser/shell.cjs b/desktop/windows/browser/shell.cjs
+index ef73daa..1960a7e 100644
+--- a/desktop/windows/browser/shell.cjs
++++ b/desktop/windows/browser/shell.cjs
+@@ -37,6 +37,8 @@ const {
+ } = require("./downloaded-archive-and-doc-ingestor.cjs");
+ const { KosworkResearchPinboardBridge } = require("./research-pinboard-bookmarks.cjs");
+ const { verifyDeterministicResearchReplay } = require("./research-replay-auditor.cjs");
++const { KosworkSpaRouteObserver } = require("./spa-route-observer.cjs");
++const { validateExcerptContextAndBoundaries } = require("./context-boundary-validator.cjs");
+ 
+ /**
+  * Shared Tool & Execution Boundary for Koswork Browser (`desktop/windows/browser/shell.cjs`).
+@@ -69,6 +71,12 @@ const BROWSER_RESEARCH_TOOL_DEFINITIONS = Object.freeze([
+       "Открыть URL с отслеживанием цепочки редиректов (HTTP/meta-refresh) и проверкой политики безопасности на каждом шаге.",
+     requiredParams: ["initialUrl"]
+   },
++  {
++    name: "browser.record_spa_route",
++    description:
++      "Зафиксировать клиентский переход SPA (pushState, replaceState, hashchange) с обновлением версионного снимка и стека истории вкладки.",
++    requiredParams: ["tabId", "nextUrl"]
++  },
+   {
+     name: "browser.read_long_page",
+     description:
+@@ -111,6 +119,12 @@ const BROWSER_RESEARCH_TOOL_DEFINITIONS = Object.freeze([
+       "Преобразовать выбранное вхождение поиска по странице в верифицированную UTF-16 выдержку.",
+     requiredParams: ["tabId", "query", "occurrenceIndex"]
+   },
++  {
++    name: "browser.validate_excerpt_context",
++    description:
++      "Проверить целостность численных/словесных границ UTF-16 выдержки и отсутствие маркеров устаревания или отрицания в окружающем контексте.",
++    requiredParams: ["tabId", "excerpt"]
++  },
+   {
+     name: "browser.extract_structured_matrix",
+     description:
+@@ -251,6 +265,7 @@ function createKosworkBrowserShell(options = {}) {
+   const coBrowsing = new KosworkCoBrowsingCoordinator({ engine });
+   const tabRevalidator = new KosworkHibernatedTabRevalidator({ engine });
+   const pinboard = new KosworkResearchPinboardBridge({ engine });
++  const spaObserver = new KosworkSpaRouteObserver({ engine });
+ 
+   async function dispatchToolCall(toolName, args = {}, context = {}) {
+     const signal = context.signal || null;
+@@ -306,6 +321,18 @@ function createKosworkBrowserShell(options = {}) {
+           signal
+         });
+ 
++      case "browser.record_spa_route":
++        return spaObserver.recordSpaRouteTransition({
++          tabId: args.tabId,
++          nextUrl: args.nextUrl,
++          transitionKind: args.transitionKind || "pushState",
++          nextTitle: args.nextTitle || null,
++          nextText: args.nextText ?? null,
++          nextHtml: args.nextHtml || null,
++          pageDate: args.pageDate,
++          eventDate: args.eventDate
++        });
++
+       case "browser.observe":
+         return engine.observePage(args.tabId, {
+           reuseSnapshot: args.reuseSnapshot !== false
+@@ -379,6 +406,13 @@ function createKosworkBrowserShell(options = {}) {
+         });
+       }
+ 
++      case "browser.validate_excerpt_context": {
++        const obs = engine.observePage(args.tabId);
++        return validateExcerptContextAndBoundaries(obs.snapshot, args.excerpt, {
++          contextWindowChars: args.contextWindowChars ?? 90
++        });
++      }
++
+       case "browser.extract_structured_matrix": {
+         const obs = engine.observePage(args.tabId);
+         const tab = engine.tabs.get(String(args.tabId));
+@@ -596,6 +630,7 @@ function createKosworkBrowserShell(options = {}) {
+     coBrowsing,
+     tabRevalidator,
+     pinboard,
++    spaObserver,
+     toolDefinitions: BROWSER_RESEARCH_TOOL_DEFINITIONS,
+     dispatchToolCall
+   };
+diff --git a/desktop/windows/browser/spa-route-observer.cjs b/desktop/windows/browser/spa-route-observer.cjs
+new file mode 100644
+index 0000000..691745a
+--- /dev/null
++++ b/desktop/windows/browser/spa-route-observer.cjs
+@@ -0,0 +1,144 @@
++"use strict";
++
++const { buildVersionedPageSnapshot } = require("./document.cjs");
++const { evaluateNavigationPolicy } = require("./policy.cjs");
++
++/**
++ * Koswork SPA `pushState` / `replaceState` & Hash-Route Observer
++ * (`desktop/windows/browser/spa-route-observer.cjs`).
++ *
++ * Deepens Requirement #3:
++ * "Довести чтение долгих/динамических страниц и навигацию по источникам. Уже есть
++ *  versioned pages, UTF-16 offsets, bounds, recovery candidates, frames/shadow scope
++ *  и устойчивые tab receipts. Сохрани эти свойства; добавляй только реальные пробелы."
++ *
++ * Handles client-side Single-Page Application (SPA) route changes (`pushState`,
++ * `replaceState`, `hashchange`) on an open tab:
++ * 1. Validates the new route URL via `evaluateNavigationPolicy`.
++ * 2. Increments `pageVersion` (`v -> v + 1`), builds a new versioned snapshot with
++ *    recomputed UTF-16 offsets and a fresh `tabReceipt` bound to the new SPA URL.
++ * 3. Updates `engine.tabNavigationStacks` (`push` for `pushState`/`hashchange`,
++ *    in-place replacement for `replaceState`) so `engine.goBack()` / `engine.goForward()`
++ *    traverse SPA states accurately.
++ */
++class KosworkSpaRouteObserver {
++  constructor(options = {}) {
++    if (!options.engine) {
++      throw new Error("SPA_ROUTE_OBSERVER_REQUIRES_ENGINE");
++    }
++    this.engine = options.engine;
++    this.routeTransitions = [];
++  }
++
++  recordSpaRouteTransition({
++    tabId,
++    nextUrl,
++    transitionKind = "pushState", // "pushState" | "replaceState" | "hashchange"
++    nextTitle = null,
++    nextText = null,
++    nextHtml = null,
++    pageDate = undefined,
++    eventDate = undefined
++  } = {}) {
++    const key = String(tabId);
++    const tab = this.engine.tabs.get(key);
++    if (!tab || tab.closed) {
++      const err = new Error(`TAB_LOST_OR_CLOSED: ${key}`);
++      err.code = "TAB_LOST_OR_CLOSED";
++      throw err;
++    }
++
++    const policy = evaluateNavigationPolicy(nextUrl, { allowLocalLoopback: true });
++    const resolvedUrl = policy.normalizedUrl;
++
++    const previousUrl = tab.url;
++    const previousVersion = tab.pageVersion;
++    const nextVersion = previousVersion + 1;
++
++    const updatedSnapshot = buildVersionedPageSnapshot({
++      tabId: key,
++      pageVersion: nextVersion,
++      url: resolvedUrl,
++      canonicalUrl: resolvedUrl,
++      httpStatus: 200,
++      title: nextTitle || tab.snapshot.title,
++      pageDate: pageDate !== undefined ? pageDate : tab.snapshot.pageDate,
++      eventDate: eventDate !== undefined ? eventDate : tab.snapshot.eventDate,
++      fetchedAt: new Date().toISOString(),
++      html: nextHtml || undefined,
++      text: nextText !== null ? nextText : tab.snapshot.fullTextUtf16,
++      controls: tab.snapshot.controls
++    });
++    updatedSnapshot.userEpoch = this.engine.userTakeover.getCurrentEpoch(key);
++
++    tab.url = resolvedUrl;
++    tab.pageVersion = nextVersion;
++    tab.snapshot = updatedSnapshot;
++    tab.lastObservation = updatedSnapshot;
++
++    // Register synthetic site state for back/forward traversal if not already registered
++    this.engine.registerSyntheticSite(resolvedUrl, {
++      title: updatedSnapshot.title,
++      pageDate: updatedSnapshot.pageDate,
++      eventDate: updatedSnapshot.eventDate,
++      text: updatedSnapshot.fullTextUtf16
++    });
++
++    if (!this.engine.tabNavigationStacks.has(key)) {
++      this.engine.tabNavigationStacks.set(key, {
++        entries: [previousUrl],
++        index: 0
++      });
++    }
++    const navStack = this.engine.tabNavigationStacks.get(key);
++
++    if (transitionKind === "replaceState") {
++      if (navStack.index >= 0 && navStack.index < navStack.entries.length) {
++        navStack.entries[navStack.index] = resolvedUrl;
++      } else {
++        navStack.entries.push(resolvedUrl);
++        navStack.index = navStack.entries.length - 1;
++      }
++    } else {
++      navStack.entries = navStack.entries.slice(0, navStack.index + 1);
++      navStack.entries.push(resolvedUrl);
++      navStack.index = navStack.entries.length - 1;
++    }
++
++    this.engine.resourceGovernor.invalidateSnapshotsForTab(key);
++    this.engine.resourceGovernor.cacheSnapshot(updatedSnapshot);
++    this.engine.provenanceJournal.recordSourceOpen({
++      url: resolvedUrl,
++      canonicalUrl: updatedSnapshot.canonicalUrl,
++      title: updatedSnapshot.title,
++      httpStatus: 200,
++      available: true,
++      pageVersion: updatedSnapshot.pageVersion,
++      snapshotId: updatedSnapshot.snapshotId,
++      tabReceiptId: updatedSnapshot.tabReceipt.receiptId,
++      pageDate: updatedSnapshot.pageDate,
++      eventDate: updatedSnapshot.eventDate,
++      fetchedAt: updatedSnapshot.fetchedAt
++    });
++
++    const record = {
++      tabId: key,
++      transitionKind,
++      previousUrl,
++      nextUrl: resolvedUrl,
++      previousPageVersion: previousVersion,
++      pageVersion: nextVersion,
++      tabReceipt: updatedSnapshot.tabReceipt,
++      snapshot: updatedSnapshot,
++      historyLength: navStack.entries.length,
++      historyIndex: navStack.index
++    };
++
++    this.routeTransitions.push(record);
++    return record;
++  }
++}
++
++module.exports = {
++  KosworkSpaRouteObserver
++};
+diff --git a/desktop/windows/test/browser-research-acceptance.test.cjs b/desktop/windows/test/browser-research-acceptance.test.cjs
+index 53222f8..6d9da2e 100644
+--- a/desktop/windows/test/browser-research-acceptance.test.cjs
++++ b/desktop/windows/test/browser-research-acceptance.test.cjs
+@@ -2338,3 +2338,126 @@ test("23. Deterministic Replay & Cross-Bundle Audit Verifier (`research-replay-a
+   assert.equal(auditOk.verifiedHarEntries, 1);
+   assert.equal(auditOk.violations.length, 0);
+ });
++
++test("24. SPA `pushState` / `replaceState` & Hash-Route Observer (`spa-route-observer.cjs` + `goBack`/`goForward` across SPA routes)", async () => {
++  const workspaceRoot = createTempWorkspace();
++  const shell = createKosworkBrowserShell({ workspaceRoot });
++  const engine = shell.engine;
++
++  engine.registerSyntheticSite("https://corpus.local/spa-docs/overview", {
++    title: "SPA Документация — Обзор",
++    pageDate: "2026-11-07",
++    eventDate: "2026-11-01",
++    text: "Обзорный экран SPA: выберите вкладку тарифов или лимитов."
++  });
++
++  await engine.navigate({
++    tabId: "tab-spa",
++    url: "https://corpus.local/spa-docs/overview"
++  });
++
++  // 1. Client-side pushState transition to /spa-docs/pricing
++  const push1 = await shell.dispatchToolCall("browser.record_spa_route", {
++    tabId: "tab-spa",
++    transitionKind: "pushState",
++    nextUrl: "https://corpus.local/spa-docs/pricing",
++    nextTitle: "SPA Документация — Тарифы",
++    nextText: "Экран тарифов SPA: стоимость лицензии составляет $59/мес."
++  });
++  assert.equal(push1.pageVersion, 2);
++  assert.equal(push1.nextUrl, "https://corpus.local/spa-docs/pricing");
++  assert.equal(push1.historyLength, 2);
++
++  // 2. Client-side replaceState transition to /spa-docs/pricing?currency=usd
++  const rep = await shell.dispatchToolCall("browser.record_spa_route", {
++    tabId: "tab-spa",
++    transitionKind: "replaceState",
++    nextUrl: "https://corpus.local/spa-docs/pricing?currency=usd",
++    nextTitle: "SPA Документация — Тарифы (USD)",
++    nextText: "Экран тарифов SPA (USD): стоимость лицензии составляет 59 USD/мес."
++  });
++  assert.equal(rep.pageVersion, 3);
++  // replaceState replaces top of history stack instead of growing length
++  assert.equal(rep.historyLength, 2);
++
++  // 3. Navigate back to initial SPA route via engine.goBack
++  const backNav = await engine.goBack("tab-spa");
++  assert.equal(backNav.url, "https://corpus.local/spa-docs/overview");
++
++  // 4. Navigate forward to replaced SPA route via engine.goForward
++  const fwdNav = await engine.goForward("tab-spa");
++  assert.equal(fwdNav.url, "https://corpus.local/spa-docs/pricing?currency=usd");
++  const spaExc = engine.extractExcerpt("tab-spa", {
++    searchTerm: "стоимость лицензии составляет 59 USD/мес"
++  });
++  assert.ok(spaExc);
++});
++
++test("25. Numeric/Token Boundary & Deprecation Context Validator (`context-boundary-validator.cjs`) + Standalone CLI Research Runner (`run-koswork-browser-research-cli.mjs`)", async () => {
++  const workspaceRoot = createTempWorkspace();
++  const shell = createKosworkBrowserShell({ workspaceRoot });
++  const engine = shell.engine;
++
++  engine.registerSyntheticSite("https://corpus.local/context-traps", {
++    title: "Страница с контекстными ловушками",
++    pageDate: "2026-11-07",
++    text: [
++      "Актуальный тариф 2026: базовая стоимость составляет $490/мес для дата-центров.",
++      "УСТАРЕЛО (архивный тариф 2023 года, не действует): прежняя цена составляла $25/мес.",
++      "Техническое ограничение — НЕ поддерживается: локальная репликация без ключа шифрования."
++    ].join("\n\n")
++  });
++
++  const nav = await engine.navigate({
++    tabId: "tab-ctx",
++    url: "https://corpus.local/context-traps"
++  });
++
++  // 1. Truncated number "$49" sliced out of "$490/мес" is caught as NUMERIC_OR_WORD_BOUNDARY_TRUNCATED
++  const idx490 = nav.snapshot.fullTextUtf16.indexOf("$490/мес");
++  const truncatedExcerpt = {
++    startUtf16: idx490,
++    endUtf16: idx490 + 3, // "$49" cut mid-number before "0"
++    quote: "$49"
++  };
++  const truncCheck = await shell.dispatchToolCall("browser.validate_excerpt_context", {
++    tabId: "tab-ctx",
++    excerpt: truncatedExcerpt
++  });
++  assert.equal(truncCheck.validForConfirmation, false);
++  assert.ok(
++    truncCheck.advisories.some((a) => a.code === "NUMERIC_OR_WORD_BOUNDARY_TRUNCATED")
++  );
++
++  // 2. Clean "$490/мес" excerpt passes boundary and context validation
++  const cleanExcerpt = engine.extractExcerpt("tab-ctx", {
++    searchTerm: "базовая стоимость составляет $490/мес"
++  });
++  const cleanCheck = await shell.dispatchToolCall("browser.validate_excerpt_context", {
++    tabId: "tab-ctx",
++    excerpt: cleanExcerpt
++  });
++  assert.equal(cleanCheck.validForConfirmation, true);
++  assert.equal(cleanCheck.hasDeprecationWarning, false);
++
++  // 3. Deprecated context ("УСТАРЕЛО ... прежняя цена составляла $25/мес") flags CONTEXT_DEPRECATION_MARKER
++  const depExcerpt = engine.extractExcerpt("tab-ctx", {
++    searchTerm: "прежняя цена составляла $25/мес"
++  });
++  const depCheck = await shell.dispatchToolCall("browser.validate_excerpt_context", {
++    tabId: "tab-ctx",
++    excerpt: depExcerpt
++  });
++  assert.equal(depCheck.hasDeprecationWarning, true);
++
++  // 4. Negated context ("НЕ поддерживается: локальная репликация...") flags CONTEXT_NEGATION_MARKER
++  const negExcerpt = engine.extractExcerpt("tab-ctx", {
++    searchTerm: "локальная репликация без ключа шифрования"
++  });
++  const negCheck = await shell.dispatchToolCall("browser.validate_excerpt_context", {
++    tabId: "tab-ctx",
++    excerpt: negExcerpt
++  });
++  assert.equal(negCheck.validForConfirmation, false);
++  assert.ok(negCheck.advisories.some((a) => a.code === "CONTEXT_NEGATION_MARKER"));
++});
+diff --git a/scripts/run-koswork-browser-research-cli.mjs b/scripts/run-koswork-browser-research-cli.mjs
+new file mode 100644
+index 0000000..6d0f8c6
+--- /dev/null
++++ b/scripts/run-koswork-browser-research-cli.mjs
+@@ -0,0 +1,154 @@
++#!/usr/bin/env node
++/**
++ * Standalone CLI & Programmatic Runner for the Koswork Browser Research Cycle
++ * (`scripts/run-koswork-browser-research-cli.mjs`).
++ *
++ * Executes a complete 5-site HTTP corpus research cycle + W3C PROV-JSON / BibTeX +
++ * W3C HAR 1.2 + Deterministic Replay Audit and outputs a JSON verification summary.
++ */
++
++import fs from "node:fs";
++import os from "node:os";
++import path from "node:path";
++import { createRequire } from "node:module";
++
++const require = createRequire(import.meta.url);
++
++const { KosworkBrowserEngine } = require("../desktop/windows/browser/engine.cjs");
++const { startReproducibleCorpusServer } = require("../desktop/windows/browser/corpus-http-server.cjs");
++const { createKosworkBrowserShell } = require("../desktop/windows/browser/shell.cjs");
++const { KosworkUnifiedTaskCoordinator } = require("../desktop/windows/ci/unified-task-coordinator.cjs");
++const { buildBrowserResearchProvAndBibtex } = require("../desktop/windows/browser/prov-lineage-exporter.cjs");
++const { buildResearchSessionHarLog } = require("../desktop/windows/browser/research-session-har-exporter.cjs");
++
++export async function runCliBrowserResearchVerification(options = {}) {
++  const workspaceRoot =
++    options.workspaceRoot ||
++    fs.mkdtempSync(path.join(os.tmpdir(), "koswork-cli-research-"));
++  fs.mkdirSync(path.join(workspaceRoot, "downloads"), { recursive: true });
++  fs.mkdirSync(path.join(workspaceRoot, "docs"), { recursive: true });
++
++  const corpusServer = await startReproducibleCorpusServer();
++  try {
++    const engine = new KosworkBrowserEngine({
++      allowedWorkspaceRoot: workspaceRoot,
++      maxLiveTabs: 3,
++      searchAdapterOptions: {
++        providerId: "local-http-5site-corpus",
++        searchEndpoint: `${corpusServer.baseOrigin}/search`
++      }
++    });
++
++    const shell = createKosworkBrowserShell({
++      engine,
++      workspaceRoot
++    });
++
++    const coordinator = new KosworkUnifiedTaskCoordinator({
++      workspaceRoot,
++      browserEngine: engine
++    });
++
++    const httpCycle = await coordinator.executeBrowserResearchCycle({
++      question: "Сквозная CLI проверка 5 сайтов по реальному HTTP-протоколу (Option Alpha vs Option Beta)",
++      searchQuery: "Option Alpha Option Beta",
++      options: ["Option Alpha", "Option Beta"],
++      criteria: ["Цена", "Поддержка SLA"],
++      reportSlug: "cli-5site-corpus-report",
++      substitutionsByUrlPath: {
++        "/site-5-dynamic-and-substituted": {
++          targetPhrase: "Гарантия возврата средств: 30 дней без условий.",
++          reNavigateUrl: `${corpusServer.baseOrigin}/site-5-dynamic-and-substituted`
++        }
++      },
++      assertionsByUrlPath: {
++        "/site-1-official-2026": [
++          {
++            optionName: "Option Alpha",
++            criterion: "Цена",
++            value: "$49/мес",
++            displayValue: "$49/мес",
++            quote: "для пакета Option Alpha базовая цена составляет $49/мес при годовой подписке."
++          },
++          {
++            optionName: "Option Alpha",
++            criterion: "Поддержка SLA",
++            value: "99.95%",
++            displayValue: "99.95%",
++            quote: "для Option Alpha поддержка SLA зафиксирована на уровне 99.95% времени доступности."
++          }
++        ],
++        "/site-2-contradiction-2025": [
++          {
++            optionName: "Option Alpha",
++            criterion: "Цена",
++            value: "$79/мес",
++            displayValue: "$79/мес",
++            quote: "для пакета Option Alpha базовая цена составляет $79/мес без учёта скидок."
++          }
++        ],
++        "/site-4-very-long-article": [
++          {
++            optionName: "Option Beta",
++            criterion: "Цена",
++            value: "$35/мес",
++            displayValue: "$35/мес",
++            quote: "Итоговая сводка по пакету Option Beta: базовая цена составляет $35/мес для малых команд."
++          },
++          {
++            optionName: "Option Beta",
++            criterion: "Поддержка SLA",
++            value: "99.90%",
++            displayValue: "99.90%",
++            quote: "Для пакета Option Beta поддержка SLA составляет 99.90% в рабочие дни."
++          }
++        ]
++      }
++    });
++
++    const snapshotsByUrl = {};
++    for (const [, tab] of engine.tabs.entries()) {
++      if (tab.snapshot) {
++        snapshotsByUrl[tab.url] = tab.snapshot;
++      }
++    }
++
++    const provBundle = buildBrowserResearchProvAndBibtex({
++      question: httpCycle.question,
++      confirmedClaims: httpCycle.savedReports.confirmedClaims
++    });
++    const harLog = buildResearchSessionHarLog({
++      openedSources: httpCycle.openedSources
++    });
++
++    const replayAudit = await shell.dispatchToolCall("browser.verify_replay_audit", {
++      savedReports: httpCycle.savedReports,
++      provJsonObject: provBundle.provJsonObject,
++      harLog,
++      snapshotsByUrl
++    });
++
++    return {
++      status: httpCycle.status,
++      workspaceRoot,
++      openedSourcesCount: httpCycle.openedSources.length,
++      confirmedClaimsCount: httpCycle.savedReports.confirmedClaims.length,
++      contradictionsCount: httpCycle.contradictions.length,
++      outdatedFindingsCount: httpCycle.outdatedFindings.length,
++      unavailableSourcesCount: httpCycle.unavailableSources.length,
++      substitutionIncidentsCount: httpCycle.substitutionIncidents.length,
++      replayAuditPassed: replayAudit.replayAuditPassed,
++      reportDigestSha256: replayAudit.reportDigestSha256
++    };
++  } finally {
++    await corpusServer.close();
++  }
++}
++
++if (import.meta.url === `file://${process.argv[1]}`) {
++  const summary = await runCliBrowserResearchVerification();
++  console.log(JSON.stringify(summary));
++  if (!summary.replayAuditPassed) {
++    process.exit(1);
++  }
++}
+-- 
+2.39.5
+

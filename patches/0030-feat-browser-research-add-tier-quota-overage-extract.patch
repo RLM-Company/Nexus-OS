@@ -1,0 +1,771 @@
+From 5e0b17d17113cac51620d081d9683cc4c112c854 Mon Sep 17 00:00:00 2001
+From: Kosmora Engineering <eng@kosmora.ai>
+Date: Tue, 10 Nov 2026 14:47:51 +0000
+Subject: [PATCH 30/32] feat(browser-research): add tier quota/overage
+ extractor, OAuth/SSO redirect guard, and JUnit/TAP v14 exporter (Phase 28)
+
+---
+ .../junit-and-tap-verification-exporter.cjs   | 155 ++++++++++++++++
+ .../oauth-sso-redirect-and-popup-guard.cjs    | 139 ++++++++++++++
+ ...pricing-tier-limit-and-quota-extractor.cjs | 170 ++++++++++++++++++
+ desktop/windows/browser/shell.cjs             |  70 ++++++++
+ .../test/browser-research-acceptance.test.cjs | 148 +++++++++++++++
+ docs/koswork-browser-research.md              |   9 +
+ 6 files changed, 691 insertions(+)
+ create mode 100644 desktop/windows/browser/junit-and-tap-verification-exporter.cjs
+ create mode 100644 desktop/windows/browser/oauth-sso-redirect-and-popup-guard.cjs
+ create mode 100644 desktop/windows/browser/pricing-tier-limit-and-quota-extractor.cjs
+
+diff --git a/desktop/windows/browser/junit-and-tap-verification-exporter.cjs b/desktop/windows/browser/junit-and-tap-verification-exporter.cjs
+new file mode 100644
+index 0000000..f24dd51
+--- /dev/null
++++ b/desktop/windows/browser/junit-and-tap-verification-exporter.cjs
+@@ -0,0 +1,155 @@
++"use strict";
++
++const { createKosworkWorkspaceService } = require("../workspace/workspace-service.cjs");
++
++/**
++ * Koswork JUnit XML & TAP v14 Epistemic Verification Exporter
++ * (`desktop/windows/browser/junit-and-tap-verification-exporter.cjs`).
++ *
++ * Deepens Requirement #5 & End-to-End Acceptance:
++ * - Exports a multi-site research report into standard CI/CD verification formats:
++ *   1. JUnit XML (`reports/<slug>-junit.xml`)
++ *   2. TAP Version 14 (`reports/<slug>.tap`)
++ *   via `workspace-service.cjs`.
++ * - Encodes each verified `(optionName, criterion)` claim with its verbatim UTF-16
++ *   `[startUtf16..endUtf16]` quote and `pageDate`/`eventDate`/`fetchedAt` as a passing
++ *   test case, encodes bare-link rejections as `<failure>` test cases, and encodes
++ *   HTTP 503 unavailable sources as `<skipped>` diagnostic test cases.
++ */
++
++function escapeXml(raw = "") {
++  return String(raw ?? "")
++    .replace(/&/g, "&amp;")
++    .replace(/</g, "&lt;")
++    .replace(/>/g, "&gt;")
++    .replace(/"/g, "&quot;")
++    .replace(/'/g, "&apos;");
++}
++
++function buildJUnitXmlAndTap14ResearchReport(report = {}) {
++  const question = report.question || "Koswork Browser Research Verification";
++  const testCases = [];
++
++  for (const row of report.comparisonRows || []) {
++    const optionName = row.optionName || "Option";
++    for (const [criterion, cell] of Object.entries(row.cells || {})) {
++      const hasValidQuote =
++        Boolean(cell && cell.quote && String(cell.quote).trim().length > 0) &&
++        Number.isInteger(cell.startUtf16) &&
++        cell.startUtf16 >= 0 &&
++        Number.isInteger(cell.endUtf16) &&
++        cell.endUtf16 > cell.startUtf16;
++
++      if (hasValidQuote) {
++        testCases.push({
++          name: `${optionName} :: ${criterion} (${cell.displayValue || cell.value || ""})`,
++          classname: "KosworkBrowserResearch.VerifiedClaim",
++          status: "passed",
++          detail: `Quote: "${cell.quote}" [${cell.startUtf16}..${cell.endUtf16}] (${cell.sourceUrl}, pageDate=${cell.pageDate || "n/a"}, eventDate=${cell.eventDate || "n/a"})`
++        });
++      } else if (cell && cell.sourceUrl) {
++        testCases.push({
++          name: `${optionName} :: ${criterion} (Bare Link Rejected)`,
++          classname: "KosworkBrowserResearch.BareLinkGuard",
++          status: "failed",
++          failureType: "BARE_LINK_NOT_PROOF_OF_CLAIM",
++          detail: `Bare URL ${cell.sourceUrl} rejected because no verbatim UTF-16 quote was provided.`
++        });
++      }
++    }
++  }
++
++  for (const unav of report.unavailableSources || []) {
++    testCases.push({
++      name: `Unavailable Source :: ${unav.url}`,
++      classname: "KosworkBrowserResearch.SourceAvailability",
++      status: "skipped",
++      detail: `HTTP ${unav.statusCode || 503} (${unav.reason || "Service Unavailable"})`
++    });
++  }
++
++  const totalTests = testCases.length;
++  const failuresCount = testCases.filter((t) => t.status === "failed").length;
++  const skippedCount = testCases.filter((t) => t.status === "skipped").length;
++  const passedCount = testCases.filter((t) => t.status === "passed").length;
++
++  const xmlLines = [
++    '<?xml version="1.0" encoding="UTF-8"?>',
++    `<testsuites name="${escapeXml(question)}" tests="${totalTests}" failures="${failuresCount}" skipped="${skippedCount}">`,
++    `  <testsuite name="KosworkBrowserResearchSuite" tests="${totalTests}" failures="${failuresCount}" skipped="${skippedCount}">`
++  ];
++
++  const tapLines = ["TAP version 14", `1..${totalTests}`];
++
++  for (let i = 0; i < testCases.length; i += 1) {
++    const tc = testCases[i];
++    const num = i + 1;
++    xmlLines.push(
++      `    <testcase name="${escapeXml(tc.name)}" classname="${escapeXml(tc.classname)}">`
++    );
++    if (tc.status === "failed") {
++      xmlLines.push(
++        `      <failure message="${escapeXml(tc.detail)}" type="${escapeXml(tc.failureType || "EPIC_FAILURE")}">${escapeXml(tc.detail)}</failure>`
++      );
++      tapLines.push(`not ok ${num} - ${tc.name}`);
++      tapLines.push("  ---");
++      tapLines.push(`  message: ${JSON.stringify(tc.detail)}`);
++      tapLines.push("  ...");
++    } else if (tc.status === "skipped") {
++      xmlLines.push(`      <skipped message="${escapeXml(tc.detail)}" />`);
++      tapLines.push(`ok ${num} - ${tc.name} # SKIP ${tc.detail}`);
++    } else {
++      xmlLines.push(
++        `      <system-out>${escapeXml(tc.detail)}</system-out>`
++      );
++      tapLines.push(`ok ${num} - ${tc.name}`);
++    }
++    xmlLines.push("    </testcase>");
++  }
++
++  xmlLines.push("  </testsuite>", "</testsuites>", "");
++
++  return {
++    totalTests,
++    passedCount,
++    failuresCount,
++    skippedCount,
++    junitXml: xmlLines.join("\n"),
++    tap14Text: tapLines.join("\n") + "\n"
++  };
++}
++
++async function saveJUnitAndTapVerificationReportViaWorkspace({
++  workspaceRoot,
++  slug = "research-verification",
++  report = {},
++  signal = null
++} = {}) {
++  const built = buildJUnitXmlAndTap14ResearchReport(report);
++  const svc = createKosworkWorkspaceService();
++  await svc.connectFolder({ folderPath: workspaceRoot, signal });
++
++  const junitFile = await svc.createFile({
++    relativePath: `reports/${slug}-junit.xml`,
++    content: built.junitXml,
++    createParents: true,
++    signal
++  });
++  const tapFile = await svc.createFile({
++    relativePath: `reports/${slug}.tap`,
++    content: built.tap14Text,
++    createParents: true,
++    signal
++  });
++
++  return {
++    ...built,
++    junitFile,
++    tapFile
++  };
++}
++
++module.exports = {
++  buildJUnitXmlAndTap14ResearchReport,
++  saveJUnitAndTapVerificationReportViaWorkspace
++};
+diff --git a/desktop/windows/browser/oauth-sso-redirect-and-popup-guard.cjs b/desktop/windows/browser/oauth-sso-redirect-and-popup-guard.cjs
+new file mode 100644
+index 0000000..e57e4e0
+--- /dev/null
++++ b/desktop/windows/browser/oauth-sso-redirect-and-popup-guard.cjs
+@@ -0,0 +1,139 @@
++"use strict";
++
++const { KosworkBrowserPolicyError } = require("./policy.cjs");
++
++/**
++ * Koswork OAuth 2.0 / OIDC / SAML SSO Redirect & Popup Guard
++ * (`desktop/windows/browser/oauth-sso-redirect-and-popup-guard.cjs`).
++ *
++ * Deepens Requirements #4 & #7:
++ * - Detects interactive OAuth 2.0 / OIDC (`/oauth/authorize`, `response_type=code`,
++ *   `client_id=`) and SAML 2.0 (`/saml/sso`, `SAMLRequest=`) authentication redirects
++ *   and transitions the tab cleanly into `status: "paused_for_user"`
++ *   (`code: "BROWSER_PAUSED_FOR_SSO_LOGIN"`) without attempting to bypass authentication.
++ * - Blocks open-redirect attacks where `redirect_uri` points to an untrusted external
++ *   origin (`OAUTH_OPEN_REDIRECT_BLOCKED`).
++ * - Supports explicit user SSO completion handback (`completeUserSsoHandback`) that
++ *   resumes the tab on the post-login callback URL and refreshes observation state.
++ */
++
++const SSO_PATH_PATTERNS = [
++  /\/oauth2?\/authorize/i,
++  /\/oidc\/authorize/i,
++  /\/saml2?\/(?:sso|login)/i,
++  /\/login\/oauth/i
++];
++
++class KosworkOAuthSsoPopupAndRedirectGuard {
++  constructor({ engine, trustedCallbackOrigins = [] } = {}) {
++    this.engine = engine || null;
++    this.trustedCallbackOrigins = new Set(
++      (trustedCallbackOrigins || []).map((o) => String(o).toLowerCase())
++    );
++    this.pendingSsoByTab = new Map();
++  }
++
++  inspectRedirectOrPopup({
++    tabId = "tab-1",
++    currentOriginUrl,
++    targetUrl,
++    isPopupWindow = false
++  } = {}) {
++    const parsedTarget = new URL(String(targetUrl || ""));
++    const currentOrigin = currentOriginUrl
++      ? new URL(String(currentOriginUrl)).origin.toLowerCase()
++      : parsedTarget.origin.toLowerCase();
++
++    const searchParams = parsedTarget.searchParams;
++    const isOAuthOrSaml =
++      SSO_PATH_PATTERNS.some((re) => re.test(parsedTarget.pathname)) ||
++      (searchParams.has("client_id") && searchParams.has("response_type")) ||
++      searchParams.has("SAMLRequest");
++
++    if (!isOAuthOrSaml) {
++      return {
++        isSsoFlow: false,
++        status: "allowed_normal_navigation",
++        targetUrl: parsedTarget.toString()
++      };
++    }
++
++    const redirectUriRaw =
++      searchParams.get("redirect_uri") || searchParams.get("RelayState") || "";
++    if (redirectUriRaw && /^https?:\/\//i.test(redirectUriRaw)) {
++      const callbackOrigin = new URL(redirectUriRaw).origin.toLowerCase();
++      const isTrusted =
++        callbackOrigin === currentOrigin ||
++        this.trustedCallbackOrigins.has(callbackOrigin);
++
++      if (!isTrusted) {
++        throw new KosworkBrowserPolicyError(
++          "OAUTH_OPEN_REDIRECT_BLOCKED",
++          `Заблокирован OAuth/SSO редирект с недоверенным redirect_uri (${callbackOrigin}).`,
++          {
++            tabId,
++            targetUrl: parsedTarget.toString(),
++            redirectUri: redirectUriRaw,
++            callbackOrigin
++          }
++        );
++      }
++    }
++
++    const pauseRecord = {
++      tabId: String(tabId),
++      isSsoFlow: true,
++      isPopupWindow: Boolean(isPopupWindow),
++      status: "paused_for_user",
++      code: "BROWSER_PAUSED_FOR_SSO_LOGIN",
++      ssoProviderOrigin: parsedTarget.origin,
++      authorizeUrl: parsedTarget.toString(),
++      redirectUri: redirectUriRaw || null,
++      pkceChallengeMethod: searchParams.get("code_challenge_method") || null,
++      hasStateParam: searchParams.has("state"),
++      pausedAt: new Date().toISOString(),
++      reason:
++        "Обнаружен переход на страницу входа OAuth 2.0 / SAML SSO. Автоматический обход запрещён; ожидание ручного входа пользователя."
++    };
++
++    this.pendingSsoByTab.set(String(tabId), pauseRecord);
++    return pauseRecord;
++  }
++
++  async completeUserSsoHandback({ tabId, postLoginCallbackUrl, signal = null } = {}) {
++    const id = String(tabId || "");
++    const pending = this.pendingSsoByTab.get(id);
++    if (!pending) {
++      const err = new Error(`No pending SSO login pause found for tab ${id}`);
++      err.code = "NO_PENDING_SSO_PAUSE";
++      throw err;
++    }
++
++    this.pendingSsoByTab.delete(id);
++    if (this.engine && postLoginCallbackUrl) {
++      const nav = await this.engine.navigate({
++        tabId: id,
++        url: postLoginCallbackUrl,
++        actor: "user_handback",
++        signal
++      });
++      return {
++        status: "resumed_after_user_sso",
++        tabId: id,
++        postLoginUrl: nav.url,
++        pageVersion: nav.pageVersion,
++        snapshot: nav.snapshot
++      };
++    }
++
++    return {
++      status: "resumed_after_user_sso",
++      tabId: id,
++      postLoginUrl: postLoginCallbackUrl || pending.redirectUri
++    };
++  }
++}
++
++module.exports = {
++  KosworkOAuthSsoPopupAndRedirectGuard
++};
+diff --git a/desktop/windows/browser/pricing-tier-limit-and-quota-extractor.cjs b/desktop/windows/browser/pricing-tier-limit-and-quota-extractor.cjs
+new file mode 100644
+index 0000000..017a4de
+--- /dev/null
++++ b/desktop/windows/browser/pricing-tier-limit-and-quota-extractor.cjs
+@@ -0,0 +1,170 @@
++"use strict";
++
++/**
++ * Koswork Tier Quota, Rate-Limit & Overage Pricing Extractor
++ * (`desktop/windows/browser/pricing-tier-limit-and-quota-extractor.cjs`).
++ *
++ * Deepens Requirements #2, #3 & #5:
++ * - Extracts included plan storage quotas (`500 ГБ`, `2 ТБ`), monthly request quotas
++ *   (`10 млн запросов/мес`, `25M requests/mo`), concurrent connection caps, and overage
++ *   unit prices (`$0.15/ГБ сверх лимита`, `$0.20 per GB overage`) with exact UTF-16
++ *   `[startUtf16..endUtf16]` offsets and distinct `pageDate`, `eventDate`, and `fetchedAt`.
++ * - Evaluates a target workload (`requiredStorageGb`, `requiredMonthlyRequestsMillions`)
++ *   against vendor tiers, calculating exact overage charges and rejecting bare links
++ *   (`BARE_QUOTA_CLAIM_REJECTED`).
++ */
++
++function extractTierQuotasAndOverageRates(snapshot = {}) {
++  const fullText = String(snapshot.fullTextUtf16 || snapshot.text || "");
++  const storageQuotas = [];
++  const requestQuotas = [];
++  const overageRates = [];
++
++  // 1. Storage quotas: e.g. "включено 500 ГБ", "included 2 TB"
++  const storageRe = /(?:включено|квота|лимит|до|included|up to)\s+(\d+(?:\.\d+)?)\s*(ГБ|GB|ТБ|TB)/giu;
++  let m;
++  while ((m = storageRe.exec(fullText)) !== null) {
++    const rawNum = Number(m[1]);
++    const unit = m[2].toUpperCase();
++    const quotaGb = unit === "ТБ" || unit === "TB" ? rawNum * 1024 : rawNum;
++    const quote = m[0].trim();
++    const startUtf16 = fullText.indexOf(quote, m.index);
++    const endUtf16 = startUtf16 + quote.length;
++
++    storageQuotas.push({
++      quotaGb,
++      quote,
++      startUtf16,
++      endUtf16,
++      url: snapshot.url || "",
++      pageDate: snapshot.pageDate || null,
++      eventDate: snapshot.eventDate || null,
++      fetchedAt: snapshot.fetchedAt || null
++    });
++  }
++
++  // 2. Monthly request quotas (in millions): e.g. "10 млн запросов/мес", "25M requests/month"
++  const reqRe = /(\d+(?:\.\d+)?)\s*(?:млн\s+запросов|M\s+requests|million\s+requests)\s*(?:\/|\s+в\s+|\s+per\s+)?\s*(?:мес|месяц|mo|month)/giu;
++  while ((m = reqRe.exec(fullText)) !== null) {
++    const millions = Number(m[1]);
++    const quote = m[0].trim();
++    const startUtf16 = fullText.indexOf(quote, m.index);
++    const endUtf16 = startUtf16 + quote.length;
++
++    requestQuotas.push({
++      includedMillionsPerMonth: millions,
++      quote,
++      startUtf16,
++      endUtf16,
++      url: snapshot.url || "",
++      pageDate: snapshot.pageDate || null,
++      eventDate: snapshot.eventDate || null,
++      fetchedAt: snapshot.fetchedAt || null
++    });
++  }
++
++  // 3. Overage per GB rate: e.g. "$0.15/ГБ сверх лимита", "$0.20 per GB overage"
++  const overRe = /\$(\d+(?:\.\d+)?)\s*(?:\/|\s+за\s+|\s+per\s+)\s*(?:1\s*)?(?:ГБ|GB)\s*(?:сверх\s+лимита|overage)?/giu;
++  while ((m = overRe.exec(fullText)) !== null) {
++    const usdPerGb = Number(m[1]);
++    const quote = m[0].trim();
++    const startUtf16 = fullText.indexOf(quote, m.index);
++    const endUtf16 = startUtf16 + quote.length;
++
++    overageRates.push({
++      usdPerGb,
++      quote,
++      startUtf16,
++      endUtf16,
++      url: snapshot.url || "",
++      pageDate: snapshot.pageDate || null,
++      eventDate: snapshot.eventDate || null,
++      fetchedAt: snapshot.fetchedAt || null
++    });
++  }
++
++  return {
++    url: snapshot.url || "",
++    title: snapshot.title || "",
++    pageDate: snapshot.pageDate || null,
++    eventDate: snapshot.eventDate || null,
++    fetchedAt: snapshot.fetchedAt || null,
++    storageQuotas,
++    requestQuotas,
++    overageRates
++  };
++}
++
++function evaluateWorkloadFitAgainstTierQuotas({
++  vendorTiers = [],
++  requiredStorageGb = 600
++} = {}) {
++  const evaluated = [];
++  const rejected = [];
++
++  for (const tier of vendorTiers || []) {
++    const optionName = String(tier?.optionName || "Option").trim();
++    if (tier?.bareLinkOnly || !tier?.snapshot) {
++      rejected.push({
++        optionName,
++        sourceUrl: tier?.sourceUrl || "",
++        code: "BARE_QUOTA_CLAIM_REJECTED",
++        reason: "Голая ссылка на тарифную сетку без UTF-16 выдержки не принимается."
++      });
++      continue;
++    }
++
++    const extracted = extractTierQuotasAndOverageRates(tier.snapshot);
++    const storageQuota = extracted.storageQuotas[0] || null;
++    const overageRate = extracted.overageRates[0] || null;
++
++    if (!storageQuota) {
++      rejected.push({
++        optionName,
++        sourceUrl: tier.snapshot.url || "",
++        code: "QUOTA_NOT_FOUND_IN_SNAPSHOT",
++        reason: "В снимке страницы не найдена подтверждённая квота хранилища."
++      });
++      continue;
++    }
++
++    const baseMonthlyUsd = Number(tier.baseMonthlyUsd || 0);
++    const excessGb = Math.max(0, Number(requiredStorageGb || 0) - storageQuota.quotaGb);
++    const overageMonthlyUsd = Number(
++      (excessGb * Number(overageRate ? overageRate.usdPerGb : 0)).toFixed(2)
++    );
++    const effectiveMonthlyUsd = Number((baseMonthlyUsd + overageMonthlyUsd).toFixed(2));
++
++    evaluated.push({
++      optionName,
++      baseMonthlyUsd,
++      includedStorageGb: storageQuota.quotaGb,
++      requiredStorageGb: Number(requiredStorageGb || 0),
++      excessStorageGb: excessGb,
++      overageUsdPerGb: overageRate ? overageRate.usdPerGb : 0,
++      overageMonthlyUsd,
++      effectiveMonthlyUsd,
++      storageQuotaExcerpt: storageQuota,
++      overageRateExcerpt: overageRate,
++      pageDate: tier.snapshot.pageDate || null,
++      eventDate: tier.snapshot.eventDate || null,
++      fetchedAt: tier.snapshot.fetchedAt || null
++    });
++  }
++
++  evaluated.sort((a, b) => a.effectiveMonthlyUsd - b.effectiveMonthlyUsd);
++
++  return {
++    requiredStorageGb: Number(requiredStorageGb || 0),
++    evaluatedCount: evaluated.length,
++    rejectedCount: rejected.length,
++    bestFitOptionName: evaluated[0] ? evaluated[0].optionName : null,
++    evaluated,
++    rejected
++  };
++}
++
++module.exports = {
++  extractTierQuotasAndOverageRates,
++  evaluateWorkloadFitAgainstTierQuotas
++};
+diff --git a/desktop/windows/browser/shell.cjs b/desktop/windows/browser/shell.cjs
+index 89423b6..18cdf67 100644
+--- a/desktop/windows/browser/shell.cjs
++++ b/desktop/windows/browser/shell.cjs
+@@ -156,6 +156,17 @@ const {
+   buildRoCrateMetadataDescriptor,
+   saveRoCrateResearchPackageViaWorkspace
+ } = require("./ro-crate-research-object-exporter.cjs");
++const {
++  extractTierQuotasAndOverageRates,
++  evaluateWorkloadFitAgainstTierQuotas
++} = require("./pricing-tier-limit-and-quota-extractor.cjs");
++const {
++  KosworkOAuthSsoPopupAndRedirectGuard
++} = require("./oauth-sso-redirect-and-popup-guard.cjs");
++const {
++  buildJUnitXmlAndTap14ResearchReport,
++  saveJUnitAndTapVerificationReportViaWorkspace
++} = require("./junit-and-tap-verification-exporter.cjs");
+ 
+ /**
+  * Shared Tool & Execution Boundary for Koswork Browser (`desktop/windows/browser/shell.cjs`).
+@@ -338,6 +349,30 @@ const BROWSER_RESEARCH_TOOL_DEFINITIONS = Object.freeze([
+       "Проверить заголовок Content-Disposition и магические байты скачиваемого файла для блокировки замаскированных исполняемых файлов (MZ/ELF/#!).",
+     requiredParams: ["contentDispositionHeader"]
+   },
++  {
++    name: "browser.extract_tier_quotas",
++    description:
++      "Извлечь квоты хранилища, месячные лимиты запросов и ставки сверхлимитного потребления (overage) с точными смещениями UTF-16.",
++    requiredParams: ["tabId"]
++  },
++  {
++    name: "browser.evaluate_workload_quotas",
++    description:
++      "Рассчитать эффективную месячную стоимость с учётом сверхлимитного потребления (overage) под заданную нагрузку по верифицированным снимкам.",
++    requiredParams: ["vendorTiers"]
++  },
++  {
++    name: "browser.inspect_oauth_sso_redirect",
++    description:
++      "Проверить OAuth 2.0 / OIDC / SAML SSO редирект или popup-окно, заблокировать open-redirect и перевести вкладку в paused_for_user.",
++    requiredParams: ["targetUrl"]
++  },
++  {
++    name: "browser.export_junit_tap_report",
++    description:
++      "Экспортировать верификационный отчёт исследования в форматы JUnit XML (.xml) и TAP v14 (.tap) через workspace-service.",
++    requiredParams: ["report"]
++  },
+   {
+     name: "browser.export_ro_crate",
+     description:
+@@ -941,6 +976,41 @@ function createKosworkBrowserShell(options = {}) {
+           contentBuffer: args.contentBuffer || Buffer.alloc(0)
+         });
+ 
++      case "browser.extract_tier_quotas": {
++        const obs = engine.observePage(args.tabId);
++        return extractTierQuotasAndOverageRates(obs.snapshot);
++      }
++
++      case "browser.evaluate_workload_quotas":
++        return evaluateWorkloadFitAgainstTierQuotas({
++          vendorTiers: args.vendorTiers || [],
++          requiredStorageGb: args.requiredStorageGb ?? 600
++        });
++
++      case "browser.inspect_oauth_sso_redirect": {
++        const ssoGuard = new KosworkOAuthSsoPopupAndRedirectGuard({
++          engine,
++          trustedCallbackOrigins: args.trustedCallbackOrigins || []
++        });
++        return ssoGuard.inspectRedirectOrPopup({
++          tabId: args.tabId || "tab-1",
++          currentOriginUrl: args.currentOriginUrl || null,
++          targetUrl: args.targetUrl,
++          isPopupWindow: Boolean(args.isPopupWindow)
++        });
++      }
++
++      case "browser.export_junit_tap_report":
++        if (args.saveToWorkspace && resolvedWorkspaceRoot) {
++          return await saveJUnitAndTapVerificationReportViaWorkspace({
++            workspaceRoot: resolvedWorkspaceRoot,
++            slug: args.slug || "research-verification",
++            report: args.report || {},
++            signal
++          });
++        }
++        return buildJUnitXmlAndTap14ResearchReport(args.report || {});
++
+       case "browser.export_ro_crate":
+         if (args.saveToWorkspace && resolvedWorkspaceRoot) {
+           return await saveRoCrateResearchPackageViaWorkspace({
+diff --git a/desktop/windows/test/browser-research-acceptance.test.cjs b/desktop/windows/test/browser-research-acceptance.test.cjs
+index c096cc4..881ca44 100644
+--- a/desktop/windows/test/browser-research-acceptance.test.cjs
++++ b/desktop/windows/test/browser-research-acceptance.test.cjs
+@@ -4175,3 +4175,151 @@ test("47. W3C / ResearchObject.org RO-Crate 1.1 JSON-LD Exporter (`ro-crate-rese
+   assert.equal(quotationEntity.eventDate, "2026-11-01");
+   assert.ok(fs.existsSync(path.join(workspaceRoot, crateRes.jsonLdFile.path)));
+ });
++
++test("48. Tier Quota & Overage Rate Extractor (`pricing-tier-limit-and-quota-extractor.cjs`) & OAuth 2.0 / SAML SSO Redirect & Popup Guard (`oauth-sso-redirect-and-popup-guard.cjs`)", async () => {
++  const workspaceRoot = createTempWorkspace();
++  const shell = createKosworkBrowserShell({ workspaceRoot });
++  const engine = shell.engine;
++
++  engine.registerSyntheticSite("https://corpus.local/alpha-quotas", {
++    title: "Квоты тарифа Option Alpha",
++    pageDate: "2026-10-20",
++    eventDate: "2026-11-01",
++    text: "В базовый пакет Option Alpha включено 500 ГБ хранилища и 10 млн запросов/мес. Тарификация превышения: $0.10/ГБ сверх лимита."
++  });
++
++  engine.registerSyntheticSite("https://corpus.local/beta-quotas", {
++    title: "Квоты тарифа Option Beta",
++    pageDate: "2026-10-20",
++    eventDate: "2026-11-01",
++    text: "В пакет Option Beta включено 200 ГБ хранилища. Тарификация превышения: $0.25/ГБ сверх лимита."
++  });
++
++  const navAlpha = await engine.navigate({
++    tabId: "tab-quota-alpha",
++    url: "https://corpus.local/alpha-quotas"
++  });
++  const navBeta = await engine.navigate({
++    tabId: "tab-quota-beta",
++    url: "https://corpus.local/beta-quotas"
++  });
++
++  const alphaQuotas = await shell.dispatchToolCall(
++    "browser.extract_tier_quotas",
++    { tabId: "tab-quota-alpha" },
++    { workspaceRoot }
++  );
++
++  assert.equal(alphaQuotas.storageQuotas.length, 1);
++  assert.equal(alphaQuotas.storageQuotas[0].quotaGb, 500);
++  assert.equal(alphaQuotas.requestQuotas.length, 1);
++  assert.equal(alphaQuotas.requestQuotas[0].includedMillionsPerMonth, 10);
++  assert.equal(alphaQuotas.overageRates.length, 1);
++  assert.equal(alphaQuotas.overageRates[0].usdPerGb, 0.1);
++
++  const fitRes = await shell.dispatchToolCall(
++    "browser.evaluate_workload_quotas",
++    {
++      requiredStorageGb: 600,
++      vendorTiers: [
++        { optionName: "Option Alpha", baseMonthlyUsd: 49, snapshot: navAlpha.snapshot },
++        { optionName: "Option Beta", baseMonthlyUsd: 45, snapshot: navBeta.snapshot },
++        { optionName: "Option Gamma (Bare)", bareLinkOnly: true, sourceUrl: "https://corpus.local/bare" }
++      ]
++    },
++    { workspaceRoot }
++  );
++
++  // Alpha: 49 + (600 - 500)*0.10 = $59.00/mo; Beta: 45 + (600 - 200)*0.25 = $145.00/mo
++  assert.equal(fitRes.evaluatedCount, 2);
++  assert.equal(fitRes.rejectedCount, 1);
++  assert.equal(fitRes.bestFitOptionName, "Option Alpha");
++  assert.equal(fitRes.evaluated[0].effectiveMonthlyUsd, 59);
++  assert.equal(fitRes.evaluated[1].effectiveMonthlyUsd, 145);
++
++  // Test OAuth 2.0 / SAML SSO Redirect & Popup Guard
++  const ssoPause = await shell.dispatchToolCall(
++    "browser.inspect_oauth_sso_redirect",
++    {
++      tabId: "tab-sso",
++      currentOriginUrl: "https://corpus.local/app",
++      targetUrl:
++        "https://idp.corpus.local/oauth2/authorize?client_id=koswork&response_type=code&redirect_uri=https%3A%2F%2Fcorpus.local%2Fcallback&state=xyz&code_challenge_method=S256",
++      isPopupWindow: true
++    },
++    { workspaceRoot }
++  );
++
++  assert.equal(ssoPause.isSsoFlow, true);
++  assert.equal(ssoPause.status, "paused_for_user");
++  assert.equal(ssoPause.code, "BROWSER_PAUSED_FOR_SSO_LOGIN");
++  assert.equal(ssoPause.pkceChallengeMethod, "S256");
++
++  // Untrusted open-redirect URI must be blocked
++  await assert.rejects(
++    async () =>
++      shell.dispatchToolCall(
++        "browser.inspect_oauth_sso_redirect",
++        {
++          tabId: "tab-sso",
++          currentOriginUrl: "https://corpus.local/app",
++          targetUrl:
++            "https://idp.corpus.local/oauth2/authorize?client_id=koswork&response_type=code&redirect_uri=https%3A%2F%2Fevil.attacker.example%2Fsteal"
++        },
++        { workspaceRoot }
++      ),
++    (err) => err.code === "OAUTH_OPEN_REDIRECT_BLOCKED"
++  );
++});
++
++test("49. JUnit XML & TAP v14 Epistemic Verification Exporter (`junit-and-tap-verification-exporter.cjs` & `browser.export_junit_tap_report` via `shell.cjs`)", async () => {
++  const workspaceRoot = createTempWorkspace();
++  const shell = createKosworkBrowserShell({ workspaceRoot });
++
++  const verRes = await shell.dispatchToolCall(
++    "browser.export_junit_tap_report",
++    {
++      saveToWorkspace: true,
++      slug: "alpha-beta-ci-verification",
++      report: {
++        question: "CI-верификация утверждений Option Alpha и Option Beta",
++        comparisonRows: [
++          {
++            optionName: "Option Alpha",
++            cells: {
++              Цена: {
++                displayValue: "$49/мес",
++                quote: "Тариф Option Alpha составляет $49/мес",
++                startUtf16: 10,
++                endUtf16: 47,
++                sourceUrl: "https://corpus.local/alpha-2026",
++                pageDate: "2026-10-15",
++                eventDate: "2026-11-01"
++              },
++              "Голая ссылка": {
++                displayValue: "99.99%",
++                quote: "",
++                startUtf16: -1,
++                endUtf16: -1,
++                sourceUrl: "https://corpus.local/bare"
++              }
++            }
++          }
++        ],
++        unavailableSources: [
++          { url: "https://corpus.local/down-503", statusCode: 503 }
++        ]
++      }
++    },
++    { workspaceRoot }
++  );
++
++  assert.equal(verRes.totalTests, 3);
++  assert.equal(verRes.passedCount, 1);
++  assert.equal(verRes.failuresCount, 1);
++  assert.equal(verRes.skippedCount, 1);
++  assert.ok(verRes.junitXml.includes("<testsuites"));
++  assert.ok(verRes.tap14Text.startsWith("TAP version 14"));
++  assert.ok(fs.existsSync(path.join(workspaceRoot, verRes.junitFile.path)));
++  assert.ok(fs.existsSync(path.join(workspaceRoot, verRes.tapFile.path)));
++});
+diff --git a/docs/koswork-browser-research.md b/docs/koswork-browser-research.md
+index 665b925..12110e0 100644
+--- a/docs/koswork-browser-research.md
++++ b/docs/koswork-browser-research.md
+@@ -62,3 +62,12 @@
+ - **`desktop/windows/browser/ro-crate-research-object-exporter.cjs`**:
+   - `buildRoCrateMetadataDescriptor` and `saveRoCrateResearchPackageViaWorkspace`: packages a multi-site research report into a W3C / ResearchObject.org RO-Crate 1.1 JSON-LD descriptor (`reports/<slug>-ro-crate-metadata.json`) with `CreateAction` search adapter provenance, `WebPage` temporal triads (`datePublished` / `temporalCoverage` / `sdDatePublished`), and `Quotation` entities (`UTF-16 [startUtf16..endUtf16]`).
+ - **Exposed via `shell.cjs` (`browser.analyze_semver_changelog`, `browser.verify_semver_feature_status`, `browser.verify_download_magic_bytes`, `browser.export_ro_crate`) and verified in Subtests 46 and 47 (`57/57` total suites passing).**
++
++### Phase 28: Tier Quota & Overage Rate Extractor, OAuth 2.0 / SAML SSO Redirect & Popup Guard, and JUnit XML & TAP v14 Verification Exporter
++- **`desktop/windows/browser/pricing-tier-limit-and-quota-extractor.cjs`**:
++  - `extractTierQuotasAndOverageRates(snapshot)` and `evaluateWorkloadFitAgainstTierQuotas`: extracts included storage quotas (`500 ГБ`, `2 ТБ`), monthly request quotas (`10 млн запросов/мес`), and overage unit rates (`$0.10/ГБ сверх лимита`) with exact UTF-16 `[startUtf16..endUtf16]` offsets and distinct `pageDate`/`eventDate`/`fetchedAt`, computing effective monthly cost under a target workload while rejecting bare links (`BARE_QUOTA_CLAIM_REJECTED`).
++- **`desktop/windows/browser/oauth-sso-redirect-and-popup-guard.cjs`**:
++  - `KosworkOAuthSsoPopupAndRedirectGuard`: detects OAuth 2.0 / OIDC / SAML SSO redirects (`/oauth2/authorize`, `response_type=code`, `SAMLRequest`), pauses the tab for user sign-in (`status: "paused_for_user"`, `code: "BROWSER_PAUSED_FOR_SSO_LOGIN"`), blocks open-redirect attacks (`OAUTH_OPEN_REDIRECT_BLOCKED`), and supports clean user SSO completion handback (`completeUserSsoHandback`).
++- **`desktop/windows/browser/junit-and-tap-verification-exporter.cjs`**:
++  - `buildJUnitXmlAndTap14ResearchReport(report)` and `saveJUnitAndTapVerificationReportViaWorkspace`: exports multi-site research verification results into CI-ready JUnit XML (`reports/<slug>-junit.xml`) and TAP Version 14 (`reports/<slug>.tap`) files via `workspace-service.cjs`.
++- **Exposed via `shell.cjs` (`browser.extract_tier_quotas`, `browser.evaluate_workload_quotas`, `browser.inspect_oauth_sso_redirect`, `browser.export_junit_tap_report`) and verified in Subtests 48 and 49 (`59/59` total suites passing).**
+-- 
+2.39.5
+

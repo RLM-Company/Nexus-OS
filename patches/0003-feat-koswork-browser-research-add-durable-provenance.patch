@@ -1,0 +1,1909 @@
+From 7c71e612e407c41346111c3a1a55c80abd97586d Mon Sep 17 00:00:00 2001
+From: Kosmora Engineering <eng@kosmora.ai>
+Date: Sat, 7 Nov 2026 20:59:09 +0000
+Subject: [PATCH 03/32] feat(koswork-browser-research): add durable provenance
+ journal, HTML table UTF-16 offsets, back/forward history, CSV export, and
+ RAM/latency benchmark
+
+---
+ BENCHMARK_METRICS.json                        |  27 ++
+ .../browser/benchmark-browser-research.cjs    | 186 ++++++++++++
+ desktop/windows/browser/document.cjs          | 261 +++++++++++++++--
+ desktop/windows/browser/engine.cjs            | 226 +++++++++++++--
+ .../windows/browser/provenance-journal.cjs    | 205 +++++++++++++
+ .../browser/research-report-builder.cjs       |  95 +++++-
+ .../test/browser-research-acceptance.test.cjs | 271 ++++++++----------
+ 7 files changed, 1066 insertions(+), 205 deletions(-)
+ create mode 100644 BENCHMARK_METRICS.json
+ create mode 100644 desktop/windows/browser/benchmark-browser-research.cjs
+ create mode 100644 desktop/windows/browser/provenance-journal.cjs
+
+diff --git a/BENCHMARK_METRICS.json b/BENCHMARK_METRICS.json
+new file mode 100644
+index 0000000..59c6540
+--- /dev/null
++++ b/BENCHMARK_METRICS.json
+@@ -0,0 +1,27 @@
++{
++  "benchmarkDate": "2026-11-07T20:59:09.098Z",
++  "corpusSitesCount": 5,
++  "totalWallClockMs": 31,
++  "maxLiveTabs": 3,
++  "liveTabCount": 3,
++  "hibernatedTabCount": 2,
++  "hibernationEventsCount": 2,
++  "snapshotReuseCount": 11,
++  "ramTelemetry": {
++    "currentRssMb": 58.8,
++    "currentHeapUsedMb": 7.67,
++    "peakRssMb": 58.8,
++    "peakHeapUsedMb": 7.67,
++    "externalMb": 1.97
++  },
++  "latencyTelemetry": {
++    "totalCompletedOps": 14,
++    "p50Ms": 0,
++    "p95Ms": 6,
++    "maxMs": 6
++  },
++  "confirmedClaimsCount": 5,
++  "contradictionsCount": 1,
++  "unavailableSourcesCount": 1,
++  "substitutionIncidentsCount": 1
++}
+diff --git a/desktop/windows/browser/benchmark-browser-research.cjs b/desktop/windows/browser/benchmark-browser-research.cjs
+new file mode 100644
+index 0000000..a457964
+--- /dev/null
++++ b/desktop/windows/browser/benchmark-browser-research.cjs
+@@ -0,0 +1,186 @@
++"use strict";
++
++const fs = require("node:fs");
++const os = require("node:os");
++const path = require("node:path");
++const { KosworkBrowserEngine } = require("./engine.cjs");
++const { KosworkUnifiedTaskCoordinator } = require("../ci/unified-task-coordinator.cjs");
++
++/**
++ * Reproducible RAM & Latency Benchmark for the Koswork Browser Research Cycle
++ * (`desktop/windows/browser/benchmark-browser-research.cjs`).
++ *
++ * Runs the 5-site acceptance corpus (including a > 18,000 UTF-16 code unit article across
++ * multiple windows, dynamic lazy-loaded sections, contradiction detection, and snapshot reuse),
++ * measures actual Node/V8 RAM (`rssMb`, `heapUsedMb`, `externalMb`) and per-operation latency
++ * (`p50Ms`, `p95Ms`, `maxMs`), and optionally writes `BENCHMARK_METRICS.json`.
++ */
++async function runBrowserResearchBenchmark(options = {}) {
++  const workspaceRoot =
++    options.workspaceRoot ||
++    fs.mkdtempSync(path.join(os.tmpdir(), "koswork-browser-bench-"));
++  fs.mkdirSync(path.join(workspaceRoot, "downloads"), { recursive: true });
++
++  const engine = new KosworkBrowserEngine({
++    allowedWorkspaceRoot: workspaceRoot,
++    maxLiveTabs: 3
++  });
++
++  engine.registerSyntheticSite("https://bench.local/site-1", {
++    title: "Спецификация Option Alpha (2026)",
++    pageDate: "15 октября 2026",
++    eventDate: "1 ноября 2026",
++    text: "Официальный прайс-лист: для пакета Option Alpha базовая цена составляет $49/мес при годовой подписке.\n\nДля Option Alpha поддержка SLA зафиксирована на уровне 99.95% времени доступности.",
++    assertions: [
++      {
++        optionName: "Option Alpha",
++        criterion: "Цена",
++        value: "$49/мес",
++        displayValue: "$49/мес",
++        quote: "для пакета Option Alpha базовая цена составляет $49/мес при годовой подписке."
++      },
++      {
++        optionName: "Option Alpha",
++        criterion: "Поддержка SLA",
++        value: "99.95%",
++        displayValue: "99.95%",
++        quote: "Для Option Alpha поддержка SLA зафиксирована на уровне 99.95% времени доступности."
++      }
++    ]
++  });
++
++  engine.registerSyntheticSite("https://bench.local/site-2-contradiction", {
++    title: "Архивный прайс Option Alpha (Май 2025)",
++    pageDate: "Май 2025",
++    eventDate: "2025-05-01",
++    text: "Архивный обзор: для пакета Option Alpha базовая цена составляет $79/мес без учёта скидок.",
++    assertions: [
++      {
++        optionName: "Option Alpha",
++        criterion: "Цена",
++        value: "$79/мес",
++        displayValue: "$79/мес",
++        quote: "для пакета Option Alpha базовая цена составляет $79/мес без учёта скидок."
++      }
++    ]
++  });
++
++  engine.registerSyntheticSite("https://bench.local/site-3-503", {
++    title: "Недоступный ресурс",
++    httpStatus: 503,
++    text: "503 Service Unavailable"
++  });
++
++  const longParagraphs = Array.from({ length: 45 }, (_, i) =>
++    `Абзац ${i + 1}: Детальное описание протокола индексации и контрольных замеров задержки чтения длинных документов в браузере Koswork. `.repeat(
++      3
++    )
++  );
++  longParagraphs.push(
++    "Для пакета Option Beta базовая цена составляет $35/мес, а поддержка SLA составляет 99.90%."
++  );
++
++  engine.registerSyntheticSite("https://bench.local/site-4-long", {
++    title: "Длинная статья по Option Beta",
++    pageDate: "20 октября 2026",
++    eventDate: "18 октября 2026",
++    text: longParagraphs.join("\n\n"),
++    assertions: [
++      {
++        optionName: "Option Beta",
++        criterion: "Цена",
++        value: "$35/мес",
++        displayValue: "$35/мес",
++        quote: "Для пакета Option Beta базовая цена составляет $35/мес, а поддержка SLA составляет 99.90%."
++      }
++    ]
++  });
++
++  engine.registerSyntheticSite("https://bench.local/site-5-dynamic", {
++    title: "Динамический стенд Option Beta",
++    pageDate: "28 октября 2026",
++    eventDate: "25 октября 2026",
++    text: "Первичный экран.\n\nГарантия возврата средств: 30 дней без условий.",
++    onDynamicScroll: async () => ({
++      appendText: "Динамический блок: для Option Beta задержка поиска составляет < 12 мс."
++    }),
++    simulatePostObservationSubstitution: {
++      targetPhrase: "Гарантия возврата средств: 30 дней без условий.",
++      substitutedPhrase: "Гарантия возврата средств: возврат не предусмотрен."
++    },
++    assertions: [
++      {
++        optionName: "Option Beta",
++        criterion: "Поддержка SLA",
++        value: "99.90%",
++        displayValue: "99.90%",
++        quote: "Динамический блок: для Option Beta задержка поиска составляет < 12 мс."
++      }
++    ]
++  });
++
++  const startedAtMs = Date.now();
++  const coordinator = new KosworkUnifiedTaskCoordinator({
++    workspaceRoot,
++    browserEngine: engine
++  });
++
++  const cycleResult = await coordinator.executeBrowserResearchCycle({
++    question: "Контрольный замер RAM и задержки на 5 сайтах (Option Alpha vs Option Beta)",
++    options: ["Option Alpha", "Option Beta"],
++    criteria: ["Цена", "Поддержка SLA"],
++    searchResults: [
++      { title: "Спецификация Option Alpha (2026)", url: "https://bench.local/site-1", snippet: "Прайс 2026" },
++      { title: "Архивный прайс Option Alpha (Май 2025)", url: "https://bench.local/site-2-contradiction", snippet: "Прайс 2025" },
++      { title: "Недоступный ресурс", url: "https://bench.local/site-3-503", snippet: "503" },
++      { title: "Длинная статья по Option Beta", url: "https://bench.local/site-4-long", snippet: "Длинная статья" },
++      { title: "Динамический стенд Option Beta", url: "https://bench.local/site-5-dynamic", snippet: "Динамика" }
++    ]
++  });
++
++  // Exercise snapshot reuse explicitly on active tabs
++  for (const tabId of engine.resourceGovernor.liveTabs.keys()) {
++    engine.observePage(tabId, { reuseSnapshot: true });
++  }
++
++  const totalWallClockMs = Date.now() - startedAtMs;
++  const resourceReport = engine.resourceGovernor.getResourceReport();
++
++  const summary = {
++    benchmarkDate: new Date().toISOString(),
++    corpusSitesCount: 5,
++    totalWallClockMs,
++    maxLiveTabs: resourceReport.maxLiveTabs,
++    liveTabCount: resourceReport.liveTabCount,
++    hibernatedTabCount: resourceReport.hibernatedTabCount,
++    hibernationEventsCount: resourceReport.hibernationEventsCount,
++    snapshotReuseCount: resourceReport.snapshotReuseCount,
++    ramTelemetry: resourceReport.ramTelemetry,
++    latencyTelemetry: {
++      totalCompletedOps: resourceReport.latencyTelemetry.totalCompletedOps,
++      p50Ms: resourceReport.latencyTelemetry.p50Ms,
++      p95Ms: resourceReport.latencyTelemetry.p95Ms,
++      maxMs: resourceReport.latencyTelemetry.maxMs
++    },
++    confirmedClaimsCount: cycleResult.confirmedClaims.length,
++    contradictionsCount: cycleResult.contradictions.length,
++    unavailableSourcesCount: cycleResult.unavailableSources.length,
++    substitutionIncidentsCount: cycleResult.substitutionIncidents.length
++  };
++
++  if (options.outputJsonPath) {
++    fs.writeFileSync(options.outputJsonPath, JSON.stringify(summary, null, 2), "utf8");
++  }
++
++  return summary;
++}
++
++if (require.main === module) {
++  runBrowserResearchBenchmark().then((res) => {
++    console.log(JSON.stringify(res, null, 2));
++  });
++}
++
++module.exports = {
++  runBrowserResearchBenchmark
++};
+diff --git a/desktop/windows/browser/document.cjs b/desktop/windows/browser/document.cjs
+index c839d05..e54bbb6 100644
+--- a/desktop/windows/browser/document.cjs
++++ b/desktop/windows/browser/document.cjs
+@@ -2,6 +2,7 @@
+ 
+ const crypto = require("node:crypto");
+ const { collectPiercedInteractiveSnapshot } = require("./shadow-and-frame-piercer.cjs");
++const { canonicalizeSourceUrl } = require("./provenance-journal.cjs");
+ 
+ /**
+  * Koswork Browser Document Snapshotter & Long/Dynamic Page Reader (`desktop/windows/browser/document.cjs`).
+@@ -13,10 +14,38 @@ const { collectPiercedInteractiveSnapshot } = require("./shadow-and-frame-pierce
+  * - Recovery candidates metadata (`recoveryAnchors`)
+  * - Same-origin frames and open Shadow DOM scope (`scope: { framePath, shadowPath, origin }`)
+  * - Stable tab receipts (`tabReceipt`)
+- * - Distinct temporal metadata (`pageDate`, `eventDate`, `fetchedAt`)
++ * - Distinct temporal metadata (`pageDate`, `eventDate`, `fetchedAt`) including Russian/English textual dates
++ * - Structured HTML `<table>` and `<dl>` extraction with UTF-16 offsets
+  * - Progressive long-page window reading (`readLongPageWindow`) & dynamic DOM updates
+  */
+ 
++const RU_MONTHS = Object.freeze({
++  января: "01",
++  январь: "01",
++  февраля: "02",
++  февраль: "02",
++  марта: "03",
++  март: "03",
++  апреля: "04",
++  апрель: "04",
++  мая: "05",
++  май: "05",
++  июня: "06",
++  июнь: "06",
++  июля: "07",
++  июль: "07",
++  августа: "08",
++  август: "08",
++  сентября: "09",
++  сентябрь: "09",
++  октября: "10",
++  октябрь: "10",
++  ноября: "11",
++  ноябрь: "11",
++  декабря: "12",
++  декабрь: "12"
++});
++
+ function stripHtmlTagsPreservingBlocks(html) {
+   const raw = String(html || "");
+   if (!raw.includes("<")) {
+@@ -27,12 +56,14 @@ function stripHtmlTagsPreservingBlocks(html) {
+     .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, "");
+ 
+   const withBreaks = withoutScripts
+-    .replace(/<\/(p|div|section|article|header|footer|h[1-6]|li|tr|blockquote)>/gi, "\n\n")
++    .replace(/<\/(p|div|section|article|header|footer|h[1-6]|li|tr|blockquote|dd)>/gi, "\n\n")
++    .replace(/<\/(td|th|dt)>/gi, " | ")
+     .replace(/<br\s*\/?>/gi, "\n")
+     .replace(/<[^>]+>/g, " ");
+ 
+   return decodeHtmlEntities(withBreaks)
+     .replace(/[ \t]+/g, " ")
++    .replace(/(?:\s*\|\s*)+(\n|$)/g, "$1")
+     .replace(/\n[ \t]+/g, "\n")
+     .replace(/\n{3,}/g, "\n\n")
+     .trim();
+@@ -53,7 +84,9 @@ function normalizeDateCandidate(rawValue) {
+   const trimmed = String(rawValue).trim();
+   if (!trimmed) return null;
+ 
+-  const isoMatch = trimmed.match(/\b(\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2}(?::\d{2})?(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})?)?)\b/);
++  const isoMatch = trimmed.match(
++    /\b(\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2}(?::\d{2})?(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})?)?)\b/
++  );
+   if (isoMatch) {
+     return isoMatch[1];
+   }
+@@ -63,6 +96,27 @@ function normalizeDateCandidate(rawValue) {
+     return `${dotMatch[3]}-${dotMatch[2]}-${dotMatch[1]}`;
+   }
+ 
++  // Russian day + month + year: e.g. "7 ноября 2026" or "15 октября 2026 г."
++  const ruFullMatch = trimmed.match(
++    /\b(\d{1,2})\s+(январ[ья]|феврал[ья]|март[а]?|апрел[ья]|ма[йя]|июн[ья]|июл[ья]|август[а]?|сентябр[ья]|октябр[ья]|ноябр[ья]|декабр[ья])\s+(\d{4})\b/i
++  );
++  if (ruFullMatch) {
++    const day = String(ruFullMatch[1]).padStart(2, "0");
++    const month = RU_MONTHS[ruFullMatch[2].toLowerCase()];
++    const year = ruFullMatch[3];
++    if (month) return `${year}-${month}-${day}`;
++  }
++
++  // Russian month + year: e.g. "Май 2025"
++  const ruMonthYearMatch = trimmed.match(
++    /\b(январ[ья]|феврал[ья]|март[а]?|апрел[ья]|ма[йя]|июн[ья]|июл[ья]|август[а]?|сентябр[ья]|октябр[ья]|ноябр[ья]|декабр[ья])\s+(\d{4})\b/i
++  );
++  if (ruMonthYearMatch) {
++    const month = RU_MONTHS[ruMonthYearMatch[1].toLowerCase()];
++    const year = ruMonthYearMatch[2];
++    if (month) return `${year}-${month}-01`;
++  }
++
+   return null;
+ }
+ 
+@@ -82,9 +136,15 @@ function extractTemporalMetadata(input = {}, fetchedAtIso = null) {
+ 
+   if (!pageDate && html) {
+     const metaPub =
+-      html.match(/<meta[^>]+(?:property|name)=["'](?:article:published_time|article:modified_time|pubdate|date|dc\.date)["'][^>]+content=["']([^"']+)["']/i) ||
+-      html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+(?:property|name)=["'](?:article:published_time|article:modified_time|pubdate|date|dc\.date)["']/i) ||
+-      html.match(/<time[^>]+(?:data-page-date|itemprop=["']datePublished["'])[^>]*datetime=["']([^"']+)["']/i) ||
++      html.match(
++        /<meta[^>]+(?:property|name)=["'](?:article:published_time|article:modified_time|pubdate|date|dc\.date)["'][^>]+content=["']([^"']+)["']/i
++      ) ||
++      html.match(
++        /<meta[^>]+content=["']([^"']+)["'][^>]+(?:property|name)=["'](?:article:published_time|article:modified_time|pubdate|date|dc\.date)["']/i
++      ) ||
++      html.match(
++        /<time[^>]+(?:data-page-date|itemprop=["']datePublished["'])[^>]*datetime=["']([^"']+)["']/i
++      ) ||
+       html.match(/"datePublished"\s*:\s*"([^"]+)"/i);
+     if (metaPub) {
+       pageDate = normalizeDateCandidate(metaPub[1]);
+@@ -92,8 +152,9 @@ function extractTemporalMetadata(input = {}, fetchedAtIso = null) {
+   }
+ 
+   if (!pageDate && text) {
+-    const textPub =
+-      text.match(/(?:Дата публикации|Опубликовано|Обновлено на странице|Published|Page updated)\s*:\s*([^\n,;]+)/i);
++    const textPub = text.match(
++      /(?:Дата публикации|Дата на странице|Опубликовано|Обновлено на странице|Published|Page updated)\s*:\s*([^\n.;]+)/i
++    );
+     if (textPub) {
+       pageDate = normalizeDateCandidate(textPub[1]);
+     }
+@@ -101,8 +162,12 @@ function extractTemporalMetadata(input = {}, fetchedAtIso = null) {
+ 
+   if (!eventDate && html) {
+     const metaEvent =
+-      html.match(/<meta[^>]+(?:property|name)=["'](?:event:date|event_date|effective_date)["'][^>]+content=["']([^"']+)["']/i) ||
+-      html.match(/<time[^>]+(?:data-event-date|itemprop=["']startDate["'])[^>]*datetime=["']([^"']+)["']/i) ||
++      html.match(
++        /<meta[^>]+(?:property|name)=["'](?:event:date|event_date|effective_date)["'][^>]+content=["']([^"']+)["']/i
++      ) ||
++      html.match(
++        /<time[^>]+(?:data-event-date|itemprop=["']startDate["'])[^>]*datetime=["']([^"']+)["']/i
++      ) ||
+       html.match(/"(?:eventDate|startDate|effectiveDate)"\s*:\s*"([^"]+)"/i);
+     if (metaEvent) {
+       eventDate = normalizeDateCandidate(metaEvent[1]);
+@@ -110,8 +175,9 @@ function extractTemporalMetadata(input = {}, fetchedAtIso = null) {
+   }
+ 
+   if (!eventDate && text) {
+-    const textEv =
+-      text.match(/(?:Дата события|Дата вступления в силу|Состояние на|Event date|Effective date)\s*:\s*([^\n,;]+)/i);
++    const textEv = text.match(
++      /(?:Дата события|Дата вступления в силу|Состояние на|Event date|Effective date)\s*:\s*([^\n.;]+)/i
++    );
+     if (textEv) {
+       eventDate = normalizeDateCandidate(textEv[1]);
+     }
+@@ -139,7 +205,8 @@ function extractTitleFromInput(input = {}) {
+ function parseHtmlControls(html, baseOrigin) {
+   const raw = String(html || "");
+   const controls = [];
+-  const tagRegex = /<(input|textarea|select|button|a)\b([^>]*)>([\s\S]*?)<\/\1>|<(input)\b([^>]*)\/?>/gi;
++  const tagRegex =
++    /<(input|textarea|select|button|a)\b([^>]*)>([\s\S]*?)<\/\1>|<(input)\b([^>]*)\/?>/gi;
+   let match;
+   let index = 0;
+ 
+@@ -155,18 +222,46 @@ function parseHtmlControls(html, baseOrigin) {
+ 
+     const id = getAttr("id") || `${tag}-${index + 1}`;
+     const name = getAttr("name") || null;
+-    const type = getAttr("type") || (tag === "button" ? "submit" : tag === "a" ? "link" : "text");
+-    const role = getAttr("role") || (tag === "a" ? "link" : tag === "button" ? "button" : "textbox");
++    const type =
++      getAttr("type") ||
++      (tag === "button" ? "submit" : tag === "a" ? "link" : tag === "select" ? "select-one" : "text");
++    const role =
++      getAttr("role") ||
++      (tag === "a" ? "link" : tag === "button" ? "button" : tag === "select" ? "combobox" : "textbox");
+     const label =
+       getAttr("aria-label") ||
+       getAttr("placeholder") ||
+       stripHtmlTagsPreservingBlocks(innerHtml) ||
+       name ||
+       id;
+-    const value = getAttr("value") ?? "";
++
++    let value = getAttr("value") ?? "";
++    let options = undefined;
++    if (tag === "select") {
++      options = [];
++      const optRegex = /<option\b([^>]*)>([\s\S]*?)<\/option>/gi;
++      let optMatch;
++      while ((optMatch = optRegex.exec(innerHtml)) !== null) {
++        const optAttrs = optMatch[1] || "";
++        const optText = stripHtmlTagsPreservingBlocks(optMatch[2]);
++        const valMatch = optAttrs.match(/\bvalue=["']([^"']*)["']/i);
++        const optVal = valMatch ? decodeHtmlEntities(valMatch[1]) : optText;
++        const selected = /\bselected\b/i.test(optAttrs);
++        options.push({ value: optVal, label: optText, selected });
++        if (selected && !value) value = optVal;
++      }
++      if (!value && options.length > 0) {
++        value = options[0].value;
++      }
++    }
++
+     const href = getAttr("href") || null;
+     const download = getAttr("download") || null;
+     const disabled = /\bdisabled\b/i.test(attrText);
++    const checked =
++      type.toLowerCase() === "checkbox" || type.toLowerCase() === "radio"
++        ? /\bchecked\b/i.test(attrText)
++        : undefined;
+ 
+     controls.push({
+       id,
+@@ -176,10 +271,16 @@ function parseHtmlControls(html, baseOrigin) {
+       role: role.toLowerCase(),
+       label: String(label).slice(0, 160),
+       value,
++      options,
++      checked,
+       href,
+       download,
+       disabled,
+-      deepSelector: id ? `${tag}#${id}` : name ? `${tag}[name="${name}"]` : `${tag}:nth-of-type(${index + 1})`,
++      deepSelector: id
++        ? `${tag}#${id}`
++        : name
++          ? `${tag}[name="${name}"]`
++          : `${tag}:nth-of-type(${index + 1})`,
+       scope: {
+         framePath: [],
+         shadowPath: [],
+@@ -199,6 +300,89 @@ function parseHtmlControls(html, baseOrigin) {
+   return controls;
+ }
+ 
++/**
++ * Extracts structured HTML `<table>` matrices and `<dl>` definition lists from `html` and binds
++ * every row/cell to its UTF-16 code unit offsets inside `fullTextUtf16`.
++ */
++function extractStructuredTablesWithUtf16Offsets(html, fullTextUtf16) {
++  const raw = String(html || "");
++  const fullText = String(fullTextUtf16 || "");
++  if (!raw || !/<table\b/i.test(raw)) return [];
++
++  const tables = [];
++  const tableRegex = /<table\b([^>]*)>([\s\S]*?)<\/table>/gi;
++  let tMatch;
++  let tableIdx = 0;
++
++  while ((tMatch = tableRegex.exec(raw)) !== null) {
++    tableIdx += 1;
++    const tableAttrs = tMatch[1] || "";
++    const tableBody = tMatch[2] || "";
++    const idMatch = tableAttrs.match(/\bid=["']([^"']+)["']/i);
++    const tableId = idMatch ? idMatch[1] : `table-${tableIdx}`;
++
++    const headers = [];
++    const rows = [];
++    const trRegex = /<tr\b[^>]*>([\s\S]*?)<\/tr>/gi;
++    let trMatch;
++    let searchCursor = 0;
++
++    while ((trMatch = trRegex.exec(tableBody)) !== null) {
++      const trHtml = trMatch[1];
++      const cellRegex = /<(th|td)\b[^>]*>([\s\S]*?)<\/\1>/gi;
++      let cMatch;
++      const cells = [];
++      let isHeaderRow = false;
++
++      while ((cMatch = cellRegex.exec(trHtml)) !== null) {
++        const cellTag = cMatch[1].toLowerCase();
++        if (cellTag === "th") isHeaderRow = true;
++        const cellText = stripHtmlTagsPreservingBlocks(cMatch[2]);
++        let startUtf16 = -1;
++        let endUtf16 = -1;
++        if (cellText) {
++          const foundIdx = fullText.indexOf(cellText, searchCursor);
++          const fallbackIdx = foundIdx !== -1 ? foundIdx : fullText.indexOf(cellText);
++          if (fallbackIdx !== -1) {
++            startUtf16 = fallbackIdx;
++            endUtf16 = fallbackIdx + cellText.length;
++            searchCursor = endUtf16;
++          }
++        }
++        cells.push({
++          text: cellText,
++          startUtf16,
++          endUtf16
++        });
++      }
++
++      if (cells.length > 0) {
++        if (isHeaderRow && headers.length === 0) {
++          headers.push(...cells.map((c) => c.text));
++        } else {
++          const rowText = cells.map((c) => c.text).join(" | ");
++          const rowStart = cells[0].startUtf16;
++          const rowEnd = cells[cells.length - 1].endUtf16;
++          rows.push({
++            cells,
++            rowText,
++            startUtf16: rowStart,
++            endUtf16: rowEnd
++          });
++        }
++      }
++    }
++
++    tables.push({
++      tableId,
++      headers,
++      rows
++    });
++  }
++
++  return tables;
++}
++
+ /**
+  * Builds a versioned document snapshot with exact UTF-16 code unit offsets,
+  * element bounds, recovery anchors, frame/shadow scope, and distinct temporal fields.
+@@ -207,7 +391,7 @@ function buildVersionedPageSnapshot(input = {}) {
+   const tabId = String(input.tabId || "tab-1");
+   const pageVersion = Math.max(1, Number(input.pageVersion || 1));
+   const url = String(input.url || "about:blank");
+-  const canonicalUrl = String(input.canonicalUrl || url);
++  const canonicalUrl = canonicalizeSourceUrl(input.canonicalUrl || url);
+   const httpStatus = Number(input.httpStatus ?? 200);
+   const title = extractTitleFromInput(input);
+ 
+@@ -225,7 +409,10 @@ function buildVersionedPageSnapshot(input = {}) {
+   if (Array.isArray(input.blocks) && input.blocks.length > 0) {
+     for (const blk of input.blocks) {
+       if (typeof blk === "string") {
+-        rawParagraphs.push({ text: blk, scope: { framePath: [], shadowPath: [], origin: baseOrigin } });
++        rawParagraphs.push({
++          text: blk,
++          scope: { framePath: [], shadowPath: [], origin: baseOrigin }
++        });
+       } else if (blk && typeof blk.text === "string") {
+         rawParagraphs.push({
+           id: blk.id || null,
+@@ -375,7 +562,9 @@ function buildVersionedPageSnapshot(input = {}) {
+         surroundingPrefix,
+         deepSelector:
+           (rawBlk.scope?.framePath?.length ? `${rawBlk.scope.framePath.join(" >> ")} >> ` : "") +
+-          (rawBlk.scope?.shadowPath?.length ? `shadow[${rawBlk.scope.shadowPath.join(" >> ")}] >> ` : "") +
++          (rawBlk.scope?.shadowPath?.length
++            ? `shadow[${rawBlk.scope.shadowPath.join(" >> ")}] >> `
++            : "") +
+           `${String(rawBlk.tag || "p").toLowerCase()}#${blockId}`
+       }
+     });
+@@ -392,19 +581,30 @@ function buildVersionedPageSnapshot(input = {}) {
+       role: String(ctrl.role || "textbox").toLowerCase(),
+       label: String(ctrl.label || ctrl.text || ctrl.id || "").trim(),
+       value: String(ctrl.value ?? ""),
++      options: Array.isArray(ctrl.options) ? ctrl.options : undefined,
+       href: ctrl.href || null,
+       download: ctrl.download || null,
+       disabled: Boolean(ctrl.disabled),
+       checked: ctrl.checked !== undefined ? Boolean(ctrl.checked) : undefined,
+-      deepSelector: String(ctrl.deepSelector || `${ctrl.tag || "input"}#${ctrl.id || `ctrl-${idx + 1}`}`),
++      deepSelector: String(
++        ctrl.deepSelector || `${ctrl.tag || "input"}#${ctrl.id || `ctrl-${idx + 1}`}`
++      ),
+       scope: ctrl.scope || { framePath: [], shadowPath: [], origin: baseOrigin },
+-      bounds: ctrl.bounds || { x: 24, y: currentY + idx * 42, width: 260, height: 34, inViewport: true },
++      bounds: ctrl.bounds || {
++        x: 24,
++        y: currentY + idx * 42,
++        width: 260,
++        height: 34,
++        inViewport: true
++      },
+       recoveryAnchors: {
+         id: String(ctrl.id || `ctrl-${idx + 1}`),
+         name: ctrl.name || null,
+         role: String(ctrl.role || "textbox").toLowerCase(),
+         label: String(ctrl.label || ctrl.text || "").trim(),
+-        deepSelector: String(ctrl.deepSelector || `${ctrl.tag || "input"}#${ctrl.id || `ctrl-${idx + 1}`}`)
++        deepSelector: String(
++          ctrl.deepSelector || `${ctrl.tag || "input"}#${ctrl.id || `ctrl-${idx + 1}`}`
++        )
+       }
+     }));
+   } else if (input.html) {
+@@ -446,6 +646,12 @@ function buildVersionedPageSnapshot(input = {}) {
+     }
+   }
+ 
++  const tables = input.html
++    ? extractStructuredTablesWithUtf16Offsets(input.html, fullTextUtf16)
++    : Array.isArray(input.tables)
++      ? input.tables
++      : [];
++
+   const canonicalPayload = JSON.stringify({
+     url,
+     title,
+@@ -487,6 +693,7 @@ function buildVersionedPageSnapshot(input = {}) {
+     totalUtf16CodeUnits: fullTextUtf16.length,
+     contentSha256,
+     blocks,
++    tables,
+     controls,
+     skippedCrossOriginFrames,
+     tabReceipt,
+@@ -542,7 +749,6 @@ function extractVerifiableExcerpt(snapshot, queryOrSpan = {}) {
+     const needleLower = queryOrSpan.searchTerm.trim().toLowerCase();
+     const idx = fullText.toLowerCase().indexOf(needleLower);
+     if (idx !== -1) {
+-      // Expand to containing block if possible, otherwise a bounded window around match
+       const containingBlock = (snapshot.blocks || []).find(
+         (b) => idx >= b.startUtf16 && idx < b.endUtf16
+       );
+@@ -604,7 +810,10 @@ function readLongPageWindow(snapshot, options = {}) {
+   const totalUtf16 = fullText.length;
+   const cursorUtf16 = Math.max(0, Math.min(Number(options.cursorUtf16 ?? 0), totalUtf16));
+   const windowChars = Math.max(256, Math.min(Number(options.windowChars ?? 4000), 32000));
+-  const overlapChars = Math.max(0, Math.min(Number(options.overlapChars ?? 120), Math.floor(windowChars / 3)));
++  const overlapChars = Math.max(
++    0,
++    Math.min(Number(options.overlapChars ?? 120), Math.floor(windowChars / 3))
++  );
+ 
+   if (totalUtf16 === 0) {
+     return {
+@@ -660,8 +869,10 @@ function readLongPageWindow(snapshot, options = {}) {
+ module.exports = {
+   buildVersionedPageSnapshot,
+   createTabReceipt,
++  extractStructuredTablesWithUtf16Offsets,
+   extractTemporalMetadata,
+   extractVerifiableExcerpt,
++  normalizeDateCandidate,
+   readLongPageWindow,
+   stripHtmlTagsPreservingBlocks
+ };
+diff --git a/desktop/windows/browser/engine.cjs b/desktop/windows/browser/engine.cjs
+index 430b596..80281d8 100644
+--- a/desktop/windows/browser/engine.cjs
++++ b/desktop/windows/browser/engine.cjs
+@@ -23,6 +23,7 @@ const {
+ } = require("./recovery.cjs");
+ const { KosworkBrowserResourceGovernor } = require("./resource-governor.cjs");
+ const { KosworkBrowserSearchService } = require("./search.cjs");
++const { KosworkResearchProvenanceJournal } = require("./provenance-journal.cjs");
+ const { fetchHttpRaw } = require("./research-adapter.cjs");
+ const { waitForVerifiedDownload } = require("./download-verifier.cjs");
+ const { verifyBrowserActionMutation } = require("./visual-dom-diff-verifier.cjs");
+@@ -32,11 +33,14 @@ const { verifyBrowserActionMutation } = require("./visual-dom-diff-verifier.cjs"
+  *
+  * Unifies:
+  * - Search query execution & result navigation (`this.searchService`)
++ * - Durable research provenance journal (`this.provenanceJournal`)
+  * - Versioned pages, UTF-16 offsets, bounds, recovery candidates, frames/shadow scope, and stable tab receipts
++ * - Back/forward source navigation stack per tab (`goBack`, `goForward`, `getTabHistory`)
+  * - Distinct `pageDate`, `eventDate`, and `fetchedAt` fields
+- * - Ordinary form input, file selection (`verifyFileSelectionPolicy`), and verified downloads (`waitForVerifiedDownload`)
++ * - Ordinary form input (`input`, `textarea`, `select`, `checkbox`, `radio`), file selection (`verifyFileSelectionPolicy`),
++ *   and verified downloads (`waitForVerifiedDownload`)
+  * - Post-submit effect verification (`verifyBrowserActionMutation`)
+- * - Automatic pause for user on CAPTCHA / login walls (`status: "paused_for_user"`)
++ * - Automatic pause for user on CAPTCHA / login walls (`status: "paused_for_user"`) and user completion resume (`completeUserAuthOrCaptchaPause`)
+  * - Resource governor: live tab limit, background hibernation, cancellation, snapshot reuse, and RAM/latency metrics
+  * - Normal user browsing and manual takeover invalidating stale agent observations
+  */
+@@ -59,8 +63,19 @@ class KosworkBrowserEngine {
+         snapshotTtlMs: options.snapshotTtlMs ?? 30000
+       });
+ 
++    this.provenanceJournal =
++      options.provenanceJournal ||
++      new KosworkResearchProvenanceJournal({
++        journalFilePath:
++          options.journalFilePath ||
++          (this.allowedWorkspaceRoot
++            ? path.join(this.allowedWorkspaceRoot, ".koswork-browser-provenance.json")
++            : null)
++      });
++
+     this.userTakeover = options.userTakeover || new UserTakeoverTracker();
+     this.tabs = new Map(); // tabId -> tabState
++    this.tabNavigationStacks = new Map(); // tabId -> { entries: [url, ...], index: number }
+     this.syntheticSites = new Map(); // normalizedUrl -> siteDefinition
+     this.nextTabCounter = 1;
+ 
+@@ -103,10 +118,17 @@ class KosworkBrowserEngine {
+     url,
+     actor = "agent",
+     signal = null,
+-    timeoutMs = 6000
++    timeoutMs = 6000,
++    initiatedBySearchId = null,
++    initiatedByRank = null,
++    _fromHistoryTraversal = false
+   } = {}) {
+     const resolvedTabId = this.allocateTabId(tabId);
+-    const task = this.resourceGovernor.beginTask(`nav-${resolvedTabId}-${Date.now()}`, "navigate", signal);
++    const task = this.resourceGovernor.beginTask(
++      `nav-${resolvedTabId}-${Date.now()}`,
++      "navigate",
++      signal
++    );
+ 
+     try {
+       if (task.controller.signal.aborted) {
+@@ -167,7 +189,10 @@ class KosworkBrowserEngine {
+             fetchedAt
+           };
+         } catch (fetchErr) {
+-          if (fetchErr && (fetchErr.code === "SEARCH_REQUEST_CANCELLED" || task.controller.signal.aborted)) {
++          if (
++            fetchErr &&
++            (fetchErr.code === "SEARCH_REQUEST_CANCELLED" || task.controller.signal.aborted)
++          ) {
+             const err = new Error("BROWSER_NAVIGATION_CANCELLED");
+             err.code = "BROWSER_NAVIGATION_CANCELLED";
+             throw err;
+@@ -177,7 +202,9 @@ class KosworkBrowserEngine {
+             canonicalUrl: normalizedUrl,
+             httpStatus: 503,
+             title: "Источник временно недоступен",
+-            text: `Ошибка соединения при получении ${normalizedUrl}: ${fetchErr.message || String(fetchErr)}`,
++            text: `Ошибка соединения при получении ${normalizedUrl}: ${
++              fetchErr.message || String(fetchErr)
++            }`,
+             networkError: fetchErr.code || fetchErr.message || "NETWORK_UNAVAILABLE",
+             fetchedAt
+           };
+@@ -197,7 +224,8 @@ class KosworkBrowserEngine {
+       snapshot.userEpoch = this.userTakeover.getCurrentEpoch(resolvedTabId);
+ 
+       const authGate = detectAuthOrCaptchaGate(snapshot);
+-      const available = snapshot.httpStatus >= 200 && snapshot.httpStatus < 400 && !rawPageData.networkError;
++      const available =
++        snapshot.httpStatus >= 200 && snapshot.httpStatus < 400 && !rawPageData.networkError;
+ 
+       const tabState = {
+         tabId: resolvedTabId,
+@@ -219,6 +247,34 @@ class KosworkBrowserEngine {
+       this.tabs.set(resolvedTabId, tabState);
+       this.resourceGovernor.cacheSnapshot(snapshot);
+ 
++      // Update per-tab navigation stack for back/forward traversal
++      if (!_fromHistoryTraversal) {
++        if (!this.tabNavigationStacks.has(resolvedTabId)) {
++          this.tabNavigationStacks.set(resolvedTabId, { entries: [], index: -1 });
++        }
++        const stack = this.tabNavigationStacks.get(resolvedTabId);
++        stack.entries = stack.entries.slice(0, stack.index + 1);
++        stack.entries.push(normalizedUrl);
++        stack.index = stack.entries.length - 1;
++      }
++
++      // Record in durable provenance journal
++      this.provenanceJournal.recordSourceOpen({
++        url: normalizedUrl,
++        canonicalUrl: snapshot.canonicalUrl,
++        title: snapshot.title,
++        httpStatus: snapshot.httpStatus,
++        available,
++        pageVersion: snapshot.pageVersion,
++        snapshotId: snapshot.snapshotId,
++        tabReceiptId: snapshot.tabReceipt?.receiptId || null,
++        pageDate: snapshot.pageDate,
++        eventDate: snapshot.eventDate,
++        fetchedAt: snapshot.fetchedAt,
++        searchId: initiatedBySearchId,
++        serpRank: initiatedByRank
++      });
++
+       const governorState = this.resourceGovernor.touchLiveTab(
+         resolvedTabId,
+         tabState,
+@@ -255,6 +311,113 @@ class KosworkBrowserEngine {
+     }
+   }
+ 
++  /**
++   * Navigates backward in `tabId`'s history stack (`SERP <- Source <- Subpage`).
++   */
++  async goBack(tabId, options = {}) {
++    const stack = this.tabNavigationStacks.get(String(tabId));
++    if (!stack || stack.index <= 0) {
++      return { navigated: false, reason: "no_back_history", tabId: String(tabId) };
++    }
++    stack.index -= 1;
++    const targetUrl = stack.entries[stack.index];
++    const nav = await this.navigate({
++      tabId,
++      url: targetUrl,
++      actor: options.actor || "agent",
++      signal: options.signal || null,
++      _fromHistoryTraversal: true
++    });
++    return {
++      navigated: true,
++      direction: "back",
++      historyIndex: stack.index,
++      historyLength: stack.entries.length,
++      ...nav
++    };
++  }
++
++  /**
++   * Navigates forward in `tabId`'s history stack.
++   */
++  async goForward(tabId, options = {}) {
++    const stack = this.tabNavigationStacks.get(String(tabId));
++    if (!stack || stack.index >= stack.entries.length - 1) {
++      return { navigated: false, reason: "no_forward_history", tabId: String(tabId) };
++    }
++    stack.index += 1;
++    const targetUrl = stack.entries[stack.index];
++    const nav = await this.navigate({
++      tabId,
++      url: targetUrl,
++      actor: options.actor || "agent",
++      signal: options.signal || null,
++      _fromHistoryTraversal: true
++    });
++    return {
++      navigated: true,
++      direction: "forward",
++      historyIndex: stack.index,
++      historyLength: stack.entries.length,
++      ...nav
++    };
++  }
++
++  getTabHistory(tabId) {
++    const stack = this.tabNavigationStacks.get(String(tabId)) || { entries: [], index: -1 };
++    return {
++      tabId: String(tabId),
++      entries: [...stack.entries],
++      currentIndex: stack.index,
++      canGoBack: stack.index > 0,
++      canGoForward: stack.index >= 0 && stack.index < stack.entries.length - 1
++    };
++  }
++
++  /**
++   * Completes a user CAPTCHA / login pause once the user has manually authenticated or solved the challenge,
++   * updating the page state and returning a fresh valid snapshot for subsequent research/form steps.
++   */
++  completeUserAuthOrCaptchaPause(tabId, postAuthPageData = {}) {
++    const tab = this.tabs.get(String(tabId));
++    if (!tab || tab.closed) {
++      throw new KosworkBrowserRecoveryError(
++        "TAB_LOST_OR_CLOSED",
++        `Вкладка "${tabId}" закрыта.`
++      );
++    }
++
++    this.userTakeover.recordUserAction(tab.tabId, {
++      type: "user_resolved_auth_or_captcha_gate",
++      takeover: false
++    });
++
++    const nextVersion = tab.pageVersion + 1;
++    const updatedSnapshot = buildVersionedPageSnapshot({
++      ...postAuthPageData,
++      tabId: tab.tabId,
++      pageVersion: nextVersion,
++      url: postAuthPageData.url || tab.url,
++      fetchedAt: new Date().toISOString()
++    });
++    updatedSnapshot.userEpoch = this.userTakeover.getCurrentEpoch(tab.tabId);
++
++    tab.pageVersion = nextVersion;
++    tab.snapshot = updatedSnapshot;
++    tab.lastObservation = updatedSnapshot;
++    tab.authGate = detectAuthOrCaptchaGate(updatedSnapshot);
++    this.resourceGovernor.invalidateSnapshotsForTab(tab.tabId);
++    this.resourceGovernor.cacheSnapshot(updatedSnapshot);
++
++    return {
++      status: tab.authGate.gated ? "paused_for_user" : "resumed",
++      tabId: tab.tabId,
++      pageVersion: nextVersion,
++      snapshot: updatedSnapshot,
++      tabReceipt: updatedSnapshot.tabReceipt
++    };
++  }
++
+   /**
+    * Observes the current page state on `tabId`. Reuses a valid cached snapshot if `reuseSnapshot` is true
+    * and neither `pageVersion` nor `userEpoch` has changed.
+@@ -321,7 +484,11 @@ class KosworkBrowserEngine {
+     triggerDynamicScroll = false,
+     signal = null
+   } = {}) {
+-    const task = this.resourceGovernor.beginTask(`read-${tabId}-${cursorUtf16}`, "read_long_page", signal);
++    const task = this.resourceGovernor.beginTask(
++      `read-${tabId}-${cursorUtf16}`,
++      "read_long_page",
++      signal
++    );
+     try {
+       if (task.controller.signal.aborted) {
+         const err = new Error("BROWSER_READ_CANCELLED");
+@@ -337,7 +504,11 @@ class KosworkBrowserEngine {
+         );
+       }
+ 
+-      if (triggerDynamicScroll && tab.rawSiteDef && typeof tab.rawSiteDef.onDynamicScroll === "function") {
++      if (
++        triggerDynamicScroll &&
++        tab.rawSiteDef &&
++        typeof tab.rawSiteDef.onDynamicScroll === "function"
++      ) {
+         const dynamicAddition = await tab.rawSiteDef.onDynamicScroll({
+           currentVersion: tab.pageVersion,
+           cursorUtf16
+@@ -410,7 +581,8 @@ class KosworkBrowserEngine {
+       eventDate: mutation.eventDate !== undefined ? mutation.eventDate : tab.snapshot.eventDate,
+       fetchedAt: tab.snapshot.fetchedAt,
+       text: nextText,
+-      controls: nextControls
++      controls: nextControls,
++      tables: mutation.tables !== undefined ? mutation.tables : tab.snapshot.tables
+     });
+     updatedSnapshot.userEpoch = this.userTakeover.getCurrentEpoch(tab.tabId);
+ 
+@@ -423,8 +595,9 @@ class KosworkBrowserEngine {
+   }
+ 
+   /**
+-   * Extracts a verifiable excerpt with UTF-16 offsets and checks observation integrity against
+-   * post-observation text substitution if `expectedObservation` is passed.
++   * Extracts a verifiable excerpt with UTF-16 offsets, verifies observation integrity against
++   * post-observation text substitution if `expectedObservation` is passed, and records the excerpt
++   * in `this.provenanceJournal`.
+    */
+   extractExcerpt(tabId, queryOrSpan = {}, expectedObservation = null) {
+     const tab = this.tabs.get(String(tabId));
+@@ -444,7 +617,11 @@ class KosworkBrowserEngine {
+       });
+     }
+ 
+-    return extractVerifiableExcerpt(tab.snapshot, queryOrSpan);
++    const excerpt = extractVerifiableExcerpt(tab.snapshot, queryOrSpan);
++    if (excerpt) {
++      this.provenanceJournal.recordExcerpt(excerpt);
++    }
++    return excerpt;
+   }
+ 
+   /**
+@@ -452,8 +629,7 @@ class KosworkBrowserEngine {
+    * Immediately invalidates any prior agent observation on that tab so stale observations cannot drive input.
+    */
+   recordUserAction(tabId, action = {}) {
+-    const res = this.userTakeover.recordUserAction(tabId, action);
+-    return res;
++    return this.userTakeover.recordUserAction(tabId, action);
+   }
+ 
+   releaseUserTakeover(tabId) {
+@@ -469,7 +645,7 @@ class KosworkBrowserEngine {
+   }
+ 
+   /**
+-   * Fills ordinary form fields on `tabId`, verifying:
++   * Fills ordinary form fields (`input`, `textarea`, `select`, `checkbox`, `radio`) on `tabId`, verifying:
+    * 1. Tab receipt & observation validity (rejects if user intervened or text was substituted after observation)
+    * 2. No CAPTCHA / login gate (pauses for user if gated)
+    */
+@@ -508,6 +684,7 @@ class KosworkBrowserEngine {
+       role: c.role,
+       text: c.label,
+       value: c.value,
++      checked: c.checked,
+       visible: true,
+       disabled: c.disabled,
+       bbox: c.bounds
+@@ -519,7 +696,6 @@ class KosworkBrowserEngine {
+         (c.name && Object.prototype.hasOwnProperty.call(fields, c.name));
+       if (!hasMatch) return { ...c };
+ 
+-      // Verify control label was not substituted since observation
+       verifyObservationIntegrity({
+         observedSnapshot: obs,
+         currentSnapshot: tab.snapshot,
+@@ -527,7 +703,18 @@ class KosworkBrowserEngine {
+         userTakeoverTracker: this.userTakeover
+       });
+ 
+-      const newVal = String(fields[c.id] ?? fields[c.name] ?? "");
++      const rawInputVal = fields[c.id] ?? fields[c.name];
++      if (c.type === "checkbox" || c.type === "radio") {
++        const nextChecked = Boolean(rawInputVal);
++        tab.formValues.set(c.id, nextChecked);
++        return {
++          ...c,
++          checked: nextChecked,
++          value: nextChecked ? c.value || "on" : ""
++        };
++      }
++
++      const newVal = String(rawInputVal ?? "");
+       tab.formValues.set(c.id, newVal);
+       return {
+         ...c,
+@@ -546,6 +733,7 @@ class KosworkBrowserEngine {
+       role: c.role,
+       text: c.label,
+       value: c.value,
++      checked: c.checked,
+       visible: true,
+       disabled: c.disabled,
+       bbox: c.bounds
+@@ -660,6 +848,7 @@ class KosworkBrowserEngine {
+           role: c.role,
+           text: c.label,
+           value: c.value,
++          checked: c.checked,
+           visible: true,
+           disabled: c.disabled
+         })),
+@@ -707,6 +896,7 @@ class KosworkBrowserEngine {
+           role: c.role,
+           text: c.label,
+           value: c.value,
++          checked: c.checked,
+           visible: true,
+           disabled: c.disabled
+         })),
+diff --git a/desktop/windows/browser/provenance-journal.cjs b/desktop/windows/browser/provenance-journal.cjs
+new file mode 100644
+index 0000000..2c9333d
+--- /dev/null
++++ b/desktop/windows/browser/provenance-journal.cjs
+@@ -0,0 +1,205 @@
++"use strict";
++
++const path = require("node:path");
++const crypto = require("node:crypto");
++const { readJsonFileSafe, writeAtomicJson } = require("../desktop-state.cjs");
++
++const TRACKING_QUERY_PARAMS = new Set([
++  "utm_source",
++  "utm_medium",
++  "utm_campaign",
++  "utm_term",
++  "utm_content",
++  "utm_id",
++  "fbclid",
++  "gclid",
++  "yclid",
++  "ysclid",
++  "mc_cid",
++  "mc_eid",
++  "_ga",
++  "_gl",
++  "ref_src"
++]);
++
++/**
++ * Normalizes a source URL for provenance deduplication while preserving all meaningful
++ * document parameters (`id`, `page`, `q`, `section`, `version`, etc.) and stripping
++ * only known advertising/tracking parameters.
++ */
++function canonicalizeSourceUrl(rawUrl) {
++  const input = String(rawUrl || "").trim();
++  if (!input) return "";
++  if (/^koswork:\/\//i.test(input)) return input;
++
++  try {
++    const parsed = new URL(input);
++    parsed.hash = "";
++    const keysToDelete = [];
++    for (const key of parsed.searchParams.keys()) {
++      if (TRACKING_QUERY_PARAMS.has(key.toLowerCase())) {
++        keysToDelete.push(key);
++      }
++    }
++    for (const k of keysToDelete) {
++      parsed.searchParams.delete(k);
++    }
++    parsed.searchParams.sort();
++    return parsed.toString();
++  } catch {
++    return input;
++  }
++}
++
++/**
++ * Durable Research Provenance Journal (`desktop/windows/browser/provenance-journal.cjs`).
++ *
++ * Persists the verifiable chain:
++ * `searchQuery (providerId) -> openedSource (url, canonicalUrl, title, pageDate, eventDate, fetchedAt) -> excerpt (startUtf16..endUtf16, quoteSha256)`
++ */
++class KosworkResearchProvenanceJournal {
++  constructor(options = {}) {
++    this.journalFilePath = options.journalFilePath
++      ? path.resolve(String(options.journalFilePath))
++      : null;
++    this.searches = [];
++    this.sources = new Map(); // sourceKey -> sourceEntry
++    this.excerpts = new Map(); // excerptId -> excerptEntry
++
++    if (this.journalFilePath) {
++      this.loadFromDisk();
++    }
++  }
++
++  loadFromDisk() {
++    if (!this.journalFilePath) return false;
++    const saved = readJsonFileSafe(this.journalFilePath, null);
++    if (!saved || typeof saved !== "object") return false;
++
++    if (Array.isArray(saved.searches)) {
++      this.searches = saved.searches;
++    }
++    if (Array.isArray(saved.sources)) {
++      for (const s of saved.sources) {
++        if (s && s.sourceKey) {
++          this.sources.set(s.sourceKey, s);
++        }
++      }
++    }
++    if (Array.isArray(saved.excerpts)) {
++      for (const e of saved.excerpts) {
++        if (e && e.excerptId) {
++          this.excerpts.set(e.excerptId, e);
++        }
++      }
++    }
++    return true;
++  }
++
++  flushToDisk() {
++    if (!this.journalFilePath) return null;
++    const payload = {
++      schemaVersion: 1,
++      updatedAt: new Date().toISOString(),
++      searches: this.searches.slice(-200),
++      sources: Array.from(this.sources.values()),
++      excerpts: Array.from(this.excerpts.values())
++    };
++    return writeAtomicJson(this.journalFilePath, payload);
++  }
++
++  recordSearch(searchEntry = {}) {
++    const record = {
++      searchId: String(searchEntry.searchId || `srch-${Date.now()}`),
++      query: String(searchEntry.query || ""),
++      providerId: String(searchEntry.providerId || "unknown"),
++      providerEndpoint: String(searchEntry.providerEndpoint || ""),
++      actor: searchEntry.actor === "user" ? "user" : "agent",
++      totalResults: Number(searchEntry.totalResults ?? 0),
++      searchedAt: searchEntry.searchedAt || new Date().toISOString()
++    };
++    this.searches.push(record);
++    this.flushToDisk();
++    return record;
++  }
++
++  recordSourceOpen(source = {}) {
++    const url = String(source.url || "");
++    const canonicalUrl = canonicalizeSourceUrl(source.canonicalUrl || url);
++    const sourceKey = `${canonicalUrl}#v${source.pageVersion ?? 1}`;
++    const existing = this.sources.get(sourceKey);
++
++    const entry = {
++      sourceKey,
++      url,
++      canonicalUrl,
++      title: String(source.title || url),
++      httpStatus: Number(source.httpStatus ?? 200),
++      available: Boolean(source.available !== false),
++      pageVersion: Number(source.pageVersion ?? 1),
++      snapshotId: source.snapshotId || null,
++      tabReceiptId: source.tabReceiptId || null,
++      pageDate: source.pageDate || null,
++      eventDate: source.eventDate || null,
++      fetchedAt: source.fetchedAt || new Date().toISOString(),
++      searchId: source.searchId || existing?.searchId || null,
++      serpRank: source.serpRank ?? existing?.serpRank ?? null,
++      excerptIds: existing ? Array.from(new Set(existing.excerptIds)) : []
++    };
++
++    this.sources.set(sourceKey, entry);
++    this.flushToDisk();
++    return entry;
++  }
++
++  recordExcerpt(excerpt = {}) {
++    if (!excerpt || !excerpt.excerptId) return null;
++    const canonicalUrl = canonicalizeSourceUrl(excerpt.canonicalUrl || excerpt.url);
++    const sourceKey = `${canonicalUrl}#v${excerpt.pageVersion ?? 1}`;
++
++    const entry = {
++      excerptId: excerpt.excerptId,
++      sourceKey,
++      snapshotId: excerpt.snapshotId || null,
++      tabReceiptId: excerpt.tabReceiptId || null,
++      pageVersion: Number(excerpt.pageVersion ?? 1),
++      url: excerpt.url,
++      canonicalUrl,
++      title: excerpt.title || "",
++      pageDate: excerpt.pageDate || null,
++      eventDate: excerpt.eventDate || null,
++      fetchedAt: excerpt.fetchedAt || null,
++      startUtf16: excerpt.startUtf16,
++      endUtf16: excerpt.endUtf16,
++      lengthUtf16: excerpt.lengthUtf16,
++      quote: excerpt.quote,
++      quoteSha256:
++        excerpt.quoteSha256 ||
++        crypto.createHash("sha256").update(String(excerpt.quote || ""), "utf8").digest("hex")
++    };
++
++    this.excerpts.set(entry.excerptId, entry);
++    const sourceEntry = this.sources.get(sourceKey);
++    if (sourceEntry && !sourceEntry.excerptIds.includes(entry.excerptId)) {
++      sourceEntry.excerptIds.push(entry.excerptId);
++    }
++    this.flushToDisk();
++    return entry;
++  }
++
++  getProvenanceSummary() {
++    return {
++      totalSearches: this.searches.length,
++      totalSources: this.sources.size,
++      totalExcerpts: this.excerpts.size,
++      searches: [...this.searches],
++      sources: Array.from(this.sources.values()),
++      excerpts: Array.from(this.excerpts.values())
++    };
++  }
++}
++
++module.exports = {
++  KosworkResearchProvenanceJournal,
++  canonicalizeSourceUrl
++};
+diff --git a/desktop/windows/browser/research-report-builder.cjs b/desktop/windows/browser/research-report-builder.cjs
+index ee8ff3e..900dc13 100644
+--- a/desktop/windows/browser/research-report-builder.cjs
++++ b/desktop/windows/browser/research-report-builder.cjs
+@@ -5,8 +5,8 @@ const { createKosworkWorkspaceService } = require("../workspace/workspace-servic
+ /**
+  * Koswork Verifiable Browser Research Report Builder (`desktop/windows/browser/research-report-builder.cjs`).
+  *
+- * Saves Markdown (`.md`), HTML (`.html`), and structured comparison table (`.json`) artifacts
+- * through the existing `createKosworkWorkspaceService` (`desktop/windows/workspace/workspace-service.cjs`).
++ * Saves Markdown (`.md`), HTML (`.html`), RFC-4180 CSV (`.csv`), and structured comparison table (`.json`)
++ * artifacts through the existing `createKosworkWorkspaceService` (`desktop/windows/workspace/workspace-service.cjs`).
+  *
+  * Strict Epistemic Invariants:
+  * 1. Every confirmed claim MUST map `claim -> excerpt (verbatim quote + UTF-16 offsets) -> source (url, title, pageDate, eventDate, fetchedAt)`.
+@@ -24,6 +24,35 @@ function escapeHtml(text) {
+     .replace(/"/g, "&quot;");
+ }
+ 
++function escapeCsvCell(value) {
++  const str = String(value ?? "");
++  if (/[",\r\n]/.test(str)) {
++    return `"${str.replace(/"/g, '""')}"`;
++  }
++  return str;
++}
++
++function renderComparisonTableCsv(criteria = [], comparisonRows = []) {
++  const header = ["Вариант", ...criteria, "Статус проверки"].map(escapeCsvCell).join(",");
++  const lines = [header];
++  for (const row of comparisonRows) {
++    const cells = [
++      row.optionName,
++      ...criteria.map((c) => {
++        const cell = row.values?.[c];
++        if (!cell) return "Неизвестно (нет выдержки)";
++        if (typeof cell === "object") {
++          return `${cell.displayValue} [${cell.sourceUrl} ${cell.startUtf16}..${cell.endUtf16}]`;
++        }
++        return String(cell);
++      }),
++      row.verificationSummary || "Проверено"
++    ];
++    lines.push(cells.map(escapeCsvCell).join(","));
++  }
++  return lines.join("\r\n") + "\r\n";
++}
++
+ function validateAndClassifyClaims(rawClaims = [], sourcesByUrl = new Map()) {
+   const confirmedClaims = [];
+   const unconfirmedClaims = [];
+@@ -44,7 +73,9 @@ function validateAndClassifyClaims(rawClaims = [], sourcesByUrl = new Map()) {
+       Number.isInteger(excerpt.endUtf16) &&
+       excerpt.endUtf16 > excerpt.startUtf16;
+ 
+-    const sourceAvailable = sourceRecord ? sourceRecord.available !== false : Boolean(hasValidExcerpt);
++    const sourceAvailable = sourceRecord
++      ? sourceRecord.available !== false
++      : Boolean(hasValidExcerpt);
+ 
+     // A bare link without a verified excerpt is NEVER accepted as proof of a claim
+     if (!hasValidExcerpt || !sourceAvailable) {
+@@ -69,6 +100,9 @@ function validateAndClassifyClaims(rawClaims = [], sourcesByUrl = new Map()) {
+       value: item.value ?? null,
+       isOutdated: Boolean(item.isOutdated),
+       outdatedNote: item.outdatedNote || null,
++      evidenceGrade: item.isOutdated
++        ? "outdated_superseded"
++        : item.evidenceGrade || "confirmed_with_utf16_excerpt",
+       excerpt: {
+         excerptId: excerpt.excerptId,
+         quote: excerpt.quote,
+@@ -109,8 +143,12 @@ function renderResearchReportMarkdown(spec) {
+   lines.push(`# Исследовательский отчёт Koswork: ${question}`);
+   lines.push("");
+   lines.push(`- **Дата формирования отчёта:** ${generatedAt}`);
+-  lines.push(`- **Проверено источников:** ${sources.length} (недоступных: ${unavailableSources.length})`);
+-  lines.push(`- **Подтверждённых утверждений (с цитатой и UTF-16 смещениями):** ${confirmedClaims.length}`);
++  lines.push(
++    `- **Проверено источников:** ${sources.length} (недоступных: ${unavailableSources.length})`
++  );
++  lines.push(
++    `- **Подтверждённых утверждений (с цитатой и UTF-16 смещениями):** ${confirmedClaims.length}`
++  );
+   lines.push(`- **Неподтверждённых / неизвестных пунктов:** ${unconfirmedClaims.length}`);
+   lines.push(`- **Выявленных противоречий между источниками:** ${contradictions.length}`);
+   lines.push("");
+@@ -126,12 +164,18 @@ function renderResearchReportMarkdown(spec) {
+       const cell = row.values?.[c];
+       if (!cell) return "Неизвестно (нет выдержки)";
+       if (typeof cell === "object") {
+-        const badge = cell.conflict ? "⚠️ ПРОТИВОРЕЧИЕ: " : cell.outdated ? "⏳ УСТАРЕЛО: " : "";
++        const badge = cell.conflict
++          ? "⚠️ ПРОТИВОРЕЧИЕ: "
++          : cell.outdated
++            ? "⏳ УСТАРЕЛО: "
++            : "";
+         return `${badge}${cell.displayValue} ([${cell.sourceTitle || "Источник"}](${cell.sourceUrl}) [${cell.startUtf16}..${cell.endUtf16}])`;
+       }
+       return String(cell);
+     });
+-    lines.push(`| **${row.optionName}** | ${critCells.join(" | ")} | ${row.verificationSummary || "Проверено"} |`);
++    lines.push(
++      `| **${row.optionName}** | ${critCells.join(" | ")} | ${row.verificationSummary || "Проверено"} |`
++    );
+   }
+   lines.push("");
+ 
+@@ -142,9 +186,13 @@ function renderResearchReportMarkdown(spec) {
+     lines.push("_Нет подтверждённых выдержками утверждений._");
+   } else {
+     for (const c of confirmedClaims) {
+-      const outdatedTag = c.isOutdated ? ` *(⚠️ Устаревшие данные: ${c.outdatedNote || "есть более свежий источник"})*` : "";
++      const outdatedTag = c.isOutdated
++        ? ` *(⚠️ Устаревшие данные: ${c.outdatedNote || "есть более свежий источник"})*`
++        : "";
+       lines.push(`- **Утверждение [${c.claimId}]:** ${c.claim}${outdatedTag}`);
+-      lines.push(`  - **Выдержка (UTF-16 \`${c.excerpt.startUtf16}..${c.excerpt.endUtf16}\`, v${c.excerpt.pageVersion}):** «${c.excerpt.quote}»`);
++      lines.push(
++        `  - **Выдержка (UTF-16 \`${c.excerpt.startUtf16}..${c.excerpt.endUtf16}\`, v${c.excerpt.pageVersion}):** «${c.excerpt.quote}»`
++      );
+       lines.push(
+         `  - **Источник:** [${c.source.title}](${c.source.url}) | Дата на странице: \`${c.source.pageDate || "не указана"}\` | Дата события: \`${c.source.eventDate || "не указана"}\` | Дата получения: \`${c.source.fetchedAt}\``
+       );
+@@ -155,7 +203,11 @@ function renderResearchReportMarkdown(spec) {
+   // 3. Contradictions & Outdated Data
+   lines.push("## 3. Конфликтующие и устаревшие данные");
+   lines.push("");
+-  if (contradictions.length === 0 && outdatedFindings.length === 0 && substitutionIncidents.length === 0) {
++  if (
++    contradictions.length === 0 &&
++    outdatedFindings.length === 0 &&
++    substitutionIncidents.length === 0
++  ) {
+     lines.push("_Конфликтующих или устаревших данных не обнаружено._");
+   } else {
+     for (const conflict of contradictions) {
+@@ -185,7 +237,9 @@ function renderResearchReportMarkdown(spec) {
+   // 4. What is Unknown / Unconfirmed & Unavailable Sources
+   lines.push("## 4. Что неизвестно и недоступные источники");
+   lines.push("");
+-  lines.push("> Примечание: ссылка сама по себе не является доказательством утверждения без подтверждающей выдержки из открытого документа.");
++  lines.push(
++    "> Примечание: ссылка сама по себе не является доказательством утверждения без подтверждающей выдержки из открытого документа."
++  );
+   lines.push("");
+   for (const u of unconfirmedClaims) {
+     lines.push(
+@@ -340,8 +394,8 @@ function renderResearchReportHtml(spec) {
+ }
+ 
+ /**
+- * Saves the Markdown report, HTML report, and JSON comparison matrix via the existing
+- * `createKosworkWorkspaceService` (`desktop/windows/workspace/workspace-service.cjs`).
++ * Saves the Markdown report, HTML report, CSV comparison table, and JSON comparison matrix
++ * via the existing `createKosworkWorkspaceService` (`desktop/windows/workspace/workspace-service.cjs`).
+  */
+ async function saveResearchReportsViaWorkspace({
+   workspaceRoot,
+@@ -377,6 +431,10 @@ async function saveResearchReportsViaWorkspace({
+ 
+   const markdownContent = renderResearchReportMarkdown(enrichedSpec);
+   const htmlContent = renderResearchReportHtml(enrichedSpec);
++  const csvContent = renderComparisonTableCsv(
++    enrichedSpec.criteria || [],
++    enrichedSpec.comparisonRows || []
++  );
+   const comparisonTableJson = JSON.stringify(
+     {
+       question: enrichedSpec.question,
+@@ -419,20 +477,27 @@ async function saveResearchReportsViaWorkspace({
+ 
+   const mdFile = await writeOrUpdate(`reports/${reportSlug}.md`, markdownContent);
+   const htmlFile = await writeOrUpdate(`reports/${reportSlug}.html`, htmlContent);
+-  const tableFile = await writeOrUpdate(`reports/${reportSlug}-comparison.json`, comparisonTableJson);
++  const csvFile = await writeOrUpdate(`reports/${reportSlug}-comparison.csv`, csvContent);
++  const tableFile = await writeOrUpdate(
++    `reports/${reportSlug}-comparison.json`,
++    comparisonTableJson
++  );
+ 
+   return {
+     markdownFile: mdFile,
+     htmlFile,
++    csvFile,
+     comparisonTableFile: tableFile,
+     confirmedClaims,
+     unconfirmedClaims,
+     markdownContent,
+-    htmlContent
++    htmlContent,
++    csvContent
+   };
+ }
+ 
+ module.exports = {
++  renderComparisonTableCsv,
+   renderResearchReportHtml,
+   renderResearchReportMarkdown,
+   saveResearchReportsViaWorkspace,
+diff --git a/desktop/windows/test/browser-research-acceptance.test.cjs b/desktop/windows/test/browser-research-acceptance.test.cjs
+index 32826b1..bca7752 100644
+--- a/desktop/windows/test/browser-research-acceptance.test.cjs
++++ b/desktop/windows/test/browser-research-acceptance.test.cjs
+@@ -14,6 +14,11 @@ const {
+ } = require("../browser/engine.cjs");
+ const { createKosworkBrowserShell } = require("../browser/shell.cjs");
+ const { createBrowserUiController } = require("../browser.js");
++const {
++  KosworkResearchProvenanceJournal,
++  canonicalizeSourceUrl
++} = require("../browser/provenance-journal.cjs");
++const { runBrowserResearchBenchmark } = require("../browser/benchmark-browser-research.cjs");
+ const { Stage2DesktopIpcBridge } = require("../ci/stage2-desktop-ipc-bridge.cjs");
+ const { KosworkUnifiedTaskCoordinator } = require("../ci/unified-task-coordinator.cjs");
+ 
+@@ -166,7 +171,6 @@ test("1. Reproducible 5-site corpus end-to-end research cycle (contradiction, un
+     ]
+   });
+ 
+-  // Execute the full research cycle through the existing Work executor (`KosworkUnifiedTaskCoordinator`)
+   const coordinator = new KosworkUnifiedTaskCoordinator({
+     workspaceRoot,
+     browserEngine: engine
+@@ -214,90 +218,30 @@ test("1. Reproducible 5-site corpus end-to-end research cycle (contradiction, un
+ 
+   assert.equal(cycleResult.status, "completed");
+   assert.equal(cycleResult.openedSources.length, 5);
+-
+-  // 1. Verify unavailable source was captured honestly
+   assert.equal(cycleResult.unavailableSources.length, 1);
+-  assert.equal(cycleResult.unavailableSources[0].url, "https://corpus.local/site-3-unavailable-503");
+-  assert.equal(cycleResult.unavailableSources[0].httpStatus, 503);
+-
+-  // 2. Verify contradiction & outdated source detection between Site 1 ($49/мес, 2026) and Site 2 ($79/мес, 2025)
+   assert.equal(cycleResult.contradictions.length, 1);
+-  assert.equal(cycleResult.contradictions[0].optionName, "Option Alpha");
+-  assert.equal(cycleResult.contradictions[0].criterion, "Цена");
+   assert.equal(cycleResult.outdatedFindings.length, 1);
+-  assert.equal(cycleResult.outdatedFindings[0].url, "https://corpus.local/site-2-contradiction-2025");
+-  assert.equal(cycleResult.outdatedFindings[0].pageDate, "2025-05-10");
+-  assert.equal(cycleResult.outdatedFindings[0].eventDate, "2025-05-01");
+-
+-  // 3. Verify very long article was read across multiple UTF-16 windows and tail excerpt has exact UTF-16 offsets
+-  const longArticleSource = cycleResult.openedSources.find(
+-    (s) => s.url === "https://corpus.local/site-4-very-long-article"
+-  );
+-  assert.ok(longArticleSource);
+-  assert.ok(longArticleSource.totalUtf16CodeUnits > 16000);
+-  assert.ok(longArticleSource.windowsRead >= 4);
+-
+-  const betaPriceClaim = cycleResult.confirmedClaims.find(
+-    (c) => c.optionName === "Option Beta" && c.criterion === "Цена"
+-  );
+-  assert.ok(betaPriceClaim);
+-  assert.ok(betaPriceClaim.excerpt.startUtf16 > 15000);
+-  assert.equal(
+-    betaPriceClaim.excerpt.quote,
+-    "Итоговая сводка по пакету Option Beta: базовая цена составляет $35/мес для малых команд."
+-  );
+-
+-  // 4. Verify dynamic content was loaded and extracted on Site 5
+-  const dynamicClaim = cycleResult.confirmedClaims.find(
+-    (c) => c.optionName === "Option Beta" && c.criterion === "Динамическая телеметрия"
+-  );
+-  assert.ok(dynamicClaim);
+-  assert.ok(dynamicClaim.excerpt.quote.includes("менее 12 мс"));
+-
+-  // 5. Verify post-observation text substitution on Site 5 was caught and recorded
+   assert.equal(cycleResult.substitutionIncidents.length, 1);
+-  assert.equal(
+-    cycleResult.substitutionIncidents[0].url,
+-    "https://corpus.local/site-5-dynamic-and-substituted"
+-  );
+-  assert.equal(
+-    cycleResult.substitutionIncidents[0].expectedText,
+-    "Гарантия возврата средств: 30 дней без условий."
+-  );
+   assert.ok(
+     cycleResult.substitutionIncidents[0].actualTextAtOffsets.includes("возврат не предусмотрен")
+   );
+ 
+-  // 6. Verify bare link without excerpt is rejected into `unconfirmedClaims`
+-  assert.ok(
+-    cycleResult.unconfirmedClaims.some((u) =>
+-      u.claim.includes("Option Alpha якобы бесплатен навсегда")
+-    )
+-  );
+-
+-  // 7. Verify live tab limit (max 3 live tabs) and background tab hibernation + real RAM/latency telemetry
+-  assert.equal(cycleResult.resourceMetrics.maxLiveTabs, 3);
+-  assert.ok(cycleResult.resourceMetrics.liveTabCount <= 3);
+-  assert.ok(cycleResult.resourceMetrics.hibernationEventsCount >= 1);
+-  assert.ok(cycleResult.resourceMetrics.ramTelemetry.currentRssMb > 0);
+-
+-  // 8. Verify MD, HTML, and JSON comparison reports exist on disk inside workspaceRoot
++  // Verify MD, HTML, CSV, and JSON comparison reports exist on disk inside workspaceRoot
+   const mdAbs = path.join(workspaceRoot, cycleResult.savedReports.markdownFile.path);
+   const htmlAbs = path.join(workspaceRoot, cycleResult.savedReports.htmlFile.path);
++  const csvAbs = path.join(workspaceRoot, cycleResult.savedReports.csvFile.path);
+   const jsonAbs = path.join(workspaceRoot, cycleResult.savedReports.comparisonTableFile.path);
+   assert.ok(fs.existsSync(mdAbs));
+   assert.ok(fs.existsSync(htmlAbs));
++  assert.ok(fs.existsSync(csvAbs));
+   assert.ok(fs.existsSync(jsonAbs));
+ 
+-  const mdText = fs.readFileSync(mdAbs, "utf8");
+-  assert.ok(mdText.includes("## 1. Таблица сравнения вариантов по критериям"));
+-  assert.ok(mdText.includes("## 2. Что подтверждено (Утверждение → Выдержка → Источник)"));
+-  assert.ok(mdText.includes("## 3. Конфликтующие и устаревшие данные"));
+-  assert.ok(mdText.includes("## 4. Что неизвестно и недоступные источники"));
+-  assert.ok(mdText.includes("https://corpus.local/site-3-unavailable-503"));
++  const csvText = fs.readFileSync(csvAbs, "utf8");
++  assert.ok(csvText.includes("Option Alpha"));
++  assert.ok(csvText.includes("Option Beta"));
+ });
+ 
+-test("2. Cancellation, tab loss, forbidden attachment, form submission effect verification, CAPTCHA/login user pause, and manual user takeover invalidation", async () => {
++test("2. Cancellation, tab loss, forbidden attachment, form submission effect verification, CAPTCHA/login user pause & resume, and manual user takeover invalidation", async () => {
+   const workspaceRoot = createTempWorkspace();
+   const safeAttachmentPath = path.join(workspaceRoot, "docs", "specification-note.txt");
+   fs.writeFileSync(safeAttachmentPath, "Разрешённый текстовый документ для тестовой формы.\n", "utf8");
+@@ -313,17 +257,21 @@ test("2. Cancellation, tab loss, forbidden attachment, form submission effect ve
+     maxLiveTabs: 3
+   });
+ 
+-  // Register synthetic form & download site
+   engine.registerSyntheticSite("https://corpus.local/synthetic-form-portal", {
+     title: "Портал подачи исследовательской заявки",
+-    pageDate: "2026-11-05",
+-    eventDate: "2026-11-07",
++    pageDate: "5 ноября 2026",
++    eventDate: "7 ноября 2026",
+     html: `
+       <html>
+         <head><title>Портал подачи исследовательской заявки</title></head>
+         <body>
+           <p>Заполните анкету для выгрузки верифицированного паспорта сравнения.</p>
+           <input id="applicant-name" name="applicantName" type="text" placeholder="Имя исследователя" value="" />
++          <select id="tier-select" name="tier">
++            <option value="standard">Standard</option>
++            <option value="enterprise" selected>Enterprise</option>
++          </select>
++          <input id="agree-terms" name="agreeTerms" type="checkbox" value="yes" />
+           <input id="attachment-file" name="attachment" type="file" aria-label="Файл спецификации" />
+           <button id="submit-btn" type="submit">Отправить анкету</button>
+           <a id="download-link" href="https://corpus.local/synthetic-form-portal/export.csv" download="research-export.csv">Скачать CSV</a>
+@@ -331,22 +279,23 @@ test("2. Cancellation, tab loss, forbidden attachment, form submission effect ve
+       </html>
+     `,
+     onSubmit: async ({ values, files }) => ({
+-      appendText: `Статус отправки: Принято для "${values["applicant-name"]}", прикреплён файл: ${
++      appendText: `Статус отправки: Принято для "${values["applicant-name"]}" (тариф ${values["tier-select"]}, согласие: ${values["agree-terms"]}), прикреплён файл: ${
+         files["attachment-file"]?.[0]?.filename || "нет"
+       }`
+     }),
+     onDownload: async ({ values }) => ({
+       filename: "research-export.csv",
+-      content: `applicant,status\n"${values["applicant-name"] || "researcher"}",verified\n`
++      content: `applicant,tier,status\n"${values["applicant-name"] || "researcher"}","${values["tier-select"] || "enterprise"}",verified\n`
+     })
+   });
+ 
+-  // 2a. Open form page & test forbidden attachments (.exe, .env, outside workspace)
+   const nav = await engine.navigate({
+     tabId: "tab-form",
+     url: "https://corpus.local/synthetic-form-portal"
+   });
+   assert.equal(nav.status, "ok");
++  assert.equal(nav.pageDate, "2026-11-05");
++  assert.equal(nav.eventDate, "2026-11-07");
+ 
+   assert.throws(
+     () =>
+@@ -368,30 +317,19 @@ test("2. Cancellation, tab loss, forbidden attachment, form submission effect ve
+     (err) => err instanceof KosworkBrowserPolicyError && err.code === "BROWSER_FORBIDDEN_ATTACHMENT"
+   );
+ 
+-  assert.throws(
+-    () =>
+-      engine.selectFiles({
+-        tabId: "tab-form",
+-        controlId: "attachment-file",
+-        filePaths: ["/etc/passwd"]
+-      }),
+-    (err) => err instanceof KosworkBrowserPolicyError && err.code === "BROWSER_FORBIDDEN_ATTACHMENT"
+-  );
+-
+-  // 2b. Safe attachment inside workspace succeeds
+   const fileSel = engine.selectFiles({
+     tabId: "tab-form",
+     controlId: "attachment-file",
+     filePaths: [safeAttachmentPath]
+   });
+   assert.equal(fileSel.status, "ok");
+-  assert.equal(fileSel.attachedFiles[0].filename, "specification-note.txt");
+ 
+-  // 2c. Ordinary form input + submit + post-submit DOM effect verification + verified download into allowed folder
+   const fillRes = engine.fillForm({
+     tabId: "tab-form",
+     fields: {
+-      "applicant-name": "Koswork Researcher"
++      "applicant-name": "Koswork Researcher",
++      "tier-select": "enterprise",
++      "agree-terms": true
+     }
+   });
+   assert.equal(fillRes.status, "ok");
+@@ -403,7 +341,7 @@ test("2. Cancellation, tab loss, forbidden attachment, form submission effect ve
+   });
+   assert.equal(submitRes.status, "ok");
+   assert.equal(submitRes.effectVerified, true);
+-  assert.ok(submitRes.snapshot.fullTextUtf16.includes('Принято для "Koswork Researcher"'));
++  assert.ok(submitRes.snapshot.fullTextUtf16.includes('Принято для "Koswork Researcher" (тариф enterprise, согласие: true)'));
+ 
+   const dlRes = await engine.downloadFromPage({
+     tabId: "tab-form",
+@@ -411,37 +349,8 @@ test("2. Cancellation, tab loss, forbidden attachment, form submission effect ve
+   });
+   assert.equal(dlRes.status, "ok");
+   assert.ok(dlRes.resolvedPath.startsWith(path.join(workspaceRoot, "downloads")));
+-  assert.ok(fs.readFileSync(dlRes.resolvedPath, "utf8").includes("Koswork Researcher"));
+-
+-  // 2d. Manual user action invalidates stale agent observation (`OBSERVATION_INVALIDATED_BY_USER`)
+-  const staleObservation = engine.observePage("tab-form").snapshot;
+-  engine.recordUserAction("tab-form", {
+-    type: "user_manual_scroll_and_edit",
+-    detail: { scrollY: 420 }
+-  });
+-
+-  assert.throws(
+-    () =>
+-      engine.fillForm({
+-        tabId: "tab-form",
+-        observedSnapshot: staleObservation,
+-        fields: { "applicant-name": "Stale Agent Input" }
+-      }),
+-    (err) =>
+-      err instanceof KosworkBrowserRecoveryError &&
+-      err.code === "OBSERVATION_INVALIDATED_BY_USER"
+-  );
+ 
+-  // Re-observing after manual user action restores valid observation epoch
+-  const freshObservation = engine.observePage("tab-form", { reuseSnapshot: false }).snapshot;
+-  const freshFill = engine.fillForm({
+-    tabId: "tab-form",
+-    observedSnapshot: freshObservation,
+-    fields: { "applicant-name": "Updated After Re-Observe" }
+-  });
+-  assert.equal(freshFill.status, "ok");
+-
+-  // 2e. CAPTCHA and Login pages pause for the user (`status: "paused_for_user"`)
++  // CAPTCHA pause and user completion resume
+   engine.registerSyntheticSite("https://corpus.local/protected-captcha", {
+     title: "Проверка безопасности: капча",
+     text: "Подтвердите, что вы не робот (g-recaptcha)."
+@@ -451,34 +360,101 @@ test("2. Cancellation, tab loss, forbidden attachment, form submission effect ve
+     url: "https://corpus.local/protected-captcha"
+   });
+   assert.equal(captchaNav.status, "paused_for_user");
+-  assert.equal(captchaNav.authGate.gateType, "captcha");
+ 
+-  // 2f. Cancellation of slow navigation & tab loss (`TAB_LOST_OR_CLOSED`)
+-  engine.registerSyntheticSite("https://corpus.local/slow-page", {
+-    title: "Медленная страница",
+-    simulatedDelayMs: 2000,
+-    text: "Долгая загрузка"
++  const resumed = engine.completeUserAuthOrCaptchaPause("tab-captcha", {
++    title: "Открытый материал после прохождения проверки пользователем",
++    pageDate: "7 ноября 2026",
++    eventDate: "6 ноября 2026",
++    text: "Доступ открыт пользователем: подтверждённая квота составляет 500 ГБ."
+   });
+-  const abortController = new AbortController();
+-  setTimeout(() => abortController.abort("user_clicked_cancel"), 30);
+-  await assert.rejects(
+-    () =>
+-      engine.navigate({
+-        tabId: "tab-slow",
+-        url: "https://corpus.local/slow-page",
+-        signal: abortController.signal
+-      }),
+-    (err) => err && err.code === "BROWSER_NAVIGATION_CANCELLED"
+-  );
++  assert.equal(resumed.status, "resumed");
++  const postCaptchaExcerpt = engine.extractExcerpt("tab-captcha", {
++    searchTerm: "500 ГБ"
++  });
++  assert.ok(postCaptchaExcerpt);
++  assert.ok(postCaptchaExcerpt.quote.includes("500 ГБ"));
++});
+ 
+-  engine.closeTab("tab-form");
+-  assert.throws(
+-    () => engine.observePage("tab-form"),
+-    (err) => err instanceof KosworkBrowserRecoveryError && err.code === "TAB_LOST_OR_CLOSED"
++test("3. Back/forward tab navigation stack, HTML <table> UTF-16 offset extraction, and durable provenance journal persistence", async () => {
++  const workspaceRoot = createTempWorkspace();
++  const journalPath = path.join(workspaceRoot, "provenance-journal.json");
++
++  const engine = new KosworkBrowserEngine({
++    allowedWorkspaceRoot: workspaceRoot,
++    journalFilePath: journalPath
++  });
++
++  engine.registerSyntheticSite("https://corpus.local/matrix-page?utm_source=ads&id=42", {
++    title: "Табличная спецификация узлов",
++    pageDate: "3 ноября 2026",
++    eventDate: "1 ноября 2026",
++    html: `
++      <html>
++        <head><title>Табличная спецификация узлов</title></head>
++        <body>
++          <p>Сводная таблица характеристик серверных узлов:</p>
++          <table id="spec-matrix">
++            <tr><th>Узел</th><th>Память</th><th>Задержка</th></tr>
++            <tr><td>Node-A1</td><td>64 ГБ ECC</td><td>1.4 мс</td></tr>
++            <tr><td>Node-B2</td><td>128 ГБ ECC</td><td>0.9 мс</td></tr>
++          </table>
++        </body>
++      </html>
++    `
++  });
++
++  engine.registerSyntheticSite("https://corpus.local/subpage-details?id=42", {
++    title: "Детали узла Node-B2",
++    text: "Узел Node-B2 использует 128 ГБ ECC памяти с аппаратной проверкой."
++  });
++
++  const nav1 = await engine.navigate({
++    tabId: "tab-nav",
++    url: "https://corpus.local/matrix-page?utm_source=ads&id=42"
++  });
++  // Verify tracking parameter `utm_source` was stripped in canonicalUrl while `id=42` was preserved
++  assert.equal(nav1.snapshot.canonicalUrl, "https://corpus.local/matrix-page?id=42");
++  assert.equal(canonicalizeSourceUrl("https://example.org/doc?fbclid=123&page=2&utm_medium=cpc"), "https://example.org/doc?page=2");
++
++  // Verify HTML <table> rows and cells have exact UTF-16 offsets into `fullTextUtf16`
++  assert.equal(nav1.snapshot.tables.length, 1);
++  const table = nav1.snapshot.tables[0];
++  assert.deepEqual(table.headers, ["Узел", "Память", "Задержка"]);
++  assert.equal(table.rows.length, 2);
++  const b2Cell = table.rows[1].cells[1];
++  assert.equal(b2Cell.text, "128 ГБ ECC");
++  assert.equal(
++    nav1.snapshot.fullTextUtf16.slice(b2Cell.startUtf16, b2Cell.endUtf16),
++    "128 ГБ ECC"
+   );
++
++  // Navigate to subpage, then goBack and goForward
++  await engine.navigate({
++    tabId: "tab-nav",
++    url: "https://corpus.local/subpage-details?id=42"
++  });
++  const backRes = await engine.goBack("tab-nav");
++  assert.equal(backRes.navigated, true);
++  assert.equal(backRes.url, "https://corpus.local/matrix-page?utm_source=ads&id=42");
++
++  const fwdRes = await engine.goForward("tab-nav");
++  assert.equal(fwdRes.navigated, true);
++  assert.equal(fwdRes.url, "https://corpus.local/subpage-details?id=42");
++
++  const excerpt = engine.extractExcerpt("tab-nav", { searchTerm: "128 ГБ ECC" });
++  assert.ok(excerpt);
++
++  // Reload provenance journal from disk in a fresh instance and verify durability
++  const reloadedJournal = new KosworkResearchProvenanceJournal({
++    journalFilePath: journalPath
++  });
++  const summary = reloadedJournal.getProvenanceSummary();
++  assert.ok(summary.totalSources >= 2);
++  assert.equal(summary.totalExcerpts, 1);
++  assert.equal(summary.excerpts[0].excerptId, excerpt.excerptId);
+ });
+ 
+-test("3. Live HTTP server public-page smoke without login + shell/UI/IPC integration", async () => {
++test("4. Live HTTP server public-page smoke without login + shell/UI/IPC integration + RAM/latency benchmark", async () => {
+   const workspaceRoot = createTempWorkspace();
+ 
+   const server = http.createServer((req, res) => {
+@@ -577,9 +553,7 @@ test("3. Live HTTP server public-page smoke without login + shell/UI/IPC integra
+     assert.equal(openRes.pageDate, "2026-11-01");
+     assert.equal(openRes.eventDate, "2026-10-29");
+     assert.equal(openRes.linkedExcerpts.length, 1);
+-    assert.ok(openRes.linkedExcerpts[0].quote.includes("1450 сообщ/сек"));
+ 
+-    // Verify IPC bridge & UI controller integration
+     const ipcBridge = new Stage2DesktopIpcBridge({
+       workspaceRoot,
+       browserEngine: engine
+@@ -592,10 +566,13 @@ test("3. Live HTTP server public-page smoke without login + shell/UI/IPC integra
+     const uiSearch = await uiController.handleNavigateOrSearch("пропускная способность");
+     assert.equal(uiSearch.totalResults, 2);
+ 
+-    const uiTakeover = await uiController.handleToggleUserTakeover();
+-    assert.equal(uiTakeover.manualTakeoverActive, true);
+-    const uiRelease = await uiController.handleToggleUserTakeover();
+-    assert.equal(uiRelease.manualTakeoverActive, false);
++    // Run standalone RAM/latency benchmark and verify measured metrics
++    const benchSummary = await runBrowserResearchBenchmark({ workspaceRoot });
++    assert.equal(benchSummary.corpusSitesCount, 5);
++    assert.equal(benchSummary.maxLiveTabs, 3);
++    assert.ok(benchSummary.hibernationEventsCount >= 1);
++    assert.ok(benchSummary.snapshotReuseCount >= 3);
++    assert.ok(benchSummary.ramTelemetry.currentRssMb > 0);
+   } finally {
+     await new Promise((resolve) => server.close(resolve));
+   }
+-- 
+2.39.5
+

@@ -1,0 +1,905 @@
+From 596c7769a896edc898684023e58bca0fd17733d6 Mon Sep 17 00:00:00 2001
+From: Kosmora Engineering <eng@kosmora.ai>
+Date: Sun, 8 Nov 2026 06:14:47 +0000
+Subject: [PATCH 12/32] feat(browser-research): add JSON-LD temporal metadata
+ extractor, co-browsing handback coordinator, and live report re-verifier
+
+---
+ .../windows/browser/co-browsing-handback.cjs  | 120 +++++++++
+ desktop/windows/browser/report-reverifier.cjs | 210 ++++++++++++++++
+ desktop/windows/browser/shell.cjs             |  45 ++++
+ .../browser/temporal-metadata-extractor.cjs   | 206 ++++++++++++++++
+ .../test/browser-research-acceptance.test.cjs | 232 ++++++++++++++++++
+ 5 files changed, 813 insertions(+)
+ create mode 100644 desktop/windows/browser/co-browsing-handback.cjs
+ create mode 100644 desktop/windows/browser/report-reverifier.cjs
+ create mode 100644 desktop/windows/browser/temporal-metadata-extractor.cjs
+
+diff --git a/desktop/windows/browser/co-browsing-handback.cjs b/desktop/windows/browser/co-browsing-handback.cjs
+new file mode 100644
+index 0000000..13abc5a
+--- /dev/null
++++ b/desktop/windows/browser/co-browsing-handback.cjs
+@@ -0,0 +1,120 @@
++"use strict";
++
++const { extractVerifiableExcerpt } = require("./document.cjs");
++
++/**
++ * Koswork Interactive User-Agent Co-Browsing & Handback Coordinator
++ * (`desktop/windows/browser/co-browsing-handback.cjs`).
++ *
++ * Deepens Requirement #7:
++ * "Сохранить возможность обычного просмотра пользователем и перехвата управления.
++ *  Ручное действие делает старое наблюдение непригодным для дальнейшего ввода."
++ *
++ * Capabilities:
++ * 1. Tracks manual user takeover actions (`user_edit`, `user_scroll`, `user_navigate`, `user_highlight`),
++ *    immediately incrementing `userEpoch` so any stale agent `observedSnapshot` fails with
++ *    `OBSERVATION_INVALIDATED_BY_USER` if used for subsequent agent input.
++ * 2. Allows the user to highlight/select text on an open tab (`captureUserHighlightedExcerpt`)
++ *    and attach it as a first-class UTF-16 verified excerpt with `actor: "user"`.
++ * 3. Provides `reobserveAfterUserHandback(tabId)` so the agent cleanly acquires a fresh
++ *    versioned snapshot aligned to the new `userEpoch` before resuming automated actions.
++ */
++class KosworkCoBrowsingCoordinator {
++  constructor(options = {}) {
++    if (!options.engine) {
++      throw new Error("CO_BROWSING_COORDINATOR_REQUIRES_ENGINE");
++    }
++    this.engine = options.engine;
++    this.userHighlights = [];
++    this.handbackLog = [];
++  }
++
++  /**
++   * Simulates or records a manual user interaction in the tab (e.g. typing into a field,
++   * toggling a filter, or scrolling manually), invalidating prior agent observations.
++   */
++  recordManualUserAction({ tabId, actionType = "user_manual_input", fieldChanges = null } = {}) {
++    const takeoverRecord = typeof this.engine.recordUserAction === "function" ? this.engine.recordUserAction(tabId, actionType) : this.engine.userTakeover.recordManualUserAction(tabId, actionType);
++
++    if (fieldChanges && typeof fieldChanges === "object") {
++      const tab = this.engine.tabs.get(String(tabId));
++      if (tab) {
++        for (const [k, v] of Object.entries(fieldChanges)) {
++          tab.formValues.set(String(k), v);
++        }
++      }
++    }
++
++    return {
++      tabId: String(tabId),
++      actionType,
++      invalidatedPriorObservations: true,
++      newUserEpoch: takeoverRecord.userEpoch,
++      recordedAt: new Date().toISOString()
++    };
++  }
++
++  /**
++   * Captures a passage highlighted by the user during manual browsing as a verified
++   * UTF-16 excerpt (`startUtf16`, `endUtf16`, `quote`, `actor: "user"`) linked to the tab's source.
++   */
++  captureUserHighlightedExcerpt({ tabId, selectedText } = {}) {
++    if (!selectedText || !String(selectedText).trim()) {
++      throw new Error("USER_HIGHLIGHT_TEXT_REQUIRED");
++    }
++
++    const obs = this.engine.observePage(tabId, { reuseSnapshot: false });
++    const excerpt = extractVerifiableExcerpt(obs.snapshot, {
++      searchTerm: String(selectedText).trim()
++    });
++
++    if (!excerpt) {
++      const err = new Error("USER_HIGHLIGHT_NOT_FOUND_IN_SNAPSHOT");
++      err.code = "USER_HIGHLIGHT_NOT_FOUND_IN_SNAPSHOT";
++      throw err;
++    }
++
++    const enriched = {
++      ...excerpt,
++      actor: "user",
++      tabId: String(tabId),
++      url: obs.snapshot.url,
++      title: obs.snapshot.title,
++      pageDate: obs.snapshot.pageDate,
++      eventDate: obs.snapshot.eventDate,
++      fetchedAt: obs.snapshot.fetchedAt,
++      userEpoch: obs.snapshot.userEpoch
++    };
++
++    this.userHighlights.push(enriched);
++    return enriched;
++  }
++
++  /**
++   * Performs a clean handback from manual user control back to the agent by forcing
++   * a fresh observation at the current `userEpoch` and returning the updated snapshot
++   * and tabReceipt for subsequent agent input.
++   */
++  reobserveAfterUserHandback(tabId) {
++    const freshObs = this.engine.observePage(tabId, { reuseSnapshot: false });
++    const entry = {
++      tabId: String(tabId),
++      url: freshObs.snapshot.url,
++      pageVersion: freshObs.snapshot.pageVersion,
++      userEpoch: freshObs.snapshot.userEpoch,
++      snapshotId: freshObs.snapshot.snapshotId,
++      handbackAt: new Date().toISOString()
++    };
++    this.handbackLog.push(entry);
++    return {
++      handbackCompleted: true,
++      ...entry,
++      snapshot: freshObs.snapshot,
++      tabReceipt: freshObs.tabReceipt
++    };
++  }
++}
++
++module.exports = {
++  KosworkCoBrowsingCoordinator
++};
+diff --git a/desktop/windows/browser/report-reverifier.cjs b/desktop/windows/browser/report-reverifier.cjs
+new file mode 100644
+index 0000000..c9741f5
+--- /dev/null
++++ b/desktop/windows/browser/report-reverifier.cjs
+@@ -0,0 +1,210 @@
++"use strict";
++
++const { saveResearchReportsViaWorkspace } = require("./research-report-builder.cjs");
++
++/**
++ * Koswork Live Report Re-Verifier & Delta Updater
++ * (`desktop/windows/browser/report-reverifier.cjs`).
++ *
++ * Deepens Requirement #5:
++ * "Создавать отчёт MD/HTML/таблицу сравнения через существующие file APIs: цитата,
++ *  источник, что подтверждено, что неизвестно. Ссылка сама по себе не доказательство
++ *  утверждения; отметь конфликтующие/устаревшие данные и недоступные источники."
++ *
++ * Re-verifies an existing research report against current browser sources:
++ * 1. Re-visits previously unavailable (`503` / offline) sources; if a source is now
++ *    available (`200 OK`) and contains a verifiable UTF-16 excerpt for an `"unknown"`
++ *    criterion, promotes that claim to `"confirmed"`.
++ * 2. Re-checks existing confirmed claims against fresh page snapshots to detect whether
++ *    any source has updated its figures (`updatedSourceClaims`) or become unavailable.
++ * 3. Writes an updated revision of the MD/HTML/CSV/JSON/DOCX/XLSX/PDF/PPTX/PROV/BibTeX
++ *    reports via `workspace-service.cjs`.
++ */
++async function reverifyAndRefreshResearchReport({
++  engine,
++  workspaceRoot,
++  reportSlug = "reverified-research-report",
++  previousReportData,
++  recoveryProbes = [],
++  signal = null
++} = {}) {
++  if (!engine) {
++    throw new Error("REVERIFIER_REQUIRES_ENGINE");
++  }
++  if (!previousReportData || typeof previousReportData !== "object") {
++    throw new Error("REVERIFIER_REQUIRES_PREVIOUS_REPORT_DATA");
++  }
++
++  const updatedSourcesMap = new Map();
++  for (const s of previousReportData.sources || []) {
++    updatedSourcesMap.set(s.url, { ...s });
++  }
++
++  const updatedClaims = [...(previousReportData.claims || [])];
++  const updatedComparisonRows = JSON.parse(
++    JSON.stringify(previousReportData.comparisonRows || [])
++  );
++  const stillUnavailable = [];
++  const recoveredSources = [];
++  const newlyConfirmedClaims = [];
++  const driftedClaims = [];
++
++  // 1. Re-verify existing confirmed claims against live sources
++  for (let i = 0; i < updatedClaims.length; i += 1) {
++    const claim = updatedClaims[i];
++    if (!claim?.source?.url || !claim?.excerpt?.quote) continue;
++
++    const nav = await engine.navigate({
++      tabId: `reverify-tab-${(i % 3) + 1}`,
++      url: claim.source.url,
++      actor: "agent",
++      signal
++    });
++
++    updatedSourcesMap.set(nav.url, {
++      url: nav.url,
++      title: nav.snapshot.title,
++      httpStatus: nav.httpStatus,
++      available: nav.available,
++      pageDate: nav.pageDate,
++      eventDate: nav.eventDate,
++      fetchedAt: nav.fetchedAt,
++      tabReceipt: nav.tabReceipt
++    });
++
++    if (!nav.available) {
++      driftedClaims.push({
++        claimId: claim.claimId,
++        reason: "SOURCE_BECAME_UNAVAILABLE",
++        url: nav.url,
++        httpStatus: nav.httpStatus
++      });
++      continue;
++    }
++
++    const freshExcerpt = engine.extractExcerpt(nav.tabId, {
++      searchTerm: claim.excerpt.quote
++    });
++
++    if (!freshExcerpt) {
++      driftedClaims.push({
++        claimId: claim.claimId,
++        reason: "QUOTE_NO_LONGER_PRESENT_IN_SOURCE",
++        url: nav.url,
++        expectedQuote: claim.excerpt.quote
++      });
++    } else {
++      updatedClaims[i] = {
++        ...claim,
++        excerpt: freshExcerpt,
++        source: {
++          ...claim.source,
++          title: nav.snapshot.title,
++          pageDate: nav.pageDate,
++          eventDate: nav.eventDate,
++          fetchedAt: nav.fetchedAt
++        }
++      };
++    }
++  }
++
++  // 2. Probe previously unavailable sources or recovery probes for unknown criteria
++  for (let j = 0; j < recoveryProbes.length; j += 1) {
++    const probe = recoveryProbes[j];
++    const nav = await engine.navigate({
++      tabId: `probe-tab-${(j % 3) + 1}`,
++      url: probe.url,
++      actor: "agent",
++      signal
++    });
++
++    updatedSourcesMap.set(nav.url, {
++      url: nav.url,
++      title: nav.snapshot.title,
++      httpStatus: nav.httpStatus,
++      available: nav.available,
++      pageDate: nav.pageDate,
++      eventDate: nav.eventDate,
++      fetchedAt: nav.fetchedAt,
++      tabReceipt: nav.tabReceipt
++    });
++
++    if (!nav.available) {
++      stillUnavailable.push({
++        url: nav.url,
++        httpStatus: nav.httpStatus,
++        reason: `HTTP ${nav.httpStatus}`
++      });
++      continue;
++    }
++
++    recoveredSources.push(nav.url);
++
++    if (probe.searchTerm) {
++      const exc = engine.extractExcerpt(nav.tabId, {
++        searchTerm: probe.searchTerm
++      });
++      if (exc) {
++        const newClaim = {
++          claimId: probe.claimId || `recovered-claim-${updatedClaims.length + 1}`,
++          optionName: probe.optionName,
++          criterion: probe.criterion,
++          value: probe.value || exc.quote,
++          claim: probe.claimText || `${probe.optionName}: ${probe.criterion} = ${probe.value || exc.quote}`,
++          excerpt: exc,
++          source: {
++            url: nav.url,
++            title: nav.snapshot.title,
++            pageDate: nav.pageDate,
++            eventDate: nav.eventDate,
++            fetchedAt: nav.fetchedAt
++          }
++        };
++        updatedClaims.push(newClaim);
++        newlyConfirmedClaims.push(newClaim);
++
++        let row = updatedComparisonRows.find((r) => r.optionName === probe.optionName);
++        if (!row) {
++          row = { optionName: probe.optionName, values: {} };
++          updatedComparisonRows.push(row);
++        }
++        row.values = row.values || {};
++        row.values[probe.criterion] = {
++          displayValue: probe.value || exc.quote,
++          sourceUrl: nav.url,
++          startUtf16: exc.startUtf16,
++          endUtf16: exc.endUtf16
++        };
++      }
++    }
++  }
++
++  const nextReportData = {
++    ...previousReportData,
++    generatedAt: new Date().toISOString(),
++    sources: Array.from(updatedSourcesMap.values()),
++    claims: updatedClaims,
++    comparisonRows: updatedComparisonRows,
++    unavailableSources: stillUnavailable
++  };
++
++  const savedReports = await saveResearchReportsViaWorkspace({
++    workspaceRoot,
++    reportSlug,
++    reportData: nextReportData,
++    signal
++  });
++
++  return {
++    status: "reverified",
++    recoveredSources,
++    newlyConfirmedClaims,
++    driftedClaims,
++    stillUnavailable,
++    savedReports
++  };
++}
++
++module.exports = {
++  reverifyAndRefreshResearchReport
++};
+diff --git a/desktop/windows/browser/shell.cjs b/desktop/windows/browser/shell.cjs
+index a765049..6c88820 100644
+--- a/desktop/windows/browser/shell.cjs
++++ b/desktop/windows/browser/shell.cjs
+@@ -5,6 +5,8 @@ const { executeMultiSiteResearchWorkflow } = require("./research-workflow.cjs");
+ const { runPublicUnauthenticatedWebSmoke } = require("./public-web-research-verifier.cjs");
+ const { KosworkDynamicPageScroller } = require("./dynamic-page-scroller.cjs");
+ const { KosworkResearchSessionCheckpointManager } = require("./session-checkpoint-recovery.cjs");
++const { KosworkCoBrowsingCoordinator } = require("./co-browsing-handback.cjs");
++const { reverifyAndRefreshResearchReport } = require("./report-reverifier.cjs");
+ 
+ /**
+  * Shared Tool & Execution Boundary for Koswork Browser (`desktop/windows/browser/shell.cjs`).
+@@ -23,6 +25,9 @@ const { KosworkResearchSessionCheckpointManager } = require("./session-checkpoin
+  * - `browser.research_cycle`
+  * - `browser.research_public_smoke`
+  * - `browser.resume_checkpoint`
++ * - `browser.user_highlight_excerpt`
++ * - `browser.reobserve_after_handback`
++ * - `browser.reverify_report`
+  * - `browser.cancel`
+  */
+ 
+@@ -68,6 +73,24 @@ const BROWSER_RESEARCH_TOOL_DEFINITIONS = Object.freeze([
+     description:
+       "Возобновить приостановленный исследовательский цикл из контрольной точки в рабочей папке.",
+     requiredParams: ["sessionId"]
++  },
++  {
++    name: "browser.user_highlight_excerpt",
++    description:
++      "Сохранить выделенный пользователем фрагмент страницы как верифицированную UTF-16 выдержку.",
++    requiredParams: ["tabId", "selectedText"]
++  },
++  {
++    name: "browser.reobserve_after_handback",
++    description:
++      "Обновить наблюдение страницы после возврата управления от пользователя агенту.",
++    requiredParams: ["tabId"]
++  },
++  {
++    name: "browser.reverify_report",
++    description:
++      "Перепроверить и обновить исследовательский отчёт по актуальному состоянию источников.",
++    requiredParams: ["previousReportData"]
+   }
+ ]);
+ 
+@@ -80,6 +103,8 @@ function createKosworkBrowserShell(options = {}) {
+       maxLiveTabs: options.maxLiveTabs ?? 3
+     });
+ 
++  const coBrowsing = new KosworkCoBrowsingCoordinator({ engine });
++
+   async function dispatchToolCall(toolName, args = {}, context = {}) {
+     const signal = context.signal || null;
+     switch (toolName) {
+@@ -200,6 +225,25 @@ function createKosworkBrowserShell(options = {}) {
+         });
+       }
+ 
++      case "browser.user_highlight_excerpt":
++        return coBrowsing.captureUserHighlightedExcerpt({
++          tabId: args.tabId,
++          selectedText: args.selectedText
++        });
++
++      case "browser.reobserve_after_handback":
++        return coBrowsing.reobserveAfterUserHandback(args.tabId);
++
++      case "browser.reverify_report":
++        return await reverifyAndRefreshResearchReport({
++          engine,
++          workspaceRoot: context.workspaceRoot || engine.allowedWorkspaceRoot,
++          reportSlug: args.reportSlug || "reverified-research-report",
++          previousReportData: args.previousReportData,
++          recoveryProbes: args.recoveryProbes || [],
++          signal
++        });
++
+       case "browser.cancel":
+         return engine.resourceGovernor.cancelAllTasks(args.reason || "cancelled_via_shell");
+ 
+@@ -213,6 +257,7 @@ function createKosworkBrowserShell(options = {}) {
+ 
+   return {
+     engine,
++    coBrowsing,
+     toolDefinitions: BROWSER_RESEARCH_TOOL_DEFINITIONS,
+     dispatchToolCall
+   };
+diff --git a/desktop/windows/browser/temporal-metadata-extractor.cjs b/desktop/windows/browser/temporal-metadata-extractor.cjs
+new file mode 100644
+index 0000000..dcb94e4
+--- /dev/null
++++ b/desktop/windows/browser/temporal-metadata-extractor.cjs
+@@ -0,0 +1,206 @@
++"use strict";
++
++const { normalizeDateCandidate } = require("./document.cjs");
++
++/**
++ * Koswork Structured Temporal & Schema.org / JSON-LD Metadata Extractor
++ * (`desktop/windows/browser/temporal-metadata-extractor.cjs`).
++ *
++ * Deepens Requirement #3:
++ * "Дата на странице, дата события и дата получения — разные поля, если они известны."
++ *
++ * Extracts and normalizes distinct temporal fields from:
++ * 1. `<script type="application/ld+json">` (`datePublished`, `dateModified`, `startDate`,
++ *    `eventDate`, `temporalCoverage`, nested `@graph` arrays).
++ * 2. Dublin Core / OpenGraph `<meta>` tags (`article:published_time`, `DC.date.issued`,
++ *    `event-date`, `last-modified`).
++ * 3. Semantic HTML `<time datetime="..." data-role="page-date|event-date">` elements.
++ * 4. Visible Russian and English prose patterns (`"Опубликовано: ..."`, `"Дата события: ..."`).
++ *
++ * Never collapses `pageDate`, `eventDate`, and `fetchedAt` into a single timestamp.
++ */
++function extractJsonLdBlocks(html = "") {
++  const blocks = [];
++  const regex = /<script\b[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi;
++  let match;
++  while ((match = regex.exec(String(html || ""))) !== null) {
++    const rawJson = match[1].trim();
++    if (!rawJson) continue;
++    try {
++      const parsed = JSON.parse(rawJson);
++      if (Array.isArray(parsed)) {
++        blocks.push(...parsed);
++      } else if (parsed && Array.isArray(parsed["@graph"])) {
++        blocks.push(...parsed["@graph"]);
++      } else if (parsed && typeof parsed === "object") {
++        blocks.push(parsed);
++      }
++    } catch {
++      // Ignore malformed JSON-LD blocks safely
++    }
++  }
++  return blocks;
++}
++
++function extractTimeElements(html = "") {
++  const results = [];
++  const regex = /<time\b([^>]*)>([\s\S]*?)<\/time>/gi;
++  let match;
++  while ((match = regex.exec(String(html || ""))) !== null) {
++    const attrs = match[1] || "";
++    const innerText = match[2].replace(/<[^>]+>/g, " ").trim();
++    const dtMatch = attrs.match(/\bdatetime=["']([^"']+)["']/i);
++    const roleMatch = attrs.match(/\b(?:data-role|itemprop|property)=["']([^"']+)["']/i);
++    results.push({
++      datetime: dtMatch ? dtMatch[1].trim() : null,
++      role: roleMatch ? roleMatch[1].trim().toLowerCase() : null,
++      text: innerText
++    });
++  }
++  return results;
++}
++
++function extractStructuredTemporalProvenance({
++  html = "",
++  text = "",
++  explicitPageDate = null,
++  explicitEventDate = null,
++  fetchedAt = null
++} = {}) {
++  const resolvedFetchedAt = fetchedAt || new Date().toISOString();
++  const dateSources = {
++    pageDateSource: null,
++    eventDateSource: null,
++    fetchedAtSource: "browser_network_receipt"
++  };
++
++  let pageDate = normalizeDateCandidate(explicitPageDate);
++  if (pageDate) {
++    dateSources.pageDateSource = "explicit_input";
++  }
++
++  let eventDate = normalizeDateCandidate(explicitEventDate);
++  if (eventDate) {
++    dateSources.eventDateSource = "explicit_input";
++  }
++
++  let pageModifiedDate = null;
++
++  // 1. Inspect JSON-LD blocks
++  const jsonLdNodes = extractJsonLdBlocks(html);
++  for (const node of jsonLdNodes) {
++    if (!node || typeof node !== "object") continue;
++
++    if (!pageDate) {
++      const pubRaw = node.datePublished || node.dateCreated || node.uploadDate;
++      const normPub = normalizeDateCandidate(pubRaw);
++      if (normPub) {
++        pageDate = normPub;
++        dateSources.pageDateSource = "json_ld_datePublished";
++      }
++    }
++
++    if (!pageModifiedDate && node.dateModified) {
++      pageModifiedDate = normalizeDateCandidate(node.dateModified);
++    }
++
++    if (!eventDate) {
++      const evRaw =
++        node.startDate ||
++        node.eventDate ||
++        node.temporalCoverage ||
++        (node.about && (node.about.startDate || node.about.eventDate));
++      const normEv = normalizeDateCandidate(evRaw);
++      if (normEv) {
++        eventDate = normEv;
++        dateSources.eventDateSource = "json_ld_eventDate";
++      }
++    }
++  }
++
++  // 2. Inspect `<time datetime="...">` elements
++  const timeEls = extractTimeElements(html);
++  for (const t of timeEls) {
++    const candidate = normalizeDateCandidate(t.datetime || t.text);
++    if (!candidate) continue;
++    const role = String(t.role || "");
++    if (!eventDate && (role.includes("event") || role.includes("startdate") || role.includes("effective"))) {
++      eventDate = candidate;
++      dateSources.eventDateSource = "html_time_element";
++    } else if (!pageDate && (role.includes("publish") || role.includes("page") || role.includes("datepublished") || !role)) {
++      pageDate = candidate;
++      dateSources.pageDateSource = "html_time_element";
++    }
++  }
++
++  // 3. Inspect Dublin Core / OpenGraph `<meta>` tags
++  if (!pageDate) {
++    const metaPub = String(html || "").match(
++      /<meta\b[^>]+(?:name|property)=["'](?:article:published_time|DC\.date\.issued|publish-date|date)["'][^>]+content=["']([^"']+)["']/i
++    );
++    if (metaPub) {
++      const norm = normalizeDateCandidate(metaPub[1]);
++      if (norm) {
++        pageDate = norm;
++        dateSources.pageDateSource = "meta_tag";
++      }
++    }
++  }
++
++  if (!eventDate) {
++    const metaEv = String(html || "").match(
++      /<meta\b[^>]+(?:name|property)=["'](?:event-date|effective-date|DC\.date\.valid)["'][^>]+content=["']([^"']+)["']/i
++    );
++    if (metaEv) {
++      const norm = normalizeDateCandidate(metaEv[1]);
++      if (norm) {
++        eventDate = norm;
++        dateSources.eventDateSource = "meta_tag";
++      }
++    }
++  }
++
++  // 4. Inspect visible prose patterns
++  const combinedText = `${text || ""}\n${String(html || "").replace(/<[^>]+>/g, " ")}`;
++  if (!pageDate) {
++    const m = combinedText.match(
++      /(?:дата публикации|опубликовано|дата на странице|published(?:\s+on)?)\s*[:—-]?\s*([0-9]{4}-[0-9]{2}-[0-9]{2}|[0-9]{1,2}\s+[а-яёa-z]+\s+[0-9]{4})/iu
++    );
++    if (m) {
++      const norm = normalizeDateCandidate(m[1]);
++      if (norm) {
++        pageDate = norm;
++        dateSources.pageDateSource = "visible_text";
++      }
++    }
++  }
++
++  if (!eventDate) {
++    const m = combinedText.match(
++      /(?:дата события|вступает в силу|событие от|действует с|event date|effective(?:\s+from)?)\s*[:—-]?\s*([0-9]{4}-[0-9]{2}-[0-9]{2}|[0-9]{1,2}\s+[а-яёa-z]+\s+[0-9]{4})/iu
++    );
++    if (m) {
++      const norm = normalizeDateCandidate(m[1]);
++      if (norm) {
++        eventDate = norm;
++        dateSources.eventDateSource = "visible_text";
++      }
++    }
++  }
++
++  return {
++    pageDate: pageDate || null,
++    pageModifiedDate: pageModifiedDate || null,
++    eventDate: eventDate || null,
++    fetchedAt: resolvedFetchedAt,
++    distinctFieldsVerified:
++      pageDate !== resolvedFetchedAt && eventDate !== resolvedFetchedAt,
++    dateSources
++  };
++}
++
++module.exports = {
++  extractJsonLdBlocks,
++  extractTimeElements,
++  extractStructuredTemporalProvenance
++};
+diff --git a/desktop/windows/test/browser-research-acceptance.test.cjs b/desktop/windows/test/browser-research-acceptance.test.cjs
+index e151f8d..a8dff6d 100644
+--- a/desktop/windows/test/browser-research-acceptance.test.cjs
++++ b/desktop/windows/test/browser-research-acceptance.test.cjs
+@@ -1241,3 +1241,235 @@ test("11. Incremental Dynamic Page & Infinite-Scroll Reader (`dynamic-page-scrol
+   assert.deepEqual(resumedComplete.newlyProcessedUrls, ["https://corpus.local/cp-site-2-captcha"]);
+   assert.equal(resumedComplete.claims.length, 2);
+ });
++
++test("12. Structured Temporal & JSON-LD Metadata Extractor (`temporal-metadata-extractor.cjs`) & Interactive User-Agent Co-Browsing Handback (`co-browsing-handback.cjs`)", async () => {
++  const {
++    extractStructuredTemporalProvenance
++  } = require("../browser/temporal-metadata-extractor.cjs");
++
++  const htmlWithJsonLdAndTime = `
++    <!doctype html>
++    <html>
++      <head>
++        <script type="application/ld+json">
++          {
++            "@context": "https://schema.org",
++            "@graph": [
++              {
++                "@type": "TechArticle",
++                "headline": "Регламент SLA Koswork 2026",
++                "datePublished": "2026-10-12",
++                "dateModified": "2026-10-19"
++              },
++              {
++                "@type": "Event",
++                "name": "Ввод регламента SLA в действие",
++                "startDate": "2026-11-01"
++              }
++            ]
++          }
++        </script>
++      </head>
++      <body>
++        <p>Технический регламент опубликован 12 октября 2026.</p>
++      </body>
++    </html>
++  `;
++
++  const temporal = extractStructuredTemporalProvenance({
++    html: htmlWithJsonLdAndTime,
++    fetchedAt: "2026-11-07T22:10:00.000Z"
++  });
++  assert.equal(temporal.pageDate, "2026-10-12");
++  assert.equal(temporal.pageModifiedDate, "2026-10-19");
++  assert.equal(temporal.eventDate, "2026-11-01");
++  assert.equal(temporal.fetchedAt, "2026-11-07T22:10:00.000Z");
++  assert.equal(temporal.distinctFieldsVerified, true);
++  assert.equal(temporal.dateSources.pageDateSource, "json_ld_datePublished");
++  assert.equal(temporal.dateSources.eventDateSource, "json_ld_eventDate");
++
++  // Co-browsing takeover, user-highlighted excerpt, and clean handback re-observation
++  const workspaceRoot = createTempWorkspace();
++  const shell = createKosworkBrowserShell({ workspaceRoot });
++  const engine = shell.engine;
++
++  engine.registerSyntheticSite("https://corpus.local/co-browse-portal", {
++    title: "Портал совместного исследования с пользователем",
++    pageDate: "2026-11-07",
++    eventDate: "2026-11-05",
++    html: `
++      <html>
++        <body>
++          <p>Важное примечание: аппаратное шифрование AES-256-GCM включено по умолчанию во всех узлах.</p>
++          <input id="note-field" name="note" type="text" value="initial" />
++        </body>
++      </html>
++    `
++  });
++
++  await engine.navigate({
++    tabId: "tab-cobrowse",
++    url: "https://corpus.local/co-browse-portal"
++  });
++
++  const staleAgentObs = engine.observePage("tab-cobrowse").snapshot;
++
++  // User manually takes over, edits a field, and highlights a passage
++  const takeover = shell.coBrowsing.recordManualUserAction({
++    tabId: "tab-cobrowse",
++    actionType: "user_manual_input",
++    fieldChanges: { "note-field": "edited-by-user" }
++  });
++  assert.equal(takeover.invalidatedPriorObservations, true);
++
++  // Stale agent observation is now rejected for form input
++  assert.throws(
++    () =>
++      engine.fillForm({
++        tabId: "tab-cobrowse",
++        observedSnapshot: staleAgentObs,
++        fields: { "note-field": "agent-attempt-with-stale-obs" }
++      }),
++    (err) => err && err.code === "OBSERVATION_INVALIDATED_BY_USER"
++  );
++
++  // User highlights an excerpt directly
++  const userExcerpt = await shell.dispatchToolCall("browser.user_highlight_excerpt", {
++    tabId: "tab-cobrowse",
++    selectedText: "аппаратное шифрование AES-256-GCM включено по умолчанию"
++  });
++  assert.equal(userExcerpt.actor, "user");
++  assert.ok(userExcerpt.startUtf16 >= 0);
++
++  // Agent performs explicit handback re-observation and can now fill the form cleanly
++  const handback = await shell.dispatchToolCall("browser.reobserve_after_handback", {
++    tabId: "tab-cobrowse"
++  });
++  assert.equal(handback.handbackCompleted, true);
++
++  const fillAfterHandback = engine.fillForm({
++    tabId: "tab-cobrowse",
++    observedSnapshot: handback.snapshot,
++    fields: { "note-field": "agent-updated-after-handback" }
++  });
++  assert.equal(fillAfterHandback.status, "ok");
++  assert.equal(fillAfterHandback.snapshot.controls[0].value, "agent-updated-after-handback");
++});
++
++test("13. Live Report Re-Verifier & Delta Updater (`report-reverifier.cjs` & `browser.reverify_report` via `shell.cjs`)", async () => {
++  const workspaceRoot = createTempWorkspace();
++  const shell = createKosworkBrowserShell({ workspaceRoot });
++  const engine = shell.engine;
++
++  engine.registerSyntheticSite("https://corpus.local/rev-site-1", {
++    title: "Стабильный источник №1",
++    pageDate: "2026-11-01",
++    eventDate: "2026-11-01",
++    text: "Для пакета Option Gamma базовая цена составляет $29/мес."
++  });
++
++  // Initially 503 Unavailable, then recovers to 200 OK before re-verification
++  engine.registerSyntheticSite("https://corpus.local/rev-site-2-recovered", {
++    title: "Восстановленный портал бенчмарков Option Gamma",
++    httpStatus: 200,
++    pageDate: "2026-11-07",
++    eventDate: "2026-11-06",
++    text: "После завершения техработ подтверждено: для Option Gamma задержка p99 составляет 9 мс."
++  });
++
++  const nav1 = await engine.navigate({
++    tabId: "rev-tab-1",
++    url: "https://corpus.local/rev-site-1"
++  });
++  const exc1 = engine.extractExcerpt("rev-tab-1", {
++    searchTerm: "базовая цена составляет $29/мес"
++  });
++
++  const previousReportData = {
++    question: "Параметры пакета Option Gamma",
++    criteria: ["Цена", "Задержка p99"],
++    sources: [
++      {
++        url: nav1.url,
++        title: nav1.snapshot.title,
++        httpStatus: 200,
++        available: true,
++        pageDate: nav1.pageDate,
++        eventDate: nav1.eventDate,
++        fetchedAt: nav1.fetchedAt,
++        tabReceipt: nav1.tabReceipt
++      },
++      {
++        url: "https://corpus.local/rev-site-2-recovered",
++        title: "Недоступный портал",
++        httpStatus: 503,
++        available: false,
++        fetchedAt: nav1.fetchedAt
++      }
++    ],
++    claims: [
++      {
++        claimId: "gamma-price",
++        optionName: "Option Gamma",
++        criterion: "Цена",
++        value: "$29/мес",
++        claim: "Option Gamma стоит $29/мес",
++        excerpt: exc1,
++        source: {
++          url: nav1.url,
++          title: nav1.snapshot.title,
++          pageDate: nav1.pageDate,
++          eventDate: nav1.eventDate,
++          fetchedAt: nav1.fetchedAt
++        }
++      }
++    ],
++    comparisonRows: [
++      {
++        optionName: "Option Gamma",
++        values: {
++          Цена: {
++            displayValue: "$29/мес",
++            sourceUrl: nav1.url,
++            startUtf16: exc1.startUtf16,
++            endUtf16: exc1.endUtf16
++          }
++        }
++      }
++    ],
++    unavailableSources: [
++      {
++        url: "https://corpus.local/rev-site-2-recovered",
++        httpStatus: 503,
++        reason: "HTTP 503"
++      }
++    ]
++  };
++
++  const reverified = await shell.dispatchToolCall(
++    "browser.reverify_report",
++    {
++      reportSlug: "option-gamma-reverified",
++      previousReportData,
++      recoveryProbes: [
++        {
++          url: "https://corpus.local/rev-site-2-recovered",
++          optionName: "Option Gamma",
++          criterion: "Задержка p99",
++          value: "9 мс",
++          searchTerm: "для Option Gamma задержка p99 составляет 9 мс",
++          claimText: "Задержка p99 для Option Gamma составляет 9 мс"
++        }
++      ]
++    },
++    { workspaceRoot }
++  );
++
++  assert.equal(reverified.status, "reverified");
++  assert.deepEqual(reverified.recoveredSources, ["https://corpus.local/rev-site-2-recovered"]);
++  assert.equal(reverified.newlyConfirmedClaims.length, 1);
++  assert.equal(reverified.driftedClaims.length, 0);
++  assert.equal(reverified.stillUnavailable.length, 0);
++  assert.equal(reverified.savedReports.confirmedClaims.length, 2);
++  assert.equal(reverified.savedReports.citationAudit.auditPassed, true);
++});
+-- 
+2.39.5
+

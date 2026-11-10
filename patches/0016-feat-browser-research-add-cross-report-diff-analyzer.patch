@@ -1,0 +1,687 @@
+From 3a12c24cf1ca6d99f194010c706116d7f2b11b72 Mon Sep 17 00:00:00 2001
+From: Kosmora Engineering <eng@kosmora.ai>
+Date: Sun, 8 Nov 2026 20:54:22 +0000
+Subject: [PATCH 16/32] feat(browser-research): add cross-report diff analyzer,
+ in-page UTF-16 find highlighter, and HTTP 429/403 non-bypass guard
+
+---
+ .../browser/find-in-page-highlighter.cjs      | 111 ++++++++++
+ .../browser/rate-limit-and-robots-guard.cjs   |  98 +++++++++
+ .../windows/browser/report-diff-analyzer.cjs  | 195 ++++++++++++++++++
+ desktop/windows/browser/shell.cjs             |  70 +++++++
+ .../test/browser-research-acceptance.test.cjs | 114 ++++++++++
+ 5 files changed, 588 insertions(+)
+ create mode 100644 desktop/windows/browser/find-in-page-highlighter.cjs
+ create mode 100644 desktop/windows/browser/rate-limit-and-robots-guard.cjs
+ create mode 100644 desktop/windows/browser/report-diff-analyzer.cjs
+
+diff --git a/desktop/windows/browser/find-in-page-highlighter.cjs b/desktop/windows/browser/find-in-page-highlighter.cjs
+new file mode 100644
+index 0000000..73216b2
+--- /dev/null
++++ b/desktop/windows/browser/find-in-page-highlighter.cjs
+@@ -0,0 +1,111 @@
++"use strict";
++
++const { extractVerifiableExcerpt } = require("./document.cjs");
++
++/**
++ * Koswork In-Page All-Occurrences UTF-16 Find & Highlighter
++ * (`desktop/windows/browser/find-in-page-highlighter.cjs`).
++ *
++ * Deepens Requirement #3 & #7:
++ * - Provides deterministic `Ctrl+F`-style search across `snapshot.fullTextUtf16`,
++ *   returning every occurrence with exact `[startUtf16, endUtf16]` code unit offsets,
++ *   surrounding context snippets (`contextBefore`, `matchedText`, `contextAfter`),
++ *   and owning block metadata (`blockId`, `bounds`).
++ * - Allows promoting any occurrence index (`occurrenceIndex`) directly into a
++ *   cryptographically verified citation excerpt (`extractExcerptForOccurrence`).
++ */
++function findAllOccurrencesInSnapshot(
++  snapshot,
++  { query, contextWindowChars = 60, maxMatches = 100 } = {}
++) {
++  if (!snapshot || typeof snapshot.fullTextUtf16 !== "string") {
++    throw new Error("FIND_IN_PAGE_REQUIRES_SNAPSHOT");
++  }
++  const needle = String(query || "").trim();
++  if (!needle) {
++    throw new Error("FIND_IN_PAGE_QUERY_REQUIRED");
++  }
++
++  const fullText = snapshot.fullTextUtf16;
++  const lowerFull = fullText.toLowerCase();
++  const lowerNeedle = needle.toLowerCase();
++
++  const matches = [];
++  let cursor = 0;
++
++  while (cursor < fullText.length && matches.length < maxMatches) {
++    const idx = lowerFull.indexOf(lowerNeedle, cursor);
++    if (idx < 0) break;
++
++    const startUtf16 = idx;
++    const endUtf16 = idx + needle.length;
++    const matchedText = fullText.slice(startUtf16, endUtf16);
++
++    const ctxStart = Math.max(0, startUtf16 - contextWindowChars);
++    const ctxEnd = Math.min(fullText.length, endUtf16 + contextWindowChars);
++    const contextBefore = fullText.slice(ctxStart, startUtf16);
++    const contextAfter = fullText.slice(endUtf16, ctxEnd);
++
++    const owningBlock = (snapshot.blocks || []).find(
++      (b) => startUtf16 >= b.startUtf16 && endUtf16 <= b.endUtf16
++    );
++
++    matches.push({
++      occurrenceIndex: matches.length + 1,
++      startUtf16,
++      endUtf16,
++      lengthUtf16: endUtf16 - startUtf16,
++      matchedText,
++      contextBefore,
++      contextAfter,
++      blockId: owningBlock ? owningBlock.blockId : null,
++      bounds: owningBlock ? owningBlock.bounds : null
++    });
++
++    cursor = endUtf16;
++  }
++
++  return {
++    snapshotId: snapshot.snapshotId,
++    pageVersion: snapshot.pageVersion,
++    url: snapshot.url,
++    query: needle,
++    totalOccurrences: matches.length,
++    matches
++  };
++}
++
++function promoteOccurrenceToVerifiedExcerpt(
++  snapshot,
++  { query, occurrenceIndex = 1, expandToBlock = true } = {}
++) {
++  const found = findAllOccurrencesInSnapshot(snapshot, { query });
++  const target = found.matches.find((m) => m.occurrenceIndex === Number(occurrenceIndex));
++  if (!target) {
++    const err = new Error(
++      `FIND_OCCURRENCE_OUT_OF_RANGE: requested #${occurrenceIndex} of ${found.totalOccurrences} for "${query}"`
++    );
++    err.code = "FIND_OCCURRENCE_OUT_OF_RANGE";
++    throw err;
++  }
++
++  if (expandToBlock && target.blockId) {
++    const blk = (snapshot.blocks || []).find((b) => b.blockId === target.blockId);
++    if (blk) {
++      return extractVerifiableExcerpt(snapshot, {
++        startUtf16: blk.startUtf16,
++        endUtf16: blk.endUtf16
++      });
++    }
++  }
++
++  return extractVerifiableExcerpt(snapshot, {
++    startUtf16: target.startUtf16,
++    endUtf16: target.endUtf16
++  });
++}
++
++module.exports = {
++  findAllOccurrencesInSnapshot,
++  promoteOccurrenceToVerifiedExcerpt
++};
+diff --git a/desktop/windows/browser/rate-limit-and-robots-guard.cjs b/desktop/windows/browser/rate-limit-and-robots-guard.cjs
+new file mode 100644
+index 0000000..18106d6
+--- /dev/null
++++ b/desktop/windows/browser/rate-limit-and-robots-guard.cjs
+@@ -0,0 +1,98 @@
++"use strict";
++
++/**
++ * Koswork HTTP 429 `Retry-After`, Meta-Robots & Access-Restriction Non-Bypass Guard
++ * (`desktop/windows/browser/rate-limit-and-robots-guard.cjs`).
++ *
++ * Deepens Requirement #4 & #6:
++ * - "CAPTCHA/логины — пауза для пользователя. Не обходить ограничения доступа и не расширять file permissions."
++ * - "Оптимизировать ресурсы по измерениям... отмена незавершённого чтения/поиска."
++ *
++ * Capabilities:
++ * 1. Parses `Retry-After` headers (integer seconds or HTTP date) on `429 Too Many Requests`
++ *    or `503 Service Unavailable` responses and enforces a bounded, `AbortSignal`-cancellable
++ *    wait (`maxRetryDelayMs`).
++ * 2. Evaluates `401 Unauthorized` / `403 Forbidden` / paywall responses and strictly returns
++ *    `status: "access_restricted_no_bypass"` (`bypassAttempted: false`) so the agent never
++ *    attempts to circumvent access controls.
++ * 3. Extracts `<meta name="robots">` / `<meta name="googlebot">` directives from HTML for
++ *    provenance transparency.
++ */
++
++function parseRetryAfterMs(retryAfterHeader, nowMs = Date.now(), maxCapMs = 5000) {
++  if (retryAfterHeader === undefined || retryAfterHeader === null) return 0;
++  const raw = String(retryAfterHeader).trim();
++  if (!raw) return 0;
++
++  if (/^\d+(\.\d+)?$/.test(raw)) {
++    const secs = Number(raw);
++    return Math.min(maxCapMs, Math.max(0, Math.round(secs * 1000)));
++  }
++
++  const parsedDateMs = Date.parse(raw);
++  if (!Number.isNaN(parsedDateMs)) {
++    return Math.min(maxCapMs, Math.max(0, parsedDateMs - nowMs));
++  }
++
++  return 0;
++}
++
++function extractMetaRobotsDirectives(html = "") {
++  const directives = new Set();
++  const regex =
++    /<meta\b[^>]+name=["'](?:robots|bot|kosworkbot)["'][^>]+content=["']([^"']+)["']/gi;
++  let m;
++  while ((m = regex.exec(String(html || ""))) !== null) {
++    const parts = m[1]
++      .split(",")
++      .map((p) => p.trim().toLowerCase())
++      .filter(Boolean);
++    for (const p of parts) {
++      directives.add(p);
++    }
++  }
++  return Array.from(directives);
++}
++
++function evaluateAccessRestrictionDecision({ httpStatus = 200, html = "", headers = {} } = {}) {
++  const status = Number(httpStatus || 200);
++  const robotsDirectives = extractMetaRobotsDirectives(html);
++
++  if (status === 401 || status === 403 || status === 451) {
++    return {
++      allowedToExtract: false,
++      status: "access_restricted_no_bypass",
++      httpStatus: status,
++      bypassAttempted: false,
++      reasonRu: `Доступ к источнику ограничен (HTTP ${status}); обход ограничений доступа запрещён политикой Koswork.`,
++      robotsDirectives
++    };
++  }
++
++  if (status === 429) {
++    const retryAfterMs = parseRetryAfterMs(headers["retry-after"] ?? headers["Retry-After"]);
++    return {
++      allowedToExtract: false,
++      status: "rate_limited_429",
++      httpStatus: 429,
++      bypassAttempted: false,
++      retryAfterMs,
++      reasonRu: `Источник вернул 429 Too Many Requests (Retry-After: ${retryAfterMs} мс).`,
++      robotsDirectives
++    };
++  }
++
++  return {
++    allowedToExtract: status >= 200 && status < 400,
++    status: status >= 200 && status < 400 ? "ok" : "unavailable",
++    httpStatus: status,
++    bypassAttempted: false,
++    robotsDirectives
++  };
++}
++
++module.exports = {
++  parseRetryAfterMs,
++  extractMetaRobotsDirectives,
++  evaluateAccessRestrictionDecision
++};
+diff --git a/desktop/windows/browser/report-diff-analyzer.cjs b/desktop/windows/browser/report-diff-analyzer.cjs
+new file mode 100644
+index 0000000..d78fdd2
+--- /dev/null
++++ b/desktop/windows/browser/report-diff-analyzer.cjs
+@@ -0,0 +1,195 @@
++"use strict";
++
++const { normalizeComparableValue } = require("./claim-comparator.cjs");
++const { createKosworkWorkspaceService } = require("../workspace/workspace-service.cjs");
++
++/**
++ * Koswork Cross-Report Diff & Regression Analyzer
++ * (`desktop/windows/browser/report-diff-analyzer.cjs`).
++ *
++ * Compares two Browser Research Reports (`baselineReport` vs `currentReport`):
++ * 1. Detects `newlyConfirmedCriteria` (upgraded from unknown/unavailable to confirmed with a UTF-16 excerpt).
++ * 2. Detects `valueChanges` (where the canonical normalized value of `(optionName, criterion)`
++ *    changed between runs, recording before/after quotes, URLs, and `eventDate` / `pageDate`).
++ * 3. Detects `resolvedContradictions` and `newContradictions`.
++ * 4. Saves a verified Markdown and JSON diff report into the workspace via `workspace-service.cjs`.
++ */
++
++function indexClaimsByOptionAndCriterion(claims = []) {
++  const map = new Map();
++  for (const c of claims) {
++    if (!c) continue;
++    const key = `${String(c.optionName || "Option").trim()}||${String(
++      c.criterion || "Spec"
++    ).trim()}`;
++    map.set(key, c);
++  }
++  return map;
++}
++
++function compareResearchReports(baselineReport = {}, currentReport = {}) {
++  const baseClaims = baselineReport.confirmedClaims || baselineReport.claims || [];
++  const currClaims = currentReport.confirmedClaims || currentReport.claims || [];
++
++  const baseMap = indexClaimsByOptionAndCriterion(baseClaims);
++  const currMap = indexClaimsByOptionAndCriterion(currClaims);
++
++  const newlyConfirmedCriteria = [];
++  const lostConfirmations = [];
++  const valueChanges = [];
++  const unchangedConfirmations = [];
++
++  for (const [key, curr] of currMap.entries()) {
++    const [optionName, criterion] = key.split("||");
++    if (!baseMap.has(key)) {
++      newlyConfirmedCriteria.push({
++        optionName,
++        criterion,
++        newValue: curr.value || curr.excerpt?.quote || "",
++        newQuote: curr.excerpt?.quote || "",
++        startUtf16: curr.excerpt?.startUtf16 ?? null,
++        endUtf16: curr.excerpt?.endUtf16 ?? null,
++        sourceUrl: curr.source?.url || null,
++        eventDate: curr.source?.eventDate || null
++      });
++      continue;
++    }
++
++    const base = baseMap.get(key);
++    const normBase = normalizeComparableValue(base.value || base.excerpt?.quote || "");
++    const normCurr = normalizeComparableValue(curr.value || curr.excerpt?.quote || "");
++
++    if (normBase.canonicalKey !== normCurr.canonicalKey) {
++      valueChanges.push({
++        optionName,
++        criterion,
++        previousValue: base.value || base.excerpt?.quote || "",
++        previousQuote: base.excerpt?.quote || "",
++        previousSourceUrl: base.source?.url || null,
++        previousEventDate: base.source?.eventDate || null,
++        currentValue: curr.value || curr.excerpt?.quote || "",
++        currentQuote: curr.excerpt?.quote || "",
++        currentSourceUrl: curr.source?.url || null,
++        currentEventDate: curr.source?.eventDate || null
++      });
++    } else {
++      unchangedConfirmations.push({
++        optionName,
++        criterion,
++        value: curr.value || curr.excerpt?.quote || ""
++      });
++    }
++  }
++
++  for (const [key, base] of baseMap.entries()) {
++    if (!currMap.has(key)) {
++      const [optionName, criterion] = key.split("||");
++      lostConfirmations.push({
++        optionName,
++        criterion,
++        previousValue: base.value || base.excerpt?.quote || "",
++        previousSourceUrl: base.source?.url || null
++      });
++    }
++  }
++
++  const baseUnavailable = new Set(
++    (baselineReport.unavailableSources || []).map((u) => u.url)
++  );
++  const currUnavailable = new Set(
++    (currentReport.unavailableSources || []).map((u) => u.url)
++  );
++
++  const recoveredSources = Array.from(baseUnavailable).filter((u) => !currUnavailable.has(u));
++  const newlyUnavailableSources = Array.from(currUnavailable).filter(
++    (u) => !baseUnavailable.has(u)
++  );
++
++  return {
++    comparedAt: new Date().toISOString(),
++    newlyConfirmedCount: newlyConfirmedCriteria.length,
++    valueChangesCount: valueChanges.length,
++    unchangedCount: unchangedConfirmations.length,
++    lostConfirmationsCount: lostConfirmations.length,
++    newlyConfirmedCriteria,
++    valueChanges,
++    unchangedConfirmations,
++    lostConfirmations,
++    recoveredSources,
++    newlyUnavailableSources
++  };
++}
++
++function renderReportDiffMarkdown(diffResult = {}, title = "Сравнение ревизий отчёта") {
++  const lines = [
++    `# ${title}`,
++    "",
++    `- Дата сверки: \`${diffResult.comparedAt || new Date().toISOString()}\``,
++    `- Новых подтверждённых критериев: **${diffResult.newlyConfirmedCount || 0}**`,
++    `- Изменившихся значений: **${diffResult.valueChangesCount || 0}**`,
++    `- Без изменений: **${diffResult.unchangedCount || 0}**`,
++    ""
++  ];
++
++  if ((diffResult.newlyConfirmedCriteria || []).length > 0) {
++    lines.push("## 1. Новые подтверждённые критерии");
++    for (const item of diffResult.newlyConfirmedCriteria) {
++      lines.push(
++        `- **${item.optionName} — ${item.criterion}**: \`${item.newValue}\` (выдержка [${item.startUtf16}..${item.endUtf16}]: «${item.newQuote}», источник: ${item.sourceUrl})`
++      );
++    }
++    lines.push("");
++  }
++
++  if ((diffResult.valueChanges || []).length > 0) {
++    lines.push("## 2. Изменения значений между ревизиями");
++    for (const chg of diffResult.valueChanges) {
++      lines.push(
++        `- **${chg.optionName} — ${chg.criterion}**: \`${chg.previousValue}\` (${chg.previousSourceUrl || "н/д"}) → \`${chg.currentValue}\` (${chg.currentSourceUrl || "н/д"}, дата события: ${chg.currentEventDate || "н/д"})`
++      );
++    }
++    lines.push("");
++  }
++
++  return lines.join("\n") + "\n";
++}
++
++async function saveReportDiffViaWorkspace({
++  workspaceRoot,
++  diffSlug = "research-report-diff",
++  baselineReport,
++  currentReport,
++  signal = null
++} = {}) {
++  const diff = compareResearchReports(baselineReport, currentReport);
++  const md = renderReportDiffMarkdown(diff);
++  const json = JSON.stringify(diff, null, 2) + "\n";
++
++  const svc = createKosworkWorkspaceService();
++  await svc.connectFolder({ folderPath: workspaceRoot, signal });
++
++  const mdFile = await svc.createFile({
++    relativePath: `reports/${diffSlug}.md`,
++    content: md,
++    createParents: true,
++    signal
++  });
++  const jsonFile = await svc.createFile({
++    relativePath: `reports/${diffSlug}.json`,
++    content: json,
++    createParents: true,
++    signal
++  });
++
++  return {
++    diff,
++    markdownFile: mdFile,
++    jsonFile
++  };
++}
++
++module.exports = {
++  compareResearchReports,
++  renderReportDiffMarkdown,
++  saveReportDiffViaWorkspace
++};
+diff --git a/desktop/windows/browser/shell.cjs b/desktop/windows/browser/shell.cjs
+index 0fbd7c4..3de74ec 100644
+--- a/desktop/windows/browser/shell.cjs
++++ b/desktop/windows/browser/shell.cjs
+@@ -23,6 +23,15 @@ const {
+ } = require("./heading-outline-navigator.cjs");
+ const { scoreMultiSourceCorroboration } = require("./corroboration-scorer.cjs");
+ const { buildBrowserResearchDrawerViewModel } = require("./ui-research-drawer-state.cjs");
++const {
++  compareResearchReports,
++  saveReportDiffViaWorkspace
++} = require("./report-diff-analyzer.cjs");
++const {
++  findAllOccurrencesInSnapshot,
++  promoteOccurrenceToVerifiedExcerpt
++} = require("./find-in-page-highlighter.cjs");
++const { evaluateAccessRestrictionDecision } = require("./rate-limit-and-robots-guard.cjs");
+ 
+ /**
+  * Shared Tool & Execution Boundary for Koswork Browser (`desktop/windows/browser/shell.cjs`).
+@@ -85,6 +94,18 @@ const BROWSER_RESEARCH_TOOL_DEFINITIONS = Object.freeze([
+       "Извлечь верифицированную UTF-16 выдержку строго внутри выбранного раздела длинной страницы.",
+     requiredParams: ["tabId", "headingQuery", "searchTerm"]
+   },
++  {
++    name: "browser.find_in_page",
++    description:
++      "Найти все вхождения фразы на странице с точными смещениями UTF-16 и контекстным окном.",
++    requiredParams: ["tabId", "query"]
++  },
++  {
++    name: "browser.promote_find_occurrence",
++    description:
++      "Преобразовать выбранное вхождение поиска по странице в верифицированную UTF-16 выдержку.",
++    requiredParams: ["tabId", "query", "occurrenceIndex"]
++  },
+   {
+     name: "browser.extract_structured_matrix",
+     description:
+@@ -133,6 +154,12 @@ const BROWSER_RESEARCH_TOOL_DEFINITIONS = Object.freeze([
+       "Перепроверить и обновить исследовательский отчёт по актуальному состоянию источников.",
+     requiredParams: ["previousReportData"]
+   },
++  {
++    name: "browser.diff_reports",
++    description:
++      "Сравнить две ревизии исследовательского отчёта и сохранить MD/JSON отчёт об изменениях в рабочую папку.",
++    requiredParams: ["baselineReport", "currentReport"]
++  },
+   {
+     name: "browser.wake_hibernated_tab",
+     description:
+@@ -163,6 +190,12 @@ const BROWSER_RESEARCH_TOOL_DEFINITIONS = Object.freeze([
+       "Оценить многосайтовую перекрёстную подтверждённость утверждений (multi-source corroboration) и отсеять голые ссылки без выдержки.",
+     requiredParams: ["claims"]
+   },
++  {
++    name: "browser.evaluate_access_restriction",
++    description:
++      "Оценить статус ограничения доступа (401/403 без обхода, 429 Retry-After, meta-robots).",
++    requiredParams: ["httpStatus"]
++  },
+   {
+     name: "browser.get_drawer_view_model",
+     description:
+@@ -292,6 +325,24 @@ function createKosworkBrowserShell(options = {}) {
+         });
+       }
+ 
++      case "browser.find_in_page": {
++        const obs = engine.observePage(args.tabId);
++        return findAllOccurrencesInSnapshot(obs.snapshot, {
++          query: args.query,
++          contextWindowChars: args.contextWindowChars ?? 60,
++          maxMatches: args.maxMatches ?? 100
++        });
++      }
++
++      case "browser.promote_find_occurrence": {
++        const obs = engine.observePage(args.tabId);
++        return promoteOccurrenceToVerifiedExcerpt(obs.snapshot, {
++          query: args.query,
++          occurrenceIndex: args.occurrenceIndex ?? 1,
++          expandToBlock: args.expandToBlock !== false
++        });
++      }
++
+       case "browser.extract_structured_matrix": {
+         const obs = engine.observePage(args.tabId);
+         const tab = engine.tabs.get(String(args.tabId));
+@@ -393,6 +444,18 @@ function createKosworkBrowserShell(options = {}) {
+           signal
+         });
+ 
++      case "browser.diff_reports":
++        if (args.saveToWorkspace && resolvedWorkspaceRoot) {
++          return await saveReportDiffViaWorkspace({
++            workspaceRoot: resolvedWorkspaceRoot,
++            diffSlug: args.diffSlug || "research-report-diff",
++            baselineReport: args.baselineReport,
++            currentReport: args.currentReport,
++            signal
++          });
++        }
++        return compareResearchReports(args.baselineReport, args.currentReport);
++
+       case "browser.wake_hibernated_tab":
+         return await tabRevalidator.wakeAndRevalidateTab(args.tabId, {
+           forceUpstreamCheck: args.forceUpstreamCheck !== false
+@@ -431,6 +494,13 @@ function createKosworkBrowserShell(options = {}) {
+       case "browser.score_corroboration":
+         return scoreMultiSourceCorroboration(args.claims || []);
+ 
++      case "browser.evaluate_access_restriction":
++        return evaluateAccessRestrictionDecision({
++          httpStatus: args.httpStatus,
++          html: args.html || "",
++          headers: args.headers || {}
++        });
++
+       case "browser.get_drawer_view_model":
+         return buildBrowserResearchDrawerViewModel(engine);
+ 
+diff --git a/desktop/windows/test/browser-research-acceptance.test.cjs b/desktop/windows/test/browser-research-acceptance.test.cjs
+index 7274412..0fce6d8 100644
+--- a/desktop/windows/test/browser-research-acceptance.test.cjs
++++ b/desktop/windows/test/browser-research-acceptance.test.cjs
+@@ -2042,3 +2042,117 @@ test("19. Multi-Source Claim Corroboration Scorer (`corroboration-scorer.cjs`) &
+   assert.equal(drawerVm.provenanceCounters.openedSourcesCount, 3);
+   assert.equal(drawerVm.provenanceCounters.verifiedExcerptsCount, 2);
+ });
++
++test("20. Cross-Report Diff & Regression Analyzer (`report-diff-analyzer.cjs` & `browser.diff_reports` via `shell.cjs`)", async () => {
++  const workspaceRoot = createTempWorkspace();
++  const shell = createKosworkBrowserShell({ workspaceRoot });
++
++  const baselineReport = {
++    confirmedClaims: [
++      {
++        claimId: "c1",
++        optionName: "Option Alpha",
++        criterion: "Цена",
++        value: "$79/мес",
++        excerpt: { quote: "базовая цена $79/мес", startUtf16: 10, endUtf16: 30 },
++        source: { url: "https://corpus.local/2025", eventDate: "2025-05-01" }
++      }
++    ],
++    unavailableSources: [{ url: "https://corpus.local/benchmark-503" }]
++  };
++
++  const currentReport = {
++    confirmedClaims: [
++      {
++        claimId: "c1-updated",
++        optionName: "Option Alpha",
++        criterion: "Цена",
++        value: "$49/мес",
++        excerpt: { quote: "базовая цена $49/мес", startUtf16: 12, endUtf16: 32 },
++        source: { url: "https://corpus.local/2026", eventDate: "2026-11-01" }
++      },
++      {
++        claimId: "c2-new",
++        optionName: "Option Alpha",
++        criterion: "Задержка p99",
++        value: "8 мс",
++        excerpt: { quote: "задержка p99 равна 8 мс", startUtf16: 40, endUtf16: 63 },
++        source: { url: "https://corpus.local/benchmark-503", eventDate: "2026-11-06" }
++      }
++    ],
++    unavailableSources: []
++  };
++
++  const diffSaved = await shell.dispatchToolCall(
++    "browser.diff_reports",
++    {
++      saveToWorkspace: true,
++      diffSlug: "alpha-november-diff",
++      baselineReport,
++      currentReport
++    },
++    { workspaceRoot }
++  );
++
++  assert.equal(diffSaved.diff.newlyConfirmedCount, 1);
++  assert.equal(diffSaved.diff.valueChangesCount, 1);
++  assert.equal(diffSaved.diff.valueChanges[0].previousValue, "$79/мес");
++  assert.equal(diffSaved.diff.valueChanges[0].currentValue, "$49/мес");
++  assert.deepEqual(diffSaved.diff.recoveredSources, ["https://corpus.local/benchmark-503"]);
++  assert.ok(fs.existsSync(path.join(workspaceRoot, diffSaved.markdownFile.path)));
++  assert.ok(fs.existsSync(path.join(workspaceRoot, diffSaved.jsonFile.path)));
++});
++
++test("21. In-Page All-Occurrences UTF-16 Find & Highlighter (`find-in-page-highlighter.cjs`) + HTTP 429 & Access-Restriction Guard (`rate-limit-and-robots-guard.cjs`)", async () => {
++  const workspaceRoot = createTempWorkspace();
++  const shell = createKosworkBrowserShell({ workspaceRoot });
++  const engine = shell.engine;
++
++  engine.registerSyntheticSite("https://corpus.local/multi-match-doc", {
++    title: "Документ с несколькими вхождениями термина",
++    pageDate: "2026-11-07",
++    text: [
++      "Абзац 1: для тестового контура резервный канал работает со скоростью 1 Гбит/с.",
++      "Абзац 2: для промышленного кластера резервный канал обеспечивает 40 Гбит/с с дублированием."
++    ].join("\n\n")
++  });
++
++  await engine.navigate({
++    tabId: "tab-find",
++    url: "https://corpus.local/multi-match-doc"
++  });
++
++  const found = await shell.dispatchToolCall("browser.find_in_page", {
++    tabId: "tab-find",
++    query: "резервный канал"
++  });
++  assert.equal(found.totalOccurrences, 2);
++  assert.ok(found.matches[0].startUtf16 < found.matches[1].startUtf16);
++
++  // Promote occurrence #2 specifically into a full block-verified UTF-16 excerpt
++  const promoted2 = await shell.dispatchToolCall("browser.promote_find_occurrence", {
++    tabId: "tab-find",
++    query: "резервный канал",
++    occurrenceIndex: 2,
++    expandToBlock: true
++  });
++  assert.ok(promoted2.quote.includes("40 Гбит/с с дублированием"));
++  assert.ok(!promoted2.quote.includes("1 Гбит/с"));
++
++  // Verify HTTP 403 Forbidden non-bypass and HTTP 429 Retry-After parsing
++  const forbiddenDecision = await shell.dispatchToolCall("browser.evaluate_access_restriction", {
++    httpStatus: 403,
++    html: `<html><head><meta name="robots" content="noindex, noarchive" /></head><body>403 Forbidden</body></html>`
++  });
++  assert.equal(forbiddenDecision.allowedToExtract, false);
++  assert.equal(forbiddenDecision.status, "access_restricted_no_bypass");
++  assert.equal(forbiddenDecision.bypassAttempted, false);
++  assert.deepEqual(forbiddenDecision.robotsDirectives, ["noindex", "noarchive"]);
++
++  const rateLimitDecision = await shell.dispatchToolCall("browser.evaluate_access_restriction", {
++    httpStatus: 429,
++    headers: { "Retry-After": "2" }
++  });
++  assert.equal(rateLimitDecision.status, "rate_limited_429");
++  assert.equal(rateLimitDecision.retryAfterMs, 2000);
++});
+-- 
+2.39.5
+

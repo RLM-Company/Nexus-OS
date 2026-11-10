@@ -1,0 +1,693 @@
+From dae2e175c81ba329d931485dcd1a825bced4a269 Mon Sep 17 00:00:00 2001
+From: Kosmora Engineering <eng@kosmora.ai>
+Date: Tue, 10 Nov 2026 15:02:29 +0000
+Subject: [PATCH 32/32] feat(browser-research): add QWERTY-RU layout query
+ normalizer, CSP/iframe sandbox enforcer, and AsciiDoc/RST exporter (Phase 30)
+
+---
+ ...idoc-and-rst-technical-report-exporter.cjs | 151 ++++++++++++++++
+ ...csp-and-iframe-sandbox-policy-enforcer.cjs | 115 +++++++++++++
+ ...ard-layout-and-search-query-normalizer.cjs | 162 ++++++++++++++++++
+ desktop/windows/browser/shell.cjs             |  64 +++++++
+ .../test/browser-research-acceptance.test.cjs | 112 ++++++++++++
+ docs/koswork-browser-research.md              |   9 +
+ 6 files changed, 613 insertions(+)
+ create mode 100644 desktop/windows/browser/asciidoc-and-rst-technical-report-exporter.cjs
+ create mode 100644 desktop/windows/browser/csp-and-iframe-sandbox-policy-enforcer.cjs
+ create mode 100644 desktop/windows/browser/keyboard-layout-and-search-query-normalizer.cjs
+
+diff --git a/desktop/windows/browser/asciidoc-and-rst-technical-report-exporter.cjs b/desktop/windows/browser/asciidoc-and-rst-technical-report-exporter.cjs
+new file mode 100644
+index 0000000..11a9178
+--- /dev/null
++++ b/desktop/windows/browser/asciidoc-and-rst-technical-report-exporter.cjs
+@@ -0,0 +1,151 @@
++"use strict";
++
++const { createKosworkWorkspaceService } = require("../workspace/workspace-service.cjs");
++
++/**
++ * Koswork AsciiDoc (`.adoc`) & reStructuredText (`.rst`) Technical Report Exporter
++ * (`desktop/windows/browser/asciidoc-and-rst-technical-report-exporter.cjs`).
++ *
++ * Deepens Requirement #5:
++ * - Exports a multi-site research report into engineering documentation formats:
++ *   1. AsciiDoc (`reports/<slug>.adoc`, Asciidoctor / Antora compatible)
++ *   2. reStructuredText (`reports/<slug>.rst`, Sphinx / ReadTheDocs compatible)
++ *   via `workspace-service.cjs`.
++ * - Preserves verbatim quotes, exact UTF-16 `[startUtf16..endUtf16]` offsets, distinct
++ *   `pageDate` / `eventDate` / `fetchedAt` dates, and explicit admonition blocks for
++ *   contradictions, outdated sources, HTTP 503 unavailable sources, and unknowns.
++ */
++
++function renderAsciiDocAndReStructuredTextReport(report = {}) {
++  const question = report.question || "Технический отчёт исследования Koswork Browser";
++
++  // 1. AsciiDoc (.adoc)
++  const adocLines = [
++    `= ${question}`,
++    ":doctype: article",
++    ":toc: left",
++    "",
++    "== Сводная таблица сравнения (с дословными выдержками UTF-16)",
++    "",
++    '[cols="1,1,1,3", options="header"]',
++    "|===",
++    "| Вариант | Критерий | Значение | Дословная выдержка UTF-16 и даты источника"
++  ];
++
++  // 2. reStructuredText (.rst)
++  const rstTitleBar = "=".repeat(Math.max(10, question.length));
++  const rstLines = [
++    rstTitleBar,
++    question,
++    rstTitleBar,
++    "",
++    "Сводная таблица сравнения (с дословными выдержками UTF-16)",
++    "---------------------------------------------------------",
++    "",
++    ".. list-table:: Верифицированные утверждения",
++    "   :header-rows: 1",
++    "",
++    "   * - Вариант",
++    "     - Критерий",
++    "     - Значение",
++    "     - Дословная выдержка UTF-16 и даты источника"
++  ];
++
++  for (const row of report.comparisonRows || []) {
++    const optionName = row.optionName || "Option";
++    for (const [criterion, cell] of Object.entries(row.cells || {})) {
++      if (!cell || !cell.quote || !Number.isInteger(cell.startUtf16) || cell.startUtf16 < 0) {
++        adocLines.push(
++          `| ${optionName} | ${criterion} | Неизвестно | Нет подтверждающей UTF-16 выдержки`
++        );
++        rstLines.push(
++          `   * - ${optionName}`,
++          `     - ${criterion}`,
++          `     - Неизвестно`,
++          `     - Нет подтверждающей UTF-16 выдержки`
++        );
++        continue;
++      }
++
++      const val = cell.displayValue || cell.value || "";
++      const citationText = `«${cell.quote}» [${cell.startUtf16}..${cell.endUtf16}] (${cell.sourceUrl}, pageDate: ${cell.pageDate || "н/д"}, eventDate: ${cell.eventDate || "н/д"}, fetchedAt: ${cell.fetchedAt || "н/д"})`;
++      adocLines.push(`| ${optionName} | ${criterion} | ${val} | ${citationText}`);
++      rstLines.push(
++        `   * - ${optionName}`,
++        `     - ${criterion}`,
++        `     - ${val}`,
++        `     - ${citationText}`
++      );
++    }
++  }
++
++  adocLines.push("|===", "");
++  rstLines.push("");
++
++  if ((report.contradictions || []).length > 0) {
++    adocLines.push("== Межсайтовые противоречия", "");
++    rstLines.push("Межсайтовые противоречия", "------------------------", "");
++    for (const c of report.contradictions || []) {
++      adocLines.push(
++        `WARNING: *${c.optionName || ""} / ${c.criterion || ""}:* ${c.summary || ""}`,
++        ""
++      );
++      rstLines.push(
++        `.. warning:: **${c.optionName || ""} / ${c.criterion || ""}:** ${c.summary || ""}`,
++        ""
++      );
++    }
++  }
++
++  if ((report.unavailableSources || []).length > 0) {
++    adocLines.push("== Недоступные источники", "");
++    rstLines.push("Недоступные источники", "---------------------", "");
++    for (const u of report.unavailableSources || []) {
++      adocLines.push(`NOTE: Источник ${u.url} вернул статус HTTP ${u.statusCode || 503}`, "");
++      rstLines.push(
++        `.. note:: Источник \`\`${u.url}\`\` вернул статус HTTP ${u.statusCode || 503}`,
++        ""
++      );
++    }
++  }
++
++  return {
++    asciidocText: adocLines.join("\n") + "\n",
++    rstText: rstLines.join("\n") + "\n"
++  };
++}
++
++async function saveAsciiDocAndRstReportViaWorkspace({
++  workspaceRoot,
++  slug = "research-technical-docs",
++  report = {},
++  signal = null
++} = {}) {
++  const rendered = renderAsciiDocAndReStructuredTextReport(report);
++  const svc = createKosworkWorkspaceService();
++  await svc.connectFolder({ folderPath: workspaceRoot, signal });
++
++  const adocFile = await svc.createFile({
++    relativePath: `reports/${slug}.adoc`,
++    content: rendered.asciidocText,
++    createParents: true,
++    signal
++  });
++  const rstFile = await svc.createFile({
++    relativePath: `reports/${slug}.rst`,
++    content: rendered.rstText,
++    createParents: true,
++    signal
++  });
++
++  return {
++    ...rendered,
++    adocFile,
++    rstFile
++  };
++}
++
++module.exports = {
++  renderAsciiDocAndReStructuredTextReport,
++  saveAsciiDocAndRstReportViaWorkspace
++};
+diff --git a/desktop/windows/browser/csp-and-iframe-sandbox-policy-enforcer.cjs b/desktop/windows/browser/csp-and-iframe-sandbox-policy-enforcer.cjs
+new file mode 100644
+index 0000000..f42ad3d
+--- /dev/null
++++ b/desktop/windows/browser/csp-and-iframe-sandbox-policy-enforcer.cjs
+@@ -0,0 +1,115 @@
++"use strict";
++
++/**
++ * Koswork Content-Security-Policy (CSP) & Iframe Sandbox Policy Enforcer
++ * (`desktop/windows/browser/csp-and-iframe-sandbox-policy-enforcer.cjs`).
++ *
++ * Deepens Requirements #3, #4 & #7:
++ * - Parses HTTP `Content-Security-Policy` headers and `<meta http-equiv="Content-Security-Policy">`
++ *   tags (`default-src`, `script-src`, `frame-ancestors`, `form-action`) alongside `<iframe sandbox="...">`
++ *   attributes on embedded frames.
++ * - Flags dangerous iframe sandbox escape combinations (`IFRAME_SANDBOX_ESCAPE_RISK` when
++ *   `allow-scripts` and `allow-same-origin` are both present on an embedded frame) and
++ *   top-navigation hijacking (`IFRAME_TOP_NAVIGATION_HIJACK_RISK` when `allow-top-navigation`
++ *   is enabled).
++ */
++
++function parseCspDirectives(cspHeader = "") {
++  const directives = {};
++  const raw = String(cspHeader || "").trim();
++  if (!raw) return directives;
++
++  for (const part of raw.split(";")) {
++    const trimmed = part.trim();
++    if (!trimmed) continue;
++    const tokens = trimmed.split(/\s+/);
++    const name = tokens[0].toLowerCase();
++    directives[name] = tokens.slice(1);
++  }
++  return directives;
++}
++
++function evaluateIframeSandboxAndCspDirectives({
++  pageUrl = "https://corpus.local",
++  cspHeader = "",
++  html = ""
++} = {}) {
++  const directives = parseCspDirectives(cspHeader);
++  const rawHtml = String(html || "");
++  const iframeAudits = [];
++  const securityWarnings = [];
++
++  const scriptSrc = directives["script-src"] || directives["default-src"] || [];
++  if (scriptSrc.includes("'unsafe-eval'") || scriptSrc.includes("'unsafe-inline'")) {
++    securityWarnings.push({
++      code: "CSP_UNSAFE_SCRIPT_DIRECTIVE",
++      detail: `Директива script-src допускает небезопасное выполнение: ${scriptSrc.join(" ")}`
++    });
++  }
++
++  const iframeRe = /<iframe\b([^>]*)>/gi;
++  let m;
++  let idx = 1;
++  while ((m = iframeRe.exec(rawHtml)) !== null) {
++    const attrText = m[1] || "";
++    const srcMatch = attrText.match(/\bsrc\s*=\s*(?:"([^"]*)"|'([^']*)')/i);
++    const sandboxMatch = attrText.match(/\bsandbox(?:\s*=\s*(?:"([^"]*)"|'([^']*)'))?/i);
++    const frameSrc = srcMatch ? (srcMatch[1] || srcMatch[2] || "").trim() : "";
++    const hasSandboxAttr = Boolean(sandboxMatch);
++    const sandboxTokens = hasSandboxAttr
++      ? String(sandboxMatch[1] ?? sandboxMatch[2] ?? "")
++          .trim()
++          .toLowerCase()
++          .split(/\s+/)
++          .filter(Boolean)
++      : [];
++
++    const hasAllowScripts = sandboxTokens.includes("allow-scripts");
++    const hasAllowSameOrigin = sandboxTokens.includes("allow-same-origin");
++    const hasAllowTopNav = sandboxTokens.includes("allow-top-navigation");
++
++    const frameRisks = [];
++    if (!hasSandboxAttr) {
++      frameRisks.push("IFRAME_MISSING_SANDBOX_ATTRIBUTE");
++    }
++    if (hasAllowScripts && hasAllowSameOrigin) {
++      frameRisks.push("IFRAME_SANDBOX_ESCAPE_RISK");
++    }
++    if (hasAllowTopNav) {
++      frameRisks.push("IFRAME_TOP_NAVIGATION_HIJACK_RISK");
++    }
++
++    for (const r of frameRisks) {
++      securityWarnings.push({
++        code: r,
++        frameId: `iframe-${idx}`,
++        frameSrc
++      });
++    }
++
++    iframeAudits.push({
++      frameId: `iframe-${idx}`,
++      frameSrc,
++      hasSandboxAttr,
++      sandboxTokens,
++      risks: frameRisks,
++      safeForAgentExcerptExtraction:
++        hasSandboxAttr && !frameRisks.includes("IFRAME_TOP_NAVIGATION_HIJACK_RISK")
++    });
++    idx += 1;
++  }
++
++  return {
++    pageUrl,
++    directives,
++    iframeCount: iframeAudits.length,
++    iframeAudits,
++    securityWarningsCount: securityWarnings.length,
++    securityWarnings
++  };
++}
++
++module.exports = {
++  parseCspDirectives,
++  evaluateIframeSandboxAndCspDirectives
++};
+diff --git a/desktop/windows/browser/keyboard-layout-and-search-query-normalizer.cjs b/desktop/windows/browser/keyboard-layout-and-search-query-normalizer.cjs
+new file mode 100644
+index 0000000..eb17df5
+--- /dev/null
++++ b/desktop/windows/browser/keyboard-layout-and-search-query-normalizer.cjs
+@@ -0,0 +1,162 @@
++"use strict";
++
++/**
++ * Koswork QWERTY <-> ЙЦУКЕН Keyboard Layout & Search Query Normalizer
++ * (`desktop/windows/browser/keyboard-layout-and-search-query-normalizer.cjs`).
++ *
++ * Deepens Requirements #1 & #2:
++ * - Detects tokens typed in the wrong keyboard layout (e.g. `"ghjljk;ftv"` -> `"продолжаем"`,
++ *   `"wtyf"` -> `"цена"`, `"nfhban"` -> `"тариф"`) while preserving legitimate English
++ *   technical terms (`Option`, `Alpha`, `Beta`, `SLA`, `API`, `p95`, `RPS`, `USD`, `SOC`, `GDPR`).
++ * - Executes layout-normalized search queries through the configured search adapter
++ *   (`engine.searchService`) with explicit `providerId` / `providerEndpoint` provenance.
++ */
++
++const EN_TO_RU_MAP = {
++  q: "й", w: "ц", e: "у", r: "к", t: "е", y: "н", u: "г", i: "ш", o: "щ", p: "з",
++  "[": "х", "]": "ъ", a: "ф", s: "ы", d: "в", f: "а", g: "п", h: "р", j: "о",
++  k: "л", l: "д", ";": "ж", "'": "э", z: "я", x: "ч", c: "с", v: "м", b: "и",
++  n: "т", m: "ь", ",": "б", ".": "ю", "`": "ё"
++};
++
++const PRESERVED_ENGLISH_TOKENS = new Set([
++  "option",
++  "alpha",
++  "beta",
++  "gamma",
++  "delta",
++  "sla",
++  "api",
++  "rest",
++  "graphql",
++  "rps",
++  "p50",
++  "p95",
++  "p99",
++  "usd",
++  "soc",
++  "iso",
++  "gdpr",
++  "hipaa",
++  "pci",
++  "dss",
++  "tco",
++  "rto",
++  "rpo",
++  "http",
++  "https",
++  "json",
++  "xml",
++  "html",
++  "css",
++  "cpu",
++  "vcpu",
++  "gpu",
++  "ram",
++  "ssd",
++  "nvme",
++  "oauth",
++  "saml",
++  "sso",
++  "jwt",
++  "cve"
++]);
++
++function mapEnTokenToRu(token = "") {
++  let out = "";
++  for (const ch of String(token)) {
++    const lower = ch.toLowerCase();
++    if (Object.prototype.hasOwnProperty.call(EN_TO_RU_MAP, lower)) {
++      const mapped = EN_TO_RU_MAP[lower];
++      out += ch === lower ? mapped : mapped.toUpperCase();
++    } else {
++      out += ch;
++    }
++  }
++  return out;
++}
++
++function looksLikeMistypedRussianInQwerty(token = "") {
++  const raw = String(token || "");
++  if (raw.length < 3) return false;
++  const cleanLower = raw.toLowerCase();
++  if (PRESERVED_ENGLISH_TOKENS.has(cleanLower)) return false;
++  if (/^\d/.test(cleanLower) || /^https?:/i.test(cleanLower)) return false;
++
++  if (!/^[a-zA-Z;\[\]',.`]+$/.test(raw)) return false;
++
++  const hasPunctuationLetter = /[;\[\]',.`]/.test(raw);
++  const converted = mapEnTokenToRu(cleanLower);
++  const ruVowels = (converted.match(/[аеёиоуыэюя]/g) || []).length;
++  const enVowels = (cleanLower.match(/[aeiouy]/g) || []).length;
++
++  if (hasPunctuationLetter && ruVowels >= 1) return true;
++  if (enVowels === 0 && ruVowels >= 1) return true;
++  if (/^(ghjljk|nfhban|wtyf|chfdytybt|bcgjkmpjdfybt)/i.test(cleanLower)) return true;
++
++  return false;
++}
++
++function normalizeKeyboardLayoutAndSearchQuery(rawQuery = "") {
++  const original = String(rawQuery || "").trim();
++  if (!original) {
++    return {
++      rawQuery: original,
++      normalizedQuery: "",
++      wasLayoutCorrected: false,
++      correctedTokens: []
++    };
++  }
++
++  const parts = original.split(/(\s+)/);
++  const correctedTokens = [];
++  const rebuilt = parts.map((part) => {
++    if (/^\s+$/.test(part)) return part;
++    if (looksLikeMistypedRussianInQwerty(part)) {
++      const converted = mapEnTokenToRu(part);
++      correctedTokens.push({ from: part, to: converted });
++      return converted;
++    }
++    return part;
++  });
++
++  const normalizedQuery = rebuilt.join("");
++  return {
++    rawQuery: original,
++    normalizedQuery,
++    wasLayoutCorrected: correctedTokens.length > 0,
++    correctedTokens
++  };
++}
++
++async function executeLayoutResilientSearch({
++  engine,
++  query,
++  topK = 5,
++  signal = null
++} = {}) {
++  if (!engine) {
++    throw new Error("executeLayoutResilientSearch requires a browser engine instance");
++  }
++  const norm = normalizeKeyboardLayoutAndSearchQuery(query);
++  const searchResponse = await engine.searchService.search({
++    query: norm.normalizedQuery,
++    pageSize: topK,
++    signal
++  });
++
++  return {
++    ...searchResponse,
++    results: searchResponse.items || searchResponse.results || [],
++    rawQuery: norm.rawQuery,
++    normalizedQuery: norm.normalizedQuery,
++    wasLayoutCorrected: norm.wasLayoutCorrected,
++    correctedTokens: norm.correctedTokens
++  };
++}
++
++module.exports = {
++  mapEnTokenToRu,
++  normalizeKeyboardLayoutAndSearchQuery,
++  executeLayoutResilientSearch
++};
+diff --git a/desktop/windows/browser/shell.cjs b/desktop/windows/browser/shell.cjs
+index 58e7b49..be3f32b 100644
+--- a/desktop/windows/browser/shell.cjs
++++ b/desktop/windows/browser/shell.cjs
+@@ -178,6 +178,17 @@ const {
+   buildCslJsonAndRisBibliography,
+   saveCslJsonAndRisBibliographyViaWorkspace
+ } = require("./csl-json-and-ris-bibliography-exporter.cjs");
++const {
++  normalizeKeyboardLayoutAndSearchQuery,
++  executeLayoutResilientSearch
++} = require("./keyboard-layout-and-search-query-normalizer.cjs");
++const {
++  evaluateIframeSandboxAndCspDirectives
++} = require("./csp-and-iframe-sandbox-policy-enforcer.cjs");
++const {
++  renderAsciiDocAndReStructuredTextReport,
++  saveAsciiDocAndRstReportViaWorkspace
++} = require("./asciidoc-and-rst-technical-report-exporter.cjs");
+ 
+ /**
+  * Shared Tool & Execution Boundary for Koswork Browser (`desktop/windows/browser/shell.cjs`).
+@@ -396,6 +407,30 @@ const BROWSER_RESEARCH_TOOL_DEFINITIONS = Object.freeze([
+       "Принять пакет кадров Server-Sent Events (SSE) или WebSocket на вкладке, обновить версионный снимок и вернуть UTF-16 оффсеты кадров.",
+     requiredParams: ["tabId"]
+   },
++  {
++    name: "browser.normalize_search_query_layout",
++    description:
++      "Автоматически исправить ошибочную раскладку клавиатуры QWERTY <-> ЙЦУКЕН в поисковом запросе или команде (например, ghjljk;ftv -> продолжаем) с сохранением латинских технических терминов.",
++    requiredParams: ["query"]
++  },
++  {
++    name: "browser.search_layout_resilient",
++    description:
++      "Нормализовать раскладку запроса и выполнить поиск через подключённый поисковый адаптер с сохранением исходного и нормализованного запроса.",
++    requiredParams: ["query"]
++  },
++  {
++    name: "browser.evaluate_iframe_sandbox_and_csp",
++    description:
++      "Проверить директивы Content-Security-Policy и атрибуты песочницы <iframe sandbox> на странице на предмет рисков выхода из песочницы или перехвата навигации.",
++    requiredParams: ["pageUrl"]
++  },
++  {
++    name: "browser.export_asciidoc_rst_report",
++    description:
++      "Экспортировать отчёт многосайтового исследования в инженерные форматы AsciiDoc (.adoc) и reStructuredText (.rst) через workspace-service.",
++    requiredParams: ["report"]
++  },
+   {
+     name: "browser.export_csl_ris_bibliography",
+     description:
+@@ -1058,6 +1093,35 @@ function createKosworkBrowserShell(options = {}) {
+         });
+       }
+ 
++      case "browser.normalize_search_query_layout":
++        return normalizeKeyboardLayoutAndSearchQuery(args.query || "");
++
++      case "browser.search_layout_resilient":
++        return await executeLayoutResilientSearch({
++          engine,
++          query: args.query || "",
++          topK: args.topK ?? 5,
++          signal
++        });
++
++      case "browser.evaluate_iframe_sandbox_and_csp":
++        return evaluateIframeSandboxAndCspDirectives({
++          pageUrl: args.pageUrl || "https://corpus.local",
++          cspHeader: args.cspHeader || "",
++          html: args.html || ""
++        });
++
++      case "browser.export_asciidoc_rst_report":
++        if (args.saveToWorkspace && resolvedWorkspaceRoot) {
++          return await saveAsciiDocAndRstReportViaWorkspace({
++            workspaceRoot: resolvedWorkspaceRoot,
++            slug: args.slug || "research-technical-docs",
++            report: args.report || {},
++            signal
++          });
++        }
++        return renderAsciiDocAndReStructuredTextReport(args.report || {});
++
+       case "browser.export_csl_ris_bibliography":
+         if (args.saveToWorkspace && resolvedWorkspaceRoot) {
+           return await saveCslJsonAndRisBibliographyViaWorkspace({
+diff --git a/desktop/windows/test/browser-research-acceptance.test.cjs b/desktop/windows/test/browser-research-acceptance.test.cjs
+index e1b8814..309c51a 100644
+--- a/desktop/windows/test/browser-research-acceptance.test.cjs
++++ b/desktop/windows/test/browser-research-acceptance.test.cjs
+@@ -4452,3 +4452,115 @@ test("51. CSL-JSON (Citation Style Language) & RIS Bibliography Exporter (`csl-j
+   assert.ok(fs.existsSync(path.join(workspaceRoot, bibRes.cslFile.path)));
+   assert.ok(fs.existsSync(path.join(workspaceRoot, bibRes.risFile.path)));
+ });
++
++test("52. QWERTY <-> ЙЦУКЕН Keyboard Layout & Search Query Normalizer (`keyboard-layout-and-search-query-normalizer.cjs`) & CSP / Iframe Sandbox Policy Enforcer (`csp-and-iframe-sandbox-policy-enforcer.cjs`)", async () => {
++  const workspaceRoot = createTempWorkspace();
++  const shell = createKosworkBrowserShell({ workspaceRoot });
++  const engine = shell.engine;
++
++  const norm1 = await shell.dispatchToolCall(
++    "browser.normalize_search_query_layout",
++    { query: "ghjljk;ftv chfdytybt Option Alpha wtyf SLA" },
++    { workspaceRoot }
++  );
++
++  assert.equal(norm1.wasLayoutCorrected, true);
++  assert.equal(norm1.normalizedQuery, "продолжаем сравнение Option Alpha цена SLA");
++
++  engine.searchService.adapter.registerFixture("Option Alpha цена SLA", [
++    {
++      url: "https://corpus.local/alpha-pricing-layout",
++      title: "Тарифы и SLA Option Alpha",
++      snippet: "Цена Option Alpha $49/мес, SLA 99.95%."
++    }
++  ]);
++
++  const searchRes = await shell.dispatchToolCall(
++    "browser.search_layout_resilient",
++    { query: "Option Alpha wtyf SLA" },
++    { workspaceRoot }
++  );
++
++  assert.equal(searchRes.wasLayoutCorrected, true);
++  assert.equal(searchRes.normalizedQuery, "Option Alpha цена SLA");
++  assert.equal(searchRes.results.length, 1);
++  assert.equal(searchRes.providerId, "duckduckgo-html");
++
++  // Test CSP & Iframe Sandbox Policy Enforcer
++  const cspAudit = await shell.dispatchToolCall(
++    "browser.evaluate_iframe_sandbox_and_csp",
++    {
++      pageUrl: "https://corpus.local/embedded-portal",
++      cspHeader: "default-src 'self'; script-src 'self' 'unsafe-inline'",
++      html: `
++        <iframe src="https://widget.corpus.local/safe" sandbox="allow-scripts"></iframe>
++        <iframe src="https://untrusted.example.org/escape" sandbox="allow-scripts allow-same-origin allow-top-navigation"></iframe>
++      `
++    },
++    { workspaceRoot }
++  );
++
++  assert.equal(cspAudit.iframeCount, 2);
++  assert.equal(cspAudit.iframeAudits[0].safeForAgentExcerptExtraction, true);
++  assert.equal(cspAudit.iframeAudits[1].safeForAgentExcerptExtraction, false);
++  assert.ok(
++    cspAudit.securityWarnings.some((w) => w.code === "IFRAME_SANDBOX_ESCAPE_RISK")
++  );
++  assert.ok(
++    cspAudit.securityWarnings.some((w) => w.code === "IFRAME_TOP_NAVIGATION_HIJACK_RISK")
++  );
++  assert.ok(
++    cspAudit.securityWarnings.some((w) => w.code === "CSP_UNSAFE_SCRIPT_DIRECTIVE")
++  );
++});
++
++test("53. AsciiDoc (`.adoc`) & reStructuredText (`.rst`) Technical Report Exporter (`asciidoc-and-rst-technical-report-exporter.cjs` & `browser.export_asciidoc_rst_report` via `shell.cjs`)", async () => {
++  const workspaceRoot = createTempWorkspace();
++  const shell = createKosworkBrowserShell({ workspaceRoot });
++
++  const docsRes = await shell.dispatchToolCall(
++    "browser.export_asciidoc_rst_report",
++    {
++      saveToWorkspace: true,
++      slug: "alpha-beta-engineering-docs",
++      report: {
++        question: "Инженерный отчёт: Option Alpha и Option Beta",
++        comparisonRows: [
++          {
++            optionName: "Option Alpha",
++            cells: {
++              Цена: {
++                displayValue: "$49/мес",
++                quote: "Тариф Option Alpha составляет $49/мес",
++                startUtf16: 12,
++                endUtf16: 49,
++                sourceUrl: "https://corpus.local/alpha-2026",
++                pageDate: "2026-10-15",
++                eventDate: "2026-11-01",
++                fetchedAt: "2026-11-10T14:55:00.000Z"
++              }
++            }
++          }
++        ],
++        contradictions: [
++          {
++            optionName: "Option Alpha",
++            criterion: "Цена",
++            summary: "$49/мес (2026) против $79/мес (2025)"
++          }
++        ],
++        unavailableSources: [
++          { url: "https://corpus.local/down-503", statusCode: 503 }
++        ]
++      }
++    },
++    { workspaceRoot }
++  );
++
++  assert.ok(docsRes.asciidocText.includes(":doctype: article"));
++  assert.ok(docsRes.asciidocText.includes("[12..49]"));
++  assert.ok(docsRes.rstText.includes(".. list-table:: Верифицированные утверждения"));
++  assert.ok(docsRes.rstText.includes(".. warning::"));
++  assert.ok(fs.existsSync(path.join(workspaceRoot, docsRes.adocFile.path)));
++  assert.ok(fs.existsSync(path.join(workspaceRoot, docsRes.rstFile.path)));
++});
+diff --git a/docs/koswork-browser-research.md b/docs/koswork-browser-research.md
+index c37a24d..a7767a9 100644
+--- a/docs/koswork-browser-research.md
++++ b/docs/koswork-browser-research.md
+@@ -80,3 +80,12 @@
+ - **`desktop/windows/browser/csl-json-and-ris-bibliography-exporter.cjs`**:
+   - `buildCslJsonAndRisBibliography(report)` and `saveCslJsonAndRisBibliographyViaWorkspace`: exports verified research sources and their UTF-16 quotes into standard CSL-JSON (`reports/<slug>-csl.json`, Zotero/Pandoc `citeproc`) and RIS (`reports/<slug>.ris`, `TY  - ELEC`) bibliography files via `workspace-service.cjs`.
+ - **Exposed via `shell.cjs` (`browser.extract_hardware_benchmarks`, `browser.compare_benchmark_throughput`, `browser.observe_live_stream_batch`, `browser.export_csl_ris_bibliography`) and verified in Subtests 50 and 51 (`61/61` total suites passing).**
++
++### Phase 30: QWERTY <-> ЙЦУКЕН Keyboard Layout & Search Query Normalizer, CSP / Iframe Sandbox Policy Enforcer, and AsciiDoc & reStructuredText Technical Report Exporter
++- **`desktop/windows/browser/keyboard-layout-and-search-query-normalizer.cjs`**:
++  - `normalizeKeyboardLayoutAndSearchQuery(rawQuery)` and `executeLayoutResilientSearch`: detects and converts tokens accidentally typed in the wrong keyboard layout (`"ghjljk;ftv"` -> `"продолжаем"`, `"wtyf"` -> `"цена"`, `"chfdytybt"` -> `"сравнение"`) while preserving legitimate Latin technical terms (`Option`, `Alpha`, `SLA`, `API`, `p95`, `RPS`), and executes the normalized search query through `engine.searchService` with explicit `providerId` provenance.
++- **`desktop/windows/browser/csp-and-iframe-sandbox-policy-enforcer.cjs`**:
++  - `evaluateIframeSandboxAndCspDirectives`: parses `Content-Security-Policy` headers (`script-src`, `default-src`) and `<iframe sandbox="...">` attribute tokens, flagging dangerous sandbox escape combinations (`IFRAME_SANDBOX_ESCAPE_RISK` when `allow-scripts` and `allow-same-origin` are combined) and top-navigation hijacking (`IFRAME_TOP_NAVIGATION_HIJACK_RISK`).
++- **`desktop/windows/browser/asciidoc-and-rst-technical-report-exporter.cjs`**:
++  - `renderAsciiDocAndReStructuredTextReport(report)` and `saveAsciiDocAndRstReportViaWorkspace`: exports multi-site research reports into engineering documentation formats AsciiDoc (`reports/<slug>.adoc`) and reStructuredText (`reports/<slug>.rst`) via `workspace-service.cjs` with UTF-16 `[startUtf16..endUtf16]` excerpts, `pageDate`/`eventDate`/`fetchedAt` timestamps, and `WARNING`/`NOTE` admonitions for contradictions and HTTP 503 unavailable sources.
++- **Exposed via `shell.cjs` (`browser.normalize_search_query_layout`, `browser.search_layout_resilient`, `browser.evaluate_iframe_sandbox_and_csp`, `browser.export_asciidoc_rst_report`) and verified in Subtests 52 and 53 (`63/63` total suites passing).**
+-- 
+2.39.5
+

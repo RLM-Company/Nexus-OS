@@ -1,0 +1,822 @@
+From 28882ef17fbd6e6509494ca45d0167392b1476e4 Mon Sep 17 00:00:00 2001
+From: Kosmora Engineering <eng@kosmora.ai>
+Date: Mon, 9 Nov 2026 15:58:08 +0000
+Subject: [PATCH 19/32] feat(browser-research): add cross-page hyperlink
+ citation graph, multi-criteria Pareto decision matrix, and RFC 2557 MHTML
+ offline evidence archiver
+
+---
+ .../browser/hyperlink-citation-graph.cjs      | 178 ++++++++++++++++
+ .../multi-criteria-decision-matrix.cjs        | 200 ++++++++++++++++++
+ .../offline-evidence-bundle-archiver.cjs      | 154 ++++++++++++++
+ desktop/windows/browser/shell.cjs             |  75 +++++++
+ .../test/browser-research-acceptance.test.cjs | 129 +++++++++++
+ 5 files changed, 736 insertions(+)
+ create mode 100644 desktop/windows/browser/hyperlink-citation-graph.cjs
+ create mode 100644 desktop/windows/browser/multi-criteria-decision-matrix.cjs
+ create mode 100644 desktop/windows/browser/offline-evidence-bundle-archiver.cjs
+
+diff --git a/desktop/windows/browser/hyperlink-citation-graph.cjs b/desktop/windows/browser/hyperlink-citation-graph.cjs
+new file mode 100644
+index 0000000..8ca98e9
+--- /dev/null
++++ b/desktop/windows/browser/hyperlink-citation-graph.cjs
+@@ -0,0 +1,178 @@
++"use strict";
++
++const { evaluateNavigationPolicy } = require("./policy.cjs");
++
++/**
++ * Koswork Cross-Page Hyperlink Citation Graph & Primary Source Verifier
++ * (`desktop/windows/browser/hyperlink-citation-graph.cjs`).
++ *
++ * Deepens Requirement #1, #2 & #3:
++ * - Extracts outbound `<a href="...">` citation links from an open page's HTML along
++ *   with each anchor's exact `[anchorStartUtf16, anchorEndUtf16]` code unit offsets
++ *   in `snapshot.fullTextUtf16`.
++ * - Resolves relative URLs against the page's base URL and filters out unsafe schemes.
++ * - Follows an inline citation link from a secondary/review article to its cited primary
++ *   source (`followAndVerifyPrimaryCitation`), verifying whether the primary source
++ *   actually substantiates the claimed phrase with a verifiable UTF-16 excerpt!
++ */
++
++function extractOutboundCitationLinks(snapshot, rawHtml = "") {
++  if (!snapshot || typeof snapshot.fullTextUtf16 !== "string") {
++    throw new Error("CITATION_GRAPH_REQUIRES_SNAPSHOT");
++  }
++
++  const fullText = snapshot.fullTextUtf16;
++  const baseUrl = snapshot.url || "https://corpus.local/";
++  const links = [];
++
++  const aRegex = /<a\b([^>]*)>([\s\S]*?)<\/a>/gi;
++  let match;
++  let searchFrom = 0;
++
++  while ((match = aRegex.exec(String(rawHtml || ""))) !== null) {
++    const attrs = match[1] || "";
++    const anchorText = match[2]
++      .replace(/<[^>]+>/g, " ")
++      .replace(/\s+/g, " ")
++      .trim();
++    const hrefMatch = attrs.match(/\bhref=["']([^"']+)["']/i);
++    if (!hrefMatch || !anchorText) continue;
++
++    let resolvedUrl = null;
++    try {
++      const candidate = new URL(hrefMatch[1].trim(), baseUrl).toString();
++      const policy = evaluateNavigationPolicy(candidate, { allowLocalLoopback: true });
++      if (policy.allowed) {
++        resolvedUrl = policy.normalizedUrl;
++      }
++    } catch {
++      resolvedUrl = null;
++    }
++
++    if (!resolvedUrl) continue;
++
++    const idx = fullText.indexOf(anchorText, searchFrom);
++    const anchorStartUtf16 = idx >= 0 ? idx : fullText.indexOf(anchorText);
++    const anchorEndUtf16 =
++      anchorStartUtf16 >= 0 ? anchorStartUtf16 + anchorText.length : null;
++    if (idx >= 0) {
++      searchFrom = idx + anchorText.length;
++    }
++
++    links.push({
++      linkIndex: links.length + 1,
++      anchorText,
++      targetUrl: resolvedUrl,
++      sameOrigin:
++        new URL(resolvedUrl).origin.toLowerCase() === new URL(baseUrl).origin.toLowerCase(),
++      anchorStartUtf16: anchorStartUtf16 >= 0 ? anchorStartUtf16 : null,
++      anchorEndUtf16
++    });
++  }
++
++  return {
++    sourceUrl: snapshot.url,
++    pageVersion: snapshot.pageVersion,
++    linksCount: links.length,
++    links
++  };
++}
++
++async function followAndVerifyPrimaryCitation({
++  engine,
++  sourceTabId,
++  rawHtml = "",
++  anchorOrUrlQuery,
++  expectedPrimaryPhrase,
++  primaryTabId = "tab-primary-citation",
++  signal = null
++} = {}) {
++  if (!engine) {
++    throw new Error("PRIMARY_CITATION_VERIFIER_REQUIRES_ENGINE");
++  }
++
++  const sourceObs = engine.observePage(sourceTabId);
++  const tab = engine.tabs.get(String(sourceTabId));
++  const graph = extractOutboundCitationLinks(
++    sourceObs.snapshot,
++    rawHtml || tab?.rawSiteDef?.html || ""
++  );
++
++  const needle = String(anchorOrUrlQuery || "").trim().toLowerCase();
++  const matchedLink = graph.links.find(
++    (l) =>
++      l.anchorText.toLowerCase().includes(needle) ||
++      l.targetUrl.toLowerCase().includes(needle)
++  );
++
++  if (!matchedLink) {
++    const err = new Error(`CITATION_LINK_NOT_FOUND_ON_PAGE: ${anchorOrUrlQuery}`);
++    err.code = "CITATION_LINK_NOT_FOUND_ON_PAGE";
++    throw err;
++  }
++
++  const secondaryExcerpt =
++    matchedLink.anchorStartUtf16 !== null
++      ? engine.extractExcerpt(sourceTabId, {
++          searchTerm: matchedLink.anchorText
++        })
++      : null;
++
++  const primaryNav = await engine.navigate({
++    tabId: primaryTabId,
++    url: matchedLink.targetUrl,
++    actor: "agent",
++    signal
++  });
++
++  if (!primaryNav.available) {
++    return {
++      status: "primary_source_unavailable",
++      primarySourceSubstantiated: false,
++      citationLink: matchedLink,
++      secondarySource: {
++        url: sourceObs.snapshot.url,
++        title: sourceObs.snapshot.title,
++        excerpt: secondaryExcerpt
++      },
++      primarySource: {
++        url: primaryNav.url,
++        httpStatus: primaryNav.httpStatus,
++        available: false
++      }
++    };
++  }
++
++  const primaryExcerpt = expectedPrimaryPhrase
++    ? engine.extractExcerpt(primaryTabId, { searchTerm: expectedPrimaryPhrase })
++    : null;
++
++  return {
++    status: primaryExcerpt ? "primary_source_verified" : "primary_phrase_not_found",
++    primarySourceSubstantiated: Boolean(primaryExcerpt),
++    citationLink: matchedLink,
++    secondarySource: {
++      url: sourceObs.snapshot.url,
++      title: sourceObs.snapshot.title,
++      pageDate: sourceObs.snapshot.pageDate,
++      eventDate: sourceObs.snapshot.eventDate,
++      fetchedAt: sourceObs.snapshot.fetchedAt,
++      excerpt: secondaryExcerpt
++    },
++    primarySource: {
++      url: primaryNav.url,
++      title: primaryNav.snapshot.title,
++      httpStatus: primaryNav.httpStatus,
++      available: primaryNav.available,
++      pageDate: primaryNav.pageDate,
++      eventDate: primaryNav.eventDate,
++      fetchedAt: primaryNav.fetchedAt,
++      excerpt: primaryExcerpt
++    }
++  };
++}
++
++module.exports = {
++  extractOutboundCitationLinks,
++  followAndVerifyPrimaryCitation
++};
+diff --git a/desktop/windows/browser/multi-criteria-decision-matrix.cjs b/desktop/windows/browser/multi-criteria-decision-matrix.cjs
+new file mode 100644
+index 0000000..061ac3b
+--- /dev/null
++++ b/desktop/windows/browser/multi-criteria-decision-matrix.cjs
+@@ -0,0 +1,200 @@
++"use strict";
++
++const { normalizeComparableValue } = require("./claim-comparator.cjs");
++
++/**
++ * Koswork Multi-Criteria Decision Matrix & Pareto Trade-Off Analyzer
++ * (`desktop/windows/browser/multi-criteria-decision-matrix.cjs`).
++ *
++ * Deepens Requirement #2 & #5:
++ * - Evaluates compared options across weighted criteria (`direction: "lower_better" | "higher_better"`
++ *   and hard constraints `maxNumeric` / `minNumeric`).
++ * - Strictly requires a verified UTF-16 excerpt (`startUtf16`, `endUtf16`, `quote`) for any
++ *   confirmed criterion score; missing or bare-link criteria are marked `"unknown"` and
++ *   never fabricated or interpolated.
++ * - Identifies Pareto-optimal options (`paretoOptimal: true`) and ranks eligible options
++ *   with full citation provenance per cell.
++ */
++
++function evaluateMultiCriteriaDecisionMatrix({
++  options = [],
++  criteriaSpecs = [],
++  confirmedClaims = []
++} = {}) {
++  const optionNames = Array.from(
++    new Set([
++      ...options,
++      ...confirmedClaims.map((c) => c.optionName).filter(Boolean)
++    ])
++  );
++
++  // Index verified claims by `${optionName}||${criterion}`
++  const claimMap = new Map();
++  for (const c of confirmedClaims) {
++    if (!c || !c.optionName || !c.criterion || !c.excerpt || !c.excerpt.quote) continue;
++    const key = `${String(c.optionName).trim()}||${String(c.criterion).trim()}`;
++    if (!claimMap.has(key)) {
++      claimMap.set(key, c);
++    }
++  }
++
++  // Collect min/max numeric values per criterion across options for min-max normalization
++  const numericBounds = new Map();
++  for (const spec of criteriaSpecs) {
++    const crit = spec.name || spec.criterion;
++    const nums = [];
++    for (const opt of optionNames) {
++      const claim = claimMap.get(`${opt}||${crit}`);
++      if (!claim) continue;
++      const norm = normalizeComparableValue(claim.value || claim.excerpt.quote);
++      if (typeof norm.numericValue === "number" && Number.isFinite(norm.numericValue)) {
++        nums.push(norm.numericValue);
++      }
++    }
++    if (nums.length > 0) {
++      numericBounds.set(crit, {
++        min: Math.min(...nums),
++        max: Math.max(...nums)
++      });
++    }
++  }
++
++  const evaluatedOptions = optionNames.map((optionName) => {
++    let weightedSum = 0;
++    let totalWeight = 0;
++    let confirmedCriteriaCount = 0;
++    let unknownCriteriaCount = 0;
++    const hardConstraintViolations = [];
++    const criterionCells = {};
++    const numericVector = {};
++
++    for (const spec of criteriaSpecs) {
++      const crit = spec.name || spec.criterion;
++      const weight = Math.max(0, Number(spec.weight ?? 1));
++      const direction = spec.direction || "higher_better";
++      totalWeight += weight;
++
++      const claim = claimMap.get(`${optionName}||${crit}`);
++      if (!claim) {
++        unknownCriteriaCount += 1;
++        if (spec.required) {
++          hardConstraintViolations.push({
++            criterion: crit,
++            reason: "MISSING_VERIFIED_EXCERPT_FOR_REQUIRED_CRITERION"
++          });
++        }
++        criterionCells[crit] = {
++          status: "unknown",
++          displayValue: "Неизвестно (нет выдержки)",
++          normalizedScore: 0,
++          sourceUrl: null
++        };
++        continue;
++      }
++
++      confirmedCriteriaCount += 1;
++      const norm = normalizeComparableValue(claim.value || claim.excerpt.quote);
++      const numVal = norm.numericValue;
++
++      if (typeof numVal === "number" && Number.isFinite(numVal)) {
++        if (typeof spec.maxNumeric === "number" && numVal > spec.maxNumeric) {
++          hardConstraintViolations.push({
++            criterion: crit,
++            reason: `VALUE_${numVal}_EXCEEDS_MAX_${spec.maxNumeric}`
++          });
++        }
++        if (typeof spec.minNumeric === "number" && numVal < spec.minNumeric) {
++          hardConstraintViolations.push({
++            criterion: crit,
++            reason: `VALUE_${numVal}_BELOW_MIN_${spec.minNumeric}`
++          });
++        }
++      }
++
++      let cellScore = 1;
++      const bounds = numericBounds.get(crit);
++      if (bounds && typeof numVal === "number" && bounds.max > bounds.min) {
++        const ratio = (numVal - bounds.min) / (bounds.max - bounds.min);
++        cellScore = direction === "lower_better" ? 1 - ratio : ratio;
++      }
++
++      numericVector[crit] =
++        typeof numVal === "number"
++          ? direction === "lower_better"
++            ? -numVal
++            : numVal
++          : cellScore;
++
++      weightedSum += cellScore * weight;
++      criterionCells[crit] = {
++        status: "confirmed",
++        displayValue: claim.value || claim.excerpt.quote,
++        numericValue: numVal,
++        normalizedScore: Number(cellScore.toFixed(4)),
++        quote: claim.excerpt.quote,
++        startUtf16: claim.excerpt.startUtf16,
++        endUtf16: claim.excerpt.endUtf16,
++        sourceUrl: claim.source?.url || null
++      };
++    }
++
++    const overallScore =
++      totalWeight > 0 ? Number((weightedSum / totalWeight).toFixed(4)) : 0;
++
++    return {
++      optionName,
++      eligible: hardConstraintViolations.length === 0,
++      hardConstraintViolations,
++      confirmedCriteriaCount,
++      unknownCriteriaCount,
++      overallScore,
++      criterionCells,
++      _numericVector: numericVector
++    };
++  });
++
++  // Compute Pareto optimality among eligible options
++  for (const cand of evaluatedOptions) {
++    if (!cand.eligible) {
++      cand.paretoOptimal = false;
++      continue;
++    }
++    let dominated = false;
++    for (const other of evaluatedOptions) {
++      if (other.optionName === cand.optionName || !other.eligible) continue;
++      const critNames = criteriaSpecs.map((s) => s.name || s.criterion);
++      const allGreaterOrEqual = critNames.every(
++        (c) => (other._numericVector[c] ?? -Infinity) >= (cand._numericVector[c] ?? -Infinity)
++      );
++      const strictlyGreaterOne = critNames.some(
++        (c) => (other._numericVector[c] ?? -Infinity) > (cand._numericVector[c] ?? -Infinity)
++      );
++      if (allGreaterOrEqual && strictlyGreaterOne) {
++        dominated = true;
++        break;
++      }
++    }
++    cand.paretoOptimal = !dominated;
++  }
++  for (const cand of evaluatedOptions) {
++    delete cand._numericVector;
++  }
++
++  evaluatedOptions.sort((a, b) => {
++    if (a.eligible !== b.eligible) return a.eligible ? -1 : 1;
++    return b.overallScore - a.overallScore;
++  });
++
++  return {
++    optionsCount: evaluatedOptions.length,
++    paretoFrontierOptions: evaluatedOptions
++      .filter((o) => o.paretoOptimal)
++      .map((o) => o.optionName),
++    recommendedOption: evaluatedOptions.find((o) => o.eligible)?.optionName || null,
++    rankings: evaluatedOptions
++  };
++}
++
++module.exports = {
++  evaluateMultiCriteriaDecisionMatrix
++};
+diff --git a/desktop/windows/browser/offline-evidence-bundle-archiver.cjs b/desktop/windows/browser/offline-evidence-bundle-archiver.cjs
+new file mode 100644
+index 0000000..a3b7edc
+--- /dev/null
++++ b/desktop/windows/browser/offline-evidence-bundle-archiver.cjs
+@@ -0,0 +1,154 @@
++"use strict";
++
++const { createKosworkWorkspaceService } = require("../workspace/workspace-service.cjs");
++
++/**
++ * Koswork RFC 2557 MHTML & Offline Self-Contained Evidence Bundle Archiver
++ * (`desktop/windows/browser/offline-evidence-bundle-archiver.cjs`).
++ *
++ * Deepens Requirement #1, #3 & #5:
++ * - Packages all visited versioned snapshots (`url`, `title`, `pageVersion`, `snapshotId`,
++ *   `contentSha256`, `pageDate`, `eventDate`, `fetchedAt`, `fullTextUtf16`, `tabReceipt`)
++ *   and verified excerpts into:
++ *   1. An RFC 2557 Multipart MHTML web archive (`reports/<slug>-evidence.mhtml`) that
++ *      can be inspected offline even if external web pages later change or go offline.
++ *   2. A deterministic JSON Evidence Bundle (`reports/<slug>-evidence-bundle.json`) that
++ *      can be reloaded offline via `restoreSnapshotsFromEvidenceBundle`.
++ */
++
++function buildMultipartMhtmlArchive({
++  title = "Koswork Browser Research Evidence Archive",
++  generatedAt = new Date().toISOString(),
++  snapshots = []
++} = {}) {
++  const boundary = "----=_NextPart_Koswork_Browser_Research_MHTML";
++  const rootUrl = snapshots[0]?.url || "https://koswork.local/research-archive";
++
++  const lines = [
++    `From: <Saved by Koswork Browser Research Engine>`,
++    `Subject: ${title}`,
++    `Date: ${new Date(generatedAt).toUTCString()}`,
++    `MIME-Version: 1.0`,
++    `Content-Type: multipart/related; type="text/html"; boundary="${boundary}"`,
++    ``,
++    `This is a multi-part message in MIME format (RFC 2557 MHTML Evidence Archive).`,
++    ``
++  ];
++
++  for (const snap of snapshots) {
++    if (!snap || !snap.url) continue;
++    const escapedText = String(snap.fullTextUtf16 || "")
++      .replace(/&/g, "&amp;")
++      .replace(/</g, "&lt;")
++      .replace(/>/g, "&gt;");
++
++    lines.push(
++      `--${boundary}`,
++      `Content-Type: text/html; charset="utf-8"`,
++      `Content-Transfer-Encoding: 8bit`,
++      `Content-Location: ${snap.url}`,
++      `X-Koswork-Snapshot-Id: ${snap.snapshotId || ""}`,
++      `X-Koswork-Page-Version: ${snap.pageVersion ?? 1}`,
++      `X-Koswork-Content-Sha256: ${snap.contentSha256 || ""}`,
++      `X-Koswork-Page-Date: ${snap.pageDate || ""}`,
++      `X-Koswork-Event-Date: ${snap.eventDate || ""}`,
++      `X-Koswork-Fetched-At: ${snap.fetchedAt || generatedAt}`,
++      ``,
++      `<!doctype html>`,
++      `<html lang="ru">`,
++      `<head><meta charset="utf-8" /><title>${snap.title || snap.url}</title></head>`,
++      `<body><pre data-utf16-length="${(snap.fullTextUtf16 || "").length}">${escapedText}</pre></body>`,
++      `</html>`,
++      ``
++    );
++  }
++
++  lines.push(`--${boundary}--`, ``);
++  return {
++    rootUrl,
++    partCount: snapshots.length,
++    mhtmlText: lines.join("\r\n")
++  };
++}
++
++async function saveOfflineEvidenceBundleToWorkspace({
++  workspaceRoot,
++  bundleSlug = "research-evidence",
++  question = "",
++  snapshots = [],
++  confirmedClaims = [],
++  signal = null
++} = {}) {
++  if (!workspaceRoot) {
++    throw new Error("OFFLINE_BUNDLE_REQUIRES_WORKSPACE_ROOT");
++  }
++
++  const generatedAt = new Date().toISOString();
++  const mhtml = buildMultipartMhtmlArchive({
++    title: `Koswork Evidence Archive: ${question || bundleSlug}`,
++    generatedAt,
++    snapshots
++  });
++
++  const bundleJsonObj = {
++    schemaVersion: "koswork.browser-research.offline-bundle.v1",
++    question,
++    generatedAt,
++    snapshots: snapshots.map((s) => ({
++      tabId: s.tabId,
++      url: s.url,
++      canonicalUrl: s.canonicalUrl || s.url,
++      title: s.title,
++      httpStatus: s.httpStatus ?? 200,
++      pageVersion: s.pageVersion ?? 1,
++      snapshotId: s.snapshotId,
++      contentSha256: s.contentSha256,
++      pageDate: s.pageDate || null,
++      eventDate: s.eventDate || null,
++      fetchedAt: s.fetchedAt || generatedAt,
++      totalLengthUtf16: (s.fullTextUtf16 || "").length,
++      fullTextUtf16: s.fullTextUtf16 || "",
++      tabReceipt: s.tabReceipt || null
++    })),
++    confirmedClaims
++  };
++
++  const svc = createKosworkWorkspaceService();
++  await svc.connectFolder({ folderPath: workspaceRoot, signal });
++
++  const mhtmlFile = await svc.createFile({
++    relativePath: `reports/${bundleSlug}-evidence.mhtml`,
++    content: mhtml.mhtmlText,
++    createParents: true,
++    signal
++  });
++
++  const jsonFile = await svc.createFile({
++    relativePath: `reports/${bundleSlug}-evidence-bundle.json`,
++    content: JSON.stringify(bundleJsonObj, null, 2) + "\n",
++    createParents: true,
++    signal
++  });
++
++  return {
++    partCount: mhtml.partCount,
++    mhtmlFile,
++    jsonFile,
++    bundle: bundleJsonObj
++  };
++}
++
++function restoreSnapshotsFromEvidenceBundle(bundleObj = {}) {
++  const snapshotsByUrl = {};
++  for (const s of bundleObj.snapshots || []) {
++    if (!s || !s.url) continue;
++    snapshotsByUrl[s.url] = { ...s };
++  }
++  return snapshotsByUrl;
++}
++
++module.exports = {
++  buildMultipartMhtmlArchive,
++  saveOfflineEvidenceBundleToWorkspace,
++  restoreSnapshotsFromEvidenceBundle
++};
+diff --git a/desktop/windows/browser/shell.cjs b/desktop/windows/browser/shell.cjs
+index 1960a7e..5712858 100644
+--- a/desktop/windows/browser/shell.cjs
++++ b/desktop/windows/browser/shell.cjs
+@@ -39,6 +39,17 @@ const { KosworkResearchPinboardBridge } = require("./research-pinboard-bookmarks
+ const { verifyDeterministicResearchReplay } = require("./research-replay-auditor.cjs");
+ const { KosworkSpaRouteObserver } = require("./spa-route-observer.cjs");
+ const { validateExcerptContextAndBoundaries } = require("./context-boundary-validator.cjs");
++const {
++  extractOutboundCitationLinks,
++  followAndVerifyPrimaryCitation
++} = require("./hyperlink-citation-graph.cjs");
++const {
++  evaluateMultiCriteriaDecisionMatrix
++} = require("./multi-criteria-decision-matrix.cjs");
++const {
++  saveOfflineEvidenceBundleToWorkspace,
++  restoreSnapshotsFromEvidenceBundle
++} = require("./offline-evidence-bundle-archiver.cjs");
+ 
+ /**
+  * Shared Tool & Execution Boundary for Koswork Browser (`desktop/windows/browser/shell.cjs`).
+@@ -77,6 +88,18 @@ const BROWSER_RESEARCH_TOOL_DEFINITIONS = Object.freeze([
+       "Зафиксировать клиентский переход SPA (pushState, replaceState, hashchange) с обновлением версионного снимка и стека истории вкладки.",
+     requiredParams: ["tabId", "nextUrl"]
+   },
++  {
++    name: "browser.extract_citation_links",
++    description:
++      "Извлечь исходящие гиперссылки <a href> на открытой странице с точными смещениями UTF-16 текста ссылки.",
++    requiredParams: ["tabId"]
++  },
++  {
++    name: "browser.follow_primary_citation",
++    description:
++      "Перейти по цитируемой гиперссылке из обзорной статьи в первоисточник и проверить подтверждение утверждения UTF-16 выдержкой.",
++    requiredParams: ["sourceTabId", "anchorOrUrlQuery"]
++  },
+   {
+     name: "browser.read_long_page",
+     description:
+@@ -131,6 +154,18 @@ const BROWSER_RESEARCH_TOOL_DEFINITIONS = Object.freeze([
+       "Извлечь структурированные ячейки сравнения (вариант, критерий, значение) из HTML таблиц <table> и списков <dl>/<dt>/<dd> с точными смещениями UTF-16.",
+     requiredParams: ["tabId"]
+   },
++  {
++    name: "browser.evaluate_decision_matrix",
++    description:
++      "Вычислить многокритериальную матрицу выбора и границу Парето только по подтверждённым UTF-16 выдержкам.",
++    requiredParams: ["criteriaSpecs", "confirmedClaims"]
++  },
++  {
++    name: "browser.archive_offline_evidence",
++    description:
++      "Сохранить автономный архив доказательств (RFC 2557 MHTML и JSON-пакет снимков) в рабочую папку.",
++    requiredParams: ["snapshots"]
++  },
+   {
+     name: "browser.run_form_wizard",
+     description:
+@@ -333,6 +368,26 @@ function createKosworkBrowserShell(options = {}) {
+           eventDate: args.eventDate
+         });
+ 
++      case "browser.extract_citation_links": {
++        const obs = engine.observePage(args.tabId);
++        const tab = engine.tabs.get(String(args.tabId));
++        return extractOutboundCitationLinks(
++          obs.snapshot,
++          args.rawHtml || tab?.rawSiteDef?.html || ""
++        );
++      }
++
++      case "browser.follow_primary_citation":
++        return await followAndVerifyPrimaryCitation({
++          engine,
++          sourceTabId: args.sourceTabId,
++          rawHtml: args.rawHtml || "",
++          anchorOrUrlQuery: args.anchorOrUrlQuery,
++          expectedPrimaryPhrase: args.expectedPrimaryPhrase || null,
++          primaryTabId: args.primaryTabId || "tab-primary-citation",
++          signal
++        });
++
+       case "browser.observe":
+         return engine.observePage(args.tabId, {
+           reuseSnapshot: args.reuseSnapshot !== false
+@@ -425,6 +480,26 @@ function createKosworkBrowserShell(options = {}) {
+         });
+       }
+ 
++      case "browser.evaluate_decision_matrix":
++        return evaluateMultiCriteriaDecisionMatrix({
++          options: args.options || [],
++          criteriaSpecs: args.criteriaSpecs || [],
++          confirmedClaims: args.confirmedClaims || []
++        });
++
++      case "browser.archive_offline_evidence":
++        return await saveOfflineEvidenceBundleToWorkspace({
++          workspaceRoot: resolvedWorkspaceRoot,
++          bundleSlug: args.bundleSlug || "research-evidence",
++          question: args.question || "",
++          snapshots: args.snapshots || [],
++          confirmedClaims: args.confirmedClaims || [],
++          signal
++        });
++
++      case "browser.restore_offline_evidence":
++        return restoreSnapshotsFromEvidenceBundle(args.bundle || {});
++
+       case "browser.fill_form":
+         return engine.fillForm({
+           tabId: args.tabId,
+diff --git a/desktop/windows/test/browser-research-acceptance.test.cjs b/desktop/windows/test/browser-research-acceptance.test.cjs
+index 6d9da2e..4fd8cb3 100644
+--- a/desktop/windows/test/browser-research-acceptance.test.cjs
++++ b/desktop/windows/test/browser-research-acceptance.test.cjs
+@@ -2461,3 +2461,132 @@ test("25. Numeric/Token Boundary & Deprecation Context Validator (`context-bound
+   assert.equal(negCheck.validForConfirmation, false);
+   assert.ok(negCheck.advisories.some((a) => a.code === "CONTEXT_NEGATION_MARKER"));
+ });
++
++test("26. Cross-Page Hyperlink Citation Graph & Primary Source Verifier (`hyperlink-citation-graph.cjs`)", async () => {
++  const workspaceRoot = createTempWorkspace();
++  const shell = createKosworkBrowserShell({ workspaceRoot });
++  const engine = shell.engine;
++
++  engine.registerSyntheticSite("https://corpus.local/review-article", {
++    title: "Аналитический обзор со ссылками на первоисточники",
++    pageDate: "2026-11-07",
++    eventDate: "2026-11-05",
++    html: `
++      <html>
++        <body>
++          <p>В обзоре утверждается, что <a href="/primary-rfc-spec">официальный протокол синхронизации узлов</a> гарантирует задержку не более 5 мс.</p>
++          <p>Дополнительная ссылка на <a href="javascript:alert(1)">небезопасный скрипт</a> игнорируется политикой.</p>
++        </body>
++      </html>
++    `
++  });
++
++  engine.registerSyntheticSite("https://corpus.local/primary-rfc-spec", {
++    title: "Первоисточник: Спецификация протокола синхронизации",
++    pageDate: "2026-10-30",
++    eventDate: "2026-10-25",
++    text: "Раздел 4.2: официальный протокол синхронизации узлов гарантирует верхнюю границу задержки 5 мс при кворуме."
++  });
++
++  await engine.navigate({
++    tabId: "tab-sec-review",
++    url: "https://corpus.local/review-article"
++  });
++
++  const linkGraph = await shell.dispatchToolCall("browser.extract_citation_links", {
++    tabId: "tab-sec-review"
++  });
++  // javascript: link is filtered out by evaluateNavigationPolicy; only the safe relative link remains
++  assert.equal(linkGraph.linksCount, 1);
++  assert.equal(linkGraph.links[0].targetUrl, "https://corpus.local/primary-rfc-spec");
++  assert.ok(linkGraph.links[0].anchorStartUtf16 >= 0);
++
++  const verifiedPrimary = await shell.dispatchToolCall("browser.follow_primary_citation", {
++    sourceTabId: "tab-sec-review",
++    anchorOrUrlQuery: "официальный протокол синхронизации узлов",
++    expectedPrimaryPhrase: "верхнюю границу задержки 5 мс при кворуме"
++  });
++
++  assert.equal(verifiedPrimary.status, "primary_source_verified");
++  assert.equal(verifiedPrimary.primarySourceSubstantiated, true);
++  assert.ok(verifiedPrimary.secondarySource.excerpt.quote.includes("протокол синхронизации"));
++  assert.ok(verifiedPrimary.primarySource.excerpt.quote.includes("5 мс при кворуме"));
++});
++
++test("27. Multi-Criteria Decision Matrix & Pareto Analyzer (`multi-criteria-decision-matrix.cjs`) + RFC 2557 MHTML Offline Evidence Archiver (`offline-evidence-bundle-archiver.cjs`)", async () => {
++  const workspaceRoot = createTempWorkspace();
++  const shell = createKosworkBrowserShell({ workspaceRoot });
++  const engine = shell.engine;
++
++  engine.registerSyntheticSite("https://corpus.local/mcdm-source", {
++    title: "Источник для многокритериальной матрицы",
++    pageDate: "2026-11-07",
++    eventDate: "2026-11-06",
++    text: [
++      "Для пакета Option Alpha цена составляет $49/мес, а уровень SLA равен 99.95%.",
++      "Для пакета Option Beta цена составляет $35/мес, а уровень SLA равен 99.90%.",
++      "Для пакета Option Expensive цена составляет $120/мес, а уровень SLA равен 99.85%."
++    ].join("\n\n")
++  });
++
++  const nav = await engine.navigate({
++    tabId: "tab-mcdm",
++    url: "https://corpus.local/mcdm-source"
++  });
++
++  const excAlphaPrice = engine.extractExcerpt("tab-mcdm", { searchTerm: "Option Alpha цена составляет $49/мес" });
++  const excAlphaSla = engine.extractExcerpt("tab-mcdm", { searchTerm: "уровень SLA равен 99.95%" });
++  const excBetaPrice = engine.extractExcerpt("tab-mcdm", { searchTerm: "Option Beta цена составляет $35/мес" });
++  const excBetaSla = engine.extractExcerpt("tab-mcdm", { searchTerm: "уровень SLA равен 99.90%" });
++  const excExpPrice = engine.extractExcerpt("tab-mcdm", { searchTerm: "Option Expensive цена составляет $120/мес" });
++  const excExpSla = engine.extractExcerpt("tab-mcdm", { searchTerm: "уровень SLA равен 99.85%" });
++
++  const confirmedClaims = [
++    { optionName: "Option Alpha", criterion: "Цена", value: "$49/мес", excerpt: excAlphaPrice, source: { url: nav.url } },
++    { optionName: "Option Alpha", criterion: "SLA", value: "99.95%", excerpt: excAlphaSla, source: { url: nav.url } },
++    { optionName: "Option Beta", criterion: "Цена", value: "$35/мес", excerpt: excBetaPrice, source: { url: nav.url } },
++    { optionName: "Option Beta", criterion: "SLA", value: "99.90%", excerpt: excBetaSla, source: { url: nav.url } },
++    { optionName: "Option Expensive", criterion: "Цена", value: "$120/мес", excerpt: excExpPrice, source: { url: nav.url } },
++    { optionName: "Option Expensive", criterion: "SLA", value: "99.85%", excerpt: excExpSla, source: { url: nav.url } }
++  ];
++
++  const mcdm = await shell.dispatchToolCall("browser.evaluate_decision_matrix", {
++    options: ["Option Alpha", "Option Beta", "Option Expensive"],
++    criteriaSpecs: [
++      { name: "Цена", weight: 1, direction: "lower_better", maxNumeric: 80, required: true },
++      { name: "SLA", weight: 2, direction: "higher_better", minNumeric: 99.9, required: true }
++    ],
++    confirmedClaims
++  });
++
++  // Option Expensive violates maxNumeric: 80 and minNumeric: 99.9, so it is ineligible
++  const expRow = mcdm.rankings.find((r) => r.optionName === "Option Expensive");
++  assert.equal(expRow.eligible, false);
++  assert.equal(expRow.paretoOptimal, false);
++
++  // Option Alpha (higher SLA) and Option Beta (lower price) are both on the Pareto frontier!
++  assert.deepEqual(mcdm.paretoFrontierOptions.sort(), ["Option Alpha", "Option Beta"]);
++  assert.equal(mcdm.recommendedOption, "Option Alpha"); // SLA has weight 2 vs Price weight 1
++
++  // Archive visited snapshot into RFC 2557 MHTML & JSON offline bundle and restore it
++  const archived = await shell.dispatchToolCall(
++    "browser.archive_offline_evidence",
++    {
++      bundleSlug: "mcdm-offline-archive",
++      question: "Многокритериальный выбор Alpha vs Beta",
++      snapshots: [nav.snapshot],
++      confirmedClaims
++    },
++    { workspaceRoot }
++  );
++
++  assert.equal(archived.partCount, 1);
++  assert.ok(fs.existsSync(path.join(workspaceRoot, archived.mhtmlFile.path)));
++  assert.ok(fs.existsSync(path.join(workspaceRoot, archived.jsonFile.path)));
++
++  const restoredMap = await shell.dispatchToolCall("browser.restore_offline_evidence", {
++    bundle: archived.bundle
++  });
++  assert.ok(restoredMap[nav.url]);
++  assert.equal(restoredMap[nav.url].contentSha256, nav.snapshot.contentSha256);
++});
+-- 
+2.39.5
+

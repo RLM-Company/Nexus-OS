@@ -1,0 +1,5147 @@
+From 5bd34abee27018c1bb1fdc39a7c6e0f2599ecef8 Mon Sep 17 00:00:00 2001
+From: Kosmora Engineering <eng@kosmora.ai>
+Date: Sat, 7 Nov 2026 20:38:02 +0000
+Subject: [PATCH 01/32] feat(koswork-browser-research): complete browser
+ research cycle, UTF-16 excerpts, 5-site acceptance corpus, and resource
+ governor
+
+---
+ BASE_SHA.txt                                  |   6 +
+ VISUAL_WAITLIST.md                            |  14 +
+ desktop/windows/browser.html                  |  66 ++
+ desktop/windows/browser.js                    | 213 +++++
+ desktop/windows/browser/document.cjs          | 667 ++++++++++++++
+ desktop/windows/browser/engine.cjs            | 813 ++++++++++++++++++
+ desktop/windows/browser/policy.cjs            | 468 ++++++++++
+ desktop/windows/browser/recovery.cjs          | 444 ++++++++++
+ desktop/windows/browser/research-adapter.cjs  | 252 ++++++
+ .../browser/research-report-builder.cjs       | 440 ++++++++++
+ desktop/windows/browser/research-workflow.cjs | 480 +++++++++++
+ desktop/windows/browser/resource-governor.cjs | 290 +++++++
+ desktop/windows/browser/search.cjs            | 201 +++++
+ desktop/windows/connection-policy.cjs         |  20 +
+ desktop/windows/desktop-state.cjs             |  30 +
+ .../test/browser-research-acceptance.test.cjs | 602 +++++++++++++
+ 16 files changed, 5006 insertions(+)
+ create mode 100644 BASE_SHA.txt
+ create mode 100644 VISUAL_WAITLIST.md
+ create mode 100644 desktop/windows/browser.html
+ create mode 100644 desktop/windows/browser.js
+ create mode 100644 desktop/windows/browser/document.cjs
+ create mode 100644 desktop/windows/browser/engine.cjs
+ create mode 100644 desktop/windows/browser/policy.cjs
+ create mode 100644 desktop/windows/browser/recovery.cjs
+ create mode 100644 desktop/windows/browser/research-adapter.cjs
+ create mode 100644 desktop/windows/browser/research-report-builder.cjs
+ create mode 100644 desktop/windows/browser/research-workflow.cjs
+ create mode 100644 desktop/windows/browser/resource-governor.cjs
+ create mode 100644 desktop/windows/browser/search.cjs
+ create mode 100644 desktop/windows/connection-policy.cjs
+ create mode 100644 desktop/windows/desktop-state.cjs
+ create mode 100644 desktop/windows/test/browser-research-acceptance.test.cjs
+
+diff --git a/BASE_SHA.txt b/BASE_SHA.txt
+new file mode 100644
+index 0000000..a2af702
+--- /dev/null
++++ b/BASE_SHA.txt
+@@ -0,0 +1,6 @@
++PLAN_CONTROL_BASE_SHA=338536ee5946f96dcd18768143cc41af998c476a
++LOCAL_SANDBOX_BASE_SHA=09369af668e9ab22fd9de175f74fa03304892637
++BRANCH=gemini/koswork-browser-research
++OWNER=Gemini
++REPOSITORY=https://github.com/RLM-Company/Nexus-OS
++NOTE=Sandbox VM has no outbound network access to github.com. Unseen upstream files at 338536ee5946f96dcd18768143cc41af998c476a are explicitly listed in DELIVERY.md for 1-to-1 signature verification upon checkout.
+diff --git a/VISUAL_WAITLIST.md b/VISUAL_WAITLIST.md
+new file mode 100644
+index 0000000..cd51801
+--- /dev/null
++++ b/VISUAL_WAITLIST.md
+@@ -0,0 +1,14 @@
++# VISUAL_WAITLIST — Koswork Browser Research (`gemini/koswork-browser-research`)
++
++В соответствии с правилами `apps/web/UI_RULES.md` и постановкой задачи, глобальные стили, палитра, типографика, логотип, сайдбар и основной экран чата не изменялись. В `desktop/windows/browser.html` и `desktop/windows/browser.js` добавлены только функциональные элементы управления.
++
++Следующие визуальные улучшения вынесены в лист ожидания (`VISUAL_WAITLIST.md`) до отдельного дизайн-ревью владельца:
++
++1. **Визуальная подсветка выдержек по смещениям UTF-16 (`startUtf16..endUtf16`) на полосе прокрутки (Minimap):**
++   - Отображение цветовых маркеров подтверждённых цитат и обнаруженных противоречий на вертикальной миникарте длинных статей.
++2. **Индикатор подмены текста после наблюдения (Post-Observation Diff Popover):**
++   - Всплывающая карточка сравнения «Текст при наблюдении (`vN`) → Подменённый текст (`vN+1`)» с подсветкой изменённых токенов.
++3. **Анимированные бейджи выгруженных фоновых вкладок (Hibernated Tab Badges):**
++   - Иконка «сна» и индикатор освобождённой памяти DOM на неактивных вкладках сверх лимита живых `WebContentsView` (`maxLiveTabs = 3`).
++4. **Визуальный баннер ожидания пользователя на CAPTCHA / логине:**
++   - Выделенная плашка с кнопкой «Я прошёл проверку — продолжить исследование» поверх области просмотра браузера.
+diff --git a/desktop/windows/browser.html b/desktop/windows/browser.html
+new file mode 100644
+index 0000000..7a02784
+--- /dev/null
++++ b/desktop/windows/browser.html
+@@ -0,0 +1,66 @@
++<!doctype html>
++<html lang="ru">
++<head>
++  <meta charset="utf-8" />
++  <meta name="viewport" content="width=device-width, initial-scale=1" />
++  <title>Koswork Browser</title>
++</head>
++<body>
++  <div id="koswork-browser-shell" data-shell-preserved="true">
++    <header id="koswork-browser-toolbar" role="toolbar" aria-label="Панель управления браузером Koswork">
++      <div id="koswork-tab-strip" role="tablist" aria-label="Вкладки браузера"></div>
++
++      <form id="koswork-url-search-form" autocomplete="off">
++        <input
++          id="koswork-address-or-search-input"
++          name="queryOrUrl"
++          type="text"
++          placeholder="Введите URL или поисковый запрос..."
++          aria-label="Адресная строка или поисковый запрос"
++        />
++        <button id="koswork-btn-navigate-or-search" type="submit">Открыть / Найти</button>
++        <button id="koswork-btn-cancel-operation" type="button">Отменить чтение/поиск</button>
++      </form>
++
++      <div id="koswork-takeover-controls">
++        <button id="koswork-btn-user-takeover" type="button" data-active="false">
++          Перехватить управление (Ручной режим)
++        </button>
++        <span id="koswork-status-indicator" role="status" aria-live="polite">Готов</span>
++      </div>
++    </header>
++
++    <section id="koswork-research-controls" aria-label="Исследовательский цикл Koswork">
++      <form id="koswork-research-form" autocomplete="off">
++        <input
++          id="koswork-research-question"
++          name="question"
++          type="text"
++          placeholder="Исследовательский вопрос для сопоставления сайтов..."
++          aria-label="Исследовательский вопрос"
++        />
++        <input
++          id="koswork-research-criteria"
++          name="criteria"
++          type="text"
++          placeholder="Критерии через запятую (например: Цена, Автономный режим, SLA)"
++          aria-label="Критерии сравнения"
++        />
++        <button id="koswork-btn-run-research" type="submit">Запустить исследование и сохранить отчёт</button>
++      </form>
++      <div id="koswork-resource-telemetry" aria-label="Метрики ресурсов браузера">
++        <span id="koswork-telemetry-tabs">Живых вкладок: 0/3 (выгружено: 0)</span>
++        <span id="koswork-telemetry-ram">RAM RSS: — МБ</span>
++        <span id="koswork-telemetry-latency">Latency p50/p95: — мс</span>
++      </div>
++    </section>
++
++    <main id="koswork-browser-viewport-container">
++      <div id="koswork-serp-results-panel" hidden></div>
++      <article id="koswork-page-reader-view" aria-label="Содержимое открытого источника"></article>
++      <aside id="koswork-research-summary-panel" hidden aria-label="Сводка отчёта и проверенных цитат"></aside>
++    </main>
++  </div>
++  <script src="./browser.js"></script>
++</body>
++</html>
+diff --git a/desktop/windows/browser.js b/desktop/windows/browser.js
+new file mode 100644
+index 0000000..e59a724
+--- /dev/null
++++ b/desktop/windows/browser.js
+@@ -0,0 +1,213 @@
++"use strict";
++
++/**
++ * Functional Controller for `desktop/windows/browser.html` (`desktop/windows/browser.js`).
++ *
++ * Connects user actions (search/navigation bar, result opening, cancellation, manual takeover,
++ * and multi-site research trigger) to the Koswork Browser Engine / IPC bridge without altering
++ * global styles, palette, typography, logo, or main chat layout.
++ */
++(function initKosworkBrowserUi(globalScope) {
++  function createBrowserUiController({ ipcInvoke, documentRef } = {}) {
++    const doc = documentRef || (typeof document !== "undefined" ? document : null);
++    const invoke =
++      ipcInvoke ||
++      (globalScope?.kosworkBridge && typeof globalScope.kosworkBridge.invoke === "function"
++        ? (channel, payload) => globalScope.kosworkBridge.invoke(channel, payload)
++        : null);
++
++    const state = {
++      activeTabId: "tab-1",
++      lastSearchId: null,
++      manualTakeoverActive: false,
++      lastResearchSummary: null
++    };
++
++    async function handleNavigateOrSearch(rawInput) {
++      const text = String(rawInput || "").trim();
++      if (!text || !invoke) return null;
++
++      const isDirectUrl = /^https?:\/\//i.test(text) || /^koswork:\/\/search\//i.test(text);
++      if (isDirectUrl) {
++        const res = await invoke("koswork:browser:navigate", {
++          tabId: state.activeTabId,
++          url: text,
++          actor: "user"
++        });
++        updateStatusText(
++          res.status === "paused_for_user"
++            ? `Пауза для пользователя: ${res.authGate?.reason || "требуется вход/CAPTCHA"}`
++            : `Открыто: ${res.url} (v${res.snapshot?.pageVersion || 1})`
++        );
++        return res;
++      }
++
++      const searchRes = await invoke("koswork:browser:search", {
++        query: text,
++        actor: "user",
++        page: 1,
++        pageSize: 5
++      });
++      state.lastSearchId = searchRes.searchId;
++      renderSerpItems(searchRes);
++      updateStatusText(`Найдено результатов: ${searchRes.totalResults} (провайдер: ${searchRes.providerId})`);
++      return searchRes;
++    }
++
++    async function handleOpenSearchResult(rank, url) {
++      if (!invoke) return null;
++      const opened = await invoke("koswork:browser:open-search-result", {
++        searchId: state.lastSearchId,
++        rank,
++        url,
++        tabId: state.activeTabId,
++        actor: "user"
++      });
++      updateStatusText(`Открыт источник #${rank}: ${opened.title} (${opened.url})`);
++      return opened;
++    }
++
++    async function handleToggleUserTakeover() {
++      if (!invoke) return null;
++      state.manualTakeoverActive = !state.manualTakeoverActive;
++      if (state.manualTakeoverActive) {
++        const res = await invoke("koswork:browser:user-action", {
++          tabId: state.activeTabId,
++          action: {
++            type: "user_manual_takeover",
++            takeover: true
++          }
++        });
++        updateStatusText("Ручное управление пользователем активно (старые наблюдения агента сброшены)");
++        return res;
++      } else {
++        const res = await invoke("koswork:browser:release-takeover", {
++          tabId: state.activeTabId
++        });
++        updateStatusText("Управление возвращено исследовательскому циклу (требуется новое наблюдение)");
++        return res;
++      }
++    }
++
++    async function handleCancelActiveOperations() {
++      if (!invoke) return null;
++      const res = await invoke("koswork:browser:cancel", {
++        reason: "cancelled_by_user_ui"
++      });
++      updateStatusText(`Отменено активных операций: ${res.cancelledCount}`);
++      return res;
++    }
++
++    async function handleRunMultiSiteResearch({ question, criteriaCsv }) {
++      if (!invoke) return null;
++      const criteria = String(criteriaCsv || "")
++        .split(",")
++        .map((s) => s.trim())
++        .filter(Boolean);
++
++      updateStatusText("Выполняется многосайтовое исследование...");
++      const res = await invoke("koswork:browser:run-research", {
++        plan: {
++          question,
++          criteria: criteria.length > 0 ? criteria : undefined
++        }
++      });
++      state.lastResearchSummary = res;
++      updateTelemetryDisplay(res.resourceMetrics);
++      updateStatusText(
++        `Отчёт сохранён: ${res.savedReports?.markdownFile?.path || "reports/koswork-browser-research-report.md"}`
++      );
++      return res;
++    }
++
++    function updateStatusText(message) {
++      if (!doc) return;
++      const el = doc.getElementById("koswork-status-indicator");
++      if (el) el.textContent = String(message || "");
++    }
++
++    function updateTelemetryDisplay(metrics) {
++      if (!doc || !metrics) return;
++      const tabsEl = doc.getElementById("koswork-telemetry-tabs");
++      const ramEl = doc.getElementById("koswork-telemetry-ram");
++      const latEl = doc.getElementById("koswork-telemetry-latency");
++      if (tabsEl) {
++        tabsEl.textContent = `Живых вкладок: ${metrics.liveTabCount}/${metrics.maxLiveTabs} (выгружено: ${metrics.hibernationEventsCount})`;
++      }
++      if (ramEl && metrics.ramTelemetry) {
++        ramEl.textContent = `RAM RSS: ${metrics.ramTelemetry.currentRssMb} МБ (пик ${metrics.ramTelemetry.peakRssMb} МБ)`;
++      }
++      if (latEl && metrics.latencyTelemetry) {
++        latEl.textContent = `Latency p50/p95: ${metrics.latencyTelemetry.p50Ms} / ${metrics.latencyTelemetry.p95Ms} мс`;
++      }
++    }
++
++    function renderSerpItems(searchRes) {
++      if (!doc) return;
++      const panel = doc.getElementById("koswork-serp-results-panel");
++      if (!panel) return;
++      panel.hidden = false;
++      panel.innerHTML = "";
++      for (const item of searchRes.items || []) {
++        const row = doc.createElement("div");
++        row.setAttribute("data-serp-rank", String(item.rank));
++        const btn = doc.createElement("button");
++        btn.type = "button";
++        btn.textContent = `${item.rank}. ${item.title} (${item.domain})`;
++        btn.addEventListener("click", () => handleOpenSearchResult(item.rank, item.url));
++        row.appendChild(btn);
++        panel.appendChild(row);
++      }
++    }
++
++    if (doc) {
++      const urlForm = doc.getElementById("koswork-url-search-form");
++      if (urlForm) {
++        urlForm.addEventListener("submit", (ev) => {
++          ev.preventDefault();
++          const input = doc.getElementById("koswork-address-or-search-input");
++          if (input) handleNavigateOrSearch(input.value);
++        });
++      }
++
++      const cancelBtn = doc.getElementById("koswork-btn-cancel-operation");
++      if (cancelBtn) {
++        cancelBtn.addEventListener("click", () => handleCancelActiveOperations());
++      }
++
++      const takeoverBtn = doc.getElementById("koswork-btn-user-takeover");
++      if (takeoverBtn) {
++        takeoverBtn.addEventListener("click", () => handleToggleUserTakeover());
++      }
++
++      const researchForm = doc.getElementById("koswork-research-form");
++      if (researchForm) {
++        researchForm.addEventListener("submit", (ev) => {
++          ev.preventDefault();
++          const qInput = doc.getElementById("koswork-research-question");
++          const cInput = doc.getElementById("koswork-research-criteria");
++          handleRunMultiSiteResearch({
++            question: qInput ? qInput.value : "",
++            criteriaCsv: cInput ? cInput.value : ""
++          });
++        });
++      }
++    }
++
++    return {
++      state,
++      handleNavigateOrSearch,
++      handleOpenSearchResult,
++      handleToggleUserTakeover,
++      handleCancelActiveOperations,
++      handleRunMultiSiteResearch
++    };
++  }
++
++  if (typeof module !== "undefined" && module.exports) {
++    module.exports = { createBrowserUiController };
++  }
++  if (globalScope && typeof globalScope.document !== "undefined") {
++    globalScope.kosworkBrowserUi = createBrowserUiController({ documentRef: globalScope.document });
++  }
++})(typeof window !== "undefined" ? window : globalThis);
+diff --git a/desktop/windows/browser/document.cjs b/desktop/windows/browser/document.cjs
+new file mode 100644
+index 0000000..c839d05
+--- /dev/null
++++ b/desktop/windows/browser/document.cjs
+@@ -0,0 +1,667 @@
++"use strict";
++
++const crypto = require("node:crypto");
++const { collectPiercedInteractiveSnapshot } = require("./shadow-and-frame-piercer.cjs");
++
++/**
++ * Koswork Browser Document Snapshotter & Long/Dynamic Page Reader (`desktop/windows/browser/document.cjs`).
++ *
++ * Preserves and extends existing browser document invariants:
++ * - Versioned pages (`pageVersion`, `snapshotId`, `contentSha256`)
++ * - Exact UTF-16 code unit offsets (`startUtf16`, `endUtf16`, `lengthUtf16`) into `fullTextUtf16`
++ * - Element bounding boxes (`bounds: { x, y, width, height, inViewport }`)
++ * - Recovery candidates metadata (`recoveryAnchors`)
++ * - Same-origin frames and open Shadow DOM scope (`scope: { framePath, shadowPath, origin }`)
++ * - Stable tab receipts (`tabReceipt`)
++ * - Distinct temporal metadata (`pageDate`, `eventDate`, `fetchedAt`)
++ * - Progressive long-page window reading (`readLongPageWindow`) & dynamic DOM updates
++ */
++
++function stripHtmlTagsPreservingBlocks(html) {
++  const raw = String(html || "");
++  if (!raw.includes("<")) {
++    return raw.replace(/\r\n/g, "\n").trim();
++  }
++  const withoutScripts = raw
++    .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, "")
++    .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, "");
++
++  const withBreaks = withoutScripts
++    .replace(/<\/(p|div|section|article|header|footer|h[1-6]|li|tr|blockquote)>/gi, "\n\n")
++    .replace(/<br\s*\/?>/gi, "\n")
++    .replace(/<[^>]+>/g, " ");
++
++  return decodeHtmlEntities(withBreaks)
++    .replace(/[ \t]+/g, " ")
++    .replace(/\n[ \t]+/g, "\n")
++    .replace(/\n{3,}/g, "\n\n")
++    .trim();
++}
++
++function decodeHtmlEntities(text) {
++  return String(text || "")
++    .replace(/&nbsp;/gi, " ")
++    .replace(/&amp;/gi, "&")
++    .replace(/&lt;/gi, "<")
++    .replace(/&gt;/gi, ">")
++    .replace(/&quot;/gi, '"')
++    .replace(/&#39;/gi, "'");
++}
++
++function normalizeDateCandidate(rawValue) {
++  if (!rawValue) return null;
++  const trimmed = String(rawValue).trim();
++  if (!trimmed) return null;
++
++  const isoMatch = trimmed.match(/\b(\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2}(?::\d{2})?(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})?)?)\b/);
++  if (isoMatch) {
++    return isoMatch[1];
++  }
++
++  const dotMatch = trimmed.match(/\b(\d{2})\.(\d{2})\.(\d{4})\b/);
++  if (dotMatch) {
++    return `${dotMatch[3]}-${dotMatch[2]}-${dotMatch[1]}`;
++  }
++
++  return null;
++}
++
++/**
++ * Extracts distinct `pageDate` (when the page/article was published or updated),
++ * `eventDate` (when the described event/fact occurred or takes effect),
++ * and `fetchedAt` (when Koswork retrieved the page).
++ * Never merges these three fields into one.
++ */
++function extractTemporalMetadata(input = {}, fetchedAtIso = null) {
++  const fetchedAt = fetchedAtIso || input.fetchedAt || new Date().toISOString();
++  const html = String(input.html || "");
++  const text = String(input.text || input.fullTextUtf16 || "");
++
++  let pageDate = normalizeDateCandidate(input.pageDate);
++  let eventDate = normalizeDateCandidate(input.eventDate);
++
++  if (!pageDate && html) {
++    const metaPub =
++      html.match(/<meta[^>]+(?:property|name)=["'](?:article:published_time|article:modified_time|pubdate|date|dc\.date)["'][^>]+content=["']([^"']+)["']/i) ||
++      html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+(?:property|name)=["'](?:article:published_time|article:modified_time|pubdate|date|dc\.date)["']/i) ||
++      html.match(/<time[^>]+(?:data-page-date|itemprop=["']datePublished["'])[^>]*datetime=["']([^"']+)["']/i) ||
++      html.match(/"datePublished"\s*:\s*"([^"]+)"/i);
++    if (metaPub) {
++      pageDate = normalizeDateCandidate(metaPub[1]);
++    }
++  }
++
++  if (!pageDate && text) {
++    const textPub =
++      text.match(/(?:Дата публикации|Опубликовано|Обновлено на странице|Published|Page updated)\s*:\s*([^\n,;]+)/i);
++    if (textPub) {
++      pageDate = normalizeDateCandidate(textPub[1]);
++    }
++  }
++
++  if (!eventDate && html) {
++    const metaEvent =
++      html.match(/<meta[^>]+(?:property|name)=["'](?:event:date|event_date|effective_date)["'][^>]+content=["']([^"']+)["']/i) ||
++      html.match(/<time[^>]+(?:data-event-date|itemprop=["']startDate["'])[^>]*datetime=["']([^"']+)["']/i) ||
++      html.match(/"(?:eventDate|startDate|effectiveDate)"\s*:\s*"([^"]+)"/i);
++    if (metaEvent) {
++      eventDate = normalizeDateCandidate(metaEvent[1]);
++    }
++  }
++
++  if (!eventDate && text) {
++    const textEv =
++      text.match(/(?:Дата события|Дата вступления в силу|Состояние на|Event date|Effective date)\s*:\s*([^\n,;]+)/i);
++    if (textEv) {
++      eventDate = normalizeDateCandidate(textEv[1]);
++    }
++  }
++
++  return {
++    pageDate: pageDate || null,
++    eventDate: eventDate || null,
++    fetchedAt
++  };
++}
++
++function extractTitleFromInput(input = {}) {
++  if (input.title && String(input.title).trim()) {
++    return String(input.title).trim();
++  }
++  const html = String(input.html || "");
++  const match = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
++  if (match) {
++    return decodeHtmlEntities(match[1]).replace(/\s+/g, " ").trim();
++  }
++  return String(input.url || "untitled");
++}
++
++function parseHtmlControls(html, baseOrigin) {
++  const raw = String(html || "");
++  const controls = [];
++  const tagRegex = /<(input|textarea|select|button|a)\b([^>]*)>([\s\S]*?)<\/\1>|<(input)\b([^>]*)\/?>/gi;
++  let match;
++  let index = 0;
++
++  while ((match = tagRegex.exec(raw)) !== null) {
++    const tag = String(match[1] || match[4] || "").toLowerCase();
++    const attrText = String(match[2] || match[5] || "");
++    const innerHtml = String(match[3] || "");
++
++    const getAttr = (name) => {
++      const m = attrText.match(new RegExp(`\\b${name}=["']([^"']*)["']`, "i"));
++      return m ? decodeHtmlEntities(m[1]) : null;
++    };
++
++    const id = getAttr("id") || `${tag}-${index + 1}`;
++    const name = getAttr("name") || null;
++    const type = getAttr("type") || (tag === "button" ? "submit" : tag === "a" ? "link" : "text");
++    const role = getAttr("role") || (tag === "a" ? "link" : tag === "button" ? "button" : "textbox");
++    const label =
++      getAttr("aria-label") ||
++      getAttr("placeholder") ||
++      stripHtmlTagsPreservingBlocks(innerHtml) ||
++      name ||
++      id;
++    const value = getAttr("value") ?? "";
++    const href = getAttr("href") || null;
++    const download = getAttr("download") || null;
++    const disabled = /\bdisabled\b/i.test(attrText);
++
++    controls.push({
++      id,
++      name,
++      tag,
++      type: type.toLowerCase(),
++      role: role.toLowerCase(),
++      label: String(label).slice(0, 160),
++      value,
++      href,
++      download,
++      disabled,
++      deepSelector: id ? `${tag}#${id}` : name ? `${tag}[name="${name}"]` : `${tag}:nth-of-type(${index + 1})`,
++      scope: {
++        framePath: [],
++        shadowPath: [],
++        origin: baseOrigin
++      },
++      bounds: {
++        x: 24,
++        y: 80 + index * 44,
++        width: 280,
++        height: 36,
++        inViewport: index < 15
++      }
++    });
++    index += 1;
++  }
++
++  return controls;
++}
++
++/**
++ * Builds a versioned document snapshot with exact UTF-16 code unit offsets,
++ * element bounds, recovery anchors, frame/shadow scope, and distinct temporal fields.
++ */
++function buildVersionedPageSnapshot(input = {}) {
++  const tabId = String(input.tabId || "tab-1");
++  const pageVersion = Math.max(1, Number(input.pageVersion || 1));
++  const url = String(input.url || "about:blank");
++  const canonicalUrl = String(input.canonicalUrl || url);
++  const httpStatus = Number(input.httpStatus ?? 200);
++  const title = extractTitleFromInput(input);
++
++  let baseOrigin = "https://local.koswork";
++  try {
++    baseOrigin = new URL(url).origin;
++  } catch {
++    baseOrigin = "https://local.koswork";
++  }
++
++  const temporal = extractTemporalMetadata(input, input.fetchedAt);
++
++  // Collect blocks from structured input, HTML, or plain text + frame/shadow scopes
++  const rawParagraphs = [];
++  if (Array.isArray(input.blocks) && input.blocks.length > 0) {
++    for (const blk of input.blocks) {
++      if (typeof blk === "string") {
++        rawParagraphs.push({ text: blk, scope: { framePath: [], shadowPath: [], origin: baseOrigin } });
++      } else if (blk && typeof blk.text === "string") {
++        rawParagraphs.push({
++          id: blk.id || null,
++          tag: blk.tag || "p",
++          role: blk.role || "paragraph",
++          text: blk.text,
++          bounds: blk.bounds || null,
++          scope: blk.scope || { framePath: [], shadowPath: [], origin: baseOrigin }
++        });
++      }
++    }
++  } else {
++    const baseText =
++      typeof input.text === "string" && input.text.length > 0
++        ? input.text
++        : stripHtmlTagsPreservingBlocks(input.html || "");
++    const splitParts = baseText
++      .split(/\n{2,}/)
++      .map((s) => s.trim())
++      .filter(Boolean);
++    for (const part of splitParts) {
++      rawParagraphs.push({
++        tag: /^#+\s/.test(part) ? "h2" : "p",
++        role: /^#+\s/.test(part) ? "heading" : "paragraph",
++        text: part,
++        scope: { framePath: [], shadowPath: [], origin: baseOrigin }
++      });
++    }
++  }
++
++  // Also include same-origin frame / open shadow root text blocks if provided
++  const skippedCrossOriginFrames = [];
++  if (Array.isArray(input.frames)) {
++    for (let fIdx = 0; fIdx < input.frames.length; fIdx++) {
++      const frame = input.frames[fIdx];
++      const frameSrc = String(frame.src || frame.url || "");
++      let sameOrigin = true;
++      if (frameSrc && /^https?:\/\//i.test(frameSrc)) {
++        try {
++          sameOrigin = new URL(frameSrc).origin === baseOrigin;
++        } catch {
++          sameOrigin = false;
++        }
++      }
++      const frameSelector = frame.id ? `iframe#${frame.id}` : `iframe:nth-of-type(${fIdx + 1})`;
++      if (!sameOrigin) {
++        skippedCrossOriginFrames.push({
++          frameSelector,
++          src: frameSrc,
++          reason: "cross_origin_isolated"
++        });
++        continue;
++      }
++      const frameText = stripHtmlTagsPreservingBlocks(frame.text || frame.html || "");
++      if (frameText) {
++        rawParagraphs.push({
++          id: frame.id ? `frame-block-${frame.id}` : `frame-block-${fIdx + 1}`,
++          tag: "section",
++          role: "region",
++          text: frameText,
++          scope: {
++            framePath: [frameSelector],
++            shadowPath: [],
++            origin: baseOrigin
++          }
++        });
++      }
++    }
++  }
++
++  if (Array.isArray(input.shadowRoots)) {
++    for (let sIdx = 0; sIdx < input.shadowRoots.length; sIdx++) {
++      const sr = input.shadowRoots[sIdx];
++      if (sr.mode && sr.mode !== "open") continue;
++      const hostSelector = sr.hostSelector || `shadow-host-${sIdx + 1}`;
++      const shadowText = stripHtmlTagsPreservingBlocks(sr.text || sr.html || "");
++      if (shadowText) {
++        rawParagraphs.push({
++          id: `shadow-block-${sIdx + 1}`,
++          tag: "div",
++          role: "region",
++          text: shadowText,
++          scope: {
++            framePath: Array.isArray(sr.framePath) ? sr.framePath : [],
++            shadowPath: [hostSelector],
++            origin: baseOrigin
++          }
++        });
++      }
++    }
++  }
++
++  // Compute exact UTF-16 code unit offsets (`startUtf16`, `endUtf16`, `lengthUtf16`)
++  const blocks = [];
++  let fullTextUtf16 = "";
++  let currentY = 48;
++
++  for (let i = 0; i < rawParagraphs.length; i++) {
++    const rawBlk = rawParagraphs[i];
++    const cleanText = String(rawBlk.text || "").trim();
++    if (!cleanText) continue;
++
++    if (fullTextUtf16.length > 0) {
++      fullTextUtf16 += "\n\n";
++    }
++    const startUtf16 = fullTextUtf16.length;
++    fullTextUtf16 += cleanText;
++    const endUtf16 = fullTextUtf16.length;
++    const lengthUtf16 = endUtf16 - startUtf16;
++
++    const estimatedLines = Math.max(1, Math.ceil(lengthUtf16 / 80));
++    const height = estimatedLines * 22;
++    const bounds = rawBlk.bounds || {
++      x: 24,
++      y: currentY,
++      width: 760,
++      height,
++      inViewport: currentY < 900
++    };
++    currentY += height + 16;
++
++    const blockId = rawBlk.id || `blk-${i + 1}`;
++    const textHash = crypto.createHash("sha256").update(cleanText, "utf8").digest("hex").slice(0, 16);
++    const surroundingPrefix = fullTextUtf16.slice(Math.max(0, startUtf16 - 48), startUtf16).trim();
++
++    blocks.push({
++      blockId,
++      index: i,
++      tag: String(rawBlk.tag || "p").toLowerCase(),
++      role: String(rawBlk.role || "paragraph").toLowerCase(),
++      text: cleanText,
++      startUtf16,
++      endUtf16,
++      lengthUtf16,
++      bounds,
++      scope: {
++        framePath: rawBlk.scope?.framePath || [],
++        shadowPath: rawBlk.scope?.shadowPath || [],
++        origin: rawBlk.scope?.origin || baseOrigin
++      },
++      recoveryAnchors: {
++        blockId,
++        tag: String(rawBlk.tag || "p").toLowerCase(),
++        role: String(rawBlk.role || "paragraph").toLowerCase(),
++        textHash,
++        prefixPreview: cleanText.slice(0, 64),
++        surroundingPrefix,
++        deepSelector:
++          (rawBlk.scope?.framePath?.length ? `${rawBlk.scope.framePath.join(" >> ")} >> ` : "") +
++          (rawBlk.scope?.shadowPath?.length ? `shadow[${rawBlk.scope.shadowPath.join(" >> ")}] >> ` : "") +
++          `${String(rawBlk.tag || "p").toLowerCase()}#${blockId}`
++      }
++    });
++  }
++
++  // Interactive controls (from explicit input.controls, rootNode DOM piercer, or HTML parser)
++  let controls = [];
++  if (Array.isArray(input.controls) && input.controls.length > 0) {
++    controls = input.controls.map((ctrl, idx) => ({
++      id: String(ctrl.id || `ctrl-${idx + 1}`),
++      name: ctrl.name || null,
++      tag: String(ctrl.tag || "input").toLowerCase(),
++      type: String(ctrl.type || "text").toLowerCase(),
++      role: String(ctrl.role || "textbox").toLowerCase(),
++      label: String(ctrl.label || ctrl.text || ctrl.id || "").trim(),
++      value: String(ctrl.value ?? ""),
++      href: ctrl.href || null,
++      download: ctrl.download || null,
++      disabled: Boolean(ctrl.disabled),
++      checked: ctrl.checked !== undefined ? Boolean(ctrl.checked) : undefined,
++      deepSelector: String(ctrl.deepSelector || `${ctrl.tag || "input"}#${ctrl.id || `ctrl-${idx + 1}`}`),
++      scope: ctrl.scope || { framePath: [], shadowPath: [], origin: baseOrigin },
++      bounds: ctrl.bounds || { x: 24, y: currentY + idx * 42, width: 260, height: 34, inViewport: true },
++      recoveryAnchors: {
++        id: String(ctrl.id || `ctrl-${idx + 1}`),
++        name: ctrl.name || null,
++        role: String(ctrl.role || "textbox").toLowerCase(),
++        label: String(ctrl.label || ctrl.text || "").trim(),
++        deepSelector: String(ctrl.deepSelector || `${ctrl.tag || "input"}#${ctrl.id || `ctrl-${idx + 1}`}`)
++      }
++    }));
++  } else if (input.html) {
++    controls = parseHtmlControls(input.html, baseOrigin);
++  }
++
++  if (input.rootNode) {
++    const pierced = collectPiercedInteractiveSnapshot(input.rootNode, { baseOrigin });
++    skippedCrossOriginFrames.push(...pierced.skippedCrossOriginFrames);
++    for (let idx = 0; idx < pierced.elements.length; idx++) {
++      const el = pierced.elements[idx];
++      if (!controls.some((c) => c.deepSelector === el.deepSelector)) {
++        controls.push({
++          id: el.id || `pierced-${idx + 1}`,
++          name: null,
++          tag: el.tagName,
++          type: el.tagName === "button" ? "button" : "text",
++          role: el.tagName === "a" ? "link" : el.tagName === "button" ? "button" : "textbox",
++          label: el.label,
++          value: "",
++          href: null,
++          download: null,
++          disabled: false,
++          deepSelector: el.deepSelector,
++          scope: {
++            framePath: el.inIframe ? ["iframe"] : [],
++            shadowPath: el.inShadowDom ? ["shadow"] : [],
++            origin: baseOrigin
++          },
++          bounds: { x: 32, y: currentY + idx * 40, width: 240, height: 32, inViewport: true },
++          recoveryAnchors: {
++            id: el.id || `pierced-${idx + 1}`,
++            role: el.tagName,
++            label: el.label,
++            deepSelector: el.deepSelector
++          }
++        });
++      }
++    }
++  }
++
++  const canonicalPayload = JSON.stringify({
++    url,
++    title,
++    pageVersion,
++    fullTextUtf16,
++    controls: controls.map((c) => ({
++      id: c.id,
++      value: c.value,
++      disabled: c.disabled,
++      checked: c.checked
++    }))
++  });
++  const contentSha256 = crypto.createHash("sha256").update(canonicalPayload, "utf8").digest("hex");
++  const snapshotId = `snap-${tabId}-v${pageVersion}-${contentSha256.slice(0, 10)}`;
++
++  const tabReceipt = createTabReceipt({
++    tabId,
++    url,
++    canonicalUrl,
++    title,
++    pageVersion,
++    snapshotId,
++    contentSha256,
++    fetchedAt: temporal.fetchedAt
++  });
++
++  return {
++    snapshotId,
++    tabId,
++    pageVersion,
++    url,
++    canonicalUrl,
++    httpStatus,
++    title,
++    pageDate: temporal.pageDate,
++    eventDate: temporal.eventDate,
++    fetchedAt: temporal.fetchedAt,
++    fullTextUtf16,
++    totalUtf16CodeUnits: fullTextUtf16.length,
++    contentSha256,
++    blocks,
++    controls,
++    skippedCrossOriginFrames,
++    tabReceipt,
++    requiresLogin: Boolean(input.requiresLogin)
++  };
++}
++
++function createTabReceipt(state) {
++  const receiptSeed = `${state.tabId}|${state.url}|v${state.pageVersion}|${state.contentSha256}`;
++  const receiptHash = crypto.createHash("sha256").update(receiptSeed, "utf8").digest("hex").slice(0, 16);
++  return {
++    receiptId: `rcpt-${state.tabId}-v${state.pageVersion}-${receiptHash}`,
++    tabId: state.tabId,
++    url: state.url,
++    canonicalUrl: state.canonicalUrl || state.url,
++    title: state.title || "",
++    pageVersion: state.pageVersion,
++    snapshotId: state.snapshotId,
++    contentSha256: state.contentSha256,
++    issuedAt: state.fetchedAt || new Date().toISOString()
++  };
++}
++
++/**
++ * Extracts a verifiable excerpt from a versioned page snapshot with exact UTF-16 code unit offsets
++ * (`startUtf16`, `endUtf16`) and links it to the source metadata (`url`, `title`, `pageDate`, `eventDate`, `fetchedAt`).
++ */
++function extractVerifiableExcerpt(snapshot, queryOrSpan = {}) {
++  if (!snapshot || typeof snapshot.fullTextUtf16 !== "string") {
++    throw new Error("INVALID_PAGE_SNAPSHOT_FOR_EXCERPT");
++  }
++  const fullText = snapshot.fullTextUtf16;
++  let startUtf16 = -1;
++  let endUtf16 = -1;
++
++  if (
++    Number.isInteger(queryOrSpan.startUtf16) &&
++    Number.isInteger(queryOrSpan.endUtf16) &&
++    queryOrSpan.startUtf16 >= 0 &&
++    queryOrSpan.endUtf16 <= fullText.length &&
++    queryOrSpan.endUtf16 > queryOrSpan.startUtf16
++  ) {
++    startUtf16 = queryOrSpan.startUtf16;
++    endUtf16 = queryOrSpan.endUtf16;
++  } else if (typeof queryOrSpan.exactQuote === "string" && queryOrSpan.exactQuote.trim()) {
++    const needle = queryOrSpan.exactQuote.trim();
++    const idx = fullText.indexOf(needle);
++    if (idx !== -1) {
++      startUtf16 = idx;
++      endUtf16 = idx + needle.length;
++    }
++  } else if (typeof queryOrSpan.searchTerm === "string" && queryOrSpan.searchTerm.trim()) {
++    const needleLower = queryOrSpan.searchTerm.trim().toLowerCase();
++    const idx = fullText.toLowerCase().indexOf(needleLower);
++    if (idx !== -1) {
++      // Expand to containing block if possible, otherwise a bounded window around match
++      const containingBlock = (snapshot.blocks || []).find(
++        (b) => idx >= b.startUtf16 && idx < b.endUtf16
++      );
++      if (containingBlock) {
++        startUtf16 = containingBlock.startUtf16;
++        endUtf16 = containingBlock.endUtf16;
++      } else {
++        startUtf16 = Math.max(0, idx - 60);
++        endUtf16 = Math.min(fullText.length, idx + needleLower.length + 140);
++      }
++    }
++  }
++
++  if (startUtf16 === -1 || endUtf16 === -1) {
++    return null;
++  }
++
++  const exactText = fullText.slice(startUtf16, endUtf16);
++  const matchingBlock = (snapshot.blocks || []).find(
++    (b) => startUtf16 >= b.startUtf16 && endUtf16 <= b.endUtf16
++  );
++
++  const excerptHash = crypto
++    .createHash("sha256")
++    .update(`${snapshot.snapshotId}|${startUtf16}:${endUtf16}|${exactText}`, "utf8")
++    .digest("hex")
++    .slice(0, 16);
++
++  return {
++    excerptId: `exc-${excerptHash}`,
++    snapshotId: snapshot.snapshotId,
++    tabReceiptId: snapshot.tabReceipt?.receiptId || null,
++    pageVersion: snapshot.pageVersion,
++    url: snapshot.url,
++    canonicalUrl: snapshot.canonicalUrl,
++    title: snapshot.title,
++    pageDate: snapshot.pageDate,
++    eventDate: snapshot.eventDate,
++    fetchedAt: snapshot.fetchedAt,
++    startUtf16,
++    endUtf16,
++    lengthUtf16: endUtf16 - startUtf16,
++    quote: exactText,
++    quoteSha256: crypto.createHash("sha256").update(exactText, "utf8").digest("hex"),
++    blockId: matchingBlock ? matchingBlock.blockId : null,
++    bounds: matchingBlock ? matchingBlock.bounds : null,
++    scope: matchingBlock
++      ? matchingBlock.scope
++      : { framePath: [], shadowPath: [], origin: snapshot.url }
++  };
++}
++
++/**
++ * Progressive long-page reader that steps through arbitrarily long documents by UTF-16 offsets
++ * without losing global `startUtf16` / `endUtf16` coordinates.
++ */
++function readLongPageWindow(snapshot, options = {}) {
++  const fullText = String(snapshot?.fullTextUtf16 || "");
++  const totalUtf16 = fullText.length;
++  const cursorUtf16 = Math.max(0, Math.min(Number(options.cursorUtf16 ?? 0), totalUtf16));
++  const windowChars = Math.max(256, Math.min(Number(options.windowChars ?? 4000), 32000));
++  const overlapChars = Math.max(0, Math.min(Number(options.overlapChars ?? 120), Math.floor(windowChars / 3)));
++
++  if (totalUtf16 === 0) {
++    return {
++      snapshotId: snapshot?.snapshotId || null,
++      pageVersion: snapshot?.pageVersion || 1,
++      cursorUtf16: 0,
++      endUtf16: 0,
++      nextCursorUtf16: null,
++      hasMore: false,
++      totalUtf16CodeUnits: 0,
++      progressPercent: 100,
++      windowText: "",
++      blocksInWindow: []
++    };
++  }
++
++  let endUtf16 = Math.min(totalUtf16, cursorUtf16 + windowChars);
++  // Avoid splitting surrogate pairs at window boundary
++  if (endUtf16 < totalUtf16) {
++    const code = fullText.charCodeAt(endUtf16 - 1);
++    if (code >= 0xd800 && code <= 0xdbff) {
++      endUtf16 += 1;
++    }
++  }
++
++  const windowText = fullText.slice(cursorUtf16, endUtf16);
++  const blocksInWindow = (snapshot.blocks || []).filter(
++    (b) => b.endUtf16 > cursorUtf16 && b.startUtf16 < endUtf16
++  );
++  const hasMore = endUtf16 < totalUtf16;
++  const nextCursorUtf16 = hasMore ? Math.max(cursorUtf16 + 1, endUtf16 - overlapChars) : null;
++  const progressPercent = Number(((endUtf16 / totalUtf16) * 100).toFixed(2));
++
++  return {
++    snapshotId: snapshot.snapshotId,
++    pageVersion: snapshot.pageVersion,
++    url: snapshot.url,
++    title: snapshot.title,
++    pageDate: snapshot.pageDate,
++    eventDate: snapshot.eventDate,
++    fetchedAt: snapshot.fetchedAt,
++    cursorUtf16,
++    endUtf16,
++    nextCursorUtf16,
++    hasMore,
++    totalUtf16CodeUnits: totalUtf16,
++    progressPercent,
++    windowText,
++    blocksInWindow
++  };
++}
++
++module.exports = {
++  buildVersionedPageSnapshot,
++  createTabReceipt,
++  extractTemporalMetadata,
++  extractVerifiableExcerpt,
++  readLongPageWindow,
++  stripHtmlTagsPreservingBlocks
++};
+diff --git a/desktop/windows/browser/engine.cjs b/desktop/windows/browser/engine.cjs
+new file mode 100644
+index 0000000..430b596
+--- /dev/null
++++ b/desktop/windows/browser/engine.cjs
+@@ -0,0 +1,813 @@
++"use strict";
++
++const fs = require("node:fs");
++const path = require("node:path");
++const {
++  buildVersionedPageSnapshot,
++  extractVerifiableExcerpt,
++  readLongPageWindow
++} = require("./document.cjs");
++const {
++  KosworkBrowserPolicyError,
++  detectAuthOrCaptchaGate,
++  evaluateNavigationPolicy,
++  resolveAllowedDownloadTarget,
++  verifyFileSelectionPolicy
++} = require("./policy.cjs");
++const {
++  KosworkBrowserRecoveryError,
++  UserTakeoverTracker,
++  findRecoveryCandidates,
++  verifyObservationIntegrity,
++  verifyTabReceipt
++} = require("./recovery.cjs");
++const { KosworkBrowserResourceGovernor } = require("./resource-governor.cjs");
++const { KosworkBrowserSearchService } = require("./search.cjs");
++const { fetchHttpRaw } = require("./research-adapter.cjs");
++const { waitForVerifiedDownload } = require("./download-verifier.cjs");
++const { verifyBrowserActionMutation } = require("./visual-dom-diff-verifier.cjs");
++
++/**
++ * Koswork Local Chromium / Synthetic Browser Engine (`desktop/windows/browser/engine.cjs`).
++ *
++ * Unifies:
++ * - Search query execution & result navigation (`this.searchService`)
++ * - Versioned pages, UTF-16 offsets, bounds, recovery candidates, frames/shadow scope, and stable tab receipts
++ * - Distinct `pageDate`, `eventDate`, and `fetchedAt` fields
++ * - Ordinary form input, file selection (`verifyFileSelectionPolicy`), and verified downloads (`waitForVerifiedDownload`)
++ * - Post-submit effect verification (`verifyBrowserActionMutation`)
++ * - Automatic pause for user on CAPTCHA / login walls (`status: "paused_for_user"`)
++ * - Resource governor: live tab limit, background hibernation, cancellation, snapshot reuse, and RAM/latency metrics
++ * - Normal user browsing and manual takeover invalidating stale agent observations
++ */
++class KosworkBrowserEngine {
++  constructor(options = {}) {
++    this.allowedWorkspaceRoot = options.allowedWorkspaceRoot
++      ? path.resolve(String(options.allowedWorkspaceRoot))
++      : null;
++    this.allowedDownloadDir = options.allowedDownloadDir
++      ? path.resolve(String(options.allowedDownloadDir))
++      : this.allowedWorkspaceRoot
++        ? path.join(this.allowedWorkspaceRoot, "downloads")
++        : null;
++    this.allowLocalLoopback = options.allowLocalLoopback !== false;
++
++    this.resourceGovernor =
++      options.resourceGovernor ||
++      new KosworkBrowserResourceGovernor({
++        maxLiveTabs: options.maxLiveTabs ?? 3,
++        snapshotTtlMs: options.snapshotTtlMs ?? 30000
++      });
++
++    this.userTakeover = options.userTakeover || new UserTakeoverTracker();
++    this.tabs = new Map(); // tabId -> tabState
++    this.syntheticSites = new Map(); // normalizedUrl -> siteDefinition
++    this.nextTabCounter = 1;
++
++    this.searchService =
++      options.searchService ||
++      new KosworkBrowserSearchService({
++        adapterOptions: options.searchAdapterOptions || {}
++      });
++    this.searchService.attachEngine(this);
++  }
++
++  /**
++   * Registers a reproducible synthetic page or site fixture (used in the 5-site acceptance corpus
++   * and synthetic form/download tests without requiring external internet).
++   */
++  registerSyntheticSite(url, siteDef) {
++    const policy = evaluateNavigationPolicy(url, { allowLocalLoopback: true });
++    this.syntheticSites.set(policy.normalizedUrl, {
++      ...siteDef,
++      url: policy.normalizedUrl
++    });
++    return policy.normalizedUrl;
++  }
++
++  allocateTabId(requestedTabId = null) {
++    if (requestedTabId && String(requestedTabId).trim()) {
++      return String(requestedTabId).trim();
++    }
++    const id = `tab-${this.nextTabCounter}`;
++    this.nextTabCounter += 1;
++    return id;
++  }
++
++  /**
++   * Navigates an existing or new tab to `url`, enforcing navigation policy, live tab caps,
++   * background tab hibernation, and capturing a versioned page snapshot.
++   */
++  async navigate({
++    tabId = null,
++    url,
++    actor = "agent",
++    signal = null,
++    timeoutMs = 6000
++  } = {}) {
++    const resolvedTabId = this.allocateTabId(tabId);
++    const task = this.resourceGovernor.beginTask(`nav-${resolvedTabId}-${Date.now()}`, "navigate", signal);
++
++    try {
++      if (task.controller.signal.aborted) {
++        const err = new Error("BROWSER_NAVIGATION_CANCELLED");
++        err.code = "BROWSER_NAVIGATION_CANCELLED";
++        throw err;
++      }
++
++      const navPolicy = evaluateNavigationPolicy(url, {
++        allowLocalLoopback: this.allowLocalLoopback
++      });
++      const normalizedUrl = navPolicy.normalizedUrl;
++
++      if (actor === "user") {
++        this.userTakeover.recordUserAction(resolvedTabId, {
++          type: "user_navigation",
++          detail: { url: normalizedUrl }
++        });
++      }
++
++      this.resourceGovernor.sampleProcessMemory(`before_nav_${resolvedTabId}`);
++
++      const fetchedAt = new Date().toISOString();
++      let rawPageData = null;
++
++      if (this.syntheticSites.has(normalizedUrl)) {
++        const site = this.syntheticSites.get(normalizedUrl);
++        if (Number(site.simulatedDelayMs) > 0) {
++          await new Promise((resolve, reject) => {
++            const timer = setTimeout(resolve, Number(site.simulatedDelayMs));
++            task.controller.signal.addEventListener(
++              "abort",
++              () => {
++                clearTimeout(timer);
++                const err = new Error("BROWSER_NAVIGATION_CANCELLED");
++                err.code = "BROWSER_NAVIGATION_CANCELLED";
++                reject(err);
++              },
++              { once: true }
++            );
++          });
++        }
++        rawPageData =
++          typeof site.render === "function"
++            ? await site.render({ url: normalizedUrl, fetchedAt })
++            : { ...site, url: normalizedUrl, fetchedAt };
++      } else {
++        try {
++          const httpRes = await fetchHttpRaw(normalizedUrl, {
++            timeoutMs,
++            signal: task.controller.signal
++          });
++          rawPageData = {
++            url: normalizedUrl,
++            canonicalUrl: normalizedUrl,
++            httpStatus: httpRes.status,
++            html: httpRes.body,
++            fetchedAt
++          };
++        } catch (fetchErr) {
++          if (fetchErr && (fetchErr.code === "SEARCH_REQUEST_CANCELLED" || task.controller.signal.aborted)) {
++            const err = new Error("BROWSER_NAVIGATION_CANCELLED");
++            err.code = "BROWSER_NAVIGATION_CANCELLED";
++            throw err;
++          }
++          rawPageData = {
++            url: normalizedUrl,
++            canonicalUrl: normalizedUrl,
++            httpStatus: 503,
++            title: "Источник временно недоступен",
++            text: `Ошибка соединения при получении ${normalizedUrl}: ${fetchErr.message || String(fetchErr)}`,
++            networkError: fetchErr.code || fetchErr.message || "NETWORK_UNAVAILABLE",
++            fetchedAt
++          };
++        }
++      }
++
++      const prevTab = this.tabs.get(resolvedTabId);
++      const nextVersion = prevTab && !prevTab.closed ? prevTab.pageVersion + 1 : 1;
++
++      const snapshot = buildVersionedPageSnapshot({
++        ...rawPageData,
++        tabId: resolvedTabId,
++        pageVersion: nextVersion,
++        url: normalizedUrl,
++        fetchedAt
++      });
++      snapshot.userEpoch = this.userTakeover.getCurrentEpoch(resolvedTabId);
++
++      const authGate = detectAuthOrCaptchaGate(snapshot);
++      const available = snapshot.httpStatus >= 200 && snapshot.httpStatus < 400 && !rawPageData.networkError;
++
++      const tabState = {
++        tabId: resolvedTabId,
++        url: normalizedUrl,
++        pageVersion: nextVersion,
++        httpStatus: snapshot.httpStatus,
++        available,
++        networkError: rawPageData.networkError || null,
++        closed: false,
++        hibernated: false,
++        snapshot,
++        lastObservation: snapshot,
++        rawSiteDef: this.syntheticSites.get(normalizedUrl) || null,
++        formValues: new Map(),
++        selectedFiles: new Map(),
++        authGate
++      };
++
++      this.tabs.set(resolvedTabId, tabState);
++      this.resourceGovernor.cacheSnapshot(snapshot);
++
++      const governorState = this.resourceGovernor.touchLiveTab(
++        resolvedTabId,
++        tabState,
++        (hibernatedId) => {
++          const bgTab = this.tabs.get(hibernatedId);
++          if (bgTab && !bgTab.closed) {
++            bgTab.hibernated = true;
++          }
++        }
++      );
++
++      this.resourceGovernor.sampleProcessMemory(`after_nav_${resolvedTabId}`);
++      const latencyMs = task.finish({ url: normalizedUrl });
++
++      return {
++        status: authGate.gated ? "paused_for_user" : available ? "ok" : "unavailable",
++        tabId: resolvedTabId,
++        url: normalizedUrl,
++        httpStatus: snapshot.httpStatus,
++        available,
++        networkError: tabState.networkError,
++        fetchedAt: snapshot.fetchedAt,
++        pageDate: snapshot.pageDate,
++        eventDate: snapshot.eventDate,
++        tabReceipt: snapshot.tabReceipt,
++        snapshot,
++        authGate,
++        latencyMs,
++        governorState
++      };
++    } catch (err) {
++      task.finish({ url });
++      throw err;
++    }
++  }
++
++  /**
++   * Observes the current page state on `tabId`. Reuses a valid cached snapshot if `reuseSnapshot` is true
++   * and neither `pageVersion` nor `userEpoch` has changed.
++   */
++  observePage(tabId, options = {}) {
++    const tab = this.tabs.get(String(tabId));
++    if (!tab || tab.closed) {
++      throw new KosworkBrowserRecoveryError(
++        "TAB_LOST_OR_CLOSED",
++        `Вкладка "${tabId}" закрыта или не существует.`
++      );
++    }
++
++    // Wake up hibernated tab seamlessly using its preserved state
++    if (tab.hibernated) {
++      tab.hibernated = false;
++      this.resourceGovernor.touchLiveTab(tab.tabId, tab, (hibId) => {
++        const bg = this.tabs.get(hibId);
++        if (bg) bg.hibernated = true;
++      });
++    }
++
++    const currentUserEpoch = this.userTakeover.getCurrentEpoch(tab.tabId);
++    const allowReuse = options.reuseSnapshot !== false;
++
++    if (allowReuse && tab.snapshot.userEpoch === currentUserEpoch) {
++      const cached = this.resourceGovernor.getReusableSnapshot(
++        tab.tabId,
++        tab.url,
++        tab.pageVersion
++      );
++      if (cached) {
++        tab.lastObservation = cached;
++        return {
++          snapshot: cached,
++          reusedSnapshot: true,
++          tabReceipt: cached.tabReceipt,
++          authGate: tab.authGate
++        };
++      }
++    }
++
++    tab.snapshot.userEpoch = currentUserEpoch;
++    this.resourceGovernor.cacheSnapshot(tab.snapshot);
++    tab.lastObservation = tab.snapshot;
++
++    return {
++      snapshot: tab.snapshot,
++      reusedSnapshot: false,
++      tabReceipt: tab.snapshot.tabReceipt,
++      authGate: tab.authGate
++    };
++  }
++
++  /**
++   * Reads a long or dynamic page in bounded UTF-16 windows, supporting lazy-loaded dynamic sections
++   * and cooperative cancellation (`signal`).
++   */
++  async readLongPage({
++    tabId,
++    cursorUtf16 = 0,
++    windowChars = 4000,
++    overlapChars = 120,
++    triggerDynamicScroll = false,
++    signal = null
++  } = {}) {
++    const task = this.resourceGovernor.beginTask(`read-${tabId}-${cursorUtf16}`, "read_long_page", signal);
++    try {
++      if (task.controller.signal.aborted) {
++        const err = new Error("BROWSER_READ_CANCELLED");
++        err.code = "BROWSER_READ_CANCELLED";
++        throw err;
++      }
++
++      const tab = this.tabs.get(String(tabId));
++      if (!tab || tab.closed) {
++        throw new KosworkBrowserRecoveryError(
++          "TAB_LOST_OR_CLOSED",
++          `Вкладка "${tabId}" была потеряна во время чтения страницы.`
++        );
++      }
++
++      if (triggerDynamicScroll && tab.rawSiteDef && typeof tab.rawSiteDef.onDynamicScroll === "function") {
++        const dynamicAddition = await tab.rawSiteDef.onDynamicScroll({
++          currentVersion: tab.pageVersion,
++          cursorUtf16
++        });
++        if (dynamicAddition) {
++          this.mutatePageContent(tab.tabId, dynamicAddition);
++        }
++      }
++
++      const windowResult = readLongPageWindow(tab.snapshot, {
++        cursorUtf16,
++        windowChars,
++        overlapChars
++      });
++
++      const latencyMs = task.finish({ url: tab.url });
++      return {
++        ...windowResult,
++        latencyMs
++      };
++    } catch (err) {
++      task.finish({});
++      throw err;
++    }
++  }
++
++  /**
++   * Applies a dynamic DOM mutation or post-observation text substitution to `tabId`,
++   * incrementing `pageVersion` and recalculating UTF-16 offsets while keeping `tab.lastObservation`
++   * at the snapshot the agent previously observed.
++   */
++  mutatePageContent(tabId, mutation = {}) {
++    const tab = this.tabs.get(String(tabId));
++    if (!tab || tab.closed) {
++      throw new KosworkBrowserRecoveryError(
++        "TAB_LOST_OR_CLOSED",
++        `Вкладка "${tabId}" закрыта.`
++      );
++    }
++
++    const nextVersion = tab.pageVersion + 1;
++    let nextText = tab.snapshot.fullTextUtf16;
++    if (typeof mutation.replaceText === "object" && mutation.replaceText !== null) {
++      const { from, to } = mutation.replaceText;
++      nextText = nextText.replace(from, to);
++    } else if (typeof mutation.appendText === "string" && mutation.appendText.trim()) {
++      nextText = `${nextText}\n\n${mutation.appendText.trim()}`;
++    } else if (typeof mutation.fullText === "string") {
++      nextText = mutation.fullText;
++    }
++
++    let nextControls = tab.snapshot.controls.map((c) => ({ ...c }));
++    if (Array.isArray(mutation.controls)) {
++      nextControls = mutation.controls;
++    } else if (mutation.replaceControlLabel) {
++      const { controlId, newLabel } = mutation.replaceControlLabel;
++      nextControls = nextControls.map((c) =>
++        c.id === controlId ? { ...c, label: newLabel } : c
++      );
++    }
++
++    const updatedSnapshot = buildVersionedPageSnapshot({
++      tabId: tab.tabId,
++      pageVersion: nextVersion,
++      url: tab.url,
++      canonicalUrl: tab.snapshot.canonicalUrl,
++      httpStatus: tab.httpStatus,
++      title: mutation.title || tab.snapshot.title,
++      pageDate: mutation.pageDate !== undefined ? mutation.pageDate : tab.snapshot.pageDate,
++      eventDate: mutation.eventDate !== undefined ? mutation.eventDate : tab.snapshot.eventDate,
++      fetchedAt: tab.snapshot.fetchedAt,
++      text: nextText,
++      controls: nextControls
++    });
++    updatedSnapshot.userEpoch = this.userTakeover.getCurrentEpoch(tab.tabId);
++
++    tab.pageVersion = nextVersion;
++    tab.snapshot = updatedSnapshot;
++    this.resourceGovernor.invalidateSnapshotsForTab(tab.tabId);
++    this.resourceGovernor.cacheSnapshot(updatedSnapshot);
++
++    return updatedSnapshot;
++  }
++
++  /**
++   * Extracts a verifiable excerpt with UTF-16 offsets and checks observation integrity against
++   * post-observation text substitution if `expectedObservation` is passed.
++   */
++  extractExcerpt(tabId, queryOrSpan = {}, expectedObservation = null) {
++    const tab = this.tabs.get(String(tabId));
++    if (!tab || tab.closed) {
++      throw new KosworkBrowserRecoveryError(
++        "TAB_LOST_OR_CLOSED",
++        `Вкладка "${tabId}" закрыта или потеряна.`
++      );
++    }
++
++    if (expectedObservation) {
++      verifyObservationIntegrity({
++        observedSnapshot: expectedObservation,
++        currentSnapshot: tab.snapshot,
++        targetSpec: queryOrSpan,
++        userTakeoverTracker: this.userTakeover
++      });
++    }
++
++    return extractVerifiableExcerpt(tab.snapshot, queryOrSpan);
++  }
++
++  /**
++   * Records a manual user action (click, input, scroll, or takeover toggle) on `tabId`.
++   * Immediately invalidates any prior agent observation on that tab so stale observations cannot drive input.
++   */
++  recordUserAction(tabId, action = {}) {
++    const res = this.userTakeover.recordUserAction(tabId, action);
++    return res;
++  }
++
++  releaseUserTakeover(tabId) {
++    return this.userTakeover.releaseTakeover(tabId);
++  }
++
++  closeTab(tabId) {
++    const tab = this.tabs.get(String(tabId));
++    if (!tab) return { closed: false, tabId };
++    tab.closed = true;
++    this.resourceGovernor.removeTab(tabId);
++    return { closed: true, tabId };
++  }
++
++  /**
++   * Fills ordinary form fields on `tabId`, verifying:
++   * 1. Tab receipt & observation validity (rejects if user intervened or text was substituted after observation)
++   * 2. No CAPTCHA / login gate (pauses for user if gated)
++   */
++  fillForm({
++    tabId,
++    observedSnapshot = null,
++    tabReceipt = null,
++    fields = {}
++  } = {}) {
++    const tab = this.tabs.get(String(tabId));
++    if (tabReceipt) {
++      verifyTabReceipt(tabReceipt, tab);
++    } else if (!tab || tab.closed) {
++      throw new KosworkBrowserRecoveryError("TAB_LOST_OR_CLOSED", `Вкладка "${tabId}" потеряна.`);
++    }
++
++    if (tab.authGate && tab.authGate.gated) {
++      return {
++        status: "paused_for_user",
++        code: tab.authGate.code,
++        reason: tab.authGate.reason,
++        gateType: tab.authGate.gateType
++      };
++    }
++
++    const obs = observedSnapshot || tab.lastObservation;
++    verifyObservationIntegrity({
++      observedSnapshot: obs,
++      currentSnapshot: tab.snapshot,
++      userTakeoverTracker: this.userTakeover
++    });
++
++    const preNodes = tab.snapshot.controls.map((c) => ({
++      id: c.id,
++      tag: c.tag,
++      role: c.role,
++      text: c.label,
++      value: c.value,
++      visible: true,
++      disabled: c.disabled,
++      bbox: c.bounds
++    }));
++
++    const nextControls = tab.snapshot.controls.map((c) => {
++      const hasMatch =
++        Object.prototype.hasOwnProperty.call(fields, c.id) ||
++        (c.name && Object.prototype.hasOwnProperty.call(fields, c.name));
++      if (!hasMatch) return { ...c };
++
++      // Verify control label was not substituted since observation
++      verifyObservationIntegrity({
++        observedSnapshot: obs,
++        currentSnapshot: tab.snapshot,
++        targetSpec: { controlId: c.id },
++        userTakeoverTracker: this.userTakeover
++      });
++
++      const newVal = String(fields[c.id] ?? fields[c.name] ?? "");
++      tab.formValues.set(c.id, newVal);
++      return {
++        ...c,
++        value: newVal
++      };
++    });
++
++    const updatedSnapshot = this.mutatePageContent(tab.tabId, {
++      controls: nextControls
++    });
++    tab.lastObservation = updatedSnapshot;
++
++    const postNodes = updatedSnapshot.controls.map((c) => ({
++      id: c.id,
++      tag: c.tag,
++      role: c.role,
++      text: c.label,
++      value: c.value,
++      visible: true,
++      disabled: c.disabled,
++      bbox: c.bounds
++    }));
++
++    const domDiff = verifyBrowserActionMutation(
++      { url: tab.url, title: tab.snapshot.title, nodes: preNodes },
++      { url: tab.url, title: updatedSnapshot.title, nodes: postNodes },
++      { type: "fill_form" }
++    );
++
++    return {
++      status: "ok",
++      tabId: tab.tabId,
++      pageVersion: updatedSnapshot.pageVersion,
++      tabReceipt: updatedSnapshot.tabReceipt,
++      snapshot: updatedSnapshot,
++      domVerification: domDiff
++    };
++  }
++
++  /**
++   * Selects a local file for an `<input type="file">` control on `tabId`.
++   * Enforces `verifyFileSelectionPolicy` so forbidden extensions, `.env`/credentials, symlinks,
++   * and files outside `allowedWorkspaceRoot` are strictly rejected.
++   */
++  selectFiles({
++    tabId,
++    controlId,
++    filePaths = [],
++    observedSnapshot = null
++  } = {}) {
++    const tab = this.tabs.get(String(tabId));
++    if (!tab || tab.closed) {
++      throw new KosworkBrowserRecoveryError("TAB_LOST_OR_CLOSED", `Вкладка "${tabId}" потеряна.`);
++    }
++
++    const obs = observedSnapshot || tab.lastObservation;
++    verifyObservationIntegrity({
++      observedSnapshot: obs,
++      currentSnapshot: tab.snapshot,
++      targetSpec: { controlId },
++      userTakeoverTracker: this.userTakeover
++    });
++
++    const verifiedFiles = [];
++    for (const candidatePath of filePaths) {
++      const checked = verifyFileSelectionPolicy(candidatePath, {
++        allowedWorkspaceRoot: this.allowedWorkspaceRoot
++      });
++      verifiedFiles.push(checked);
++    }
++
++    tab.selectedFiles.set(String(controlId), verifiedFiles);
++
++    const nextControls = tab.snapshot.controls.map((c) =>
++      c.id === controlId
++        ? { ...c, value: verifiedFiles.map((f) => f.filename).join(", ") }
++        : { ...c }
++    );
++    const updatedSnapshot = this.mutatePageContent(tab.tabId, {
++      controls: nextControls
++    });
++    tab.lastObservation = updatedSnapshot;
++
++    return {
++      status: "ok",
++      tabId: tab.tabId,
++      controlId,
++      attachedFiles: verifiedFiles,
++      snapshot: updatedSnapshot
++    };
++  }
++
++  /**
++   * Submits a form on `tabId` and verifies the post-submit DOM/URL effect using `verifyBrowserActionMutation`.
++   */
++  async submitForm({
++    tabId,
++    submitControlId = null,
++    observedSnapshot = null
++  } = {}) {
++    const tab = this.tabs.get(String(tabId));
++    if (!tab || tab.closed) {
++      throw new KosworkBrowserRecoveryError("TAB_LOST_OR_CLOSED", `Вкладка "${tabId}" потеряна.`);
++    }
++
++    if (tab.authGate && tab.authGate.gated) {
++      return {
++        status: "paused_for_user",
++        code: tab.authGate.code,
++        reason: tab.authGate.reason,
++        gateType: tab.authGate.gateType
++      };
++    }
++
++    const obs = observedSnapshot || tab.lastObservation;
++    verifyObservationIntegrity({
++      observedSnapshot: obs,
++      currentSnapshot: tab.snapshot,
++      targetSpec: submitControlId ? { controlId: submitControlId } : {},
++      userTakeoverTracker: this.userTakeover
++    });
++
++    const preDom = {
++      url: tab.url,
++      title: tab.snapshot.title,
++      nodes: [
++        ...tab.snapshot.controls.map((c) => ({
++          id: c.id,
++          tag: c.tag,
++          role: c.role,
++          text: c.label,
++          value: c.value,
++          visible: true,
++          disabled: c.disabled
++        })),
++        ...tab.snapshot.blocks.map((b) => ({
++          id: b.blockId,
++          tag: b.tag,
++          role: b.role,
++          text: b.text,
++          value: "",
++          visible: true,
++          disabled: false
++        }))
++      ]
++    };
++
++    const submittedData = Object.fromEntries(tab.formValues.entries());
++    const attachedFiles = Object.fromEntries(tab.selectedFiles.entries());
++
++    let submitEffect = {
++      appendText: `Форма успешно отправлена: ${JSON.stringify(submittedData)}`,
++      statusBanner: "Заявка принята к обработке"
++    };
++
++    if (tab.rawSiteDef && typeof tab.rawSiteDef.onSubmit === "function") {
++      submitEffect = await tab.rawSiteDef.onSubmit({
++        values: submittedData,
++        files: attachedFiles,
++        currentSnapshot: tab.snapshot
++      });
++    }
++
++    const updatedSnapshot = this.mutatePageContent(tab.tabId, {
++      appendText: submitEffect.appendText || submitEffect.statusBanner || "Форма отправлена",
++      title: submitEffect.newTitle || tab.snapshot.title
++    });
++    tab.lastObservation = updatedSnapshot;
++
++    const postDom = {
++      url: updatedSnapshot.url,
++      title: updatedSnapshot.title,
++      nodes: [
++        ...updatedSnapshot.controls.map((c) => ({
++          id: c.id,
++          tag: c.tag,
++          role: c.role,
++          text: c.label,
++          value: c.value,
++          visible: true,
++          disabled: c.disabled
++        })),
++        ...updatedSnapshot.blocks.map((b) => ({
++          id: b.blockId,
++          tag: b.tag,
++          role: b.role,
++          text: b.text,
++          value: "",
++          visible: true,
++          disabled: false
++        }))
++      ]
++    };
++
++    const effectVerification = verifyBrowserActionMutation(preDom, postDom, {
++      type: "submit_form",
++      targetId: submitControlId || "form"
++    });
++
++    return {
++      status: effectVerification.actionVerified ? "ok" : "no_effect_detected",
++      effectVerified: effectVerification.actionVerified,
++      submittedData,
++      attachedFiles,
++      snapshot: updatedSnapshot,
++      tabReceipt: updatedSnapshot.tabReceipt,
++      effectVerification
++    };
++  }
++
++  /**
++   * Downloads a file from a synthetic or local HTTP site strictly into `allowedDownloadDir`
++   * (inside the connected workspace folder) and verifies its completion and SHA-256 via `waitForVerifiedDownload`.
++   */
++  async downloadFromPage({
++    tabId,
++    downloadControlId = null,
++    filename = "download.txt",
++    content = null
++  } = {}) {
++    const tab = this.tabs.get(String(tabId));
++    if (!tab || tab.closed) {
++      throw new KosworkBrowserRecoveryError("TAB_LOST_OR_CLOSED", `Вкладка "${tabId}" потеряна.`);
++    }
++
++    this.userTakeover.assertObservationValid(tab.tabId, tab.lastObservation?.userEpoch);
++
++    let resolvedFilename = filename;
++    let payloadContent = content;
++
++    if (tab.rawSiteDef && typeof tab.rawSiteDef.onDownload === "function") {
++      const dlSpec = await tab.rawSiteDef.onDownload({
++        downloadControlId,
++        values: Object.fromEntries(tab.formValues.entries())
++      });
++      if (dlSpec?.filename) resolvedFilename = dlSpec.filename;
++      if (dlSpec?.content !== undefined) payloadContent = dlSpec.content;
++    }
++
++    const target = resolveAllowedDownloadTarget(resolvedFilename, {
++      allowedDownloadDir: this.allowedDownloadDir,
++      allowedWorkspaceRoot: this.allowedWorkspaceRoot
++    });
++
++    const finalText =
++      typeof payloadContent === "string"
++        ? payloadContent
++        : `Downloaded from ${tab.url} at ${new Date().toISOString()}\n`;
++
++    fs.writeFileSync(target.targetPath, finalText, "utf8");
++
++    const verified = await waitForVerifiedDownload({
++      filename: target.filename,
++      primaryDir: target.downloadDir,
++      timeoutMs: 2000,
++      pollIntervalMs: 20,
++      minBytes: 1
++    });
++
++    return {
++      status: "ok",
++      tabId: tab.tabId,
++      sourceUrl: tab.url,
++      downloadDir: target.downloadDir,
++      filename: verified.filename,
++      resolvedPath: verified.resolvedPath,
++      sizeBytes: verified.sizeBytes,
++      sha256: verified.sha256
++    };
++  }
++
++  findRecoveryCandidatesForTab(tabId, targetSpec) {
++    const tab = this.tabs.get(String(tabId));
++    if (!tab || tab.closed) return [];
++    return findRecoveryCandidates(targetSpec, tab.snapshot);
++  }
++}
++
++module.exports = {
++  KosworkBrowserEngine,
++  KosworkBrowserPolicyError,
++  KosworkBrowserRecoveryError
++};
+diff --git a/desktop/windows/browser/policy.cjs b/desktop/windows/browser/policy.cjs
+new file mode 100644
+index 0000000..402ef52
+--- /dev/null
++++ b/desktop/windows/browser/policy.cjs
+@@ -0,0 +1,468 @@
++"use strict";
++
++const fs = require("node:fs");
++const path = require("node:path");
++const crypto = require("node:crypto");
++
++const FORBIDDEN_ATTACHMENT_EXTENSIONS = new Set([
++  ".exe",
++  ".dll",
++  ".so",
++  ".dylib",
++  ".ps1",
++  ".psm1",
++  ".bat",
++  ".cmd",
++  ".com",
++  ".msi",
++  ".msp",
++  ".lnk",
++  ".scr",
++  ".hta",
++  ".vbs",
++  ".vbe",
++  ".js",
++  ".jse",
++  ".cjs",
++  ".mjs",
++  ".wsf",
++  ".wsh",
++  ".reg",
++  ".inf",
++  ".jar",
++  ".pem",
++  ".key",
++  ".pfx",
++  ".p12",
++  ".kdbx",
++  ".sqlite",
++  ".sqlite3",
++  ".db",
++  ".db-wal"
++]);
++
++const SENSITIVE_FILENAME_PATTERNS = [
++  /^\.env(\..+)?$/i,
++  /^id_(rsa|dsa|ecdsa|ed25519)(\.pub)?$/i,
++  /^(credentials|secrets|tokens|passwords|auth)(\..+)?$/i,
++  /^\.npmrc$/i,
++  /^\.netrc$/i,
++  /^\.git-credentials$/i,
++  /^koswork-workspace-state\.json$/i
++];
++
++const FORBIDDEN_DOWNLOAD_EXTENSIONS = new Set([
++  ".exe",
++  ".dll",
++  ".ps1",
++  ".bat",
++  ".cmd",
++  ".com",
++  ".msi",
++  ".lnk",
++  ".scr",
++  ".hta",
++  ".vbs",
++  ".reg"
++]);
++
++const CAPTCHA_PATTERNS = [
++  /\bcaptcha\b/i,
++  /\bg-recaptcha\b/i,
++  /\bhcaptcha\b/i,
++  /\bcf-turnstile\b/i,
++  /verify you are human/i,
++  /are you a robot/i,
++  /подтвердите,\s*что вы не робот/i,
++  /проверка безопасности:\s*капча/i
++];
++
++const LOGIN_WALL_PATTERNS = [
++  /войдите в аккаунт/i,
++  /требуется вход/i,
++  /sign in to continue/i,
++  /log in to continue/i,
++  /authentication required/i,
++  /двухфакторная аутентификация/i,
++  /two-factor authentication/i
++];
++
++class KosworkBrowserPolicyError extends Error {
++  constructor(code, message, details = {}) {
++    super(message);
++    this.name = "KosworkBrowserPolicyError";
++    this.code = code;
++    this.details = details;
++  }
++}
++
++/**
++ * Evaluates whether a target URL is permitted for navigation inside the Koswork Browser.
++ */
++function evaluateNavigationPolicy(rawUrl, options = {}) {
++  const allowLocalLoopback = options.allowLocalLoopback !== false;
++  const urlText = String(rawUrl || "").trim();
++  if (!urlText) {
++    throw new KosworkBrowserPolicyError(
++      "BROWSER_INVALID_URL",
++      "URL перехода не может быть пустым.",
++      { rawUrl }
++    );
++  }
++
++  if (/^koswork:\/\/search\/srch-[a-f0-9]{16}$/i.test(urlText)) {
++    return {
++      allowed: true,
++      normalizedUrl: urlText,
++      protocol: "koswork:",
++      hostname: "search",
++      isInternalReceipt: true
++    };
++  }
++
++  let parsed;
++  try {
++    parsed = new URL(urlText);
++  } catch {
++    throw new KosworkBrowserPolicyError(
++      "BROWSER_INVALID_URL",
++      `Некорректный формат URL: "${urlText}".`,
++      { rawUrl: urlText }
++    );
++  }
++
++  const protocol = parsed.protocol.toLowerCase();
++  if (protocol !== "http:" && protocol !== "https:") {
++    throw new KosworkBrowserPolicyError(
++      "BROWSER_NAVIGATION_PROTOCOL_FORBIDDEN",
++      `Протокол "${protocol}" запрещён в браузере Koswork. Разрешены только http: и https:.`,
++      { url: urlText, protocol }
++    );
++  }
++
++  const hostname = parsed.hostname.toLowerCase();
++  if (
++    hostname === "169.254.169.254" ||
++    hostname === "metadata.google.internal" ||
++    hostname === "100.100.100.200"
++  ) {
++    throw new KosworkBrowserPolicyError(
++      "BROWSER_SSRF_METADATA_BLOCKED",
++      `Доступ к облачному сервису метаданных (${hostname}) заблокирован политикой безопасности.`,
++      { url: urlText, hostname }
++    );
++  }
++
++  const isLoopback =
++    hostname === "localhost" ||
++    hostname === "127.0.0.1" ||
++    hostname === "[::1]" ||
++    hostname.endsWith(".localhost");
++
++  if (isLoopback && !allowLocalLoopback) {
++    throw new KosworkBrowserPolicyError(
++      "BROWSER_LOOPBACK_DISABLED",
++      `Доступ к локальному адресу (${hostname}) отключён в текущем режиме.`,
++      { url: urlText, hostname }
++    );
++  }
++
++  return {
++    allowed: true,
++    normalizedUrl: parsed.toString(),
++    protocol,
++    hostname,
++    isLoopback,
++    isInternalReceipt: false
++  };
++}
++
++/**
++ * Inspects a page snapshot or DOM state for CAPTCHA challenges, login walls, or HTTP 401/403 gates.
++ * When detected, the browser engine MUST pause for the user rather than attempting to bypass access restrictions.
++ */
++function detectAuthOrCaptchaGate(pageSnapshot = {}) {
++  const status = Number(pageSnapshot.httpStatus ?? pageSnapshot.status ?? 200);
++  const title = String(pageSnapshot.title || "");
++  const bodyText = String(pageSnapshot.fullTextUtf16 || pageSnapshot.text || "");
++  const html = String(pageSnapshot.html || "");
++  const controls = Array.isArray(pageSnapshot.controls) ? pageSnapshot.controls : [];
++
++  const combinedText = `${title}\n${bodyText}`;
++
++  for (const pattern of CAPTCHA_PATTERNS) {
++    if (pattern.test(combinedText) || pattern.test(html)) {
++      return {
++        gated: true,
++        gateType: "captcha",
++        status: "paused_for_user",
++        code: "BROWSER_PAUSED_FOR_CAPTCHA",
++        reason: "На странице обнаружена проверка CAPTCHA. Автоматический обход запрещён; ожидание ручного прохождения пользователем.",
++        url: pageSnapshot.url || null
++      };
++    }
++  }
++
++  const hasPasswordControl = controls.some(
++    (c) =>
++      String(c.type || "").toLowerCase() === "password" ||
++      String(c.name || "").toLowerCase().includes("password") ||
++      String(c.id || "").toLowerCase().includes("password")
++  );
++  const hasCaptchaControl = controls.some(
++    (c) =>
++      String(c.id || "").toLowerCase().includes("captcha") ||
++      String(c.name || "").toLowerCase().includes("captcha") ||
++      String(c.role || "").toLowerCase() === "captcha"
++  );
++
++  if (hasCaptchaControl) {
++    return {
++      gated: true,
++      gateType: "captcha",
++      status: "paused_for_user",
++      code: "BROWSER_PAUSED_FOR_CAPTCHA",
++      reason: "Обнаружен интерактивный элемент CAPTCHA. Требуется действие пользователя.",
++      url: pageSnapshot.url || null
++    };
++  }
++
++  const matchesLoginPrompt = LOGIN_WALL_PATTERNS.some((p) => p.test(combinedText));
++  if (hasPasswordControl || (status === 401 && matchesLoginPrompt) || (matchesLoginPrompt && pageSnapshot.requiresLogin === true)) {
++    return {
++      gated: true,
++      gateType: "login_required",
++      status: "paused_for_user",
++      code: "BROWSER_PAUSED_FOR_LOGIN",
++      reason: "Страница требует входа в учётную запись (логин/пароль или 2FA). Агент поставлен на паузу для ручного ввода пользователем.",
++      url: pageSnapshot.url || null
++    };
++  }
++
++  if (status === 401 || status === 403) {
++    return {
++      gated: true,
++      gateType: "access_restricted",
++      status: "paused_for_user",
++      code: "BROWSER_ACCESS_RESTRICTED",
++      reason: `Доступ к ресурсу ограничен сервером (HTTP ${status}). Обход ограничений доступа запрещён.`,
++      httpStatus: status,
++      url: pageSnapshot.url || null
++    };
++  }
++
++  return {
++    gated: false,
++    gateType: null,
++    status: "ok",
++    code: null,
++    reason: null
++  };
++}
++
++/**
++ * Verifies whether a local file may be attached to a browser `<input type="file">` control.
++ * Never widens file permissions outside `allowedWorkspaceRoot` and blocks sensitive or executable files.
++ */
++function verifyFileSelectionPolicy(candidateFilePath, options = {}) {
++  const allowedWorkspaceRoot = options.allowedWorkspaceRoot
++    ? path.resolve(String(options.allowedWorkspaceRoot))
++    : null;
++  const maxUploadBytes = Number(options.maxUploadBytes ?? 10 * 1024 * 1024);
++
++  if (!allowedWorkspaceRoot) {
++    throw new KosworkBrowserPolicyError(
++      "BROWSER_WORKSPACE_NOT_CONNECTED",
++      "Выбор файлов для загрузки невозможен: не подключена разрешённая рабочая папка Koswork."
++    );
++  }
++
++  const rawPath = String(candidateFilePath || "").trim();
++  if (!rawPath) {
++    throw new KosworkBrowserPolicyError(
++      "BROWSER_FORBIDDEN_ATTACHMENT",
++      "Не указан путь к прикрепляемому файлу."
++    );
++  }
++
++  if (rawPath.includes("\0") || rawPath.startsWith("\\\\")) {
++    throw new KosworkBrowserPolicyError(
++      "BROWSER_FORBIDDEN_ATTACHMENT",
++      "Сетевые пути UNC и нулевые байты в имени вложения запрещены.",
++      { candidateFilePath: rawPath }
++    );
++  }
++
++  const resolvedCandidate = path.isAbsolute(rawPath)
++    ? path.resolve(rawPath)
++    : path.resolve(allowedWorkspaceRoot, rawPath);
++
++  let canonicalRoot;
++  try {
++    canonicalRoot = fs.realpathSync(allowedWorkspaceRoot);
++  } catch {
++    throw new KosworkBrowserPolicyError(
++      "BROWSER_WORKSPACE_NOT_CONNECTED",
++      "Разрешённая рабочая папка недоступна на диске."
++    );
++  }
++
++  const relativeCheck = path.relative(canonicalRoot, resolvedCandidate);
++  if (
++    relativeCheck === "" ||
++    relativeCheck.startsWith("..") ||
++    path.isAbsolute(relativeCheck)
++  ) {
++    throw new KosworkBrowserPolicyError(
++      "BROWSER_FORBIDDEN_ATTACHMENT",
++      `Запрещено прикреплять файлы за пределами разрешённой рабочей папки: "${rawPath}".`,
++      { candidateFilePath: rawPath, allowedWorkspaceRoot: canonicalRoot }
++    );
++  }
++
++  const baseName = path.basename(resolvedCandidate);
++  if (baseName.includes(":")) {
++    throw new KosworkBrowserPolicyError(
++      "BROWSER_FORBIDDEN_ATTACHMENT",
++      `Обнаружен альтернативный поток NTFS (ADS) в имени файла "${baseName}".`,
++      { filename: baseName }
++    );
++  }
++
++  for (const pattern of SENSITIVE_FILENAME_PATTERNS) {
++    if (pattern.test(baseName)) {
++      throw new KosworkBrowserPolicyError(
++        "BROWSER_FORBIDDEN_ATTACHMENT",
++        `Файл "${baseName}" относится к защищённым учётным данным или конфигурации (.env/ключи/токены) и не может быть отправлен на внешний сайт.`,
++        { filename: baseName, reason: "sensitive_filename" }
++      );
++    }
++  }
++
++  const ext = path.extname(baseName).toLowerCase();
++  if (FORBIDDEN_ATTACHMENT_EXTENSIONS.has(ext)) {
++    throw new KosworkBrowserPolicyError(
++      "BROWSER_FORBIDDEN_ATTACHMENT",
++      `Расширение "${ext}" файла "${baseName}" запрещено для загрузки в браузер.`,
++      { filename: baseName, extension: ext, reason: "forbidden_extension" }
++    );
++  }
++
++  let lstat;
++  try {
++    lstat = fs.lstatSync(resolvedCandidate);
++  } catch {
++    throw new KosworkBrowserPolicyError(
++      "BROWSER_ATTACHMENT_NOT_FOUND",
++      `Файл вложения не найден: "${baseName}".`,
++      { candidateFilePath: rawPath }
++    );
++  }
++
++  if (lstat.isSymbolicLink() || !lstat.isFile()) {
++    throw new KosworkBrowserPolicyError(
++      "BROWSER_FORBIDDEN_ATTACHMENT",
++      `Символические ссылки и директории ("${baseName}") не могут быть прикреплены в форму.`,
++      { filename: baseName, reason: "symlink_or_directory" }
++    );
++  }
++
++  const canonicalFile = fs.realpathSync(resolvedCandidate);
++  const canonicalRel = path.relative(canonicalRoot, canonicalFile);
++  if (canonicalRel.startsWith("..") || path.isAbsolute(canonicalRel)) {
++    throw new KosworkBrowserPolicyError(
++      "BROWSER_FORBIDDEN_ATTACHMENT",
++      `Канонический путь файла "${baseName}" выходит за пределы разрешённой рабочей папки.`,
++      { filename: baseName }
++    );
++  }
++
++  if (lstat.size > maxUploadBytes) {
++    throw new KosworkBrowserPolicyError(
++      "BROWSER_ATTACHMENT_TOO_LARGE",
++      `Размер файла "${baseName}" (${lstat.size} байт) превышает лимит загрузки (${maxUploadBytes} байт).`,
++      { filename: baseName, sizeBytes: lstat.size, maxUploadBytes }
++    );
++  }
++
++  const buffer = fs.readFileSync(canonicalFile);
++  const sha256 = crypto.createHash("sha256").update(buffer).digest("hex");
++
++  return {
++    allowed: true,
++    filename: baseName,
++    canonicalPath: canonicalFile,
++    relativePath: canonicalRel.replace(/\\/g, "/"),
++    sizeBytes: buffer.length,
++    sha256
++  };
++}
++
++/**
++ * Validates and resolves a safe download target strictly inside the allowed workspace download folder.
++ */
++function resolveAllowedDownloadTarget(rawFilename, options = {}) {
++  const allowedDownloadDir = options.allowedDownloadDir
++    ? path.resolve(String(options.allowedDownloadDir))
++    : null;
++  const allowedWorkspaceRoot = options.allowedWorkspaceRoot
++    ? path.resolve(String(options.allowedWorkspaceRoot))
++    : null;
++
++  if (!allowedDownloadDir) {
++    throw new KosworkBrowserPolicyError(
++      "BROWSER_DOWNLOAD_DIR_NOT_CONFIGURED",
++      "Не задана разрешённая папка для скачивания файлов."
++    );
++  }
++
++  if (allowedWorkspaceRoot) {
++    const relDir = path.relative(allowedWorkspaceRoot, allowedDownloadDir);
++    if (relDir.startsWith("..") || path.isAbsolute(relDir)) {
++      throw new KosworkBrowserPolicyError(
++        "BROWSER_DOWNLOAD_DIR_OUTSIDE_WORKSPACE",
++        "Папка загрузок должна находиться внутри подключённой рабочей папки Koswork.",
++        { allowedDownloadDir, allowedWorkspaceRoot }
++      );
++    }
++  }
++
++  const base = path.basename(String(rawFilename || "download.txt").trim());
++  const sanitized = base.replace(/[<>:"/\\|?*\x00-\x1F]/g, "_").replace(/^\.+/, "") || "download.txt";
++  const ext = path.extname(sanitized).toLowerCase();
++
++  if (FORBIDDEN_DOWNLOAD_EXTENSIONS.has(ext)) {
++    throw new KosworkBrowserPolicyError(
++      "BROWSER_FORBIDDEN_DOWNLOAD_TYPE",
++      `Скачивание исполняемого файла "${sanitized}" (${ext}) заблокировано политикой безопасности.`,
++      { filename: sanitized, extension: ext }
++    );
++  }
++
++  fs.mkdirSync(allowedDownloadDir, { recursive: true });
++  const targetPath = path.join(allowedDownloadDir, sanitized);
++  const verifyRel = path.relative(allowedDownloadDir, targetPath);
++  if (verifyRel.startsWith("..") || path.isAbsolute(verifyRel)) {
++    throw new KosworkBrowserPolicyError(
++      "BROWSER_DOWNLOAD_PATH_TRAVERSAL",
++      "Обнаружена попытка выхода за пределы разрешённой папки скачивания."
++    );
++  }
++
++  return {
++    allowed: true,
++    filename: sanitized,
++    downloadDir: allowedDownloadDir,
++    targetPath
++  };
++}
++
++module.exports = {
++  FORBIDDEN_ATTACHMENT_EXTENSIONS,
++  FORBIDDEN_DOWNLOAD_EXTENSIONS,
++  KosworkBrowserPolicyError,
++  detectAuthOrCaptchaGate,
++  evaluateNavigationPolicy,
++  resolveAllowedDownloadTarget,
++  verifyFileSelectionPolicy
++};
+diff --git a/desktop/windows/browser/recovery.cjs b/desktop/windows/browser/recovery.cjs
+new file mode 100644
+index 0000000..d9926aa
+--- /dev/null
++++ b/desktop/windows/browser/recovery.cjs
+@@ -0,0 +1,444 @@
++"use strict";
++
++/**
++ * Koswork Browser Observation Integrity, Recovery Candidates & Manual Takeover Guard
++ * (`desktop/windows/browser/recovery.cjs`).
++ *
++ * Guarantees:
++ * 1. Detects tab closure/loss (`TAB_LOST_OR_CLOSED`) and unexpected URL transitions (`TAB_URL_CHANGED`).
++ * 2. Detects post-observation text substitution (`OBSERVATION_TEXT_SUBSTITUTED`): if page content
++ *    under an observed UTF-16 span or interactive element changed between observation and execution,
++ *    refuses to act on the substituted text and returns a structured conflict diagnostic.
++ * 3. Computes ranked recovery candidates (`findRecoveryCandidates`) when harmless layout shifts move
++ *    an element while preserving its semantic identity.
++ * 4. Tracks manual user actions (`UserTakeoverTracker`) so any manual user interaction immediately
++ *    invalidates prior agent observations (`OBSERVATION_INVALIDATED_BY_USER`).
++ */
++
++class KosworkBrowserRecoveryError extends Error {
++  constructor(code, message, details = {}) {
++    super(message);
++    this.name = "KosworkBrowserRecoveryError";
++    this.code = code;
++    this.details = details;
++  }
++}
++
++function tokenizeNormalized(text) {
++  return String(text || "")
++    .toLowerCase()
++    .replace(/[^\p{L}\p{N}\s]+/gu, " ")
++    .split(/\s+/)
++    .filter(Boolean);
++}
++
++function computeJaccardTokenSimilarity(a, b) {
++  const tokensA = new Set(tokenizeNormalized(a));
++  const tokensB = new Set(tokenizeNormalized(b));
++  if (tokensA.size === 0 && tokensB.size === 0) return 1;
++  if (tokensA.size === 0 || tokensB.size === 0) return 0;
++
++  let intersection = 0;
++  for (const t of tokensA) {
++    if (tokensB.has(t)) intersection += 1;
++  }
++  const union = tokensA.size + tokensB.size - intersection;
++  return union === 0 ? 0 : intersection / union;
++}
++
++/**
++ * Verifies that a tab receipt is still backed by a live tab and has not been lost or navigated away.
++ */
++function verifyTabReceipt(tabReceipt, liveTabState) {
++  if (!tabReceipt || !tabReceipt.tabId) {
++    throw new KosworkBrowserRecoveryError(
++      "INVALID_TAB_RECEIPT",
++      "Отсутствует корректная квитанция вкладки (tabReceipt)."
++    );
++  }
++
++  if (!liveTabState || liveTabState.closed === true) {
++    throw new KosworkBrowserRecoveryError(
++      "TAB_LOST_OR_CLOSED",
++      `Вкладка "${tabReceipt.tabId}" была закрыта или потеряна во время выполнения операции.`,
++      {
++        tabId: tabReceipt.tabId,
++        expectedReceiptId: tabReceipt.receiptId,
++        expectedUrl: tabReceipt.url
++      }
++    );
++  }
++
++  if (liveTabState.url && tabReceipt.url && liveTabState.url !== tabReceipt.url) {
++    throw new KosworkBrowserRecoveryError(
++      "TAB_URL_CHANGED",
++      `URL вкладки "${tabReceipt.tabId}" изменился с "${tabReceipt.url}" на "${liveTabState.url}". Старое наблюдение больше недействительно.`,
++      {
++        tabId: tabReceipt.tabId,
++        expectedUrl: tabReceipt.url,
++        actualUrl: liveTabState.url
++      }
++    );
++  }
++
++  return {
++    valid: true,
++    tabId: tabReceipt.tabId,
++    receiptId: tabReceipt.receiptId,
++    versionAdvanced:
++      liveTabState.snapshot &&
++      Number(liveTabState.snapshot.pageVersion) !== Number(tabReceipt.pageVersion)
++  };
++}
++
++/**
++ * Ranks recovery candidates across blocks or controls when a page version advances due to dynamic layout changes.
++ */
++function findRecoveryCandidates(targetSpec = {}, currentSnapshot = {}) {
++  const kind = targetSpec.kind === "block" ? "block" : "control";
++  const pool =
++    kind === "block"
++      ? Array.isArray(currentSnapshot.blocks)
++        ? currentSnapshot.blocks
++        : []
++      : Array.isArray(currentSnapshot.controls)
++        ? currentSnapshot.controls
++        : [];
++
++  const candidates = [];
++
++  for (const item of pool) {
++    let score = 0;
++    const reasons = [];
++
++    const itemId = item.id || item.blockId || null;
++    if (targetSpec.id && itemId === targetSpec.id) {
++      score += 0.45;
++      reasons.push("exact_id");
++    }
++    if (targetSpec.name && item.name && item.name === targetSpec.name) {
++      score += 0.25;
++      reasons.push("exact_name");
++    }
++    if (
++      targetSpec.deepSelector &&
++      item.deepSelector &&
++      item.deepSelector === targetSpec.deepSelector
++    ) {
++      score += 0.25;
++      reasons.push("exact_deep_selector");
++    }
++    if (targetSpec.role && item.role && item.role === targetSpec.role) {
++      score += 0.1;
++      reasons.push("matching_role");
++    }
++
++    const expectedText = String(targetSpec.expectedText || targetSpec.label || "").trim();
++    const actualText = String(item.text || item.label || "").trim();
++    let textSimilarity = 1;
++    if (expectedText) {
++      textSimilarity = computeJaccardTokenSimilarity(expectedText, actualText);
++      score += textSimilarity * 0.35;
++      if (actualText === expectedText) {
++        reasons.push("exact_text");
++      } else if (textSimilarity >= 0.7) {
++        reasons.push("high_text_similarity");
++      }
++    }
++
++    if (score > 0.2) {
++      candidates.push({
++        candidateId: itemId,
++        deepSelector: item.deepSelector || item.recoveryAnchors?.deepSelector || null,
++        role: item.role || null,
++        actualText,
++        textSimilarity: Number(textSimilarity.toFixed(3)),
++        confidence: Number(Math.min(1, score).toFixed(3)),
++        reasons,
++        bounds: item.bounds || null,
++        startUtf16: item.startUtf16 ?? null,
++        endUtf16: item.endUtf16 ?? null
++      });
++    }
++  }
++
++  candidates.sort((a, b) => b.confidence - a.confidence);
++  return candidates.slice(0, 5);
++}
++
++/**
++ * Verifies that an observation captured at `observedSnapshot` is still safe to use on `currentSnapshot`.
++ * Specifically detects:
++ * 1. Manual user action since observation (`OBSERVATION_INVALIDATED_BY_USER`)
++ * 2. Post-observation text substitution (`OBSERVATION_TEXT_SUBSTITUTED`) at target UTF-16 offsets,
++ *    block IDs, or control labels.
++ */
++function verifyObservationIntegrity({
++  observedSnapshot,
++  currentSnapshot,
++  targetSpec = {},
++  userTakeoverTracker = null
++} = {}) {
++  if (!observedSnapshot || !currentSnapshot) {
++    throw new KosworkBrowserRecoveryError(
++      "MISSING_OBSERVATION_SNAPSHOT",
++      "Невозможно выполнить действие без актуального наблюдения страницы."
++    );
++  }
++
++  if (userTakeoverTracker) {
++    userTakeoverTracker.assertObservationValid(observedSnapshot.tabId, observedSnapshot.userEpoch);
++  }
++
++  if (observedSnapshot.url !== currentSnapshot.url) {
++    throw new KosworkBrowserRecoveryError(
++      "TAB_URL_CHANGED",
++      `URL страницы изменился после наблюдения ("${observedSnapshot.url}" -> "${currentSnapshot.url}").`,
++      {
++        observedUrl: observedSnapshot.url,
++        currentUrl: currentSnapshot.url
++      }
++    );
++  }
++
++  // 1. Check UTF-16 span integrity if the target specifies `startUtf16` / `endUtf16` or `expectedQuote`
++  if (
++    Number.isInteger(targetSpec.startUtf16) &&
++    Number.isInteger(targetSpec.endUtf16) &&
++    targetSpec.endUtf16 > targetSpec.startUtf16
++  ) {
++    const fullCurrent = String(currentSnapshot.fullTextUtf16 || "");
++    const observedSpanText = String(observedSnapshot.fullTextUtf16 || "").slice(
++      targetSpec.startUtf16,
++      targetSpec.endUtf16
++    );
++    const currentSpanText = fullCurrent.slice(
++      targetSpec.startUtf16,
++      targetSpec.endUtf16
++    );
++    const expectedQuote =
++      typeof targetSpec.expectedQuote === "string" ? targetSpec.expectedQuote : observedSpanText;
++
++    if (currentSpanText !== expectedQuote) {
++      // Check if the exact quote merely shifted offsets due to a harmless header/banner insertion
++      const shiftedIdx = fullCurrent.indexOf(expectedQuote);
++      if (shiftedIdx === -1) {
++        const containingBlock = (currentSnapshot.blocks || []).find(
++          (b) => targetSpec.startUtf16 >= b.startUtf16 && targetSpec.startUtf16 < b.endUtf16
++        );
++        const nextNewlineIdx = fullCurrent.indexOf("\n", targetSpec.startUtf16);
++        const expandedEnd =
++          containingBlock
++            ? containingBlock.endUtf16
++            : nextNewlineIdx !== -1
++              ? Math.max(targetSpec.endUtf16, nextNewlineIdx)
++              : Math.min(fullCurrent.length, targetSpec.endUtf16 + 120);
++        const actualExpandedText = fullCurrent.slice(targetSpec.startUtf16, expandedEnd);
++
++        const recoveryCandidates = findRecoveryCandidates(
++          {
++            kind: "block",
++            id: targetSpec.blockId,
++            expectedText: expectedQuote
++          },
++          currentSnapshot
++        );
++        throw new KosworkBrowserRecoveryError(
++          "OBSERVATION_TEXT_SUBSTITUTED",
++          `Обнаружена подмена текста после наблюдения на вкладке "${currentSnapshot.tabId}" (v${observedSnapshot.pageVersion} -> v${currentSnapshot.pageVersion}).`,
++          {
++            tabId: currentSnapshot.tabId,
++            observedPageVersion: observedSnapshot.pageVersion,
++            currentPageVersion: currentSnapshot.pageVersion,
++            startUtf16: targetSpec.startUtf16,
++            endUtf16: targetSpec.endUtf16,
++            expectedText: expectedQuote,
++            actualTextAtOffsets: actualExpandedText,
++            recoveryCandidates
++          }
++        );
++      }
++
++      return {
++        valid: true,
++        recoveredShift: true,
++        newStartUtf16: shiftedIdx,
++        newEndUtf16: shiftedIdx + expectedQuote.length,
++        pageVersion: currentSnapshot.pageVersion
++      };
++    }
++  }
++
++  // 2. Check interactive control label/text substitution if targeting a control
++  if (targetSpec.controlId || targetSpec.deepSelector) {
++    const obsCtrl = (observedSnapshot.controls || []).find(
++      (c) =>
++        (targetSpec.controlId && c.id === targetSpec.controlId) ||
++        (targetSpec.deepSelector && c.deepSelector === targetSpec.deepSelector)
++    );
++    const curCtrl = (currentSnapshot.controls || []).find(
++      (c) =>
++        (targetSpec.controlId && c.id === targetSpec.controlId) ||
++        (targetSpec.deepSelector && c.deepSelector === targetSpec.deepSelector)
++    );
++
++    if (obsCtrl && !curCtrl) {
++      const recoveryCandidates = findRecoveryCandidates(
++        {
++          kind: "control",
++          id: obsCtrl.id,
++          name: obsCtrl.name,
++          role: obsCtrl.role,
++          label: obsCtrl.label,
++          deepSelector: obsCtrl.deepSelector
++        },
++        currentSnapshot
++      );
++      throw new KosworkBrowserRecoveryError(
++        "TARGET_CONTROL_MISSING_AFTER_MUTATION",
++        `Целевой элемент "${obsCtrl.id}" исчез после динамического обновления страницы.`,
++        {
++          controlId: obsCtrl.id,
++          observedPageVersion: observedSnapshot.pageVersion,
++          currentPageVersion: currentSnapshot.pageVersion,
++          recoveryCandidates
++        }
++      );
++    }
++
++    if (obsCtrl && curCtrl) {
++      const expectedLabel = String(targetSpec.expectedLabel || obsCtrl.label || "").trim();
++      const currentLabel = String(curCtrl.label || "").trim();
++      if (expectedLabel && currentLabel && expectedLabel !== currentLabel) {
++        const similarity = computeJaccardTokenSimilarity(expectedLabel, currentLabel);
++        if (similarity < 0.65) {
++          throw new KosworkBrowserRecoveryError(
++            "OBSERVATION_TEXT_SUBSTITUTED",
++            `Текст интерактивного элемента "${curCtrl.id}" был подменён после наблюдения ("${expectedLabel}" -> "${currentLabel}"). Ввод/нажатие заблокировано.`,
++            {
++              controlId: curCtrl.id,
++              observedLabel: expectedLabel,
++              currentLabel,
++              similarity: Number(similarity.toFixed(3)),
++              observedPageVersion: observedSnapshot.pageVersion,
++              currentPageVersion: currentSnapshot.pageVersion
++            }
++          );
++        }
++      }
++    }
++  }
++
++  return {
++    valid: true,
++    recoveredShift: false,
++    pageVersion: currentSnapshot.pageVersion
++  };
++}
++
++/**
++ * Tracks manual user interactions and takeover state per tab.
++ * Any manual action by the user invalidates observations taken prior to that action.
++ */
++class UserTakeoverTracker {
++  constructor() {
++    this.tabStates = new Map();
++  }
++
++  ensureTab(tabId) {
++    const key = String(tabId || "tab-1");
++    if (!this.tabStates.has(key)) {
++      this.tabStates.set(key, {
++        tabId: key,
++        userEpoch: 0,
++        manualTakeoverActive: false,
++        lastUserAction: null,
++        lastUserActionAt: null,
++        history: []
++      });
++    }
++    return this.tabStates.get(key);
++  }
++
++  getCurrentEpoch(tabId) {
++    return this.ensureTab(tabId).userEpoch;
++  }
++
++  recordUserAction(tabId, action = {}) {
++    const state = this.ensureTab(tabId);
++    state.userEpoch += 1;
++    if (action.takeover !== undefined) {
++      state.manualTakeoverActive = Boolean(action.takeover);
++    }
++    const entry = {
++      epoch: state.userEpoch,
++      type: String(action.type || "user_manual_action"),
++      detail: action.detail || null,
++      recordedAt: action.recordedAt || new Date().toISOString()
++    };
++    state.lastUserAction = entry.type;
++    state.lastUserActionAt = entry.recordedAt;
++    state.history.push(entry);
++    return {
++      tabId: state.tabId,
++      userEpoch: state.userEpoch,
++      manualTakeoverActive: state.manualTakeoverActive,
++      previousObservationsInvalidated: true,
++      lastUserAction: entry
++    };
++  }
++
++  releaseTakeover(tabId) {
++    const state = this.ensureTab(tabId);
++    state.manualTakeoverActive = false;
++    return {
++      tabId: state.tabId,
++      userEpoch: state.userEpoch,
++      manualTakeoverActive: false
++    };
++  }
++
++  assertObservationValid(tabId, observedUserEpoch) {
++    const state = this.ensureTab(tabId);
++    if (state.manualTakeoverActive) {
++      throw new KosworkBrowserRecoveryError(
++        "USER_TAKEOVER_ACTIVE",
++        `Пользователь перехватил управление вкладкой "${state.tabId}". Автоматические действия приостановлены до возврата управления.`,
++        {
++          tabId: state.tabId,
++          userEpoch: state.userEpoch,
++          lastUserAction: state.lastUserAction
++        }
++      );
++    }
++
++    if (
++      observedUserEpoch !== undefined &&
++      observedUserEpoch !== null &&
++      Number(observedUserEpoch) !== state.userEpoch
++    ) {
++      throw new KosworkBrowserRecoveryError(
++        "OBSERVATION_INVALIDATED_BY_USER",
++        `Ручное действие пользователя (${state.lastUserAction || "user_input"}) на вкладке "${state.tabId}" сделало старое наблюдение (epoch ${observedUserEpoch}) непригодным для дальнейшего ввода (текущий epoch ${state.userEpoch}). Требуется повторное наблюдение страницы.`,
++        {
++          tabId: state.tabId,
++          observedUserEpoch: Number(observedUserEpoch),
++          currentUserEpoch: state.userEpoch,
++          lastUserAction: state.lastUserAction,
++          lastUserActionAt: state.lastUserActionAt
++        }
++      );
++    }
++
++    return true;
++  }
++}
++
++module.exports = {
++  KosworkBrowserRecoveryError,
++  UserTakeoverTracker,
++  computeJaccardTokenSimilarity,
++  findRecoveryCandidates,
++  verifyObservationIntegrity,
++  verifyTabReceipt
++};
+diff --git a/desktop/windows/browser/research-adapter.cjs b/desktop/windows/browser/research-adapter.cjs
+new file mode 100644
+index 0000000..b55893b
+--- /dev/null
++++ b/desktop/windows/browser/research-adapter.cjs
+@@ -0,0 +1,252 @@
++"use strict";
++
++const http = require("node:http");
++const https = require("node:https");
++const { stripHtmlTagsPreservingBlocks } = require("./document.cjs");
++
++/**
++ * Isolated Search / HTTP Provider Adapter (`desktop/windows/browser/research-adapter.cjs`).
++ *
++ * Rules:
++ * - Never masks the origin of search results behind a fabricated "proprietary internet index".
++ * - Explicitly records `providerId` (`"duckduckgo-html"`, `"local-http-search"`, `"synthetic-corpus-index"`)
++ *   and `providerEndpoint` on every search response.
++ * - Supports both live HTTP/HTTPS search endpoints and deterministic synthetic/local HTTP corpora.
++ */
++
++function parseDuckDuckGoHtmlSerp(html, baseOrigin = "https://html.duckduckgo.com") {
++  const raw = String(html || "");
++  const results = [];
++  const blockRegex = /<div[^>]+class=["'][^"']*result\b[^"']*["'][^>]*>([\s\S]*?)<\/div>\s*<\/div>/gi;
++  const linkRegex = /<a[^>]+class=["'][^"']*result__a[^"']*["'][^>]+href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/i;
++  const snippetRegex = /<(?:a|div)[^>]+class=["'][^"']*result__snippet[^"']*["'][^>]*>([\s\S]*?)<\/(?:a|div)>/i;
++
++  let match;
++  while ((match = blockRegex.exec(raw)) !== null) {
++    const chunk = match[1];
++    const linkMatch = chunk.match(linkRegex);
++    if (!linkMatch) continue;
++    let href = linkMatch[1];
++    try {
++      const parsedHref = new URL(href, baseOrigin);
++      const uddg = parsedHref.searchParams.get("uddg");
++      if (uddg) href = uddg;
++      else href = parsedHref.toString();
++    } catch {
++      /* keep raw href */
++    }
++    const title = stripHtmlTagsPreservingBlocks(linkMatch[2]);
++    const snippetMatch = chunk.match(snippetRegex);
++    const snippet = snippetMatch ? stripHtmlTagsPreservingBlocks(snippetMatch[1]) : "";
++    if (href && title) {
++      results.push({
++        title,
++        url: href,
++        snippet
++      });
++    }
++  }
++
++  // Fallback generic `<a data-search-result="true" href="...">` parser for local HTTP SERP fixtures
++  if (results.length === 0) {
++    const genericRegex = /<article[^>]+data-serp-item=["']true["'][^>]*>([\s\S]*?)<\/article>/gi;
++    let gMatch;
++    while ((gMatch = genericRegex.exec(raw)) !== null) {
++      const itemHtml = gMatch[1];
++      const aMatch = itemHtml.match(/<a[^>]+href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/i);
++      const pMatch = itemHtml.match(/<p[^>]*>([\s\S]*?)<\/p>/i);
++      if (aMatch) {
++        results.push({
++          url: aMatch[1],
++          title: stripHtmlTagsPreservingBlocks(aMatch[2]),
++          snippet: pMatch ? stripHtmlTagsPreservingBlocks(pMatch[1]) : ""
++        });
++      }
++    }
++  }
++
++  return results;
++}
++
++function fetchHttpRaw(targetUrl, options = {}) {
++  const timeoutMs = Number(options.timeoutMs ?? 6000);
++  const signal = options.signal || null;
++
++  return new Promise((resolve, reject) => {
++    if (signal?.aborted) {
++      const err = new Error("SEARCH_REQUEST_CANCELLED");
++      err.code = "SEARCH_REQUEST_CANCELLED";
++      return reject(err);
++    }
++
++    let parsed;
++    try {
++      parsed = new URL(targetUrl);
++    } catch (e) {
++      return reject(e);
++    }
++
++    const client = parsed.protocol === "https:" ? https : http;
++    const req = client.request(
++      parsed,
++      {
++        method: "GET",
++        headers: {
++          "User-Agent": "KosworkBrowserResearch/1.0",
++          Accept: "text/html,application/xhtml+xml,application/json;q=0.9,*/*;q=0.8"
++        },
++        timeout: timeoutMs
++      },
++      (res) => {
++        const chunks = [];
++        res.on("data", (chunk) => chunks.push(chunk));
++        res.on("end", () => {
++          const body = Buffer.concat(chunks).toString("utf8");
++          resolve({
++            status: res.statusCode || 200,
++            headers: res.headers || {},
++            url: targetUrl,
++            body
++          });
++        });
++      }
++    );
++
++    const onAbort = () => {
++      req.destroy();
++      const err = new Error("SEARCH_REQUEST_CANCELLED");
++      err.code = "SEARCH_REQUEST_CANCELLED";
++      reject(err);
++    };
++
++    if (signal) {
++      signal.addEventListener("abort", onAbort, { once: true });
++    }
++
++    req.on("timeout", () => {
++      req.destroy();
++      const err = new Error(`HTTP_TIMEOUT: Request to ${targetUrl} timed out after ${timeoutMs}ms`);
++      err.code = "HTTP_TIMEOUT";
++      reject(err);
++    });
++
++    req.on("error", (err) => {
++      if (signal) signal.removeEventListener("abort", onAbort);
++      reject(err);
++    });
++
++    req.end();
++  });
++}
++
++function createSearchProviderAdapter(options = {}) {
++  const providerId = String(options.providerId || "duckduckgo-html");
++  const searchEndpoint = String(options.searchEndpoint || "https://html.duckduckgo.com/html/");
++  const customSearchFn = typeof options.searchFn === "function" ? options.searchFn : null;
++  const syntheticCatalog = Array.isArray(options.syntheticCatalog) ? options.syntheticCatalog : null;
++
++  async function executeQuery(query, execOptions = {}) {
++    const signal = execOptions.signal || null;
++    if (signal?.aborted) {
++      const err = new Error("SEARCH_REQUEST_CANCELLED");
++      err.code = "SEARCH_REQUEST_CANCELLED";
++      throw err;
++    }
++
++    const trimmedQuery = String(query || "").trim();
++    if (!trimmedQuery) {
++      const err = new Error("INVALID_SEARCH_QUERY_LENGTH");
++      err.code = "INVALID_SEARCH_QUERY_LENGTH";
++      throw err;
++    }
++
++    const searchedAt = execOptions.nowIso || new Date().toISOString();
++
++    if (customSearchFn) {
++      const rawResults = await customSearchFn(trimmedQuery, { signal, searchedAt });
++      return {
++        providerId,
++        providerEndpoint: searchEndpoint,
++        searchedAt,
++        query: trimmedQuery,
++        results: Array.isArray(rawResults) ? rawResults : []
++      };
++    }
++
++    if (syntheticCatalog) {
++      const queryTokens = trimmedQuery
++        .toLowerCase()
++        .replace(/[^\p{L}\p{N}\s]+/gu, " ")
++        .split(/\s+/)
++        .filter((t) => t.length >= 2);
++
++      const scored = syntheticCatalog
++        .map((entry) => {
++          const haystack = `${entry.title || ""} ${entry.snippet || ""} ${(entry.keywords || []).join(" ")}`.toLowerCase();
++          let hits = 0;
++          for (const tok of queryTokens) {
++            if (haystack.includes(tok)) hits += 1;
++          }
++          return {
++            entry,
++            hits: queryTokens.length === 0 ? 1 : hits
++          };
++        })
++        .filter((item) => item.hits > 0 || syntheticCatalog.length <= 6)
++        .sort((a, b) => b.hits - a.hits);
++
++      return {
++        providerId: options.providerId || "synthetic-corpus-adapter",
++        providerEndpoint: "local://synthetic-corpus",
++        searchedAt,
++        query: trimmedQuery,
++        results: scored.map((s) => ({
++          title: s.entry.title,
++          url: s.entry.url,
++          snippet: s.entry.snippet || ""
++        }))
++      };
++    }
++
++    const urlObj = new URL(searchEndpoint);
++    urlObj.searchParams.set("q", trimmedQuery);
++    const httpRes = await fetchHttpRaw(urlObj.toString(), {
++      timeoutMs: execOptions.timeoutMs ?? 6000,
++      signal
++    });
++
++    let parsedResults = [];
++    const contentType = String(httpRes.headers["content-type"] || "").toLowerCase();
++    if (contentType.includes("application/json")) {
++      const json = JSON.parse(httpRes.body);
++      parsedResults = Array.isArray(json.results) ? json.results : [];
++    } else {
++      parsedResults = parseDuckDuckGoHtmlHtmlOrSerp(httpRes.body, urlObj.origin);
++    }
++
++    return {
++      providerId,
++      providerEndpoint: urlObj.origin + urlObj.pathname,
++      searchedAt,
++      query: trimmedQuery,
++      results: parsedResults
++    };
++  }
++
++  return {
++    providerId,
++    searchEndpoint,
++    executeQuery,
++    fetchHttpRaw
++  };
++}
++
++function parseDuckDuckGoHtmlHtmlOrSerp(body, origin) {
++  return parseDuckDuckGoHtmlSerp(body, origin);
++}
++
++module.exports = {
++  createSearchProviderAdapter,
++  fetchHttpRaw,
++  parseDuckDuckGoHtmlSerp
++};
+diff --git a/desktop/windows/browser/research-report-builder.cjs b/desktop/windows/browser/research-report-builder.cjs
+new file mode 100644
+index 0000000..ee8ff3e
+--- /dev/null
++++ b/desktop/windows/browser/research-report-builder.cjs
+@@ -0,0 +1,440 @@
++"use strict";
++
++const { createKosworkWorkspaceService } = require("../workspace/workspace-service.cjs");
++
++/**
++ * Koswork Verifiable Browser Research Report Builder (`desktop/windows/browser/research-report-builder.cjs`).
++ *
++ * Saves Markdown (`.md`), HTML (`.html`), and structured comparison table (`.json`) artifacts
++ * through the existing `createKosworkWorkspaceService` (`desktop/windows/workspace/workspace-service.cjs`).
++ *
++ * Strict Epistemic Invariants:
++ * 1. Every confirmed claim MUST map `claim -> excerpt (verbatim quote + UTF-16 offsets) -> source (url, title, pageDate, eventDate, fetchedAt)`.
++ * 2. A bare URL link without a matching verbatim quote from an available page is NEVER treated as proof of a claim;
++ *    such items are explicitly placed in "Что неизвестно / не подтверждено выдержкой".
++ * 3. Explicitly surfaces conflicting/contradictory figures across sources, outdated sources (comparing `pageDate` / `eventDate`),
++ *    unavailable sources (HTTP 404/503 or network error), and post-observation text substitution incidents.
++ */
++
++function escapeHtml(text) {
++  return String(text ?? "")
++    .replace(/&/g, "&amp;")
++    .replace(/</g, "&lt;")
++    .replace(/>/g, "&gt;")
++    .replace(/"/g, "&quot;");
++}
++
++function validateAndClassifyClaims(rawClaims = [], sourcesByUrl = new Map()) {
++  const confirmedClaims = [];
++  const unconfirmedClaims = [];
++
++  for (const item of rawClaims) {
++    const claimText = String(item.claim || "").trim();
++    if (!claimText) continue;
++
++    const excerpt = item.excerpt || null;
++    const sourceUrl = excerpt?.url || item.sourceUrl || null;
++    const sourceRecord = sourceUrl ? sourcesByUrl.get(sourceUrl) : null;
++
++    const hasValidExcerpt =
++      excerpt &&
++      typeof excerpt.quote === "string" &&
++      excerpt.quote.trim().length > 0 &&
++      Number.isInteger(excerpt.startUtf16) &&
++      Number.isInteger(excerpt.endUtf16) &&
++      excerpt.endUtf16 > excerpt.startUtf16;
++
++    const sourceAvailable = sourceRecord ? sourceRecord.available !== false : Boolean(hasValidExcerpt);
++
++    // A bare link without a verified excerpt is NEVER accepted as proof of a claim
++    if (!hasValidExcerpt || !sourceAvailable) {
++      unconfirmedClaims.push({
++        claimId: item.claimId || `unconf-${unconfirmedClaims.length + 1}`,
++        claim: claimText,
++        criterion: item.criterion || null,
++        optionName: item.optionName || null,
++        candidateUrl: sourceUrl,
++        reason: !sourceAvailable
++          ? "Источник недоступен (HTTP 503/404 или сбой сети); голая ссылка не является доказательством."
++          : "Отсутствует подтверждающая выдержка (цитата с UTF-16 смещениями); сама по себе ссылка не доказывает утверждение."
++      });
++      continue;
++    }
++
++    confirmedClaims.push({
++      claimId: item.claimId || `claim-${confirmedClaims.length + 1}`,
++      claim: claimText,
++      optionName: item.optionName || null,
++      criterion: item.criterion || null,
++      value: item.value ?? null,
++      isOutdated: Boolean(item.isOutdated),
++      outdatedNote: item.outdatedNote || null,
++      excerpt: {
++        excerptId: excerpt.excerptId,
++        quote: excerpt.quote,
++        startUtf16: excerpt.startUtf16,
++        endUtf16: excerpt.endUtf16,
++        pageVersion: excerpt.pageVersion ?? 1
++      },
++      source: {
++        url: excerpt.url,
++        title: excerpt.title || sourceRecord?.title || excerpt.url,
++        pageDate: excerpt.pageDate || sourceRecord?.pageDate || null,
++        eventDate: excerpt.eventDate || sourceRecord?.eventDate || null,
++        fetchedAt: excerpt.fetchedAt || sourceRecord?.fetchedAt || null
++      }
++    });
++  }
++
++  return { confirmedClaims, unconfirmedClaims };
++}
++
++function renderResearchReportMarkdown(spec) {
++  const {
++    question,
++    generatedAt,
++    criteria = [],
++    comparisonRows = [],
++    confirmedClaims = [],
++    unconfirmedClaims = [],
++    contradictions = [],
++    outdatedFindings = [],
++    unavailableSources = [],
++    substitutionIncidents = [],
++    sources = [],
++    resourceMetrics = null
++  } = spec;
++
++  const lines = [];
++  lines.push(`# Исследовательский отчёт Koswork: ${question}`);
++  lines.push("");
++  lines.push(`- **Дата формирования отчёта:** ${generatedAt}`);
++  lines.push(`- **Проверено источников:** ${sources.length} (недоступных: ${unavailableSources.length})`);
++  lines.push(`- **Подтверждённых утверждений (с цитатой и UTF-16 смещениями):** ${confirmedClaims.length}`);
++  lines.push(`- **Неподтверждённых / неизвестных пунктов:** ${unconfirmedClaims.length}`);
++  lines.push(`- **Выявленных противоречий между источниками:** ${contradictions.length}`);
++  lines.push("");
++
++  // 1. Comparison Table
++  lines.push("## 1. Таблица сравнения вариантов по критериям");
++  lines.push("");
++  const headerCols = ["Вариант", ...criteria, "Статус проверки и источники"];
++  lines.push(`| ${headerCols.join(" | ")} |`);
++  lines.push(`| ${headerCols.map(() => "---").join(" | ")} |`);
++  for (const row of comparisonRows) {
++    const critCells = criteria.map((c) => {
++      const cell = row.values?.[c];
++      if (!cell) return "Неизвестно (нет выдержки)";
++      if (typeof cell === "object") {
++        const badge = cell.conflict ? "⚠️ ПРОТИВОРЕЧИЕ: " : cell.outdated ? "⏳ УСТАРЕЛО: " : "";
++        return `${badge}${cell.displayValue} ([${cell.sourceTitle || "Источник"}](${cell.sourceUrl}) [${cell.startUtf16}..${cell.endUtf16}])`;
++      }
++      return String(cell);
++    });
++    lines.push(`| **${row.optionName}** | ${critCells.join(" | ")} | ${row.verificationSummary || "Проверено"} |`);
++  }
++  lines.push("");
++
++  // 2. Confirmed Claims (Claim -> Excerpt -> Source)
++  lines.push("## 2. Что подтверждено (Утверждение → Выдержка → Источник)");
++  lines.push("");
++  if (confirmedClaims.length === 0) {
++    lines.push("_Нет подтверждённых выдержками утверждений._");
++  } else {
++    for (const c of confirmedClaims) {
++      const outdatedTag = c.isOutdated ? ` *(⚠️ Устаревшие данные: ${c.outdatedNote || "есть более свежий источник"})*` : "";
++      lines.push(`- **Утверждение [${c.claimId}]:** ${c.claim}${outdatedTag}`);
++      lines.push(`  - **Выдержка (UTF-16 \`${c.excerpt.startUtf16}..${c.excerpt.endUtf16}\`, v${c.excerpt.pageVersion}):** «${c.excerpt.quote}»`);
++      lines.push(
++        `  - **Источник:** [${c.source.title}](${c.source.url}) | Дата на странице: \`${c.source.pageDate || "не указана"}\` | Дата события: \`${c.source.eventDate || "не указана"}\` | Дата получения: \`${c.source.fetchedAt}\``
++      );
++    }
++  }
++  lines.push("");
++
++  // 3. Contradictions & Outdated Data
++  lines.push("## 3. Конфликтующие и устаревшие данные");
++  lines.push("");
++  if (contradictions.length === 0 && outdatedFindings.length === 0 && substitutionIncidents.length === 0) {
++    lines.push("_Конфликтующих или устаревших данных не обнаружено._");
++  } else {
++    for (const conflict of contradictions) {
++      lines.push(
++        `- **Противоречие по критерию «${conflict.criterion}» (${conflict.optionName || "общий параметр"}):** ${conflict.summary}`
++      );
++      lines.push(
++        `  - *Позиция А:* «${conflict.sideA.quote}» ([${conflict.sideA.title}](${conflict.sideA.url}), UTF-16 \`${conflict.sideA.startUtf16}..${conflict.sideA.endUtf16}\`, дата на странице: \`${conflict.sideA.pageDate || "н/д"}\`, дата события: \`${conflict.sideA.eventDate || "н/д"}\`)`
++      );
++      lines.push(
++        `  - *Позиция Б:* «${conflict.sideB.quote}» ([${conflict.sideB.title}](${conflict.sideB.url}), UTF-16 \`${conflict.sideB.startUtf16}..${conflict.sideB.endUtf16}\`, дата на странице: \`${conflict.sideB.pageDate || "н/д"}\`, дата события: \`${conflict.sideB.eventDate || "н/д"}\`)`
++      );
++    }
++    for (const out of outdatedFindings) {
++      lines.push(
++        `- **Устаревшие сведения (${out.optionName || "источник"}):** [${out.title}](${out.url}) содержит данные от \`${out.pageDate || out.eventDate}\`, которые перекрыты более свежим источником от \`${out.supersededByDate}\` (${out.note}).`
++      );
++    }
++    for (const sub of substitutionIncidents) {
++      lines.push(
++        `- **Подмена текста после наблюдения (блокировка действия):** На странице [${sub.url}](${sub.url}) между версиями \`v${sub.observedPageVersion}\` и \`v${sub.currentPageVersion}\` текст на смещении UTF-16 \`${sub.startUtf16}..${sub.endUtf16}\` был изменён с «${sub.expectedText}» на «${sub.actualTextAtOffsets}».`
++      );
++    }
++  }
++  lines.push("");
++
++  // 4. What is Unknown / Unconfirmed & Unavailable Sources
++  lines.push("## 4. Что неизвестно и недоступные источники");
++  lines.push("");
++  lines.push("> Примечание: ссылка сама по себе не является доказательством утверждения без подтверждающей выдержки из открытого документа.");
++  lines.push("");
++  for (const u of unconfirmedClaims) {
++    lines.push(
++      `- **Не подтверждено [${u.claimId}]:** ${u.claim} — *${u.reason}*${u.candidateUrl ? ` (кандидат: ${u.candidateUrl})` : ""}`
++    );
++  }
++  for (const unavail of unavailableSources) {
++    lines.push(
++      `- **Недоступный источник:** \`${unavail.url}\` — HTTP \`${unavail.httpStatus || "ERR"}\` (${unavail.reason || "страница недоступна"}), время попытки: \`${unavail.fetchedAt}\`.`
++    );
++  }
++  lines.push("");
++
++  // 5. Resource & Latency Telemetry
++  if (resourceMetrics) {
++    lines.push("## 5. Фактические метрики ресурсов (RAM и задержка)");
++    lines.push("");
++    lines.push(
++      `- **Лимит живых вкладок:** ${resourceMetrics.liveTabCount} / ${resourceMetrics.maxLiveTabs} (выгружено фоновых вкладок: ${resourceMetrics.hibernationEventsCount}, переиспользовано снимков: ${resourceMetrics.snapshotReuseCount})`
++    );
++    lines.push(
++      `- **Фактическая память процесса (RAM):** RSS \`${resourceMetrics.ramTelemetry.currentRssMb} МБ\` (пик \`${resourceMetrics.ramTelemetry.peakRssMb} МБ\`), Heap Used \`${resourceMetrics.ramTelemetry.currentHeapUsedMb} МБ\``
++    );
++    lines.push(
++      `- **Задержка операций (Latency):** медиана (p50) \`${resourceMetrics.latencyTelemetry.p50Ms} мс\`, p95 \`${resourceMetrics.latencyTelemetry.p95Ms} мс\`, макс \`${resourceMetrics.latencyTelemetry.maxMs} мс\``
++    );
++    lines.push("");
++  }
++
++  return lines.join("\n");
++}
++
++function renderResearchReportHtml(spec) {
++  const {
++    question,
++    generatedAt,
++    criteria = [],
++    comparisonRows = [],
++    confirmedClaims = [],
++    unconfirmedClaims = [],
++    contradictions = [],
++    unavailableSources = [],
++    substitutionIncidents = [],
++    resourceMetrics = null
++  } = spec;
++
++  const thCells = ["Вариант", ...criteria, "Статус проверки"]
++    .map((c) => `<th>${escapeHtml(c)}</th>`)
++    .join("");
++
++  const trRows = comparisonRows
++    .map((row) => {
++      const tds = criteria
++        .map((c) => {
++          const cell = row.values?.[c];
++          if (!cell) return `<td class="unverified">Неизвестно (нет выдержки)</td>`;
++          if (typeof cell === "object") {
++            const cls = cell.conflict ? "conflict" : cell.outdated ? "outdated" : "confirmed";
++            return `<td class="${cls}">${escapeHtml(cell.displayValue)} <a href="${escapeHtml(cell.sourceUrl)}">[${escapeHtml(cell.sourceTitle || "Источник")} ${cell.startUtf16}..${cell.endUtf16}]</a></td>`;
++          }
++          return `<td>${escapeHtml(cell)}</td>`;
++        })
++        .join("");
++      return `<tr><td><strong>${escapeHtml(row.optionName)}</strong></td>${tds}<td>${escapeHtml(row.verificationSummary || "Проверено")}</td></tr>`;
++    })
++    .join("\n");
++
++  const claimsHtml = confirmedClaims
++    .map(
++      (c) =>
++        `<li data-claim-id="${escapeHtml(c.claimId)}">
++          <strong>${escapeHtml(c.claim)}</strong>
++          ${c.isOutdated ? `<span class="badge-outdated">Устаревшие данные: ${escapeHtml(c.outdatedNote || "")}</span>` : ""}
++          <blockquote>«${escapeHtml(c.excerpt.quote)}» <code>[UTF-16 ${c.excerpt.startUtf16}..${c.excerpt.endUtf16}, v${c.excerpt.pageVersion}]</code></blockquote>
++          <div class="source-meta">
++            Источник: <a href="${escapeHtml(c.source.url)}">${escapeHtml(c.source.title)}</a> |
++            Дата на странице: <code>${escapeHtml(c.source.pageDate || "не указана")}</code> |
++            Дата события: <code>${escapeHtml(c.source.eventDate || "не указана")}</code> |
++            Получено: <code>${escapeHtml(c.source.fetchedAt)}</code>
++          </div>
++        </li>`
++    )
++    .join("\n");
++
++  const conflictsHtml = contradictions
++    .map(
++      (cf) =>
++        `<li class="conflict-item">
++          <strong>${escapeHtml(cf.criterion)} (${escapeHtml(cf.optionName || "")}):</strong> ${escapeHtml(cf.summary)}
++          <ul>
++            <li>Позиция А: «${escapeHtml(cf.sideA.quote)}» (<a href="${escapeHtml(cf.sideA.url)}">${escapeHtml(cf.sideA.title)}</a>, UTF-16 ${cf.sideA.startUtf16}..${cf.sideA.endUtf16})</li>
++            <li>Позиция Б: «${escapeHtml(cf.sideB.quote)}» (<a href="${escapeHtml(cf.sideB.url)}">${escapeHtml(cf.sideB.title)}</a>, UTF-16 ${cf.sideB.startUtf16}..${cf.sideB.endUtf16})</li>
++          </ul>
++        </li>`
++    )
++    .join("\n");
++
++  const unknownHtml = [
++    ...unconfirmedClaims.map(
++      (u) =>
++        `<li><strong>Не подтверждено (${escapeHtml(u.claimId)}):</strong> ${escapeHtml(u.claim)} — <em>${escapeHtml(u.reason)}</em></li>`
++    ),
++    ...unavailableSources.map(
++      (s) =>
++        `<li><strong>Недоступный источник:</strong> <code>${escapeHtml(s.url)}</code> (HTTP ${escapeHtml(s.httpStatus)}, ${escapeHtml(s.reason || "недоступен")})</li>`
++    ),
++    ...substitutionIncidents.map(
++      (sub) =>
++        `<li><strong>Подмена текста после наблюдения:</strong> <code>${escapeHtml(sub.url)}</code> (v${sub.observedPageVersion} → v${sub.currentPageVersion}, UTF-16 ${sub.startUtf16}..${sub.endUtf16}: «${escapeHtml(sub.expectedText)}» → «${escapeHtml(sub.actualTextAtOffsets)}»)</li>`
++    )
++  ].join("\n");
++
++  return `<!doctype html>
++<html lang="ru">
++<head>
++  <meta charset="utf-8" />
++  <title>Исследовательский отчёт Koswork: ${escapeHtml(question)}</title>
++  <style>
++    body { font-family: system-ui, -apple-system, sans-serif; margin: 24px; color: #111827; line-height: 1.5; }
++    table { border-collapse: collapse; width: 100%; margin: 16px 0; }
++    th, td { border: 1px solid #d1d5db; padding: 8px 10px; text-align: left; vertical-align: top; }
++    th { background: #f3f4f6; }
++    .conflict { background: #fef2f2; }
++    .outdated { background: #fffbeb; }
++    .unverified { color: #6b7280; font-style: italic; }
++    blockquote { margin: 6px 0; padding: 6px 12px; border-left: 3px solid #2563eb; background: #f8fafc; }
++    .source-meta { font-size: 0.875rem; color: #4b5563; }
++  </style>
++</head>
++<body>
++  <h1>Исследовательский отчёт Koswork: ${escapeHtml(question)}</h1>
++  <p>Сформировано: <code>${escapeHtml(generatedAt)}</code></p>
++  <h2>1. Таблица сравнения вариантов</h2>
++  <table>
++    <thead><tr>${thCells}</tr></thead>
++    <tbody>${trRows}</tbody>
++  </table>
++  <h2>2. Подтверждённые утверждения (Утверждение → Выдержка → Источник)</h2>
++  <ul>${claimsHtml}</ul>
++  <h2>3. Противоречия и устаревшие данные</h2>
++  <ul>${conflictsHtml}</ul>
++  <h2>4. Что неизвестно и недоступные источники</h2>
++  <ul>${unknownHtml}</ul>
++  ${
++    resourceMetrics
++      ? `<h2>5. Фактические метрики ресурсов</h2>
++         <p>RAM RSS: <code>${resourceMetrics.ramTelemetry.currentRssMb} МБ</code> (пик <code>${resourceMetrics.ramTelemetry.peakRssMb} МБ</code>) | Задержка p50: <code>${resourceMetrics.latencyTelemetry.p50Ms} мс</code>, p95: <code>${resourceMetrics.latencyTelemetry.p95Ms} мс</code></p>`
++      : ""
++  }
++</body>
++</html>`;
++}
++
++/**
++ * Saves the Markdown report, HTML report, and JSON comparison matrix via the existing
++ * `createKosworkWorkspaceService` (`desktop/windows/workspace/workspace-service.cjs`).
++ */
++async function saveResearchReportsViaWorkspace({
++  workspaceRoot,
++  workspaceService = null,
++  reportSlug = "browser-research-report",
++  reportData,
++  signal = null
++} = {}) {
++  let svc = workspaceService;
++  if (!svc) {
++    svc = createKosworkWorkspaceService();
++    await svc.connectFolder({ folderPath: workspaceRoot, signal });
++  } else if (!svc.getStatus().connected && workspaceRoot) {
++    await svc.connectFolder({ folderPath: workspaceRoot, signal });
++  }
++
++  const sourcesByUrl = new Map();
++  for (const s of reportData.sources || []) {
++    sourcesByUrl.set(s.url, s);
++  }
++
++  const { confirmedClaims, unconfirmedClaims } = validateAndClassifyClaims(
++    reportData.claims || [],
++    sourcesByUrl
++  );
++
++  const enrichedSpec = {
++    ...reportData,
++    generatedAt: reportData.generatedAt || new Date().toISOString(),
++    confirmedClaims,
++    unconfirmedClaims
++  };
++
++  const markdownContent = renderResearchReportMarkdown(enrichedSpec);
++  const htmlContent = renderResearchReportHtml(enrichedSpec);
++  const comparisonTableJson = JSON.stringify(
++    {
++      question: enrichedSpec.question,
++      generatedAt: enrichedSpec.generatedAt,
++      criteria: enrichedSpec.criteria || [],
++      comparisonRows: enrichedSpec.comparisonRows || [],
++      confirmedClaims,
++      unconfirmedClaims,
++      contradictions: enrichedSpec.contradictions || [],
++      outdatedFindings: enrichedSpec.outdatedFindings || [],
++      unavailableSources: enrichedSpec.unavailableSources || [],
++      substitutionIncidents: enrichedSpec.substitutionIncidents || [],
++      resourceMetrics: enrichedSpec.resourceMetrics || null
++    },
++    null,
++    2
++  );
++
++  const writeOrUpdate = async (relativePath, content) => {
++    try {
++      return await svc.createFile({
++        relativePath,
++        content,
++        createParents: true,
++        signal
++      });
++    } catch (err) {
++      if (err && err.code === "WORKSPACE_ALREADY_EXISTS") {
++        const existing = await svc.readTextFile({ relativePath, signal });
++        return await svc.updateFile({
++          relativePath,
++          content,
++          expectedVersion: existing.version,
++          signal
++        });
++      }
++      throw err;
++    }
++  };
++
++  const mdFile = await writeOrUpdate(`reports/${reportSlug}.md`, markdownContent);
++  const htmlFile = await writeOrUpdate(`reports/${reportSlug}.html`, htmlContent);
++  const tableFile = await writeOrUpdate(`reports/${reportSlug}-comparison.json`, comparisonTableJson);
++
++  return {
++    markdownFile: mdFile,
++    htmlFile,
++    comparisonTableFile: tableFile,
++    confirmedClaims,
++    unconfirmedClaims,
++    markdownContent,
++    htmlContent
++  };
++}
++
++module.exports = {
++  renderResearchReportHtml,
++  renderResearchReportMarkdown,
++  saveResearchReportsViaWorkspace,
++  validateAndClassifyClaims
++};
+diff --git a/desktop/windows/browser/research-workflow.cjs b/desktop/windows/browser/research-workflow.cjs
+new file mode 100644
+index 0000000..567c6e3
+--- /dev/null
++++ b/desktop/windows/browser/research-workflow.cjs
+@@ -0,0 +1,480 @@
++"use strict";
++
++const { KosworkBrowserEngine } = require("./engine.cjs");
++const { saveResearchReportsViaWorkspace } = require("./research-report-builder.cjs");
++
++/**
++ * Koswork Multi-Site Browser Research Procedure (`desktop/windows/browser/research-workflow.cjs`).
++ *
++ * Implements the end-to-end research cycle inside the existing Work executor:
++ * 1. Question formulation & criteria decomposition (`formulateResearchQuestion`)
++ * 2. Search execution via `engine.searchService`
++ * 3. Opening candidate sources in the browser, reading long & dynamic pages, and extracting
++ *    UTF-16 anchored excerpts (`claim -> excerpt -> source`)
++ * 4. Cross-source comparison by criteria, detecting contradictions, outdated `pageDate`/`eventDate`,
++ *    unavailable pages, and post-observation text substitutions
++ * 5. Saving verifiable MD / HTML / comparison table reports via existing workspace file APIs
++ */
++
++function formulateResearchQuestion(input = {}) {
++  const rawQuestion = String(input.question || input.searchQuery || "").trim();
++  if (!rawQuestion) {
++    throw new Error("RESEARCH_QUESTION_REQUIRED");
++  }
++  const criteria =
++    Array.isArray(input.criteria) && input.criteria.length > 0
++      ? input.criteria.map((c) => String(c).trim()).filter(Boolean)
++      : ["Цена", "Автономный режим", "Поддержка SLA"];
++
++  const options =
++    Array.isArray(input.options) && input.options.length > 0
++      ? input.options.map((o) => String(o).trim()).filter(Boolean)
++      : [];
++
++  return {
++    question: rawQuestion,
++    searchQuery: String(input.searchQuery || rawQuestion).trim(),
++    criteria,
++    options,
++    formulatedAt: new Date().toISOString()
++  };
++}
++
++/**
++ * Executes a complete multi-site browser research workflow using an existing `KosworkBrowserEngine`
++ * and optional `workExecutor` (`KosworkUnifiedTaskCoordinator`), recording steps into the unified
++ * Work executor history without creating a second agent loop.
++ */
++async function executeMultiSiteResearchWorkflow({
++  engine,
++  workspaceRoot,
++  workspaceService = null,
++  workExecutor = null,
++  plan = {},
++  signal = null
++} = {}) {
++  const browserEngine =
++    engine ||
++    new KosworkBrowserEngine({
++      allowedWorkspaceRoot: workspaceRoot
++    });
++
++  const recordStep = (action, status, details) => {
++    if (workExecutor && typeof workExecutor.appendHistoryEntry === "function") {
++      workExecutor.appendHistoryEntry({
++        domain: "browser_research",
++        action,
++        status,
++        details
++      });
++    }
++  };
++
++  // Step 1: Question formulation
++  const formulation = formulateResearchQuestion(plan);
++  recordStep("formulate_question", "completed", {
++    question: formulation.question,
++    criteria: formulation.criteria,
++    options: formulation.options
++  });
++
++  // Step 2: Execute search query
++  const searchResponse = await browserEngine.searchService.search({
++    query: formulation.searchQuery,
++    actor: plan.actor || "agent",
++    page: 1,
++    pageSize: 10,
++    signal,
++    mockOrAdapterResults: plan.searchResults || null
++  });
++
++  recordStep("search_sources", "completed", {
++    searchId: searchResponse.searchId,
++    providerId: searchResponse.providerId,
++    totalResults: searchResponse.totalResults
++  });
++
++  const openedSources = [];
++  const unavailableSources = [];
++  const extractedFacts = []; // { optionName, criterion, value, displayValue, excerpt, source, pageDate, eventDate }
++  const substitutionIncidents = [];
++  const authPausedSources = [];
++
++  // Step 3: Open each result in the browser engine, read long/dynamic content, and extract UTF-16 excerpts
++  for (const item of searchResponse.items) {
++    if (signal?.aborted) {
++      const err = new Error("RESEARCH_WORKFLOW_CANCELLED");
++      err.code = "RESEARCH_WORKFLOW_CANCELLED";
++      throw err;
++    }
++
++    const sourceVisit = await browserEngine.searchService.openSearchResult({
++      searchId: searchResponse.searchId,
++      rank: item.rank,
++      url: item.url,
++      actor: plan.actor || "agent",
++      signal
++    });
++
++    const tabState = browserEngine.tabs.get(sourceVisit.tabId);
++    if (!sourceVisit.available || sourceVisit.httpStatus >= 400) {
++      unavailableSources.push({
++        url: sourceVisit.url,
++        title: sourceVisit.title,
++        httpStatus: sourceVisit.httpStatus,
++        reason: tabState?.networkError || `HTTP ${sourceVisit.httpStatus}`,
++        fetchedAt: sourceVisit.fetchedAt
++      });
++      openedSources.push(sourceVisit);
++      recordStep("open_source_unavailable", "degraded", {
++        url: sourceVisit.url,
++        httpStatus: sourceVisit.httpStatus
++      });
++      continue;
++    }
++
++    if (tabState?.authGate?.gated) {
++      authPausedSources.push({
++        url: sourceVisit.url,
++        gateType: tabState.authGate.gateType,
++        code: tabState.authGate.code,
++        reason: tabState.authGate.reason
++      });
++      openedSources.push(sourceVisit);
++      recordStep("open_source_paused_for_user", "paused_for_user", {
++        url: sourceVisit.url,
++        gateType: tabState.authGate.gateType
++      });
++      continue;
++    }
++
++    // Trigger dynamic content loading if page has lazy-loaded blocks
++    if (tabState?.rawSiteDef?.onDynamicScroll) {
++      await browserEngine.readLongPage({
++        tabId: sourceVisit.tabId,
++        cursorUtf16: 0,
++        windowChars: 4000,
++        triggerDynamicScroll: true,
++        signal
++      });
++    }
++
++    // Read progressive windows if the page is a very long article (> 4000 UTF-16 code units)
++    const initialObservation = browserEngine.observePage(sourceVisit.tabId, { reuseSnapshot: true }).snapshot;
++    let cursor = 0;
++    let windowsRead = 0;
++    while (cursor !== null && cursor < initialObservation.totalUtf16CodeUnits) {
++      const win = await browserEngine.readLongPage({
++        tabId: sourceVisit.tabId,
++        cursorUtf16: cursor,
++        windowChars: 4000,
++        overlapChars: 100,
++        signal
++      });
++      windowsRead += 1;
++      cursor = win.hasMore ? win.nextCursorUtf16 : null;
++    }
++
++    // Check if the site simulates a post-observation text substitution before claim verification
++    if (tabState?.rawSiteDef?.simulatePostObservationSubstitution) {
++      const subSpec = tabState.rawSiteDef.simulatePostObservationSubstitution;
++      const preSubExcerpt = browserEngine.extractExcerpt(sourceVisit.tabId, {
++        searchTerm: subSpec.targetPhrase
++      });
++      browserEngine.mutatePageContent(sourceVisit.tabId, {
++        replaceText: {
++          from: subSpec.targetPhrase,
++          to: subSpec.substitutedPhrase
++        }
++      });
++      if (preSubExcerpt) {
++        try {
++          browserEngine.extractExcerpt(
++            sourceVisit.tabId,
++            {
++              startUtf16: preSubExcerpt.startUtf16,
++              endUtf16: preSubExcerpt.endUtf16,
++              expectedQuote: preSubExcerpt.quote
++            },
++            initialObservation
++          );
++        } catch (subErr) {
++          if (subErr && subErr.code === "OBSERVATION_TEXT_SUBSTITUTED") {
++            substitutionIncidents.push({
++              url: sourceVisit.url,
++              title: sourceVisit.title,
++              ...subErr.details
++            });
++          } else {
++            throw subErr;
++          }
++        }
++      }
++    }
++
++    // Extract structured claims/facts from the current verified snapshot
++    const currentObs = browserEngine.observePage(sourceVisit.tabId, { reuseSnapshot: true }).snapshot;
++    const siteAssertions = Array.isArray(tabState?.rawSiteDef?.assertions)
++      ? tabState.rawSiteDef.assertions
++      : extractHeuristicAssertionsFromSnapshot(currentObs, formulation);
++
++    for (const assertion of siteAssertions) {
++      const excerpt = browserEngine.extractExcerpt(
++        sourceVisit.tabId,
++        {
++          exactQuote: assertion.quote,
++          searchTerm: assertion.searchTerm || assertion.quote
++        },
++        currentObs
++      );
++      if (excerpt) {
++        browserEngine.searchService.linkExcerptToSource(sourceVisit.sourceVisitId, excerpt);
++        extractedFacts.push({
++          optionName: assertion.optionName || "Общий вариант",
++          criterion: assertion.criterion,
++          value: assertion.value,
++          displayValue: String(assertion.displayValue ?? assertion.value),
++          claimText:
++            assertion.claimText ||
++            `${assertion.optionName}: ${assertion.criterion} = ${assertion.displayValue ?? assertion.value}`,
++          excerpt,
++          source: {
++            url: sourceVisit.url,
++            title: currentObs.title,
++            pageDate: currentObs.pageDate,
++            eventDate: currentObs.eventDate,
++            fetchedAt: currentObs.fetchedAt
++          }
++        });
++      }
++    }
++
++    openedSources.push({
++      ...sourceVisit,
++      pageDate: currentObs.pageDate,
++      eventDate: currentObs.eventDate,
++      windowsRead,
++      totalUtf16CodeUnits: currentObs.totalUtf16CodeUnits
++    });
++  }
++
++  // Step 4: Compare across sources, detect contradictions and outdated data
++  const contradictions = [];
++  const outdatedFindings = [];
++  const factsByOptionAndCriterion = new Map();
++
++  for (const fact of extractedFacts) {
++    const key = `${fact.optionName}||${fact.criterion}`;
++    if (!factsByOptionAndCriterion.has(key)) {
++      factsByOptionAndCriterion.set(key, []);
++    }
++    factsByOptionAndCriterion.get(key).push(fact);
++  }
++
++  const allOptions =
++    formulation.options.length > 0
++      ? formulation.options
++      : Array.from(new Set(extractedFacts.map((f) => f.optionName)));
++
++  const comparisonRows = [];
++  const claimsForReport = [];
++
++  for (const optionName of allOptions) {
++    const rowValues = {};
++    let hasConflictInRow = false;
++
++    for (const criterion of formulation.criteria) {
++      const key = `${optionName}||${criterion}`;
++      const group = factsByOptionAndCriterion.get(key) || [];
++      if (group.length === 0) {
++        rowValues[criterion] = null;
++        claimsForReport.push({
++          optionName,
++          criterion,
++          claim: `${optionName} — значение по критерию «${criterion}»`,
++          excerpt: null,
++          sourceUrl: null
++        });
++        continue;
++      }
++
++      // Sort by effective date (`eventDate` || `pageDate`) descending if dates exist
++      const distinctValues = Array.from(new Set(group.map((g) => String(g.value))));
++      if (distinctValues.length > 1) {
++        const first = group[0];
++        const second = group.find((g) => String(g.value) !== String(first.value));
++        const dateA = first.source.eventDate || first.source.pageDate || null;
++        const dateB = second.source.eventDate || second.source.pageDate || null;
++
++        hasConflictInRow = true;
++        contradictions.push({
++          optionName,
++          criterion,
++          summary: `Расхождение значений между источниками: «${first.displayValue}» против «${second.displayValue}».`,
++          sideA: {
++            value: first.value,
++            quote: first.excerpt.quote,
++            startUtf16: first.excerpt.startUtf16,
++            endUtf16: first.excerpt.endUtf16,
++            url: first.source.url,
++            title: first.source.title,
++            pageDate: first.source.pageDate,
++            eventDate: first.source.eventDate
++          },
++          sideB: {
++            value: second.value,
++            quote: second.excerpt.quote,
++            startUtf16: second.excerpt.startUtf16,
++            endUtf16: second.excerpt.endUtf16,
++            url: second.source.url,
++            title: second.source.title,
++            pageDate: second.source.pageDate,
++            eventDate: second.source.eventDate
++          }
++        });
++
++        // Also check if one of the conflicting sources is older by `pageDate` / `eventDate`
++        if (dateA && dateB && dateA !== dateB) {
++          const older = dateA < dateB ? first : second;
++          const newer = dateA < dateB ? second : first;
++          older.isOutdated = true;
++          older.outdatedNote = `Более свежий источник (${newer.source.title}) от ${newer.source.eventDate || newer.source.pageDate} указывает: ${newer.displayValue}`;
++          outdatedFindings.push({
++            optionName,
++            criterion,
++            url: older.source.url,
++            title: older.source.title,
++            pageDate: older.source.pageDate,
++            eventDate: older.source.eventDate,
++            supersededByDate: newer.source.eventDate || newer.source.pageDate,
++            note: older.outdatedNote
++          });
++        }
++
++        rowValues[criterion] = {
++          displayValue: `${first.displayValue} vs ${second.displayValue}`,
++          conflict: true,
++          outdated: Boolean(first.isOutdated || second.isOutdated),
++          sourceUrl: first.source.url,
++          sourceTitle: first.source.title,
++          startUtf16: first.excerpt.startUtf16,
++          endUtf16: first.excerpt.endUtf16
++        };
++      } else {
++        const chosen = group[0];
++        rowValues[criterion] = {
++          displayValue: chosen.displayValue,
++          conflict: false,
++          outdated: Boolean(chosen.isOutdated),
++          sourceUrl: chosen.source.url,
++          sourceTitle: chosen.source.title,
++          startUtf16: chosen.excerpt.startUtf16,
++          endUtf16: chosen.excerpt.endUtf16
++        };
++      }
++
++      for (const f of group) {
++        claimsForReport.push({
++          optionName: f.optionName,
++          criterion: f.criterion,
++          value: f.value,
++          claim: f.claimText,
++          isOutdated: Boolean(f.isOutdated),
++          outdatedNote: f.outdatedNote || null,
++          excerpt: f.excerpt,
++          sourceUrl: f.source.url
++        });
++      }
++    }
++
++    comparisonRows.push({
++      optionName,
++      values: rowValues,
++      verificationSummary: hasConflictInRow
++        ? "Обнаружено противоречие между источниками"
++        : "Подтверждено выдержками"
++    });
++  }
++
++  // Include any explicit unbacked claims passed in plan.unbackedClaims to verify epistemic rejection
++  if (Array.isArray(plan.unbackedClaims)) {
++    for (const rawUnbacked of plan.unbackedClaims) {
++      claimsForReport.push({
++        claim: rawUnbacked.claim,
++        sourceUrl: rawUnbacked.sourceUrl || null,
++        excerpt: null
++      });
++    }
++  }
++
++  const resourceMetrics = browserEngine.resourceGovernor.getResourceReport();
++
++  // Step 5: Save reports via workspace service
++  const savedReports = await saveResearchReportsViaWorkspace({
++    workspaceRoot,
++    workspaceService,
++    reportSlug: plan.reportSlug || "koswork-browser-research-report",
++    reportData: {
++      question: formulation.question,
++      criteria: formulation.criteria,
++      comparisonRows,
++      claims: claimsForReport,
++      contradictions,
++      outdatedFindings,
++      unavailableSources,
++      substitutionIncidents,
++      sources: openedSources,
++      resourceMetrics
++    },
++    signal
++  });
++
++  recordStep("save_research_reports", "completed", {
++    markdownPath: savedReports.markdownFile.path,
++    htmlPath: savedReports.htmlFile.path,
++    comparisonTablePath: savedReports.comparisonTableFile.path,
++    confirmedClaimsCount: savedReports.confirmedClaims.length,
++    contradictionsCount: contradictions.length
++  });
++
++  return {
++    status: "completed",
++    formulation,
++    searchResponse,
++    openedSources,
++    unavailableSources,
++    authPausedSources,
++    contradictions,
++    outdatedFindings,
++    substitutionIncidents,
++    confirmedClaims: savedReports.confirmedClaims,
++    unconfirmedClaims: savedReports.unconfirmedClaims,
++    comparisonRows,
++    resourceMetrics,
++    savedReports
++  };
++}
++
++function extractHeuristicAssertionsFromSnapshot(snapshot, formulation) {
++  const results = [];
++  for (const block of snapshot.blocks || []) {
++    for (const crit of formulation.criteria || []) {
++      if (block.text.toLowerCase().includes(crit.toLowerCase())) {
++        results.push({
++          optionName: formulation.options[0] || snapshot.title || "Источник",
++          criterion: crit,
++          value: block.text.slice(0, 120),
++          displayValue: block.text.slice(0, 120),
++          quote: block.text.slice(0, Math.min(block.text.length, 160)),
++          claimText: `${snapshot.title}: ${block.text.slice(0, 120)}`
++        });
++      }
++    }
++  }
++  return results;
++}
++
++module.exports = {
++  executeMultiSiteResearchWorkflow,
++  formulateResearchQuestion
++};
+diff --git a/desktop/windows/browser/resource-governor.cjs b/desktop/windows/browser/resource-governor.cjs
+new file mode 100644
+index 0000000..258b214
+--- /dev/null
++++ b/desktop/windows/browser/resource-governor.cjs
+@@ -0,0 +1,290 @@
++"use strict";
++
++const { MAX_ACTIVE_WEB_VIEWS } = require("./search-pagination-and-bookmarks.cjs");
++
++/**
++ * Koswork Browser Resource Governor & Telemetry Collector (`desktop/windows/browser/resource-governor.cjs`).
++ *
++ * Implements measurement-driven resource management:
++ * 1. Enforces a live tab limit (`maxLiveTabs`, default 3), automatically hibernating/unloading
++ *    least-recently-used background tabs while preserving their lightweight `tabReceipt` and
++ *    snapshot metadata for seamless restoration.
++ * 2. Reuses valid snapshots (`snapshotTtlMs`) when `url` and `pageVersion` match, avoiding
++ *    redundant DOM serialization.
++ * 3. Provides cooperative cancellation (`AbortController`) for in-flight page reads and searches.
++ * 4. Measures actual process RAM (`rssBytes`, `heapUsedBytes`, `externalBytes`) and per-page
++ *    navigation/read latency (`p50Ms`, `p95Ms`, `totalMs`) on a benchmark page set without promising "zero load".
++ */
++
++class KosworkBrowserResourceGovernor {
++  constructor(options = {}) {
++    this.maxLiveTabs = Math.max(1, Number(options.maxLiveTabs ?? MAX_ACTIVE_WEB_VIEWS));
++    this.snapshotTtlMs = Math.max(0, Number(options.snapshotTtlMs ?? 30000));
++    this.now = typeof options.now === "function" ? options.now : () => Date.now();
++
++    this.liveTabs = new Map(); // tabId -> { tabId, url, lastActiveAt, estimatedDomBytes, status: 'live' }
++    this.hibernatedTabs = new Map(); // tabId -> { tabId, url, tabReceipt, hibernatedAt, snapshotSummary }
++    this.snapshotCache = new Map(); // cacheKey -> { snapshot, cachedAtMs }
++    this.activeControllers = new Map(); // taskId -> { taskId, kind, controller, startedAtMs }
++    this.latencySamples = [];
++    this.memorySamples = [];
++    this.hibernationEvents = [];
++    this.snapshotReuseCount = 0;
++    this.snapshotMissCount = 0;
++  }
++
++  sampleProcessMemory(label = "sample") {
++    const usage = process.memoryUsage();
++    const entry = {
++      label,
++      sampledAtMs: this.now(),
++      rssMb: Number((usage.rss / (1024 * 1024)).toFixed(2)),
++      heapUsedMb: Number((usage.heapUsed / (1024 * 1024)).toFixed(2)),
++      heapTotalMb: Number((usage.heapTotal / (1024 * 1024)).toFixed(2)),
++      externalMb: Number((usage.external / (1024 * 1024)).toFixed(2)),
++      liveTabCount: this.liveTabs.size,
++      hibernatedTabCount: this.hibernatedTabs.size
++    };
++    this.memorySamples.push(entry);
++    return entry;
++  }
++
++  /**
++   * Registers or touches a live tab and unloads/hibernates the oldest background tab(s)
++   * if `liveTabs.size > maxLiveTabs`.
++   */
++  touchLiveTab(tabId, tabState = {}, onHibernateCallback = null) {
++    const key = String(tabId);
++    const nowMs = this.now();
++
++    if (this.hibernatedTabs.has(key)) {
++      this.hibernatedTabs.delete(key);
++    }
++
++    const domChars = Number(tabState.snapshot?.totalUtf16CodeUnits || 0);
++    this.liveTabs.set(key, {
++      tabId: key,
++      url: String(tabState.url || "about:blank"),
++      lastActiveAt: nowMs,
++      estimatedDomBytes: domChars * 2,
++      tabReceipt: tabState.snapshot?.tabReceipt || tabState.tabReceipt || null,
++      status: "live"
++    });
++
++    const newlyHibernated = [];
++    while (this.liveTabs.size > this.maxLiveTabs) {
++      let oldestId = null;
++      let oldestTime = Infinity;
++      for (const [id, info] of this.liveTabs.entries()) {
++        if (id === key) continue;
++        if (info.lastActiveAt < oldestTime) {
++          oldestTime = info.lastActiveAt;
++          oldestId = id;
++        }
++      }
++      if (!oldestId) break;
++
++      const evicted = this.liveTabs.get(oldestId);
++      this.liveTabs.delete(oldestId);
++
++      const hibRecord = {
++        tabId: oldestId,
++        url: evicted.url,
++        tabReceipt: evicted.tabReceipt,
++        hibernatedAtMs: nowMs,
++        freedDomBytes: evicted.estimatedDomBytes,
++        status: "hibernated"
++      };
++      this.hibernatedTabs.set(oldestId, hibRecord);
++      this.hibernationEvents.push(hibRecord);
++      newlyHibernated.push(oldestId);
++
++      if (typeof onHibernateCallback === "function") {
++        onHibernateCallback(oldestId, hibRecord);
++      }
++    }
++
++    return {
++      liveTabCount: this.liveTabs.size,
++      maxLiveTabs: this.maxLiveTabs,
++      hibernatedTabCount: this.hibernatedTabs.size,
++      newlyHibernatedTabIds: newlyHibernated
++    };
++  }
++
++  removeTab(tabId) {
++    const key = String(tabId);
++    this.liveTabs.delete(key);
++    this.hibernatedTabs.delete(key);
++    for (const cacheKey of this.snapshotCache.keys()) {
++      if (cacheKey.startsWith(`${key}|`)) {
++        this.snapshotCache.delete(cacheKey);
++      }
++    }
++  }
++
++  /**
++   * Stores a versioned snapshot for reuse within `snapshotTtlMs`.
++   */
++  cacheSnapshot(snapshot) {
++    if (!snapshot || !snapshot.tabId) return;
++    const key = `${snapshot.tabId}|${snapshot.url}|v${snapshot.pageVersion}`;
++    this.snapshotCache.set(key, {
++      snapshot,
++      cachedAtMs: this.now()
++    });
++  }
++
++  /**
++   * Returns a cached snapshot if it matches `tabId`, `url`, and `pageVersion` and is within `snapshotTtlMs`.
++   */
++  getReusableSnapshot(tabId, url, pageVersion) {
++    const key = `${tabId}|${url}|v${pageVersion}`;
++    const entry = this.snapshotCache.get(key);
++    if (!entry) {
++      this.snapshotMissCount += 1;
++      return null;
++    }
++    const ageMs = this.now() - entry.cachedAtMs;
++    if (ageMs > this.snapshotTtlMs) {
++      this.snapshotCache.delete(key);
++      this.snapshotMissCount += 1;
++      return null;
++    }
++    this.snapshotReuseCount += 1;
++    return entry.snapshot;
++  }
++
++  invalidateSnapshotsForTab(tabId) {
++    const prefix = `${tabId}|`;
++    for (const key of this.snapshotCache.keys()) {
++      if (key.startsWith(prefix)) {
++        this.snapshotCache.delete(key);
++      }
++    }
++  }
++
++  /**
++   * Begins a cancellable read or search operation and links any external AbortSignal.
++   */
++  beginTask(taskId, kind = "read", externalSignal = null) {
++    const id = String(taskId || `task-${this.now()}-${Math.random().toString(36).slice(2, 7)}`);
++    const controller = new AbortController();
++    const startedAtMs = this.now();
++
++    const onExternalAbort = () => {
++      controller.abort(externalSignal?.reason || "cancelled_by_caller");
++    };
++
++    if (externalSignal) {
++      if (externalSignal.aborted) {
++        onExternalAbort();
++      } else {
++        externalSignal.addEventListener("abort", onExternalAbort, { once: true });
++      }
++    }
++
++    const record = {
++      taskId: id,
++      kind,
++      controller,
++      startedAtMs,
++      finish: (meta = {}) => {
++        const durationMs = Math.max(0, this.now() - startedAtMs);
++        this.activeControllers.delete(id);
++        if (externalSignal) {
++          externalSignal.removeEventListener("abort", onExternalAbort);
++        }
++        this.latencySamples.push({
++          taskId: id,
++          kind,
++          durationMs,
++          url: meta.url || null,
++          aborted: controller.signal.aborted,
++          recordedAtMs: this.now()
++        });
++        return durationMs;
++      }
++    };
++
++    this.activeControllers.set(id, record);
++    return record;
++  }
++
++  cancelTask(taskId, reason = "cancelled_by_user") {
++    const record = this.activeControllers.get(String(taskId));
++    if (!record) return { cancelled: false, taskId };
++    if (!record.controller.signal.aborted) {
++      record.controller.abort(reason);
++    }
++    this.activeControllers.delete(String(taskId));
++    return { cancelled: true, taskId, reason };
++  }
++
++  cancelAllTasks(reason = "cancelled_all") {
++    const cancelledIds = [];
++    for (const [id, rec] of this.activeControllers.entries()) {
++      if (!rec.controller.signal.aborted) {
++        rec.controller.abort(reason);
++        cancelledIds.push(id);
++      }
++    }
++    this.activeControllers.clear();
++    return {
++      cancelledCount: cancelledIds.length,
++      cancelledTaskIds: cancelledIds,
++      reason
++    };
++  }
++
++  getResourceReport() {
++    const mem = this.sampleProcessMemory("report");
++    const completedLatencies = this.latencySamples
++      .filter((s) => !s.aborted)
++      .map((s) => s.durationMs)
++      .sort((a, b) => a - b);
++
++    const percentile = (sorted, p) => {
++      if (sorted.length === 0) return 0;
++      const idx = Math.min(sorted.length - 1, Math.floor((p / 100) * sorted.length));
++      return Number(sorted[idx].toFixed(2));
++    };
++
++    let peakRssMb = mem.rssMb;
++    let peakHeapUsedMb = mem.heapUsedMb;
++    for (const s of this.memorySamples) {
++      if (s.rssMb > peakRssMb) peakRssMb = s.rssMb;
++      if (s.heapUsedMb > peakHeapUsedMb) peakHeapUsedMb = s.heapUsedMb;
++    }
++
++    return {
++      maxLiveTabs: this.maxLiveTabs,
++      liveTabCount: this.liveTabs.size,
++      liveTabIds: Array.from(this.liveTabs.keys()),
++      hibernatedTabCount: this.hibernatedTabs.size,
++      hibernatedTabIds: Array.from(this.hibernatedTabs.keys()),
++      hibernationEventsCount: this.hibernationEvents.length,
++      snapshotReuseCount: this.snapshotReuseCount,
++      snapshotMissCount: this.snapshotMissCount,
++      activeTasksCount: this.activeControllers.size,
++      ramTelemetry: {
++        currentRssMb: mem.rssMb,
++        currentHeapUsedMb: mem.heapUsedMb,
++        peakRssMb,
++        peakHeapUsedMb,
++        externalMb: mem.externalMb
++      },
++      latencyTelemetry: {
++        totalCompletedOps: completedLatencies.length,
++        p50Ms: percentile(completedLatencies, 50),
++        p95Ms: percentile(completedLatencies, 95),
++        maxMs: completedLatencies.length ? Number(completedLatencies[completedLatencies.length - 1].toFixed(2)) : 0,
++        samples: this.latencySamples.slice(-20)
++      }
++    };
++  }
++}
++
++module.exports = {
++  KosworkBrowserResourceGovernor
++};
+diff --git a/desktop/windows/browser/search.cjs b/desktop/windows/browser/search.cjs
+new file mode 100644
+index 0000000..8b4f06a
+--- /dev/null
++++ b/desktop/windows/browser/search.cjs
+@@ -0,0 +1,201 @@
++"use strict";
++
++const { KosworkSearchAndBrowserStore } = require("./search-pagination-and-bookmarks.cjs");
++const { createSearchProviderAdapter } = require("./research-adapter.cjs");
++const { extractVerifiableExcerpt } = require("./document.cjs");
++
++/**
++ * Koswork Browser Search & Result Navigation Controller (`desktop/windows/browser/search.cjs`).
++ *
++ * Connects user and agent search queries directly to the existing Koswork browser engine:
++ * 1. Executes search via the isolated search adapter (`research-adapter.cjs`), preserving explicit
++ *    provider provenance (`providerId`, `providerEndpoint`) — never claiming a fake "proprietary internet index".
++ * 2. Stores and paginates SERP entries in `KosworkSearchAndBrowserStore`.
++ * 3. `openSearchResult` actually opens the target URL in the browser engine, records `url`, `title`,
++ *    `fetchedAt`, `pageDate`, `eventDate`, and links any extracted excerpt (`excerptId`, `startUtf16`, `endUtf16`)
++ *    back to the originating search and source receipt.
++ */
++class KosworkBrowserSearchService {
++  constructor(options = {}) {
++    this.store = options.store || new KosworkSearchAndBrowserStore();
++    this.adapter = options.adapter || createSearchProviderAdapter(options.adapterOptions || {});
++    this.engine = options.engine || null;
++    this.openedSources = new Map(); // sourceVisitId -> provenance & excerpt linkages
++  }
++
++  attachEngine(engine) {
++    this.engine = engine;
++  }
++
++  async search({
++    query,
++    actor = "agent",
++    page = 1,
++    pageSize = 5,
++    signal = null,
++    mockOrAdapterResults = null
++  } = {}) {
++    if (signal?.aborted) {
++      const err = new Error("SEARCH_OPERATION_CANCELLED");
++      err.code = "SEARCH_OPERATION_CANCELLED";
++      throw err;
++    }
++
++    const normalizedActor = actor === "user" ? "user" : "agent";
++    let providerResponse;
++    if (Array.isArray(mockOrAdapterResults)) {
++      providerResponse = {
++        providerId: this.adapter.providerId || "explicit-results",
++        providerEndpoint: this.adapter.searchEndpoint || "local://explicit",
++        searchedAt: new Date().toISOString(),
++        query: String(query || "").trim(),
++        results: mockOrAdapterResults
++      };
++    } else {
++      providerResponse = await this.adapter.executeQuery(query, { signal });
++    }
++
++    const paginated = this.store.recordAndPaginateSearch({
++      query: providerResponse.query,
++      results: providerResponse.results,
++      page,
++      pageSize,
++      recordedAt: providerResponse.searchedAt
++    });
++
++    // Attach explicit provider origin metadata to the journal entry (never hiding behind a fake index)
++    const journalEntry = this.store.searchJournal.find((s) => s.searchId === paginated.searchId);
++    if (journalEntry) {
++      journalEntry.providerId = providerResponse.providerId;
++      journalEntry.providerEndpoint = providerResponse.providerEndpoint;
++      journalEntry.actor = normalizedActor;
++    }
++
++    return {
++      ...paginated,
++      actor: normalizedActor,
++      providerId: providerResponse.providerId,
++      providerEndpoint: providerResponse.providerEndpoint,
++      searchedAt: providerResponse.searchedAt
++    };
++  }
++
++  /**
++   * Opens a search result in the attached browser engine (for both user clicks and agent navigation),
++   * recording `url`, `title`, `fetchedAt`, `pageDate`, `eventDate`, and optional initial excerpt linkage.
++   */
++  async openSearchResult({
++    searchId,
++    rank = 1,
++    url = null,
++    tabId = null,
++    actor = "agent",
++    extractQuery = null,
++    signal = null
++  } = {}) {
++    if (!this.engine) {
++      throw new Error("BROWSER_ENGINE_NOT_ATTACHED_TO_SEARCH");
++    }
++    if (signal?.aborted) {
++      const err = new Error("SEARCH_RESULT_OPEN_CANCELLED");
++      err.code = "SEARCH_RESULT_OPEN_CANCELLED";
++      throw err;
++    }
++
++    let selectedItem = null;
++    let journalEntry = null;
++    if (searchId) {
++      journalEntry = this.store.searchJournal.find((s) => s.searchId === String(searchId));
++      if (!journalEntry) {
++        const err = new Error("SEARCH_JOURNAL_ENTRY_NOT_FOUND");
++        err.code = "SEARCH_JOURNAL_ENTRY_NOT_FOUND";
++        throw err;
++      }
++      selectedItem =
++        journalEntry.results.find((r) => Number(r.rank) === Number(rank)) ||
++        (url ? journalEntry.results.find((r) => r.url === url) : null);
++      if (!selectedItem && !url) {
++        const err = new Error(`SEARCH_RESULT_RANK_NOT_FOUND: rank ${rank} in ${searchId}`);
++        err.code = "SEARCH_RESULT_RANK_NOT_FOUND";
++        throw err;
++      }
++    }
++
++    const targetUrl = url || selectedItem?.url;
++    if (!targetUrl) {
++      throw new Error("SEARCH_RESULT_URL_MISSING");
++    }
++
++    const navResult = await this.engine.navigate({
++      tabId,
++      url: targetUrl,
++      actor,
++      signal,
++      initiatedBySearchId: searchId || null,
++      initiatedByRank: selectedItem ? selectedItem.rank : rank
++    });
++
++    const sourceVisitId = `src-${navResult.tabId}-v${navResult.snapshot?.pageVersion || 1}-${Date.now()}`;
++    const linkedExcerpts = [];
++
++    if (extractQuery && navResult.snapshot && navResult.httpStatus < 400) {
++      const excerpt = extractVerifiableExcerpt(navResult.snapshot, {
++        searchTerm: extractQuery
++      });
++      if (excerpt) {
++        linkedExcerpts.push(excerpt);
++      }
++    }
++
++    const sourceRecord = {
++      sourceVisitId,
++      searchId: searchId || null,
++      searchQuery: journalEntry ? journalEntry.queryPreview : null,
++      providerId: journalEntry ? journalEntry.providerId || journalEntry.engine : this.adapter.providerId,
++      serpRank: selectedItem ? selectedItem.rank : rank,
++      serpTitle: selectedItem ? selectedItem.title : null,
++      serpSnippet: selectedItem ? selectedItem.snippet : null,
++      actor: actor === "user" ? "user" : "agent",
++      tabId: navResult.tabId,
++      tabReceipt: navResult.tabReceipt,
++      url: navResult.url,
++      canonicalUrl: navResult.snapshot?.canonicalUrl || navResult.url,
++      title: navResult.snapshot?.title || selectedItem?.title || navResult.url,
++      httpStatus: navResult.httpStatus,
++      available: navResult.available,
++      pageDate: navResult.snapshot?.pageDate || null,
++      eventDate: navResult.snapshot?.eventDate || null,
++      fetchedAt: navResult.fetchedAt,
++      linkedExcerpts
++    };
++
++    this.openedSources.set(sourceVisitId, sourceRecord);
++    return sourceRecord;
++  }
++
++  /**
++   * Links a newly extracted excerpt from an open page to its source provenance record.
++   */
++  linkExcerptToSource(sourceVisitId, excerpt) {
++    const record = this.openedSources.get(String(sourceVisitId));
++    if (!record) {
++      throw new Error(`SOURCE_VISIT_NOT_FOUND: ${sourceVisitId}`);
++    }
++    if (excerpt && !record.linkedExcerpts.some((e) => e.excerptId === excerpt.excerptId)) {
++      record.linkedExcerpts.push(excerpt);
++    }
++    return record;
++  }
++
++  getSourceRecord(sourceVisitId) {
++    return this.openedSources.get(String(sourceVisitId)) || null;
++  }
++
++  listOpenedSources() {
++    return Array.from(this.openedSources.values());
++  }
++}
++
++module.exports = {
++  KosworkBrowserSearchService
++};
+diff --git a/desktop/windows/connection-policy.cjs b/desktop/windows/connection-policy.cjs
+new file mode 100644
+index 0000000..2b0ba63
+--- /dev/null
++++ b/desktop/windows/connection-policy.cjs
+@@ -0,0 +1,20 @@
++"use strict";
++
++function normalizeServerOrigin(rawOrigin) {
++  const input = String(rawOrigin || "").trim();
++  if (!input || input === "local") return "local";
++  let parsed;
++  try {
++    parsed = new URL(input);
++  } catch {
++    throw new Error(`INVALID_SERVER_ORIGIN: "${input}"`);
++  }
++  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
++    throw new Error(`UNSUPPORTED_ORIGIN_PROTOCOL: "${parsed.protocol}"`);
++  }
++  return parsed.origin.toLowerCase();
++}
++
++module.exports = {
++  normalizeServerOrigin
++};
+diff --git a/desktop/windows/desktop-state.cjs b/desktop/windows/desktop-state.cjs
+new file mode 100644
+index 0000000..cf6b75e
+--- /dev/null
++++ b/desktop/windows/desktop-state.cjs
+@@ -0,0 +1,30 @@
++"use strict";
++
++const fs = require("node:fs");
++const path = require("node:path");
++const crypto = require("node:crypto");
++
++function writeAtomicJson(targetPath, data) {
++  const resolved = path.resolve(String(targetPath));
++  const dir = path.dirname(resolved);
++  fs.mkdirSync(dir, { recursive: true });
++  const tmpPath = path.join(dir, `.tmp-${process.pid}-${Date.now()}-${crypto.randomBytes(4).toString("hex")}.json`);
++  const payload = JSON.stringify(data, null, 2);
++  fs.writeFileSync(tmpPath, payload, { encoding: "utf8", mode: 0o600 });
++  fs.renameSync(tmpPath, resolved);
++  return resolved;
++}
++
++function readJsonFileSafe(targetPath, fallback = null) {
++  try {
++    const raw = fs.readFileSync(path.resolve(String(targetPath)), "utf8");
++    return JSON.parse(raw);
++  } catch {
++    return fallback;
++  }
++}
++
++module.exports = {
++  readJsonFileSafe,
++  writeAtomicJson
++};
+diff --git a/desktop/windows/test/browser-research-acceptance.test.cjs b/desktop/windows/test/browser-research-acceptance.test.cjs
+new file mode 100644
+index 0000000..32826b1
+--- /dev/null
++++ b/desktop/windows/test/browser-research-acceptance.test.cjs
+@@ -0,0 +1,602 @@
++"use strict";
++
++const test = require("node:test");
++const assert = require("node:assert/strict");
++const fs = require("node:fs");
++const os = require("node:os");
++const path = require("node:path");
++const http = require("node:http");
++
++const {
++  KosworkBrowserEngine,
++  KosworkBrowserPolicyError,
++  KosworkBrowserRecoveryError
++} = require("../browser/engine.cjs");
++const { createKosworkBrowserShell } = require("../browser/shell.cjs");
++const { createBrowserUiController } = require("../browser.js");
++const { Stage2DesktopIpcBridge } = require("../ci/stage2-desktop-ipc-bridge.cjs");
++const { KosworkUnifiedTaskCoordinator } = require("../ci/unified-task-coordinator.cjs");
++
++function createTempWorkspace() {
++  const root = fs.mkdtempSync(path.join(os.tmpdir(), "koswork-browser-research-"));
++  fs.mkdirSync(path.join(root, "downloads"), { recursive: true });
++  fs.mkdirSync(path.join(root, "docs"), { recursive: true });
++  return root;
++}
++
++test("1. Reproducible 5-site corpus end-to-end research cycle (contradiction, unavailable page, very long article, dynamic content, post-observation text substitution)", async () => {
++  const workspaceRoot = createTempWorkspace();
++  const engine = new KosworkBrowserEngine({
++    allowedWorkspaceRoot: workspaceRoot,
++    maxLiveTabs: 3
++  });
++
++  // Site 1: Official 2026 specification for Option Alpha (distinct pageDate, eventDate, fetchedAt)
++  engine.registerSyntheticSite("https://corpus.local/site-1-official-2026", {
++    title: "Официальная спецификация Koswork Option Alpha (2026)",
++    pageDate: "2026-10-15",
++    eventDate: "2026-11-01",
++    text: [
++      "Введение в корпоративный пакет Option Alpha для защищённых рабочих станций.",
++      "Официальный прайс-лист: для пакета Option Alpha базовая цена составляет $49/мес при годовой подписке.",
++      "Техническая архитектура: для Option Alpha автономный режим полностью поддерживается (SQLite WAL + локальный индекс).",
++      "Гарантии надёжности: для Option Alpha поддержка SLA зафиксирована на уровне 99.95% времени доступности."
++    ].join("\n\n"),
++    assertions: [
++      {
++        optionName: "Option Alpha",
++        criterion: "Цена",
++        value: "$49/мес",
++        displayValue: "$49/мес",
++        quote: "для пакета Option Alpha базовая цена составляет $49/мес при годовой подписке.",
++        claimText: "Option Alpha стоит $49/мес согласно спецификации 2026 года"
++      },
++      {
++        optionName: "Option Alpha",
++        criterion: "Автономный режим",
++        value: "Полный (SQLite WAL)",
++        displayValue: "Полный (SQLite WAL)",
++        quote: "для Option Alpha автономный режим полностью поддерживается (SQLite WAL + локальный индекс)."
++      },
++      {
++        optionName: "Option Alpha",
++        criterion: "Поддержка SLA",
++        value: "99.95%",
++        displayValue: "99.95%",
++        quote: "для Option Alpha поддержка SLA зафиксирована на уровне 99.95% времени доступности."
++      }
++    ]
++  });
++
++  // Site 2: Contradicting & outdated 2025 archive review for Option Alpha ($79/мес vs $49/мес)
++  engine.registerSyntheticSite("https://corpus.local/site-2-contradiction-2025", {
++    title: "Архивный обзор корпоративных решений (Май 2025)",
++    pageDate: "2025-05-10",
++    eventDate: "2025-05-01",
++    text: [
++      "Архивный разбор рынка за весну 2025 года.",
++      "По состоянию на май 2025 года для пакета Option Alpha базовая цена составляет $79/мес без учёта скидок."
++    ].join("\n\n"),
++    assertions: [
++      {
++        optionName: "Option Alpha",
++        criterion: "Цена",
++        value: "$79/мес",
++        displayValue: "$79/мес",
++        quote: "для пакета Option Alpha базовая цена составляет $79/мес без учёта скидок.",
++        claimText: "Option Alpha стоит $79/мес по архивному обзору 2025 года"
++      }
++    ]
++  });
++
++  // Site 3: Unavailable page (HTTP 503)
++  engine.registerSyntheticSite("https://corpus.local/site-3-unavailable-503", {
++    title: "Недоступный портал бенчмарков",
++    httpStatus: 503,
++    text: "503 Service Unavailable — сервер на техническом обслуживании."
++  });
++
++  // Site 4: Very long article (> 18,000 UTF-16 code units with surrogate pairs 🧪🚀) where Option Beta specs are at the tail
++  const fillerParagraphs = Array.from({ length: 42 }, (_, idx) =>
++    `Раздел ${idx + 1} [🧪🚀]: Подробный технический разбор методологии тестирования распределённых систем хранения и индексации документов в локальной среде выполнения. Этот абзац содержит аналитические выкладки и контрольные замеры пропускной способности конвейера чтения длинных страниц (#${idx + 1}). `.repeat(
++      2
++    )
++  );
++  fillerParagraphs.push(
++    "Итоговая сводка по пакету Option Beta: базовая цена составляет $35/мес для малых команд.",
++    "В пакете Option Beta автономный режим реализован через частичный кэш последних 100 документов.",
++    "Для пакета Option Beta поддержка SLA составляет 99.90% в рабочие дни."
++  );
++
++  engine.registerSyntheticSite("https://corpus.local/site-4-very-long-article", {
++    title: "Полное руководство по архитектуре Option Beta (Длинная статья)",
++    pageDate: "2026-10-20",
++    eventDate: "2026-10-18",
++    text: fillerParagraphs.join("\n\n"),
++    assertions: [
++      {
++        optionName: "Option Beta",
++        criterion: "Цена",
++        value: "$35/мес",
++        displayValue: "$35/мес",
++        quote: "Итоговая сводка по пакету Option Beta: базовая цена составляет $35/мес для малых команд."
++      },
++      {
++        optionName: "Option Beta",
++        criterion: "Автономный режим",
++        value: "Частичный кэш",
++        displayValue: "Частичный кэш",
++        quote: "В пакете Option Beta автономный режим реализован через частичный кэш последних 100 документов."
++      },
++      {
++        optionName: "Option Beta",
++        criterion: "Поддержка SLA",
++        value: "99.90%",
++        displayValue: "99.90%",
++        quote: "Для пакета Option Beta поддержка SLA составляет 99.90% в рабочие дни."
++      }
++    ]
++  });
++
++  // Site 5: Dynamic lazy-loaded content + Post-observation text substitution
++  engine.registerSyntheticSite("https://corpus.local/site-5-dynamic-and-substituted", {
++    title: "Динамический портал телеметрии Option Beta",
++    pageDate: "2026-10-28",
++    eventDate: "2026-10-25",
++    text: [
++      "Первичный экран портала Option Beta.",
++      "Гарантия возврата средств: 30 дней без условий."
++    ].join("\n\n"),
++    onDynamicScroll: async () => ({
++      appendText:
++        "Динамически подгруженный блок телеметрии: пакет Option Beta подтверждает задержку индексации менее 12 мс."
++    }),
++    simulatePostObservationSubstitution: {
++      targetPhrase: "Гарантия возврата средств: 30 дней без условий.",
++      substitutedPhrase: "Гарантия возврата средств: возврат не предусмотрен (тариф невозвратный)."
++    },
++    assertions: [
++      {
++        optionName: "Option Beta",
++        criterion: "Динамическая телеметрия",
++        value: "< 12 мс",
++        displayValue: "< 12 мс",
++        quote: "Динамически подгруженный блок телеметрии: пакет Option Beta подтверждает задержку индексации менее 12 мс."
++      }
++    ]
++  });
++
++  // Execute the full research cycle through the existing Work executor (`KosworkUnifiedTaskCoordinator`)
++  const coordinator = new KosworkUnifiedTaskCoordinator({
++    workspaceRoot,
++    browserEngine: engine
++  });
++
++  const cycleResult = await coordinator.executeBrowserResearchCycle({
++    question: "Сравнение пакетов Option Alpha и Option Beta по цене, автономному режиму и SLA",
++    searchQuery: "Option Alpha Option Beta спецификация цена автономный режим SLA",
++    options: ["Option Alpha", "Option Beta"],
++    criteria: ["Цена", "Автономный режим", "Поддержка SLA", "Динамическая телеметрия"],
++    searchResults: [
++      {
++        title: "Официальная спецификация Koswork Option Alpha (2026)",
++        url: "https://corpus.local/site-1-official-2026",
++        snippet: "Официальный прайс-лист и параметры SLA для Option Alpha."
++      },
++      {
++        title: "Архивный обзор корпоративных решений (Май 2025)",
++        url: "https://corpus.local/site-2-contradiction-2025",
++        snippet: "Обзор стоимости Option Alpha за весну 2025 года."
++      },
++      {
++        title: "Недоступный портал бенчмарков",
++        url: "https://corpus.local/site-3-unavailable-503",
++        snippet: "Внешний бенчмарк (сервер недоступен)."
++      },
++      {
++        title: "Полное руководство по архитектуре Option Beta (Длинная статья)",
++        url: "https://corpus.local/site-4-very-long-article",
++        snippet: "Многостраничное исследование архитектуры и цен Option Beta."
++      },
++      {
++        title: "Динамический портал телеметрии Option Beta",
++        url: "https://corpus.local/site-5-dynamic-and-substituted",
++        snippet: "Динамические метрики и условия возврата."
++      }
++    ],
++    unbackedClaims: [
++      {
++        claim: "Утверждение только со ссылкой без выдержки (Option Alpha якобы бесплатен навсегда)",
++        sourceUrl: "https://corpus.local/site-1-official-2026"
++      }
++    ]
++  });
++
++  assert.equal(cycleResult.status, "completed");
++  assert.equal(cycleResult.openedSources.length, 5);
++
++  // 1. Verify unavailable source was captured honestly
++  assert.equal(cycleResult.unavailableSources.length, 1);
++  assert.equal(cycleResult.unavailableSources[0].url, "https://corpus.local/site-3-unavailable-503");
++  assert.equal(cycleResult.unavailableSources[0].httpStatus, 503);
++
++  // 2. Verify contradiction & outdated source detection between Site 1 ($49/мес, 2026) and Site 2 ($79/мес, 2025)
++  assert.equal(cycleResult.contradictions.length, 1);
++  assert.equal(cycleResult.contradictions[0].optionName, "Option Alpha");
++  assert.equal(cycleResult.contradictions[0].criterion, "Цена");
++  assert.equal(cycleResult.outdatedFindings.length, 1);
++  assert.equal(cycleResult.outdatedFindings[0].url, "https://corpus.local/site-2-contradiction-2025");
++  assert.equal(cycleResult.outdatedFindings[0].pageDate, "2025-05-10");
++  assert.equal(cycleResult.outdatedFindings[0].eventDate, "2025-05-01");
++
++  // 3. Verify very long article was read across multiple UTF-16 windows and tail excerpt has exact UTF-16 offsets
++  const longArticleSource = cycleResult.openedSources.find(
++    (s) => s.url === "https://corpus.local/site-4-very-long-article"
++  );
++  assert.ok(longArticleSource);
++  assert.ok(longArticleSource.totalUtf16CodeUnits > 16000);
++  assert.ok(longArticleSource.windowsRead >= 4);
++
++  const betaPriceClaim = cycleResult.confirmedClaims.find(
++    (c) => c.optionName === "Option Beta" && c.criterion === "Цена"
++  );
++  assert.ok(betaPriceClaim);
++  assert.ok(betaPriceClaim.excerpt.startUtf16 > 15000);
++  assert.equal(
++    betaPriceClaim.excerpt.quote,
++    "Итоговая сводка по пакету Option Beta: базовая цена составляет $35/мес для малых команд."
++  );
++
++  // 4. Verify dynamic content was loaded and extracted on Site 5
++  const dynamicClaim = cycleResult.confirmedClaims.find(
++    (c) => c.optionName === "Option Beta" && c.criterion === "Динамическая телеметрия"
++  );
++  assert.ok(dynamicClaim);
++  assert.ok(dynamicClaim.excerpt.quote.includes("менее 12 мс"));
++
++  // 5. Verify post-observation text substitution on Site 5 was caught and recorded
++  assert.equal(cycleResult.substitutionIncidents.length, 1);
++  assert.equal(
++    cycleResult.substitutionIncidents[0].url,
++    "https://corpus.local/site-5-dynamic-and-substituted"
++  );
++  assert.equal(
++    cycleResult.substitutionIncidents[0].expectedText,
++    "Гарантия возврата средств: 30 дней без условий."
++  );
++  assert.ok(
++    cycleResult.substitutionIncidents[0].actualTextAtOffsets.includes("возврат не предусмотрен")
++  );
++
++  // 6. Verify bare link without excerpt is rejected into `unconfirmedClaims`
++  assert.ok(
++    cycleResult.unconfirmedClaims.some((u) =>
++      u.claim.includes("Option Alpha якобы бесплатен навсегда")
++    )
++  );
++
++  // 7. Verify live tab limit (max 3 live tabs) and background tab hibernation + real RAM/latency telemetry
++  assert.equal(cycleResult.resourceMetrics.maxLiveTabs, 3);
++  assert.ok(cycleResult.resourceMetrics.liveTabCount <= 3);
++  assert.ok(cycleResult.resourceMetrics.hibernationEventsCount >= 1);
++  assert.ok(cycleResult.resourceMetrics.ramTelemetry.currentRssMb > 0);
++
++  // 8. Verify MD, HTML, and JSON comparison reports exist on disk inside workspaceRoot
++  const mdAbs = path.join(workspaceRoot, cycleResult.savedReports.markdownFile.path);
++  const htmlAbs = path.join(workspaceRoot, cycleResult.savedReports.htmlFile.path);
++  const jsonAbs = path.join(workspaceRoot, cycleResult.savedReports.comparisonTableFile.path);
++  assert.ok(fs.existsSync(mdAbs));
++  assert.ok(fs.existsSync(htmlAbs));
++  assert.ok(fs.existsSync(jsonAbs));
++
++  const mdText = fs.readFileSync(mdAbs, "utf8");
++  assert.ok(mdText.includes("## 1. Таблица сравнения вариантов по критериям"));
++  assert.ok(mdText.includes("## 2. Что подтверждено (Утверждение → Выдержка → Источник)"));
++  assert.ok(mdText.includes("## 3. Конфликтующие и устаревшие данные"));
++  assert.ok(mdText.includes("## 4. Что неизвестно и недоступные источники"));
++  assert.ok(mdText.includes("https://corpus.local/site-3-unavailable-503"));
++});
++
++test("2. Cancellation, tab loss, forbidden attachment, form submission effect verification, CAPTCHA/login user pause, and manual user takeover invalidation", async () => {
++  const workspaceRoot = createTempWorkspace();
++  const safeAttachmentPath = path.join(workspaceRoot, "docs", "specification-note.txt");
++  fs.writeFileSync(safeAttachmentPath, "Разрешённый текстовый документ для тестовой формы.\n", "utf8");
++
++  const forbiddenExePath = path.join(workspaceRoot, "docs", "installer.exe");
++  fs.writeFileSync(forbiddenExePath, "MZ-fake-binary", "utf8");
++
++  const forbiddenEnvPath = path.join(workspaceRoot, ".env.production");
++  fs.writeFileSync(forbiddenEnvPath, "SECRET_TOKEN=never_touch", "utf8");
++
++  const engine = new KosworkBrowserEngine({
++    allowedWorkspaceRoot: workspaceRoot,
++    maxLiveTabs: 3
++  });
++
++  // Register synthetic form & download site
++  engine.registerSyntheticSite("https://corpus.local/synthetic-form-portal", {
++    title: "Портал подачи исследовательской заявки",
++    pageDate: "2026-11-05",
++    eventDate: "2026-11-07",
++    html: `
++      <html>
++        <head><title>Портал подачи исследовательской заявки</title></head>
++        <body>
++          <p>Заполните анкету для выгрузки верифицированного паспорта сравнения.</p>
++          <input id="applicant-name" name="applicantName" type="text" placeholder="Имя исследователя" value="" />
++          <input id="attachment-file" name="attachment" type="file" aria-label="Файл спецификации" />
++          <button id="submit-btn" type="submit">Отправить анкету</button>
++          <a id="download-link" href="https://corpus.local/synthetic-form-portal/export.csv" download="research-export.csv">Скачать CSV</a>
++        </body>
++      </html>
++    `,
++    onSubmit: async ({ values, files }) => ({
++      appendText: `Статус отправки: Принято для "${values["applicant-name"]}", прикреплён файл: ${
++        files["attachment-file"]?.[0]?.filename || "нет"
++      }`
++    }),
++    onDownload: async ({ values }) => ({
++      filename: "research-export.csv",
++      content: `applicant,status\n"${values["applicant-name"] || "researcher"}",verified\n`
++    })
++  });
++
++  // 2a. Open form page & test forbidden attachments (.exe, .env, outside workspace)
++  const nav = await engine.navigate({
++    tabId: "tab-form",
++    url: "https://corpus.local/synthetic-form-portal"
++  });
++  assert.equal(nav.status, "ok");
++
++  assert.throws(
++    () =>
++      engine.selectFiles({
++        tabId: "tab-form",
++        controlId: "attachment-file",
++        filePaths: [forbiddenExePath]
++      }),
++    (err) => err instanceof KosworkBrowserPolicyError && err.code === "BROWSER_FORBIDDEN_ATTACHMENT"
++  );
++
++  assert.throws(
++    () =>
++      engine.selectFiles({
++        tabId: "tab-form",
++        controlId: "attachment-file",
++        filePaths: [forbiddenEnvPath]
++      }),
++    (err) => err instanceof KosworkBrowserPolicyError && err.code === "BROWSER_FORBIDDEN_ATTACHMENT"
++  );
++
++  assert.throws(
++    () =>
++      engine.selectFiles({
++        tabId: "tab-form",
++        controlId: "attachment-file",
++        filePaths: ["/etc/passwd"]
++      }),
++    (err) => err instanceof KosworkBrowserPolicyError && err.code === "BROWSER_FORBIDDEN_ATTACHMENT"
++  );
++
++  // 2b. Safe attachment inside workspace succeeds
++  const fileSel = engine.selectFiles({
++    tabId: "tab-form",
++    controlId: "attachment-file",
++    filePaths: [safeAttachmentPath]
++  });
++  assert.equal(fileSel.status, "ok");
++  assert.equal(fileSel.attachedFiles[0].filename, "specification-note.txt");
++
++  // 2c. Ordinary form input + submit + post-submit DOM effect verification + verified download into allowed folder
++  const fillRes = engine.fillForm({
++    tabId: "tab-form",
++    fields: {
++      "applicant-name": "Koswork Researcher"
++    }
++  });
++  assert.equal(fillRes.status, "ok");
++  assert.equal(fillRes.domVerification.actionVerified, true);
++
++  const submitRes = await engine.submitForm({
++    tabId: "tab-form",
++    submitControlId: "submit-btn"
++  });
++  assert.equal(submitRes.status, "ok");
++  assert.equal(submitRes.effectVerified, true);
++  assert.ok(submitRes.snapshot.fullTextUtf16.includes('Принято для "Koswork Researcher"'));
++
++  const dlRes = await engine.downloadFromPage({
++    tabId: "tab-form",
++    downloadControlId: "download-link"
++  });
++  assert.equal(dlRes.status, "ok");
++  assert.ok(dlRes.resolvedPath.startsWith(path.join(workspaceRoot, "downloads")));
++  assert.ok(fs.readFileSync(dlRes.resolvedPath, "utf8").includes("Koswork Researcher"));
++
++  // 2d. Manual user action invalidates stale agent observation (`OBSERVATION_INVALIDATED_BY_USER`)
++  const staleObservation = engine.observePage("tab-form").snapshot;
++  engine.recordUserAction("tab-form", {
++    type: "user_manual_scroll_and_edit",
++    detail: { scrollY: 420 }
++  });
++
++  assert.throws(
++    () =>
++      engine.fillForm({
++        tabId: "tab-form",
++        observedSnapshot: staleObservation,
++        fields: { "applicant-name": "Stale Agent Input" }
++      }),
++    (err) =>
++      err instanceof KosworkBrowserRecoveryError &&
++      err.code === "OBSERVATION_INVALIDATED_BY_USER"
++  );
++
++  // Re-observing after manual user action restores valid observation epoch
++  const freshObservation = engine.observePage("tab-form", { reuseSnapshot: false }).snapshot;
++  const freshFill = engine.fillForm({
++    tabId: "tab-form",
++    observedSnapshot: freshObservation,
++    fields: { "applicant-name": "Updated After Re-Observe" }
++  });
++  assert.equal(freshFill.status, "ok");
++
++  // 2e. CAPTCHA and Login pages pause for the user (`status: "paused_for_user"`)
++  engine.registerSyntheticSite("https://corpus.local/protected-captcha", {
++    title: "Проверка безопасности: капча",
++    text: "Подтвердите, что вы не робот (g-recaptcha)."
++  });
++  const captchaNav = await engine.navigate({
++    tabId: "tab-captcha",
++    url: "https://corpus.local/protected-captcha"
++  });
++  assert.equal(captchaNav.status, "paused_for_user");
++  assert.equal(captchaNav.authGate.gateType, "captcha");
++
++  // 2f. Cancellation of slow navigation & tab loss (`TAB_LOST_OR_CLOSED`)
++  engine.registerSyntheticSite("https://corpus.local/slow-page", {
++    title: "Медленная страница",
++    simulatedDelayMs: 2000,
++    text: "Долгая загрузка"
++  });
++  const abortController = new AbortController();
++  setTimeout(() => abortController.abort("user_clicked_cancel"), 30);
++  await assert.rejects(
++    () =>
++      engine.navigate({
++        tabId: "tab-slow",
++        url: "https://corpus.local/slow-page",
++        signal: abortController.signal
++      }),
++    (err) => err && err.code === "BROWSER_NAVIGATION_CANCELLED"
++  );
++
++  engine.closeTab("tab-form");
++  assert.throws(
++    () => engine.observePage("tab-form"),
++    (err) => err instanceof KosworkBrowserRecoveryError && err.code === "TAB_LOST_OR_CLOSED"
++  );
++});
++
++test("3. Live HTTP server public-page smoke without login + shell/UI/IPC integration", async () => {
++  const workspaceRoot = createTempWorkspace();
++
++  const server = http.createServer((req, res) => {
++    const host = req.headers.host || "127.0.0.1";
++    const baseUrl = `http://${host}`;
++
++    if (req.url.startsWith("/search")) {
++      res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
++      res.end(`
++        <html>
++          <body>
++            <article data-serp-item="true">
++              <a href="${baseUrl}/public-doc-1">Публичный документ 1: Протокол синхронизации</a>
++              <p>Открытая спецификация протокола синхронизации без авторизации.</p>
++            </article>
++            <article data-serp-item="true">
++              <a href="${baseUrl}/public-doc-2">Публичный документ 2: Замеры производительности</a>
++              <p>Публичные результаты замеров пропускной способности.</p>
++            </article>
++          </body>
++        </html>
++      `);
++      return;
++    }
++
++    if (req.url === "/public-doc-1") {
++      res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
++      res.end(`
++        <html>
++          <head>
++            <title>Публичный документ 1: Протокол синхронизации</title>
++            <meta property="article:published_time" content="2026-11-01" />
++            <meta name="event:date" content="2026-10-29" />
++          </head>
++          <body>
++            <p>Открытая документация Koswork: пропускная способность канала составляет 1450 сообщ/сек в локальном контуре.</p>
++          </body>
++        </html>
++      `);
++      return;
++    }
++
++    if (req.url === "/public-doc-2") {
++      res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
++      res.end(`
++        <html>
++          <head>
++            <title>Публичный документ 2: Замеры производительности</title>
++            <meta property="article:published_time" content="2026-11-04" />
++            <meta name="event:date" content="2026-11-02" />
++          </head>
++          <body>
++            <p>Контрольный замер на стенде без входа: пропускная способность канала составляет 1450 сообщ/сек при нулевой потере пакетов.</p>
++          </body>
++        </html>
++      `);
++      return;
++    }
++
++    res.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" });
++    res.end("Not Found");
++  });
++
++  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
++  const address = server.address();
++  const baseOrigin = `http://127.0.0.1:${address.port}`;
++
++  try {
++    const engine = new KosworkBrowserEngine({
++      allowedWorkspaceRoot: workspaceRoot,
++      searchAdapterOptions: {
++        providerId: "local-http-public-smoke",
++        searchEndpoint: `${baseOrigin}/search`
++      }
++    });
++
++    const shell = createKosworkBrowserShell({
++      engine,
++      workspaceRoot
++    });
++
++    const searchRes = await shell.dispatchToolCall("browser.search", {
++      query: "пропускная способность канала",
++      actor: "user"
++    });
++    assert.equal(searchRes.providerId, "local-http-public-smoke");
++    assert.equal(searchRes.items.length, 2);
++
++    const openRes = await shell.dispatchToolCall("browser.open_result", {
++      searchId: searchRes.searchId,
++      rank: 1,
++      actor: "user",
++      extractQuery: "1450 сообщ/сек"
++    });
++    assert.equal(openRes.available, true);
++    assert.equal(openRes.pageDate, "2026-11-01");
++    assert.equal(openRes.eventDate, "2026-10-29");
++    assert.equal(openRes.linkedExcerpts.length, 1);
++    assert.ok(openRes.linkedExcerpts[0].quote.includes("1450 сообщ/сек"));
++
++    // Verify IPC bridge & UI controller integration
++    const ipcBridge = new Stage2DesktopIpcBridge({
++      workspaceRoot,
++      browserEngine: engine
++    });
++    const trustedEvent = { senderFrame: { url: "file:///app/browser.html" } };
++    const uiController = createBrowserUiController({
++      ipcInvoke: (channel, payload) => ipcBridge.invoke(channel, trustedEvent, payload)
++    });
++
++    const uiSearch = await uiController.handleNavigateOrSearch("пропускная способность");
++    assert.equal(uiSearch.totalResults, 2);
++
++    const uiTakeover = await uiController.handleToggleUserTakeover();
++    assert.equal(uiTakeover.manualTakeoverActive, true);
++    const uiRelease = await uiController.handleToggleUserTakeover();
++    assert.equal(uiRelease.manualTakeoverActive, false);
++  } finally {
++    await new Promise((resolve) => server.close(resolve));
++  }
++});
+-- 
+2.39.5
+

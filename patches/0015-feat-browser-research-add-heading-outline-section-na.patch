@@ -1,0 +1,687 @@
+From 694832ec2238746be926ce48e84d5836a0598e3e Mon Sep 17 00:00:00 2001
+From: Kosmora Engineering <eng@kosmora.ai>
+Date: Sun, 8 Nov 2026 20:50:28 +0000
+Subject: [PATCH 15/32] feat(browser-research): add heading-outline section
+ navigator, multi-source corroboration scorer, and functional research drawer
+ view-model
+
+---
+ .../windows/browser/corroboration-scorer.cjs  | 136 +++++++++++++
+ .../browser/heading-outline-navigator.cjs     | 180 ++++++++++++++++++
+ desktop/windows/browser/shell.cjs             |  70 +++++++
+ .../browser/ui-research-drawer-state.cjs      |  79 ++++++++
+ .../test/browser-research-acceptance.test.cjs | 136 +++++++++++++
+ 5 files changed, 601 insertions(+)
+ create mode 100644 desktop/windows/browser/corroboration-scorer.cjs
+ create mode 100644 desktop/windows/browser/heading-outline-navigator.cjs
+ create mode 100644 desktop/windows/browser/ui-research-drawer-state.cjs
+
+diff --git a/desktop/windows/browser/corroboration-scorer.cjs b/desktop/windows/browser/corroboration-scorer.cjs
+new file mode 100644
+index 0000000..8aade0b
+--- /dev/null
++++ b/desktop/windows/browser/corroboration-scorer.cjs
+@@ -0,0 +1,136 @@
++"use strict";
++
++const { normalizeComparableValue } = require("./claim-comparator.cjs");
++
++/**
++ * Koswork Multi-Source Claim Corroboration & Confidence Scorer
++ * (`desktop/windows/browser/corroboration-scorer.cjs`).
++ *
++ * Deepens Requirement #2 & #5:
++ * - Evaluates claims across multiple independent sources/domains.
++ * - Uses `normalizeComparableValue` so equivalent values phrased in different units or
++ *   currencies (e.g., `"$49/мес"` vs `"49 USD/month"`, `"12 мс"` vs `"0.012 с"`) are
++ *   recognized as corroborating the same canonical value.
++ * - Rejects bare links without a valid UTF-16 excerpt (`verdict: "unverified_bare_link"`).
++ * - Distinguishes:
++ *   - `"multi_source_corroborated"` (>= 2 distinct sources agree on the canonical value),
++ *   - `"single_source_verified"` (1 verified source with UTF-16 excerpt, no contradiction),
++ *   - `"conflicting_sources"` (sources provide incompatible canonical values),
++ *   - `"unverified_bare_link"` (no valid UTF-16 excerpt).
++ */
++
++function extractSourceHostname(rawUrl = "") {
++  try {
++    return new URL(String(rawUrl)).hostname.toLowerCase();
++  } catch {
++    return String(rawUrl || "unknown").toLowerCase();
++  }
++}
++
++function scoreMultiSourceCorroboration(claims = []) {
++  const groups = new Map(); // `${optionName}||${criterion}` -> claims[]
++  const rejectedBareLinkClaims = [];
++
++  for (const c of claims) {
++    if (!c) continue;
++    const hasValidExcerpt =
++      c.excerpt &&
++      typeof c.excerpt.quote === "string" &&
++      c.excerpt.quote.trim().length > 0 &&
++      Number.isInteger(c.excerpt.startUtf16) &&
++      Number.isInteger(c.excerpt.endUtf16) &&
++      c.excerpt.endUtf16 - c.excerpt.startUtf16 === c.excerpt.quote.length;
++
++    if (!hasValidExcerpt) {
++      rejectedBareLinkClaims.push({
++        claimId: c.claimId || null,
++        optionName: c.optionName || "Option",
++        criterion: c.criterion || "Spec",
++        verdict: "unverified_bare_link",
++        confidenceScore: 0,
++        reason: "Ссылка без верифицированной UTF-16 выдержки не является доказательством утверждения."
++      });
++      continue;
++    }
++
++    const key = `${String(c.optionName || "Option").trim()}||${String(
++      c.criterion || "Spec"
++    ).trim()}`;
++    if (!groups.has(key)) {
++      groups.set(key, []);
++    }
++    groups.get(key).push(c);
++  }
++
++  const groupEvaluations = [];
++
++  for (const [key, items] of groups.entries()) {
++    const [optionName, criterion] = key.split("||");
++    const byCanonicalVal = new Map(); // canonicalKey -> items[]
++
++    for (const item of items) {
++      const norm = normalizeComparableValue(item.value || item.excerpt.quote);
++      const valKey = norm.canonicalKey;
++      if (!byCanonicalVal.has(valKey)) {
++        byCanonicalVal.set(valKey, []);
++      }
++      byCanonicalVal.get(valKey).push({
++        ...item,
++        normalizedValue: norm,
++        sourceHostname: extractSourceHostname(item.source?.url),
++        sourceKey: item.source?.url || "unknown"
++      });
++    }
++
++    const distinctValueClusters = Array.from(byCanonicalVal.entries()).map(
++      ([canonicalKey, clusterItems]) => {
++        const distinctUrls = new Set(clusterItems.map((i) => i.sourceKey));
++        const distinctHosts = new Set(clusterItems.map((i) => i.sourceHostname));
++        return {
++          canonicalKey,
++          displayValue: clusterItems[0].value || clusterItems[0].excerpt.quote,
++          distinctSourcesCount: distinctUrls.size,
++          distinctDomainsCount: distinctHosts.size,
++          supportingClaims: clusterItems
++        };
++      }
++    );
++
++    distinctValueClusters.sort((a, b) => b.distinctSourcesCount - a.distinctSourcesCount);
++
++    let verdict = "single_source_verified";
++    let confidenceScore = 0.72;
++
++    if (distinctValueClusters.length > 1) {
++      verdict = "conflicting_sources";
++      confidenceScore = 0.35;
++    } else if (distinctValueClusters[0].distinctSourcesCount >= 2) {
++      verdict = "multi_source_corroborated";
++      confidenceScore = Math.min(
++        0.99,
++        Number((0.8 + 0.08 * (distinctValueClusters[0].distinctSourcesCount - 1)).toFixed(2))
++      );
++    }
++
++    groupEvaluations.push({
++      optionName,
++      criterion,
++      verdict,
++      confidenceScore,
++      distinctValueClustersCount: distinctValueClusters.length,
++      primaryCluster: distinctValueClusters[0],
++      allClusters: distinctValueClusters
++    });
++  }
++
++  return {
++    evaluatedGroupsCount: groupEvaluations.length,
++    rejectedBareLinkCount: rejectedBareLinkClaims.length,
++    groupEvaluations,
++    rejectedBareLinkClaims
++  };
++}
++
++module.exports = {
++  scoreMultiSourceCorroboration
++};
+diff --git a/desktop/windows/browser/heading-outline-navigator.cjs b/desktop/windows/browser/heading-outline-navigator.cjs
+new file mode 100644
+index 0000000..e853e15
+--- /dev/null
++++ b/desktop/windows/browser/heading-outline-navigator.cjs
+@@ -0,0 +1,180 @@
++"use strict";
++
++const { extractVerifiableExcerpt } = require("./document.cjs");
++
++/**
++ * Koswork Heading-Outline (`<h1>..<h6>`) & Section-Scoped Long-Page Navigator
++ * (`desktop/windows/browser/heading-outline-navigator.cjs`).
++ *
++ * Deepens Requirement #3:
++ * "Довести чтение долгих/динамических страниц и навигацию по источникам. Уже есть
++ *  versioned pages, UTF-16 offsets, bounds, recovery candidates, frames/shadow scope
++ *  и устойчивые tab receipts. Сохрани эти свойства; добавляй только реальные пробелы."
++ *
++ * Capabilities:
++ * 1. Builds a structured Table of Contents / Section Outline from HTML `<h1..h6>` tags
++ *    or numbered/titled paragraphs in `snapshot.fullTextUtf16`, computing exact
++ *    `[sectionStartUtf16, sectionEndUtf16]` UTF-16 code unit spans for every section.
++ * 2. Allows direct navigation (`jumpToSectionByHeading`) to a target section on a long
++ *    article without scanning irrelevant preceding text.
++ * 3. Extracts UTF-16 excerpts strictly scoped to a matched section (`extractSectionScopedExcerpt`)
++ *    so identical phrases appearing in different sections are never confused.
++ */
++
++function buildDocumentHeadingOutline(snapshot, rawHtml = "") {
++  if (!snapshot || typeof snapshot.fullTextUtf16 !== "string") {
++    throw new Error("HEADING_OUTLINE_REQUIRES_SNAPSHOT");
++  }
++
++  const fullText = snapshot.fullTextUtf16;
++  const discoveredHeadings = [];
++
++  // 1. Parse explicit `<h1..h6>` headings from rawHtml if available and locate their UTF-16 offsets
++  if (rawHtml && rawHtml.includes("<h")) {
++    const hRegex = /<h([1-6])\b[^>]*>([\s\S]*?)<\/h\1>/gi;
++    let m;
++    let searchFrom = 0;
++    while ((m = hRegex.exec(String(rawHtml))) !== null) {
++      const level = Number(m[1]);
++      const titleText = m[2]
++        .replace(/<[^>]+>/g, " ")
++        .replace(/\s+/g, " ")
++        .trim();
++      if (!titleText) continue;
++
++      const idx = fullText.indexOf(titleText, searchFrom);
++      if (idx >= 0) {
++        discoveredHeadings.push({
++          level,
++          title: titleText,
++          headingStartUtf16: idx,
++          headingEndUtf16: idx + titleText.length
++        });
++        searchFrom = idx + titleText.length;
++      }
++    }
++  }
++
++  // 2. Fallback / supplement: detect numbered section headers in `snapshot.blocks` (e.g., "Раздел 12...", "Глава 3...", "## ...")
++  if (discoveredHeadings.length === 0 && Array.isArray(snapshot.blocks)) {
++    for (const blk of snapshot.blocks) {
++      const text = String(blk.text || "").trim();
++      const secMatch = text.match(
++        /^(?:(?:#{1,6})\s+([^\n]+)|((?:Раздел|Глава|Секция|Section|Chapter)\s+\d+[^:\n]*[:]?))/i
++      );
++      if (secMatch) {
++        const title = (secMatch[1] || secMatch[2] || text.slice(0, 80)).trim();
++        discoveredHeadings.push({
++          level: 2,
++          title,
++          headingStartUtf16: blk.startUtf16,
++          headingEndUtf16: blk.startUtf16 + title.length
++        });
++      }
++    }
++  }
++
++  discoveredHeadings.sort((a, b) => a.headingStartUtf16 - b.headingStartUtf16);
++
++  const sections = discoveredHeadings.map((h, idx) => {
++    // A section extends until the next heading of equal or higher importance (`level <= h.level`) or end of document
++    let sectionEndUtf16 = fullText.length;
++    for (let nextIdx = idx + 1; nextIdx < discoveredHeadings.length; nextIdx += 1) {
++      if (discoveredHeadings[nextIdx].level <= h.level) {
++        sectionEndUtf16 = discoveredHeadings[nextIdx].headingStartUtf16;
++        break;
++      }
++    }
++    return {
++      sectionIndex: idx + 1,
++      level: h.level,
++      title: h.title,
++      headingStartUtf16: h.headingStartUtf16,
++      headingEndUtf16: h.headingEndUtf16,
++      sectionStartUtf16: h.headingStartUtf16,
++      sectionEndUtf16,
++      sectionLengthUtf16: sectionEndUtf16 - h.headingStartUtf16
++    };
++  });
++
++  return {
++    snapshotId: snapshot.snapshotId,
++    pageVersion: snapshot.pageVersion,
++    url: snapshot.url,
++    totalLengthUtf16: fullText.length,
++    sectionCount: sections.length,
++    sections
++  };
++}
++
++function jumpToSectionByHeading({ snapshot, rawHtml = "", headingQuery } = {}) {
++  const outline = buildDocumentHeadingOutline(snapshot, rawHtml);
++  const needle = String(headingQuery || "").trim().toLowerCase();
++  if (!needle) {
++    throw new Error("HEADING_QUERY_REQUIRED");
++  }
++
++  const matched = outline.sections.find((s) => s.title.toLowerCase().includes(needle));
++  if (!matched) {
++    const err = new Error(`SECTION_HEADING_NOT_FOUND: ${headingQuery}`);
++    err.code = "SECTION_HEADING_NOT_FOUND";
++    throw err;
++  }
++
++  const sectionText = snapshot.fullTextUtf16.slice(
++    matched.sectionStartUtf16,
++    matched.sectionEndUtf16
++  );
++
++  return {
++    snapshotId: snapshot.snapshotId,
++    pageVersion: snapshot.pageVersion,
++    url: snapshot.url,
++    tabReceipt: snapshot.tabReceipt,
++    pageDate: snapshot.pageDate,
++    eventDate: snapshot.eventDate,
++    fetchedAt: snapshot.fetchedAt,
++    section: matched,
++    sectionText
++  };
++}
++
++function extractSectionScopedExcerpt({
++  snapshot,
++  rawHtml = "",
++  headingQuery,
++  searchTerm
++} = {}) {
++  const jumped = jumpToSectionByHeading({ snapshot, rawHtml, headingQuery });
++  const needle = String(searchTerm || "").trim();
++  if (!needle) {
++    throw new Error("SECTION_EXCERPT_SEARCH_TERM_REQUIRED");
++  }
++
++  const relIdx = jumped.sectionText.toLowerCase().indexOf(needle.toLowerCase());
++  if (relIdx < 0) {
++    return null;
++  }
++
++  const absStartUtf16 = jumped.section.sectionStartUtf16 + relIdx;
++  const absEndUtf16 = absStartUtf16 + needle.length;
++
++  const excerpt = extractVerifiableExcerpt(snapshot, {
++    startUtf16: absStartUtf16,
++    endUtf16: absEndUtf16
++  });
++
++  return {
++    ...excerpt,
++    sectionTitle: jumped.section.title,
++    sectionLevel: jumped.section.level,
++    sectionStartUtf16: jumped.section.sectionStartUtf16,
++    sectionEndUtf16: jumped.section.sectionEndUtf16
++  };
++}
++
++module.exports = {
++  buildDocumentHeadingOutline,
++  jumpToSectionByHeading,
++  extractSectionScopedExcerpt
++};
+diff --git a/desktop/windows/browser/shell.cjs b/desktop/windows/browser/shell.cjs
+index f8a2eeb..0fbd7c4 100644
+--- a/desktop/windows/browser/shell.cjs
++++ b/desktop/windows/browser/shell.cjs
+@@ -16,6 +16,13 @@ const { KosworkHibernatedTabRevalidator } = require("./hibernated-tab-revalidato
+ const { extractStructuredSpecsFromSnapshot } = require("./structured-matrix-extractor.cjs");
+ const { KosworkBrowserEvidenceVault } = require("./evidence-vault-index.cjs");
+ const { buildApiSyncBundleFromDesktopCycle } = require("./work-executor-sqlite-bridge.cjs");
++const {
++  buildDocumentHeadingOutline,
++  jumpToSectionByHeading,
++  extractSectionScopedExcerpt
++} = require("./heading-outline-navigator.cjs");
++const { scoreMultiSourceCorroboration } = require("./corroboration-scorer.cjs");
++const { buildBrowserResearchDrawerViewModel } = require("./ui-research-drawer-state.cjs");
+ 
+ /**
+  * Shared Tool & Execution Boundary for Koswork Browser (`desktop/windows/browser/shell.cjs`).
+@@ -60,6 +67,24 @@ const BROWSER_RESEARCH_TOOL_DEFINITIONS = Object.freeze([
+       "Пошагово раскрыть динамическую страницу или бесконечную прокрутку с проверкой сохранности смещений UTF-16.",
+     requiredParams: ["tabId"]
+   },
++  {
++    name: "browser.build_heading_outline",
++    description:
++      "Построить оглавление заголовков (h1..h6 / разделов) длинной страницы с точными границами смещений UTF-16.",
++    requiredParams: ["tabId"]
++  },
++  {
++    name: "browser.jump_to_section",
++    description:
++      "Перейти непосредственно к нужному разделу длинной страницы по заголовку и получить его текст и границы UTF-16.",
++    requiredParams: ["tabId", "headingQuery"]
++  },
++  {
++    name: "browser.extract_section_excerpt",
++    description:
++      "Извлечь верифицированную UTF-16 выдержку строго внутри выбранного раздела длинной страницы.",
++    requiredParams: ["tabId", "headingQuery", "searchTerm"]
++  },
+   {
+     name: "browser.extract_structured_matrix",
+     description:
+@@ -131,6 +156,18 @@ const BROWSER_RESEARCH_TOOL_DEFINITIONS = Object.freeze([
+     description:
+       "Сформировать пакет синхронизации десктопного исследовательского цикла для сохранения в SQLite 0064 / API.",
+     requiredParams: ["cycleResult"]
++  },
++  {
++    name: "browser.score_corroboration",
++    description:
++      "Оценить многосайтовую перекрёстную подтверждённость утверждений (multi-source corroboration) и отсеять голые ссылки без выдержки.",
++    requiredParams: ["claims"]
++  },
++  {
++    name: "browser.get_drawer_view_model",
++    description:
++      "Получить функциональную модель состояния панели исследования браузера (живые/спящие вкладки, пауза CAPTCHA, телеметрия ОЗУ/задержки).",
++    requiredParams: []
+   }
+ ]);
+ 
+@@ -228,6 +265,33 @@ function createKosworkBrowserShell(options = {}) {
+         });
+       }
+ 
++      case "browser.build_heading_outline": {
++        const obs = engine.observePage(args.tabId);
++        const tab = engine.tabs.get(String(args.tabId));
++        return buildDocumentHeadingOutline(obs.snapshot, args.rawHtml || tab?.rawSiteDef?.html || "");
++      }
++
++      case "browser.jump_to_section": {
++        const obs = engine.observePage(args.tabId);
++        const tab = engine.tabs.get(String(args.tabId));
++        return jumpToSectionByHeading({
++          snapshot: obs.snapshot,
++          rawHtml: args.rawHtml || tab?.rawSiteDef?.html || "",
++          headingQuery: args.headingQuery
++        });
++      }
++
++      case "browser.extract_section_excerpt": {
++        const obs = engine.observePage(args.tabId);
++        const tab = engine.tabs.get(String(args.tabId));
++        return extractSectionScopedExcerpt({
++          snapshot: obs.snapshot,
++          rawHtml: args.rawHtml || tab?.rawSiteDef?.html || "",
++          headingQuery: args.headingQuery,
++          searchTerm: args.searchTerm
++        });
++      }
++
+       case "browser.extract_structured_matrix": {
+         const obs = engine.observePage(args.tabId);
+         const tab = engine.tabs.get(String(args.tabId));
+@@ -364,6 +428,12 @@ function createKosworkBrowserShell(options = {}) {
+           criteria: args.criteria || null
+         });
+ 
++      case "browser.score_corroboration":
++        return scoreMultiSourceCorroboration(args.claims || []);
++
++      case "browser.get_drawer_view_model":
++        return buildBrowserResearchDrawerViewModel(engine);
++
+       case "browser.cancel":
+         return engine.resourceGovernor.cancelAllTasks(args.reason || "cancelled_via_shell");
+ 
+diff --git a/desktop/windows/browser/ui-research-drawer-state.cjs b/desktop/windows/browser/ui-research-drawer-state.cjs
+new file mode 100644
+index 0000000..fb15cc9
+--- /dev/null
++++ b/desktop/windows/browser/ui-research-drawer-state.cjs
+@@ -0,0 +1,79 @@
++"use strict";
++
++/**
++ * Koswork Functional Browser Research Drawer State Controller
++ * (`desktop/windows/browser/ui-research-drawer-state.cjs`).
++ *
++ * Adheres strictly to `apps/web/UI_RULES.md` and task instructions:
++ * - "UI browser.html/browser.js — только функциональные элементы с сохранением текущей оболочки."
++ * - "Сайдбар, основной экран чата, логотип, палитру, типографику и глобальные стили не переделывай."
++ */
++function buildBrowserResearchDrawerViewModel(engine) {
++  if (!engine) {
++    throw new Error("DRAWER_VIEW_MODEL_REQUIRES_ENGINE");
++  }
++
++  const resourceReport = engine.resourceGovernor.getResourceReport();
++  const journalSummary = engine.provenanceJournal.getProvenanceSummary();
++
++  const tabItems = [];
++  for (const [tabId, tab] of engine.tabs.entries()) {
++    if (tab.closed) continue;
++    const isPaused = Boolean(tab.authGate && tab.authGate.gated);
++    tabItems.push({
++      tabId,
++      url: tab.url,
++      title: tab.snapshot?.title || tab.url,
++      pageVersion: tab.pageVersion,
++      httpStatus: tab.httpStatus,
++      available: tab.available,
++      hibernated: Boolean(tab.hibernated),
++      pausedForUser: isPaused,
++      pauseReason: isPaused ? tab.authGate.reason : null,
++      pauseGateType: isPaused ? tab.authGate.gateType : null,
++      pageDate: tab.snapshot?.pageDate || null,
++      eventDate: tab.snapshot?.eventDate || null,
++      fetchedAt: tab.snapshot?.fetchedAt || null,
++      userEpoch: tab.snapshot?.userEpoch ?? 0
++    });
++  }
++
++  const pausedTabs = tabItems.filter((t) => t.pausedForUser);
++
++  return {
++    shellPreserved: true,
++    liveTabsBadgeText: `Живых вкладок: ${resourceReport.liveTabCount}/${resourceReport.maxLiveTabs}`,
++    hibernatedTabsBadgeText: `В гибернации: ${resourceReport.hibernatedTabCount}`,
++    pausedBanner:
++      pausedTabs.length > 0
++        ? {
++            visible: true,
++            tabId: pausedTabs[0].tabId,
++            url: pausedTabs[0].url,
++            gateType: pausedTabs[0].pauseGateType,
++            messageRu:
++              pausedTabs[0].pauseReason ||
++              "Требуется ручное прохождение CAPTCHA или входа пользователем.",
++            resumeActionLabelRu: "Я прошёл проверку — продолжить исследование"
++          }
++        : { visible: false },
++    tabs: tabItems,
++    provenanceCounters: {
++      searchesCount: journalSummary.totalSearches,
++      openedSourcesCount: journalSummary.totalSources,
++      verifiedExcerptsCount: journalSummary.totalExcerpts
++    },
++    telemetryFooter: {
++      rssMb: resourceReport.ramTelemetry.currentRssMb,
++      peakRssMb: resourceReport.ramTelemetry.peakRssMb,
++      heapUsedMb: resourceReport.ramTelemetry.currentHeapUsedMb,
++      latencyP50Ms: resourceReport.latencyTelemetry.p50Ms,
++      latencyP95Ms: resourceReport.latencyTelemetry.p95Ms,
++      snapshotReuseCount: resourceReport.snapshotReuseCount
++    }
++  };
++}
++
++module.exports = {
++  buildBrowserResearchDrawerViewModel
++};
+diff --git a/desktop/windows/test/browser-research-acceptance.test.cjs b/desktop/windows/test/browser-research-acceptance.test.cjs
+index aeceedc..7274412 100644
+--- a/desktop/windows/test/browser-research-acceptance.test.cjs
++++ b/desktop/windows/test/browser-research-acceptance.test.cjs
+@@ -1906,3 +1906,139 @@ test("17. Cross-Session Evidence Vault (`evidence-vault-index.cjs`) & Work Execu
+   assert.equal(syncBundle.claims[0].verificationStatus, "confirmed");
+   assert.equal(syncBundle.claims[1].verificationStatus, "unconfirmed_bare_link_rejected");
+ });
++
++test("18. Heading-Outline (`<h1>..<h6>`) & Section-Scoped Long-Page Navigator (`heading-outline-navigator.cjs`)", async () => {
++  const workspaceRoot = createTempWorkspace();
++  const shell = createKosworkBrowserShell({ workspaceRoot });
++  const engine = shell.engine;
++
++  engine.registerSyntheticSite("https://corpus.local/structured-long-spec", {
++    title: "Многораздельный регламент архитектуры",
++    pageDate: "2026-11-07",
++    eventDate: "2026-11-05",
++    html: `
++      <html>
++        <body>
++          <h1>1. Архитектура хранения</h1>
++          <p>В разделе хранения: базовая квота составляет 500 ГБ SSD.</p>
++          <h2>1.1. Резервное копирование</h2>
++          <p>Снимки состояния создаются каждые 15 минут.</p>
++          <h1>2. Сетевой контур и SLA</h1>
++          <p>В сетевом разделе: гарантированный уровень доступности 99.97% и базовая квота составляет 10 Гбит/с.</p>
++        </body>
++      </html>
++    `
++  });
++
++  await engine.navigate({
++    tabId: "tab-outline",
++    url: "https://corpus.local/structured-long-spec"
++  });
++
++  const outline = await shell.dispatchToolCall("browser.build_heading_outline", {
++    tabId: "tab-outline"
++  });
++  assert.equal(outline.sectionCount, 3);
++  assert.equal(outline.sections[0].title, "1. Архитектура хранения");
++  assert.equal(outline.sections[1].title, "1.1. Резервное копирование");
++  assert.equal(outline.sections[2].title, "2. Сетевой контур и SLA");
++
++  const jumped = await shell.dispatchToolCall("browser.jump_to_section", {
++    tabId: "tab-outline",
++    headingQuery: "Сетевой контур и SLA"
++  });
++  assert.ok(jumped.sectionText.includes("99.97%"));
++  assert.ok(!jumped.sectionText.includes("500 ГБ SSD"));
++
++  // Notice both Section 1 and Section 2 contain "базовая квота составляет", but section-scoped extraction
++  // inside "2. Сетевой контур и SLA" strictly extracts the occurrence in Section 2 ("10 Гбит/с")!
++  const scopedExcerpt = await shell.dispatchToolCall("browser.extract_section_excerpt", {
++    tabId: "tab-outline",
++    headingQuery: "2. Сетевой контур и SLA",
++    searchTerm: "базовая квота составляет 10 Гбит/с"
++  });
++  assert.ok(scopedExcerpt);
++  assert.equal(scopedExcerpt.sectionTitle, "2. Сетевой контур и SLA");
++  assert.ok(scopedExcerpt.startUtf16 >= jumped.section.sectionStartUtf16);
++});
++
++test("19. Multi-Source Claim Corroboration Scorer (`corroboration-scorer.cjs`) & Functional Browser Research Drawer View-Model (`ui-research-drawer-state.cjs`)", async () => {
++  const workspaceRoot = createTempWorkspace();
++  const shell = createKosworkBrowserShell({ workspaceRoot, maxLiveTabs: 3 });
++  const engine = shell.engine;
++
++  engine.registerSyntheticSite("https://vendor-a.local/pricing", {
++    title: "Официальный прайс Option Alpha",
++    pageDate: "2026-11-07",
++    text: "Стоимость пакета Option Alpha составляет $49/мес."
++  });
++  engine.registerSyntheticSite("https://independent-audit.local/review", {
++    title: "Независимый аудит Option Alpha",
++    pageDate: "2026-11-07",
++    text: "По результатам аудита цена Option Alpha равна 49 USD/month."
++  });
++  engine.registerSyntheticSite("https://captcha-portal.local/gate", {
++    title: "Портал с проверкой CAPTCHA",
++    text: "Пожалуйста, решите CAPTCHA (Verify you are human), чтобы открыть документ."
++  });
++
++  const navA = await engine.navigate({
++    tabId: "tab-corr-1",
++    url: "https://vendor-a.local/pricing"
++  });
++  const excA = engine.extractExcerpt("tab-corr-1", { searchTerm: "$49/мес" });
++
++  const navB = await engine.navigate({
++    tabId: "tab-corr-2",
++    url: "https://independent-audit.local/review"
++  });
++  const excB = engine.extractExcerpt("tab-corr-2", { searchTerm: "49 USD/month" });
++
++  await engine.navigate({
++    tabId: "tab-corr-captcha",
++    url: "https://captcha-portal.local/gate"
++  });
++
++  const scored = await shell.dispatchToolCall("browser.score_corroboration", {
++    claims: [
++      {
++        claimId: "c1",
++        optionName: "Option Alpha",
++        criterion: "Цена",
++        value: "$49/мес",
++        excerpt: excA,
++        source: { url: navA.url, title: navA.snapshot.title }
++      },
++      {
++        claimId: "c2",
++        optionName: "Option Alpha",
++        criterion: "Цена",
++        value: "49 USD/month",
++        excerpt: excB,
++        source: { url: navB.url, title: navB.snapshot.title }
++      },
++      {
++        claimId: "c3-bare",
++        optionName: "Option Alpha",
++        criterion: "SLA",
++        value: "99.99%",
++        excerpt: null,
++        source: { url: navA.url }
++      }
++    ]
++  });
++
++  assert.equal(scored.evaluatedGroupsCount, 1);
++  assert.equal(scored.rejectedBareLinkCount, 1);
++  assert.equal(scored.groupEvaluations[0].verdict, "multi_source_corroborated");
++  assert.equal(scored.groupEvaluations[0].primaryCluster.distinctDomainsCount, 2);
++  assert.ok(scored.groupEvaluations[0].confidenceScore >= 0.85);
++
++  const drawerVm = await shell.dispatchToolCall("browser.get_drawer_view_model", {});
++  assert.equal(drawerVm.shellPreserved, true);
++  assert.equal(drawerVm.pausedBanner.visible, true);
++  assert.equal(drawerVm.pausedBanner.tabId, "tab-corr-captcha");
++  assert.ok(drawerVm.telemetryFooter.rssMb > 0);
++  assert.equal(drawerVm.provenanceCounters.openedSourcesCount, 3);
++  assert.equal(drawerVm.provenanceCounters.verifiedExcerptsCount, 2);
++});
+-- 
+2.39.5
+

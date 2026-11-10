@@ -1,0 +1,27 @@
+{
+  "benchmarkDate": "2026-11-07T20:59:09.098Z",
+  "corpusSitesCount": 5,
+  "totalWallClockMs": 31,
+  "maxLiveTabs": 3,
+  "liveTabCount": 3,
+  "hibernatedTabCount": 2,
+  "hibernationEventsCount": 2,
+  "snapshotReuseCount": 11,
+  "ramTelemetry": {
+    "currentRssMb": 58.8,
+    "currentHeapUsedMb": 7.67,
+    "peakRssMb": 58.8,
+    "peakHeapUsedMb": 7.67,
+    "externalMb": 1.97
+  },
+  "latencyTelemetry": {
+    "totalCompletedOps": 14,
+    "p50Ms": 0,
+    "p95Ms": 6,
+    "maxMs": 6
+  },
+  "confirmedClaimsCount": 5,
+  "contradictionsCount": 1,
+  "unavailableSourcesCount": 1,
+  "substitutionIncidentsCount": 1
+}

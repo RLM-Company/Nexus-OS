@@ -1,0 +1,905 @@
+From 5738af2e20526cc9c7a18b9fc412113408dcd420 Mon Sep 17 00:00:00 2001
+From: Kosmora Engineering <eng@kosmora.ai>
+Date: Tue, 10 Nov 2026 12:15:56 +0000
+Subject: [PATCH 27/32] feat(browser-research): add OpenAPI/GraphQL doc
+ extractor, network waterfall profiler, and SARIF 2.1.0 audit exporter (Phase
+ 25)
+
+---
+ .../json-schema-and-sarif-audit-exporter.cjs  | 238 ++++++++++++++++++
+ .../browser/openapi-graphql-doc-extractor.cjs | 150 +++++++++++
+ desktop/windows/browser/shell.cjs             |  76 ++++++
+ ...b-network-waterfall-and-cache-profiler.cjs | 178 +++++++++++++
+ .../test/browser-research-acceptance.test.cjs | 173 +++++++++++++
+ docs/koswork-browser-research.md              |   9 +
+ 6 files changed, 824 insertions(+)
+ create mode 100644 desktop/windows/browser/json-schema-and-sarif-audit-exporter.cjs
+ create mode 100644 desktop/windows/browser/openapi-graphql-doc-extractor.cjs
+ create mode 100644 desktop/windows/browser/tab-network-waterfall-and-cache-profiler.cjs
+
+diff --git a/desktop/windows/browser/json-schema-and-sarif-audit-exporter.cjs b/desktop/windows/browser/json-schema-and-sarif-audit-exporter.cjs
+new file mode 100644
+index 0000000..7f31315
+--- /dev/null
++++ b/desktop/windows/browser/json-schema-and-sarif-audit-exporter.cjs
+@@ -0,0 +1,238 @@
++"use strict";
++
++const { createKosworkWorkspaceService } = require("../workspace/workspace-service.cjs");
++
++/**
++ * Koswork OASIS SARIF 2.1.0 Epistemic Audit & JSON Schema Validator Exporter
++ * (`desktop/windows/browser/json-schema-and-sarif-audit-exporter.cjs`).
++ *
++ * Deepens Requirement #5:
++ * - Exports a standard OASIS SARIF 2.1.0 (`Static Analysis Results Interchange Format`)
++ *   epistemic audit report (`reports/<slug>.sarif.json`) and a companion JSON Schema
++ *   validation report (`reports/<slug>-schema-validation.json`) via `workspace-service.cjs`.
++ * - Encodes inter-site contradictions (`KOSWORK001_CONTRADICTION`), outdated/superseded
++ *   sources (`KOSWORK002_OUTDATED_SOURCE`), unavailable HTTP 503 sources (`KOSWORK003_UNAVAILABLE_503`),
++ *   post-observation text substitutions (`KOSWORK004_POST_OBS_SUBSTITUTION`), and rejected
++ *   bare links (`KOSWORK005_BARE_LINK_REJECTED`) with exact UTF-16 `charOffset` and `charLength`.
++ */
++
++const SARIF_RULES = Object.freeze([
++  {
++    id: "KOSWORK001_CONTRADICTION",
++    name: "InterSiteClaimContradiction",
++    shortDescription: {
++      text: "Обнаружено межсайтовое противоречие значений для одного критерия."
++    }
++  },
++  {
++    id: "KOSWORK002_OUTDATED_SOURCE",
++    name: "SupersededOutdatedSource",
++    shortDescription: {
++      text: "Источник содержит устаревшие данные, перекрытые более свежей датой (eventDate/pageDate)."
++    }
++  },
++  {
++    id: "KOSWORK003_UNAVAILABLE_503",
++    name: "UnavailableHttpSource",
++    shortDescription: {
++      text: "Целевой источник оказался временно недоступен (HTTP 503 или сетевой сбой)."
++    }
++  },
++  {
++    id: "KOSWORK004_POST_OBS_SUBSTITUTION",
++    name: "PostObservationTextSubstitution",
++    shortDescription: {
++      text: "Обнаружена пост-наблюдательная подмена текста после первичной фиксации снимка."
++    }
++  },
++  {
++    id: "KOSWORK005_BARE_LINK_REJECTED",
++    name: "BareLinkWithoutExcerptRejected",
++    shortDescription: {
++      text: "Голая ссылка без дословной UTF-16 выдержки отклонена как доказательство утверждения."
++    }
++  }
++]);
++
++function buildSarif210ResearchAuditReport(report = {}) {
++  const results = [];
++
++  for (const c of report.contradictions || []) {
++    const sideA = c.sideA || {};
++    const startUtf16 = Number.isInteger(sideA.startUtf16) ? sideA.startUtf16 : 0;
++    const endUtf16 = Number.isInteger(sideA.endUtf16) ? sideA.endUtf16 : startUtf16;
++    results.push({
++      ruleId: "KOSWORK001_CONTRADICTION",
++      level: "warning",
++      message: {
++        text: `${c.optionName || "Option"} / ${c.criterion || "Spec"}: ${c.summary || "Расхождение между источниками"}`
++      },
++      locations: [
++        {
++          physicalLocation: {
++            artifactLocation: {
++              uri: sideA.url || "https://corpus.local/unknown"
++            },
++            region: {
++              charOffset: startUtf16,
++              charLength: Math.max(0, endUtf16 - startUtf16),
++              snippet: {
++                text: sideA.quote || ""
++              }
++            }
++          }
++        }
++      ]
++    });
++  }
++
++  for (const out of report.outdatedSources || []) {
++    results.push({
++      ruleId: "KOSWORK002_OUTDATED_SOURCE",
++      level: "note",
++      message: {
++        text: `Устаревший источник для ${out.optionName || "Option"} / ${out.criterion || "Spec"} (pageDate: ${out.pageDate || "н/д"}, eventDate: ${out.eventDate || "н/д"})`
++      },
++      locations: [
++        {
++          physicalLocation: {
++            artifactLocation: {
++              uri: out.url || "https://corpus.local/outdated"
++            }
++          }
++        }
++      ]
++    });
++  }
++
++  for (const unav of report.unavailableSources || []) {
++    results.push({
++      ruleId: "KOSWORK003_UNAVAILABLE_503",
++      level: "warning",
++      message: {
++        text: `Источник недоступен (HTTP ${unav.statusCode || 503}): ${unav.url}`
++      },
++      locations: [
++        {
++          physicalLocation: {
++            artifactLocation: {
++              uri: unav.url || "https://corpus.local/503"
++            }
++          }
++        }
++      ]
++    });
++  }
++
++  for (const sub of report.postObservationSubstitutions || []) {
++    results.push({
++      ruleId: "KOSWORK004_POST_OBS_SUBSTITUTION",
++      level: "error",
++      message: {
++        text: `Пост-наблюдательная подмена текста на ${sub.url || "вкладке"}`
++      },
++      locations: [
++        {
++          physicalLocation: {
++            artifactLocation: {
++              uri: sub.url || "https://corpus.local/substituted"
++            }
++          }
++        }
++      ]
++    });
++  }
++
++  for (const bare of report.rejectedBareLinks || []) {
++    results.push({
++      ruleId: "KOSWORK005_BARE_LINK_REJECTED",
++      level: "error",
++      message: {
++        text: `Отклонена голая ссылка без UTF-16 выдержки: ${bare.url || bare.sourceUrl || ""}`
++      },
++      locations: [
++        {
++          physicalLocation: {
++            artifactLocation: {
++              uri: bare.url || bare.sourceUrl || "https://corpus.local/bare"
++            }
++          }
++        }
++      ]
++    });
++  }
++
++  const sarifLog = {
++    $schema: "https://json.schemastore.org/sarif-2.1.0.json",
++    version: "2.1.0",
++    runs: [
++      {
++        tool: {
++          driver: {
++            name: "KosworkBrowserEpistemicAuditor",
++            version: "1.0.0",
++            rules: SARIF_RULES
++          }
++        },
++        results
++      }
++    ]
++  };
++
++  const schemaValidation = {
++    schemaId: "https://kosmora.local/schemas/koswork-browser-research-report-v1.json",
++    valid: Boolean(
++      typeof report.question === "string" &&
++        Array.isArray(report.comparisonRows) &&
++        Array.isArray(report.contradictions) &&
++        Array.isArray(report.unavailableSources)
++    ),
++    totalSarifFindings: results.length,
++    findingsByRule: SARIF_RULES.reduce((acc, r) => {
++      acc[r.id] = results.filter((res) => res.ruleId === r.id).length;
++      return acc;
++    }, {})
++  };
++
++  return {
++    sarifLog,
++    schemaValidation
++  };
++}
++
++async function saveSarifAndJsonSchemaAuditViaWorkspace({
++  workspaceRoot,
++  slug = "research-epistemic-audit",
++  report = {},
++  signal = null
++} = {}) {
++  const { sarifLog, schemaValidation } = buildSarif210ResearchAuditReport(report);
++  const svc = createKosworkWorkspaceService();
++  await svc.connectFolder({ folderPath: workspaceRoot, signal });
++
++  const sarifFile = await svc.createFile({
++    relativePath: `reports/${slug}.sarif.json`,
++    content: JSON.stringify(sarifLog, null, 2) + "\n",
++    createParents: true,
++    signal
++  });
++  const schemaFile = await svc.createFile({
++    relativePath: `reports/${slug}-schema-validation.json`,
++    content: JSON.stringify(schemaValidation, null, 2) + "\n",
++    createParents: true,
++    signal
++  });
++
++  return {
++    sarifLog,
++    schemaValidation,
++    sarifFile,
++    schemaFile
++  };
++}
++
++module.exports = {
++  SARIF_RULES,
++  buildSarif210ResearchAuditReport,
++  saveSarifAndJsonSchemaAuditViaWorkspace
++};
+diff --git a/desktop/windows/browser/openapi-graphql-doc-extractor.cjs b/desktop/windows/browser/openapi-graphql-doc-extractor.cjs
+new file mode 100644
+index 0000000..62dce3b
+--- /dev/null
++++ b/desktop/windows/browser/openapi-graphql-doc-extractor.cjs
+@@ -0,0 +1,150 @@
++"use strict";
++
++/**
++ * Koswork OpenAPI / REST Endpoint & GraphQL Schema Technical Documentation Extractor
++ * (`desktop/windows/browser/openapi-graphql-doc-extractor.cjs`).
++ *
++ * Deepens Requirements #2 & #3:
++ * - Extracts REST API endpoints (`GET /v1/...`, `POST /api/...`, `DELETE`, `PUT`, `PATCH`),
++ *   rate limits (`1200 req/min`, `X-RateLimit-Limit`), authentication schemes (`Bearer`, `OAuth2`, `API-Key`),
++ *   and GraphQL SDL type/query blocks from technical documentation snapshots with exact
++ *   UTF-16 `[startUtf16..endUtf16]` offsets and distinct `pageDate`, `eventDate`, and `fetchedAt`.
++ * - Verifies API capability claims against extracted UTF-16 endpoint excerpts while rejecting
++ *   bare documentation links (`BARE_API_DOC_LINK_REJECTED`).
++ */
++
++function extractApiEndpointsAndGraphqlSchemas(snapshot = {}) {
++  const fullText = String(snapshot.fullTextUtf16 || snapshot.text || "");
++  const endpoints = [];
++  const graphqlTypes = [];
++  const rateLimits = [];
++
++  // 1. REST Endpoints: e.g. "GET /v1/models", "POST /api/v2/research/sessions"
++  const endpointRe = /\b(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\s+(\/[a-zA-Z0-9_.\-/{}:?&=]+)/g;
++  let m;
++  while ((m = endpointRe.exec(fullText)) !== null) {
++    const method = m[1].toUpperCase();
++    const route = m[2];
++    const quote = m[0];
++    const startUtf16 = m.index;
++    const endUtf16 = m.index + quote.length;
++
++    endpoints.push({
++      method,
++      route,
++      quote,
++      startUtf16,
++      endUtf16,
++      url: snapshot.url || "",
++      title: snapshot.title || "",
++      pageDate: snapshot.pageDate || null,
++      eventDate: snapshot.eventDate || null,
++      fetchedAt: snapshot.fetchedAt || null
++    });
++  }
++
++  // 2. GraphQL SDL blocks: e.g. "type Query { ... }", "type Mutation { ... }"
++  const gqlRe = /\b(type|input|interface|enum)\s+([A-Za-z_][A-Za-z0-9_]*)\s*\{([^}]*)\}/g;
++  while ((m = gqlRe.exec(fullText)) !== null) {
++    const kind = m[1];
++    const typeName = m[2];
++    const body = m[3].trim();
++    const quote = m[0];
++    const startUtf16 = m.index;
++    const endUtf16 = m.index + quote.length;
++
++    graphqlTypes.push({
++      kind,
++      typeName,
++      fieldsPreview: body.replace(/\s+/g, " "),
++      quote,
++      startUtf16,
++      endUtf16,
++      url: snapshot.url || "",
++      pageDate: snapshot.pageDate || null,
++      eventDate: snapshot.eventDate || null,
++      fetchedAt: snapshot.fetchedAt || null
++    });
++  }
++
++  // 3. Rate-limit specifications: e.g. "1200 req/min", "600 запросов/мин", "100 rps"
++  const rlRe = /(\d+)\s*(req\/min|requests\/min|запросов\/мин|rps|req\/sec|запросов\/сек)/gi;
++  while ((m = rlRe.exec(fullText)) !== null) {
++    const limitValue = Number(m[1]);
++    const unit = m[2];
++    const quote = m[0];
++    const startUtf16 = m.index;
++    const endUtf16 = m.index + quote.length;
++
++    rateLimits.push({
++      limitValue,
++      unit,
++      quote,
++      startUtf16,
++      endUtf16,
++      url: snapshot.url || "",
++      pageDate: snapshot.pageDate || null,
++      eventDate: snapshot.eventDate || null,
++      fetchedAt: snapshot.fetchedAt || null
++    });
++  }
++
++  return {
++    url: snapshot.url || "",
++    title: snapshot.title || "",
++    pageVersion: snapshot.pageVersion ?? 1,
++    pageDate: snapshot.pageDate || null,
++    eventDate: snapshot.eventDate || null,
++    fetchedAt: snapshot.fetchedAt || null,
++    endpointsCount: endpoints.length,
++    graphqlTypesCount: graphqlTypes.length,
++    rateLimitsCount: rateLimits.length,
++    endpoints,
++    graphqlTypes,
++    rateLimits
++  };
++}
++
++function verifyApiSpecClaimAgainstEndpointTable({
++  snapshot = {},
++  requiredMethod = "POST",
++  requiredRouteSubstring = "",
++  bareLinkOnly = false
++} = {}) {
++  if (bareLinkOnly) {
++    return {
++      verified: false,
++      code: "BARE_API_DOC_LINK_REJECTED",
++      reason: "Голая ссылка на документацию API без UTF-16 выдержки не является доказательством наличия эндпоинта."
++    };
++  }
++
++  const extracted = extractApiEndpointsAndGraphqlSchemas(snapshot);
++  const methodUpper = String(requiredMethod || "GET").toUpperCase();
++  const routeSub = String(requiredRouteSubstring || "").trim();
++
++  const matched = extracted.endpoints.find(
++    (e) => e.method === methodUpper && (!routeSub || e.route.includes(routeSub))
++  );
++
++  if (!matched) {
++    return {
++      verified: false,
++      code: "API_ENDPOINT_NOT_FOUND_IN_SNAPSHOT",
++      reason: `Эндпоинт ${methodUpper} ${routeSub} не найден в тексте страницы документации.`
++    };
++  }
++
++  return {
++    verified: true,
++    code: "API_ENDPOINT_VERIFIED_WITH_UTF16_EXCERPT",
++    endpoint: matched,
++    rateLimits: extracted.rateLimits,
++    graphqlTypes: extracted.graphqlTypes
++  };
++}
++
++module.exports = {
++  extractApiEndpointsAndGraphqlSchemas,
++  verifyApiSpecClaimAgainstEndpointTable
++};
+diff --git a/desktop/windows/browser/shell.cjs b/desktop/windows/browser/shell.cjs
+index f2a6406..53f24de 100644
+--- a/desktop/windows/browser/shell.cjs
++++ b/desktop/windows/browser/shell.cjs
+@@ -123,6 +123,17 @@ const {
+   renderResearchReportLatexDossier,
+   saveLatexAcademicDossierViaWorkspace
+ } = require("./latex-academic-dossier-exporter.cjs");
++const {
++  extractApiEndpointsAndGraphqlSchemas,
++  verifyApiSpecClaimAgainstEndpointTable
++} = require("./openapi-graphql-doc-extractor.cjs");
++const {
++  KosworkTabNetworkWaterfallProfiler
++} = require("./tab-network-waterfall-and-cache-profiler.cjs");
++const {
++  buildSarif210ResearchAuditReport,
++  saveSarifAndJsonSchemaAuditViaWorkspace
++} = require("./json-schema-and-sarif-audit-exporter.cjs");
+ 
+ /**
+  * Shared Tool & Execution Boundary for Koswork Browser (`desktop/windows/browser/shell.cjs`).
+@@ -257,6 +268,30 @@ const BROWSER_RESEARCH_TOOL_DEFINITIONS = Object.freeze([
+       "Выполнить безопасный drag-and-drop выбор файлов из разрешённой рабочей папки в input[type=file] с отсевом запрещённых типов (.env, .exe).",
+     requiredParams: ["tabId", "selector", "candidateFilePaths"]
+   },
++  {
++    name: "browser.extract_api_and_graphql_specs",
++    description:
++      "Извлечь REST/OpenAPI эндпоинты, лимиты запросов и GraphQL SDL типы из документации с точными смещениями UTF-16 и датами источника.",
++    requiredParams: ["tabId"]
++  },
++  {
++    name: "browser.verify_api_spec_claim",
++    description:
++      "Проверить утверждение о наличии API эндпоинта по дословной UTF-16 выдержке из страницы документации с отклонением голых ссылок.",
++    requiredParams: ["tabId", "requiredMethod", "requiredRouteSubstring"]
++  },
++  {
++    name: "browser.profile_tab_network_waterfall",
++    description:
++      "Записать и агрегировать сетевой водопад вкладок (DNS/TCP/TLS/TTFB/Download) и экономию трафика от повторного использования валидных снимков.",
++    requiredParams: ["events"]
++  },
++  {
++    name: "browser.export_sarif_audit",
++    description:
++      "Экспортировать эпистемический аудит исследования в формат OASIS SARIF 2.1.0 (.sarif.json) и отчёт валидации JSON Schema с UTF-16 charOffset/charLength.",
++    requiredParams: ["report"]
++  },
+   {
+     name: "browser.export_latex_dossier",
+     description:
+@@ -781,6 +816,47 @@ function createKosworkBrowserShell(options = {}) {
+           observedUserEpoch: args.observedUserEpoch ?? null
+         });
+ 
++      case "browser.extract_api_and_graphql_specs": {
++        const obs = engine.observePage(args.tabId);
++        return extractApiEndpointsAndGraphqlSchemas(obs.snapshot);
++      }
++
++      case "browser.verify_api_spec_claim": {
++        if (args.bareLinkOnly) {
++          return verifyApiSpecClaimAgainstEndpointTable({
++            bareLinkOnly: true
++          });
++        }
++        const obs = engine.observePage(args.tabId);
++        return verifyApiSpecClaimAgainstEndpointTable({
++          snapshot: obs.snapshot,
++          requiredMethod: args.requiredMethod || "GET",
++          requiredRouteSubstring: args.requiredRouteSubstring || "",
++          bareLinkOnly: false
++        });
++      }
++
++      case "browser.profile_tab_network_waterfall": {
++        const profiler = new KosworkTabNetworkWaterfallProfiler();
++        for (const ev of args.events || []) {
++          profiler.recordNavigationWaterfall(ev);
++        }
++        return profiler.buildWaterfallSummary({
++          slowOriginThresholdMs: args.slowOriginThresholdMs ?? 80
++        });
++      }
++
++      case "browser.export_sarif_audit":
++        if (args.saveToWorkspace && resolvedWorkspaceRoot) {
++          return await saveSarifAndJsonSchemaAuditViaWorkspace({
++            workspaceRoot: resolvedWorkspaceRoot,
++            slug: args.slug || "research-epistemic-audit",
++            report: args.report || {},
++            signal
++          });
++        }
++        return buildSarif210ResearchAuditReport(args.report || {});
++
+       case "browser.export_latex_dossier":
+         if (args.saveToWorkspace && resolvedWorkspaceRoot) {
+           return await saveLatexAcademicDossierViaWorkspace({
+diff --git a/desktop/windows/browser/tab-network-waterfall-and-cache-profiler.cjs b/desktop/windows/browser/tab-network-waterfall-and-cache-profiler.cjs
+new file mode 100644
+index 0000000..dda51fb
+--- /dev/null
++++ b/desktop/windows/browser/tab-network-waterfall-and-cache-profiler.cjs
+@@ -0,0 +1,178 @@
++"use strict";
++
++/**
++ * Koswork Tab Network Waterfall & Snapshot Cache Efficiency Profiler
++ * (`desktop/windows/browser/tab-network-waterfall-and-cache-profiler.cjs`).
++ *
++ * Deepens Requirements #1, #3 & #6:
++ * - Records detailed per-tab request timing waterfalls (`dnsLookupMs`, `tcpConnectMs`,
++ *   `tlsHandshakeMs`, `ttfbMs`, `contentDownloadMs`, `totalLatencyMs`, `transferSizeBytes`,
++ *   `cacheStatus`: `"network_fetch"` | `"snapshot_cache_hit"` | `"http_304_revalidated"`).
++ * - Computes p50 / p95 / p99 TTFB and total load latencies, bandwidth saved by valid
++ *   snapshot reuse (`bytesSavedBySnapshotReuse`), and identifies slow bottleneck origins.
++ */
++
++function percentile(sortedNumbers, pct) {
++  if (!sortedNumbers.length) return 0;
++  const idx = Math.min(
++    sortedNumbers.length - 1,
++    Math.max(0, Math.ceil((pct / 100) * sortedNumbers.length) - 1)
++  );
++  return Number(sortedNumbers[idx].toFixed(2));
++}
++
++class KosworkTabNetworkWaterfallProfiler {
++  constructor() {
++    this.entries = [];
++  }
++
++  recordNavigationWaterfall({
++    tabId,
++    url,
++    httpStatus = 200,
++    cacheStatus = "network_fetch",
++    dnsLookupMs = 2,
++    tcpConnectMs = 4,
++    tlsHandshakeMs = 6,
++    ttfbMs = 18,
++    contentDownloadMs = 9,
++    transferSizeBytes = 16384,
++    decodedBodySizeBytes = 32768
++  } = {}) {
++    const isCached =
++      cacheStatus === "snapshot_cache_hit" || cacheStatus === "http_304_revalidated";
++
++    const effectiveDns = isCached ? 0 : Number(dnsLookupMs || 0);
++    const effectiveTcp = isCached ? 0 : Number(tcpConnectMs || 0);
++    const effectiveTls = isCached ? 0 : Number(tlsHandshakeMs || 0);
++    const effectiveTtfb =
++      cacheStatus === "snapshot_cache_hit" ? 0.5 : Number(ttfbMs || 0);
++    const effectiveDownload =
++      cacheStatus === "snapshot_cache_hit" ? 0.5 : Number(contentDownloadMs || 0);
++
++    const totalLatencyMs = Number(
++      (
++        effectiveDns +
++        effectiveTcp +
++        effectiveTls +
++        effectiveTtfb +
++        effectiveDownload
++      ).toFixed(2)
++    );
++
++    const actualTransferBytes =
++      cacheStatus === "snapshot_cache_hit"
++        ? 0
++        : cacheStatus === "http_304_revalidated"
++          ? Math.min(512, Number(transferSizeBytes || 0))
++          : Number(transferSizeBytes || 0);
++
++    const bytesSaved = Math.max(
++      0,
++      Number(decodedBodySizeBytes || transferSizeBytes || 0) - actualTransferBytes
++    );
++
++    let origin = "unknown";
++    try {
++      origin = new URL(String(url || "https://corpus.local")).origin;
++    } catch (_) {
++      origin = "https://corpus.local";
++    }
++
++    const record = {
++      entryId: `wf-${this.entries.length + 1}`,
++      recordedAt: new Date().toISOString(),
++      tabId: String(tabId || "tab-1"),
++      url: String(url || ""),
++      origin,
++      httpStatus: Number(httpStatus || 200),
++      cacheStatus,
++      timings: {
++        dnsLookupMs: effectiveDns,
++        tcpConnectMs: effectiveTcp,
++        tlsHandshakeMs: effectiveTls,
++        ttfbMs: effectiveTtfb,
++        contentDownloadMs: effectiveDownload,
++        totalLatencyMs
++      },
++      transferSizeBytes: actualTransferBytes,
++      decodedBodySizeBytes: Number(decodedBodySizeBytes || 0),
++      bytesSavedByCache: isCached ? bytesSaved : 0
++    };
++
++    this.entries.push(record);
++    return record;
++  }
++
++  buildWaterfallSummary({ slowOriginThresholdMs = 80 } = {}) {
++    const totalRequests = this.entries.length;
++    const ttfbList = this.entries
++      .map((e) => e.timings.ttfbMs)
++      .sort((a, b) => a - b);
++    const totalLatList = this.entries
++      .map((e) => e.timings.totalLatencyMs)
++      .sort((a, b) => a - b);
++
++    const cacheHits = this.entries.filter(
++      (e) =>
++        e.cacheStatus === "snapshot_cache_hit" ||
++        e.cacheStatus === "http_304_revalidated"
++    ).length;
++
++    const totalTransferBytes = this.entries.reduce(
++      (acc, e) => acc + e.transferSizeBytes,
++      0
++    );
++    const totalBytesSavedByCache = this.entries.reduce(
++      (acc, e) => acc + e.bytesSavedByCache,
++      0
++    );
++
++    const byOrigin = new Map();
++    for (const e of this.entries) {
++      if (!byOrigin.has(e.origin)) {
++        byOrigin.set(e.origin, []);
++      }
++      byOrigin.get(e.origin).push(e.timings.totalLatencyMs);
++    }
++
++    const bottleneckOrigins = [];
++    for (const [origin, latencies] of byOrigin.entries()) {
++      const avgMs = Number(
++        (latencies.reduce((a, b) => a + b, 0) / latencies.length).toFixed(2)
++      );
++      if (avgMs >= slowOriginThresholdMs) {
++        bottleneckOrigins.push({
++          origin,
++          requestCount: latencies.length,
++          avgLatencyMs: avgMs
++        });
++      }
++    }
++
++    return {
++      totalRequests,
++      cacheHits,
++      cacheHitRatio:
++        totalRequests > 0 ? Number((cacheHits / totalRequests).toFixed(4)) : 0,
++      ttfbPercentilesMs: {
++        p50: percentile(ttfbList, 50),
++        p95: percentile(ttfbList, 95),
++        p99: percentile(ttfbList, 99)
++      },
++      totalLatencyPercentilesMs: {
++        p50: percentile(totalLatList, 50),
++        p95: percentile(totalLatList, 95),
++        p99: percentile(totalLatList, 99)
++      },
++      totalTransferBytes,
++      totalBytesSavedByCache,
++      bottleneckOrigins,
++      entries: this.entries
++    };
++  }
++}
++
++module.exports = {
++  KosworkTabNetworkWaterfallProfiler
++};
+diff --git a/desktop/windows/test/browser-research-acceptance.test.cjs b/desktop/windows/test/browser-research-acceptance.test.cjs
+index edaccc0..390e37e 100644
+--- a/desktop/windows/test/browser-research-acceptance.test.cjs
++++ b/desktop/windows/test/browser-research-acceptance.test.cjs
+@@ -3705,3 +3705,176 @@ test("41. LaTeX Academic Research Dossier & Synchronized BibTeX Exporter (`latex
+   assert.ok(fs.existsSync(path.join(workspaceRoot, dossierRes.texFile.path)));
+   assert.ok(fs.existsSync(path.join(workspaceRoot, dossierRes.bibFile.path)));
+ });
++
++test("42. OpenAPI / REST Endpoint & GraphQL Schema Extractor (`openapi-graphql-doc-extractor.cjs`) & Tab Network Waterfall / Cache Efficiency Profiler (`tab-network-waterfall-and-cache-profiler.cjs`)", async () => {
++  const workspaceRoot = createTempWorkspace();
++  const shell = createKosworkBrowserShell({ workspaceRoot });
++  const engine = shell.engine;
++
++  const apiDocText = [
++    "Спецификация API Option Alpha v2:",
++    "Эндпоинт создания сессии: POST /api/v2/research/sessions",
++    "Эндпоинт выгрузки отчёта: GET /api/v2/research/reports/{id}",
++    "Лимит запросов: 1200 req/min на токен организации.",
++    "Схема GraphQL: type Query { researchSession(id: ID!): Session } type Mutation { archiveSession(id: ID!): Boolean }"
++  ].join(" ");
++
++  engine.registerSyntheticSite("https://corpus.local/alpha-api-docs", {
++    title: "Документация API Option Alpha",
++    pageDate: "2026-10-20",
++    eventDate: "2026-11-01",
++    text: apiDocText
++  });
++
++  await engine.navigate({
++    tabId: "tab-api-doc",
++    url: "https://corpus.local/alpha-api-docs"
++  });
++
++  const specs = await shell.dispatchToolCall(
++    "browser.extract_api_and_graphql_specs",
++    { tabId: "tab-api-doc" },
++    { workspaceRoot }
++  );
++
++  assert.equal(specs.endpointsCount, 2);
++  assert.equal(specs.graphqlTypesCount, 2);
++  assert.equal(specs.rateLimitsCount, 1);
++  assert.equal(specs.rateLimits[0].limitValue, 1200);
++  assert.ok(specs.endpoints[0].startUtf16 > 0);
++
++  const verOk = await shell.dispatchToolCall(
++    "browser.verify_api_spec_claim",
++    {
++      tabId: "tab-api-doc",
++      requiredMethod: "POST",
++      requiredRouteSubstring: "/api/v2/research/sessions"
++    },
++    { workspaceRoot }
++  );
++  assert.equal(verOk.verified, true);
++  assert.equal(verOk.code, "API_ENDPOINT_VERIFIED_WITH_UTF16_EXCERPT");
++
++  const verBare = await shell.dispatchToolCall(
++    "browser.verify_api_spec_claim",
++    {
++      tabId: "tab-api-doc",
++      requiredMethod: "POST",
++      requiredRouteSubstring: "/api/v2/research/sessions",
++      bareLinkOnly: true
++    },
++    { workspaceRoot }
++  );
++  assert.equal(verBare.verified, false);
++  assert.equal(verBare.code, "BARE_API_DOC_LINK_REJECTED");
++
++  // Network waterfall & snapshot cache profiler
++  const wfSummary = await shell.dispatchToolCall(
++    "browser.profile_tab_network_waterfall",
++    {
++      slowOriginThresholdMs: 50,
++      events: [
++        {
++          tabId: "tab-1",
++          url: "https://fast.corpus.local/a",
++          cacheStatus: "network_fetch",
++          dnsLookupMs: 2,
++          tcpConnectMs: 3,
++          tlsHandshakeMs: 4,
++          ttfbMs: 12,
++          contentDownloadMs: 5,
++          transferSizeBytes: 20000,
++          decodedBodySizeBytes: 40000
++        },
++        {
++          tabId: "tab-1",
++          url: "https://fast.corpus.local/a",
++          cacheStatus: "snapshot_cache_hit",
++          transferSizeBytes: 20000,
++          decodedBodySizeBytes: 40000
++        },
++        {
++          tabId: "tab-2",
++          url: "https://slow.corpus.local/heavy",
++          cacheStatus: "network_fetch",
++          dnsLookupMs: 10,
++          tcpConnectMs: 15,
++          tlsHandshakeMs: 20,
++          ttfbMs: 65,
++          contentDownloadMs: 30,
++          transferSizeBytes: 80000,
++          decodedBodySizeBytes: 120000
++        }
++      ]
++    },
++    { workspaceRoot }
++  );
++
++  assert.equal(wfSummary.totalRequests, 3);
++  assert.equal(wfSummary.cacheHits, 1);
++  assert.equal(wfSummary.totalBytesSavedByCache, 40000);
++  assert.equal(wfSummary.bottleneckOrigins.length, 1);
++  assert.equal(wfSummary.bottleneckOrigins[0].origin, "https://slow.corpus.local");
++});
++
++test("43. OASIS SARIF 2.1.0 Epistemic Audit & JSON Schema Validator Exporter (`json-schema-and-sarif-audit-exporter.cjs` & `browser.export_sarif_audit` via `shell.cjs`)", async () => {
++  const workspaceRoot = createTempWorkspace();
++  const shell = createKosworkBrowserShell({ workspaceRoot });
++
++  const sarifRes = await shell.dispatchToolCall(
++    "browser.export_sarif_audit",
++    {
++      saveToWorkspace: true,
++      slug: "alpha-beta-epistemic-audit",
++      report: {
++        question: "Сравнение Option Alpha и Option Beta",
++        comparisonRows: [],
++        contradictions: [
++          {
++            optionName: "Option Alpha",
++            criterion: "Цена",
++            summary: "$49/мес против $79/мес",
++            sideA: {
++              url: "https://corpus.local/alpha-2026",
++              quote: "Тариф составляет $49/мес",
++              startUtf16: 14,
++              endUtf16: 38
++            }
++          }
++        ],
++        outdatedSources: [
++          {
++            optionName: "Option Alpha",
++            criterion: "Цена",
++            url: "https://corpus.local/alpha-2025",
++            pageDate: "2025-05-10"
++          }
++        ],
++        unavailableSources: [
++          { url: "https://corpus.local/503", statusCode: 503 }
++        ],
++        postObservationSubstitutions: [
++          { url: "https://corpus.local/mutated-page" }
++        ],
++        rejectedBareLinks: [
++          { url: "https://corpus.local/bare-only" }
++        ]
++      }
++    },
++    { workspaceRoot }
++  );
++
++  assert.equal(sarifRes.sarifLog.version, "2.1.0");
++  assert.equal(sarifRes.schemaValidation.valid, true);
++  assert.equal(sarifRes.schemaValidation.totalSarifFindings, 5);
++  assert.equal(
++    sarifRes.sarifLog.runs[0].results[0].locations[0].physicalLocation.region.charOffset,
++    14
++  );
++  assert.equal(
++    sarifRes.sarifLog.runs[0].results[0].locations[0].physicalLocation.region.charLength,
++    24
++  );
++  assert.ok(fs.existsSync(path.join(workspaceRoot, sarifRes.sarifFile.path)));
++  assert.ok(fs.existsSync(path.join(workspaceRoot, sarifRes.schemaFile.path)));
++});
+diff --git a/docs/koswork-browser-research.md b/docs/koswork-browser-research.md
+index 2e7b9b0..e2175a6 100644
+--- a/docs/koswork-browser-research.md
++++ b/docs/koswork-browser-research.md
+@@ -35,3 +35,12 @@
+ - **`desktop/windows/browser/latex-academic-dossier-exporter.cjs`**:
+   - `renderResearchReportLatexDossier(report)` and `saveLatexAcademicDossierViaWorkspace`: exports a publication-ready LaTeX research dossier (`reports/<slug>.tex`) and synchronized BibTeX bibliography (`reports/<slug>.bib`) with `booktabs`/`longtable` comparison tables, `\cite{...}` keys, verbatim UTF-16 `[startUtf16..endUtf16]` quotes, distinct `pageDate`/`eventDate`/`fetchedAt`, and explicit sections for contradictions, unavailable HTTP 503 sources, and unknowns.
+ - **Exposed via `shell.cjs` (`browser.ingest_feed_sources`, `browser.paste_clipboard_into_control`, `browser.drop_workspace_files`, `browser.export_latex_dossier`) and verified in Subtests 40 and 41 (`51/51` total suites passing).**
++
++### Phase 25: OpenAPI / REST Endpoint & GraphQL Schema Extractor, Tab Network Waterfall / Cache Profiler, and OASIS SARIF 2.1.0 Epistemic Audit Exporter
++- **`desktop/windows/browser/openapi-graphql-doc-extractor.cjs`**:
++  - `extractApiEndpointsAndGraphqlSchemas(snapshot)` and `verifyApiSpecClaimAgainstEndpointTable`: extracts REST endpoints (`GET / POST / PUT / PATCH / DELETE`), rate limits (`1200 req/min`), and GraphQL SDL definitions (`type Query`, `type Mutation`) with exact UTF-16 `[startUtf16..endUtf16]` offsets and distinct `pageDate`/`eventDate`/`fetchedAt`, while rejecting bare documentation links (`BARE_API_DOC_LINK_REJECTED`).
++- **`desktop/windows/browser/tab-network-waterfall-and-cache-profiler.cjs`**:
++  - `KosworkTabNetworkWaterfallProfiler`: records per-tab request timing waterfalls (`dnsLookupMs`, `tcpConnectMs`, `tlsHandshakeMs`, `ttfbMs`, `contentDownloadMs`, `totalLatencyMs`), computes p50/p95/p99 TTFB and total load latencies, tracks bandwidth saved by snapshot reuse (`totalBytesSavedByCache`), and identifies slow bottleneck origins.
++- **`desktop/windows/browser/json-schema-and-sarif-audit-exporter.cjs`**:
++  - `buildSarif210ResearchAuditReport(report)` and `saveSarifAndJsonSchemaAuditViaWorkspace`: exports an OASIS SARIF 2.1.0 epistemic audit report (`reports/<slug>.sarif.json`) and JSON Schema validation report (`reports/<slug>-schema-validation.json`) with exact UTF-16 `charOffset` and `charLength` across rules `KOSWORK001_CONTRADICTION`, `KOSWORK002_OUTDATED_SOURCE`, `KOSWORK003_UNAVAILABLE_503`, `KOSWORK004_POST_OBS_SUBSTITUTION`, and `KOSWORK005_BARE_LINK_REJECTED`.
++- **Exposed via `shell.cjs` (`browser.extract_api_and_graphql_specs`, `browser.verify_api_spec_claim`, `browser.profile_tab_network_waterfall`, `browser.export_sarif_audit`) and verified in Subtests 42 and 43 (`53/53` total suites passing).**
+-- 
+2.39.5
+

@@ -1,0 +1,658 @@
+From 1e97c456d64c8caac55f1477e909823e24efd08b Mon Sep 17 00:00:00 2001
+From: Kosmora Engineering <eng@kosmora.ai>
+Date: Sun, 8 Nov 2026 21:00:15 +0000
+Subject: [PATCH 17/32] feat(browser-research): add multi-format downloaded
+ document ingestor, bookmark pinboard bridge, and deterministic replay auditor
+
+---
+ .../downloaded-archive-and-doc-ingestor.cjs   |  78 ++++++++
+ .../browser/research-pinboard-bookmarks.cjs   | 123 ++++++++++++
+ .../browser/research-replay-auditor.cjs       |  99 ++++++++++
+ desktop/windows/browser/shell.cjs             |  77 ++++++++
+ .../test/browser-research-acceptance.test.cjs | 182 ++++++++++++++++++
+ 5 files changed, 559 insertions(+)
+ create mode 100644 desktop/windows/browser/downloaded-archive-and-doc-ingestor.cjs
+ create mode 100644 desktop/windows/browser/research-pinboard-bookmarks.cjs
+ create mode 100644 desktop/windows/browser/research-replay-auditor.cjs
+
+diff --git a/desktop/windows/browser/downloaded-archive-and-doc-ingestor.cjs b/desktop/windows/browser/downloaded-archive-and-doc-ingestor.cjs
+new file mode 100644
+index 0000000..f0c47ff
+--- /dev/null
++++ b/desktop/windows/browser/downloaded-archive-and-doc-ingestor.cjs
+@@ -0,0 +1,78 @@
++"use strict";
++
++const fs = require("node:fs");
++const path = require("node:path");
++const crypto = require("node:crypto");
++const { extractVaultDocument } = require("../vault-document-extractor.cjs");
++const { buildVersionedPageSnapshot, extractVerifiableExcerpt } = require("./document.cjs");
++
++/**
++ * Koswork Multi-Format Downloaded Document Ingestor
++ * (`desktop/windows/browser/downloaded-archive-and-doc-ingestor.cjs`).
++ *
++ * Deepens Requirement #4 & #5:
++ * - Ingests binary and structured files downloaded into the allowed workspace download folder
++ *   (`.docx`, `.xlsx`, `.pdf`, `.pptx`, `.csv`, `.json`, `.html`, `.md`, `.txt`) using
++ *   `extractVaultDocument` (`desktop/windows/vault-document-extractor.cjs`).
++ * - Enforces that the downloaded file resides strictly inside `allowedDownloadDir` or
++ *   `allowedWorkspaceRoot`.
++ * - Converts the extracted document text into a versioned research snapshot with exact
++ *   UTF-16 code unit offsets (`startUtf16`, `endUtf16`) and SHA-256 binary file digest provenance.
++ */
++function ingestMultiFormatDownloadedDocument(downloadResult = {}, metadata = {}) {
++  const filePath = downloadResult.savedPath || downloadResult.filePath;
++  if (!filePath || !fs.existsSync(filePath)) {
++    const err = new Error("DOWNLOADED_DOCUMENT_FILE_MISSING");
++    err.code = "DOWNLOADED_DOCUMENT_FILE_MISSING";
++    throw err;
++  }
++
++  const resolvedFile = path.resolve(filePath);
++  if (metadata.allowedWorkspaceRoot) {
++    const resolvedRoot = path.resolve(metadata.allowedWorkspaceRoot);
++    if (!resolvedFile.startsWith(resolvedRoot + path.sep) && resolvedFile !== resolvedRoot) {
++      const err = new Error("DOWNLOADED_DOCUMENT_OUTSIDE_ALLOWED_WORKSPACE");
++      err.code = "DOWNLOADED_DOCUMENT_OUTSIDE_ALLOWED_WORKSPACE";
++      throw err;
++    }
++  }
++
++  const rawBuffer = fs.readFileSync(resolvedFile);
++  const fileSha256 = crypto.createHash("sha256").update(rawBuffer).digest("hex");
++  const filename = downloadResult.filename || path.basename(resolvedFile);
++
++  const extracted = extractVaultDocument(rawBuffer, { filename });
++  const extractedText = String(extracted.text || "").trim();
++
++  const syntheticUrl =
++    downloadResult.sourceUrl ||
++    metadata.sourceUrl ||
++    `https://downloaded.koswork.local/${encodeURIComponent(filename)}`;
++
++  const snapshot = buildVersionedPageSnapshot({
++    tabId: downloadResult.tabId || "tab-downloaded-doc",
++    pageVersion: 1,
++    url: syntheticUrl,
++    canonicalUrl: syntheticUrl,
++    httpStatus: 200,
++    title: `${filename} (Скачанный документ ${extracted.format || path.extname(filename)})`,
++    pageDate: metadata.pageDate || null,
++    eventDate: metadata.eventDate || null,
++    fetchedAt: downloadResult.completedAt || new Date().toISOString(),
++    text: extractedText
++  });
++
++  return {
++    filename,
++    detectedFormat: extracted.format || path.extname(filename).replace(/^\./, ""),
++    filePath: resolvedFile,
++    byteSize: rawBuffer.length,
++    fileSha256,
++    snapshot,
++    extractExcerpt: (querySpec) => extractVerifiableExcerpt(snapshot, querySpec)
++  };
++}
++
++module.exports = {
++  ingestMultiFormatDownloadedDocument
++};
+diff --git a/desktop/windows/browser/research-pinboard-bookmarks.cjs b/desktop/windows/browser/research-pinboard-bookmarks.cjs
+new file mode 100644
+index 0000000..e0eb91d
+--- /dev/null
++++ b/desktop/windows/browser/research-pinboard-bookmarks.cjs
+@@ -0,0 +1,123 @@
++"use strict";
++
++/**
++ * Koswork Bookmark & Reading-List Research Pinboard Bridge
++ * (`desktop/windows/browser/research-pinboard-bookmarks.cjs`).
++ *
++ * Connects the browser's persistent bookmark store (`KosworkSearchAndBrowserStore` in
++ * `search-pagination-and-bookmarks.cjs`) directly to the multi-site Browser Research Cycle:
++ * 1. Allows users or agents to pin an open tab along with a verified UTF-16 excerpt,
++ *    distinct `pageDate` / `eventDate` / `fetchedAt`, and research criterion tags.
++ * 2. Filters pinned bookmarks by category or tag (`listPinnedResearchSources`).
++ * 3. Builds a ready-to-execute multi-site research plan (`buildResearchPlanFromPinnedBookmarks`)
++ *    from the user's pinned bookmarks so manual browsing discoveries feed directly into
++ *    automated comparison reports.
++ */
++class KosworkResearchPinboardBridge {
++  constructor(options = {}) {
++    if (!options.engine) {
++      throw new Error("PINBOARD_BRIDGE_REQUIRES_ENGINE");
++    }
++    this.engine = options.engine;
++    this.store = this.engine.searchService.store;
++    this.pinnedMetadataByUrl = new Map(); // normalizedUrl -> { tags, optionName, criterion, excerpt, pageDate, eventDate, fetchedAt }
++  }
++
++  pinTabToResearchBookmarks({
++    tabId,
++    category = "research",
++    tags = [],
++    optionName = null,
++    criterion = null,
++    searchTerm = null
++  } = {}) {
++    const obs = this.engine.observePage(tabId);
++    const snap = obs.snapshot;
++
++    let excerpt = null;
++    if (searchTerm) {
++      excerpt = this.engine.extractExcerpt(tabId, { searchTerm });
++    }
++
++    const bookmark = this.store.addBookmark({
++      url: snap.url,
++      title: snap.title,
++      category,
++      tags
++    });
++
++    const richPin = {
++      bookmarkId: bookmark.bookmarkId || bookmark.id || `bm-${Date.now()}`,
++      url: bookmark.url,
++      title: bookmark.title,
++      category: bookmark.category,
++      tags: bookmark.tags,
++      optionName,
++      criterion,
++      pageDate: snap.pageDate,
++      eventDate: snap.eventDate,
++      fetchedAt: snap.fetchedAt,
++      tabReceipt: snap.tabReceipt,
++      excerpt
++    };
++
++    this.pinnedMetadataByUrl.set(bookmark.url, richPin);
++    return richPin;
++  }
++
++  listPinnedResearchSources({ category = null, tag = null } = {}) {
++    const bookmarks = this.store.listBookmarks({ category, tag });
++    return bookmarks.map((b) => {
++      const meta = this.pinnedMetadataByUrl.get(b.url) || {};
++      return {
++        ...b,
++        optionName: meta.optionName || null,
++        criterion: meta.criterion || null,
++        pageDate: meta.pageDate || null,
++        eventDate: meta.eventDate || null,
++        fetchedAt: meta.fetchedAt || b.createdAt,
++        excerpt: meta.excerpt || null
++      };
++    });
++  }
++
++  buildResearchPlanFromPinnedBookmarks({
++    question = "Сравнение по закладкам исследования",
++    category = "research",
++    tag = null,
++    defaultCriteria = ["Спецификация"]
++  } = {}) {
++    const pinned = this.listPinnedResearchSources({ category, tag });
++    const criteriaSet = new Set(defaultCriteria);
++    for (const p of pinned) {
++      if (p.criterion) criteriaSet.add(p.criterion);
++    }
++
++    return {
++      question,
++      criteria: Array.from(criteriaSet),
++      seedUrls: pinned.map((p) => p.url),
++      preverifiedClaims: pinned
++        .filter((p) => p.excerpt && p.optionName && p.criterion)
++        .map((p, idx) => ({
++          claimId: `pin-claim-${idx + 1}`,
++          optionName: p.optionName,
++          criterion: p.criterion,
++          value: p.excerpt.quote,
++          claim: `${p.optionName} (${p.criterion}): ${p.excerpt.quote}`,
++          excerpt: p.excerpt,
++          source: {
++            url: p.url,
++            title: p.title,
++            pageDate: p.pageDate,
++            eventDate: p.eventDate,
++            fetchedAt: p.fetchedAt
++          }
++        }))
++    };
++  }
++}
++
++module.exports = {
++  KosworkResearchPinboardBridge
++};
+diff --git a/desktop/windows/browser/research-replay-auditor.cjs b/desktop/windows/browser/research-replay-auditor.cjs
+new file mode 100644
+index 0000000..20ddacf
+--- /dev/null
++++ b/desktop/windows/browser/research-replay-auditor.cjs
+@@ -0,0 +1,99 @@
++"use strict";
++
++const { verifyResearchReportIntegrity } = require("./citation-verifier.cjs");
++
++/**
++ * Koswork Deterministic Replay & Audit Bundle Verifier
++ * (`desktop/windows/browser/research-replay-auditor.cjs`).
++ *
++ * Verifies cross-artifact consistency across:
++ * 1. The saved Research Report (`confirmedClaims`, `unconfirmedClaims`, `contradictions`, `unavailableSources`),
++ * 2. The W3C PROV-JSON lineage graph (`provJsonObject.entity`, `provJsonObject.wasDerivedFrom`),
++ * 3. The W3C HAR 1.2 session trace (`harLog.log.entries`),
++ * 4. The recorded versioned page snapshots (`snapshotsByUrl`).
++ *
++ * Confirms that every `"confirmed"` claim is backed by:
++ * - an exact UTF-16 slice in `snapshotsByUrl`,
++ * - a `wasDerivedFrom` edge in the PROV-JSON lineage graph, and
++ * - a corresponding HTTP 2xx entry in the HAR 1.2 trace.
++ */
++function verifyDeterministicResearchReplay({
++  savedReports,
++  provJsonObject,
++  harLog,
++  snapshotsByUrl = {}
++} = {}) {
++  if (!savedReports || typeof savedReports !== "object") {
++    throw new Error("REPLAY_AUDITOR_REQUIRES_SAVED_REPORTS");
++  }
++
++  const confirmedClaims = savedReports.confirmedClaims || [];
++  const unconfirmedClaims = savedReports.unconfirmedClaims || [];
++
++  // 1. Run cryptographic UTF-16 slice & SHA-256 citation verifier
++  const citationCheck = verifyResearchReportIntegrity({
++    confirmedClaims,
++    unconfirmedClaims,
++    snapshotsByUrl
++  });
++
++  const violations = [...(citationCheck.violations || [])];
++
++  // 2. Verify W3C PROV-JSON derivation edges if `provJsonObject` is provided
++  let verifiedProvDerivations = 0;
++  if (provJsonObject && provJsonObject.wasDerivedFrom) {
++    const wdfEntries = Object.values(provJsonObject.wasDerivedFrom);
++    for (const c of confirmedClaims) {
++      const claimEntityRef = `kosmora:${c.claimId}`;
++      const hasClaimDerivation = wdfEntries.some(
++        (edge) => edge["prov:generatedEntity"] === claimEntityRef
++      );
++      if (!hasClaimDerivation) {
++        violations.push({
++          code: "PROV_DERIVATION_MISSING_FOR_CLAIM",
++          claimId: c.claimId,
++          message: `В графе PROV-JSON отсутствует связь wasDerivedFrom для утверждения ${c.claimId}`
++        });
++      } else {
++        verifiedProvDerivations += 1;
++      }
++    }
++  }
++
++  // 3. Verify W3C HAR 1.2 entries if `harLog` is provided
++  let verifiedHarEntries = 0;
++  if (harLog && harLog.log && Array.isArray(harLog.log.entries)) {
++    const harUrls = new Set(
++      harLog.log.entries
++        .filter((e) => e.response && e.response.status >= 200 && e.response.status < 400)
++        .map((e) => e.request?.url)
++    );
++    for (const c of confirmedClaims) {
++      const srcUrl = c.source?.url;
++      if (srcUrl && !harUrls.has(srcUrl)) {
++        violations.push({
++          code: "HAR_TRACE_MISSING_SOURCE_URL",
++          claimId: c.claimId,
++          sourceUrl: srcUrl,
++          message: `В HAR 1.2 трассе отсутствует успешный HTTP-ответ для источника ${srcUrl}`
++        });
++      } else if (srcUrl) {
++        verifiedHarEntries += 1;
++      }
++    }
++  }
++
++  return {
++    replayAuditPassed: violations.length === 0 && citationCheck.auditPassed,
++    verifiedClaimsCount: confirmedClaims.length,
++    verifiedUtf16SlicesCount: citationCheck.verifiedSlicesCount,
++    verifiedProvDerivations,
++    verifiedHarEntries,
++    reportDigestSha256: citationCheck.reportDigestSha256,
++    violations
++  };
++}
++
++module.exports = {
++  verifyDeterministicResearchReplay
++};
+diff --git a/desktop/windows/browser/shell.cjs b/desktop/windows/browser/shell.cjs
+index 3de74ec..ef73daa 100644
+--- a/desktop/windows/browser/shell.cjs
++++ b/desktop/windows/browser/shell.cjs
+@@ -32,6 +32,11 @@ const {
+   promoteOccurrenceToVerifiedExcerpt
+ } = require("./find-in-page-highlighter.cjs");
+ const { evaluateAccessRestrictionDecision } = require("./rate-limit-and-robots-guard.cjs");
++const {
++  ingestMultiFormatDownloadedDocument
++} = require("./downloaded-archive-and-doc-ingestor.cjs");
++const { KosworkResearchPinboardBridge } = require("./research-pinboard-bookmarks.cjs");
++const { verifyDeterministicResearchReplay } = require("./research-replay-auditor.cjs");
+ 
+ /**
+  * Shared Tool & Execution Boundary for Koswork Browser (`desktop/windows/browser/shell.cjs`).
+@@ -118,6 +123,30 @@ const BROWSER_RESEARCH_TOOL_DEFINITIONS = Object.freeze([
+       "Выполнить многошаговую форму (wizard) с проверкой ошибок валидации, выбором файлов из разрешённой папки и скачиванием итогового артефакта.",
+     requiredParams: ["url", "steps"]
+   },
++  {
++    name: "browser.ingest_downloaded_document",
++    description:
++      "Преобразовать скачанный документ (.docx, .xlsx, .pdf, .pptx, .csv, .txt) из разрешённой папки в версионный исследовательский снимок с UTF-16 смещениями.",
++    requiredParams: ["downloadResult"]
++  },
++  {
++    name: "browser.pin_tab_bookmark",
++    description:
++      "Закрепить открытую вкладку и верифицированную UTF-16 выдержку в закладках исследования.",
++    requiredParams: ["tabId"]
++  },
++  {
++    name: "browser.list_pinned_bookmarks",
++    description:
++      "Получить список закреплённых закладок исследования по категории или тегу.",
++    requiredParams: []
++  },
++  {
++    name: "browser.build_plan_from_bookmarks",
++    description:
++      "Сформировать план многосайтового исследования на основе закреплённых пользователем закладок.",
++    requiredParams: []
++  },
+   {
+     name: "browser.research_cycle",
+     description:
+@@ -196,6 +225,12 @@ const BROWSER_RESEARCH_TOOL_DEFINITIONS = Object.freeze([
+       "Оценить статус ограничения доступа (401/403 без обхода, 429 Retry-After, meta-robots).",
+     requiredParams: ["httpStatus"]
+   },
++  {
++    name: "browser.verify_replay_audit",
++    description:
++      "Выполнить детерминированный аудит согласованности отчёта, графа W3C PROV-JSON, трассы HAR 1.2 и UTF-16 снимков страниц.",
++    requiredParams: ["savedReports"]
++  },
+   {
+     name: "browser.get_drawer_view_model",
+     description:
+@@ -215,6 +250,7 @@ function createKosworkBrowserShell(options = {}) {
+ 
+   const coBrowsing = new KosworkCoBrowsingCoordinator({ engine });
+   const tabRevalidator = new KosworkHibernatedTabRevalidator({ engine });
++  const pinboard = new KosworkResearchPinboardBridge({ engine });
+ 
+   async function dispatchToolCall(toolName, args = {}, context = {}) {
+     const signal = context.signal || null;
+@@ -396,6 +432,38 @@ function createKosworkBrowserShell(options = {}) {
+           content: args.content
+         });
+ 
++      case "browser.ingest_downloaded_document":
++        return ingestMultiFormatDownloadedDocument(args.downloadResult, {
++          allowedWorkspaceRoot: resolvedWorkspaceRoot,
++          pageDate: args.pageDate || null,
++          eventDate: args.eventDate || null,
++          sourceUrl: args.sourceUrl || null
++        });
++
++      case "browser.pin_tab_bookmark":
++        return pinboard.pinTabToResearchBookmarks({
++          tabId: args.tabId,
++          category: args.category || "research",
++          tags: args.tags || [],
++          optionName: args.optionName || null,
++          criterion: args.criterion || null,
++          searchTerm: args.searchTerm || null
++        });
++
++      case "browser.list_pinned_bookmarks":
++        return pinboard.listPinnedResearchSources({
++          category: args.category || null,
++          tag: args.tag || null
++        });
++
++      case "browser.build_plan_from_bookmarks":
++        return pinboard.buildResearchPlanFromPinnedBookmarks({
++          question: args.question || "Сравнение по закладкам исследования",
++          category: args.category || "research",
++          tag: args.tag || null,
++          defaultCriteria: args.defaultCriteria || ["Спецификация"]
++        });
++
+       case "browser.research_cycle":
+         return await executeMultiSiteResearchWorkflow({
+           engine,
+@@ -501,6 +569,14 @@ function createKosworkBrowserShell(options = {}) {
+           headers: args.headers || {}
+         });
+ 
++      case "browser.verify_replay_audit":
++        return verifyDeterministicResearchReplay({
++          savedReports: args.savedReports,
++          provJsonObject: args.provJsonObject || null,
++          harLog: args.harLog || null,
++          snapshotsByUrl: args.snapshotsByUrl || {}
++        });
++
+       case "browser.get_drawer_view_model":
+         return buildBrowserResearchDrawerViewModel(engine);
+ 
+@@ -519,6 +595,7 @@ function createKosworkBrowserShell(options = {}) {
+     engine,
+     coBrowsing,
+     tabRevalidator,
++    pinboard,
+     toolDefinitions: BROWSER_RESEARCH_TOOL_DEFINITIONS,
+     dispatchToolCall
+   };
+diff --git a/desktop/windows/test/browser-research-acceptance.test.cjs b/desktop/windows/test/browser-research-acceptance.test.cjs
+index 0fce6d8..53222f8 100644
+--- a/desktop/windows/test/browser-research-acceptance.test.cjs
++++ b/desktop/windows/test/browser-research-acceptance.test.cjs
+@@ -2156,3 +2156,185 @@ test("21. In-Page All-Occurrences UTF-16 Find & Highlighter (`find-in-page-highl
+   assert.equal(rateLimitDecision.status, "rate_limited_429");
+   assert.equal(rateLimitDecision.retryAfterMs, 2000);
+ });
++
++test("22. Multi-Format Downloaded Document Ingestor (`downloaded-archive-and-doc-ingestor.cjs`: `.docx`/`.xlsx` -> UTF-16 Snapshot) & Bookmark Pinboard Bridge (`research-pinboard-bookmarks.cjs`)", async () => {
++  const {
++    saveWordReportToWorkspace
++  } = require("../workspace/word-report-builder.cjs");
++
++  const workspaceRoot = createTempWorkspace();
++  const shell = createKosworkBrowserShell({ workspaceRoot });
++  const engine = shell.engine;
++
++  // Build a real .docx file in the allowed downloads directory and ingest it as a versioned UTF-16 snapshot
++  const dlDocx = saveWordReportToWorkspace({
++    workspaceRoot,
++    relativePath: "downloads/vendor-passport.docx",
++    reportSpec: {
++      title: "Технический паспорт Koswork Enterprise",
++      subtitle: "Выгрузка из портала сертификации",
++      sections: [
++        {
++          heading: "Параметры отказоустойчивости",
++          paragraphs: [
++            "Гарантированное время восстановления (RTO) составляет 30 секунд при синхронной репликации."
++          ]
++        }
++      ],
++      sources: []
++    }
++  });
++
++  const ingestedDocx = await shell.dispatchToolCall(
++    "browser.ingest_downloaded_document",
++    {
++      downloadResult: {
++        savedPath: dlDocx.absolutePath,
++        filename: "vendor-passport.docx"
++      },
++      pageDate: "2026-11-07",
++      eventDate: "2026-11-01",
++      sourceUrl: "https://corpus.local/downloads/vendor-passport.docx"
++    },
++    { workspaceRoot }
++  );
++
++  assert.equal(ingestedDocx.detectedFormat, "docx");
++  assert.ok(ingestedDocx.fileSha256.length === 64);
++  const docxExcerpt = ingestedDocx.extractExcerpt({
++    searchTerm: "время восстановления (RTO) составляет 30 секунд"
++  });
++  assert.ok(docxExcerpt);
++  assert.equal(
++    ingestedDocx.snapshot.fullTextUtf16.slice(docxExcerpt.startUtf16, docxExcerpt.endUtf16),
++    docxExcerpt.quote
++  );
++
++  // Test Bookmark & Research Pinboard Bridge
++  engine.registerSyntheticSite("https://corpus.local/pinned-spec", {
++    title: "Закладка: Спецификация Option Delta",
++    pageDate: "2026-11-07",
++    eventDate: "2026-11-05",
++    text: "Для пакета Option Delta пропускная способность составляет 50000 RPS."
++  });
++
++  await engine.navigate({
++    tabId: "tab-pin",
++    url: "https://corpus.local/pinned-spec"
++  });
++
++  const pin = await shell.dispatchToolCall("browser.pin_tab_bookmark", {
++    tabId: "tab-pin",
++    category: "research-2026",
++    tags: ["rps", "delta"],
++    optionName: "Option Delta",
++    criterion: "Пропускная способность",
++    searchTerm: "пропускная способность составляет 50000 RPS"
++  });
++  assert.ok(pin.bookmarkId);
++  assert.ok(pin.excerpt.quote.includes("50000 RPS"));
++
++  const plan = await shell.dispatchToolCall("browser.build_plan_from_bookmarks", {
++    question: "Сравнение по закладкам Option Delta",
++    category: "research-2026"
++  });
++  assert.deepEqual(plan.seedUrls, ["https://corpus.local/pinned-spec"]);
++  assert.equal(plan.preverifiedClaims.length, 1);
++  assert.equal(plan.preverifiedClaims[0].optionName, "Option Delta");
++});
++
++test("23. Deterministic Replay & Cross-Bundle Audit Verifier (`research-replay-auditor.cjs` across Report + PROV-JSON + HAR 1.2 + UTF-16 Snapshots)", async () => {
++  const { buildBrowserResearchProvAndBibtex } = require("../browser/prov-lineage-exporter.cjs");
++  const { saveResearchReportsViaWorkspace } = require("../browser/research-report-builder.cjs");
++
++  const workspaceRoot = createTempWorkspace();
++  const shell = createKosworkBrowserShell({ workspaceRoot });
++  const engine = shell.engine;
++
++  engine.registerSyntheticSite("https://corpus.local/replay-source", {
++    title: "Эталонный источник для реплей-аудита",
++    pageDate: "2026-11-07",
++    eventDate: "2026-11-06",
++    text: "Подтверждённое утверждение реплея: энергопотребление узла составляет 120 Вт."
++  });
++
++  const nav = await engine.navigate({
++    tabId: "tab-replay",
++    url: "https://corpus.local/replay-source"
++  });
++  const exc = engine.extractExcerpt("tab-replay", {
++    searchTerm: "энергопотребление узла составляет 120 Вт"
++  });
++
++  const claimObj = {
++    claimId: "claim-replay-1",
++    optionName: "Node Eco",
++    criterion: "Энергопотребление",
++    value: "120 Вт",
++    claim: "Энергопотребление Node Eco составляет 120 Вт",
++    excerpt: exc,
++    source: {
++      url: nav.url,
++      title: nav.snapshot.title,
++      pageDate: nav.pageDate,
++      eventDate: nav.eventDate,
++      fetchedAt: nav.fetchedAt
++    }
++  };
++
++  const savedReports = await saveResearchReportsViaWorkspace({
++    workspaceRoot,
++    reportSlug: "replay-audit-report",
++    reportData: {
++      question: "Проверка детерминированного реплея",
++      criteria: ["Энергопотребление"],
++      sources: [
++        {
++          url: nav.url,
++          title: nav.snapshot.title,
++          httpStatus: 200,
++          available: true,
++          pageDate: nav.pageDate,
++          eventDate: nav.eventDate,
++          fetchedAt: nav.fetchedAt
++        }
++      ],
++      claims: [claimObj],
++      comparisonRows: [
++        {
++          optionName: "Node Eco",
++          values: {
++            Энергопотребление: {
++              displayValue: "120 Вт",
++              sourceUrl: nav.url,
++              startUtf16: exc.startUtf16,
++              endUtf16: exc.endUtf16
++            }
++          }
++        }
++      ]
++    }
++  });
++
++  const provBundle = buildBrowserResearchProvAndBibtex({
++    question: "Проверка детерминированного реплея",
++    confirmedClaims: savedReports.confirmedClaims
++  });
++  const harLog = buildResearchSessionHarLog({
++    openedSources: [nav]
++  });
++
++  const auditOk = await shell.dispatchToolCall("browser.verify_replay_audit", {
++    savedReports,
++    provJsonObject: provBundle.provJsonObject,
++    harLog,
++    snapshotsByUrl: { [nav.url]: nav.snapshot }
++  });
++
++  assert.equal(auditOk.replayAuditPassed, true);
++  assert.equal(auditOk.verifiedClaimsCount, 1);
++  assert.equal(auditOk.verifiedUtf16SlicesCount, 1);
++  assert.equal(auditOk.verifiedProvDerivations, 1);
++  assert.equal(auditOk.verifiedHarEntries, 1);
++  assert.equal(auditOk.violations.length, 0);
++});
+-- 
+2.39.5
+

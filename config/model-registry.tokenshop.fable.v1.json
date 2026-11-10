@@ -1,0 +1,44 @@
+{
+  "schema_version": 1,
+  "registry_version": "tokenshop.fable.v1",
+  "generated_at": "2026-11-02T00:00:00.000Z",
+  "entries": [
+    {
+      "provider_id": "tokenshop",
+      "model_id": "claude-fable-5",
+      "aliases": ["fable", "fable-5", "claude-fable-5"],
+      "protocol": "openai-compatible",
+      "status": "active",
+      "roles": ["manager", "assistant", "analyst", "critic"],
+      "task_types": [
+        "project_chat",
+        "chat_response",
+        "manager_work_plan",
+        "manager_work_draft",
+        "manager_work_review"
+      ],
+      "capabilities": {
+        "streaming": true,
+        "structured_output": true,
+        "tool_calling": false,
+        "vision": true
+      },
+      "context_window_tokens": 1000000,
+      "max_output_tokens": 100000,
+      "quality_tier": 5,
+      "latency_tier": 2,
+      "pricing": null,
+      "privacy": {
+        "confidential_compatible": false,
+        "training_usage": "unknown",
+        "retention": "unknown"
+      },
+      "source": {
+        "kind": "authorized_discovery",
+        "verified_at": "2026-11-02T00:00:00.000Z",
+        "valid_until": "2026-11-09T00:00:00.000Z",
+        "reference": "https://token-shop.online/v1/models"
+      }
+    }
+  ]
+}

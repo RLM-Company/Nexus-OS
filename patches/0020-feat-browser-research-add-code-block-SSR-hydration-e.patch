@@ -1,0 +1,838 @@
+From 258399a6b424cdde9c465f3869c594d70f07ebf2 Mon Sep 17 00:00:00 2001
+From: Kosmora Engineering <eng@kosmora.ai>
+Date: Mon, 9 Nov 2026 16:34:12 +0000
+Subject: [PATCH 20/32] feat(browser-research): add code-block & SSR hydration
+ extractor, multi-tab crash-recovery session restorer, and coverage gap
+ analyzer
+
+---
+ .../hydration-and-codeblock-extractor.cjs     | 166 ++++++++++++++
+ .../research-coverage-gap-analyzer.cjs        | 117 ++++++++++
+ desktop/windows/browser/shell.cjs             | 101 +++++++++
+ .../tab-workspace-session-restorer.cjs        | 204 ++++++++++++++++++
+ .../test/browser-research-acceptance.test.cjs | 137 ++++++++++++
+ 5 files changed, 725 insertions(+)
+ create mode 100644 desktop/windows/browser/hydration-and-codeblock-extractor.cjs
+ create mode 100644 desktop/windows/browser/research-coverage-gap-analyzer.cjs
+ create mode 100644 desktop/windows/browser/tab-workspace-session-restorer.cjs
+
+diff --git a/desktop/windows/browser/hydration-and-codeblock-extractor.cjs b/desktop/windows/browser/hydration-and-codeblock-extractor.cjs
+new file mode 100644
+index 0000000..172b8ea
+--- /dev/null
++++ b/desktop/windows/browser/hydration-and-codeblock-extractor.cjs
+@@ -0,0 +1,166 @@
++"use strict";
++
++const { extractVerifiableExcerpt, decodeHtmlEntities } = require("./document.cjs");
++
++/**
++ * Koswork Technical Code-Block (`<pre>/<code>`) & SSR Hydration State Extractor
++ * (`desktop/windows/browser/hydration-and-codeblock-extractor.cjs`).
++ *
++ * Deepens Requirement #3 & #5:
++ * 1. Extracts `<pre>` / `<code>` technical configuration and specification blocks from
++ *    developer documentation pages with exact `[startUtf16, endUtf16]` code unit offsets
++ *    in `snapshot.fullTextUtf16`.
++ * 2. Extracts SSR hydration state (`<script id="__NEXT_DATA__" type="application/json">` or
++ *    `<script data-hydration-state type="application/json">`) and cross-checks each extracted
++ *    hydration value against the visible text in `snapshot.fullTextUtf16`:
++ *    - Values present in visible text get a verified UTF-16 excerpt (`visibleInDom: true`);
++ *    - Values present ONLY in hidden hydration JSON are flagged (`visibleInDom: false`,
++ *      `verificationStatus: "unconfirmed_hidden_hydration_only"`) so unrendered JSON fields
++ *      are never misrepresented as visible page quotes.
++ */
++
++function decodeBasicEntities(str = "") {
++  if (typeof decodeHtmlEntities === "function") {
++    return decodeHtmlEntities(str);
++  }
++  return String(str || "")
++    .replace(/&nbsp;/gi, " ")
++    .replace(/&amp;/gi, "&")
++    .replace(/&lt;/gi, "<")
++    .replace(/&gt;/gi, ">")
++    .replace(/&quot;/gi, '"')
++    .replace(/&#39;/gi, "'");
++}
++
++function extractCodeBlocksWithUtf16Offsets(snapshot, rawHtml = "") {
++  if (!snapshot || typeof snapshot.fullTextUtf16 !== "string") {
++    throw new Error("CODEBLOCK_EXTRACTOR_REQUIRES_SNAPSHOT");
++  }
++
++  const fullText = snapshot.fullTextUtf16;
++  const blocks = [];
++  const regex = /<(pre|code)\b([^>]*)>([\s\S]*?)<\/\1>/gi;
++  let match;
++  let searchFrom = 0;
++
++  while ((match = regex.exec(String(rawHtml || ""))) !== null) {
++    const tag = match[1].toLowerCase();
++    const attrs = match[2] || "";
++    const innerRaw = match[3]
++      .replace(/<[^>]+>/g, " ")
++      .replace(/[ \t]+/g, " ")
++      .trim();
++    const cleanText = decodeBasicEntities(innerRaw).trim();
++    if (!cleanText) continue;
++
++    const langMatch = attrs.match(/\b(?:class|data-lang)=["'][^"']*?(?:language-|lang-)([a-z0-9_-]+)/i);
++    const language = langMatch ? langMatch[1].toLowerCase() : "text";
++
++    const idx = fullText.indexOf(cleanText, searchFrom);
++    const startUtf16 = idx >= 0 ? idx : fullText.indexOf(cleanText);
++    if (startUtf16 < 0) continue;
++    const endUtf16 = startUtf16 + cleanText.length;
++    if (idx >= 0) {
++      searchFrom = endUtf16;
++    }
++
++    const excerpt = extractVerifiableExcerpt(snapshot, {
++      startUtf16,
++      endUtf16
++    });
++
++    blocks.push({
++      blockIndex: blocks.length + 1,
++      tag,
++      language,
++      startUtf16,
++      endUtf16,
++      lengthUtf16: endUtf16 - startUtf16,
++      codeText: cleanText,
++      excerpt
++    });
++  }
++
++  return {
++    url: snapshot.url,
++    pageVersion: snapshot.pageVersion,
++    codeBlocksCount: blocks.length,
++    codeBlocks: blocks
++  };
++}
++
++function extractAndVerifyHydrationJsonState(snapshot, rawHtml = "") {
++  if (!snapshot || typeof snapshot.fullTextUtf16 !== "string") {
++    throw new Error("HYDRATION_EXTRACTOR_REQUIRES_SNAPSHOT");
++  }
++
++  const scripts = [];
++  const scriptRegex =
++    /<script\b([^>]*type=["']application\/json["'][^>]*)>([\s\S]*?)<\/script>/gi;
++  let match;
++
++  while ((match = scriptRegex.exec(String(rawHtml || ""))) !== null) {
++    const attrs = match[1] || "";
++    const idMatch = attrs.match(/\bid=["']([^"']+)["']/i);
++    const scriptId = idMatch ? idMatch[1] : "inline-json";
++    try {
++      const parsed = JSON.parse(match[2].trim());
++      scripts.push({ scriptId, data: parsed });
++    } catch {
++      // Ignore malformed JSON script blocks safely
++    }
++  }
++
++  const verifiedVisibleFacts = [];
++  const hiddenOnlyHydrationFacts = [];
++
++  const visitObject = (obj, pathPrefix = "") => {
++    if (!obj || typeof obj !== "object") return;
++    for (const [k, v] of Object.entries(obj)) {
++      const currentPath = pathPrefix ? `${pathPrefix}.${k}` : k;
++      if (typeof v === "string" || typeof v === "number") {
++        const strVal = String(v).trim();
++        if (!strVal || strVal.length < 2) continue;
++        const exc = extractVerifiableExcerpt(snapshot, { searchTerm: strVal });
++        if (exc) {
++          verifiedVisibleFacts.push({
++            jsonPath: currentPath,
++            value: strVal,
++            visibleInDom: true,
++            verificationStatus: "confirmed",
++            excerpt: exc
++          });
++        } else {
++          hiddenOnlyHydrationFacts.push({
++            jsonPath: currentPath,
++            value: strVal,
++            visibleInDom: false,
++            verificationStatus: "unconfirmed_hidden_hydration_only",
++            reasonRu:
++              "Значение присутствует только в скрытом JSON-блоке гидратации и отсутствует в видимом тексте страницы."
++          });
++        }
++      } else if (typeof v === "object") {
++        visitObject(v, currentPath);
++      }
++    }
++  };
++
++  for (const s of scripts) {
++    visitObject(s.data, s.scriptId);
++  }
++
++  return {
++    url: snapshot.url,
++    hydrationScriptsCount: scripts.length,
++    verifiedVisibleCount: verifiedVisibleFacts.length,
++    hiddenOnlyCount: hiddenOnlyHydrationFacts.length,
++    verifiedVisibleFacts,
++    hiddenOnlyHydrationFacts
++  };
++}
++
++module.exports = {
++  extractCodeBlocksWithUtf16Offsets,
++  extractAndVerifyHydrationJsonState
++};
+diff --git a/desktop/windows/browser/research-coverage-gap-analyzer.cjs b/desktop/windows/browser/research-coverage-gap-analyzer.cjs
+new file mode 100644
+index 0000000..8a9f27f
+--- /dev/null
++++ b/desktop/windows/browser/research-coverage-gap-analyzer.cjs
+@@ -0,0 +1,117 @@
++"use strict";
++
++/**
++ * Koswork Research Coverage & Gap Follow-Up Planner
++ * (`desktop/windows/browser/research-coverage-gap-analyzer.cjs`).
++ *
++ * Deepens Requirement #2 & #5:
++ * - Audits an in-progress or completed research cycle against the requested
++ *   `(options × criteria)` matrix.
++ * - Explicitly classifies every cell into:
++ *   - `"confirmed"` (backed by a valid UTF-16 excerpt `[startUtf16..endUtf16]`),
++ *   - `"conflicting"` (multiple sources provide incompatible values for this cell),
++ *   - `"unknown"` (no verified excerpt found yet; bare links are rejected).
++ * - Generates targeted follow-up search queries (`followUpQueries`) specifically for
++ *   `"unknown"` and `"conflicting"` cells so the Work executor can close knowledge gaps
++ *   without re-searching already-confirmed cells.
++ */
++function analyzeResearchCoverageAndBuildFollowUps({
++  question = "",
++  options = [],
++  criteria = [],
++  confirmedClaims = [],
++  contradictions = []
++} = {}) {
++  const cleanOptions = Array.from(new Set(options.map((o) => String(o).trim()).filter(Boolean)));
++  const cleanCriteria = Array.from(
++    new Set(criteria.map((c) => String(c).trim()).filter(Boolean))
++  );
++
++  const confirmedByCell = new Map();
++  for (const c of confirmedClaims) {
++    if (!c || !c.optionName || !c.criterion || !c.excerpt || !c.excerpt.quote) continue;
++    const key = `${String(c.optionName).trim()}||${String(c.criterion).trim()}`;
++    if (!confirmedByCell.has(key)) {
++      confirmedByCell.set(key, []);
++    }
++    confirmedByCell.get(key).push(c);
++  }
++
++  const conflictCells = new Set();
++  for (const cf of contradictions) {
++    if (cf && cf.optionName && cf.criterion) {
++      conflictCells.add(`${String(cf.optionName).trim()}||${String(cf.criterion).trim()}`);
++    }
++  }
++
++  const confirmedCells = [];
++  const conflictingCells = [];
++  const unknownCells = [];
++  const followUpQueries = [];
++
++  for (const opt of cleanOptions) {
++    for (const crit of cleanCriteria) {
++      const key = `${opt}||${crit}`;
++      const claimsForCell = confirmedByCell.get(key) || [];
++      const hasConflict = conflictCells.has(key);
++
++      if (hasConflict) {
++        conflictingCells.push({
++          optionName: opt,
++          criterion: crit,
++          status: "conflicting",
++          claimsCount: claimsForCell.length
++        });
++        followUpQueries.push({
++          optionName: opt,
++          criterion: crit,
++          reason: "resolve_contradiction",
++          query: `${opt} ${crit} официальная спецификация актуальная дата 2026`
++        });
++      } else if (claimsForCell.length > 0) {
++        confirmedCells.push({
++          optionName: opt,
++          criterion: crit,
++          status: "confirmed",
++          value: claimsForCell[0].value || claimsForCell[0].excerpt.quote,
++          sourceUrl: claimsForCell[0].source?.url || null
++        });
++      } else {
++        unknownCells.push({
++          optionName: opt,
++          criterion: crit,
++          status: "unknown",
++          reasonRu: "Подтверждающая UTF-16 выдержка не найдена."
++        });
++        followUpQueries.push({
++          optionName: opt,
++          criterion: crit,
++          reason: "fill_unknown_gap",
++          query: `${opt} ${crit} документация характеристики`
++        });
++      }
++    }
++  }
++
++  const totalCells = cleanOptions.length * cleanCriteria.length;
++  const coverageRatio =
++    totalCells > 0 ? Number((confirmedCells.length / totalCells).toFixed(4)) : 1;
++
++  return {
++    question,
++    totalCells,
++    confirmedCellsCount: confirmedCells.length,
++    conflictingCellsCount: conflictingCells.length,
++    unknownCellsCount: unknownCells.length,
++    coverageRatio,
++    fullyCovered: unknownCells.length === 0 && conflictingCells.length === 0,
++    confirmedCells,
++    conflictingCells,
++    unknownCells,
++    followUpQueries
++  };
++}
++
++module.exports = {
++  analyzeResearchCoverageAndBuildFollowUps
++};
+diff --git a/desktop/windows/browser/shell.cjs b/desktop/windows/browser/shell.cjs
+index 5712858..0e4ca69 100644
+--- a/desktop/windows/browser/shell.cjs
++++ b/desktop/windows/browser/shell.cjs
+@@ -50,6 +50,16 @@ const {
+   saveOfflineEvidenceBundleToWorkspace,
+   restoreSnapshotsFromEvidenceBundle
+ } = require("./offline-evidence-bundle-archiver.cjs");
++const {
++  extractCodeBlocksWithUtf16Offsets,
++  extractAndVerifyHydrationJsonState
++} = require("./hydration-and-codeblock-extractor.cjs");
++const {
++  KosworkTabWorkspaceSessionRestorer
++} = require("./tab-workspace-session-restorer.cjs");
++const {
++  analyzeResearchCoverageAndBuildFollowUps
++} = require("./research-coverage-gap-analyzer.cjs");
+ 
+ /**
+  * Shared Tool & Execution Boundary for Koswork Browser (`desktop/windows/browser/shell.cjs`).
+@@ -100,6 +110,18 @@ const BROWSER_RESEARCH_TOOL_DEFINITIONS = Object.freeze([
+       "Перейти по цитируемой гиперссылке из обзорной статьи в первоисточник и проверить подтверждение утверждения UTF-16 выдержкой.",
+     requiredParams: ["sourceTabId", "anchorOrUrlQuery"]
+   },
++  {
++    name: "browser.extract_code_blocks",
++    description:
++      "Извлечь технические блоки <pre>/<code> на открытой странице с точными смещениями UTF-16.",
++    requiredParams: ["tabId"]
++  },
++  {
++    name: "browser.extract_hydration_state",
++    description:
++      "Извлечь JSON-блоки гидратации (__NEXT_DATA__) и сверить их значения с видимым текстом DOM.",
++    requiredParams: ["tabId"]
++  },
+   {
+     name: "browser.read_long_page",
+     description:
+@@ -160,12 +182,42 @@ const BROWSER_RESEARCH_TOOL_DEFINITIONS = Object.freeze([
+       "Вычислить многокритериальную матрицу выбора и границу Парето только по подтверждённым UTF-16 выдержкам.",
+     requiredParams: ["criteriaSpecs", "confirmedClaims"]
+   },
++  {
++    name: "browser.analyze_coverage_gaps",
++    description:
++      "Проанализировать полноту покрытия матрицы (варианты x критерии) и сформировать целевые дозапросы по неизвестным или конфликтным ячейкам.",
++    requiredParams: ["options", "criteria"]
++  },
+   {
+     name: "browser.archive_offline_evidence",
+     description:
+       "Сохранить автономный архив доказательств (RFC 2557 MHTML и JSON-пакет снимков) в рабочую папку.",
+     requiredParams: ["snapshots"]
+   },
++  {
++    name: "browser.close_and_record_tab",
++    description:
++      "Закрыть вкладку с сохранением её состояния и истории переходов в буфер восстановления.",
++    requiredParams: ["tabId"]
++  },
++  {
++    name: "browser.reopen_last_closed_tab",
++    description:
++      "Восстановить последнюю закрытую вкладку (Ctrl+Shift+T) со снимком и историей переходов.",
++    requiredParams: []
++  },
++  {
++    name: "browser.save_tab_session",
++    description:
++      "Сохранить состояние всех вкладок браузера в рабочую папку.",
++    requiredParams: []
++  },
++  {
++    name: "browser.restore_tab_session",
++    description:
++      "Восстановить сессию вкладок браузера с соблюдением лимита живых вкладок maxLiveTabs.",
++    requiredParams: []
++  },
+   {
+     name: "browser.run_form_wizard",
+     description:
+@@ -301,6 +353,10 @@ function createKosworkBrowserShell(options = {}) {
+   const tabRevalidator = new KosworkHibernatedTabRevalidator({ engine });
+   const pinboard = new KosworkResearchPinboardBridge({ engine });
+   const spaObserver = new KosworkSpaRouteObserver({ engine });
++  const tabSessionRestorer = new KosworkTabWorkspaceSessionRestorer({
++    engine,
++    workspaceRoot: options.workspaceRoot || engine.allowedWorkspaceRoot
++  });
+ 
+   async function dispatchToolCall(toolName, args = {}, context = {}) {
+     const signal = context.signal || null;
+@@ -388,6 +444,24 @@ function createKosworkBrowserShell(options = {}) {
+           signal
+         });
+ 
++      case "browser.extract_code_blocks": {
++        const obs = engine.observePage(args.tabId);
++        const tab = engine.tabs.get(String(args.tabId));
++        return extractCodeBlocksWithUtf16Offsets(
++          obs.snapshot,
++          args.rawHtml || tab?.rawSiteDef?.html || ""
++        );
++      }
++
++      case "browser.extract_hydration_state": {
++        const obs = engine.observePage(args.tabId);
++        const tab = engine.tabs.get(String(args.tabId));
++        return extractAndVerifyHydrationJsonState(
++          obs.snapshot,
++          args.rawHtml || tab?.rawSiteDef?.html || ""
++        );
++      }
++
+       case "browser.observe":
+         return engine.observePage(args.tabId, {
+           reuseSnapshot: args.reuseSnapshot !== false
+@@ -487,6 +561,15 @@ function createKosworkBrowserShell(options = {}) {
+           confirmedClaims: args.confirmedClaims || []
+         });
+ 
++      case "browser.analyze_coverage_gaps":
++        return analyzeResearchCoverageAndBuildFollowUps({
++          question: args.question || "",
++          options: args.options || [],
++          criteria: args.criteria || [],
++          confirmedClaims: args.confirmedClaims || [],
++          contradictions: args.contradictions || []
++        });
++
+       case "browser.archive_offline_evidence":
+         return await saveOfflineEvidenceBundleToWorkspace({
+           workspaceRoot: resolvedWorkspaceRoot,
+@@ -500,6 +583,23 @@ function createKosworkBrowserShell(options = {}) {
+       case "browser.restore_offline_evidence":
+         return restoreSnapshotsFromEvidenceBundle(args.bundle || {});
+ 
++      case "browser.close_and_record_tab":
++        return tabSessionRestorer.closeAndRecordTab(
++          args.tabId,
++          args.reason || "user_or_crash_close"
++        );
++
++      case "browser.reopen_last_closed_tab":
++        return await tabSessionRestorer.reopenLastClosedTab();
++
++      case "browser.save_tab_session":
++        return tabSessionRestorer.saveBrowserSessionToDisk();
++
++      case "browser.restore_tab_session":
++        return await tabSessionRestorer.restoreBrowserSessionFromDisk(
++          args.targetEngine || engine
++        );
++
+       case "browser.fill_form":
+         return engine.fillForm({
+           tabId: args.tabId,
+@@ -706,6 +806,7 @@ function createKosworkBrowserShell(options = {}) {
+     tabRevalidator,
+     pinboard,
+     spaObserver,
++    tabSessionRestorer,
+     toolDefinitions: BROWSER_RESEARCH_TOOL_DEFINITIONS,
+     dispatchToolCall
+   };
+diff --git a/desktop/windows/browser/tab-workspace-session-restorer.cjs b/desktop/windows/browser/tab-workspace-session-restorer.cjs
+new file mode 100644
+index 0000000..eee9e68
+--- /dev/null
++++ b/desktop/windows/browser/tab-workspace-session-restorer.cjs
+@@ -0,0 +1,204 @@
++"use strict";
++
++const fs = require("node:fs");
++const path = require("node:path");
++const { writeAtomicJson, readJsonFileSafe } = require("../desktop-state.cjs");
++
++/**
++ * Koswork Multi-Tab Crash-Recovery & Hibernated Workspace Session Restorer
++ * (`desktop/windows/browser/tab-workspace-session-restorer.cjs`).
++ *
++ * Deepens Requirement #3, #6 & #7:
++ * 1. Tracks closed or crashed tabs in a bounded ring buffer (`closedTabsHistory`)
++ *    and supports `reopenLastClosedTab()` (`Ctrl+Shift+T`), restoring the exact URL,
++ *    navigation history stack, and versioned snapshot.
++ * 2. Saves and restores the entire multi-tab browser session (`saveBrowserSessionToDisk`,
++ *    `restoreBrowserSessionFromDisk`) while strictly respecting `engine.resourceGovernor.maxLiveTabs`
++ *    (default `3`): only the most recent `maxLiveTabs` tabs are restored as live, and
++ *    all remaining tabs are restored in hibernated state (`hibernated: true`) so restoring
++ *    a large research session never exceeds the live tab RAM cap!
++ */
++class KosworkTabWorkspaceSessionRestorer {
++  constructor(options = {}) {
++    if (!options.engine) {
++      throw new Error("TAB_SESSION_RESTORER_REQUIRES_ENGINE");
++    }
++    this.engine = options.engine;
++    this.workspaceRoot = path.resolve(
++      options.workspaceRoot || this.engine.allowedWorkspaceRoot || process.cwd()
++    );
++    this.stateDir = path.join(this.workspaceRoot, ".koswork-research");
++    fs.mkdirSync(this.stateDir, { recursive: true });
++    this.sessionFilePath = path.join(this.stateDir, "tab-workspace-session.json");
++    this.maxClosedHistory = Math.max(1, Number(options.maxClosedHistory ?? 10));
++    this.closedTabsHistory = [];
++  }
++
++  /**
++   * Closes a tab and records its last known snapshot and navigation history stack
++   * so it can be recovered via `reopenLastClosedTab()`.
++   */
++  closeAndRecordTab(tabId, reason = "user_or_crash_close") {
++    const key = String(tabId);
++    const tab = this.engine.tabs.get(key);
++    if (!tab || tab.closed) {
++      return { closed: false, tabId: key };
++    }
++
++    const navStack = this.engine.tabNavigationStacks.get(key) || {
++      entries: [tab.url],
++      index: 0
++    };
++
++    const closedRecord = {
++      tabId: key,
++      url: tab.url,
++      title: tab.snapshot?.title || tab.url,
++      pageVersion: tab.pageVersion,
++      pageDate: tab.snapshot?.pageDate || null,
++      eventDate: tab.snapshot?.eventDate || null,
++      fetchedAt: tab.snapshot?.fetchedAt || null,
++      fullTextUtf16: tab.snapshot?.fullTextUtf16 || "",
++      navigationStack: {
++        entries: [...navStack.entries],
++        index: navStack.index
++      },
++      closedReason: reason,
++      closedAt: new Date().toISOString()
++    };
++
++    this.closedTabsHistory.push(closedRecord);
++    if (this.closedTabsHistory.length > this.maxClosedHistory) {
++      this.closedTabsHistory.shift();
++    }
++
++    this.engine.closeTab(key);
++    return {
++      closed: true,
++      tabId: key,
++      closedRecord
++    };
++  }
++
++  async reopenLastClosedTab() {
++    if (this.closedTabsHistory.length === 0) {
++      const err = new Error("NO_CLOSED_TABS_TO_REOPEN");
++      err.code = "NO_CLOSED_TABS_TO_REOPEN";
++      throw err;
++    }
++
++    const last = this.closedTabsHistory.pop();
++    if (!this.engine.syntheticSites.has(last.url) && last.fullTextUtf16) {
++      this.engine.registerSyntheticSite(last.url, {
++        title: last.title,
++        pageDate: last.pageDate,
++        eventDate: last.eventDate,
++        text: last.fullTextUtf16
++      });
++    }
++
++    const nav = await this.engine.navigate({
++      tabId: last.tabId,
++      url: last.url,
++      actor: "user"
++    });
++
++    if (last.navigationStack && Array.isArray(last.navigationStack.entries)) {
++      this.engine.tabNavigationStacks.set(last.tabId, {
++        entries: [...last.navigationStack.entries],
++        index: last.navigationStack.index
++      });
++    }
++
++    return {
++      reopened: true,
++      tabId: nav.tabId,
++      url: nav.url,
++      pageVersion: nav.snapshot.pageVersion,
++      tabReceipt: nav.tabReceipt,
++      snapshot: nav.snapshot,
++      remainingClosedHistoryCount: this.closedTabsHistory.length
++    };
++  }
++
++  saveBrowserSessionToDisk() {
++    const openTabs = [];
++    for (const [tabId, tab] of this.engine.tabs.entries()) {
++      if (tab.closed) continue;
++      const navStack = this.engine.tabNavigationStacks.get(tabId) || {
++        entries: [tab.url],
++        index: 0
++      };
++      openTabs.push({
++        tabId,
++        url: tab.url,
++        title: tab.snapshot?.title || tab.url,
++        pageVersion: tab.pageVersion,
++        hibernated: Boolean(tab.hibernated),
++        pageDate: tab.snapshot?.pageDate || null,
++        eventDate: tab.snapshot?.eventDate || null,
++        fetchedAt: tab.snapshot?.fetchedAt || null,
++        fullTextUtf16: tab.snapshot?.fullTextUtf16 || "",
++        navigationStack: navStack
++      });
++    }
++
++    const payload = {
++      schemaVersion: "koswork.browser-research.tab-session.v1",
++      savedAt: new Date().toISOString(),
++      maxLiveTabs: this.engine.resourceGovernor.maxLiveTabs,
++      openTabs,
++      closedTabsHistory: this.closedTabsHistory
++    };
++
++    writeAtomicJson(this.sessionFilePath, payload);
++    return {
++      filePath: this.sessionFilePath,
++      savedTabsCount: openTabs.length,
++      closedHistoryCount: this.closedTabsHistory.length
++    };
++  }
++
++  async restoreBrowserSessionFromDisk(targetEngine = this.engine) {
++    const data = readJsonFileSafe(this.sessionFilePath, null);
++    if (!data || !Array.isArray(data.openTabs)) {
++      return { restored: false, restoredTabsCount: 0 };
++    }
++
++    for (const item of data.openTabs) {
++      if (!targetEngine.syntheticSites.has(item.url) && item.fullTextUtf16) {
++        targetEngine.registerSyntheticSite(item.url, {
++          title: item.title,
++          pageDate: item.pageDate,
++          eventDate: item.eventDate,
++          text: item.fullTextUtf16
++        });
++      }
++      await targetEngine.navigate({
++        tabId: item.tabId,
++        url: item.url,
++        actor: "agent"
++      });
++      if (item.navigationStack) {
++        targetEngine.tabNavigationStacks.set(item.tabId, item.navigationStack);
++      }
++    }
++
++    this.closedTabsHistory = Array.isArray(data.closedTabsHistory)
++      ? [...data.closedTabsHistory]
++      : [];
++
++    const report = targetEngine.resourceGovernor.getResourceReport();
++    return {
++      restored: true,
++      restoredTabsCount: data.openTabs.length,
++      liveTabCount: report.liveTabCount,
++      hibernatedTabCount: report.hibernatedTabCount,
++      maxLiveTabs: report.maxLiveTabs
++    };
++  }
++}
++
++module.exports = {
++  KosworkTabWorkspaceSessionRestorer
++};
+diff --git a/desktop/windows/test/browser-research-acceptance.test.cjs b/desktop/windows/test/browser-research-acceptance.test.cjs
+index 4fd8cb3..21a015c 100644
+--- a/desktop/windows/test/browser-research-acceptance.test.cjs
++++ b/desktop/windows/test/browser-research-acceptance.test.cjs
+@@ -2590,3 +2590,140 @@ test("27. Multi-Criteria Decision Matrix & Pareto Analyzer (`multi-criteria-deci
+   assert.ok(restoredMap[nav.url]);
+   assert.equal(restoredMap[nav.url].contentSha256, nav.snapshot.contentSha256);
+ });
++
++test("28. Technical Code-Block (`<pre>/<code>`) & SSR Hydration State Extractor (`hydration-and-codeblock-extractor.cjs`)", async () => {
++  const workspaceRoot = createTempWorkspace();
++  const shell = createKosworkBrowserShell({ workspaceRoot });
++  const engine = shell.engine;
++
++  engine.registerSyntheticSite("https://corpus.local/ssr-dev-portal", {
++    title: "Портал разработчика с SSR гидратацией",
++    pageDate: "2026-11-07",
++    eventDate: "2026-11-05",
++    html: `
++      <html>
++        <head>
++          <script id="__NEXT_DATA__" type="application/json">
++            {
++              "props": {
++                "pageProps": {
++                  "visibleSla": "99.95% доступности",
++                  "unrenderedInternalFlag": "secret-canary-tier-999"
++                }
++              }
++            }
++          </script>
++        </head>
++        <body>
++          <p>Гарантированный показатель: 99.95% доступности для кластера.</p>
++          <pre class="language-yaml">max_connections: 4096 | wal_autocheckpoint: 1000</pre>
++        </body>
++      </html>
++    `
++  });
++
++  await engine.navigate({
++    tabId: "tab-ssr",
++    url: "https://corpus.local/ssr-dev-portal"
++  });
++
++  const codeRes = await shell.dispatchToolCall("browser.extract_code_blocks", {
++    tabId: "tab-ssr"
++  });
++  assert.equal(codeRes.codeBlocksCount, 1);
++  assert.equal(codeRes.codeBlocks[0].language, "yaml");
++  assert.ok(codeRes.codeBlocks[0].excerpt.quote.includes("max_connections: 4096"));
++
++  const hydRes = await shell.dispatchToolCall("browser.extract_hydration_state", {
++    tabId: "tab-ssr"
++  });
++  assert.equal(hydRes.hydrationScriptsCount, 1);
++  assert.equal(hydRes.verifiedVisibleCount, 1);
++  assert.equal(hydRes. verifiedVisibleFacts[0].value, "99.95% доступности");
++  assert.equal(hydRes.hiddenOnlyCount, 1);
++  assert.equal(
++    hydRes.hiddenOnlyHydrationFacts[0].verificationStatus,
++    "unconfirmed_hidden_hydration_only"
++  );
++});
++
++test("29. Multi-Tab Crash-Recovery & Hibernated Session Restorer (`tab-workspace-session-restorer.cjs`) + Research Coverage & Gap Analyzer (`research-coverage-gap-analyzer.cjs`)", async () => {
++  const workspaceRoot = createTempWorkspace();
++  const shell = createKosworkBrowserShell({ workspaceRoot, maxLiveTabs: 3 });
++  const engine = shell.engine;
++
++  for (let i = 1; i <= 5; i += 1) {
++    engine.registerSyntheticSite(`https://corpus.local/session-tab-${i}`, {
++      title: `Вкладка рабочей сессии №${i}`,
++      pageDate: "2026-11-07",
++      text: `Данные вкладки №${i}: пропускная способность ${i * 500} Мбит/с.`
++    });
++    await engine.navigate({
++      tabId: `s-tab-${i}`,
++      url: `https://corpus.local/session-tab-${i}`
++    });
++  }
++
++  // 1. Close s-tab-5 and verify Ctrl+Shift+T reopenLastClosedTab restores it with a valid snapshot
++  const closed = await shell.dispatchToolCall("browser.close_and_record_tab", {
++    tabId: "s-tab-5",
++    reason: "simulated_renderer_crash"
++  });
++  assert.equal(closed.closed, true);
++
++  const reopened = await shell.dispatchToolCall("browser.reopen_last_closed_tab", {});
++  assert.equal(reopened.reopened, true);
++  assert.equal(reopened.tabId, "s-tab-5");
++  assert.ok(reopened.snapshot.fullTextUtf16.includes("2500 Мбит/с"));
++
++  // 2. Save 5-tab session to disk and restore into a brand new engine (maxLiveTabs=3 -> 3 live, 2 hibernated)
++  const savedSess = await shell.dispatchToolCall("browser.save_tab_session", {});
++  assert.equal(savedSess.savedTabsCount, 5);
++
++  const freshEngine = new KosworkBrowserEngine({
++    allowedWorkspaceRoot: workspaceRoot,
++    maxLiveTabs: 3
++  });
++  const restored = await shell.dispatchToolCall("browser.restore_tab_session", {
++    targetEngine: freshEngine
++  });
++  assert.equal(restored.restored, true);
++  assert.equal(restored.restoredTabsCount, 5);
++  assert.equal(restored.liveTabCount, 3);
++  assert.equal(restored.hibernatedTabCount, 2);
++
++  // 3. Test Research Coverage & Gap Follow-Up Planner
++  const exc1 = engine.extractExcerpt("s-tab-5", {
++    searchTerm: "пропускная способность 2500 Мбит/с"
++  });
++
++  const gapReport = await shell.dispatchToolCall("browser.analyze_coverage_gaps", {
++    question: "Сравнение Option Alpha и Option Beta по 2 критериям",
++    options: ["Option Alpha", "Option Beta"],
++    criteria: ["Пропускная способность", "Автономный режим"],
++    confirmedClaims: [
++      {
++        optionName: "Option Alpha",
++        criterion: "Пропускная способность",
++        value: "2500 Мбит/с",
++        excerpt: exc1,
++        source: { url: "https://corpus.local/session-tab-5" }
++      }
++    ],
++    contradictions: [
++      {
++        optionName: "Option Beta",
++        criterion: "Пропускная способность",
++        summary: "Расхождение 1000 vs 2000 Мбит/с"
++      }
++    ]
++  });
++
++  assert.equal(gapReport.totalCells, 4);
++  assert.equal(gapReport.confirmedCellsCount, 1);
++  assert.equal(gapReport.conflictingCellsCount, 1);
++  assert.equal(gapReport.unknownCellsCount, 2);
++  assert.equal(gapReport.fullyCovered, false);
++  // Generates 3 targeted follow-up queries (1 for conflicting cell + 2 for unknown cells)
++  assert.equal(gapReport.followUpQueries.length, 3);
++});
+-- 
+2.39.5
+

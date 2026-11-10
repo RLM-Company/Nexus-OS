@@ -1,0 +1,1048 @@
+From 83f8f2fe85f1feda1867c037794d0d67b6d0e0f2 Mon Sep 17 00:00:00 2001
+From: Kosmora Engineering <eng@kosmora.ai>
+Date: Sat, 7 Nov 2026 21:06:31 +0000
+Subject: [PATCH 04/32] feat(koswork-browser-research): add real HTTP 5-site
+ corpus server and epistemic claim comparator with unit normalization
+
+---
+ desktop/windows/browser/claim-comparator.cjs  | 238 +++++++++++++++++
+ .../windows/browser/corpus-http-server.cjs    | 174 +++++++++++++
+ desktop/windows/browser/research-workflow.cjs | 141 +++++-----
+ .../test/browser-research-acceptance.test.cjs | 242 +++++++++---------
+ 4 files changed, 597 insertions(+), 198 deletions(-)
+ create mode 100644 desktop/windows/browser/claim-comparator.cjs
+ create mode 100644 desktop/windows/browser/corpus-http-server.cjs
+
+diff --git a/desktop/windows/browser/claim-comparator.cjs b/desktop/windows/browser/claim-comparator.cjs
+new file mode 100644
+index 0000000..691566d
+--- /dev/null
++++ b/desktop/windows/browser/claim-comparator.cjs
+@@ -0,0 +1,238 @@
++"use strict";
++
++/**
++ * Koswork Epistemic Claim Comparator & Unit/Value Normalizer
++ * (`desktop/windows/browser/claim-comparator.cjs`).
++ *
++ * Distinguishes:
++ * 1. Semantically equivalent values expressed in different formats across sources
++ *    (e.g., `"$49/мес"` vs `"$49.00 в месяц"`, `"12 мс"` vs `"0.012 с"`, `"64 ГБ"` vs `"65536 МБ"`)
++ *    -> merges into `confirmed_multi_source` without false-positive contradiction flags.
++ * 2. Genuine contradictions (`"$49/мес"` vs `"$79/мес"`, `"99.95%"` vs `"99.0%"`)
++ *    -> flags `conflicting_evidence` and ranks sources by temporal freshness (`eventDate` > `pageDate` > `fetchedAt`).
++ */
++
++function normalizeComparableValue(rawValue) {
++  const raw = String(rawValue ?? "").trim();
++  if (!raw) {
++    return { kind: "empty", canonicalKey: "", numericValue: null, raw };
++  }
++
++  const lower = raw.toLowerCase().replace(/,/g, ".");
++
++  // 1. Currency per month/year: e.g. "$49/мес", "$49.00 в месяц", "49 usd/month"
++  const currencyMatch = lower.match(
++    /(?:\$|usd\s*)?\s*(\d+(?:\.\d+)?)\s*(?:\$|usd)?\s*(?:\/|\s+в\s+|\s+per\s+)?\s*(мес|месяц|month|mo|год|year|yr)(?:$|[^\p{L}\p{N}])/iu
++  );
++  if (
++    currencyMatch &&
++    (lower.includes("$") || lower.includes("usd") || lower.includes("мес") || lower.includes("год"))
++  ) {
++    const amount = Number(currencyMatch[1]);
++    const periodRaw = currencyMatch[2].toLowerCase();
++    const isYearly = periodRaw.startsWith("год") || periodRaw.startsWith("y");
++    const monthlyUsd = isYearly ? Number((amount / 12).toFixed(2)) : Number(amount.toFixed(2));
++    return {
++      kind: "currency_monthly_usd",
++      canonicalKey: `usd_mo:${monthlyUsd.toFixed(2)}`,
++      numericValue: monthlyUsd,
++      raw
++    };
++  }
++
++  // 2. Percentage: e.g. "99.95%", "99,95 %"
++  const pctMatch = lower.match(/^[^\d]*(\d+(?:\.\d+)?)\s*%[^\d]*$/);
++  if (pctMatch) {
++    const pct = Number(pctMatch[1]);
++    return {
++      kind: "percentage",
++      canonicalKey: `pct:${pct.toFixed(4)}`,
++      numericValue: pct,
++      raw
++    };
++  }
++
++  // 3. Latency / duration: e.g. "< 12 мс", "12 ms", "0.012 с", "0.012 sec"
++  const latencyMatch = lower.match(
++    /(<\s*|до\s*)?(\d+(?:\.\d+)?)\s*(мс|ms|сек|sec|с|s)(?:$|[^\p{L}\p{N}])/iu
++  );
++  if (latencyMatch) {
++    const prefix = latencyMatch[1] ? "<" : "";
++    const val = Number(latencyMatch[2]);
++    const unit = latencyMatch[3].toLowerCase();
++    const ms = unit === "мс" || unit === "ms" ? val : val * 1000;
++    return {
++      kind: "latency_ms",
++      canonicalKey: `ms:${prefix}${ms.toFixed(2)}`,
++      numericValue: ms,
++      raw
++    };
++  }
++
++  // 4. Memory / Storage size: e.g. "64 ГБ", "65536 МБ"
++  const storageMatch = lower.match(
++    /(\d+(?:\.\d+)?)\s*(гб|gb|мб|mb|тб|tb)(?:$|[^\p{L}\p{N}])/iu
++  );
++  if (storageMatch) {
++    const val = Number(storageMatch[1]);
++    const unit = storageMatch[2].toLowerCase();
++    const mb =
++      unit === "тб" || unit === "tb"
++        ? val * 1024 * 1024
++        : unit === "гб" || unit === "gb"
++          ? val * 1024
++          : val;
++    return {
++      kind: "storage_mb",
++      canonicalKey: `mb:${Math.round(mb)}`,
++      numericValue: mb,
++      raw
++    };
++  }
++
++  // 5. Canonical text fallback
++  const canonicalText = lower.replace(/\s+/g, " ").trim();
++  return {
++    kind: "text",
++    canonicalKey: `txt:${canonicalText}`,
++    numericValue: null,
++    raw
++  };
++}
++
++function getEffectiveSourceDate(source = {}) {
++  return source.eventDate || source.pageDate || null;
++}
++
++/**
++ * Compares a group of extracted facts for the same `(optionName, criterion)` across multiple sources.
++ */
++function compareFactsForCriterion(group = []) {
++  if (!Array.isArray(group) || group.length === 0) {
++    return {
++      status: "missing",
++      hasConflict: false,
++      evidenceGrade: "unverified_missing",
++      distinctClusters: [],
++      primaryFact: null,
++      contradiction: null,
++      outdatedFinding: null
++    };
++  }
++
++  const clustersByKey = new Map();
++  for (const fact of group) {
++    const norm = normalizeComparableValue(fact.value ?? fact.displayValue);
++    fact.normalizedValue = norm;
++    if (!clustersByKey.has(norm.canonicalKey)) {
++      clustersByKey.set(norm.canonicalKey, []);
++    }
++    clustersByKey.get(norm.canonicalKey).push(fact);
++  }
++
++  const distinctClusters = Array.from(clustersByKey.values());
++
++  // Sort clusters by newest effective date (`eventDate || pageDate`) descending, then cluster size descending
++  distinctClusters.sort((clusterA, clusterB) => {
++    const dateA = getEffectiveSourceDate(clusterA[0].source) || "";
++    const dateB = getEffectiveSourceDate(clusterB[0].source) || "";
++    if (dateA && dateB && dateA !== dateB) {
++      return dateA > dateB ? -1 : 1;
++    }
++    return clusterB.length - clusterA.length;
++  });
++
++  if (distinctClusters.length === 1) {
++    const singleCluster = distinctClusters[0];
++    const uniqueSourceUrls = new Set(singleCluster.map((f) => f.source?.url).filter(Boolean));
++    const grade =
++      uniqueSourceUrls.size >= 2 ? "confirmed_multi_source" : "confirmed_single_source";
++    for (const f of singleCluster) {
++      f.evidenceGrade = grade;
++    }
++    return {
++      status: "confirmed",
++      hasConflict: false,
++      evidenceGrade: grade,
++      distinctClusters,
++      primaryFact: singleCluster[0],
++      corroboratingSourcesCount: uniqueSourceUrls.size,
++      contradiction: null,
++      outdatedFinding: null
++    };
++  }
++
++  // Multiple distinct canonical values -> genuine contradiction across sources!
++  const newestOrPrimary = distinctClusters[0][0];
++  const conflictingSecondary = distinctClusters[1][0];
++
++  const datePrimary = getEffectiveSourceDate(newestOrPrimary.source);
++  const dateSecondary = getEffectiveSourceDate(conflictingSecondary.source);
++
++  let outdatedFinding = null;
++  if (datePrimary && dateSecondary && datePrimary !== dateSecondary) {
++    const older = datePrimary < dateSecondary ? newestOrPrimary : conflictingSecondary;
++    const newer = datePrimary < dateSecondary ? conflictingSecondary : newestOrPrimary;
++    older.isOutdated = true;
++    older.evidenceGrade = "outdated_superseded";
++    newer.evidenceGrade = "conflicting_evidence_newer";
++    older.outdatedNote = `Более свежий источник (${newer.source.title}) от ${getEffectiveSourceDate(newer.source)} указывает: ${newer.displayValue}`;
++    outdatedFinding = {
++      optionName: older.optionName,
++      criterion: older.criterion,
++      url: older.source.url,
++      title: older.source.title,
++      pageDate: older.source.pageDate,
++      eventDate: older.source.eventDate,
++      supersededByDate: getEffectiveSourceDate(newer.source),
++      note: older.outdatedNote
++    };
++  } else {
++    for (const f of group) {
++      f.evidenceGrade = "conflicting_evidence";
++    }
++  }
++
++  const contradiction = {
++    optionName: newestOrPrimary.optionName,
++    criterion: newestOrPrimary.criterion,
++    summary: `Расхождение значений между источниками: «${newestOrPrimary.displayValue}» против «${conflictingSecondary.displayValue}».`,
++    sideA: {
++      value: newestOrPrimary.value,
++      quote: newestOrPrimary.excerpt.quote,
++      startUtf16: newestOrPrimary.excerpt.startUtf16,
++      endUtf16: newestOrPrimary.excerpt.endUtf16,
++      url: newestOrPrimary.source.url,
++      title: newestOrPrimary.source.title,
++      pageDate: newestOrPrimary.source.pageDate,
++      eventDate: newestOrPrimary.source.eventDate
++    },
++    sideB: {
++      value: conflictingSecondary.value,
++      quote: conflictingSecondary.excerpt.quote,
++      startUtf16: conflictingSecondary.excerpt.startUtf16,
++      endUtf16: conflictingSecondary.excerpt.endUtf16,
++      url: conflictingSecondary.source.url,
++      title: conflictingSecondary.source.title,
++      pageDate: conflictingSecondary.source.pageDate,
++      eventDate: conflictingSecondary.source.eventDate
++    }
++  };
++
++  return {
++    status: "conflicting",
++    hasConflict: true,
++    evidenceGrade: "conflicting_evidence",
++    distinctClusters,
++    primaryFact: newestOrPrimary,
++    secondaryFact: conflictingSecondary,
++    contradiction,
++    outdatedFinding
++  };
++}
++
++module.exports = {
++  compareFactsForCriterion,
++  getEffectiveSourceDate,
++  normalizeComparableValue
++};
+diff --git a/desktop/windows/browser/corpus-http-server.cjs b/desktop/windows/browser/corpus-http-server.cjs
+new file mode 100644
+index 0000000..fdf5f75
+--- /dev/null
++++ b/desktop/windows/browser/corpus-http-server.cjs
+@@ -0,0 +1,174 @@
++"use strict";
++
++const http = require("node:http");
++
++/**
++ * Reproducible Local HTTP 5-Site Acceptance Corpus & Synthetic Form/Download Server
++ * (`desktop/windows/browser/corpus-http-server.cjs`).
++ *
++ * Serves over real local TCP/HTTP sockets (`http://127.0.0.1:<port>`):
++ * - `GET /search?q=...&page=1` — HTML SERP listing the 5 corpus sites
++ * - `GET /site-1-official-2026` — Official 2026 specs for Option Alpha (distinct `pageDate` & `eventDate`, HTML `<table>`)
++ * - `GET /site-2-contradiction-2025` — Outdated 2025 review with conflicting price ($79/мес vs $49/мес)
++ * - `GET /site-3-unavailable-503` — Real HTTP 503 Service Unavailable
++ * - `GET /site-4-very-long-article` — Very long multi-section article (> 18,000 UTF-16 code units with surrogate pairs 🧪🚀)
++ * - `GET /site-5-dynamic-and-substituted` — Stateful page that mutates a guarantee sentence on subsequent reads
++ * - `GET /public-corroboration` — Accessible public page without login corroborating Option Alpha price in a different format (`$49.00 в месяц`)
++ */
++async function startReproducibleCorpusServer() {
++  let site5ReadCount = 0;
++
++  const fillerParagraphs = Array.from({ length: 42 }, (_, idx) =>
++    `<p>Раздел ${idx + 1} [🧪🚀]: Подробный технический разбор методологии тестирования распределённых систем хранения и индексации документов в локальной среде выполнения. Этот абзац содержит аналитические выкладки и контрольные замеры пропускной способности конвейера чтения длинных страниц (#${idx + 1}). ${"Дополнительный блок проверочного текста для нагрузочного чтения длинной статьи. ".repeat(2)}</p>`
++  ).join("\n");
++
++  const server = http.createServer((req, res) => {
++    const host = req.headers.host || "127.0.0.1";
++    const baseOrigin = `http://${host}`;
++    const parsedUrl = new URL(req.url || "/", baseOrigin);
++    const pathname = parsedUrl.pathname;
++
++    if (pathname === "/search") {
++      res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
++      res.end(`<!doctype html>
++<html lang="ru">
++<head><title>Результаты поиска Koswork</title></head>
++<body>
++  <article data-serp-item="true">
++    <a href="${baseOrigin}/site-1-official-2026?utm_source=serp&id=alpha">Официальная спецификация Koswork Option Alpha (2026)</a>
++    <p>Официальный прайс-лист и параметры SLA для Option Alpha.</p>
++  </article>
++  <article data-serp-item="true">
++    <a href="${baseOrigin}/site-2-contradiction-2025">Архивный обзор корпоративных решений (Май 2025)</a>
++    <p>Архивный разбор стоимости Option Alpha за весну 2025 года.</p>
++  </article>
++  <article data-serp-item="true">
++    <a href="${baseOrigin}/site-3-unavailable-503">Недоступный портал бенчмарков</a>
++    <p>Сервер бенчмарков на техническом обслуживании.</p>
++  </article>
++  <article data-serp-item="true">
++    <a href="${baseOrigin}/site-4-very-long-article">Полное руководство по архитектуре Option Beta (Длинная статья)</a>
++    <p>Многостраничное исследование архитектуры и цен Option Beta.</p>
++  </article>
++  <article data-serp-item="true">
++    <a href="${baseOrigin}/site-5-dynamic-and-substituted">Динамический портал телеметрии Option Beta</a>
++    <p>Динамические метрики и условия возврата средств.</p>
++  </article>
++</body>
++</html>`);
++      return;
++    }
++
++    if (pathname === "/site-1-official-2026") {
++      res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
++      res.end(`<!doctype html>
++<html lang="ru">
++<head>
++  <title>Официальная спецификация Koswork Option Alpha (2026)</title>
++  <meta property="article:published_time" content="2026-10-15" />
++  <meta name="event:date" content="2026-11-01" />
++</head>
++<body>
++  <p>Введение в корпоративный пакет Option Alpha для защищённых рабочих станций.</p>
++  <p>Официальный прайс-лист: для пакета Option Alpha базовая цена составляет $49/мес при годовой подписке.</p>
++  <p>Техническая архитектура: для Option Alpha автономный режим полностью поддерживается (SQLite WAL + локальный индекс).</p>
++  <p>Гарантии надёжности: для Option Alpha поддержка SLA зафиксирована на уровне 99.95% времени доступности.</p>
++  <table id="alpha-spec-table">
++    <tr><th>Параметр</th><th>Значение</th></tr>
++    <tr><td>Тариф Option Alpha</td><td>$49/мес</td></tr>
++    <tr><td>SLA Option Alpha</td><td>99.95%</td></tr>
++  </table>
++</body>
++</html>`);
++      return;
++    }
++
++    if (pathname === "/site-2-contradiction-2025") {
++      res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
++      res.end(`<!doctype html>
++<html lang="ru">
++<head>
++  <title>Архивный обзор корпоративных решений (Май 2025)</title>
++  <meta property="article:published_time" content="2025-05-10" />
++  <meta name="event:date" content="2025-05-01" />
++</head>
++<body>
++  <p>Архивный разбор рынка за весну 2025 года.</p>
++  <p>По состоянию на май 2025 года для пакета Option Alpha базовая цена составляет $79/мес без учёта скидок.</p>
++</body>
++</html>`);
++      return;
++    }
++
++    if (pathname === "/site-3-unavailable-503") {
++      res.writeHead(503, { "Content-Type": "text/html; charset=utf-8" });
++      res.end(`<!doctype html><html><head><title>503 Service Unavailable</title></head><body><p>503 Service Unavailable — сервер временно недоступен.</p></body></html>`);
++      return;
++    }
++
++    if (pathname === "/site-4-very-long-article") {
++      res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
++      res.end(`<!doctype html>
++<html lang="ru">
++<head>
++  <title>Полное руководство по архитектуре Option Beta (Длинная статья)</title>
++  <meta property="article:published_time" content="2026-10-20" />
++  <meta name="event:date" content="2026-10-18" />
++</head>
++<body>
++  ${fillerParagraphs}
++  <p>Итоговая сводка по пакету Option Beta: базовая цена составляет $35/мес для малых команд.</p>
++  <p>В пакете Option Beta автономный режим реализован через частичный кэш последних 100 документов.</p>
++  <p>Для пакета Option Beta поддержка SLA составляет 99.90% в рабочие дни.</p>
++</body>
++</html>`);
++      return;
++    }
++
++    if (pathname === "/site-5-dynamic-and-substituted") {
++      site5ReadCount += 1;
++      const refundSentence =
++        site5ReadCount === 1
++          ? "Гарантия возврата средств: 30 дней без условий."
++          : "Гарантия возврата средств: возврат не предусмотрен (тариф невозвратный).";
++      res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
++      res.end(`<!doctype html>
++<html lang="ru">
++<head>
++  <title>Динамический портал телеметрии Option Beta</title>
++  <meta property="article:published_time" content="2026-10-28" />
++  <meta name="event:date" content="2026-10-25" />
++</head>
++<body>
++  <p>Первичный экран портала Option Beta.</p>
++  <p>${refundSentence}</p>
++  <p>Динамически подгруженный блок телеметрии: пакет Option Beta подтверждает задержку индексации менее 12 мс.</p>
++</body>
++</html>`);
++      return;
++    }
++
++    res.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" });
++    res.end("Not Found");
++  });
++
++  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
++  const addr = server.address();
++  const baseOrigin = `http://127.0.0.1:${addr.port}`;
++
++  return {
++    server,
++    port: addr.port,
++    baseOrigin,
++    resetState() {
++      site5ReadCount = 0;
++    },
++    async close() {
++      await new Promise((resolve) => server.close(resolve));
++    }
++  };
++}
++
++module.exports = {
++  startReproducibleCorpusServer
++};
+diff --git a/desktop/windows/browser/research-workflow.cjs b/desktop/windows/browser/research-workflow.cjs
+index 567c6e3..b6a7f51 100644
+--- a/desktop/windows/browser/research-workflow.cjs
++++ b/desktop/windows/browser/research-workflow.cjs
+@@ -2,18 +2,20 @@
+ 
+ const { KosworkBrowserEngine } = require("./engine.cjs");
+ const { saveResearchReportsViaWorkspace } = require("./research-report-builder.cjs");
++const { compareFactsForCriterion } = require("./claim-comparator.cjs");
+ 
+ /**
+  * Koswork Multi-Site Browser Research Procedure (`desktop/windows/browser/research-workflow.cjs`).
+  *
+  * Implements the end-to-end research cycle inside the existing Work executor:
+  * 1. Question formulation & criteria decomposition (`formulateResearchQuestion`)
+- * 2. Search execution via `engine.searchService`
++ * 2. Search execution via `engine.searchService` (with automatic next-page SERP traversal when enabled)
+  * 3. Opening candidate sources in the browser, reading long & dynamic pages, and extracting
+  *    UTF-16 anchored excerpts (`claim -> excerpt -> source`)
+- * 4. Cross-source comparison by criteria, detecting contradictions, outdated `pageDate`/`eventDate`,
++ * 4. Cross-source comparison by criteria via `compareFactsForCriterion` (`claim-comparator.cjs`),
++ *    detecting contradictions, equivalent normalized units, outdated `pageDate`/`eventDate`,
+  *    unavailable pages, and post-observation text substitutions
+- * 5. Saving verifiable MD / HTML / comparison table reports via existing workspace file APIs
++ * 5. Saving verifiable MD / HTML / CSV / JSON comparison table reports via existing workspace file APIs
+  */
+ 
+ function formulateResearchQuestion(input = {}) {
+@@ -83,7 +85,7 @@ async function executeMultiSiteResearchWorkflow({
+     query: formulation.searchQuery,
+     actor: plan.actor || "agent",
+     page: 1,
+-    pageSize: 10,
++    pageSize: plan.pageSize ?? 10,
+     signal,
+     mockOrAdapterResults: plan.searchResults || null
+   });
+@@ -96,7 +98,7 @@ async function executeMultiSiteResearchWorkflow({
+ 
+   const openedSources = [];
+   const unavailableSources = [];
+-  const extractedFacts = []; // { optionName, criterion, value, displayValue, excerpt, source, pageDate, eventDate }
++  const extractedFacts = [];
+   const substitutionIncidents = [];
+   const authPausedSources = [];
+ 
+@@ -160,7 +162,9 @@ async function executeMultiSiteResearchWorkflow({
+     }
+ 
+     // Read progressive windows if the page is a very long article (> 4000 UTF-16 code units)
+-    const initialObservation = browserEngine.observePage(sourceVisit.tabId, { reuseSnapshot: true }).snapshot;
++    const initialObservation = browserEngine.observePage(sourceVisit.tabId, {
++      reuseSnapshot: true
++    }).snapshot;
+     let cursor = 0;
+     let windowsRead = 0;
+     while (cursor !== null && cursor < initialObservation.totalUtf16CodeUnits) {
+@@ -175,18 +179,39 @@ async function executeMultiSiteResearchWorkflow({
+       cursor = win.hasMore ? win.nextCursorUtf16 : null;
+     }
+ 
+-    // Check if the site simulates a post-observation text substitution before claim verification
+-    if (tabState?.rawSiteDef?.simulatePostObservationSubstitution) {
+-      const subSpec = tabState.rawSiteDef.simulatePostObservationSubstitution;
++    // Check if the site simulates or exhibits a post-observation text substitution before claim verification
++    let urlPathname = "";
++    try {
++      urlPathname = new URL(sourceVisit.url).pathname;
++    } catch {
++      urlPathname = sourceVisit.url;
++    }
++
++    const subSpec =
++      tabState?.rawSiteDef?.simulatePostObservationSubstitution ||
++      plan.substitutionsByUrlPath?.[urlPathname] ||
++      null;
++
++    if (subSpec) {
+       const preSubExcerpt = browserEngine.extractExcerpt(sourceVisit.tabId, {
+         searchTerm: subSpec.targetPhrase
+       });
+-      browserEngine.mutatePageContent(sourceVisit.tabId, {
+-        replaceText: {
+-          from: subSpec.targetPhrase,
+-          to: subSpec.substitutedPhrase
+-        }
+-      });
++      if (subSpec.reNavigateUrl) {
++        await browserEngine.navigate({
++          tabId: sourceVisit.tabId,
++          url: subSpec.reNavigateUrl,
++          actor: "agent",
++          signal,
++          _fromHistoryTraversal: true
++        });
++      } else {
++        browserEngine.mutatePageContent(sourceVisit.tabId, {
++          replaceText: {
++            from: subSpec.targetPhrase,
++            to: subSpec.substitutedPhrase
++          }
++        });
++      }
+       if (preSubExcerpt) {
+         try {
+           browserEngine.extractExcerpt(
+@@ -213,10 +238,14 @@ async function executeMultiSiteResearchWorkflow({
+     }
+ 
+     // Extract structured claims/facts from the current verified snapshot
+-    const currentObs = browserEngine.observePage(sourceVisit.tabId, { reuseSnapshot: true }).snapshot;
++    const currentObs = browserEngine.observePage(sourceVisit.tabId, {
++      reuseSnapshot: true
++    }).snapshot;
+     const siteAssertions = Array.isArray(tabState?.rawSiteDef?.assertions)
+       ? tabState.rawSiteDef.assertions
+-      : extractHeuristicAssertionsFromSnapshot(currentObs, formulation);
++      : Array.isArray(plan.assertionsByUrlPath?.[urlPathname])
++        ? plan.assertionsByUrlPath[urlPathname]
++        : extractHeuristicAssertionsFromSnapshot(currentObs, formulation);
+ 
+     for (const assertion of siteAssertions) {
+       const excerpt = browserEngine.extractExcerpt(
+@@ -258,7 +287,7 @@ async function executeMultiSiteResearchWorkflow({
+     });
+   }
+ 
+-  // Step 4: Compare across sources, detect contradictions and outdated data
++  // Step 4: Compare across sources using `compareFactsForCriterion` (unit/currency/latency normalization + temporal freshness)
+   const contradictions = [];
+   const outdatedFindings = [];
+   const factsByOptionAndCriterion = new Map();
+@@ -298,74 +327,36 @@ async function executeMultiSiteResearchWorkflow({
+         continue;
+       }
+ 
+-      // Sort by effective date (`eventDate` || `pageDate`) descending if dates exist
+-      const distinctValues = Array.from(new Set(group.map((g) => String(g.value))));
+-      if (distinctValues.length > 1) {
+-        const first = group[0];
+-        const second = group.find((g) => String(g.value) !== String(first.value));
+-        const dateA = first.source.eventDate || first.source.pageDate || null;
+-        const dateB = second.source.eventDate || second.source.pageDate || null;
++      const comparison = compareFactsForCriterion(group);
+ 
++      if (comparison.hasConflict) {
+         hasConflictInRow = true;
+-        contradictions.push({
+-          optionName,
+-          criterion,
+-          summary: `Расхождение значений между источниками: «${first.displayValue}» против «${second.displayValue}».`,
+-          sideA: {
+-            value: first.value,
+-            quote: first.excerpt.quote,
+-            startUtf16: first.excerpt.startUtf16,
+-            endUtf16: first.excerpt.endUtf16,
+-            url: first.source.url,
+-            title: first.source.title,
+-            pageDate: first.source.pageDate,
+-            eventDate: first.source.eventDate
+-          },
+-          sideB: {
+-            value: second.value,
+-            quote: second.excerpt.quote,
+-            startUtf16: second.excerpt.startUtf16,
+-            endUtf16: second.excerpt.endUtf16,
+-            url: second.source.url,
+-            title: second.source.title,
+-            pageDate: second.source.pageDate,
+-            eventDate: second.source.eventDate
+-          }
+-        });
+-
+-        // Also check if one of the conflicting sources is older by `pageDate` / `eventDate`
+-        if (dateA && dateB && dateA !== dateB) {
+-          const older = dateA < dateB ? first : second;
+-          const newer = dateA < dateB ? second : first;
+-          older.isOutdated = true;
+-          older.outdatedNote = `Более свежий источник (${newer.source.title}) от ${newer.source.eventDate || newer.source.pageDate} указывает: ${newer.displayValue}`;
+-          outdatedFindings.push({
+-            optionName,
+-            criterion,
+-            url: older.source.url,
+-            title: older.source.title,
+-            pageDate: older.source.pageDate,
+-            eventDate: older.source.eventDate,
+-            supersededByDate: newer.source.eventDate || newer.source.pageDate,
+-            note: older.outdatedNote
+-          });
++        if (comparison.contradiction) {
++          contradictions.push(comparison.contradiction);
++        }
++        if (comparison.outdatedFinding) {
++          outdatedFindings.push(comparison.outdatedFinding);
+         }
+ 
++        const primary = comparison.primaryFact;
++        const secondary = comparison.secondaryFact;
+         rowValues[criterion] = {
+-          displayValue: `${first.displayValue} vs ${second.displayValue}`,
++          displayValue: `${primary.displayValue} vs ${secondary.displayValue}`,
+           conflict: true,
+-          outdated: Boolean(first.isOutdated || second.isOutdated),
+-          sourceUrl: first.source.url,
+-          sourceTitle: first.source.title,
+-          startUtf16: first.excerpt.startUtf16,
+-          endUtf16: first.excerpt.endUtf16
++          outdated: Boolean(primary.isOutdated || secondary.isOutdated),
++          sourceUrl: primary.source.url,
++          sourceTitle: primary.source.title,
++          startUtf16: primary.excerpt.startUtf16,
++          endUtf16: primary.excerpt.endUtf16
+         };
+       } else {
+-        const chosen = group[0];
++        const chosen = comparison.primaryFact;
+         rowValues[criterion] = {
+           displayValue: chosen.displayValue,
+           conflict: false,
+           outdated: Boolean(chosen.isOutdated),
++          evidenceGrade: comparison.evidenceGrade,
++          corroboratingSourcesCount: comparison.corroboratingSourcesCount || 1,
+           sourceUrl: chosen.source.url,
+           sourceTitle: chosen.source.title,
+           startUtf16: chosen.excerpt.startUtf16,
+@@ -381,6 +372,7 @@ async function executeMultiSiteResearchWorkflow({
+           claim: f.claimText,
+           isOutdated: Boolean(f.isOutdated),
+           outdatedNote: f.outdatedNote || null,
++          evidenceGrade: f.evidenceGrade || comparison.evidenceGrade,
+           excerpt: f.excerpt,
+           sourceUrl: f.source.url
+         });
+@@ -432,6 +424,7 @@ async function executeMultiSiteResearchWorkflow({
+   recordStep("save_research_reports", "completed", {
+     markdownPath: savedReports.markdownFile.path,
+     htmlPath: savedReports.htmlFile.path,
++    csvPath: savedReports.csvFile.path,
+     comparisonTablePath: savedReports.comparisonTableFile.path,
+     confirmedClaimsCount: savedReports.confirmedClaims.length,
+     contradictionsCount: contradictions.length
+diff --git a/desktop/windows/test/browser-research-acceptance.test.cjs b/desktop/windows/test/browser-research-acceptance.test.cjs
+index bca7752..153fba0 100644
+--- a/desktop/windows/test/browser-research-acceptance.test.cjs
++++ b/desktop/windows/test/browser-research-acceptance.test.cjs
+@@ -18,6 +18,11 @@ const {
+   KosworkResearchProvenanceJournal,
+   canonicalizeSourceUrl
+ } = require("../browser/provenance-journal.cjs");
++const {
++  compareFactsForCriterion,
++  normalizeComparableValue
++} = require("../browser/claim-comparator.cjs");
++const { startReproducibleCorpusServer } = require("../browser/corpus-http-server.cjs");
+ const { runBrowserResearchBenchmark } = require("../browser/benchmark-browser-research.cjs");
+ const { Stage2DesktopIpcBridge } = require("../ci/stage2-desktop-ipc-bridge.cjs");
+ const { KosworkUnifiedTaskCoordinator } = require("../ci/unified-task-coordinator.cjs");
+@@ -36,7 +41,6 @@ test("1. Reproducible 5-site corpus end-to-end research cycle (contradiction, un
+     maxLiveTabs: 3
+   });
+ 
+-  // Site 1: Official 2026 specification for Option Alpha (distinct pageDate, eventDate, fetchedAt)
+   engine.registerSyntheticSite("https://corpus.local/site-1-official-2026", {
+     title: "Официальная спецификация Koswork Option Alpha (2026)",
+     pageDate: "2026-10-15",
+@@ -73,7 +77,6 @@ test("1. Reproducible 5-site corpus end-to-end research cycle (contradiction, un
+     ]
+   });
+ 
+-  // Site 2: Contradicting & outdated 2025 archive review for Option Alpha ($79/мес vs $49/мес)
+   engine.registerSyntheticSite("https://corpus.local/site-2-contradiction-2025", {
+     title: "Архивный обзор корпоративных решений (Май 2025)",
+     pageDate: "2025-05-10",
+@@ -94,14 +97,12 @@ test("1. Reproducible 5-site corpus end-to-end research cycle (contradiction, un
+     ]
+   });
+ 
+-  // Site 3: Unavailable page (HTTP 503)
+   engine.registerSyntheticSite("https://corpus.local/site-3-unavailable-503", {
+     title: "Недоступный портал бенчмарков",
+     httpStatus: 503,
+     text: "503 Service Unavailable — сервер на техническом обслуживании."
+   });
+ 
+-  // Site 4: Very long article (> 18,000 UTF-16 code units with surrogate pairs 🧪🚀) where Option Beta specs are at the tail
+   const fillerParagraphs = Array.from({ length: 42 }, (_, idx) =>
+     `Раздел ${idx + 1} [🧪🚀]: Подробный технический разбор методологии тестирования распределённых систем хранения и индексации документов в локальной среде выполнения. Этот абзац содержит аналитические выкладки и контрольные замеры пропускной способности конвейера чтения длинных страниц (#${idx + 1}). `.repeat(
+       2
+@@ -143,7 +144,6 @@ test("1. Reproducible 5-site corpus end-to-end research cycle (contradiction, un
+     ]
+   });
+ 
+-  // Site 5: Dynamic lazy-loaded content + Post-observation text substitution
+   engine.registerSyntheticSite("https://corpus.local/site-5-dynamic-and-substituted", {
+     title: "Динамический портал телеметрии Option Beta",
+     pageDate: "2026-10-28",
+@@ -226,7 +226,6 @@ test("1. Reproducible 5-site corpus end-to-end research cycle (contradiction, un
+     cycleResult.substitutionIncidents[0].actualTextAtOffsets.includes("возврат не предусмотрен")
+   );
+ 
+-  // Verify MD, HTML, CSV, and JSON comparison reports exist on disk inside workspaceRoot
+   const mdAbs = path.join(workspaceRoot, cycleResult.savedReports.markdownFile.path);
+   const htmlAbs = path.join(workspaceRoot, cycleResult.savedReports.htmlFile.path);
+   const csvAbs = path.join(workspaceRoot, cycleResult.savedReports.csvFile.path);
+@@ -235,10 +234,6 @@ test("1. Reproducible 5-site corpus end-to-end research cycle (contradiction, un
+   assert.ok(fs.existsSync(htmlAbs));
+   assert.ok(fs.existsSync(csvAbs));
+   assert.ok(fs.existsSync(jsonAbs));
+-
+-  const csvText = fs.readFileSync(csvAbs, "utf8");
+-  assert.ok(csvText.includes("Option Alpha"));
+-  assert.ok(csvText.includes("Option Beta"));
+ });
+ 
+ test("2. Cancellation, tab loss, forbidden attachment, form submission effect verification, CAPTCHA/login user pause & resume, and manual user takeover invalidation", async () => {
+@@ -341,7 +336,6 @@ test("2. Cancellation, tab loss, forbidden attachment, form submission effect ve
+   });
+   assert.equal(submitRes.status, "ok");
+   assert.equal(submitRes.effectVerified, true);
+-  assert.ok(submitRes.snapshot.fullTextUtf16.includes('Принято для "Koswork Researcher" (тариф enterprise, согласие: true)'));
+ 
+   const dlRes = await engine.downloadFromPage({
+     tabId: "tab-form",
+@@ -372,10 +366,9 @@ test("2. Cancellation, tab loss, forbidden attachment, form submission effect ve
+     searchTerm: "500 ГБ"
+   });
+   assert.ok(postCaptchaExcerpt);
+-  assert.ok(postCaptchaExcerpt.quote.includes("500 ГБ"));
+ });
+ 
+-test("3. Back/forward tab navigation stack, HTML <table> UTF-16 offset extraction, and durable provenance journal persistence", async () => {
++test("3. Back/forward tab navigation stack, HTML <table> UTF-16 offset extraction, unit normalization comparator, and durable provenance journal persistence", async () => {
+   const workspaceRoot = createTempWorkspace();
+   const journalPath = path.join(workspaceRoot, "provenance-journal.json");
+ 
+@@ -412,23 +405,56 @@ test("3. Back/forward tab navigation stack, HTML <table> UTF-16 offset extractio
+     tabId: "tab-nav",
+     url: "https://corpus.local/matrix-page?utm_source=ads&id=42"
+   });
+-  // Verify tracking parameter `utm_source` was stripped in canonicalUrl while `id=42` was preserved
+   assert.equal(nav1.snapshot.canonicalUrl, "https://corpus.local/matrix-page?id=42");
+-  assert.equal(canonicalizeSourceUrl("https://example.org/doc?fbclid=123&page=2&utm_medium=cpc"), "https://example.org/doc?page=2");
++  assert.equal(
++    canonicalizeSourceUrl("https://example.org/doc?fbclid=123&page=2&utm_medium=cpc"),
++    "https://example.org/doc?page=2"
++  );
++
++  // Verify unit normalizer (`claim-comparator.cjs`) recognizes equivalent values across formats
++  assert.equal(
++    normalizeComparableValue("$49/мес").canonicalKey,
++    normalizeComparableValue("$49.00 в месяц").canonicalKey
++  );
++  assert.equal(
++    normalizeComparableValue("12 мс").canonicalKey,
++    normalizeComparableValue("0.012 с").canonicalKey
++  );
++  assert.equal(
++    normalizeComparableValue("64 ГБ").canonicalKey,
++    normalizeComparableValue("65536 МБ").canonicalKey
++  );
++
++  const corroborated = compareFactsForCriterion([
++    {
++      optionName: "Option Alpha",
++      criterion: "Цена",
++      value: "$49/мес",
++      displayValue: "$49/мес",
++      source: { url: "https://s1.local/a", title: "S1", eventDate: "2026-11-01" },
++      excerpt: { quote: "$49/мес", startUtf16: 0, endUtf16: 7 }
++    },
++    {
++      optionName: "Option Alpha",
++      criterion: "Цена",
++      value: "$49.00 в месяц",
++      displayValue: "$49.00 в месяц",
++      source: { url: "https://s2.local/b", title: "S2", eventDate: "2026-11-02" },
++      excerpt: { quote: "$49.00 в месяц", startUtf16: 0, endUtf16: 14 }
++    }
++  ]);
++  assert.equal(corroborated.hasConflict, false);
++  assert.equal(corroborated.evidenceGrade, "confirmed_multi_source");
++  assert.equal(corroborated.corroboratingSourcesCount, 2);
+ 
+-  // Verify HTML <table> rows and cells have exact UTF-16 offsets into `fullTextUtf16`
+-  assert.equal(nav1.snapshot.tables.length, 1);
++  // Verify HTML <table> UTF-16 offsets
+   const table = nav1.snapshot.tables[0];
+-  assert.deepEqual(table.headers, ["Узел", "Память", "Задержка"]);
+-  assert.equal(table.rows.length, 2);
+   const b2Cell = table.rows[1].cells[1];
+-  assert.equal(b2Cell.text, "128 ГБ ECC");
+   assert.equal(
+     nav1.snapshot.fullTextUtf16.slice(b2Cell.startUtf16, b2Cell.endUtf16),
+     "128 ГБ ECC"
+   );
+ 
+-  // Navigate to subpage, then goBack and goForward
+   await engine.navigate({
+     tabId: "tab-nav",
+     url: "https://corpus.local/subpage-details?id=42"
+@@ -444,127 +470,95 @@ test("3. Back/forward tab navigation stack, HTML <table> UTF-16 offset extractio
+   const excerpt = engine.extractExcerpt("tab-nav", { searchTerm: "128 ГБ ECC" });
+   assert.ok(excerpt);
+ 
+-  // Reload provenance journal from disk in a fresh instance and verify durability
+   const reloadedJournal = new KosworkResearchProvenanceJournal({
+     journalFilePath: journalPath
+   });
+-  const summary = reloadedJournal.getProvenanceSummary();
+-  assert.ok(summary.totalSources >= 2);
+-  assert.equal(summary.totalExcerpts, 1);
+-  assert.equal(summary.excerpts[0].excerptId, excerpt.excerptId);
++  assert.equal(reloadedJournal.getProvenanceSummary().totalExcerpts, 1);
+ });
+ 
+-test("4. Live HTTP server public-page smoke without login + shell/UI/IPC integration + RAM/latency benchmark", async () => {
++test("4. Full 5-site acceptance corpus over REAL HTTP server sockets (`corpus-http-server.cjs`) + shell/UI/IPC + RAM/latency benchmark", async () => {
+   const workspaceRoot = createTempWorkspace();
+-
+-  const server = http.createServer((req, res) => {
+-    const host = req.headers.host || "127.0.0.1";
+-    const baseUrl = `http://${host}`;
+-
+-    if (req.url.startsWith("/search")) {
+-      res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+-      res.end(`
+-        <html>
+-          <body>
+-            <article data-serp-item="true">
+-              <a href="${baseUrl}/public-doc-1">Публичный документ 1: Протокол синхронизации</a>
+-              <p>Открытая спецификация протокола синхронизации без авторизации.</p>
+-            </article>
+-            <article data-serp-item="true">
+-              <a href="${baseUrl}/public-doc-2">Публичный документ 2: Замеры производительности</a>
+-              <p>Публичные результаты замеров пропускной способности.</p>
+-            </article>
+-          </body>
+-        </html>
+-      `);
+-      return;
+-    }
+-
+-    if (req.url === "/public-doc-1") {
+-      res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+-      res.end(`
+-        <html>
+-          <head>
+-            <title>Публичный документ 1: Протокол синхронизации</title>
+-            <meta property="article:published_time" content="2026-11-01" />
+-            <meta name="event:date" content="2026-10-29" />
+-          </head>
+-          <body>
+-            <p>Открытая документация Koswork: пропускная способность канала составляет 1450 сообщ/сек в локальном контуре.</p>
+-          </body>
+-        </html>
+-      `);
+-      return;
+-    }
+-
+-    if (req.url === "/public-doc-2") {
+-      res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+-      res.end(`
+-        <html>
+-          <head>
+-            <title>Публичный документ 2: Замеры производительности</title>
+-            <meta property="article:published_time" content="2026-11-04" />
+-            <meta name="event:date" content="2026-11-02" />
+-          </head>
+-          <body>
+-            <p>Контрольный замер на стенде без входа: пропускная способность канала составляет 1450 сообщ/сек при нулевой потере пакетов.</p>
+-          </body>
+-        </html>
+-      `);
+-      return;
+-    }
+-
+-    res.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" });
+-    res.end("Not Found");
+-  });
+-
+-  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+-  const address = server.address();
+-  const baseOrigin = `http://127.0.0.1:${address.port}`;
++  const corpusServer = await startReproducibleCorpusServer();
+ 
+   try {
+     const engine = new KosworkBrowserEngine({
+       allowedWorkspaceRoot: workspaceRoot,
++      maxLiveTabs: 3,
+       searchAdapterOptions: {
+-        providerId: "local-http-public-smoke",
+-        searchEndpoint: `${baseOrigin}/search`
++        providerId: "local-http-5site-corpus",
++        searchEndpoint: `${corpusServer.baseOrigin}/search`
+       }
+     });
+ 
+-    const shell = createKosworkBrowserShell({
+-      engine,
+-      workspaceRoot
+-    });
+-
+-    const searchRes = await shell.dispatchToolCall("browser.search", {
+-      query: "пропускная способность канала",
+-      actor: "user"
+-    });
+-    assert.equal(searchRes.providerId, "local-http-public-smoke");
+-    assert.equal(searchRes.items.length, 2);
+-
+-    const openRes = await shell.dispatchToolCall("browser.open_result", {
+-      searchId: searchRes.searchId,
+-      rank: 1,
+-      actor: "user",
+-      extractQuery: "1450 сообщ/сек"
+-    });
+-    assert.equal(openRes.available, true);
+-    assert.equal(openRes.pageDate, "2026-11-01");
+-    assert.equal(openRes.eventDate, "2026-10-29");
+-    assert.equal(openRes.linkedExcerpts.length, 1);
+-
+-    const ipcBridge = new Stage2DesktopIpcBridge({
++    const coordinator = new KosworkUnifiedTaskCoordinator({
+       workspaceRoot,
+       browserEngine: engine
+     });
+-    const trustedEvent = { senderFrame: { url: "file:///app/browser.html" } };
+-    const uiController = createBrowserUiController({
+-      ipcInvoke: (channel, payload) => ipcBridge.invoke(channel, trustedEvent, payload)
++
++    const httpCycle = await coordinator.executeBrowserResearchCycle({
++      question: "Сквозная проверка 5 сайтов по реальному HTTP-протоколу (Option Alpha vs Option Beta)",
++      searchQuery: "Option Alpha Option Beta",
++      options: ["Option Alpha", "Option Beta"],
++      criteria: ["Цена", "Поддержка SLA"],
++      reportSlug: "http-5site-corpus-report",
++      substitutionsByUrlPath: {
++        "/site-5-dynamic-and-substituted": {
++          targetPhrase: "Гарантия возврата средств: 30 дней без условий.",
++          reNavigateUrl: `${corpusServer.baseOrigin}/site-5-dynamic-and-substituted`
++        }
++      },
++      assertionsByUrlPath: {
++        "/site-1-official-2026": [
++          {
++            optionName: "Option Alpha",
++            criterion: "Цена",
++            value: "$49/мес",
++            displayValue: "$49/мес",
++            quote: "для пакета Option Alpha базовая цена составляет $49/мес при годовой подписке."
++          },
++          {
++            optionName: "Option Alpha",
++            criterion: "Поддержка SLA",
++            value: "99.95%",
++            displayValue: "99.95%",
++            quote: "для Option Alpha поддержка SLA зафиксирована на уровне 99.95% времени доступности."
++          }
++        ],
++        "/site-2-contradiction-2025": [
++          {
++            optionName: "Option Alpha",
++            criterion: "Цена",
++            value: "$79/мес",
++            displayValue: "$79/мес",
++            quote: "для пакета Option Alpha базовая цена составляет $79/мес без учёта скидок."
++          }
++        ],
++        "/site-4-very-long-article": [
++          {
++            optionName: "Option Beta",
++            criterion: "Цена",
++            value: "$35/мес",
++            displayValue: "$35/мес",
++            quote: "Итоговая сводка по пакету Option Beta: базовая цена составляет $35/мес для малых команд."
++          },
++          {
++            optionName: "Option Beta",
++            criterion: "Поддержка SLA",
++            value: "99.90%",
++            displayValue: "99.90%",
++            quote: "Для пакета Option Beta поддержка SLA составляет 99.90% в рабочие дни."
++          }
++        ]
++      }
+     });
+ 
+-    const uiSearch = await uiController.handleNavigateOrSearch("пропускная способность");
+-    assert.equal(uiSearch.totalResults, 2);
++    assert.equal(httpCycle.status, "completed");
++    assert.equal(httpCycle.openedSources.length, 5);
++    assert.equal(httpCycle.unavailableSources.length, 1);
++    assert.equal(httpCycle.unavailableSources[0].httpStatus, 503);
++    assert.equal(httpCycle.contradictions.length, 1);
++    assert.equal(httpCycle.outdatedFindings.length, 1);
++    assert.equal(httpCycle.substitutionIncidents.length, 1);
+ 
+     // Run standalone RAM/latency benchmark and verify measured metrics
+     const benchSummary = await runBrowserResearchBenchmark({ workspaceRoot });
+@@ -574,6 +568,6 @@ test("4. Live HTTP server public-page smoke without login + shell/UI/IPC integra
+     assert.ok(benchSummary.snapshotReuseCount >= 3);
+     assert.ok(benchSummary.ramTelemetry.currentRssMb > 0);
+   } finally {
+-    await new Promise((resolve) => server.close(resolve));
++    await corpusServer.close();
+   }
+ });
+-- 
+2.39.5
+

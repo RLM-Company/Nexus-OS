@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Koswork Browser</title>
+</head>
+<body>
+  <div id="koswork-browser-shell" data-shell-preserved="true">
+    <header id="koswork-browser-toolbar" role="toolbar" aria-label="Панель управления браузером Koswork">
+      <div id="koswork-tab-strip" role="tablist" aria-label="Вкладки браузера"></div>
+
+      <form id="koswork-url-search-form" autocomplete="off">
+        <input
+          id="koswork-address-or-search-input"
+          name="queryOrUrl"
+          type="text"
+          placeholder="Введите URL или поисковый запрос..."
+          aria-label="Адресная строка или поисковый запрос"
+        />
+        <button id="koswork-btn-navigate-or-search" type="submit">Открыть / Найти</button>
+        <button id="koswork-btn-cancel-operation" type="button">Отменить чтение/поиск</button>
+      </form>
+
+      <div id="koswork-takeover-controls">
+        <button id="koswork-btn-user-takeover" type="button" data-active="false">
+          Перехватить управление (Ручной режим)
+        </button>
+        <span id="koswork-status-indicator" role="status" aria-live="polite">Готов</span>
+      </div>
+    </header>
+
+    <section id="koswork-research-controls" aria-label="Исследовательский цикл Koswork">
+      <form id="koswork-research-form" autocomplete="off">
+        <input
+          id="koswork-research-question"
+          name="question"
+          type="text"
+          placeholder="Исследовательский вопрос для сопоставления сайтов..."
+          aria-label="Исследовательский вопрос"
+        />
+        <input
+          id="koswork-research-criteria"
+          name="criteria"
+          type="text"
+          placeholder="Критерии через запятую (например: Цена, Автономный режим, SLA)"
+          aria-label="Критерии сравнения"
+        />
+        <button id="koswork-btn-run-research" type="submit">Запустить исследование и сохранить отчёт</button>
+      </form>
+      <div id="koswork-resource-telemetry" aria-label="Метрики ресурсов браузера">
+        <span id="koswork-telemetry-tabs">Живых вкладок: 0/3 (выгружено: 0)</span>
+        <span id="koswork-telemetry-ram">RAM RSS: — МБ</span>
+        <span id="koswork-telemetry-latency">Latency p50/p95: — мс</span>
+      </div>
+    </section>
+
+    <main id="koswork-browser-viewport-container">
+      <div id="koswork-serp-results-panel" hidden></div>
+      <article id="koswork-page-reader-view" aria-label="Содержимое открытого источника"></article>
+      <aside id="koswork-research-summary-panel" hidden aria-label="Сводка отчёта и проверенных цитат"></aside>
+    </main>
+  </div>
+  <script src="./browser.js"></script>
+</body>
+</html>

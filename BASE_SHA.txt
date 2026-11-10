@@ -1,0 +1,6 @@
+PLAN_CONTROL_BASE_SHA=338536ee5946f96dcd18768143cc41af998c476a
+LOCAL_SANDBOX_BASE_SHA=09369af668e9ab22fd9de175f74fa03304892637
+BRANCH=gemini/koswork-browser-research
+OWNER=Gemini
+REPOSITORY=https://github.com/RLM-Company/Nexus-OS
+NOTE=Sandbox VM has no outbound network access to github.com. Unseen upstream files at 338536ee5946f96dcd18768143cc41af998c476a are explicitly listed in DELIVERY.md for 1-to-1 signature verification upon checkout.

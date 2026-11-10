@@ -1,0 +1,476 @@
+From 176af93b33af928ce3b44560fc6d25edc4d5977d Mon Sep 17 00:00:00 2001
+From: Kosmora Engineering <eng@kosmora.ai>
+Date: Sat, 7 Nov 2026 21:59:14 +0000
+Subject: [PATCH 08/32] feat(koswork-browser-research): add scoped frame/shadow
+ executor, downloaded source ingestor, and W3C HAR 1.2 session trace exporter
+
+---
+ .../browser/downloaded-source-ingestor.cjs    |  60 ++++++++
+ .../windows/browser/frame-shadow-executor.cjs | 131 ++++++++++++++++++
+ .../browser/research-session-har-exporter.cjs | 115 +++++++++++++++
+ .../test/browser-research-acceptance.test.cjs | 104 +++++++++++++-
+ 4 files changed, 408 insertions(+), 2 deletions(-)
+ create mode 100644 desktop/windows/browser/downloaded-source-ingestor.cjs
+ create mode 100644 desktop/windows/browser/frame-shadow-executor.cjs
+ create mode 100644 desktop/windows/browser/research-session-har-exporter.cjs
+
+diff --git a/desktop/windows/browser/downloaded-source-ingestor.cjs b/desktop/windows/browser/downloaded-source-ingestor.cjs
+new file mode 100644
+index 0000000..781e4e6
+--- /dev/null
++++ b/desktop/windows/browser/downloaded-source-ingestor.cjs
+@@ -0,0 +1,60 @@
++"use strict";
++
++const fs = require("node:fs");
++const { extractVaultDocument } = require("../vault-document-extractor.cjs");
++const { buildVersionedPageSnapshot, extractVerifiableExcerpt } = require("./document.cjs");
++
++/**
++ * Koswork Downloaded Specification Source Ingestor
++ * (`desktop/windows/browser/downloaded-source-ingestor.cjs`).
++ *
++ * Converts a verified file downloaded into the allowed workspace download folder
++ * (`.txt`, `.csv`, `.md`, `.json`, `.pdf`, `.docx`, `.xlsx`) into an addressable
++ * versioned browser document snapshot with exact UTF-16 offsets (`startUtf16`, `endUtf16`),
++ * so claims in a multi-site research report can cite verifiable excerpts from downloaded
++ * files alongside live web pages.
++ */
++function ingestDownloadedSourceIntoResearchSnapshot(downloadRecord, options = {}) {
++  if (!downloadRecord || !downloadRecord.resolvedPath) {
++    throw new Error("INVALID_DOWNLOAD_RECORD_FOR_INGESTION");
++  }
++
++  const buffer = fs.readFileSync(downloadRecord.resolvedPath);
++  const extracted = extractVaultDocument(buffer, {
++    filename: downloadRecord.filename || downloadRecord.resolvedPath
++  });
++
++  const fetchedAt = options.fetchedAt || new Date().toISOString();
++  const snapshot = buildVersionedPageSnapshot({
++    tabId: options.tabId || downloadRecord.tabId || "tab-download",
++    pageVersion: options.pageVersion || 1,
++    url: downloadRecord.sourceUrl || `koswork://download/${downloadRecord.filename}`,
++    canonicalUrl: downloadRecord.sourceUrl || `koswork://download/${downloadRecord.filename}`,
++    httpStatus: 200,
++    title: options.title || `Скачанный материал: ${downloadRecord.filename}`,
++    pageDate: options.pageDate || null,
++    eventDate: options.eventDate || null,
++    fetchedAt,
++    text: extracted.text || ""
++  });
++
++  snapshot.downloadedFileMetadata = {
++    filename: downloadRecord.filename,
++    resolvedPath: downloadRecord.resolvedPath,
++    sizeBytes: downloadRecord.sizeBytes,
++    sha256: downloadRecord.sha256,
++    extractedFormat: extracted.format
++  };
++
++  return {
++    snapshot,
++    extractedFormat: extracted.format,
++    extractExcerpt(queryOrSpan) {
++      return extractVerifiableExcerpt(snapshot, queryOrSpan);
++    }
++  };
++}
++
++module.exports = {
++  ingestDownloadedSourceIntoResearchSnapshot
++};
+diff --git a/desktop/windows/browser/frame-shadow-executor.cjs b/desktop/windows/browser/frame-shadow-executor.cjs
+new file mode 100644
+index 0000000..460cdf8
+--- /dev/null
++++ b/desktop/windows/browser/frame-shadow-executor.cjs
+@@ -0,0 +1,131 @@
++"use strict";
++
++const { extractVerifiableExcerpt } = require("./document.cjs");
++const { KosworkBrowserRecoveryError, verifyObservationIntegrity } = require("./recovery.cjs");
++
++/**
++ * Scoped Same-Origin Frame & Open Shadow DOM Excerpt & Action Executor
++ * (`desktop/windows/browser/frame-shadow-executor.cjs`).
++ *
++ * Preserves and extends `frames/shadow scope` invariants:
++ * 1. Allows targeting specific `framePath` (e.g. `["iframe#pricing-frame"]`) or `shadowPath`
++ *    (e.g. `["koswork-pricing-card#alpha"]`) when extracting UTF-16 excerpts or filling controls.
++ * 2. Explicitly blocks cross-origin frame access (`CROSS_ORIGIN_FRAME_ISOLATED`) if the target
++ *    frame selector appears in `snapshot.skippedCrossOriginFrames`.
++ * 3. Verifies post-observation text integrity inside the scoped frame/shadow block before returning
++ *    or acting on it.
++ */
++
++function assertFrameScopeAllowed(snapshot, requestedScope = {}) {
++  const framePath = Array.isArray(requestedScope.framePath) ? requestedScope.framePath : [];
++  if (framePath.length === 0) return;
++
++  const skipped = Array.isArray(snapshot?.skippedCrossOriginFrames)
++    ? snapshot.skippedCrossOriginFrames
++    : [];
++
++  for (const targetFrame of framePath) {
++    const blocked = skipped.find(
++      (s) => s.frameSelector === targetFrame || s.frameSelector.endsWith(targetFrame)
++    );
++    if (blocked) {
++      const err = new Error(
++        `CROSS_ORIGIN_FRAME_ISOLATED: Доступ к кросс-доменному фрейму "${targetFrame}" (${blocked.src}) заблокирован политикой изоляции.`
++      );
++      err.code = "CROSS_ORIGIN_FRAME_ISOLATED";
++      err.details = blocked;
++      throw err;
++    }
++  }
++}
++
++function matchesRequestedScope(blockOrControlScope = {}, requestedScope = {}) {
++  if (Array.isArray(requestedScope.framePath) && requestedScope.framePath.length > 0) {
++    const actualFrames = Array.isArray(blockOrControlScope.framePath)
++      ? blockOrControlScope.framePath
++      : [];
++    const frameMatch = requestedScope.framePath.every((reqF) =>
++      actualFrames.some((actF) => actF === reqF || actF.includes(reqF))
++    );
++    if (!frameMatch) return false;
++  }
++
++  if (Array.isArray(requestedScope.shadowPath) && requestedScope.shadowPath.length > 0) {
++    const actualShadows = Array.isArray(blockOrControlScope.shadowPath)
++      ? blockOrControlScope.shadowPath
++      : [];
++    const shadowMatch = requestedScope.shadowPath.every((reqS) =>
++      actualShadows.some((actS) => actS === reqS || actS.includes(reqS))
++    );
++    if (!shadowMatch) return false;
++  }
++
++  return true;
++}
++
++/**
++ * Extracts a verifiable UTF-16 excerpt strictly from blocks matching `requestedScope`
++ * (`{ framePath: [...], shadowPath: [...] }`), enforcing same-origin isolation and observation integrity.
++ */
++function extractScopedFrameOrShadowExcerpt({
++  snapshot,
++  requestedScope = {},
++  searchTerm = "",
++  expectedObservation = null,
++  userTakeoverTracker = null
++} = {}) {
++  assertFrameScopeAllowed(snapshot, requestedScope);
++
++  const scopedBlocks = (snapshot.blocks || []).filter((b) =>
++    matchesRequestedScope(b.scope, requestedScope)
++  );
++  if (scopedBlocks.length === 0) {
++    return null;
++  }
++
++  const needle = String(searchTerm || "").trim().toLowerCase();
++  const targetBlock = needle
++    ? scopedBlocks.find((b) => b.text.toLowerCase().includes(needle))
++    : scopedBlocks[0];
++
++  if (!targetBlock) {
++    return null;
++  }
++
++  if (expectedObservation) {
++    verifyObservationIntegrity({
++      observedSnapshot: expectedObservation,
++      currentSnapshot: snapshot,
++      targetSpec: {
++        blockId: targetBlock.blockId,
++        startUtf16: targetBlock.startUtf16,
++        endUtf16: targetBlock.endUtf16
++      },
++      userTakeoverTracker
++    });
++  }
++
++  const excerpt = extractVerifiableExcerpt(snapshot, {
++    startUtf16: targetBlock.startUtf16,
++    endUtf16: targetBlock.endUtf16
++  });
++
++  if (!excerpt) {
++    throw new KosworkBrowserRecoveryError(
++      "SCOPED_EXCERPT_EXTRACTION_FAILED",
++      `Не удалось извлечь выдержку из области ${JSON.stringify(requestedScope)}.`
++    );
++  }
++
++  return {
++    ...excerpt,
++    scope: targetBlock.scope,
++    deepSelector: targetBlock.recoveryAnchors?.deepSelector || null
++  };
++}
++
++module.exports = {
++  assertFrameScopeAllowed,
++  extractScopedFrameOrShadowExcerpt,
++  matchesRequestedScope
++};
+diff --git a/desktop/windows/browser/research-session-har-exporter.cjs b/desktop/windows/browser/research-session-har-exporter.cjs
+new file mode 100644
+index 0000000..919a5e4
+--- /dev/null
++++ b/desktop/windows/browser/research-session-har-exporter.cjs
+@@ -0,0 +1,115 @@
++"use strict";
++
++/**
++ * Koswork Research Session W3C HAR 1.2 Trace Builder
++ * (`desktop/windows/browser/research-session-har-exporter.cjs`).
++ *
++ * Exports a standard W3C HAR 1.2 JSON log of all search queries and opened source pages
++ * during a browser research cycle so network provenance, HTTP status codes (200 vs 503),
++ * and timings are auditable.
++ */
++function buildResearchSessionHarLog({
++  searchResponse = null,
++  openedSources = [],
++  startedAtIso = null
++} = {}) {
++  const entries = [];
++
++  if (searchResponse) {
++    entries.push({
++      startedDateTime: searchResponse.searchedAt || startedAtIso || new Date().toISOString(),
++      time: 5,
++      request: {
++        method: "GET",
++        url: `${searchResponse.providerEndpoint || "https://html.duckduckgo.com/html/"}?q=${encodeURIComponent(
++          searchResponse.queryPreview || ""
++        )}`,
++        httpVersion: "HTTP/1.1",
++        headers: [{ name: "User-Agent", value: "KosworkBrowserResearch/1.0" }],
++        queryString: [{ name: "q", value: String(searchResponse.queryPreview || "") }],
++        cookies: [],
++        headersSize: -1,
++        bodySize: 0
++      },
++      response: {
++        status: 200,
++        statusText: "OK",
++        httpVersion: "HTTP/1.1",
++        headers: [{ name: "Content-Type", value: "text/html; charset=utf-8" }],
++        cookies: [],
++        content: {
++          size: Number(searchResponse.totalResults || 0) * 120,
++          mimeType: "text/html"
++        },
++        redirectURL: "",
++        headersSize: -1,
++        bodySize: -1
++      },
++      cache: {},
++      timings: { send: 1, wait: 3, receive: 1 },
++      _kosworkProvenance: {
++        kind: "search",
++        searchId: searchResponse.searchId,
++        providerId: searchResponse.providerId
++      }
++    });
++  }
++
++  for (const src of openedSources) {
++    const status = Number(src.httpStatus ?? 200);
++    entries.push({
++      startedDateTime: src.fetchedAt || new Date().toISOString(),
++      time: Number(src.latencyMs ?? 4),
++      request: {
++        method: "GET",
++        url: String(src.url || ""),
++        httpVersion: "HTTP/1.1",
++        headers: [{ name: "User-Agent", value: "KosworkBrowserResearch/1.0" }],
++        queryString: [],
++        cookies: [],
++        headersSize: -1,
++        bodySize: 0
++      },
++      response: {
++        status,
++        statusText: status === 200 ? "OK" : status === 503 ? "Service Unavailable" : "Status",
++        httpVersion: "HTTP/1.1",
++        headers: [{ name: "Content-Type", value: "text/html; charset=utf-8" }],
++        cookies: [],
++        content: {
++          size: Number(src.totalUtf16CodeUnits || 0) * 2,
++          mimeType: "text/html"
++        },
++        redirectURL: "",
++        headersSize: -1,
++        bodySize: -1
++      },
++      cache: {},
++      timings: { send: 1, wait: 2, receive: 1 },
++      _kosworkProvenance: {
++        kind: "source_visit",
++        sourceVisitId: src.sourceVisitId || null,
++        tabReceiptId: src.tabReceipt?.receiptId || null,
++        pageDate: src.pageDate || null,
++        eventDate: src.eventDate || null,
++        linkedExcerptsCount: Array.isArray(src.linkedExcerpts) ? src.linkedExcerpts.length : 0
++      }
++    });
++  }
++
++  return {
++    log: {
++      version: "1.2",
++      creator: {
++        name: "KosworkBrowserResearch",
++        version: "1.0.0"
++      },
++      pages: [],
++      entries
++    }
++  };
++}
++
++module.exports = {
++  buildResearchSessionHarLog
++};
+diff --git a/desktop/windows/test/browser-research-acceptance.test.cjs b/desktop/windows/test/browser-research-acceptance.test.cjs
+index 75c61d3..c53ae69 100644
+--- a/desktop/windows/test/browser-research-acceptance.test.cjs
++++ b/desktop/windows/test/browser-research-acceptance.test.cjs
+@@ -27,6 +27,11 @@ const {
+   buildInjectedDomExtractionScript
+ } = require("../browser/electron-webview-bridge.cjs");
+ const { verifyResearchReportIntegrity } = require("../browser/citation-verifier.cjs");
++const { extractScopedFrameOrShadowExcerpt } = require("../browser/frame-shadow-executor.cjs");
++const {
++  ingestDownloadedSourceIntoResearchSnapshot
++} = require("../browser/downloaded-source-ingestor.cjs");
++const { buildResearchSessionHarLog } = require("../browser/research-session-har-exporter.cjs");
+ const { startReproducibleCorpusServer } = require("../browser/corpus-http-server.cjs");
+ const { runBrowserResearchBenchmark } = require("../browser/benchmark-browser-research.cjs");
+ const { extractVaultDocument } = require("../vault-document-extractor.cjs");
+@@ -638,7 +643,6 @@ test("6. Hidden DOM prompt-trap sanitizer (`content-sanitizer.cjs`) & Cryptograp
+     url: "https://corpus.local/trapped-page"
+   });
+ 
+-  // Verify hidden display:none block was stripped before fullTextUtf16 and recorded in securityAdvisories
+   assert.ok(!nav.snapshot.fullTextUtf16.includes("Ignore all previous instructions"));
+   assert.ok(!nav.snapshot.fullTextUtf16.includes("\u200B"));
+   assert.ok(nav.snapshot.fullTextUtf16.includes("[STRIPPED_CHATML_DELIMITER]"));
+@@ -674,7 +678,6 @@ test("6. Hidden DOM prompt-trap sanitizer (`content-sanitizer.cjs`) & Cryptograp
+   assert.equal(validAudit.auditPassed, true);
+   assert.equal(validAudit.verifiedSlicesCount, 1);
+ 
+-  // Tamper with quote offsets -> verifier must flag UTF16_SLICE_MISMATCH
+   const tamperedAudit = verifyResearchReportIntegrity({
+     confirmedClaims: [
+       {
+@@ -696,3 +699,100 @@ test("6. Hidden DOM prompt-trap sanitizer (`content-sanitizer.cjs`) & Cryptograp
+   assert.equal(tamperedAudit.auditPassed, false);
+   assert.ok(tamperedAudit.violations.some((v) => v.code === "UTF16_SLICE_MISMATCH"));
+ });
++
++test("7. Scoped Frame/Shadow Excerpt Executor (`frame-shadow-executor.cjs`), Downloaded Source Ingestor (`downloaded-source-ingestor.cjs`), and W3C HAR 1.2 Trace Exporter", async () => {
++  const workspaceRoot = createTempWorkspace();
++  const engine = new KosworkBrowserEngine({
++    allowedWorkspaceRoot: workspaceRoot
++  });
++
++  engine.registerSyntheticSite("https://corpus.local/framed-portal", {
++    title: "Портал с фреймами и Shadow DOM",
++    pageDate: "2026-11-07",
++    eventDate: "2026-11-05",
++    text: "Основной документ портала.",
++    frames: [
++      {
++        id: "pricing-frame",
++        src: "https://corpus.local/embed/pricing",
++        text: "Внутри фрейма pricing-frame: корпоративный тариф включает 24/7 поддержку."
++      },
++      {
++        id: "external-ad-frame",
++        src: "https://ads.external.example/banner",
++        text: "Чужой кросс-доменный фрейм"
++      }
++    ],
++    shadowRoots: [
++      {
++        hostSelector: "koswork-card#sla-widget",
++        mode: "open",
++        text: "Внутри открытого Shadow DOM: гарантированное время реакции составляет 15 минут."
++      }
++    ],
++    onDownload: async () => ({
++      filename: "downloaded-spec.txt",
++      content: "Паспорт спецификации из скачанного файла: максимальный объём хранилища 4 ТБ.\n"
++    })
++  });
++
++  const nav = await engine.navigate({
++    tabId: "tab-framed",
++    url: "https://corpus.local/framed-portal"
++  });
++
++  // 1. Extract scoped excerpt from same-origin iframe
++  const frameExcerpt = extractScopedFrameOrShadowExcerpt({
++    snapshot: nav.snapshot,
++    requestedScope: { framePath: ["iframe#pricing-frame"] },
++    searchTerm: "24/7 поддержку"
++  });
++  assert.ok(frameExcerpt);
++  assert.ok(frameExcerpt.quote.includes("24/7 поддержку"));
++  assert.deepEqual(frameExcerpt.scope.framePath, ["iframe#pricing-frame"]);
++
++  // 2. Extract scoped excerpt from open Shadow DOM
++  const shadowExcerpt = extractScopedFrameOrShadowExcerpt({
++    snapshot: nav.snapshot,
++    requestedScope: { shadowPath: ["koswork-card#sla-widget"] },
++    searchTerm: "15 минут"
++  });
++  assert.ok(shadowExcerpt);
++  assert.ok(shadowExcerpt.quote.includes("15 минут"));
++  assert.deepEqual(shadowExcerpt.scope.shadowPath, ["koswork-card#sla-widget"]);
++
++  // 3. Cross-origin frame access must be rejected with CROSS_ORIGIN_FRAME_ISOLATED
++  assert.throws(
++    () =>
++      extractScopedFrameOrShadowExcerpt({
++        snapshot: nav.snapshot,
++        requestedScope: { framePath: ["iframe#external-ad-frame"] },
++        searchTerm: "Чужой"
++      }),
++    (err) => err && err.code === "CROSS_ORIGIN_FRAME_ISOLATED"
++  );
++
++  // 4. Download file into allowed workspace folder and ingest into UTF-16 research snapshot
++  const dl = await engine.downloadFromPage({
++    tabId: "tab-framed"
++  });
++  const ingested = ingestDownloadedSourceIntoResearchSnapshot(dl, {
++    pageDate: "2026-11-07",
++    eventDate: "2026-11-01"
++  });
++  const dlExcerpt = ingested.extractExcerpt({ searchTerm: "4 ТБ" });
++  assert.ok(dlExcerpt);
++  assert.equal(
++    ingested.snapshot.fullTextUtf16.slice(dlExcerpt.startUtf16, dlExcerpt.endUtf16),
++    dlExcerpt.quote
++  );
++  assert.equal(ingested.snapshot.downloadedFileMetadata.sha256, dl.sha256);
++
++  // 5. Export W3C HAR 1.2 session trace
++  const har = buildResearchSessionHarLog({
++    openedSources: [nav]
++  });
++  assert.equal(har.log.version, "1.2");
++  assert.equal(har.log.entries.length, 1);
++  assert.equal(har.log.entries[0].request.url, "https://corpus.local/framed-portal");
++});
+-- 
+2.39.5
+

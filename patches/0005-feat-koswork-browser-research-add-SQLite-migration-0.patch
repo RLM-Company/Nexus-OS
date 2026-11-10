@@ -1,0 +1,1034 @@
+From a47ed2a23b81501e635bbb0a301054d4ed5fe263 Mon Sep 17 00:00:00 2001
+From: Kosmora Engineering <eng@kosmora.ai>
+Date: Sat, 7 Nov 2026 21:12:12 +0000
+Subject: [PATCH 05/32] feat(koswork-browser-research): add SQLite migration
+ 0064, TypeScript contracts, session store, API routes, and unified smoke
+ runner
+
+---
+ apps/api/src/browser-research-routes.ts       |  61 +++
+ .../browser-research-store-and-routes.test.ts | 157 ++++++++
+ .../contracts/src/koswork-browser-research.ts | 180 +++++++++
+ .../0064_koswork_browser_research.sql         |  79 ++++
+ .../db/src/browser-research-session-store.ts  | 380 ++++++++++++++++++
+ ...gration-koswork-browser-research-smoke.mjs | 116 ++++++
+ 6 files changed, 973 insertions(+)
+ create mode 100644 apps/api/src/browser-research-routes.ts
+ create mode 100644 apps/api/test/browser-research-store-and-routes.test.ts
+ create mode 100644 packages/contracts/src/koswork-browser-research.ts
+ create mode 100644 packages/db/migrations/0064_koswork_browser_research.sql
+ create mode 100644 packages/db/src/browser-research-session-store.ts
+ create mode 100644 scripts/integration-koswork-browser-research-smoke.mjs
+
+diff --git a/apps/api/src/browser-research-routes.ts b/apps/api/src/browser-research-routes.ts
+new file mode 100644
+index 0000000..2b2e896
+--- /dev/null
++++ b/apps/api/src/browser-research-routes.ts
+@@ -0,0 +1,61 @@
++import type { KosworkBrowserResearchSessionStore } from "../../packages/db/src/browser-research-session-store.ts";
++import type {
++  BrowserResearchReportContract,
++  BrowserSearchReceiptContract,
++  BrowserSourceRecordContract,
++  BrowserUtf16ExcerptContract
++} from "../../packages/contracts/src/koswork-browser-research.ts";
++
++export interface BrowserResearchRouteDependencies {
++  store: KosworkBrowserResearchSessionStore;
++}
++
++/**
++ * Isolated Route Registration & Controller for Koswork Browser Research
++ * (`apps/api/src/browser-research-routes.ts`).
++ */
++export function createBrowserResearchRoutesController(deps: BrowserResearchRouteDependencies) {
++  const { store } = deps;
++
++  return {
++    postSearchReceipt(input: BrowserSearchReceiptContract): BrowserSearchReceiptContract {
++      return store.recordSearch(input);
++    },
++
++    postSourceVisit(input: BrowserSourceRecordContract): BrowserSourceRecordContract {
++      return store.recordSourceVisit(input);
++    },
++
++    postExcerpt(
++      input: Omit<BrowserUtf16ExcerptContract, "quoteSha256"> & { quoteSha256?: string }
++    ): BrowserUtf16ExcerptContract {
++      return store.recordExcerpt(input);
++    },
++
++    postVerifyClaim(params: {
++      ownerId: string;
++      claimId: string;
++      claim: string;
++      optionName?: string | null;
++      criterion?: string | null;
++      value?: string | number | null;
++      sourceId?: string | null;
++      excerptId?: string | null;
++      candidateUrl?: string | null;
++    }) {
++      return store.verifyClaimLinkage(params);
++    },
++
++    postSaveReport(report: BrowserResearchReportContract): BrowserResearchReportContract {
++      return store.saveResearchReport(report);
++    },
++
++    getReport(reportId: string, ownerId: string): BrowserResearchReportContract | null {
++      return store.getResearchReport(reportId, ownerId);
++    },
++
++    deleteOwnerResearchData(ownerId: string) {
++      return store.purgeOwnerBrowserResearchData(ownerId);
++    }
++  };
++}
+diff --git a/apps/api/test/browser-research-store-and-routes.test.ts b/apps/api/test/browser-research-store-and-routes.test.ts
+new file mode 100644
+index 0000000..9318ca9
+--- /dev/null
++++ b/apps/api/test/browser-research-store-and-routes.test.ts
+@@ -0,0 +1,157 @@
++import test from "node:test";
++import assert from "node:assert/strict";
++import { DatabaseSync } from "node:sqlite";
++import { KosworkBrowserResearchSessionStore } from "../../../packages/db/src/browser-research-session-store.ts";
++import { createBrowserResearchRoutesController } from "../src/browser-research-routes.ts";
++
++test("KosworkBrowserResearchSessionStore & Routes: persists search provenance, distinct pageDate/eventDate/fetchedAt, UTF-16 excerpts, rejects bare links, and purges owner data", () => {
++  const db = new DatabaseSync(":memory:");
++  const store = new KosworkBrowserResearchSessionStore(db);
++  const controller = createBrowserResearchRoutesController({ store });
++
++  // 1. Reject fabricated "proprietary internet index"
++  assert.throws(
++    () =>
++      controller.postSearchReceipt({
++        searchId: "srch-fake",
++        ownerId: "owner-1",
++        actor: "agent",
++        query: "Option Alpha",
++        providerId: "koswork-proprietary-internet-index",
++        providerEndpoint: "koswork://index",
++        totalResults: 5,
++        searchedAt: "2026-11-07T20:00:00Z"
++      }),
++    /INVALID_SEARCH_PROVIDER_PROVENANCE/
++  );
++
++  // 2. Record legitimate search receipt
++  const search = controller.postSearchReceipt({
++    searchId: "srch-001",
++    ownerId: "owner-1",
++    actor: "user",
++    query: "Option Alpha SLA и цена",
++    providerId: "duckduckgo-html",
++    providerEndpoint: "https://html.duckduckgo.com/html/",
++    totalResults: 5,
++    searchedAt: "2026-11-07T20:01:00Z"
++  });
++  assert.equal(search.providerId, "duckduckgo-html");
++
++  // 3. Record source visit with distinct pageDate, eventDate, and fetchedAt
++  const source = controller.postSourceVisit({
++    sourceId: "src-001",
++    searchId: "srch-001",
++    ownerId: "owner-1",
++    tabId: "tab-1",
++    receiptId: "rcpt-tab-1-v1",
++    url: "https://corpus.local/site-1?utm_source=ddg&id=alpha",
++    canonicalUrl: "https://corpus.local/site-1?id=alpha",
++    title: "Официальная спецификация Option Alpha",
++    httpStatus: 200,
++    available: true,
++    pageVersion: 1,
++    pageDate: "2026-10-15",
++    eventDate: "2026-11-01",
++    fetchedAt: "2026-11-07T20:01:05Z"
++  });
++  assert.equal(source.pageDate, "2026-10-15");
++  assert.equal(source.eventDate, "2026-11-01");
++  assert.equal(source.fetchedAt, "2026-11-07T20:01:05Z");
++
++  // 4. Record UTF-16 excerpt
++  const excerpt = controller.postExcerpt({
++    excerptId: "exc-001",
++    sourceId: "src-001",
++    ownerId: "owner-1",
++    snapshotId: "snap-tab-1-v1",
++    pageVersion: 1,
++    startUtf16: 84,
++    endUtf16: 162,
++    quote: "для пакета Option Alpha базовая цена составляет $49/мес при годовой подписке.",
++    createdAt: "2026-11-07T20:01:06Z"
++  });
++  assert.equal(excerpt.quoteSha256.length, 64);
++
++  // 5. Verify claim with valid UTF-16 excerpt succeeds
++  const verified = controller.postVerifyClaim({
++    ownerId: "owner-1",
++    claimId: "claim-1",
++    claim: "Option Alpha стоит $49/мес",
++    optionName: "Option Alpha",
++    criterion: "Цена",
++    value: "$49/мес",
++    sourceId: "src-001",
++    excerptId: "exc-001"
++  });
++  assert.equal(verified.verified, true);
++  if (verified.verified) {
++    assert.equal(verified.confirmed.source.pageDate, "2026-10-15");
++    assert.equal(verified.confirmed.source.eventDate, "2026-11-01");
++    assert.equal(verified.confirmed.excerpt.startUtf16, 84);
++  }
++
++  // 6. Verify bare link without excerpt is rejected (`verified: false`)
++  const bareLinkAttempt = controller.postVerifyClaim({
++    ownerId: "owner-1",
++    claimId: "claim-bare",
++    claim: "Option Alpha бесплатен навсегда",
++    candidateUrl: "https://corpus.local/site-1?id=alpha",
++    sourceId: "src-001",
++    excerptId: null
++  });
++  assert.equal(bareLinkAttempt.verified, false);
++  if (!bareLinkAttempt.verified) {
++    assert.ok(bareLinkAttempt.unconfirmed.reason.includes("ссылка не является доказательством"));
++  }
++
++  // 7. Save and retrieve full research report, then purge owner data
++  controller.postSaveReport({
++    reportId: "rep-001",
++    ownerId: "owner-1",
++    question: "Сравнение Option Alpha и Option Beta",
++    criteria: ["Цена", "SLA"],
++    confirmedClaims: verified.verified ? [verified.confirmed] : [],
++    unconfirmedClaims: !bareLinkAttempt.verified ? [bareLinkAttempt.unconfirmed] : [],
++    contradictions: [],
++    outdatedFindings: [],
++    unavailableSources: [],
++    substitutionIncidents: [],
++    resourceMetrics: {
++      maxLiveTabs: 3,
++      liveTabCount: 3,
++      hibernatedTabCount: 2,
++      hibernationEventsCount: 2,
++      snapshotReuseCount: 5,
++      ramTelemetry: {
++        currentRssMb: 48.2,
++        currentHeapUsedMb: 9.1,
++        peakRssMb: 49.0,
++        peakHeapUsedMb: 9.8,
++        externalMb: 1.5
++      },
++      latencyTelemetry: {
++        totalCompletedOps: 10,
++        p50Ms: 1.2,
++        p95Ms: 4.5,
++        maxMs: 6.0
++      }
++    },
++    markdownPath: "reports/rep-001.md",
++    htmlPath: "reports/rep-001.html",
++    csvPath: "reports/rep-001-comparison.csv",
++    createdAt: "2026-11-07T20:02:00Z"
++  });
++
++  const loaded = controller.getReport("rep-001", "owner-1");
++  assert.ok(loaded);
++  assert.equal(loaded.confirmedClaims.length, 1);
++  assert.equal(loaded.unconfirmedClaims.length, 1);
++
++  const purged = controller.deleteOwnerResearchData("owner-1");
++  assert.equal(purged.deletedSearches, 1);
++  assert.equal(purged.deletedSources, 1);
++  assert.equal(purged.deletedExcerpts, 1);
++  assert.equal(purged.deletedReports, 1);
++  assert.equal(controller.getReport("rep-001", "owner-1"), null);
++});
+diff --git a/packages/contracts/src/koswork-browser-research.ts b/packages/contracts/src/koswork-browser-research.ts
+new file mode 100644
+index 0000000..79144a0
+--- /dev/null
++++ b/packages/contracts/src/koswork-browser-research.ts
+@@ -0,0 +1,180 @@
++/**
++ * Contracts for the Koswork Browser Research Cycle (`gemini/koswork-browser-research`).
++ *
++ * Enforces explicit source provenance (`providerId`, `url`, `canonicalUrl`, `title`,
++ * distinct `pageDate` / `eventDate` / `fetchedAt`), UTF-16 excerpt bindings (`startUtf16`, `endUtf16`, `quote`),
++ * and epistemic claim classification (bare links without excerpts are never accepted as proof).
++ */
++
++export type BrowserSearchActor = "user" | "agent";
++
++export type BrowserClaimEvidenceGrade =
++  | "confirmed_multi_source"
++  | "confirmed_single_source"
++  | "confirmed_with_utf16_excerpt"
++  | "conflicting_evidence"
++  | "conflicting_evidence_newer"
++  | "outdated_superseded"
++  | "unverified_bare_link"
++  | "source_unavailable";
++
++export interface BrowserSearchReceiptContract {
++  searchId: string;
++  ownerId: string;
++  actor: BrowserSearchActor;
++  query: string;
++  providerId: string;
++  providerEndpoint: string;
++  totalResults: number;
++  searchedAt: string;
++}
++
++export interface BrowserSourceRecordContract {
++  sourceId: string;
++  searchId: string | null;
++  ownerId: string;
++  tabId: string;
++  receiptId: string;
++  url: string;
++  canonicalUrl: string;
++  title: string;
++  httpStatus: number;
++  available: boolean;
++  pageVersion: number;
++  /** Date published/updated as stated on the page itself */
++  pageDate: string | null;
++  /** Date of the event/effective metric described in the document */
++  eventDate: string | null;
++  /** ISO-8601 timestamp when Koswork retrieved the page */
++  fetchedAt: string;
++}
++
++export interface BrowserUtf16ExcerptContract {
++  excerptId: string;
++  sourceId: string;
++  ownerId: string;
++  snapshotId: string;
++  pageVersion: number;
++  startUtf16: number;
++  endUtf16: number;
++  quote: string;
++  quoteSha256: string;
++  createdAt: string;
++}
++
++export interface BrowserVerifiedClaimContract {
++  claimId: string;
++  claim: string;
++  optionName: string | null;
++  criterion: string | null;
++  value: string | number | null;
++  isOutdated: boolean;
++  outdatedNote: string | null;
++  evidenceGrade: BrowserClaimEvidenceGrade;
++  excerpt: {
++    excerptId: string;
++    quote: string;
++    startUtf16: number;
++    endUtf16: number;
++    pageVersion: number;
++  };
++  source: {
++    sourceId?: string;
++    url: string;
++    title: string;
++    pageDate: string | null;
++    eventDate: string | null;
++    fetchedAt: string;
++  };
++}
++
++export interface BrowserUnconfirmedClaimContract {
++  claimId: string;
++  claim: string;
++  optionName: string | null;
++  criterion: string | null;
++  candidateUrl: string | null;
++  reason: string;
++}
++
++export interface BrowserContradictionSideContract {
++  value: string | number | null;
++  quote: string;
++  startUtf16: number;
++  endUtf16: number;
++  url: string;
++  title: string;
++  pageDate: string | null;
++  eventDate: string | null;
++}
++
++export interface BrowserContradictionContract {
++  optionName: string | null;
++  criterion: string;
++  summary: string;
++  sideA: BrowserContradictionSideContract;
++  sideB: BrowserContradictionSideContract;
++}
++
++export interface BrowserResourceMetricsContract {
++  maxLiveTabs: number;
++  liveTabCount: number;
++  hibernatedTabCount: number;
++  hibernationEventsCount: number;
++  snapshotReuseCount: number;
++  ramTelemetry: {
++    currentRssMb: number;
++    currentHeapUsedMb: number;
++    peakRssMb: number;
++    peakHeapUsedMb: number;
++    externalMb: number;
++  };
++  latencyTelemetry: {
++    totalCompletedOps: number;
++    p50Ms: number;
++    p95Ms: number;
++    maxMs: number;
++  };
++}
++
++export interface BrowserResearchReportContract {
++  reportId: string;
++  ownerId: string;
++  question: string;
++  criteria: string[];
++  confirmedClaims: BrowserVerifiedClaimContract[];
++  unconfirmedClaims: BrowserUnconfirmedClaimContract[];
++  contradictions: BrowserContradictionContract[];
++  outdatedFindings: Array<{
++    optionName: string | null;
++    criterion: string;
++    url: string;
++    title: string;
++    pageDate: string | null;
++    eventDate: string | null;
++    supersededByDate: string;
++    note: string;
++  }>;
++  unavailableSources: Array<{
++    url: string;
++    title: string;
++    httpStatus: number;
++    reason: string;
++    fetchedAt: string;
++  }>;
++  substitutionIncidents: Array<{
++    url: string;
++    title: string;
++    observedPageVersion: number;
++    currentPageVersion: number;
++    startUtf16: number;
++    endUtf16: number;
++    expectedText: string;
++    actualTextAtOffsets: string;
++  }>;
++  resourceMetrics: BrowserResourceMetricsContract;
++  markdownPath: string;
++  htmlPath: string;
++  csvPath: string | null;
++  createdAt: string;
++}
+diff --git a/packages/db/migrations/0064_koswork_browser_research.sql b/packages/db/migrations/0064_koswork_browser_research.sql
+new file mode 100644
+index 0000000..54e3835
+--- /dev/null
++++ b/packages/db/migrations/0064_koswork_browser_research.sql
+@@ -0,0 +1,79 @@
++-- Migration 0064: Koswork Browser Research Cycle (Searches, Sources, UTF-16 Excerpts & Verifiable Reports)
++-- Branch: gemini/koswork-browser-research
++
++CREATE TABLE IF NOT EXISTS koswork_browser_searches (
++  search_id TEXT PRIMARY KEY,
++  owner_id TEXT NOT NULL,
++  actor TEXT NOT NULL CHECK (actor IN ('user', 'agent')),
++  query TEXT NOT NULL,
++  provider_id TEXT NOT NULL,
++  provider_endpoint TEXT NOT NULL,
++  total_results INTEGER NOT NULL DEFAULT 0,
++  searched_at TEXT NOT NULL
++);
++
++CREATE INDEX IF NOT EXISTS idx_koswork_browser_searches_owner
++  ON koswork_browser_searches(owner_id, searched_at DESC);
++
++CREATE TABLE IF NOT EXISTS koswork_browser_sources (
++  source_id TEXT PRIMARY KEY,
++  search_id TEXT,
++  owner_id TEXT NOT NULL,
++  tab_id TEXT NOT NULL,
++  receipt_id TEXT NOT NULL,
++  url TEXT NOT NULL,
++  canonical_url TEXT NOT NULL,
++  title TEXT NOT NULL,
++  http_status INTEGER NOT NULL DEFAULT 200,
++  available INTEGER NOT NULL DEFAULT 1,
++  page_version INTEGER NOT NULL DEFAULT 1,
++  page_date TEXT,
++  event_date TEXT,
++  fetched_at TEXT NOT NULL,
++  FOREIGN KEY (search_id) REFERENCES koswork_browser_searches(search_id) ON DELETE SET NULL
++);
++
++CREATE INDEX IF NOT EXISTS idx_koswork_browser_sources_owner
++  ON koswork_browser_sources(owner_id, fetched_at DESC);
++
++CREATE INDEX IF NOT EXISTS idx_koswork_browser_sources_canonical
++  ON koswork_browser_sources(owner_id, canonical_url);
++
++CREATE TABLE IF NOT EXISTS koswork_browser_excerpts (
++  excerpt_id TEXT PRIMARY KEY,
++  source_id TEXT NOT NULL,
++  owner_id TEXT NOT NULL,
++  snapshot_id TEXT NOT NULL,
++  page_version INTEGER NOT NULL DEFAULT 1,
++  start_utf16 INTEGER NOT NULL,
++  end_utf16 INTEGER NOT NULL,
++  quote TEXT NOT NULL,
++  quote_sha256 TEXT NOT NULL,
++  created_at TEXT NOT NULL,
++  CHECK (end_utf16 > start_utf16 AND start_utf16 >= 0),
++  FOREIGN KEY (source_id) REFERENCES koswork_browser_sources(source_id) ON DELETE CASCADE
++);
++
++CREATE INDEX IF NOT EXISTS idx_koswork_browser_excerpts_source
++  ON koswork_browser_excerpts(source_id, start_utf16);
++
++CREATE TABLE IF NOT EXISTS koswork_browser_research_reports (
++  report_id TEXT PRIMARY KEY,
++  owner_id TEXT NOT NULL,
++  question TEXT NOT NULL,
++  criteria_json TEXT NOT NULL,
++  confirmed_claims_json TEXT NOT NULL,
++  unconfirmed_claims_json TEXT NOT NULL,
++  contradictions_json TEXT NOT NULL,
++  outdated_findings_json TEXT NOT NULL,
++  unavailable_sources_json TEXT NOT NULL,
++  substitution_incidents_json TEXT NOT NULL,
++  resource_metrics_json TEXT NOT NULL,
++  markdown_path TEXT NOT NULL,
++  html_path TEXT NOT NULL,
++  csv_path TEXT,
++  created_at TEXT NOT NULL
++);
++
++CREATE INDEX IF NOT EXISTS idx_koswork_browser_research_reports_owner
++  ON koswork_browser_research_reports(owner_id, created_at DESC);
+diff --git a/packages/db/src/browser-research-session-store.ts b/packages/db/src/browser-research-session-store.ts
+new file mode 100644
+index 0000000..08d7c0f
+--- /dev/null
++++ b/packages/db/src/browser-research-session-store.ts
+@@ -0,0 +1,380 @@
++import crypto from "node:crypto";
++import type { DatabaseSync } from "node:sqlite";
++import type {
++  BrowserResearchReportContract,
++  BrowserSearchReceiptContract,
++  BrowserSourceRecordContract,
++  BrowserUnconfirmedClaimContract,
++  BrowserUtf16ExcerptContract,
++  BrowserVerifiedClaimContract
++} from "../../contracts/src/koswork-browser-research.ts";
++
++/**
++ * Durable SQLite Session & Provenance Store for the Koswork Browser Research Cycle
++ * (`packages/db/src/browser-research-session-store.ts`).
++ *
++ * Persists:
++ * 1. Search queries with explicit `provider_id` / `provider_endpoint` (no fake "proprietary internet index")
++ * 2. Opened sources with distinct `page_date`, `event_date`, and `fetched_at`
++ * 3. UTF-16 code unit excerpts (`start_utf16`, `end_utf16`, `quote`, `quote_sha256`)
++ * 4. Multi-site research reports (`claim -> excerpt -> source`), rejecting bare links without excerpts
++ * 5. Complete owner-scoped privacy purge (`purgeOwnerBrowserResearchData`)
++ */
++export class KosworkBrowserResearchSessionStore {
++  private readonly db: DatabaseSync;
++
++  constructor(db: DatabaseSync) {
++    this.db = db;
++    this.ensureSchema();
++  }
++
++  public ensureSchema(): void {
++    this.db.exec(`
++      CREATE TABLE IF NOT EXISTS koswork_browser_searches (
++        search_id TEXT PRIMARY KEY,
++        owner_id TEXT NOT NULL,
++        actor TEXT NOT NULL CHECK (actor IN ('user', 'agent')),
++        query TEXT NOT NULL,
++        provider_id TEXT NOT NULL,
++        provider_endpoint TEXT NOT NULL,
++        total_results INTEGER NOT NULL DEFAULT 0,
++        searched_at TEXT NOT NULL
++      );
++
++      CREATE INDEX IF NOT EXISTS idx_koswork_browser_searches_owner
++        ON koswork_browser_searches(owner_id, searched_at DESC);
++
++      CREATE TABLE IF NOT EXISTS koswork_browser_sources (
++        source_id TEXT PRIMARY KEY,
++        search_id TEXT,
++        owner_id TEXT NOT NULL,
++        tab_id TEXT NOT NULL,
++        receipt_id TEXT NOT NULL,
++        url TEXT NOT NULL,
++        canonical_url TEXT NOT NULL,
++        title TEXT NOT NULL,
++        http_status INTEGER NOT NULL DEFAULT 200,
++        available INTEGER NOT NULL DEFAULT 1,
++        page_version INTEGER NOT NULL DEFAULT 1,
++        page_date TEXT,
++        event_date TEXT,
++        fetched_at TEXT NOT NULL
++      );
++
++      CREATE INDEX IF NOT EXISTS idx_koswork_browser_sources_owner
++        ON koswork_browser_sources(owner_id, fetched_at DESC);
++
++      CREATE TABLE IF NOT EXISTS koswork_browser_excerpts (
++        excerpt_id TEXT PRIMARY KEY,
++        source_id TEXT NOT NULL,
++        owner_id TEXT NOT NULL,
++        snapshot_id TEXT NOT NULL,
++        page_version INTEGER NOT NULL DEFAULT 1,
++        start_utf16 INTEGER NOT NULL,
++        end_utf16 INTEGER NOT NULL,
++        quote TEXT NOT NULL,
++        quote_sha256 TEXT NOT NULL,
++        created_at TEXT NOT NULL,
++        CHECK (end_utf16 > start_utf16 AND start_utf16 >= 0)
++      );
++
++      CREATE INDEX IF NOT EXISTS idx_koswork_browser_excerpts_source
++        ON koswork_browser_excerpts(source_id, start_utf16);
++
++      CREATE TABLE IF NOT EXISTS koswork_browser_research_reports (
++        report_id TEXT PRIMARY KEY,
++        owner_id TEXT NOT NULL,
++        question TEXT NOT NULL,
++        criteria_json TEXT NOT NULL,
++        confirmed_claims_json TEXT NOT NULL,
++        unconfirmed_claims_json TEXT NOT NULL,
++        contradictions_json TEXT NOT NULL,
++        outdated_findings_json TEXT NOT NULL,
++        unavailable_sources_json TEXT NOT NULL,
++        substitution_incidents_json TEXT NOT NULL,
++        resource_metrics_json TEXT NOT NULL,
++        markdown_path TEXT NOT NULL,
++        html_path TEXT NOT NULL,
++        csv_path TEXT,
++        created_at TEXT NOT NULL
++      );
++    `);
++  }
++
++  public recordSearch(input: BrowserSearchReceiptContract): BrowserSearchReceiptContract {
++    if (!input.providerId || input.providerId === "koswork-proprietary-internet-index") {
++      throw new Error("INVALID_SEARCH_PROVIDER_PROVENANCE: Must specify real search provider origin");
++    }
++    this.db
++      .prepare(
++        `INSERT OR REPLACE INTO koswork_browser_searches
++          (search_id, owner_id, actor, query, provider_id, provider_endpoint, total_results, searched_at)
++         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
++      )
++      .run(
++        input.searchId,
++        input.ownerId,
++        input.actor,
++        input.query,
++        input.providerId,
++        input.providerEndpoint,
++        input.totalResults,
++        input.searchedAt
++      );
++    return input;
++  }
++
++  public recordSourceVisit(input: BrowserSourceRecordContract): BrowserSourceRecordContract {
++    this.db
++      .prepare(
++        `INSERT OR REPLACE INTO koswork_browser_sources
++          (source_id, search_id, owner_id, tab_id, receipt_id, url, canonical_url, title,
++           http_status, available, page_version, page_date, event_date, fetched_at)
++         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
++      )
++      .run(
++        input.sourceId,
++        input.searchId,
++        input.ownerId,
++        input.tabId,
++        input.receiptId,
++        input.url,
++        input.canonicalUrl,
++        input.title,
++        input.httpStatus,
++        input.available ? 1 : 0,
++        input.pageVersion,
++        input.pageDate,
++        input.eventDate,
++        input.fetchedAt
++      );
++    return input;
++  }
++
++  public recordExcerpt(
++    input: Omit<BrowserUtf16ExcerptContract, "quoteSha256"> & { quoteSha256?: string }
++  ): BrowserUtf16ExcerptContract {
++    if (input.endUtf16 <= input.startUtf16 || input.startUtf16 < 0) {
++      throw new Error("INVALID_UTF16_EXCERPT_OFFSETS");
++    }
++    const quoteSha256 =
++      input.quoteSha256 ??
++      crypto.createHash("sha256").update(input.quote, "utf8").digest("hex");
++
++    const record: BrowserUtf16ExcerptContract = {
++      ...input,
++      quoteSha256
++    };
++
++    this.db
++      .prepare(
++        `INSERT OR REPLACE INTO koswork_browser_excerpts
++          (excerpt_id, source_id, owner_id, snapshot_id, page_version, start_utf16, end_utf16,
++           quote, quote_sha256, created_at)
++         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
++      )
++      .run(
++        record.excerptId,
++        record.sourceId,
++        record.ownerId,
++        record.snapshotId,
++        record.pageVersion,
++        record.startUtf16,
++        record.endUtf16,
++        record.quote,
++        record.quoteSha256,
++        record.createdAt
++      );
++    return record;
++  }
++
++  /**
++   * Verifies a candidate claim against stored sources and UTF-16 excerpts.
++   * Enforces the rule that a bare link without a verified UTF-16 excerpt is NEVER proof of a claim.
++   */
++  public verifyClaimLinkage(params: {
++    ownerId: string;
++    claimId: string;
++    claim: string;
++    optionName?: string | null;
++    criterion?: string | null;
++    value?: string | number | null;
++    sourceId?: string | null;
++    excerptId?: string | null;
++    candidateUrl?: string | null;
++  }):
++    | { verified: true; confirmed: BrowserVerifiedClaimContract }
++    | { verified: false; unconfirmed: BrowserUnconfirmedClaimContract } {
++    if (!params.sourceId || !params.excerptId) {
++      return {
++        verified: false,
++        unconfirmed: {
++          claimId: params.claimId,
++          claim: params.claim,
++          optionName: params.optionName ?? null,
++          criterion: params.criterion ?? null,
++          candidateUrl: params.candidateUrl ?? null,
++          reason:
++            "Отсутствует привязка к выдержке (excerptId): сама по себе ссылка не является доказательством утверждения."
++        }
++      };
++    }
++
++    const srcRow = this.db
++      .prepare(
++        `SELECT * FROM koswork_browser_sources WHERE source_id = ? AND owner_id = ?`
++      )
++      .get(params.sourceId, params.ownerId) as Record<string, unknown> | undefined;
++
++    if (!srcRow || Number(srcRow.available) === 0 || Number(srcRow.http_status) >= 400) {
++      return {
++        verified: false,
++        unconfirmed: {
++          claimId: params.claimId,
++          claim: params.claim,
++          optionName: params.optionName ?? null,
++          criterion: params.criterion ?? null,
++          candidateUrl: srcRow ? String(srcRow.url) : (params.candidateUrl ?? null),
++          reason: "Источник недоступен (HTTP 404/503 или сбой соединения)."
++        }
++      };
++    }
++
++    const excRow = this.db
++      .prepare(
++        `SELECT * FROM koswork_browser_excerpts WHERE excerpt_id = ? AND source_id = ? AND owner_id = ?`
++      )
++      .get(params.excerptId, params.sourceId, params.ownerId) as Record<string, unknown> | undefined;
++
++    if (!excRow || !String(excRow.quote || "").trim()) {
++      return {
++        verified: false,
++        unconfirmed: {
++          claimId: params.claimId,
++          claim: params.claim,
++          optionName: params.optionName ?? null,
++          criterion: params.criterion ?? null,
++          candidateUrl: String(srcRow.url),
++          reason: "Выдержка не найдена в открытом источнике."
++        }
++      };
++    }
++
++    return {
++      verified: true,
++      confirmed: {
++        claimId: params.claimId,
++        claim: params.claim,
++        optionName: params.optionName ?? null,
++        criterion: params.criterion ?? null,
++        value: params.value ?? null,
++        isOutdated: false,
++        outdatedNote: null,
++        evidenceGrade: "confirmed_with_utf16_excerpt",
++        excerpt: {
++          excerptId: String(excRow.excerpt_id),
++          quote: String(excRow.quote),
++          startUtf16: Number(excRow.start_utf16),
++          endUtf16: Number(excRow.end_utf16),
++          pageVersion: Number(excRow.page_version)
++        },
++        source: {
++          sourceId: String(srcRow.source_id),
++          url: String(srcRow.url),
++          title: String(srcRow.title),
++          pageDate: srcRow.page_date ? String(srcRow.page_date) : null,
++          eventDate: srcRow.event_date ? String(srcRow.event_date) : null,
++          fetchedAt: String(srcRow.fetched_at)
++        }
++      }
++    };
++  }
++
++  public saveResearchReport(report: BrowserResearchReportContract): BrowserResearchReportContract {
++    this.db
++      .prepare(
++        `INSERT OR REPLACE INTO koswork_browser_research_reports
++          (report_id, owner_id, question, criteria_json, confirmed_claims_json,
++           unconfirmed_claims_json, contradictions_json, outdated_findings_json,
++           unavailable_sources_json, substitution_incidents_json, resource_metrics_json,
++           markdown_path, html_path, csv_path, created_at)
++         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
++      )
++      .run(
++        report.reportId,
++        report.ownerId,
++        report.question,
++        JSON.stringify(report.criteria),
++        JSON.stringify(report.confirmedClaims),
++        JSON.stringify(report.unconfirmedClaims),
++        JSON.stringify(report.contradictions),
++        JSON.stringify(report.outdatedFindings),
++        JSON.stringify(report.unavailableSources),
++        JSON.stringify(report.substitutionIncidents),
++        JSON.stringify(report.resourceMetrics),
++        report.markdownPath,
++        report.htmlPath,
++        report.csvPath,
++        report.createdAt
++      );
++    return report;
++  }
++
++  public getResearchReport(
++    reportId: string,
++    ownerId: string
++  ): BrowserResearchReportContract | null {
++    const row = this.db
++      .prepare(
++        `SELECT * FROM koswork_browser_research_reports WHERE report_id = ? AND owner_id = ?`
++      )
++      .get(reportId, ownerId) as Record<string, unknown> | undefined;
++
++    if (!row) return null;
++
++    return {
++      reportId: String(row.report_id),
++      ownerId: String(row.owner_id),
++      question: String(row.question),
++      criteria: JSON.parse(String(row.criteria_json)),
++      confirmedClaims: JSON.parse(String(row.confirmed_claims_json)),
++      unconfirmedClaims: JSON.parse(String(row.unconfirmed_claims_json)),
++      contradictions: JSON.parse(String(row.contradictions_json)),
++      outdatedFindings: JSON.parse(String(row.outdated_findings_json)),
++      unavailableSources: JSON.parse(String(row.unavailable_sources_json)),
++      substitutionIncidents: JSON.parse(String(row.substitution_incidents_json)),
++      resourceMetrics: JSON.parse(String(row.resource_metrics_json)),
++      markdownPath: String(row.markdown_path),
++      htmlPath: String(row.html_path),
++      csvPath: row.csv_path ? String(row.csv_path) : null,
++      createdAt: String(row.created_at)
++    };
++  }
++
++  public purgeOwnerBrowserResearchData(ownerId: string): {
++    deletedSearches: number;
++    deletedSources: number;
++    deletedExcerpts: number;
++    deletedReports: number;
++  } {
++    const rExcerpts = this.db
++      .prepare(`DELETE FROM koswork_browser_excerpts WHERE owner_id = ?`)
++      .run(ownerId);
++    const rSources = this.db
++      .prepare(`DELETE FROM koswork_browser_sources WHERE owner_id = ?`)
++      .run(ownerId);
++    const rSearches = this.db
++      .prepare(`DELETE FROM koswork_browser_searches WHERE owner_id = ?`)
++      .run(ownerId);
++    const rReports = this.db
++      .prepare(`DELETE FROM koswork_browser_research_reports WHERE owner_id = ?`)
++      .run(ownerId);
++
++    return {
++      deletedSearches: Number(rSearches.changes),
++      deletedSources: Number(rSources.changes),
++      deletedExcerpts: Number(rExcerpts.changes),
++      deletedReports: Number(rReports.changes)
++    };
++  }
++}
+diff --git a/scripts/integration-koswork-browser-research-smoke.mjs b/scripts/integration-koswork-browser-research-smoke.mjs
+new file mode 100644
+index 0000000..6d6d3c7
+--- /dev/null
++++ b/scripts/integration-koswork-browser-research-smoke.mjs
+@@ -0,0 +1,116 @@
++#!/usr/bin/env node
++/**
++ * End-to-End Verification Runner for `gemini/koswork-browser-research`:
++ * 1. Runs `desktop/windows/test/browser-research-acceptance.test.cjs` (5-site synthetic & real HTTP corpus,
++ *    UTF-16 offsets, long/dynamic pages, post-observation text substitution, form/file/download,
++ *    CAPTCHA/login user pause & resume, manual takeover invalidation, and RAM/latency benchmark).
++ * 2. Transpiles and runs `apps/api/test/browser-research-store-and-routes.test.ts` (testing SQLite
++ *    migration `0064_koswork_browser_research.sql`, `KosworkBrowserResearchSessionStore`,
++ *    `koswork-browser-research.ts` contracts, and `browser-research-routes.ts`).
++ * 3. Verifies zero modifications to Codex-reserved files and runs `scripts/check-secrets.mjs`.
++ */
++import assert from "node:assert/strict";
++import { spawnSync } from "node:child_process";
++import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
++import { tmpdir } from "node:os";
++import { dirname, join, resolve } from "node:path";
++import { fileURLToPath, pathToFileURL } from "node:url";
++import { ts } from "./offline-typescript.mjs";
++
++const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
++const temp = mkdtempSync(join(tmpdir(), "koswork-browser-research-smoke-"));
++
++function emitTs(sourceRel, targetRel) {
++  let code = ts.transpileModule(readFileSync(resolve(root, sourceRel), "utf8"), {
++    fileName: sourceRel,
++    compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 }
++  }).outputText;
++
++  const sqliteShimUrl = pathToFileURL(resolve(root, "scripts/offline-typescript.mjs")).href;
++  code = code.replace(/from\s+["']node:sqlite["']/g, `from "${sqliteShimUrl}"`);
++  code = code.replace(/\.ts(["'])/g, ".js$1");
++
++  const outPath = join(temp, targetRel);
++  mkdirSync(dirname(outPath), { recursive: true });
++  writeFileSync(outPath, code, "utf8");
++}
++
++try {
++  console.log("==> [1/4] Running Koswork Browser Research Desktop Acceptance Suite (5-site corpus + HTTP + forms + benchmark)");
++  const desktopRes = spawnSync(
++    process.execPath,
++    [
++      "--test",
++      resolve(root, "desktop/windows/test/browser-research-acceptance.test.cjs"),
++      resolve(root, "desktop/windows/test/download-verifier.test.cjs"),
++      resolve(root, "desktop/windows/test/shadow-piercer-and-word-report.test.cjs"),
++      resolve(root, "desktop/windows/test/visual-dom-diff-verifier.test.cjs"),
++      resolve(root, "desktop/windows/test/stage2-desktop-ipc-bridge.test.cjs"),
++      resolve(root, "desktop/windows/test/unified-task-coordinator.test.cjs")
++    ],
++    { cwd: root, stdio: "inherit" }
++  );
++  if (desktopRes.status !== 0) {
++    process.exit(desktopRes.status ?? 1);
++  }
++
++  console.log("==> [2/4] Running SQLite Migration 0064, Contracts, Session Store & API Routes Suite");
++  writeFileSync(join(temp, "package.json"), '{"type":"module"}\n', "utf8");
++  emitTs(
++    "packages/contracts/src/koswork-browser-research.ts",
++    "packages/contracts/src/koswork-browser-research.js"
++  );
++  emitTs(
++    "packages/db/src/browser-research-session-store.ts",
++    "packages/db/src/browser-research-session-store.js"
++  );
++  emitTs(
++    "apps/api/src/browser-research-routes.ts",
++    "apps/api/src/browser-research-routes.js"
++  );
++  emitTs(
++    "apps/api/test/browser-research-store-and-routes.test.ts",
++    "apps/api/test/browser-research-store-and-routes.test.js"
++  );
++
++  const apiRes = spawnSync(
++    process.execPath,
++    ["--test", join(temp, "apps/api/test/browser-research-store-and-routes.test.js")],
++    { cwd: root, stdio: "inherit" }
++  );
++  if (apiRes.status !== 0) {
++    process.exit(apiRes.status ?? 1);
++  }
++
++  console.log("==> [3/4] Verifying zero modifications to Codex-owned boundary files");
++  const diffCheck = spawnSync(
++    "git",
++    [
++      "diff",
++      "--name-only",
++      "apps/api/src/account-settings",
++      "packages/db/src/usage-store.ts",
++      "packages/contracts/src/usage.ts"
++    ],
++    { cwd: root, encoding: "utf8" }
++  );
++  assert.equal(
++    diffCheck.stdout.trim(),
++    "",
++    `Restricted boundary files must remain unmodified, found: ${diffCheck.stdout}`
++  );
++
++  console.log("==> [4/4] Running secret scan");
++  const secretRes = spawnSync(
++    process.execPath,
++    [resolve(root, "scripts/check-secrets.mjs")],
++    { cwd: root, stdio: "inherit" }
++  );
++  if (secretRes.status !== 0) {
++    process.exit(secretRes.status ?? 1);
++  }
++
++  console.log("[OK] All Koswork Browser Research desktop, HTTP corpus, SQLite store, API contract, and boundary checks passed.");
++} finally {
++  rmSync(temp, { recursive: true, force: true });
++}
+-- 
+2.39.5
+

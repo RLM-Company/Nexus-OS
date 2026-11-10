@@ -1,0 +1,844 @@
+From 88c8f9859c1d4af949dad47ef80262b50320ce03 Mon Sep 17 00:00:00 2001
+From: Kosmora Engineering <eng@kosmora.ai>
+Date: Tue, 10 Nov 2026 10:41:03 +0000
+Subject: [PATCH 26/32] feat(browser-research): add RSS/Atom/Sitemap feed
+ ingestor, clipboard/dragdrop guard, and LaTeX/BibTeX dossier exporter (Phase
+ 24)
+
+---
+ .../clipboard-paste-and-dragdrop-guard.cjs    | 135 ++++++++++++
+ .../latex-academic-dossier-exporter.cjs       | 188 ++++++++++++++++
+ .../rss-atom-sitemap-feed-ingestor.cjs        | 200 ++++++++++++++++++
+ desktop/windows/browser/shell.cjs             |  83 ++++++++
+ .../test/browser-research-acceptance.test.cjs | 148 +++++++++++++
+ docs/koswork-browser-research.md              |   9 +
+ 6 files changed, 763 insertions(+)
+ create mode 100644 desktop/windows/browser/clipboard-paste-and-dragdrop-guard.cjs
+ create mode 100644 desktop/windows/browser/latex-academic-dossier-exporter.cjs
+ create mode 100644 desktop/windows/browser/rss-atom-sitemap-feed-ingestor.cjs
+
+diff --git a/desktop/windows/browser/clipboard-paste-and-dragdrop-guard.cjs b/desktop/windows/browser/clipboard-paste-and-dragdrop-guard.cjs
+new file mode 100644
+index 0000000..bc28adb
+--- /dev/null
++++ b/desktop/windows/browser/clipboard-paste-and-dragdrop-guard.cjs
+@@ -0,0 +1,135 @@
++"use strict";
++
++const { redactSensitiveText } = require("./privacy-redaction-guard.cjs");
++
++/**
++ * Koswork Safe Clipboard Paste & Workspace Drag-and-Drop Guard
++ * (`desktop/windows/browser/clipboard-paste-and-dragdrop-guard.cjs`).
++ *
++ * Deepens Requirements #4 & #7:
++ * - Sanitizes clipboard paste payloads (stripping zero-width / bidirectional override
++ *   characters and optionally redacting accidental secrets/tokens) before delegating
++ *   to `engine.fillForm`, which enforces observation integrity (`OBSERVATION_INVALIDATED_BY_USER`
++ *   if manual user takeover occurred) and post-input DOM verification.
++ * - Validates drag-and-drop file lists strictly against the allowed workspace folder
++ *   and forbidden attachment policy via `engine.selectFiles` (`BROWSER_FORBIDDEN_ATTACHMENT`),
++ *   never widening file permissions.
++ */
++
++const ZERO_WIDTH_AND_BIDI_RE = /[\u200B-\u200F\u202A-\u202E\u2066-\u2069\uFEFF\x00-\x08\x0B\x0C\x0E-\x1F]/g;
++
++function normalizeControlId(selector = "") {
++  return String(selector || "").trim().replace(/^#/, "");
++}
++
++function sanitizeClipboardText(rawText = "", { redactSecrets = false } = {}) {
++  const text = String(rawText ?? "");
++  const stripped = text.replace(ZERO_WIDTH_AND_BIDI_RE, "");
++  const removedCharsCount = text.length - stripped.length;
++
++  if (!redactSecrets) {
++    return {
++      sanitizedText: stripped,
++      removedHiddenCharsCount: removedCharsCount,
++      redactedSecretsCount: 0
++    };
++  }
++
++  const redaction = redactSensitiveText(stripped);
++  return {
++    sanitizedText: redaction.redactedText,
++    removedHiddenCharsCount: removedCharsCount,
++    redactedSecretsCount: redaction.redactionCount
++  };
++}
++
++function executeSafeClipboardPasteIntoControl({
++  engine,
++  tabId,
++  selector,
++  clipboardText = "",
++  observedSnapshot = null,
++  redactSecrets = false
++} = {}) {
++  if (!engine) {
++    throw new Error("executeSafeClipboardPasteIntoControl requires a browser engine instance");
++  }
++
++  const controlId = normalizeControlId(selector);
++  const sanitized = sanitizeClipboardText(clipboardText, { redactSecrets });
++  const fillResult = engine.fillForm({
++    tabId,
++    observedSnapshot,
++    fields: {
++      [controlId]: sanitized.sanitizedText,
++      [selector]: sanitized.sanitizedText
++    }
++  });
++
++  return {
++    status: fillResult.status,
++    tabId,
++    selector,
++    controlId,
++    pastedValue: sanitized.sanitizedText,
++    removedHiddenCharsCount: sanitized.removedHiddenCharsCount,
++    redactedSecretsCount: sanitized.redactedSecretsCount,
++    fillResult
++  };
++}
++
++function executeSafeWorkspaceFileDrop({
++  engine,
++  tabId,
++  selector,
++  candidateFilePaths = [],
++  observedSnapshot = null
++} = {}) {
++  if (!engine) {
++    throw new Error("executeSafeWorkspaceFileDrop requires a browser engine instance");
++  }
++
++  const controlId = normalizeControlId(selector);
++  const acceptedDrops = [];
++  const rejectedDrops = [];
++
++  for (const filePath of candidateFilePaths || []) {
++    try {
++      const selRes = engine.selectFiles({
++        tabId,
++        controlId,
++        filePaths: [filePath],
++        observedSnapshot
++      });
++      const firstAttached = (selRes.attachedFiles || [])[0] || {};
++      acceptedDrops.push({
++        filePath,
++        filename: firstAttached.filename || null,
++        sha256: firstAttached.sha256 || null,
++        sizeBytes: firstAttached.sizeBytes || 0
++      });
++    } catch (err) {
++      rejectedDrops.push({
++        filePath,
++        code: err.code || "DROP_REJECTED",
++        message: err.message
++      });
++    }
++  }
++
++  return {
++    tabId,
++    selector,
++    controlId,
++    acceptedCount: acceptedDrops.length,
++    rejectedCount: rejectedDrops.length,
++    acceptedDrops,
++    rejectedDrops
++  };
++}
++
++module.exports = {
++  sanitizeClipboardText,
++  executeSafeClipboardPasteIntoControl,
++  executeSafeWorkspaceFileDrop
++};
+diff --git a/desktop/windows/browser/latex-academic-dossier-exporter.cjs b/desktop/windows/browser/latex-academic-dossier-exporter.cjs
+new file mode 100644
+index 0000000..17e6298
+--- /dev/null
++++ b/desktop/windows/browser/latex-academic-dossier-exporter.cjs
+@@ -0,0 +1,188 @@
++"use strict";
++
++const crypto = require("node:crypto");
++const { createKosworkWorkspaceService } = require("../workspace/workspace-service.cjs");
++
++/**
++ * Koswork LaTeX Academic Research Dossier & BibTeX Exporter
++ * (`desktop/windows/browser/latex-academic-dossier-exporter.cjs`).
++ *
++ * Deepens Requirement #5:
++ * - Exports a multi-site research report into a publication-ready LaTeX `.tex` dossier
++ *   (`reports/<slug>.tex`) and synchronized `.bib` file (`reports/<slug>.bib`) via
++ *   `workspace-service.cjs`.
++ * - Embeds `\cite{...}` keys, verbatim UTF-16 `[startUtf16..endUtf16]` quotes, distinct
++ *   `pageDate`, `eventDate`, and `fetchedAt` timestamps, and dedicated sections for
++ *   inter-site contradictions, outdated sources, HTTP 503 unavailable sources, and unknowns.
++ */
++
++function escapeLatex(raw = "") {
++  return String(raw ?? "")
++    .replace(/\\/g, "\\textbackslash{}")
++    .replace(/([&%$#_{}])/g, "\\$1")
++    .replace(/~/g, "\\textasciitilde{}")
++    .replace(/\^/g, "\\textasciicircum{}");
++}
++
++function makeCiteKey(url = "", idx = 1) {
++  const hash = crypto
++    .createHash("sha256")
++    .update(String(url || idx), "utf8")
++    .digest("hex")
++    .slice(0, 8);
++  return `kosworksrc${idx}_${hash}`;
++}
++
++function renderResearchReportLatexDossier(report = {}) {
++  const question = report.question || "Многосайтовое исследование Koswork Browser";
++  const citeKeyByUrl = new Map();
++  const bibEntries = [];
++  let srcCounter = 1;
++
++  function ensureCiteKey(url, title, pageDate, eventDate, fetchedAt) {
++    const cleanUrl = String(url || "https://corpus.local/unknown");
++    if (citeKeyByUrl.has(cleanUrl)) {
++      return citeKeyByUrl.get(cleanUrl);
++    }
++    const key = makeCiteKey(cleanUrl, srcCounter);
++    srcCounter += 1;
++    citeKeyByUrl.set(cleanUrl, key);
++
++    const year =
++      String(eventDate || pageDate || fetchedAt || "2026").slice(0, 4) || "2026";
++    bibEntries.push(
++      [
++        `@misc{${key},`,
++        `  title = {${escapeLatex(title || cleanUrl)}},`,
++        `  howpublished = {\\url{${cleanUrl}}},`,
++        `  year = {${escapeLatex(year)}},`,
++        `  note = {pageDate: ${escapeLatex(pageDate || "n/a")}, eventDate: ${escapeLatex(eventDate || "n/a")}, fetchedAt: ${escapeLatex(fetchedAt || "n/a")}}`,
++        `}`
++      ].join("\n")
++    );
++    return key;
++  }
++
++  const texLines = [
++    "\\documentclass[11pt,a4paper]{article}",
++    "\\usepackage[utf8]{inputenc}",
++    "\\usepackage[T2A]{fontenc}",
++    "\\usepackage[russian,english]{babel}",
++    "\\usepackage{booktabs}",
++    "\\usepackage{longtable}",
++    "\\usepackage{hyperref}",
++    `\\title{${escapeLatex(question)}}`,
++    "\\author{Koswork Browser Research Engine}",
++    `\\date{${escapeLatex(new Date().toISOString().slice(0, 10))}}`,
++    "\\begin{document}",
++    "\\maketitle",
++    "",
++    "\\section{Подтверждённые данные и таблица сравнения (с UTF-16 выдержками)}",
++    "\\begin{longtable}{p{2.8cm}p{2.8cm}p{2.2cm}p{6.5cm}}",
++    "\\toprule",
++    "Вариант & Критерий & Значение & Дословная выдержка UTF-16 и источник \\\\",
++    "\\midrule"
++  ];
++
++  for (const row of report.comparisonRows || []) {
++    const optionName = row.optionName || "Option";
++    for (const [criterion, cell] of Object.entries(row.cells || {})) {
++      if (!cell || !cell.quote || !Number.isInteger(cell.startUtf16) || cell.startUtf16 < 0) {
++        texLines.push(
++          `${escapeLatex(optionName)} & ${escapeLatex(criterion)} & Неизвестно & Нет подтверждающей UTF-16 выдержки \\\\`
++        );
++        continue;
++      }
++      const citeKey = ensureCiteKey(
++        cell.sourceUrl,
++        cell.sourceTitle,
++        cell.pageDate,
++        cell.eventDate,
++        cell.fetchedAt
++      );
++      const quoteStr = `«${escapeLatex(cell.quote)}» [${cell.startUtf16}..${cell.endUtf16}] \\cite{${citeKey}} (pageDate: ${escapeLatex(cell.pageDate || "н/д")}, eventDate: ${escapeLatex(cell.eventDate || "н/д")})`;
++      texLines.push(
++        `${escapeLatex(optionName)} & ${escapeLatex(criterion)} & ${escapeLatex(cell.displayValue || cell.value || "")} & ${quoteStr} \\\\`
++      );
++    }
++  }
++
++  texLines.push("\\bottomrule", "\\end{longtable}", "");
++
++  texLines.push("\\section{Межсайтовые противоречия и устаревшие данные}");
++  if ((report.contradictions || []).length === 0) {
++    texLines.push("Противоречий между источниками не зафиксировано.");
++  } else {
++    texLines.push("\\begin{itemize}");
++    for (const c of report.contradictions || []) {
++      texLines.push(
++        `  \\item \\textbf{${escapeLatex(c.optionName || "")} / ${escapeLatex(c.criterion || "")}:} ${escapeLatex(c.summary || "")}`
++      );
++    }
++    texLines.push("\\end{itemize}");
++  }
++
++  texLines.push("", "\\section{Недоступные источники и неизвестные поля}");
++  if ((report.unavailableSources || []).length === 0 && (report.unknowns || []).length === 0) {
++    texLines.push("Все проверенные источники доступны; неподтверждённых полей нет.");
++  } else {
++    texLines.push("\\begin{itemize}");
++    for (const u of report.unavailableSources || []) {
++      texLines.push(
++        `  \\item Недоступный источник: \\url{${u.url}} (HTTP ${escapeLatex(String(u.statusCode || 503))})`
++      );
++    }
++    for (const unk of report.unknowns || []) {
++      texLines.push(
++        `  \\item Неизвестно: \\textbf{${escapeLatex(unk.optionName || "")} / ${escapeLatex(unk.criterion || "")}}`
++      );
++    }
++    texLines.push("\\end{itemize}");
++  }
++
++  texLines.push("", "\\end{document}", "");
++
++  return {
++    latexSource: texLines.join("\n"),
++    bibtexSource: bibEntries.join("\n\n") + "\n",
++    citationCount: bibEntries.length
++  };
++}
++
++async function saveLatexAcademicDossierViaWorkspace({
++  workspaceRoot,
++  slug = "research-academic-dossier",
++  report = {},
++  signal = null
++} = {}) {
++  const rendered = renderResearchReportLatexDossier(report);
++  const svc = createKosworkWorkspaceService();
++  await svc.connectFolder({ folderPath: workspaceRoot, signal });
++
++  const texFile = await svc.createFile({
++    relativePath: `reports/${slug}.tex`,
++    content: rendered.latexSource,
++    createParents: true,
++    signal
++  });
++  const bibFile = await svc.createFile({
++    relativePath: `reports/${slug}.bib`,
++    content: rendered.bibtexSource,
++    createParents: true,
++    signal
++  });
++
++  return {
++    citationCount: rendered.citationCount,
++    texFile,
++    bibFile,
++    latexSource: rendered.latexSource,
++    bibtexSource: rendered.bibtexSource
++  };
++}
++
++module.exports = {
++  escapeLatex,
++  renderResearchReportLatexDossier,
++  saveLatexAcademicDossierViaWorkspace
++};
+diff --git a/desktop/windows/browser/rss-atom-sitemap-feed-ingestor.cjs b/desktop/windows/browser/rss-atom-sitemap-feed-ingestor.cjs
+new file mode 100644
+index 0000000..f237ae8
+--- /dev/null
++++ b/desktop/windows/browser/rss-atom-sitemap-feed-ingestor.cjs
+@@ -0,0 +1,200 @@
++"use strict";
++
++const { evaluateNavigationPolicy } = require("./policy.cjs");
++
++/**
++ * Koswork RSS 2.0 / Atom 1.0 / XML Sitemap Feed Ingestor & Source Navigator
++ * (`desktop/windows/browser/rss-atom-sitemap-feed-ingestor.cjs`).
++ *
++ * Deepens Requirements #1, #2 & #3:
++ * - Parses structured RSS 2.0 (`<item>`), Atom 1.0 (`<entry>`), and XML Sitemap (`<url>`)
++ *   documents into verifiable source entries with distinct `pageDate` and `eventDate`
++ *   fields and exact UTF-16 `[startUtf16..endUtf16]` offsets in the feed XML.
++ * - Filters out unsafe/SSRF URLs via `evaluateNavigationPolicy`.
++ * - Can automatically open the top matching feed entries in the browser engine and
++ *   extract verifiable UTF-16 excerpts from each opened page.
++ */
++
++function stripXmlTags(str = "") {
++  return String(str || "")
++    .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, "$1")
++    .replace(/<[^>]+>/g, " ")
++    .replace(/\s+/g, " ")
++    .trim();
++}
++
++function normalizeIsoDateDay(rawDate = "") {
++  const s = String(rawDate || "").trim();
++  if (!s) return null;
++  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
++  const parsed = new Date(s);
++  if (Number.isNaN(parsed.getTime())) return null;
++  return parsed.toISOString().slice(0, 10);
++}
++
++function extractXmlTagValue(block = "", tagName = "") {
++  const re = new RegExp(`<${tagName}\\b[^>]*>([\\s\\S]*?)<\\/${tagName}>`, "i");
++  const m = re.exec(block);
++  return m ? stripXmlTags(m[1]) : "";
++}
++
++function extractAtomLinkHref(block = "") {
++  const hrefMatch = block.match(/<link\b[^>]*\bhref\s*=\s*(?:"([^"]+)"|'([^']+)')[^>]*>/i);
++  if (hrefMatch) {
++    return (hrefMatch[1] || hrefMatch[2] || "").trim();
++  }
++  return extractXmlTagValue(block, "link");
++}
++
++function parseRssAtomOrSitemapFeed(rawXml = "", { allowLocalLoopback = true } = {}) {
++  const xml = String(rawXml || "");
++  const entries = [];
++  const rejectedEntries = [];
++
++  let feedType = "unknown";
++  if (/<rss\b/i.test(xml) || /<channel\b/i.test(xml)) {
++    feedType = "rss_2_0";
++  } else if (/<feed\b/i.test(xml)) {
++    feedType = "atom_1_0";
++  } else if (/<urlset\b/i.test(xml)) {
++    feedType = "xml_sitemap";
++  }
++
++  const blockRegex = /<(item|entry|url)\b[^>]*>([\s\S]*?)<\/\1>/gi;
++  let match;
++  while ((match = blockRegex.exec(xml)) !== null) {
++    const kind = match[1].toLowerCase();
++    const blockContent = match[2] || "";
++    const startUtf16 = match.index;
++    const endUtf16 = match.index + match[0].length;
++
++    let rawUrl = "";
++    let title = "";
++    let summary = "";
++    let rawPubDate = "";
++    let rawEventDate = "";
++
++    if (kind === "item") {
++      rawUrl = extractXmlTagValue(blockContent, "link");
++      title = extractXmlTagValue(blockContent, "title");
++      summary = extractXmlTagValue(blockContent, "description");
++      rawPubDate = extractXmlTagValue(blockContent, "pubDate");
++      rawEventDate =
++        extractXmlTagValue(blockContent, "koswork:eventDate") ||
++        extractXmlTagValue(blockContent, "dc:date") ||
++        rawPubDate;
++    } else if (kind === "entry") {
++      rawUrl = extractAtomLinkHref(blockContent);
++      title = extractXmlTagValue(blockContent, "title");
++      summary =
++        extractXmlTagValue(blockContent, "summary") ||
++        extractXmlTagValue(blockContent, "content");
++      rawPubDate =
++        extractXmlTagValue(blockContent, "updated") ||
++        extractXmlTagValue(blockContent, "published");
++      rawEventDate =
++        extractXmlTagValue(blockContent, "published") || rawPubDate;
++    } else if (kind === "url") {
++      rawUrl = extractXmlTagValue(blockContent, "loc");
++      title = extractXmlTagValue(blockContent, "title") || rawUrl;
++      summary = extractXmlTagValue(blockContent, "description") || "";
++      rawPubDate = extractXmlTagValue(blockContent, "lastmod");
++      rawEventDate = rawPubDate;
++    }
++
++    try {
++      const policy = evaluateNavigationPolicy(rawUrl, { allowLocalLoopback });
++      entries.push({
++        entryKind: kind,
++        url: policy.normalizedUrl,
++        title: title || policy.normalizedUrl,
++        summary,
++        pageDate: normalizeIsoDateDay(rawPubDate),
++        eventDate: normalizeIsoDateDay(rawEventDate),
++        startUtf16,
++        endUtf16
++      });
++    } catch (err) {
++      rejectedEntries.push({
++        rawUrl,
++        reason: err.code || "INVALID_FEED_ENTRY_URL"
++      });
++    }
++  }
++
++  return {
++    feedType,
++    totalEntries: entries.length,
++    rejectedCount: rejectedEntries.length,
++    entries,
++    rejectedEntries
++  };
++}
++
++async function ingestFeedAndOpenTopEntries({
++  engine,
++  rawXml = "",
++  queryFilter = "",
++  maxEntriesToOpen = 3,
++  extractSearchTerm = null,
++  signal = null
++} = {}) {
++  const parsed = parseRssAtomOrSitemapFeed(rawXml, {
++    allowLocalLoopback: engine?.allowLocalLoopback !== false
++  });
++  const filterLower = String(queryFilter || "").trim().toLowerCase();
++
++  const matching = parsed.entries.filter((e) => {
++    if (!filterLower) return true;
++    const hay = `${e.title} ${e.summary} ${e.url}`.toLowerCase();
++    return hay.includes(filterLower);
++  });
++
++  const selected = matching.slice(0, Math.max(1, Number(maxEntriesToOpen || 3)));
++  const openedResults = [];
++
++  for (let i = 0; i < selected.length; i += 1) {
++    const entry = selected[i];
++    const tabId = `tab-feed-${i + 1}`;
++    const nav = await engine.navigate({
++      tabId,
++      url: entry.url,
++      signal
++    });
++
++    let excerpt = null;
++    if (extractSearchTerm && nav.available) {
++      try {
++        excerpt = engine.extractExcerpt(tabId, { searchTerm: extractSearchTerm });
++      } catch (_) {
++        excerpt = null;
++      }
++    }
++
++    openedResults.push({
++      tabId,
++      feedEntry: entry,
++      url: nav.url,
++      title: nav.snapshot?.title || entry.title,
++      available: nav.available,
++      httpStatus: nav.httpStatus,
++      pageDate: nav.pageDate || entry.pageDate,
++      eventDate: nav.eventDate || entry.eventDate,
++      fetchedAt: nav.fetchedAt,
++      excerpt
++    });
++  }
++
++  return {
++    feedType: parsed.feedType,
++    totalFeedEntries: parsed.totalEntries,
++    matchedEntriesCount: matching.length,
++    openedCount: openedResults.length,
++    openedResults
++  };
++}
++
++module.exports = {
++  parseRssAtomOrSitemapFeed,
++  ingestFeedAndOpenTopEntries
++};
+diff --git a/desktop/windows/browser/shell.cjs b/desktop/windows/browser/shell.cjs
+index fd312ab..f2a6406 100644
+--- a/desktop/windows/browser/shell.cjs
++++ b/desktop/windows/browser/shell.cjs
+@@ -111,6 +111,18 @@ const {
+   auditResearchSessionHealthAndCompliance,
+   saveResearchComplianceCertificateViaWorkspace
+ } = require("./research-session-health-and-sla-auditor.cjs");
++const {
++  parseRssAtomOrSitemapFeed,
++  ingestFeedAndOpenTopEntries
++} = require("./rss-atom-sitemap-feed-ingestor.cjs");
++const {
++  executeSafeClipboardPasteIntoControl,
++  executeSafeWorkspaceFileDrop
++} = require("./clipboard-paste-and-dragdrop-guard.cjs");
++const {
++  renderResearchReportLatexDossier,
++  saveLatexAcademicDossierViaWorkspace
++} = require("./latex-academic-dossier-exporter.cjs");
+ 
+ /**
+  * Shared Tool & Execution Boundary for Koswork Browser (`desktop/windows/browser/shell.cjs`).
+@@ -227,6 +239,30 @@ const BROWSER_RESEARCH_TOOL_DEFINITIONS = Object.freeze([
+       "Применить пакет живых DOM-мутаций на открытой вкладке, увеличить версию снимка, перепривязать UTF-16 оффсеты цитат и выявить пост-наблюдательную подмену текста.",
+     requiredParams: ["tabId"]
+   },
++  {
++    name: "browser.ingest_feed_sources",
++    description:
++      "Распарсить ленту RSS 2.0 / Atom 1.0 / XML Sitemap с раздельными pageDate и eventDate, проверить URL по политике безопасности и открыть релевантные материалы в браузере.",
++    requiredParams: ["rawXml"]
++  },
++  {
++    name: "browser.paste_clipboard_into_control",
++    description:
++      "Безопасно вставить текст из буфера обмена в поле формы с очисткой невидимых символов, защитой от секретов и проверкой невалидности наблюдения при вмешательстве пользователя.",
++    requiredParams: ["tabId", "selector", "clipboardText"]
++  },
++  {
++    name: "browser.drop_workspace_files",
++    description:
++      "Выполнить безопасный drag-and-drop выбор файлов из разрешённой рабочей папки в input[type=file] с отсевом запрещённых типов (.env, .exe).",
++    requiredParams: ["tabId", "selector", "candidateFilePaths"]
++  },
++  {
++    name: "browser.export_latex_dossier",
++    description:
++      "Экспортировать академическое досье исследования в формат LaTeX (.tex) и синхронизированный BibTeX (.bib) с UTF-16 выдержками через workspace-service.",
++    requiredParams: ["report"]
++  },
+   {
+     name: "browser.audit_session_compliance",
+     description:
+@@ -709,6 +745,53 @@ function createKosworkBrowserShell(options = {}) {
+         });
+       }
+ 
++      case "browser.ingest_feed_sources":
++        if (args.openEntries) {
++          return await ingestFeedAndOpenTopEntries({
++            engine,
++            rawXml: args.rawXml || "",
++            queryFilter: args.queryFilter || "",
++            maxEntriesToOpen: args.maxEntriesToOpen ?? 3,
++            extractSearchTerm: args.extractSearchTerm || null,
++            signal
++          });
++        }
++        return parseRssAtomOrSitemapFeed(args.rawXml || "", {
++          allowLocalLoopback: engine.allowLocalLoopback !== false
++        });
++
++      case "browser.paste_clipboard_into_control":
++        return executeSafeClipboardPasteIntoControl({
++          engine,
++          tabId: args.tabId,
++          selector: args.selector,
++          clipboardText: args.clipboardText || "",
++          observedPageVersion: args.observedPageVersion ?? null,
++          observedUserEpoch: args.observedUserEpoch ?? null,
++          redactSecrets: Boolean(args.redactSecrets)
++        });
++
++      case "browser.drop_workspace_files":
++        return executeSafeWorkspaceFileDrop({
++          engine,
++          tabId: args.tabId,
++          selector: args.selector,
++          candidateFilePaths: args.candidateFilePaths || [],
++          observedPageVersion: args.observedPageVersion ?? null,
++          observedUserEpoch: args.observedUserEpoch ?? null
++        });
++
++      case "browser.export_latex_dossier":
++        if (args.saveToWorkspace && resolvedWorkspaceRoot) {
++          return await saveLatexAcademicDossierViaWorkspace({
++            workspaceRoot: resolvedWorkspaceRoot,
++            slug: args.slug || "research-academic-dossier",
++            report: args.report || {},
++            signal
++          });
++        }
++        return renderResearchReportLatexDossier(args.report || {});
++
+       case "browser.audit_session_compliance":
+         if (args.saveToWorkspace && resolvedWorkspaceRoot) {
+           return await saveResearchComplianceCertificateViaWorkspace({
+diff --git a/desktop/windows/test/browser-research-acceptance.test.cjs b/desktop/windows/test/browser-research-acceptance.test.cjs
+index c3344e2..edaccc0 100644
+--- a/desktop/windows/test/browser-research-acceptance.test.cjs
++++ b/desktop/windows/test/browser-research-acceptance.test.cjs
+@@ -3557,3 +3557,151 @@ test("39. Research Session Health, Epistemic Integrity & SLA Compliance Auditor
+   assert.ok(fs.existsSync(path.join(workspaceRoot, auditRes.markdownFile.path)));
+   assert.ok(fs.existsSync(path.join(workspaceRoot, auditRes.jsonFile.path)));
+ });
++
++test("40. RSS 2.0 / Atom 1.0 / XML Sitemap Feed Ingestor (`rss-atom-sitemap-feed-ingestor.cjs`) & Safe Clipboard Paste / Workspace File Drag-and-Drop Guard (`clipboard-paste-and-dragdrop-guard.cjs`)", async () => {
++  const workspaceRoot = createTempWorkspace();
++  const shell = createKosworkBrowserShell({ workspaceRoot });
++  const engine = shell.engine;
++
++  engine.registerSyntheticSite("https://corpus.local/feed-article-1", {
++    title: "Релиз Option Alpha 4.2",
++    pageDate: "2026-10-22",
++    eventDate: "2026-11-01",
++    text: "В релизе Option Alpha 4.2 подтвержден аптайм SLA 99.95% и задержка p95 < 12 мс.",
++    controls: [
++      { id: "comment-box", selector: "#comment-box", tag: "textarea", type: "textarea", value: "" },
++      { id: "attachment-drop", selector: "#attachment-drop", tag: "input", type: "file" }
++    ]
++  });
++
++  const rssXml = `<?xml version="1.0" encoding="UTF-8"?>
++  <rss version="2.0" xmlns:koswork="https://koswork.local/ns">
++    <channel>
++      <title>Лента обновлений Koswork</title>
++      <item>
++        <title>Релиз Option Alpha 4.2</title>
++        <link>https://corpus.local/feed-article-1</link>
++        <pubDate>2026-10-22</pubDate>
++        <koswork:eventDate>2026-11-01</koswork:eventDate>
++        <description>Аптайм SLA 99.95% и задержка p95 &lt; 12 мс</description>
++      </item>
++      <item>
++        <title>Blocked SSRF Metadata Link</title>
++        <link>http://169.254.169.254/latest/meta-data</link>
++        <pubDate>2026-10-22</pubDate>
++      </item>
++    </channel>
++  </rss>`;
++
++  const feedRes = await shell.dispatchToolCall(
++    "browser.ingest_feed_sources",
++    {
++      rawXml: rssXml,
++      openEntries: true,
++      queryFilter: "Option Alpha",
++      extractSearchTerm: "подтвержден аптайм SLA 99.95%"
++    },
++    { workspaceRoot }
++  );
++
++  assert.equal(feedRes.feedType, "rss_2_0");
++  assert.equal(feedRes.totalFeedEntries, 1);
++  assert.equal(feedRes.openedCount, 1);
++  assert.equal(feedRes.openedResults[0].pageDate, "2026-10-22");
++  assert.equal(feedRes.openedResults[0].eventDate, "2026-11-01");
++  assert.ok(feedRes.openedResults[0].excerpt.quote.includes("подтвержден аптайм SLA 99.95%"));
++
++  const obs = engine.observePage("tab-feed-1");
++  const pasteRes = await shell.dispatchToolCall(
++    "browser.paste_clipboard_into_control",
++    {
++      tabId: "tab-feed-1",
++      selector: "#comment-box",
++      clipboardText: "Проверено​ по SLA 99.95%",
++      observedPageVersion: obs.snapshot.pageVersion,
++      observedUserEpoch: obs.snapshot.userEpoch
++    },
++    { workspaceRoot }
++  );
++
++  assert.equal(pasteRes.status, "ok");
++  assert.equal(pasteRes.pastedValue, "Проверено по SLA 99.95%");
++  assert.equal(pasteRes.removedHiddenCharsCount, 1);
++
++  // Test workspace drag-and-drop file guard (accepts .txt inside workspace, rejects .exe)
++  const goodFile = path.join(workspaceRoot, "sla-note.txt");
++  const badExe = path.join(workspaceRoot, "malware.exe");
++  fs.writeFileSync(goodFile, "SLA 99.95% verified\n", "utf8");
++  fs.writeFileSync(badExe, "MZ...", "utf8");
++
++  const obsAfterPaste = engine.observePage("tab-feed-1");
++  const dropRes = await shell.dispatchToolCall(
++    "browser.drop_workspace_files",
++    {
++      tabId: "tab-feed-1",
++      selector: "#attachment-drop",
++      candidateFilePaths: [goodFile, badExe],
++      observedPageVersion: obsAfterPaste.snapshot.pageVersion,
++      observedUserEpoch: obsAfterPaste.snapshot.userEpoch
++    },
++    { workspaceRoot }
++  );
++
++  assert.equal(dropRes.acceptedCount, 1);
++  assert.equal(dropRes.rejectedCount, 1);
++  assert.equal(dropRes.acceptedDrops[0].filename, "sla-note.txt");
++  assert.equal(dropRes.rejectedDrops[0].code, "BROWSER_FORBIDDEN_ATTACHMENT");
++});
++
++test("41. LaTeX Academic Research Dossier & Synchronized BibTeX Exporter (`latex-academic-dossier-exporter.cjs` & `browser.export_latex_dossier` via `shell.cjs`)", async () => {
++  const workspaceRoot = createTempWorkspace();
++  const shell = createKosworkBrowserShell({ workspaceRoot });
++
++  const dossierRes = await shell.dispatchToolCall(
++    "browser.export_latex_dossier",
++    {
++      saveToWorkspace: true,
++      slug: "alpha-beta-academic-dossier",
++      report: {
++        question: "Академическое досье: сравнение Option Alpha и Option Beta (100% точность UTF-16)",
++        comparisonRows: [
++          {
++            optionName: "Option Alpha",
++            cells: {
++              "Цена ($/мес)": {
++                displayValue: "$49/мес",
++                quote: "Тариф Option Alpha составляет $49/мес.",
++                startUtf16: 10,
++                endUtf16: 48,
++                sourceUrl: "https://corpus.local/alpha-pricing",
++                sourceTitle: "Спецификация тарифов Alpha",
++                pageDate: "2026-10-15",
++                eventDate: "2026-11-01",
++                fetchedAt: "2026-11-10T10:00:00.000Z"
++              }
++            }
++          }
++        ],
++        contradictions: [
++          {
++            optionName: "Option Alpha",
++            criterion: "Цена ($/мес)",
++            summary: "В архиве 2025 года указано $79/мес, в прайсе 2026 года — $49/мес."
++          }
++        ],
++        unavailableSources: [
++          { url: "https://corpus.local/down-503", statusCode: 503 }
++        ],
++        unknowns: [{ optionName: "Option Beta", criterion: "SLA" }]
++      }
++    },
++    { workspaceRoot }
++  );
++
++  assert.equal(dossierRes.citationCount, 1);
++  assert.ok(dossierRes.latexSource.includes("\\documentclass[11pt,a4paper]{article}"));
++  assert.ok(dossierRes.latexSource.includes("[10..48]"));
++  assert.ok(dossierRes.bibtexSource.includes("@misc{kosworksrc1_"));
++  assert.ok(fs.existsSync(path.join(workspaceRoot, dossierRes.texFile.path)));
++  assert.ok(fs.existsSync(path.join(workspaceRoot, dossierRes.bibFile.path)));
++});
+diff --git a/docs/koswork-browser-research.md b/docs/koswork-browser-research.md
+index 82ab0cc..2e7b9b0 100644
+--- a/docs/koswork-browser-research.md
++++ b/docs/koswork-browser-research.md
+@@ -26,3 +26,12 @@
+ - **`desktop/windows/browser/research-session-health-and-sla-auditor.cjs`**:
+   - `auditResearchSessionHealthAndCompliance` and `saveResearchComplianceCertificateViaWorkspace`: verifies explicit search adapter provenance, zero bare-link acceptance, temporal triad (`pageDate`/`eventDate`/`fetchedAt`) separation, Resource Governor live-tab caps (`peakLiveTabs <= maxLiveTabsLimit`), and uncertainty disclosures, producing a SHA-256 Research Session Compliance Certificate (`reports/<slug>.md` and `.json`).
+ - **Exposed via `shell.cjs` (`browser.compute_tco_model`, `browser.observe_dom_mutation_batch`, `browser.audit_session_compliance`) and verified in Subtests 38 and 39 (`49/49` total suites passing).**
++
++### Phase 24: RSS 2.0 / Atom 1.0 / XML Sitemap Feed Ingestor, Safe Clipboard Paste & Workspace File Drag-and-Drop Guard, and LaTeX Academic Research Dossier Exporter
++- **`desktop/windows/browser/rss-atom-sitemap-feed-ingestor.cjs`**:
++  - `parseRssAtomOrSitemapFeed(rawXml)` and `ingestFeedAndOpenTopEntries({ engine, rawXml, queryFilter, maxEntriesToOpen, extractSearchTerm })`: parses RSS 2.0 (`<item>`), Atom 1.0 (`<entry>`), and XML Sitemap (`<url>`) feeds with distinct `pageDate` and `eventDate` fields, exact UTF-16 offsets in the feed XML, SSRF/navigation policy filtering (`evaluateNavigationPolicy`), and automated browser navigation + UTF-16 excerpt extraction.
++- **`desktop/windows/browser/clipboard-paste-and-dragdrop-guard.cjs`**:
++  - `executeSafeClipboardPasteIntoControl` and `executeSafeWorkspaceFileDrop`: strips hidden zero-width/bidi characters (`\u200B..`), optionally redacts secret tokens, verifies observation integrity against manual user takeover (`OBSERVATION_INVALIDATED_BY_USER`), verifies post-paste DOM mutation (`verifyBrowserActionMutation`), and enforces workspace file drop policy via `engine.selectFiles` (`BROWSER_FORBIDDEN_ATTACHMENT`).
++- **`desktop/windows/browser/latex-academic-dossier-exporter.cjs`**:
++  - `renderResearchReportLatexDossier(report)` and `saveLatexAcademicDossierViaWorkspace`: exports a publication-ready LaTeX research dossier (`reports/<slug>.tex`) and synchronized BibTeX bibliography (`reports/<slug>.bib`) with `booktabs`/`longtable` comparison tables, `\cite{...}` keys, verbatim UTF-16 `[startUtf16..endUtf16]` quotes, distinct `pageDate`/`eventDate`/`fetchedAt`, and explicit sections for contradictions, unavailable HTTP 503 sources, and unknowns.
++- **Exposed via `shell.cjs` (`browser.ingest_feed_sources`, `browser.paste_clipboard_into_control`, `browser.drop_workspace_files`, `browser.export_latex_dossier`) and verified in Subtests 40 and 41 (`51/51` total suites passing).**
+-- 
+2.39.5
+

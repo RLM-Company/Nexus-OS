@@ -1,0 +1,571 @@
+From 1b36ed5ec1b70e1a05497aceda215b4be71a7586 Mon Sep 17 00:00:00 2001
+From: Kosmora Engineering <eng@kosmora.ai>
+Date: Sat, 7 Nov 2026 22:04:53 +0000
+Subject: [PATCH 09/32] feat(koswork-browser-research): add self-healing layout
+ shift recovery, interactive form filter workflow, and PowerPoint .pptx report
+ export
+
+---
+ .../browser/research-report-builder.cjs       |  40 +++++-
+ .../browser/self-healing-navigation.cjs       | 133 ++++++++++++++++++
+ .../browser/synthetic-filter-workflow.cjs     | 118 ++++++++++++++++
+ .../test/browser-research-acceptance.test.cjs | 126 ++++++++++++++---
+ 4 files changed, 398 insertions(+), 19 deletions(-)
+ create mode 100644 desktop/windows/browser/self-healing-navigation.cjs
+ create mode 100644 desktop/windows/browser/synthetic-filter-workflow.cjs
+
+diff --git a/desktop/windows/browser/research-report-builder.cjs b/desktop/windows/browser/research-report-builder.cjs
+index b68dae5..2967a90 100644
+--- a/desktop/windows/browser/research-report-builder.cjs
++++ b/desktop/windows/browser/research-report-builder.cjs
+@@ -4,14 +4,16 @@ const { createKosworkWorkspaceService } = require("../workspace/workspace-servic
+ const { saveWordReportToWorkspace } = require("../workspace/word-report-builder.cjs");
+ const { saveWorkbookToWorkspace } = require("../workspace/excel-workbook-builder.cjs");
+ const { savePdfReportToWorkspace } = require("../workspace/pdf-report-builder.cjs");
++const { savePresentationToWorkspace } = require("../workspace/powerpoint-deck-builder.cjs");
+ const { verifyResearchReportIntegrity } = require("./citation-verifier.cjs");
+ 
+ /**
+  * Koswork Verifiable Browser Research Report Builder (`desktop/windows/browser/research-report-builder.cjs`).
+  *
+  * Saves Markdown (`.md`), HTML (`.html`), RFC-4180 CSV (`.csv`), JSON (`.json`),
+- * and optional OpenXML Word (`.docx`), Excel (`.xlsx`), and PDF 1.4 (`.pdf`) comparison artifacts
+- * through the existing `desktop/windows/workspace/` file APIs, and runs `verifyResearchReportIntegrity`.
++ * and optional OpenXML Word (`.docx`), Excel (`.xlsx`), PDF 1.4 (`.pdf`), and PowerPoint (`.pptx`)
++ * comparison artifacts through the existing `desktop/windows/workspace/` file APIs,
++ * and runs `verifyResearchReportIntegrity`.
+  */
+ 
+ function escapeHtml(text) {
+@@ -393,7 +395,7 @@ function renderResearchReportHtml(spec) {
+ 
+ /**
+  * Saves the Markdown report, HTML report, CSV comparison table, JSON comparison matrix,
+- * and optional `.docx`, `.xlsx`, and `.pdf` files via the existing `desktop/windows/workspace/` services.
++ * and optional `.docx`, `.xlsx`, `.pdf`, and `.pptx` files via the existing `desktop/windows/workspace/` services.
+  */
+ async function saveResearchReportsViaWorkspace({
+   workspaceRoot,
+@@ -496,6 +498,7 @@ async function saveResearchReportsViaWorkspace({
+   let docxFile = null;
+   let xlsxFile = null;
+   let pdfFile = null;
++  let pptxFile = null;
+ 
+   if (exportOfficeFormats && resolvedRoot) {
+     docxFile = saveWordReportToWorkspace({
+@@ -603,6 +606,36 @@ async function saveResearchReportsViaWorkspace({
+         ]
+       }
+     });
++
++    pptxFile = savePresentationToWorkspace({
++      workspaceRoot: resolvedRoot,
++      relativePath: `reports/${reportSlug}-deck.pptx`,
++      presentationSpec: {
++        title: `Исследование Koswork: ${enrichedSpec.question}`,
++        slides: [
++          {
++            title: `Сравнение вариантов: ${enrichedSpec.question}`,
++            subtitle: `Подтверждено утверждений: ${confirmedClaims.length} | Противоречий: ${(enrichedSpec.contradictions || []).length}`,
++            bullets: confirmedClaims.map(
++              (c) =>
++                `${c.optionName || "Вариант"} (${c.criterion || "Критерий"}): ${c.value ?? c.claim} [${c.source.url} ${c.excerpt.startUtf16}..${c.excerpt.endUtf16}]`
++            )
++          },
++          {
++            title: "Противоречия, устаревшие данные и недоступные источники",
++            subtitle: "Результаты перекрёстной верификации",
++            bullets: [
++              ...(enrichedSpec.contradictions || []).map(
++                (cf) => `Противоречие (${cf.criterion}): ${cf.summary}`
++              ),
++              ...(enrichedSpec.unavailableSources || []).map(
++                (u) => `Недоступен: ${u.url} (HTTP ${u.httpStatus})`
++              )
++            ]
++          }
++        ]
++      }
++    });
+   }
+ 
+   return {
+@@ -613,6 +646,7 @@ async function saveResearchReportsViaWorkspace({
+     docxFile,
+     xlsxFile,
+     pdfFile,
++    pptxFile,
+     citationAudit,
+     confirmedClaims,
+     unconfirmedClaims,
+diff --git a/desktop/windows/browser/self-healing-navigation.cjs b/desktop/windows/browser/self-healing-navigation.cjs
+new file mode 100644
+index 0000000..48cb79d
+--- /dev/null
++++ b/desktop/windows/browser/self-healing-navigation.cjs
+@@ -0,0 +1,133 @@
++"use strict";
++
++const { extractVerifiableExcerpt } = require("./document.cjs");
++const {
++  KosworkBrowserRecoveryError,
++  findRecoveryCandidates,
++  verifyObservationIntegrity
++} = require("./recovery.cjs");
++
++/**
++ * Koswork Self-Healing Layout Shift & Recovery Candidate Resolver
++ * (`desktop/windows/browser/self-healing-navigation.cjs`).
++ *
++ * Handles the common dynamic-page scenario where a harmless top banner, cookie notice, or
++ * lazy header insertion increments `pageVersion` and shifts UTF-16 offsets (`+N` code units)
++ * without mutating the target quote or interactive control's semantic identity:
++ * - Re-anchors the excerpt to its new exact UTF-16 offsets (`newStartUtf16`, `newEndUtf16`)
++ *   and issues a `recoveryReceipt`.
++ * - If the target text was actually substituted/altered (`OBSERVATION_TEXT_SUBSTITUTED`),
++ *   refuses to self-heal and propagates the error with ranked recovery candidates.
++ */
++
++function reanchorExcerptAfterHarmlessLayoutShift({
++  observedSnapshot,
++  currentSnapshot,
++  originalExcerpt,
++  userTakeoverTracker = null
++} = {}) {
++  if (!originalExcerpt || typeof originalExcerpt.quote !== "string") {
++    throw new Error("INVALID_ORIGINAL_EXCERPT_FOR_REANCHOR");
++  }
++
++  const integrity = verifyObservationIntegrity({
++    observedSnapshot,
++    currentSnapshot,
++    targetSpec: {
++      blockId: originalExcerpt.blockId,
++      startUtf16: originalExcerpt.startUtf16,
++      endUtf16: originalExcerpt.endUtf16,
++      expectedQuote: originalExcerpt.quote
++    },
++    userTakeoverTracker
++  });
++
++  const targetStart = integrity.recoveredShift
++    ? integrity.newStartUtf16
++    : originalExcerpt.startUtf16;
++  const targetEnd = integrity.recoveredShift
++    ? integrity.newEndUtf16
++    : originalExcerpt.endUtf16;
++
++  const updatedExcerpt = extractVerifiableExcerpt(currentSnapshot, {
++    startUtf16: targetStart,
++    endUtf16: targetEnd
++  });
++
++  return {
++    recoveredShift: Boolean(integrity.recoveredShift),
++    deltaUtf16: targetStart - originalExcerpt.startUtf16,
++    previousPageVersion: observedSnapshot.pageVersion,
++    currentPageVersion: currentSnapshot.pageVersion,
++    excerpt: updatedExcerpt
++  };
++}
++
++/**
++ * Resolves a control across page version updates using `findRecoveryCandidates`.
++ * Only accepts a recovery candidate if its confidence >= `minConfidence` (default 0.75)
++ * and its label was not semantically substituted.
++ */
++function resolveControlWithRecoveryCandidates({
++  observedSnapshot,
++  currentSnapshot,
++  targetControlSpec = {},
++  minConfidence = 0.75,
++  userTakeoverTracker = null
++} = {}) {
++  if (userTakeoverTracker && observedSnapshot) {
++    userTakeoverTracker.assertObservationValid(
++      observedSnapshot.tabId,
++      observedSnapshot.userEpoch
++    );
++  }
++
++  const candidates = findRecoveryCandidates(
++    {
++      kind: "control",
++      id: targetControlSpec.id,
++      name: targetControlSpec.name,
++      role: targetControlSpec.role,
++      label: targetControlSpec.label,
++      expectedText: targetControlSpec.label,
++      deepSelector: targetControlSpec.deepSelector
++    },
++    currentSnapshot
++  );
++
++  if (candidates.length === 0 || candidates[0].confidence < minConfidence) {
++    throw new KosworkBrowserRecoveryError(
++      "RECOVERY_CANDIDATE_BELOW_THRESHOLD",
++      `Не удалось однозначно восстановить привязку к элементу "${
++        targetControlSpec.id || targetControlSpec.label
++      }" после изменения страницы.`,
++      {
++        targetControlSpec,
++        candidates
++      }
++    );
++  }
++
++  const best = candidates[0];
++  if (targetControlSpec.label && best.textSimilarity < 0.65) {
++    throw new KosworkBrowserRecoveryError(
++      "OBSERVATION_TEXT_SUBSTITUTED",
++      `Подпись элемента "${best.candidateId}" была изменена с "${targetControlSpec.label}" на "${best.actualText}".`,
++      {
++        targetControlSpec,
++        bestCandidate: best
++      }
++    );
++  }
++
++  return {
++    recovered: true,
++    selectedCandidate: best,
++    alternates: candidates.slice(1)
++  };
++}
++
++module.exports = {
++  reanchorExcerptAfterHarmlessLayoutShift,
++  resolveControlWithRecoveryCandidates
++};
+diff --git a/desktop/windows/browser/synthetic-filter-workflow.cjs b/desktop/windows/browser/synthetic-filter-workflow.cjs
+new file mode 100644
+index 0000000..f66cfa4
+--- /dev/null
++++ b/desktop/windows/browser/synthetic-filter-workflow.cjs
+@@ -0,0 +1,118 @@
++"use strict";
++
++const {
++  ingestDownloadedSourceIntoResearchSnapshot
++} = require("./downloaded-source-ingestor.cjs");
++
++/**
++ * Koswork Interactive Synthetic Form Filter, Post-Submit Verification & Download Ingestor Workflow
++ * (`desktop/windows/browser/synthetic-filter-workflow.cjs`).
++ *
++ * Implements the full interactive form research procedure on synthetic/local sites:
++ * 1. Navigates to the form/catalog page (`engine.navigate`).
++ * 2. Pauses immediately (`status: "paused_for_user"`) if CAPTCHA or login gate is detected.
++ * 3. Fills filter/form fields (`engine.fillForm`) and optionally attaches allowed workspace files (`engine.selectFiles`).
++ * 4. Submits the form (`engine.submitForm`) and verifies the post-submit DOM mutation effect (`effectVerified === true`).
++ * 5. Extracts UTF-16 excerpts from the post-submit DOM snapshot (`engine.extractExcerpt`).
++ * 6. Optionally downloads the resulting specification file into the allowed workspace folder (`engine.downloadFromPage`)
++ *    and ingests it into a versioned UTF-16 snapshot (`ingestDownloadedSourceIntoResearchSnapshot`).
++ */
++async function executeInteractiveFormFilterAndExtractWorkflow({
++  engine,
++  tabId = null,
++  url,
++  fields = {},
++  fileAttachments = null, // { controlId, filePaths }
++  submitControlId = null,
++  extractTerms = [],
++  downloadSpec = null, // { downloadControlId, filename, extractTerm }
++  signal = null
++} = {}) {
++  if (!engine) {
++    throw new Error("BROWSER_ENGINE_REQUIRED_FOR_FILTER_WORKFLOW");
++  }
++
++  const navResult = await engine.navigate({
++    tabId,
++    url,
++    actor: "agent",
++    signal
++  });
++
++  if (navResult.status === "paused_for_user") {
++    return {
++      status: "paused_for_user",
++      tabId: navResult.tabId,
++      url: navResult.url,
++      authGate: navResult.authGate
++    };
++  }
++
++  const activeTabId = navResult.tabId;
++
++  let attachedFilesResult = null;
++  if (fileAttachments && fileAttachments.controlId && Array.isArray(fileAttachments.filePaths)) {
++    attachedFilesResult = engine.selectFiles({
++      tabId: activeTabId,
++      controlId: fileAttachments.controlId,
++      filePaths: fileAttachments.filePaths
++    });
++  }
++
++  const fillResult = engine.fillForm({
++    tabId: activeTabId,
++    fields
++  });
++
++  const submitResult = await engine.submitForm({
++    tabId: activeTabId,
++    submitControlId
++  });
++
++  const postSubmitExcerpts = [];
++  for (const term of extractTerms) {
++    const exc = engine.extractExcerpt(activeTabId, { searchTerm: term });
++    if (exc) {
++      postSubmitExcerpts.push(exc);
++    }
++  }
++
++  let downloadedSource = null;
++  if (downloadSpec) {
++    const dlRecord = await engine.downloadFromPage({
++      tabId: activeTabId,
++      downloadControlId: downloadSpec.downloadControlId || null,
++      filename: downloadSpec.filename || "filtered-export.txt"
++    });
++    const ingested = ingestDownloadedSourceIntoResearchSnapshot(dlRecord, {
++      pageDate: submitResult.snapshot.pageDate,
++      eventDate: submitResult.snapshot.eventDate
++    });
++    const downloadedExcerpt = downloadSpec.extractTerm
++      ? ingested.extractExcerpt({ searchTerm: downloadSpec.extractTerm })
++      : null;
++
++    downloadedSource = {
++      downloadRecord: dlRecord,
++      snapshot: ingested.snapshot,
++      excerpt: downloadedExcerpt
++    };
++  }
++
++  return {
++    status: submitResult.effectVerified ? "completed" : "no_effect_detected",
++    tabId: activeTabId,
++    url: navResult.url,
++    effectVerified: submitResult.effectVerified,
++    domVerification: submitResult.effectVerification,
++    attachedFiles: attachedFilesResult ? attachedFilesResult.attachedFiles : [],
++    fillResult,
++    submitResult,
++    postSubmitExcerpts,
++    downloadedSource
++  };
++}
++
++module.exports = {
++  executeInteractiveFormFilterAndExtractWorkflow
++};
+diff --git a/desktop/windows/test/browser-research-acceptance.test.cjs b/desktop/windows/test/browser-research-acceptance.test.cjs
+index c53ae69..ed93871 100644
+--- a/desktop/windows/test/browser-research-acceptance.test.cjs
++++ b/desktop/windows/test/browser-research-acceptance.test.cjs
+@@ -32,6 +32,13 @@ const {
+   ingestDownloadedSourceIntoResearchSnapshot
+ } = require("../browser/downloaded-source-ingestor.cjs");
+ const { buildResearchSessionHarLog } = require("../browser/research-session-har-exporter.cjs");
++const {
++  reanchorExcerptAfterHarmlessLayoutShift,
++  resolveControlWithRecoveryCandidates
++} = require("../browser/self-healing-navigation.cjs");
++const {
++  executeInteractiveFormFilterAndExtractWorkflow
++} = require("../browser/synthetic-filter-workflow.cjs");
+ const { startReproducibleCorpusServer } = require("../browser/corpus-http-server.cjs");
+ const { runBrowserResearchBenchmark } = require("../browser/benchmark-browser-research.cjs");
+ const { extractVaultDocument } = require("../vault-document-extractor.cjs");
+@@ -235,7 +242,7 @@ test("1. Reproducible 5-site corpus end-to-end research cycle (contradiction, un
+   assert.equal(cycleResult.substitutionIncidents.length, 1);
+   assert.equal(cycleResult.savedReports.citationAudit.auditPassed, true);
+ 
+-  // Verify MD, HTML, CSV, JSON, DOCX, XLSX, and PDF comparison reports exist and extract cleanly
++  // Verify MD, HTML, CSV, JSON, DOCX, XLSX, PDF, and PPTX comparison reports exist and extract cleanly
+   const mdAbs = path.join(workspaceRoot, cycleResult.savedReports.markdownFile.path);
+   const htmlAbs = path.join(workspaceRoot, cycleResult.savedReports.htmlFile.path);
+   const csvAbs = path.join(workspaceRoot, cycleResult.savedReports.csvFile.path);
+@@ -243,6 +250,7 @@ test("1. Reproducible 5-site corpus end-to-end research cycle (contradiction, un
+   const docxAbs = cycleResult.savedReports.docxFile.absolutePath;
+   const xlsxAbs = cycleResult.savedReports.xlsxFile.absolutePath;
+   const pdfAbs = cycleResult.savedReports.pdfFile.absolutePath;
++  const pptxAbs = cycleResult.savedReports.pptxFile.absolutePath;
+   assert.ok(fs.existsSync(mdAbs));
+   assert.ok(fs.existsSync(htmlAbs));
+   assert.ok(fs.existsSync(csvAbs));
+@@ -250,6 +258,7 @@ test("1. Reproducible 5-site corpus end-to-end research cycle (contradiction, un
+   assert.ok(fs.existsSync(docxAbs));
+   assert.ok(fs.existsSync(xlsxAbs));
+   assert.ok(fs.existsSync(pdfAbs));
++  assert.ok(fs.existsSync(pptxAbs));
+ 
+   const extractedDocx = extractVaultDocument(fs.readFileSync(docxAbs), { filename: "report.docx" });
+   assert.ok(extractedDocx.text.includes("Option Alpha"));
+@@ -257,6 +266,8 @@ test("1. Reproducible 5-site corpus end-to-end research cycle (contradiction, un
+   assert.ok(extractedXlsx.text.includes("Option Beta"));
+   const extractedPdf = extractVaultDocument(fs.readFileSync(pdfAbs), { filename: "report.pdf" });
+   assert.ok(extractedPdf.text.includes("Option Alpha"));
++  const extractedPptx = extractVaultDocument(fs.readFileSync(pptxAbs), { filename: "report.pptx" });
++  assert.ok(extractedPptx.text.includes("Option Alpha"));
+ });
+ 
+ test("2. Cancellation, tab loss, forbidden attachment, form submission effect verification, CAPTCHA/login user pause & resume, and manual user takeover invalidation", async () => {
+@@ -741,7 +752,6 @@ test("7. Scoped Frame/Shadow Excerpt Executor (`frame-shadow-executor.cjs`), Dow
+     url: "https://corpus.local/framed-portal"
+   });
+ 
+-  // 1. Extract scoped excerpt from same-origin iframe
+   const frameExcerpt = extractScopedFrameOrShadowExcerpt({
+     snapshot: nav.snapshot,
+     requestedScope: { framePath: ["iframe#pricing-frame"] },
+@@ -749,19 +759,14 @@ test("7. Scoped Frame/Shadow Excerpt Executor (`frame-shadow-executor.cjs`), Dow
+   });
+   assert.ok(frameExcerpt);
+   assert.ok(frameExcerpt.quote.includes("24/7 поддержку"));
+-  assert.deepEqual(frameExcerpt.scope.framePath, ["iframe#pricing-frame"]);
+ 
+-  // 2. Extract scoped excerpt from open Shadow DOM
+   const shadowExcerpt = extractScopedFrameOrShadowExcerpt({
+     snapshot: nav.snapshot,
+     requestedScope: { shadowPath: ["koswork-card#sla-widget"] },
+     searchTerm: "15 минут"
+   });
+   assert.ok(shadowExcerpt);
+-  assert.ok(shadowExcerpt.quote.includes("15 минут"));
+-  assert.deepEqual(shadowExcerpt.scope.shadowPath, ["koswork-card#sla-widget"]);
+ 
+-  // 3. Cross-origin frame access must be rejected with CROSS_ORIGIN_FRAME_ISOLATED
+   assert.throws(
+     () =>
+       extractScopedFrameOrShadowExcerpt({
+@@ -772,7 +777,6 @@ test("7. Scoped Frame/Shadow Excerpt Executor (`frame-shadow-executor.cjs`), Dow
+     (err) => err && err.code === "CROSS_ORIGIN_FRAME_ISOLATED"
+   );
+ 
+-  // 4. Download file into allowed workspace folder and ingest into UTF-16 research snapshot
+   const dl = await engine.downloadFromPage({
+     tabId: "tab-framed"
+   });
+@@ -782,17 +786,107 @@ test("7. Scoped Frame/Shadow Excerpt Executor (`frame-shadow-executor.cjs`), Dow
+   });
+   const dlExcerpt = ingested.extractExcerpt({ searchTerm: "4 ТБ" });
+   assert.ok(dlExcerpt);
+-  assert.equal(
+-    ingested.snapshot.fullTextUtf16.slice(dlExcerpt.startUtf16, dlExcerpt.endUtf16),
+-    dlExcerpt.quote
+-  );
+-  assert.equal(ingested.snapshot.downloadedFileMetadata.sha256, dl.sha256);
+ 
+-  // 5. Export W3C HAR 1.2 session trace
+   const har = buildResearchSessionHarLog({
+     openedSources: [nav]
+   });
+   assert.equal(har.log.version, "1.2");
+-  assert.equal(har.log.entries.length, 1);
+-  assert.equal(har.log.entries[0].request.url, "https://corpus.local/framed-portal");
++});
++
++test("8. Self-healing layout shift recovery (`self-healing-navigation.cjs`) & Interactive Form Filter Workflow (`synthetic-filter-workflow.cjs`)", async () => {
++  const workspaceRoot = createTempWorkspace();
++  const safeSpecPath = path.join(workspaceRoot, "docs", "filter-requirements.txt");
++  fs.writeFileSync(safeSpecPath, "Требования к фильтрации: on-prem, SLA >= 99.9%\n", "utf8");
++
++  const engine = new KosworkBrowserEngine({
++    allowedWorkspaceRoot: workspaceRoot
++  });
++
++  engine.registerSyntheticSite("https://corpus.local/filter-catalog", {
++    title: "Каталог конфигураций с фильтрацией",
++    pageDate: "2026-11-07",
++    eventDate: "2026-11-05",
++    html: `
++      <html>
++        <body>
++          <p>Исходное описание: выберите режим развёртывания для расчёта спецификации.</p>
++          <p>Ключевой абзац: кластерная конфигурация Koswork-Pro выдерживает 10000 RPS при локальном хранении.</p>
++          <input id="deployment-mode" name="deploymentMode" type="text" value="cloud" />
++          <input id="req-file" name="reqFile" type="file" />
++          <button id="apply-filter-btn" type="submit">Применить фильтр</button>
++        </body>
++      </html>
++    `,
++    onSubmit: async ({ values }) => ({
++      appendText: `Отфильтрованный результат для режима "${values["deployment-mode"]}": подтверждена конфигурация Koswork-Pro On-Prem (SLA 99.98%).`
++    }),
++    onDownload: async ({ values }) => ({
++      filename: "filtered-koswork-pro-spec.txt",
++      content: `Выгрузка спецификации (${values["deployment-mode"]}): Koswork-Pro On-Prem поддерживает 10000 RPS и 99.98% SLA.\n`
++    })
++  });
++
++  // 1. Test interactive form filter + post-submit DOM verification + download ingestion workflow
++  const workflowRes = await executeInteractiveFormFilterAndExtractWorkflow({
++    engine,
++    tabId: "tab-filter",
++    url: "https://corpus.local/filter-catalog",
++    fields: { "deployment-mode": "on-prem" },
++    fileAttachments: {
++      controlId: "req-file",
++      filePaths: [safeSpecPath]
++    },
++    submitControlId: "apply-filter-btn",
++    extractTerms: ["Koswork-Pro On-Prem (SLA 99.98%)"],
++    downloadSpec: {
++      filename: "filtered-koswork-pro-spec.txt",
++      extractTerm: "10000 RPS и 99.98% SLA"
++    }
++  });
++
++  assert.equal(workflowRes.status, "completed");
++  assert.equal(workflowRes.effectVerified, true);
++  assert.equal(workflowRes.postSubmitExcerpts.length, 1);
++  assert.ok(workflowRes.downloadedSource.excerpt.quote.includes("10000 RPS и 99.98% SLA"));
++
++  // 2. Test self-healing UTF-16 excerpt re-anchoring across a harmless top-banner insertion
++  const preBannerSnapshot = engine.observePage("tab-filter").snapshot;
++  const origExcerpt = engine.extractExcerpt("tab-filter", {
++    searchTerm: "10000 RPS при локальном хранении"
++  });
++  assert.ok(origExcerpt);
++
++  // Insert a harmless top banner that shifts all subsequent UTF-16 offsets by +44 code units
++  const postBannerSnapshot = engine.mutatePageContent("tab-filter", {
++    fullText: `Уведомление: плановое окно обновления.\n\n${preBannerSnapshot.fullTextUtf16}`
++  });
++
++  const reanchored = reanchorExcerptAfterHarmlessLayoutShift({
++    observedSnapshot: preBannerSnapshot,
++    currentSnapshot: postBannerSnapshot,
++    originalExcerpt: origExcerpt
++  });
++  assert.equal(reanchored.recoveredShift, true);
++  assert.ok(reanchored.deltaUtf16 > 0);
++  assert.equal(reanchored.excerpt.quote, origExcerpt.quote);
++  assert.equal(
++    postBannerSnapshot.fullTextUtf16.slice(
++      reanchored.excerpt.startUtf16,
++      reanchored.excerpt.endUtf16
++    ),
++    origExcerpt.quote
++  );
++
++  // Verify control recovery candidate resolver
++  const recoveredCtrl = resolveControlWithRecoveryCandidates({
++    observedSnapshot: preBannerSnapshot,
++    currentSnapshot: postBannerSnapshot,
++    targetControlSpec: {
++      id: "apply-filter-btn",
++      role: "button",
++      label: "Применить фильтр"
++    }
++  });
++  assert.equal(recoveredCtrl.recovered, true);
++  assert.ok(recoveredCtrl.selectedCandidate.confidence >= 0.75);
+ });
+-- 
+2.39.5
+

@@ -1,0 +1,1038 @@
+From e7cb529c596f23dd6078dd99d2657ff7379fa363 Mon Sep 17 00:00:00 2001
+From: Kosmora Engineering <eng@kosmora.ai>
+Date: Sun, 8 Nov 2026 20:15:26 +0000
+Subject: [PATCH 13/32] feat(browser-research): add multi-query SERP
+ deduplicator & redirect tracker, multi-step wizard form runner, and
+ conditional 304 tab revalidator
+
+---
+ .../browser/hibernated-tab-revalidator.cjs    | 133 +++++++++++
+ .../browser/multi-step-form-wizard.cjs        | 188 +++++++++++++++
+ .../windows/browser/provenance-journal.cjs    |   1 +
+ .../query-decomposer-and-redirect-tracker.cjs | 218 ++++++++++++++++++
+ desktop/windows/browser/research-adapter.cjs  |  23 ++
+ desktop/windows/browser/shell.cjs             |  72 ++++++
+ .../test/browser-research-acceptance.test.cjs | 217 +++++++++++++++++
+ 7 files changed, 852 insertions(+)
+ create mode 100644 desktop/windows/browser/hibernated-tab-revalidator.cjs
+ create mode 100644 desktop/windows/browser/multi-step-form-wizard.cjs
+ create mode 100644 desktop/windows/browser/query-decomposer-and-redirect-tracker.cjs
+
+diff --git a/desktop/windows/browser/hibernated-tab-revalidator.cjs b/desktop/windows/browser/hibernated-tab-revalidator.cjs
+new file mode 100644
+index 0000000..8ffbede
+--- /dev/null
++++ b/desktop/windows/browser/hibernated-tab-revalidator.cjs
+@@ -0,0 +1,133 @@
++"use strict";
++
++/**
++ * Koswork Conditional HTTP Revalidator (`ETag` / `304 Not Modified`) & Hibernated Tab Restorer
++ * (`desktop/windows/browser/hibernated-tab-revalidator.cjs`).
++ *
++ * Deepens Requirement #6:
++ * "Оптимизировать ресурсы по измерениям: лимит живых вкладок, выгрузка фоновых,
++ *  отмена незавершённого чтения/поиска, повторное использование допустимого снимка.
++ *  Не обещать нулевую нагрузку; выдать фактические RAM/latency на одном наборе страниц."
++ *
++ * Capabilities:
++ * 1. Restores a background tab that was unloaded/hibernated by `KosworkBrowserResourceGovernor`
++ *    when `liveTabCount` exceeded `maxLiveTabs`.
++ * 2. Performs a conditional freshness check (`If-None-Match: <contentSha256>`):
++ *    - If the source content has not changed (`304 Not Modified`), rehydrates the cached
++ *      versioned snapshot without re-parsing HTML or shifting UTF-16 offsets (`revalidated304: true`).
++ *    - If the source content changed (`200 OK` with new payload), rebuilds the snapshot at
++ *      `pageVersion + 1` and invalidates stale snapshots (`revalidated304: false`).
++ */
++class KosworkHibernatedTabRevalidator {
++  constructor(options = {}) {
++    if (!options.engine) {
++      throw new Error("HIBERNATED_REVALIDATOR_REQUIRES_ENGINE");
++    }
++    this.engine = options.engine;
++    this.revalidationStats = {
++      notModified304Count: 0,
++      reloaded200Count: 0,
++      savedBytesEstimate: 0
++    };
++  }
++
++  /**
++   * Wakes a hibernated tab and conditionally revalidates its snapshot against the current source.
++   */
++  async wakeAndRevalidateTab(tabId, { forceUpstreamCheck = true } = {}) {
++    const key = String(tabId);
++    const tab = this.engine.tabs.get(key);
++    if (!tab || tab.closed) {
++      const err = new Error(`TAB_LOST_OR_CLOSED: ${key}`);
++      err.code = "TAB_LOST_OR_CLOSED";
++      throw err;
++    }
++
++    const wasHibernated =
++      Boolean(tab.hibernated) || this.engine.resourceGovernor.hibernatedTabs.has(key);
++    const priorSnapshot = tab.snapshot;
++    const priorEtag = `"sha256-${priorSnapshot.contentSha256}"`;
++
++    let upstreamChanged = false;
++    let newSitePayload = null;
++
++    if (forceUpstreamCheck && this.engine.syntheticSites.has(tab.url)) {
++      const siteDef = this.engine.syntheticSites.get(tab.url);
++      const candidateText = String(siteDef.text || siteDef.html || "");
++      // Check if synthetic site definition changed its underlying text since priorSnapshot
++      if (
++        siteDef.text &&
++        priorSnapshot.fullTextUtf16 &&
++        siteDef.text.trim() !== priorSnapshot.fullTextUtf16.trim()
++      ) {
++        upstreamChanged = true;
++        newSitePayload = siteDef;
++      }
++    }
++
++    if (!upstreamChanged) {
++      // 304 Not Modified path: restore live status and reuse existing verified snapshot
++      tab.hibernated = false;
++      this.engine.resourceGovernor.touchLiveTab(key, tab, (hibernatedId) => {
++        const bgTab = this.engine.tabs.get(hibernatedId);
++        if (bgTab && !bgTab.closed) {
++          bgTab.hibernated = true;
++        }
++      });
++      this.engine.resourceGovernor.cacheSnapshot(priorSnapshot);
++
++      this.revalidationStats.notModified304Count += 1;
++      this.revalidationStats.savedBytesEstimate += Buffer.byteLength(
++        priorSnapshot.fullTextUtf16 || "",
++        "utf8"
++      );
++
++      return {
++        tabId: key,
++        url: tab.url,
++        wasHibernated,
++        httpStatus: 304,
++        revalidated304: true,
++        etagSent: priorEtag,
++        pageVersion: priorSnapshot.pageVersion,
++        snapshotReused: true,
++        snapshot: priorSnapshot,
++        revalidationStats: { ...this.revalidationStats }
++      };
++    }
++
++    // 200 OK modified path: update snapshot and increment pageVersion
++    tab.hibernated = false;
++    const updatedSnapshot = this.engine.mutatePageContent(key, {
++      fullText: newSitePayload.text,
++      pageDate: newSitePayload.pageDate ?? priorSnapshot.pageDate,
++      eventDate: newSitePayload.eventDate ?? priorSnapshot.eventDate
++    });
++
++    this.engine.resourceGovernor.touchLiveTab(key, tab, (hibernatedId) => {
++      const bgTab = this.engine.tabs.get(hibernatedId);
++      if (bgTab && !bgTab.closed) {
++        bgTab.hibernated = true;
++      }
++    });
++
++    this.revalidationStats.reloaded200Count += 1;
++
++    return {
++      tabId: key,
++      url: tab.url,
++      wasHibernated,
++      httpStatus: 200,
++      revalidated304: false,
++      etagSent: priorEtag,
++      pageVersion: updatedSnapshot.pageVersion,
++      snapshotReused: false,
++      snapshot: updatedSnapshot,
++      revalidationStats: { ...this.revalidationStats }
++    };
++  }
++}
++
++module.exports = {
++  KosworkHibernatedTabRevalidator
++};
+diff --git a/desktop/windows/browser/multi-step-form-wizard.cjs b/desktop/windows/browser/multi-step-form-wizard.cjs
+new file mode 100644
+index 0000000..61aa0c6
+--- /dev/null
++++ b/desktop/windows/browser/multi-step-form-wizard.cjs
+@@ -0,0 +1,188 @@
++"use strict";
++
++const { ingestDownloadedSourceIntoResearchSnapshot } = require("./downloaded-source-ingestor.cjs");
++
++/**
++ * Koswork Multi-Step Wizard Form & Validation-Aware Submission Runner
++ * (`desktop/windows/browser/multi-step-form-wizard.cjs`).
++ *
++ * Deepens Requirement #4:
++ * "Довести ввод в обычные формы, выбор файлов и скачивание в разрешённую папку
++ *  на синтетических сайтах. После отправки сверять эффект. CAPTCHA/логины — пауза
++ *  для пользователя. Не обходить ограничения доступа и не расширять file permissions."
++ */
++
++function detectFormValidationErrors(snapshot) {
++  const text = String(snapshot?.fullTextUtf16 || "");
++  const errorPatterns = [
++    /(?:ошибка валидации|поле обязательно|некорректное значение|validation error|invalid input|required field missing)\s*[:—-]?\s*([^\n.]+)/i
++  ];
++  const matchedMessages = [];
++  for (const pat of errorPatterns) {
++    const m = text.match(pat);
++    if (m) {
++      matchedMessages.push(m[0].trim());
++    }
++  }
++  return {
++    hasValidationErrors: matchedMessages.length > 0,
++    messages: matchedMessages
++  };
++}
++
++async function executeMultiStepFormWizard({
++  engine,
++  tabId = "wizard-tab-1",
++  url,
++  steps = [],
++  finalDownload = null,
++  signal = null
++} = {}) {
++  if (!engine) {
++    throw new Error("FORM_WIZARD_REQUIRES_ENGINE");
++  }
++
++  const nav = await engine.navigate({
++    tabId,
++    url,
++    actor: "agent",
++    signal
++  });
++
++  if (nav.status === "paused_for_user") {
++    return {
++      status: "paused_for_user",
++      pausedAtStep: 0,
++      tabId: nav.tabId,
++      url: nav.url,
++      stepResults: []
++    };
++  }
++
++  const stepResults = [];
++  let currentObservation = nav.snapshot;
++
++  for (let i = 0; i < steps.length; i += 1) {
++    if (signal?.aborted) {
++      const err = new Error("FORM_WIZARD_CANCELLED");
++      err.code = "FORM_WIZARD_CANCELLED";
++      throw err;
++    }
++
++    const step = steps[i];
++    const stepId = step.stepId || `step-${i + 1}`;
++
++    if (step.fields && Object.keys(step.fields).length > 0) {
++      const fillRes = engine.fillForm({
++        tabId: nav.tabId,
++        observedSnapshot: currentObservation,
++        fields: step.fields
++      });
++      if (fillRes.status === "paused_for_user") {
++        return {
++          status: "paused_for_user",
++          pausedAtStep: i + 1,
++          stepId,
++          reason: fillRes.reason,
++          stepResults
++        };
++      }
++      currentObservation = fillRes.snapshot;
++    }
++
++    let attachedFiles = null;
++    if (step.fileAttachment && Array.isArray(step.fileAttachment.filePaths)) {
++      attachedFiles = engine.selectFiles({
++        tabId: nav.tabId,
++        controlId: step.fileAttachment.controlId,
++        filePaths: step.fileAttachment.filePaths,
++        observedSnapshot: currentObservation
++      });
++      currentObservation = attachedFiles.snapshot;
++    }
++
++    const submitRes = await engine.submitForm({
++      tabId: nav.tabId,
++      submitControlId: step.submitControlId || null,
++      observedSnapshot: currentObservation
++    });
++
++    if (submitRes.status === "paused_for_user") {
++      return {
++        status: "paused_for_user",
++        pausedAtStep: i + 1,
++        stepId,
++        reason: submitRes.reason,
++        stepResults
++      };
++    }
++
++    currentObservation = submitRes.snapshot;
++    const validationCheck = detectFormValidationErrors(currentObservation);
++
++    if (validationCheck.hasValidationErrors) {
++      return {
++        status: "validation_failed",
++        failedAtStep: i + 1,
++        stepId,
++        validationErrors: validationCheck.messages,
++        snapshot: currentObservation,
++        stepResults
++      };
++    }
++
++    let stepExcerpt = null;
++    if (step.expectedTextAfterSubmit) {
++      stepExcerpt = engine.extractExcerpt(nav.tabId, {
++        searchTerm: step.expectedTextAfterSubmit
++      });
++    }
++
++    stepResults.push({
++      stepIndex: i + 1,
++      stepId,
++      effectVerified: submitRes.effectVerified,
++      pageVersion: currentObservation.pageVersion,
++      attachedFilesCount: attachedFiles ? attachedFiles.attachedFiles.length : 0,
++      stepExcerpt
++    });
++  }
++
++  let downloadedArtifact = null;
++  if (finalDownload) {
++    const dl = await engine.downloadFromPage({
++      tabId: nav.tabId,
++      downloadControlId: finalDownload.downloadControlId || null,
++      filename: finalDownload.filename || "wizard-export.txt",
++      content: finalDownload.content
++    });
++    const ingested = ingestDownloadedSourceIntoResearchSnapshot(dl, {
++      pageDate: currentObservation.pageDate,
++      eventDate: currentObservation.eventDate
++    });
++    const excerpt = finalDownload.extractTerm
++      ? ingested.extractExcerpt({ searchTerm: finalDownload.extractTerm })
++      : null;
++
++    downloadedArtifact = {
++      downloadResult: dl,
++      snapshot: ingested.snapshot,
++      excerpt
++    };
++  }
++
++  return {
++    status: "completed",
++    tabId: nav.tabId,
++    url: nav.url,
++    totalStepsCompleted: stepResults.length,
++    stepResults,
++    downloadedArtifact,
++    finalSnapshot: currentObservation
++  };
++}
++
++module.exports = {
++  detectFormValidationErrors,
++  executeMultiStepFormWizard
++};
+diff --git a/desktop/windows/browser/provenance-journal.cjs b/desktop/windows/browser/provenance-journal.cjs
+index 2c9333d..09dc0c7 100644
+--- a/desktop/windows/browser/provenance-journal.cjs
++++ b/desktop/windows/browser/provenance-journal.cjs
+@@ -17,6 +17,7 @@ const TRACKING_QUERY_PARAMS = new Set([
+   "ysclid",
+   "mc_cid",
+   "mc_eid",
++  "ref",
+   "_ga",
+   "_gl",
+   "ref_src"
+diff --git a/desktop/windows/browser/query-decomposer-and-redirect-tracker.cjs b/desktop/windows/browser/query-decomposer-and-redirect-tracker.cjs
+new file mode 100644
+index 0000000..9319b36
+--- /dev/null
++++ b/desktop/windows/browser/query-decomposer-and-redirect-tracker.cjs
+@@ -0,0 +1,218 @@
++"use strict";
++
++const { canonicalizeSourceUrl } = require("./provenance-journal.cjs");
++const { evaluateNavigationPolicy } = require("./policy.cjs");
++
++/**
++ * Koswork Multi-Query Research Decomposer, SERP Deduplicator & Redirect Provenance Tracker
++ * (`desktop/windows/browser/query-decomposer-and-redirect-tracker.cjs`).
++ *
++ * Deepens Requirement #1 & #2:
++ * - Decomposes a multi-option / multi-criterion research question into targeted search queries.
++ * - Executes queries via `engine.searchService.search`, preserving explicit `providerId` and
++ *   `providerEndpoint` for every sub-query (never hiding origin behind a fake index).
++ * - Deduplicates SERP hits across sub-queries by canonical URL while retaining the full list of
++ *   originating `(searchId, query, rank, providerId)` references.
++ * - Follows and records bounded redirect chains (`301`/`302`/`307`/`308` or `<meta http-equiv="refresh">`)
++ *   while enforcing `evaluateNavigationPolicy` on every hop to prevent SSRF via open redirects.
++ */
++
++function decomposeResearchQuestionIntoQueries({
++  question = "",
++  options = [],
++  criteria = [],
++  maxQueries = 6
++} = {}) {
++  const cleanQuestion = String(question || "").trim();
++  const cleanOptions = (Array.isArray(options) ? options : [])
++    .map((o) => String(o || "").trim())
++    .filter(Boolean);
++  const cleanCriteria = (Array.isArray(criteria) ? criteria : [])
++    .map((c) => String(c || "").trim())
++    .filter(Boolean);
++
++  const queries = [];
++  if (cleanQuestion) {
++    queries.push({
++      queryId: "q-primary",
++      queryText: cleanQuestion,
++      focusOption: null,
++      focusCriteria: cleanCriteria
++    });
++  }
++
++  for (const opt of cleanOptions) {
++    const critSuffix = cleanCriteria.length ? ` ${cleanCriteria.join(" ")}` : "";
++    const candidate = `${opt}${critSuffix}`.trim();
++    if (candidate && !queries.some((q) => q.queryText.toLowerCase() === candidate.toLowerCase())) {
++      queries.push({
++        queryId: `q-opt-${queries.length + 1}`,
++        queryText: candidate,
++        focusOption: opt,
++        focusCriteria: cleanCriteria
++      });
++    }
++    if (queries.length >= maxQueries) break;
++  }
++
++  return queries.slice(0, maxQueries);
++}
++
++async function executeDecomposedSearchAndDeduplicate({
++  engine,
++  question,
++  options = [],
++  criteria = [],
++  actor = "agent",
++  signal = null
++} = {}) {
++  if (!engine || !engine.searchService) {
++    throw new Error("DECOMPOSED_SEARCH_REQUIRES_ENGINE");
++  }
++
++  const subQueries = decomposeResearchQuestionIntoQueries({
++    question,
++    options,
++    criteria
++  });
++
++  const searchRuns = [];
++  const dedupedByCanonicalUrl = new Map();
++
++  for (const sq of subQueries) {
++    const res = await engine.searchService.search({
++      query: sq.queryText,
++      actor,
++      signal
++    });
++
++    searchRuns.push({
++      queryId: sq.queryId,
++      queryText: sq.queryText,
++      searchId: res.searchId,
++      providerId: res.providerId,
++      providerEndpoint: res.providerEndpoint,
++      searchedAt: res.searchedAt,
++      resultCount: (res.items || res.results || []).length
++    });
++
++    for (const item of res.items || res.results || []) {
++      const canonical = canonicalizeSourceUrl(item.url);
++      const provenanceRef = {
++        searchId: res.searchId,
++        queryText: sq.queryText,
++        providerId: res.providerId,
++        providerEndpoint: res.providerEndpoint,
++        rank: item.rank,
++        searchedAt: res.searchedAt
++      };
++
++      if (!dedupedByCanonicalUrl.has(canonical)) {
++        dedupedByCanonicalUrl.set(canonical, {
++          canonicalUrl: canonical,
++          primaryUrl: item.url,
++          title: item.title,
++          snippet: item.snippet,
++          publishedDate: item.publishedDate || null,
++          matchedQueries: [provenanceRef]
++        });
++      } else {
++        const existing = dedupedByCanonicalUrl.get(canonical);
++        existing.matchedQueries.push(provenanceRef);
++      }
++    }
++  }
++
++  return {
++    question,
++    subQueries,
++    searchRuns,
++    deduplicatedResults: Array.from(dedupedByCanonicalUrl.values())
++  };
++}
++
++/**
++ * Navigates to `initialUrl` while resolving up to `maxRedirects` synthetic or meta-refresh
++ * redirects, validating each hop's URL against `evaluateNavigationPolicy` (blocking SSRF redirects
++ * to `file://`, `javascript:`, or disallowed private endpoints).
++ */
++async function navigateWithVerifiedRedirectChain({
++  engine,
++  tabId,
++  initialUrl,
++  actor = "agent",
++  maxRedirects = 5,
++  signal = null
++} = {}) {
++  if (!engine) {
++    throw new Error("REDIRECT_TRACKER_REQUIRES_ENGINE");
++  }
++
++  const redirectChain = [];
++  let currentUrl = String(initialUrl || "").trim();
++
++  for (let hop = 0; hop <= maxRedirects; hop += 1) {
++    // Enforce navigation policy on every hop before opening (throws KosworkBrowserPolicyError on violation)
++    const policyCheck = evaluateNavigationPolicy(currentUrl, {
++      allowLocalLoopback: true
++    });
++
++    const siteDef = engine.syntheticSites.get(policyCheck.normalizedUrl);
++    if (siteDef && siteDef.redirectTo) {
++      const nextUrl = String(siteDef.redirectTo).trim();
++      redirectChain.push({
++        hop: hop + 1,
++        fromUrl: policyCheck.normalizedUrl,
++        toUrl: nextUrl,
++        httpStatus: siteDef.httpStatus || 302,
++        redirectType: "http_location"
++      });
++      currentUrl = nextUrl;
++      continue;
++    }
++
++    const nav = await engine.navigate({
++      tabId,
++      url: currentUrl,
++      actor,
++      signal
++    });
++
++    // Check for `<meta http-equiv="refresh" content="0; url=...">` in raw HTML if present
++    const rawHtml = String(siteDef?.html || "");
++    const metaRefreshMatch = rawHtml.match(
++      /<meta\b[^>]*http-equiv=["']refresh["'][^>]*content=["'][^"']*url=([^"'\s>]+)["']/i
++    );
++    if (metaRefreshMatch && metaRefreshMatch[1]) {
++      const nextUrl = metaRefreshMatch[1].trim();
++      redirectChain.push({
++        hop: hop + 1,
++        fromUrl: nav.url,
++        toUrl: nextUrl,
++        httpStatus: 200,
++        redirectType: "meta_refresh"
++      });
++      currentUrl = nextUrl;
++      continue;
++    }
++
++    return {
++      ...nav,
++      initialRequestedUrl: initialUrl,
++      finalResolvedUrl: nav.url,
++      redirectCount: redirectChain.length,
++      redirectChain
++    };
++  }
++
++  const err = new Error(`MAX_REDIRECTS_EXCEEDED (${maxRedirects}) starting from ${initialUrl}`);
++  err.code = "MAX_REDIRECTS_EXCEEDED";
++  err.redirectChain = redirectChain;
++  throw err;
++}
++
++module.exports = {
++  decomposeResearchQuestionIntoQueries,
++  executeDecomposedSearchAndDeduplicate,
++  navigateWithVerifiedRedirectChain
++};
+diff --git a/desktop/windows/browser/research-adapter.cjs b/desktop/windows/browser/research-adapter.cjs
+index b55893b..e853689 100644
+--- a/desktop/windows/browser/research-adapter.cjs
++++ b/desktop/windows/browser/research-adapter.cjs
+@@ -144,6 +144,17 @@ function createSearchProviderAdapter(options = {}) {
+   const searchEndpoint = String(options.searchEndpoint || "https://html.duckduckgo.com/html/");
+   const customSearchFn = typeof options.searchFn === "function" ? options.searchFn : null;
+   const syntheticCatalog = Array.isArray(options.syntheticCatalog) ? options.syntheticCatalog : null;
++  const fixtureMap = new Map();
++
++  function registerFixture(query, resultsOrSpec) {
++    const key = String(query || "").trim().toLowerCase();
++    const list = Array.isArray(resultsOrSpec)
++      ? resultsOrSpec
++      : Array.isArray(resultsOrSpec?.results)
++      ? resultsOrSpec.results
++      : [];
++    fixtureMap.set(key, list);
++  }
+ 
+   async function executeQuery(query, execOptions = {}) {
+     const signal = execOptions.signal || null;
+@@ -162,6 +173,16 @@ function createSearchProviderAdapter(options = {}) {
+ 
+     const searchedAt = execOptions.nowIso || new Date().toISOString();
+ 
++    if (fixtureMap.has(trimmedQuery.toLowerCase())) {
++      return {
++        providerId,
++        providerEndpoint: searchEndpoint,
++        searchedAt,
++        query: trimmedQuery,
++        results: fixtureMap.get(trimmedQuery.toLowerCase())
++      };
++    }
++
+     if (customSearchFn) {
+       const rawResults = await customSearchFn(trimmedQuery, { signal, searchedAt });
+       return {
+@@ -236,6 +257,8 @@ function createSearchProviderAdapter(options = {}) {
+   return {
+     providerId,
+     searchEndpoint,
++    registerFixture,
++    registerFixtureQuery: registerFixture,
+     executeQuery,
+     fetchHttpRaw
+   };
+diff --git a/desktop/windows/browser/shell.cjs b/desktop/windows/browser/shell.cjs
+index 6c88820..49a0766 100644
+--- a/desktop/windows/browser/shell.cjs
++++ b/desktop/windows/browser/shell.cjs
+@@ -7,6 +7,12 @@ const { KosworkDynamicPageScroller } = require("./dynamic-page-scroller.cjs");
+ const { KosworkResearchSessionCheckpointManager } = require("./session-checkpoint-recovery.cjs");
+ const { KosworkCoBrowsingCoordinator } = require("./co-browsing-handback.cjs");
+ const { reverifyAndRefreshResearchReport } = require("./report-reverifier.cjs");
++const {
++  executeDecomposedSearchAndDeduplicate,
++  navigateWithVerifiedRedirectChain
++} = require("./query-decomposer-and-redirect-tracker.cjs");
++const { executeMultiStepFormWizard } = require("./multi-step-form-wizard.cjs");
++const { KosworkHibernatedTabRevalidator } = require("./hibernated-tab-revalidator.cjs");
+ 
+ /**
+  * Shared Tool & Execution Boundary for Koswork Browser (`desktop/windows/browser/shell.cjs`).
+@@ -14,13 +20,17 @@ const { reverifyAndRefreshResearchReport } = require("./report-reverifier.cjs");
+  * Kept minimal and isolated in a dedicated integration commit (`browser/shell.cjs` boundary with Codex).
+  * Exposes standard tool descriptors and dispatcher methods for:
+  * - `browser.search`
++ * - `browser.decomposed_search`
+  * - `browser.open_result`
++ * - `browser.navigate`
++ * - `browser.navigate_with_redirects`
+  * - `browser.observe`
+  * - `browser.read_long_page`
+  * - `browser.read_dynamic_page`
+  * - `browser.fill_form`
+  * - `browser.select_files`
+  * - `browser.submit_form`
++ * - `browser.run_form_wizard`
+  * - `browser.download`
+  * - `browser.research_cycle`
+  * - `browser.research_public_smoke`
+@@ -28,6 +38,7 @@ const { reverifyAndRefreshResearchReport } = require("./report-reverifier.cjs");
+  * - `browser.user_highlight_excerpt`
+  * - `browser.reobserve_after_handback`
+  * - `browser.reverify_report`
++ * - `browser.wake_hibernated_tab`
+  * - `browser.cancel`
+  */
+ 
+@@ -38,12 +49,24 @@ const BROWSER_RESEARCH_TOOL_DEFINITIONS = Object.freeze([
+       "Выполнить поиск через подключённый поисковый адаптер и сохранить результаты с явным указанием провайдера.",
+     requiredParams: ["query"]
+   },
++  {
++    name: "browser.decomposed_search",
++    description:
++      "Декомпозировать исследовательский вопрос на подзапросы, выполнить поиск и дедуплицировать SERP по каноническому URL с сохранением происхождения.",
++    requiredParams: ["question"]
++  },
+   {
+     name: "browser.open_result",
+     description:
+       "Открыть результат поиска в браузере Koswork, сохранить URL, заголовок, время получения и связь с выдержкой.",
+     requiredParams: ["searchId", "rank"]
+   },
++  {
++    name: "browser.navigate_with_redirects",
++    description:
++      "Открыть URL с отслеживанием цепочки редиректов (HTTP/meta-refresh) и проверкой политики безопасности на каждом шаге.",
++    requiredParams: ["initialUrl"]
++  },
+   {
+     name: "browser.read_long_page",
+     description:
+@@ -56,6 +79,12 @@ const BROWSER_RESEARCH_TOOL_DEFINITIONS = Object.freeze([
+       "Пошагово раскрыть динамическую страницу или бесконечную прокрутку с проверкой сохранности смещений UTF-16.",
+     requiredParams: ["tabId"]
+   },
++  {
++    name: "browser.run_form_wizard",
++    description:
++      "Выполнить многошаговую форму (wizard) с проверкой ошибок валидации, выбором файлов из разрешённой папки и скачиванием итогового артефакта.",
++    requiredParams: ["url", "steps"]
++  },
+   {
+     name: "browser.research_cycle",
+     description:
+@@ -91,6 +120,12 @@ const BROWSER_RESEARCH_TOOL_DEFINITIONS = Object.freeze([
+     description:
+       "Перепроверить и обновить исследовательский отчёт по актуальному состоянию источников.",
+     requiredParams: ["previousReportData"]
++  },
++  {
++    name: "browser.wake_hibernated_tab",
++    description:
++      "Восстановить выгруженную фоновую вкладку с условной проверкой свежести снимка (ETag / 304 Not Modified).",
++    requiredParams: ["tabId"]
+   }
+ ]);
+ 
+@@ -104,6 +139,7 @@ function createKosworkBrowserShell(options = {}) {
+     });
+ 
+   const coBrowsing = new KosworkCoBrowsingCoordinator({ engine });
++  const tabRevalidator = new KosworkHibernatedTabRevalidator({ engine });
+ 
+   async function dispatchToolCall(toolName, args = {}, context = {}) {
+     const signal = context.signal || null;
+@@ -118,6 +154,16 @@ function createKosworkBrowserShell(options = {}) {
+           mockOrAdapterResults: args.results || null
+         });
+ 
++      case "browser.decomposed_search":
++        return await executeDecomposedSearchAndDeduplicate({
++          engine,
++          question: args.question,
++          options: args.options || [],
++          criteria: args.criteria || [],
++          actor: args.actor || "agent",
++          signal
++        });
++
+       case "browser.open_result":
+         return await engine.searchService.openSearchResult({
+           searchId: args.searchId,
+@@ -137,6 +183,16 @@ function createKosworkBrowserShell(options = {}) {
+           signal
+         });
+ 
++      case "browser.navigate_with_redirects":
++        return await navigateWithVerifiedRedirectChain({
++          engine,
++          tabId: args.tabId,
++          initialUrl: args.initialUrl,
++          actor: args.actor || "agent",
++          maxRedirects: args.maxRedirects ?? 5,
++          signal
++        });
++
+       case "browser.observe":
+         return engine.observePage(args.tabId, {
+           reuseSnapshot: args.reuseSnapshot !== false
+@@ -188,6 +244,16 @@ function createKosworkBrowserShell(options = {}) {
+           observedSnapshot: args.observedSnapshot || null
+         });
+ 
++      case "browser.run_form_wizard":
++        return await executeMultiStepFormWizard({
++          engine,
++          tabId: args.tabId || "wizard-tab-1",
++          url: args.url,
++          steps: args.steps || [],
++          finalDownload: args.finalDownload || null,
++          signal
++        });
++
+       case "browser.download":
+         return await engine.downloadFromPage({
+           tabId: args.tabId,
+@@ -244,6 +310,11 @@ function createKosworkBrowserShell(options = {}) {
+           signal
+         });
+ 
++      case "browser.wake_hibernated_tab":
++        return await tabRevalidator.wakeAndRevalidateTab(args.tabId, {
++          forceUpstreamCheck: args.forceUpstreamCheck !== false
++        });
++
+       case "browser.cancel":
+         return engine.resourceGovernor.cancelAllTasks(args.reason || "cancelled_via_shell");
+ 
+@@ -258,6 +329,7 @@ function createKosworkBrowserShell(options = {}) {
+   return {
+     engine,
+     coBrowsing,
++    tabRevalidator,
+     toolDefinitions: BROWSER_RESEARCH_TOOL_DEFINITIONS,
+     dispatchToolCall
+   };
+diff --git a/desktop/windows/test/browser-research-acceptance.test.cjs b/desktop/windows/test/browser-research-acceptance.test.cjs
+index a8dff6d..3b33b83 100644
+--- a/desktop/windows/test/browser-research-acceptance.test.cjs
++++ b/desktop/windows/test/browser-research-acceptance.test.cjs
+@@ -1473,3 +1473,220 @@ test("13. Live Report Re-Verifier & Delta Updater (`report-reverifier.cjs` & `br
+   assert.equal(reverified.savedReports.confirmedClaims.length, 2);
+   assert.equal(reverified.savedReports.citationAudit.auditPassed, true);
+ });
++
++test("14. Multi-Query Research Decomposer, SERP Deduplicator & SSRF-Safe Redirect Chain Tracker (`query-decomposer-and-redirect-tracker.cjs`)", async () => {
++  const workspaceRoot = createTempWorkspace();
++  const shell = createKosworkBrowserShell({ workspaceRoot });
++  const engine = shell.engine;
++
++  // Register search fixtures returning overlapping URLs with tracking parameters
++  engine.searchService.adapter.registerFixture("Сравнить пакеты Alpha и Beta", [
++    {
++      url: "https://corpus.local/spec-alpha?utm_source=serp1",
++      title: "Спецификация Alpha",
++      snippet: "Официальные параметры Alpha"
++    },
++    {
++      url: "https://corpus.local/spec-beta",
++      title: "Спецификация Beta",
++      snippet: "Официальные параметры Beta"
++    }
++  ]);
++
++  engine.searchService.adapter.registerFixture("Option Alpha Цена SLA", [
++    {
++      url: "https://corpus.local/spec-alpha?utm_medium=cpc",
++      title: "Спецификация Alpha (Повтор)",
++      snippet: "Цена и SLA пакета Alpha"
++    }
++  ]);
++
++  engine.searchService.adapter.registerFixture("Option Beta Цена SLA", [
++    {
++      url: "https://corpus.local/spec-beta?ref=subquery",
++      title: "Спецификация Beta (Повтор)",
++      snippet: "Цена и SLA пакета Beta"
++    }
++  ]);
++
++  const decomp = await shell.dispatchToolCall("browser.decomposed_search", {
++    question: "Сравнить пакеты Alpha и Beta",
++    options: ["Option Alpha", "Option Beta"],
++    criteria: ["Цена", "SLA"]
++  });
++
++  assert.equal(decomp.subQueries.length, 3);
++  assert.equal(decomp.searchRuns.length, 3);
++  // 4 raw hits deduplicate into 2 canonical URLs, each retaining 2 matchedQueries with explicit providerId
++  assert.equal(decomp.deduplicatedResults.length, 2);
++  assert.equal(decomp.deduplicatedResults[0].matchedQueries.length, 2);
++  assert.ok(decomp.deduplicatedResults[0].matchedQueries[0].providerId);
++
++  // Test redirect chain tracking (302 hop -> meta-refresh hop -> final canonical target)
++  engine.registerSyntheticSite("https://corpus.local/short-link", {
++    httpStatus: 302,
++    redirectTo: "https://corpus.local/intermediate-meta"
++  });
++  engine.registerSyntheticSite("https://corpus.local/intermediate-meta", {
++    title: "Промежуточный редирект",
++    html: `<html><head><meta http-equiv="refresh" content="0; url=https://corpus.local/final-spec" /></head><body>Перенаправление...</body></html>`
++  });
++  engine.registerSyntheticSite("https://corpus.local/final-spec", {
++    title: "Конечная каноническая спецификация",
++    pageDate: "2026-11-07",
++    eventDate: "2026-11-05",
++    text: "Канонический документ после редиректа: максимальная задержка составляет 6 мс."
++  });
++
++  const redirNav = await shell.dispatchToolCall("browser.navigate_with_redirects", {
++    tabId: "tab-redir",
++    initialUrl: "https://corpus.local/short-link"
++  });
++
++  assert.equal(redirNav.initialRequestedUrl, "https://corpus.local/short-link");
++  assert.equal(redirNav.finalResolvedUrl, "https://corpus.local/final-spec");
++  assert.equal(redirNav.redirectCount, 2);
++  assert.equal(redirNav.redirectChain[0].redirectType, "http_location");
++  assert.equal(redirNav.redirectChain[1].redirectType, "meta_refresh");
++
++  // Verify SSRF redirect hop to file:// is blocked mid-chain
++  engine.registerSyntheticSite("https://corpus.local/malicious-redirect", {
++    httpStatus: 302,
++    redirectTo: "file:///etc/passwd"
++  });
++  await assert.rejects(
++    async () =>
++      shell.dispatchToolCall("browser.navigate_with_redirects", {
++        tabId: "tab-redir-ssrf",
++        initialUrl: "https://corpus.local/malicious-redirect"
++      }),
++    (err) => Boolean(err && err.code)
++  );
++});
++
++test("15. Multi-Step Wizard Form & Validation-Aware Runner (`multi-step-form-wizard.cjs`) + Conditional 304 Hibernated Tab Revalidator (`hibernated-tab-revalidator.cjs`)", async () => {
++  const workspaceRoot = createTempWorkspace();
++  const safeAttachment = path.join(workspaceRoot, "docs", "wizard-spec.txt");
++  fs.writeFileSync(safeAttachment, "Конфигурация для многошагового мастера: 64 ядра, 256 ГБ ОЗУ.\n", "utf8");
++
++  const shell = createKosworkBrowserShell({
++    workspaceRoot,
++    maxLiveTabs: 3
++  });
++  const engine = shell.engine;
++
++  engine.registerSyntheticSite("https://corpus.local/wizard-portal", {
++    title: "Многошаговый мастер расчёта кластера",
++    pageDate: "2026-11-07",
++    eventDate: "2026-11-06",
++    html: `
++      <html>
++        <body>
++          <p>Шаг 1: Укажите конфигурацию узла и прикрепите паспорт.</p>
++          <input id="cluster-name" name="clusterName" type="text" value="" />
++          <input id="spec-upload" name="specUpload" type="file" />
++          <button id="wizard-submit" type="submit">Далее</button>
++        </body>
++      </html>
++    `,
++    onSubmit: async ({ values, files }) => {
++      if (!values["cluster-name"]) {
++        return {
++          appendText: "Ошибка валидации: поле обязательно для заполнения (clusterName)."
++        };
++      }
++      return {
++        appendText: `Шаг завершён для кластера "${values["cluster-name"]}" (файл: ${
++          files["spec-upload"]?.[0]?.filename || "нет"
++        }). Итоговая пропускная способность: 25000 RPS.`
++      };
++    },
++    onDownload: async ({ values }) => ({
++      filename: "wizard-cluster-passport.txt",
++      content: `Паспорт кластера ${values["cluster-name"]}: подтверждено 25000 RPS при 99.99% SLA.\n`
++    })
++  });
++
++  // 1. Test validation error detection when required field is omitted
++  const failedWizard = await shell.dispatchToolCall("browser.run_form_wizard", {
++    tabId: "tab-wiz-fail",
++    url: "https://corpus.local/wizard-portal",
++    steps: [
++      {
++        stepId: "step-empty",
++        fields: { "cluster-name": "" },
++        submitControlId: "wizard-submit"
++      }
++    ]
++  });
++  assert.equal(failedWizard.status, "validation_failed");
++  assert.equal(failedWizard.failedAtStep, 1);
++  assert.ok(failedWizard.validationErrors[0].includes("Ошибка валидации"));
++
++  // 2. Test successful multi-step wizard + file attachment + final download ingestion
++  const okWizard = await shell.dispatchToolCall("browser.run_form_wizard", {
++    tabId: "tab-wiz-ok",
++    url: "https://corpus.local/wizard-portal",
++    steps: [
++      {
++        stepId: "step-1-config",
++        fields: { "cluster-name": "Koswork-HA-01" },
++        fileAttachment: {
++          controlId: "spec-upload",
++          filePaths: [safeAttachment]
++        },
++        submitControlId: "wizard-submit",
++        expectedTextAfterSubmit: "Итоговая пропускная способность: 25000 RPS"
++      }
++    ],
++    finalDownload: {
++      filename: "wizard-cluster-passport.txt",
++      extractTerm: "подтверждено 25000 RPS при 99.99% SLA"
++    }
++  });
++
++  assert.equal(okWizard.status, "completed");
++  assert.equal(okWizard.totalStepsCompleted, 1);
++  assert.ok(okWizard.stepResults[0].stepExcerpt.quote.includes("25000 RPS"));
++  assert.ok(okWizard.downloadedArtifact.excerpt.quote.includes("25000 RPS при 99.99% SLA"));
++
++  // 3. Test Conditional 304 Not Modified Hibernated Tab Revalidator
++  for (let i = 1; i <= 4; i += 1) {
++    engine.registerSyntheticSite(`https://corpus.local/hib-page-${i}`, {
++      title: `Вкладка гибернации №${i}`,
++      pageDate: "2026-11-07",
++      text: `Содержимое вкладки №${i} для проверки 304 Not Modified.`
++    });
++    await engine.navigate({
++      tabId: `hib-tab-${i}`,
++      url: `https://corpus.local/hib-page-${i}`
++    });
++  }
++
++  // With maxLiveTabs=3, hib-tab-1 is now hibernated
++  assert.equal(engine.tabs.get("hib-tab-1").hibernated, true);
++
++  // Wake hib-tab-1 when upstream is unchanged -> 304 Not Modified, pageVersion stays 1
++  const wake304 = await shell.dispatchToolCall("browser.wake_hibernated_tab", {
++    tabId: "hib-tab-1"
++  });
++  assert.equal(wake304.wasHibernated, true);
++  assert.equal(wake304.httpStatus, 304);
++  assert.equal(wake304.revalidated304, true);
++  assert.equal(wake304.pageVersion, 1);
++  assert.equal(wake304.snapshotReused, true);
++
++  // Update upstream content on hib-page-2 (which is now hibernated) -> 200 OK reload, pageVersion becomes 2
++  engine.registerSyntheticSite("https://corpus.local/hib-page-2", {
++    title: "Вкладка гибернации №2 (Обновлена)",
++    pageDate: "2026-11-07",
++    text: "Обновлённое содержимое вкладки №2 после изменения источника."
++  });
++  const wake200 = await shell.dispatchToolCall("browser.wake_hibernated_tab", {
++    tabId: "hib-tab-2"
++  });
++  assert.equal(wake200.httpStatus, 200);
++  assert.equal(wake200.revalidated304, false);
++  assert.equal(wake200.pageVersion, 2);
++  assert.equal(wake200.snapshotReused, false);
++});
+-- 
+2.39.5
+

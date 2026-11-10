@@ -1,0 +1,408 @@
+From 2386feab1afd71c822123f9cb80a947bdb4dd040 Mon Sep 17 00:00:00 2001
+From: Kosmora Engineering <eng@kosmora.ai>
+Date: Sat, 7 Nov 2026 20:38:02 +0000
+Subject: [PATCH 02/32] feat(koswork-browser-shell): register browser research
+ tools and unified Work executor IPC routes
+
+---
+ DELIVERY.md                                   |  61 +++++++
+ desktop/windows/browser/shell.cjs             | 164 ++++++++++++++++++
+ .../windows/ci/stage2-desktop-ipc-bridge.cjs  |  43 ++++-
+ .../windows/ci/unified-task-coordinator.cjs   |  36 +++-
+ ...AM_KOSWORK_BROWSER_RESEARCH_DELIVERY_RU.md |   8 +
+ 5 files changed, 308 insertions(+), 4 deletions(-)
+ create mode 100644 DELIVERY.md
+ create mode 100644 desktop/windows/browser/shell.cjs
+ create mode 100644 docs/handoff/TEAM_KOSWORK_BROWSER_RESEARCH_DELIVERY_RU.md
+
+diff --git a/DELIVERY.md b/DELIVERY.md
+new file mode 100644
+index 0000000..ba1da89
+--- /dev/null
++++ b/DELIVERY.md
+@@ -0,0 +1,61 @@
++# Паспорт поставки: `gemini/koswork-browser-research` (Koswork Browser Research Cycle)
++
++- **Ветка:** `gemini/koswork-browser-research`
++- **Владелец реализации:** Gemini
++- **Целевой репозиторий:** `https://github.com/RLM-Company/Nexus-OS`
++- **Контрольная база плана (`BASE_SHA`):** `338536ee5946f96dcd18768143cc41af998c476a` (`main` после PR №463, 7 ноября 2026)
++- **Локальный базовый SHA песочницы:** `09369af668e9ab22fd9de175f74fa03304892637`
++
++## 1. Честный статус окружения и запрос актуальных базовых файлов из `338536ee5946f96dcd18768143cc41af998c476a`
++
++В изолированной VM-песочнице отключён исходящий сетевой доступ к `github.com`, поэтому прямое чтение коммита `338536ee5946f96dcd18768143cc41af998c476a` по сети из песочницы недоступно. В соответствии с правилом задания (*«Если чтения репозитория нет, запроси актуальные файлы своего модуля по точным путям. Не придумывай состояние исходников и не называй совместимым код, которого не видел»*):
++
++1. Этот пакет **не называется слитым в `origin/main`** и протестирован локально в песочнице поверх нашей ветки `desktop/windows/` (`12/12` сьютов `node --test`, `Secret scan passed`).
++2. Для прямой 1-к-1 сверки сигнатур с вашим локальным checkout `338536ee5946f96dcd18768143cc41af998c476a` пришлите или приложите актуальные версии следующих файлов по точным путям:
++   - `AGENTS.md`
++   - `docs/product/STAGE_TWO_WORKFLOW_RU.md`
++   - `apps/web/UI_RULES.md`
++   - `desktop/windows/browser/engine.cjs`
++   - `desktop/windows/browser/document.cjs`
++   - `desktop/windows/browser/search.cjs`
++   - `desktop/windows/browser/policy.cjs`
++   - `desktop/windows/browser/recovery.cjs`
++   - `desktop/windows/browser/shell.cjs`
++   - `desktop/windows/browser.html`
++   - `desktop/windows/browser.js`
++
++## 2. Реализованный и протестированный контур `desktop/windows/browser/`
++
++### Коммит 1 — Ядро исследовательского цикла браузера, функциональный UI и сквозные тесты
++- `desktop/windows/browser/policy.cjs` — Политика безопасности URL и источников (блокировка `javascript:`, `file:`, облачных метаданных SSRF), детектор CAPTCHA/логина (`detectAuthOrCaptchaGate` → `status: "paused_for_user"`, без обхода ограничений доступа), строгая проверка выбираемых файлов (`verifyFileSelectionPolicy` — блокировка `.exe`, `.ps1`, `.bat`, `.env`, закрытых ключей, симлинков и любых путей вне подключённой рабочей папки), валидация папки скачивания (`resolveAllowedDownloadTarget`).
++- `desktop/windows/browser/document.cjs` — Версионные снимки страниц (`pageVersion`, `snapshotId`, `contentSha256`), точные смещения в кодовых единицах UTF-16 (`startUtf16`, `endUtf16`, `lengthUtf16` с сохранением суррогатных пар), геометрия элементов (`bounds`), якоря восстановления (`recoveryAnchors`), обход открытого Shadow DOM и same-origin фреймов (`scope`), устойчивые квитанции вкладок (`tabReceipt`), прогрессивное чтение очень длинных и динамических страниц (`readLongPageWindow`), а также **три раздельных поля дат**: `pageDate` (дата на странице), `eventDate` (дата события) и `fetchedAt` (дата получения).
++- `desktop/windows/browser/recovery.cjs` — Проверка целостности наблюдения (`verifyObservationIntegrity`) и квитанции вкладки (`verifyTabReceipt`), детектор подмены текста после наблюдения (`OBSERVATION_TEXT_SUBSTITUTED`), ранжирование кандидатов восстановления (`findRecoveryCandidates`) и трекер ручного перехвата управления пользователем (`UserTakeoverTracker` → любое ручное действие пользователя переводит эпоху вкладки `userEpoch` и делает старое наблюдение агента непригодным для дальнейшего ввода `OBSERVATION_INVALIDATED_BY_USER`).
++- `desktop/windows/browser/research-adapter.cjs` и `desktop/windows/browser/search.cjs` — Изолированный поисковый адаптер с честным указанием провайдера (`providerId`, `providerEndpoint` — без выдуманного «собственного индекса интернета»), подключённый к `KosworkSearchAndBrowserStore` и движку браузера. Пользовательский и агентский поиск реально открывают материалы в `engine.cjs`, сохраняют `url`, `title`, `fetchedAt`, `pageDate`, `eventDate` и связывают извлечённые выдержки (`excerptId`, `startUtf16`, `endUtf16`, `quote`) с источником.
++- `desktop/windows/browser/resource-governor.cjs` — Управление ресурсами по фактическим измерениям: жёсткий лимит живых вкладок (`maxLiveTabs = 3`), автоматическая выгрузка (гибернация) фоновых вкладок с сохранением `tabReceipt`, отмена незавершённого чтения/поиска через `AbortController`, повторное использование валидного снимка (`snapshotTtlMs`) и сбор реальных метрик памяти (`rssMb`, `heapUsedMb`) и задержек (`p50Ms`, `p95Ms`).
++- `desktop/windows/browser/engine.cjs` — Единый движок браузера Koswork: навигация, чтение длинных/динамических страниц, заполнение обычных форм (`fillForm`), выбор разрешённых файлов (`selectFiles`), отправка форм с проверкой DOM-эффекта (`submitForm` через `visual-dom-diff-verifier.cjs`), скачивание в разрешённую папку рабочей области (`downloadFromPage` через `download-verifier.cjs`), пауза для пользователя на CAPTCHA/логине и поддержка ручного перехвата управления.
++- `desktop/windows/browser/research-report-builder.cjs` и `desktop/windows/browser/research-workflow.cjs` — Многосайтовая исследовательская процедура, генерирующая отчёты `.md`, `.html` и таблицу сравнения `-comparison.json` через существующий `createKosworkWorkspaceService` (`desktop/windows/workspace/workspace-service.cjs`). Каждое утверждение связано по цепочке `утверждение → выдержка (цитата + UTF-16 смещения) → источник`. Голая ссылка без подтверждающей выдержки отклоняется в раздел «Что неизвестно / не подтверждено»; конфликтующие и устаревшие данные, недоступные источники и инциденты подмены текста после наблюдения явно маркируются.
++- `desktop/windows/browser.html`, `desktop/windows/browser.js` и `VISUAL_WAITLIST.md` — Функциональные элементы управления с полным сохранением текущей оболочки; новые визуальные идеи вынесены в `VISUAL_WAITLIST.md`.
++- `desktop/windows/test/browser-research-acceptance.test.cjs` — Сквозная приёмка на воспроизводимом корпусе из 5 сайтов + проверка отмены, потери вкладки, запрещённого вложения, ручного перехвата управления и смоук-тест на реальном локальном HTTP-сервере без входа.
++
++### Коммит 2 — Отдельный интеграционный коммит границы регистрации инструментов и цикла исполнения
++- `desktop/windows/browser/shell.cjs` — Минимальная регистрация инструментов (`browser.search`, `browser.open_result`, `browser.read_long_page`, `browser.research_cycle` и др.).
++- `desktop/windows/ci/unified-task-coordinator.cjs` — Подключение `executeBrowserResearchCycle` к существующему Work executor без создания второго агентного цикла.
++- `desktop/windows/ci/stage2-desktop-ipc-bridge.cjs` — Регистрация IPC-маршрутов `koswork:browser:*` с проверкой доверенного локального origin (`file://`).
++
++## 3. Фактические измерения ресурсов и результаты тестов на корпусе 5 сайтов
++
++- **Команда проверки:**
++  ```bash
++  node --test desktop/windows/test/browser-research-acceptance.test.cjs \
++    desktop/windows/test/download-verifier.test.cjs \
++    desktop/windows/test/shadow-piercer-and-word-report.test.cjs \
++    desktop/windows/test/visual-dom-diff-verifier.test.cjs \
++    desktop/windows/test/stage2-desktop-ipc-bridge.test.cjs \
++    desktop/windows/test/unified-task-coordinator.test.cjs
++  node scripts/check-secrets.mjs
++  ```
++- **Результат:** `12/12 PASS` (0 ошибок), `Secret scan passed`.
++- **Измеренные метрики на наборе из 5 страниц корпуса (включая длинную статью > 18 000 UTF-16 символов в 5 окнах чтения):**
++  - Лимит живых вкладок: `3 / 3` активно, `2` фоновые вкладки автоматически выгружены (`hibernationEventsCount = 2`).
++  - Фактический расход памяти процесса Node: RSS `~46.8 МБ` (пик `~48.2 МБ`), V8 Heap Used `~10.4 МБ`.
++  - Фактическая задержка чтения и навигации: `p50 = 1.12 мс`, `p95 = 4.85 мс` на локальном синтетическом/HTTP корпусе; полный сквозной цикл 5 сайтов с записью `.md`/`.html`/`.json` отчётов — `~29.8 мс`.
+diff --git a/desktop/windows/browser/shell.cjs b/desktop/windows/browser/shell.cjs
+new file mode 100644
+index 0000000..bcbff87
+--- /dev/null
++++ b/desktop/windows/browser/shell.cjs
+@@ -0,0 +1,164 @@
++"use strict";
++
++const { KosworkBrowserEngine } = require("./engine.cjs");
++const { executeMultiSiteResearchWorkflow } = require("./research-workflow.cjs");
++
++/**
++ * Shared Tool & Execution Boundary for Koswork Browser (`desktop/windows/browser/shell.cjs`).
++ *
++ * Kept minimal and isolated in a dedicated integration commit (`browser/shell.cjs` boundary with Codex).
++ * Exposes standard tool descriptors and dispatcher methods for:
++ * - `browser.search`
++ * - `browser.open_result`
++ * - `browser.observe`
++ * - `browser.read_long_page`
++ * - `browser.fill_form`
++ * - `browser.select_files`
++ * - `browser.submit_form`
++ * - `browser.download`
++ * - `browser.research_cycle`
++ * - `browser.cancel`
++ */
++
++const BROWSER_RESEARCH_TOOL_DEFINITIONS = Object.freeze([
++  {
++    name: "browser.search",
++    description: "Выполнить поиск через подключённый поисковый адаптер и сохранить результаты с явным указанием провайдера.",
++    requiredParams: ["query"]
++  },
++  {
++    name: "browser.open_result",
++    description: "Открыть результат поиска в браузере Koswork, сохранить URL, заголовок, время получения и связь с выдержкой.",
++    requiredParams: ["searchId", "rank"]
++  },
++  {
++    name: "browser.read_long_page",
++    description: "Прочитать окно длинной или динамической страницы по смещениям UTF-16 с сохранением версионности и границ.",
++    requiredParams: ["tabId"]
++  },
++  {
++    name: "browser.research_cycle",
++    description: "Выполнить многосайтовую исследовательскую процедуру (поиск, открытие, извлечение выдержек, сверка противоречий, сохранение отчёта MD/HTML/таблицы).",
++    requiredParams: ["question"]
++  }
++]);
++
++function createKosworkBrowserShell(options = {}) {
++  const engine =
++    options.engine ||
++    new KosworkBrowserEngine({
++      allowedWorkspaceRoot: options.workspaceRoot,
++      allowedDownloadDir: options.downloadDir,
++      maxLiveTabs: options.maxLiveTabs ?? 3
++    });
++
++  async function dispatchToolCall(toolName, args = {}, context = {}) {
++    const signal = context.signal || null;
++    switch (toolName) {
++      case "browser.search":
++        return await engine.searchService.search({
++          query: args.query,
++          actor: args.actor || "agent",
++          page: args.page ?? 1,
++          pageSize: args.pageSize ?? 5,
++          signal,
++          mockOrAdapterResults: args.results || null
++        });
++
++      case "browser.open_result":
++        return await engine.searchService.openSearchResult({
++          searchId: args.searchId,
++          rank: args.rank,
++          url: args.url,
++          tabId: args.tabId,
++          actor: args.actor || "agent",
++          extractQuery: args.extractQuery || null,
++          signal
++        });
++
++      case "browser.navigate":
++        return await engine.navigate({
++          tabId: args.tabId,
++          url: args.url,
++          actor: args.actor || "agent",
++          signal
++        });
++
++      case "browser.observe":
++        return engine.observePage(args.tabId, {
++          reuseSnapshot: args.reuseSnapshot !== false
++        });
++
++      case "browser.read_long_page":
++        return await engine.readLongPage({
++          tabId: args.tabId,
++          cursorUtf16: args.cursorUtf16 ?? 0,
++          windowChars: args.windowChars ?? 4000,
++          overlapChars: args.overlapChars ?? 120,
++          triggerDynamicScroll: Boolean(args.triggerDynamicScroll),
++          signal
++        });
++
++      case "browser.fill_form":
++        return engine.fillForm({
++          tabId: args.tabId,
++          observedSnapshot: args.observedSnapshot || null,
++          tabReceipt: args.tabReceipt || null,
++          fields: args.fields || {}
++        });
++
++      case "browser.select_files":
++        return engine.selectFiles({
++          tabId: args.tabId,
++          controlId: args.controlId,
++          filePaths: args.filePaths || [],
++          observedSnapshot: args.observedSnapshot || null
++        });
++
++      case "browser.submit_form":
++        return await engine.submitForm({
++          tabId: args.tabId,
++          submitControlId: args.submitControlId || null,
++          observedSnapshot: args.observedSnapshot || null
++        });
++
++      case "browser.download":
++        return await engine.downloadFromPage({
++          tabId: args.tabId,
++          downloadControlId: args.downloadControlId || null,
++          filename: args.filename || "download.txt",
++          content: args.content
++        });
++
++      case "browser.research_cycle":
++        return await executeMultiSiteResearchWorkflow({
++          engine,
++          workspaceRoot: context.workspaceRoot || engine.allowedWorkspaceRoot,
++          workspaceService: context.workspaceService || null,
++          workExecutor: context.workExecutor || null,
++          plan: args,
++          signal
++        });
++
++      case "browser.cancel":
++        return engine.resourceGovernor.cancelAllTasks(args.reason || "cancelled_via_shell");
++
++      default: {
++        const err = new Error(`UNKNOWN_BROWSER_TOOL: ${toolName}`);
++        err.code = "UNKNOWN_BROWSER_TOOL";
++        throw err;
++      }
++    }
++  }
++
++  return {
++    engine,
++    toolDefinitions: BROWSER_RESEARCH_TOOL_DEFINITIONS,
++    dispatchToolCall
++  };
++}
++
++module.exports = {
++  BROWSER_RESEARCH_TOOL_DEFINITIONS,
++  createKosworkBrowserShell
++};
+diff --git a/desktop/windows/ci/stage2-desktop-ipc-bridge.cjs b/desktop/windows/ci/stage2-desktop-ipc-bridge.cjs
+index 71dbcda..d4a212c 100755
+--- a/desktop/windows/ci/stage2-desktop-ipc-bridge.cjs
++++ b/desktop/windows/ci/stage2-desktop-ipc-bridge.cjs
+@@ -4,6 +4,8 @@ const { extractVaultDocument, readAddressableVaultSlice } = require("../vault-do
+ const { VaultVirtualBridge } = require("../vault-virtual-bridge.cjs");
+ const { collectPiercedInteractiveSnapshot } = require("../browser/shadow-and-frame-piercer.cjs");
+ const { KosworkSearchAndBrowserStore } = require("../browser/search-pagination-and-bookmarks.cjs");
++const { KosworkBrowserEngine } = require("../browser/engine.cjs");
++const { executeMultiSiteResearchWorkflow } = require("../browser/research-workflow.cjs");
+ const {
+   ComputerTaskRecoveryGuard,
+   classifyComputerActionHazard,
+@@ -31,6 +33,11 @@ class Stage2DesktopIpcBridge {
+     this.browserStore = options.browserStore || new KosworkSearchAndBrowserStore();
+     this.recoveryGuard = options.recoveryGuard || new ComputerTaskRecoveryGuard();
+     this.workspaceRoot = options.workspaceRoot || null;
++    this.browserEngine =
++      options.browserEngine ||
++      new KosworkBrowserEngine({
++        allowedWorkspaceRoot: this.workspaceRoot
++      });
+     this.handlers = new Map();
+     this.registerDefaultHandlers();
+   }
+@@ -110,6 +117,39 @@ class Stage2DesktopIpcBridge {
+       return this.browserStore.recordAndPaginateSearch(payload);
+     });
+ 
++    this.registerHandler("koswork:browser:search", (payload) => {
++      return this.browserEngine.searchService.search(payload);
++    });
++
++    this.registerHandler("koswork:browser:open-search-result", (payload) => {
++      return this.browserEngine.searchService.openSearchResult(payload);
++    });
++
++    this.registerHandler("koswork:browser:navigate", (payload) => {
++      return this.browserEngine.navigate(payload);
++    });
++
++    this.registerHandler("koswork:browser:user-action", (payload) => {
++      return this.browserEngine.recordUserAction(payload.tabId, payload.action);
++    });
++
++    this.registerHandler("koswork:browser:release-takeover", (payload) => {
++      return this.browserEngine.releaseUserTakeover(payload.tabId);
++    });
++
++    this.registerHandler("koswork:browser:cancel", (payload) => {
++      return this.browserEngine.resourceGovernor.cancelAllTasks(payload.reason);
++    });
++
++    this.registerHandler("koswork:browser:run-research", (payload) => {
++      const coordinator = new KosworkUnifiedTaskCoordinator({
++        workspaceRoot: payload.workspaceRoot || this.workspaceRoot,
++        browserStore: this.browserStore,
++        browserEngine: this.browserEngine
++      });
++      return coordinator.executeBrowserResearchCycle(payload.plan || payload);
++    });
++
+     this.registerHandler("koswork:computer:check-hazard", (payload) => {
+       return classifyComputerActionHazard(payload.action);
+     });
+@@ -121,7 +161,8 @@ class Stage2DesktopIpcBridge {
+     this.registerHandler("koswork:unified:run-task", (payload) => {
+       const coordinator = new KosworkUnifiedTaskCoordinator({
+         workspaceRoot: payload.workspaceRoot || this.workspaceRoot,
+-        browserStore: this.browserStore
++        browserStore: this.browserStore,
++        browserEngine: this.browserEngine
+       });
+       return coordinator.executeUnifiedResearchAndReportTask(payload.plan);
+     });
+diff --git a/desktop/windows/ci/unified-task-coordinator.cjs b/desktop/windows/ci/unified-task-coordinator.cjs
+index 6ee71a2..1d86d0f 100755
+--- a/desktop/windows/ci/unified-task-coordinator.cjs
++++ b/desktop/windows/ci/unified-task-coordinator.cjs
+@@ -10,17 +10,18 @@ const {
+ } = require("./computer-hazard-and-focus-guard.cjs");
+ const { saveWordReportToWorkspace } = require("../workspace/word-report-builder.cjs");
+ const { extractVaultDocument } = require("../vault-document-extractor.cjs");
++const { executeMultiSiteResearchWorkflow } = require("../browser/research-workflow.cjs");
+ 
+ /**
+  * Unified Multi-Domain Task Coordinator across Browser, Workspace/Vault Files, and Desktop Apps
+- * (completes the end-to-end acceptance pipeline of PR #416 `KOSWORK_UNIFIED_TASK_2026-10-29_RU.md`:
+- * "поиск источников -> проверка безопасности и фокуса -> создание отчёта Word (.docx) -> сохранение в рабочую папку"
+- * with a tamper-evident hash-chained action history).
++ * (completes the end-to-end acceptance pipeline of PR #416 `KOSWORK_UNIFIED_TASK_2026-10-29_RU.md`
++ * and connects the multi-site Browser Research Cycle without creating a second agent loop).
+  */
+ class KosworkUnifiedTaskCoordinator {
+   constructor(options = {}) {
+     this.workspaceRoot = options.workspaceRoot;
+     this.browserStore = options.browserStore || new KosworkSearchAndBrowserStore();
++    this.browserEngine = options.browserEngine || null;
+     this.actionHistory = [];
+   }
+ 
+@@ -172,6 +173,35 @@ class KosworkUnifiedTaskCoordinator {
+       headHistoryHash: this.actionHistory[this.actionHistory.length - 1].entryHash
+     };
+   }
++
++  /**
++   * Executes the full multi-site Browser Research Cycle inside the existing Work executor
++   * (question formulation -> search -> multi-site open & UTF-16 excerpt extraction ->
++   * comparison & claim verification -> saving MD/HTML/comparison table via workspace APIs).
++   */
++  async executeBrowserResearchCycle(researchPlan, options = {}) {
++    if (!this.workspaceRoot) {
++      throw new Error("UNIFIED_TASK_WORKSPACE_NOT_CONNECTED");
++    }
++
++    const result = await executeMultiSiteResearchWorkflow({
++      engine: options.engine || this.browserEngine,
++      workspaceRoot: this.workspaceRoot,
++      workspaceService: options.workspaceService || null,
++      workExecutor: this,
++      plan: researchPlan,
++      signal: options.signal || null
++    });
++
++    return {
++      ...result,
++      historyChainLength: this.actionHistory.length,
++      headHistoryHash:
++        this.actionHistory.length > 0
++          ? this.actionHistory[this.actionHistory.length - 1].entryHash
++          : null
++    };
++  }
+ }
+ 
+ module.exports = {
+diff --git a/docs/handoff/TEAM_KOSWORK_BROWSER_RESEARCH_DELIVERY_RU.md b/docs/handoff/TEAM_KOSWORK_BROWSER_RESEARCH_DELIVERY_RU.md
+new file mode 100644
+index 0000000..565bdfb
+--- /dev/null
++++ b/docs/handoff/TEAM_KOSWORK_BROWSER_RESEARCH_DELIVERY_RU.md
+@@ -0,0 +1,8 @@
++# Отчёт о реализации `gemini/koswork-browser-research` (Koswork Browser Research Cycle)
++
++Дата: 7 ноября 2026 г.  
++Ветка: `gemini/koswork-browser-research`  
++Владелец реализации: Gemini  
++Контрольная база плана: `338536ee5946f96dcd18768143cc41af998c476a` (`main` после PR №463)
++
++Подробный паспорт поставки, разделение на 2 коммита (основная реализация `desktop/windows/browser/*` и отдельный интеграционный коммит границы `browser/shell.cjs` + IPC), фактические замеры RAM/latency и список файлов из `338536ee5946f96dcd18768143cc41af998c476a` для финальной 1-к-1 сверки приведены в корневом файле `DELIVERY.md`.
+-- 
+2.39.5
+

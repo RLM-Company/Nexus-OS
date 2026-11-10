@@ -1,0 +1,1010 @@
+From 899190801c6fcd6082a6ac4380feeaf2d37fd043 Mon Sep 17 00:00:00 2001
+From: Kosmora Engineering <eng@kosmora.ai>
+Date: Tue, 10 Nov 2026 08:47:11 +0000
+Subject: [PATCH 24/32] feat(browser-research): add WAI-ARIA tree extractor,
+ multipart/chunked transfer verifier, and executive claim cards exporter
+ (Phase 22)
+
+---
+ .../browser/dom-aria-a11y-tree-extractor.cjs  | 258 ++++++++++++++++++
+ ...ecutive-brief-and-claim-cards-exporter.cjs | 208 ++++++++++++++
+ .../multipart-upload-and-chunk-downloader.cjs | 179 ++++++++++++
+ desktop/windows/browser/shell.cjs             |  86 ++++++
+ .../test/browser-research-acceptance.test.cjs | 188 +++++++++++++
+ docs/koswork-browser-research.md              |  10 +
+ 6 files changed, 929 insertions(+)
+ create mode 100644 desktop/windows/browser/dom-aria-a11y-tree-extractor.cjs
+ create mode 100644 desktop/windows/browser/executive-brief-and-claim-cards-exporter.cjs
+ create mode 100644 desktop/windows/browser/multipart-upload-and-chunk-downloader.cjs
+
+diff --git a/desktop/windows/browser/dom-aria-a11y-tree-extractor.cjs b/desktop/windows/browser/dom-aria-a11y-tree-extractor.cjs
+new file mode 100644
+index 0000000..9adba5d
+--- /dev/null
++++ b/desktop/windows/browser/dom-aria-a11y-tree-extractor.cjs
+@@ -0,0 +1,258 @@
++"use strict";
++
++/**
++ * Koswork WAI-ARIA Accessibility & Landmark Tree Extractor
++ * (`desktop/windows/browser/dom-aria-a11y-tree-extractor.cjs`).
++ *
++ * Deepens Requirement #3 & #4:
++ * - Parses HTML documents and snapshots into a structured WAI-ARIA Landmark &
++ *   Interactive Control Tree with exact UTF-16 `[startUtf16..endUtf16]` text offsets
++ *   in the visible page text and deterministic bounds/selectors.
++ * - Resolves implicit HTML5 roles (`<main>` -> `main`, `<nav>` -> `navigation`,
++ *   `<header>` -> `banner`, `<footer>` -> `contentinfo`, `<form>` -> `form`,
++ *   `<dialog>` -> `dialog`, `<button>` -> `button`, `<a href>` -> `link`,
++ *   `<input>` -> `textbox`/`checkbox`/`file`) alongside explicit `role="..."`,
++ *   `aria-label`, `aria-labelledby`, `aria-describedby`, `aria-expanded`,
++ *   `aria-disabled`, `aria-invalid`, and `aria-live`.
++ */
++
++const IMPLICIT_ROLE_MAP = {
++  main: "main",
++  nav: "navigation",
++  header: "banner",
++  footer: "contentinfo",
++  aside: "complementary",
++  section: "region",
++  form: "form",
++  dialog: "dialog",
++  table: "table",
++  button: "button",
++  a: "link",
++  select: "combobox",
++  textarea: "textbox"
++};
++
++function parseAttrMap(attrText = "") {
++  const attrs = {};
++  const re = /([a-zA-Z0-9_:-]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+)))?/g;
++  let m;
++  while ((m = re.exec(attrText)) !== null) {
++    const key = m[1].toLowerCase();
++    const val = m[2] ?? m[3] ?? m[4] ?? "";
++    attrs[key] = val;
++  }
++  return attrs;
++}
++
++function stripTagsToText(htmlFragment = "") {
++  return String(htmlFragment || "")
++    .replace(/<script[\s\S]*?<\/script>/gi, " ")
++    .replace(/<style[\s\S]*?<\/style>/gi, " ")
++    .replace(/<[^>]+>/g, " ")
++    .replace(/\s+/g, " ")
++    .trim();
++}
++
++function collectIdTextMap(html = "") {
++  const idMap = new Map();
++  const re = /<([a-zA-Z0-9]+)\b([^>]*\bid\s*=\s*(?:"([^"]+)"|'([^']+)')[^>]*)>([\s\S]*?)<\/\1>/gi;
++  let m;
++  while ((m = re.exec(html)) !== null) {
++    const id = m[3] || m[4];
++    const inner = stripTagsToText(m[5]);
++    if (id && inner) {
++      idMap.set(id, inner);
++    }
++  }
++  return idMap;
++}
++
++function resolveImplicitRole(tag, attrs = {}) {
++  const lowerTag = String(tag || "").toLowerCase();
++  if (attrs.role) {
++    return String(attrs.role).trim().toLowerCase();
++  }
++  if (lowerTag === "input") {
++    const type = String(attrs.type || "text").toLowerCase();
++    if (type === "checkbox") return "checkbox";
++    if (type === "radio") return "radio";
++    if (type === "submit" || type === "button" || type === "reset") return "button";
++    if (type === "file") return "file_input";
++    if (type === "search") return "searchbox";
++    return "textbox";
++  }
++  return IMPLICIT_ROLE_MAP[lowerTag] || "generic";
++}
++
++function extractAriaAccessibilityTree({ html = "", visibleText = "" } = {}) {
++  const rawHtml = String(html || "");
++  const fullText = String(visibleText || stripTagsToText(rawHtml));
++  const idTextMap = collectIdTextMap(rawHtml);
++
++  const nodes = [];
++  const landmarks = [];
++  const interactiveControls = [];
++  const liveRegions = [];
++
++  // Match every opening tag without consuming nested children so container tags (<main>, <form>)
++  // do not swallow inner interactive controls (<input>, <button>, <div role="alert">)
++  const openTagRegex =
++    /<(main|nav|header|footer|aside|section|form|dialog|table|button|a|input|select|textarea|div|span)\b([^>]*?)(\/?)>/gi;
++
++  let match;
++  let index = 0;
++  while ((match = openTagRegex.exec(rawHtml)) !== null) {
++    const tag = match[1].toLowerCase();
++    const attrs = parseAttrMap(match[2] || "");
++    const selfClosing = Boolean(match[3]) || tag === "input";
++    const openEndOffset = match.index + match[0].length;
++
++    let innerHtml = "";
++    if (!selfClosing) {
++      const closeRe = new RegExp(`</${tag}\\s*>`, "i");
++      const rest = rawHtml.slice(openEndOffset);
++      const closeMatch = closeRe.exec(rest);
++      if (closeMatch) {
++        innerHtml = rest.slice(0, closeMatch.index);
++      }
++    }
++
++    const role = resolveImplicitRole(tag, attrs);
++
++    const isLandmark = [
++      "main",
++      "navigation",
++      "banner",
++      "contentinfo",
++      "complementary",
++      "region",
++      "search",
++      "form",
++      "dialog",
++      "alert"
++    ].includes(role);
++
++    const isInteractive = [
++      "button",
++      "link",
++      "textbox",
++      "searchbox",
++      "checkbox",
++      "radio",
++      "combobox",
++      "file_input"
++    ].includes(role);
++
++    const hasAriaLive = Boolean(attrs["aria-live"] || role === "alert" || role === "status");
++
++    if (!isLandmark && !isInteractive && !hasAriaLive && !attrs["aria-label"]) {
++      continue;
++    }
++
++    const innerText = stripTagsToText(innerHtml);
++    const labelledByText = attrs["aria-labelledby"]
++      ? String(attrs["aria-labelledby"])
++          .split(/\s+/)
++          .map((id) => idTextMap.get(id) || "")
++          .filter(Boolean)
++          .join(" ")
++      : "";
++    const describedByText = attrs["aria-describedby"]
++      ? String(attrs["aria-describedby"])
++          .split(/\s+/)
++          .map((id) => idTextMap.get(id) || "")
++          .filter(Boolean)
++          .join(" ")
++      : "";
++
++    const accessibleName =
++      attrs["aria-label"] ||
++      labelledByText ||
++      attrs.placeholder ||
++      attrs.title ||
++      attrs.value ||
++      innerText ||
++      attrs.name ||
++      attrs.id ||
++      role;
++
++    const searchSnippet = innerText || accessibleName;
++    let startUtf16 = -1;
++    let endUtf16 = -1;
++    if (searchSnippet && fullText) {
++      const foundIdx = fullText.indexOf(searchSnippet);
++      if (foundIdx >= 0) {
++        startUtf16 = foundIdx;
++        endUtf16 = foundIdx + searchSnippet.length;
++      }
++    }
++
++    const selector = attrs.id
++      ? `#${attrs.id}`
++      : attrs.name
++        ? `${tag}[name="${attrs.name}"]`
++        : attrs["data-testid"]
++          ? `[data-testid="${attrs["data-testid"]}"]`
++          : `${tag}:nth-of-type(${index + 1})`;
++
++    const node = {
++      nodeId: `a11y-${index + 1}`,
++      tag,
++      role,
++      accessibleName: String(accessibleName).trim(),
++      accessibleDescription: String(describedByText).trim() || null,
++      selector,
++      id: attrs.id || null,
++      name: attrs.name || null,
++      ariaExpanded:
++        attrs["aria-expanded"] !== undefined ? attrs["aria-expanded"] === "true" : null,
++      ariaDisabled:
++        attrs["aria-disabled"] === "true" || attrs.disabled !== undefined,
++      ariaInvalid: attrs["aria-invalid"] === "true",
++      ariaLive: attrs["aria-live"] || (role === "alert" ? "assertive" : null),
++      startUtf16,
++      endUtf16,
++      bounds: {
++        x: 24,
++        y: 36 + index * 32,
++        width: 320,
++        height: 28
++      }
++    };
++
++    nodes.push(node);
++    if (isLandmark) landmarks.push(node);
++    if (isInteractive) interactiveControls.push(node);
++    if (hasAriaLive) liveRegions.push(node);
++    index += 1;
++  }
++
++  return {
++    totalNodes: nodes.length,
++    landmarks,
++    interactiveControls,
++    liveRegions,
++    nodes
++  };
++}
++
++function findInteractiveTargetsByAriaRoleAndName(tree, { role, nameQuery, includeDisabled = false } = {}) {
++  const nodes = Array.isArray(tree?.nodes) ? tree.nodes : [];
++  const targetRole = role ? String(role).trim().toLowerCase() : null;
++  const queryLower = nameQuery ? String(nameQuery).trim().toLowerCase() : null;
++
++  return nodes.filter((node) => {
++    if (!includeDisabled && node.ariaDisabled) return false;
++    if (targetRole && node.role !== targetRole) return false;
++    if (queryLower) {
++      const hay = `${node.accessibleName || ""} ${node.accessibleDescription || ""} ${node.name || ""} ${node.id || ""}`.toLowerCase();
++      if (!hay.includes(queryLower)) return false;
++    }
++    return true;
++  });
++}
++
++module.exports = {
++  extractAriaAccessibilityTree,
++  findInteractiveTargetsByAriaRoleAndName
++};
+diff --git a/desktop/windows/browser/executive-brief-and-claim-cards-exporter.cjs b/desktop/windows/browser/executive-brief-and-claim-cards-exporter.cjs
+new file mode 100644
+index 0000000..e5999bf
+--- /dev/null
++++ b/desktop/windows/browser/executive-brief-and-claim-cards-exporter.cjs
+@@ -0,0 +1,208 @@
++"use strict";
++
++const crypto = require("node:crypto");
++const { createKosworkWorkspaceService } = require("../workspace/workspace-service.cjs");
++
++/**
++ * Koswork Executive Brief & Atomic Claim Cards Exporter
++ * (`desktop/windows/browser/executive-brief-and-claim-cards-exporter.cjs`).
++ *
++ * Deepens Requirement #2 & #5:
++ * - Transforms a multi-site research report into a structured Executive Brief
++ *   (`reports/<slug>-executive-brief.md`) and a machine-verifiable Atomic Claim Cards
++ *   deck (`reports/<slug>-claim-cards.json`) via `workspace-service.cjs`.
++ * - Each Atomic Claim Card links `optionName`, `criterion`, `verdict`, `displayValue`,
++ *   verbatim `quote`, exact UTF-16 `[startUtf16..endUtf16]` range, `sourceUrl`,
++ *   `sourceTitle`, distinct `pageDate` / `eventDate` / `fetchedAt`, and a deterministic
++ *   `claimCardId` SHA-256 proof digest.
++ * - Explicitly flags bare-link rejections (`bareLinkRejected: true`), contradictions,
++ *   outdated sources, and unavailable HTTP 503 pages.
++ */
++
++function computeClaimCardDigest(card) {
++  const payload = [
++    card.optionName || "",
++    card.criterion || "",
++    card.displayValue || "",
++    card.quote || "",
++    String(card.startUtf16 ?? -1),
++    String(card.endUtf16 ?? -1),
++    card.sourceUrl || "",
++    card.pageDate || "",
++    card.eventDate || ""
++  ].join("|");
++  return crypto.createHash("sha256").update(payload, "utf8").digest("hex").slice(0, 16);
++}
++
++function buildExecutiveBriefAndClaimCards(report = {}) {
++  const question = report.question || "Исследовательский запрос";
++  const claimCards = [];
++  const rejectedBareLinkClaims = [];
++
++  const contradictionSet = new Set(
++    (report.contradictions || []).map(
++      (c) => `${c.optionName || ""}||${c.criterion || ""}`
++    )
++  );
++  const outdatedMap = new Map();
++  for (const out of report.outdatedSources || []) {
++    const k = `${out.optionName || ""}||${out.criterion || ""}`;
++    if (!outdatedMap.has(k)) outdatedMap.set(k, []);
++    outdatedMap.get(k).push(out);
++  }
++
++  for (const row of report.comparisonRows || []) {
++    const optionName = row.optionName || "Option";
++    const cells = row.cells || {};
++    for (const [criterion, cell] of Object.entries(cells)) {
++      const key = `${optionName}||${criterion}`;
++      const hasValidQuote =
++        Boolean(cell && cell.quote && String(cell.quote).trim().length > 0) &&
++        Number.isInteger(cell.startUtf16) &&
++        cell.startUtf16 >= 0 &&
++        Number.isInteger(cell.endUtf16) &&
++        cell.endUtf16 > cell.startUtf16;
++
++      if (!hasValidQuote) {
++        if (cell && cell.sourceUrl && (!cell.quote || !String(cell.quote).trim())) {
++          rejectedBareLinkClaims.push({
++            optionName,
++            criterion,
++            sourceUrl: cell.sourceUrl,
++            reason: "BARE_LINK_NOT_PROOF_OF_CLAIM"
++          });
++        }
++        continue;
++      }
++
++      const hasContradiction = contradictionSet.has(key) || Boolean(cell.hasConflict);
++      const supersededSources = outdatedMap.get(key) || [];
++      const verdict = hasContradiction
++        ? "CONTRADICTED_RESOLVED_BY_FRESHNESS"
++        : "CONFIRMED_WITH_UTF16_EXCERPT";
++
++      const card = {
++        optionName,
++        criterion,
++        verdict,
++        displayValue: cell.displayValue || cell.value || "",
++        quote: cell.quote,
++        startUtf16: cell.startUtf16,
++        endUtf16: cell.endUtf16,
++        sourceUrl: cell.sourceUrl || "",
++        sourceTitle: cell.sourceTitle || cell.sourceUrl || "",
++        pageDate: cell.pageDate || null,
++        eventDate: cell.eventDate || null,
++        fetchedAt: cell.fetchedAt || null,
++        supersededSourcesCount: supersededSources.length,
++        supersededSources
++      };
++      card.claimCardId = `card-${computeClaimCardDigest(card)}`;
++      claimCards.push(card);
++    }
++  }
++
++  const unavailableSources = (report.unavailableSources || []).map((u) => ({
++    url: u.url,
++    statusCode: u.statusCode || 503,
++    reason: u.reason || "Источник временно недоступен"
++  }));
++
++  return {
++    generatedAt: new Date().toISOString(),
++    question,
++    summaryCounts: {
++      totalVerifiedClaimCards: claimCards.length,
++      contradictedResolvedCards: claimCards.filter(
++        (c) => c.verdict === "CONTRADICTED_RESOLVED_BY_FRESHNESS"
++      ).length,
++      unavailableSourcesCount: unavailableSources.length,
++      rejectedBareLinkClaimsCount: rejectedBareLinkClaims.length,
++      unknownCriteriaCount: (report.unknowns || []).length
++    },
++    claimCards,
++    unavailableSources,
++    rejectedBareLinkClaims,
++    unknowns: report.unknowns || []
++  };
++}
++
++function renderExecutiveBriefMarkdown(bundle) {
++  const lines = [
++    `# Исполнительное резюме и карточки верифицированных утверждений`,
++    ``,
++    `**Исследовательский вопрос:** ${bundle.question}`,
++    ``,
++    `## Сводка доказательной базы`,
++    `- **Верифицировано карточек утверждений (с UTF-16 выдержками):** ${bundle.summaryCounts.totalVerifiedClaimCards}`,
++    `- **Разрешено межсайтовых противоречий по датам (\`eventDate > pageDate > fetchedAt\`):** ${bundle.summaryCounts.contradictedResolvedCards}`,
++    `- **Недоступных источников (HTTP 503 / ошибка сети):** ${bundle.summaryCounts.unavailableSourcesCount}`,
++    `- **Отклонено голых ссылок без выдержки (\`BARE_LINK_NOT_PROOF_OF_CLAIM\`):** ${bundle.summaryCounts.rejectedBareLinkClaimsCount}`,
++    `- **Неизвестных / неподтвержденных полей:** ${bundle.summaryCounts.unknownCriteriaCount}`,
++    ``,
++    `## Карточки утверждений (Atomic Claim Cards)`
++  ];
++
++  for (const card of bundle.claimCards) {
++    lines.push(
++      `- **[${card.claimCardId}] ${card.optionName} — ${card.criterion}:** \`${card.displayValue}\` (${card.verdict}) — Выдержка: «${card.quote}» \`[${card.startUtf16}..${card.endUtf16}]\` — Источник: [${card.sourceTitle}](${card.sourceUrl}) (\`pageDate: ${card.pageDate || "н/д"}\`, \`eventDate: ${card.eventDate || "н/д"}\`, \`fetchedAt: ${card.fetchedAt || "н/д"}\`)`
++    );
++  }
++
++  if (bundle.unavailableSources.length > 0) {
++    lines.push(``, `## Недоступные источники`);
++    for (const u of bundle.unavailableSources) {
++      lines.push(`- \`${u.url}\` — статус \`${u.statusCode}\` (${u.reason})`);
++    }
++  }
++
++  if (bundle.rejectedBareLinkClaims.length > 0) {
++    lines.push(``, `## Отклоненные голые ссылки (без подтверждающей цитаты)`);
++    for (const r of bundle.rejectedBareLinkClaims) {
++      lines.push(
++        `- **${r.optionName} / ${r.criterion}:** \`${r.sourceUrl}\` — отклонено (\`${r.reason}\`)`
++      );
++    }
++  }
++
++  return lines.join("\n") + "\n";
++}
++
++async function saveExecutiveBriefAndClaimCardsViaWorkspace({
++  workspaceRoot,
++  slug = "research-executive-brief",
++  report = {},
++  signal = null
++} = {}) {
++  const bundle = buildExecutiveBriefAndClaimCards(report);
++  const md = renderExecutiveBriefMarkdown(bundle);
++  const json = JSON.stringify(bundle, null, 2) + "\n";
++
++  const svc = createKosworkWorkspaceService();
++  await svc.connectFolder({ folderPath: workspaceRoot, signal });
++
++  const markdownFile = await svc.createFile({
++    relativePath: `reports/${slug}-executive-brief.md`,
++    content: md,
++    createParents: true,
++    signal
++  });
++  const jsonFile = await svc.createFile({
++    relativePath: `reports/${slug}-claim-cards.json`,
++    content: json,
++    createParents: true,
++    signal
++  });
++
++  return {
++    bundle,
++    markdownFile,
++    jsonFile
++  };
++}
++
++module.exports = {
++  buildExecutiveBriefAndClaimCards,
++  renderExecutiveBriefMarkdown,
++  saveExecutiveBriefAndClaimCardsViaWorkspace
++};
+diff --git a/desktop/windows/browser/multipart-upload-and-chunk-downloader.cjs b/desktop/windows/browser/multipart-upload-and-chunk-downloader.cjs
+new file mode 100644
+index 0000000..04c49e6
+--- /dev/null
++++ b/desktop/windows/browser/multipart-upload-and-chunk-downloader.cjs
+@@ -0,0 +1,179 @@
++"use strict";
++
++const fs = require("node:fs");
++const path = require("node:path");
++const crypto = require("node:crypto");
++const {
++  verifyFileSelectionPolicy,
++  resolveAllowedDownloadTarget
++} = require("./policy.cjs");
++
++/**
++ * Koswork RFC 7578 Multipart Form-Data Builder & Verified Chunked Downloader
++ * (`desktop/windows/browser/multipart-upload-and-chunk-downloader.cjs`).
++ *
++ * Deepens Requirement #4:
++ * - Validates file selection paths strictly against the allowed workspace folder and
++ *   forbidden extensions (`.exe`, `.bat`, `.cmd`, `.ps1`, `.env`, `.pem`, etc.) via `policy.cjs`.
++ * - Encodes ordinary form fields and workspace file attachments into a deterministic
++ *   RFC 7578 `multipart/form-data` payload with SHA-256 attachment receipts.
++ * - Executes multi-chunk downloads into a `.part` staging file inside the allowed workspace
++ *   folder, honours `AbortController` mid-stream (removing partial `.part` files on abort),
++ *   enforces `maxBytes` caps, and verifies SHA-256 integrity before atomic rename.
++ */
++
++function assertNotAborted(signal) {
++  if (signal && signal.aborted) {
++    const err = new Error("Operation aborted by AbortSignal");
++    err.code = "BROWSER_TASK_CANCELLED";
++    throw err;
++  }
++}
++
++function buildSafeMultipartFormDataPayload({
++  workspaceRoot,
++  fields = {},
++  fileAttachments = [],
++  boundary = "----KosworkBrowserFormBoundary7MA4YWxkTrZu0gW"
++} = {}) {
++  if (!workspaceRoot) {
++    throw new Error("workspaceRoot is required for multipart form data construction");
++  }
++
++  const lines = [];
++  const acceptedFiles = [];
++
++  for (const [fieldName, rawVal] of Object.entries(fields || {})) {
++    const safeName = String(fieldName).replace(/["\r\n]/g, "");
++    const valueStr = String(rawVal ?? "");
++    lines.push(`--${boundary}`);
++    lines.push(`Content-Disposition: form-data; name="${safeName}"`);
++    lines.push("");
++    lines.push(valueStr);
++  }
++
++  for (const attachment of fileAttachments || []) {
++    const fieldName = String(attachment.fieldName || "file").replace(/["\r\n]/g, "");
++    const candidatePath = attachment.filePath || attachment.relativePath || "";
++
++    // Enforce strict workspace containment & extension policy via policy.cjs
++    const check = verifyFileSelectionPolicy(candidatePath, {
++      allowedWorkspaceRoot: workspaceRoot
++    });
++
++    const contentBuf = fs.readFileSync(check.canonicalPath);
++    const fileName = check.filename;
++    const contentType = attachment.contentType || "application/octet-stream";
++
++    lines.push(`--${boundary}`);
++    lines.push(
++      `Content-Disposition: form-data; name="${fieldName}"; filename="${fileName}"`
++    );
++    lines.push(`Content-Type: ${contentType}`);
++    lines.push(`X-Koswork-Attachment-SHA256: ${check.sha256}`);
++    lines.push("");
++    lines.push(contentBuf.toString("utf8"));
++
++    acceptedFiles.push({
++      fieldName,
++      fileName,
++      safePath: check.canonicalPath,
++      relativePath: check.relativePath,
++      byteLength: check.sizeBytes,
++      sha256: check.sha256,
++      contentType
++    });
++  }
++
++  lines.push(`--${boundary}--`);
++  lines.push("");
++
++  const bodyText = lines.join("\r\n");
++  return {
++    contentTypeHeader: `multipart/form-data; boundary=${boundary}`,
++    boundary,
++    bodyText,
++    byteLength: Buffer.byteLength(bodyText, "utf8"),
++    acceptedFiles,
++    fieldCount: Object.keys(fields || {}).length
++  };
++}
++
++async function executeVerifiedChunkedDownload({
++  workspaceRoot,
++  fileName = "downloaded-artifact.txt",
++  subDir = "downloads",
++  chunks = [],
++  expectedSha256 = null,
++  maxBytes = 10 * 1024 * 1024,
++  signal = null
++} = {}) {
++  assertNotAborted(signal);
++  const allowedDownloadDir = path.join(workspaceRoot, subDir);
++  const dlTarget = resolveAllowedDownloadTarget(fileName, {
++    allowedDownloadDir,
++    allowedWorkspaceRoot: workspaceRoot
++  });
++  const finalPath = dlTarget.targetPath;
++  const partPath = `${finalPath}.part`;
++
++  let bytesWritten = 0;
++  const hash = crypto.createHash("sha256");
++
++  try {
++    fs.writeFileSync(partPath, Buffer.alloc(0));
++    for (let i = 0; i < chunks.length; i += 1) {
++      assertNotAborted(signal);
++      const rawChunk = chunks[i];
++      const buf = Buffer.isBuffer(rawChunk)
++        ? rawChunk
++        : Buffer.from(String(rawChunk ?? ""), "utf8");
++
++      if (bytesWritten + buf.byteLength > maxBytes) {
++        const err = new Error(
++          `Chunked download exceeded maxBytes limit (${bytesWritten + buf.byteLength} > ${maxBytes})`
++        );
++        err.code = "DOWNLOAD_MAX_BYTES_EXCEEDED";
++        throw err;
++      }
++
++      fs.appendFileSync(partPath, buf);
++      hash.update(buf);
++      bytesWritten += buf.byteLength;
++    }
++
++    assertNotAborted(signal);
++    const actualSha256 = hash.digest("hex");
++    if (expectedSha256 && actualSha256.toLowerCase() !== String(expectedSha256).toLowerCase()) {
++      const err = new Error(
++        `Downloaded file SHA-256 mismatch: expected ${expectedSha256}, got ${actualSha256}`
++      );
++      err.code = "DOWNLOAD_SHA256_MISMATCH";
++      throw err;
++    }
++
++    fs.renameSync(partPath, finalPath);
++    return {
++      status: "completed",
++      savedPath: finalPath,
++      relativePath: path.relative(workspaceRoot, finalPath).replace(/\\/g, "/"),
++      bytesWritten,
++      chunkCount: chunks.length,
++      sha256: actualSha256
++    };
++  } catch (err) {
++    if (fs.existsSync(partPath)) {
++      try {
++        fs.unlinkSync(partPath);
++      } catch (_) {
++        // ignore cleanup error
++      }
++    }
++    throw err;
++  }
++}
++
++module.exports = {
++  buildSafeMultipartFormDataPayload,
++  executeVerifiedChunkedDownload
++};
+diff --git a/desktop/windows/browser/shell.cjs b/desktop/windows/browser/shell.cjs
+index 999f512..67cf6f6 100644
+--- a/desktop/windows/browser/shell.cjs
++++ b/desktop/windows/browser/shell.cjs
+@@ -88,6 +88,18 @@ const {
+   buildContradictionResolutionMatrix,
+   saveContradictionResolutionMatrixViaWorkspace
+ } = require("./contradiction-resolution-matrix.cjs");
++const {
++  extractAriaAccessibilityTree,
++  findInteractiveTargetsByAriaRoleAndName
++} = require("./dom-aria-a11y-tree-extractor.cjs");
++const {
++  buildSafeMultipartFormDataPayload,
++  executeVerifiedChunkedDownload
++} = require("./multipart-upload-and-chunk-downloader.cjs");
++const {
++  buildExecutiveBriefAndClaimCards,
++  saveExecutiveBriefAndClaimCardsViaWorkspace
++} = require("./executive-brief-and-claim-cards-exporter.cjs");
+ 
+ /**
+  * Shared Tool & Execution Boundary for Koswork Browser (`desktop/windows/browser/shell.cjs`).
+@@ -174,6 +186,30 @@ const BROWSER_RESEARCH_TOOL_DEFINITIONS = Object.freeze([
+       "Проверить заголовки/мета-теги CSP, Subresource Integrity (SRI) и понижение HTTPS->HTTP в формах на открытой странице.",
+     requiredParams: ["tabId"]
+   },
++  {
++    name: "browser.extract_aria_tree",
++    description:
++      "Извлечь дерево доступности WAI-ARIA (landmarks, роли, доступные имена, смещения UTF-16) и при необходимости отфильтровать интерактивные элементы по роли и имени.",
++    requiredParams: ["tabId"]
++  },
++  {
++    name: "browser.build_multipart_form_payload",
++    description:
++      "Собрать безопасный RFC 7578 multipart/form-data пакет с проверкой вложений через политику рабочей папки и вычислением SHA-256.",
++    requiredParams: ["fields"]
++  },
++  {
++    name: "browser.execute_chunked_download",
++    description:
++      "Выполнить потоковую загрузку по чанкам в разрешённую рабочую папку с .part-стейджингом, контролем лимита байт, AbortSignal и проверкой SHA-256.",
++    requiredParams: ["fileName", "chunks"]
++  },
++  {
++    name: "browser.export_executive_brief",
++    description:
++      "Построить и сохранить исполнительное резюме и атомарные карточки верифицированных утверждений (Atomic Claim Cards) с UTF-16 выдержками.",
++    requiredParams: ["report"]
++  },
+   {
+     name: "browser.build_contradiction_matrix",
+     description:
+@@ -577,6 +613,56 @@ function createKosworkBrowserShell(options = {}) {
+         });
+       }
+ 
++      case "browser.extract_aria_tree": {
++        const obs = engine.observePage(args.tabId);
++        const tab = engine.tabs.get(String(args.tabId));
++        const tree = extractAriaAccessibilityTree({
++          html: args.rawHtml || tab?.rawSiteDef?.html || "",
++          visibleText: obs.snapshot.text || ""
++        });
++        if (args.role || args.nameQuery) {
++          return {
++            tree,
++            matchedTargets: findInteractiveTargetsByAriaRoleAndName(tree, {
++              role: args.role || null,
++              nameQuery: args.nameQuery || null,
++              includeDisabled: Boolean(args.includeDisabled)
++            })
++          };
++        }
++        return { tree, matchedTargets: tree.interactiveControls };
++      }
++
++      case "browser.build_multipart_form_payload":
++        return buildSafeMultipartFormDataPayload({
++          workspaceRoot: resolvedWorkspaceRoot,
++          fields: args.fields || {},
++          fileAttachments: args.fileAttachments || [],
++          boundary: args.boundary
++        });
++
++      case "browser.execute_chunked_download":
++        return await executeVerifiedChunkedDownload({
++          workspaceRoot: resolvedWorkspaceRoot,
++          fileName: args.fileName,
++          subDir: args.subDir || "downloads",
++          chunks: args.chunks || [],
++          expectedSha256: args.expectedSha256 || null,
++          maxBytes: args.maxBytes ?? 10 * 1024 * 1024,
++          signal
++        });
++
++      case "browser.export_executive_brief":
++        if (args.saveToWorkspace && resolvedWorkspaceRoot) {
++          return await saveExecutiveBriefAndClaimCardsViaWorkspace({
++            workspaceRoot: resolvedWorkspaceRoot,
++            slug: args.slug || "research-executive-brief",
++            report: args.report || {},
++            signal
++          });
++        }
++        return buildExecutiveBriefAndClaimCards(args.report || {});
++
+       case "browser.build_contradiction_matrix":
+         if (args.saveToWorkspace && resolvedWorkspaceRoot) {
+           return await saveContradictionResolutionMatrixViaWorkspace({
+diff --git a/desktop/windows/test/browser-research-acceptance.test.cjs b/desktop/windows/test/browser-research-acceptance.test.cjs
+index b047674..aa422d0 100644
+--- a/desktop/windows/test/browser-research-acceptance.test.cjs
++++ b/desktop/windows/test/browser-research-acceptance.test.cjs
+@@ -3182,3 +3182,191 @@ test("35. Contradiction Resolution Audit Matrix Builder (`contradiction-resoluti
+   assert.ok(fs.existsSync(path.join(workspaceRoot, matrixRes.markdownFile.path)));
+   assert.ok(fs.existsSync(path.join(workspaceRoot, matrixRes.jsonFile.path)));
+ });
++
++test("36. WAI-ARIA Accessibility & Landmark Tree Extractor (`dom-aria-a11y-tree-extractor.cjs`) & RFC 7578 Multipart Upload / Verified Chunked Downloader (`multipart-upload-and-chunk-downloader.cjs`)", async () => {
++  const workspaceRoot = createTempWorkspace();
++  const shell = createKosworkBrowserShell({ workspaceRoot });
++  const engine = shell.engine;
++
++  const portalHtml = `
++    <header role="banner">Портал закупок Koswork</header>
++    <nav aria-label="Основная навигация"><a href="/catalog">Каталог</a></nav>
++    <main role="main">
++      <label id="lbl-vendor">Название поставщика</label>
++      <input id="vendor-input" type="text" aria-labelledby="lbl-vendor" value="Option Alpha" />
++      <input id="spec-upload" type="file" aria-label="Файл спецификации" />
++      <button id="btn-apply" aria-label="Отправить заявку">Отправить</button>
++      <button id="btn-disabled" disabled aria-label="Удалить черновик">Удалить</button>
++      <div role="alert" aria-live="assertive">Форма готова к проверке</div>
++    </main>
++  `;
++
++  engine.registerSyntheticSite("https://corpus.local/a11y-portal", {
++    title: "Портал с разметкой WAI-ARIA",
++    pageDate: "2026-10-20",
++    eventDate: "2026-10-20",
++    html: portalHtml,
++    text: "Портал закупок Koswork Каталог Название поставщика Отправить Удалить Форма готова к проверке"
++  });
++
++  await engine.navigate({
++    tabId: "tab-a11y",
++    url: "https://corpus.local/a11y-portal"
++  });
++
++  const a11yRes = await shell.dispatchToolCall(
++    "browser.extract_aria_tree",
++    {
++      tabId: "tab-a11y",
++      role: "button",
++      nameQuery: "Отправить"
++    },
++    { workspaceRoot }
++  );
++
++  assert.ok(a11yRes.tree.landmarks.length >= 2);
++  assert.equal(a11yRes.tree.liveRegions.length, 1);
++  assert.equal(a11yRes.matchedTargets.length, 1);
++  assert.equal(a11yRes.matchedTargets[0].selector, "#btn-apply");
++  assert.ok(a11yRes.matchedTargets[0].startUtf16 >= 0);
++
++  // Create allowed attachment inside workspace
++  const allowedSpecPath = path.join(workspaceRoot, "vendor-spec.txt");
++  fs.writeFileSync(allowedSpecPath, "Option Alpha SLA: 99.95%\n", "utf8");
++
++  const mpRes = await shell.dispatchToolCall(
++    "browser.build_multipart_form_payload",
++    {
++      fields: { vendor: "Option Alpha", tier: "Enterprise" },
++      fileAttachments: [
++        {
++          fieldName: "spec_doc",
++          filePath: allowedSpecPath,
++          contentType: "text/plain"
++        }
++      ]
++    },
++    { workspaceRoot }
++  );
++
++  assert.ok(mpRes.contentTypeHeader.startsWith("multipart/form-data; boundary="));
++  assert.equal(mpRes.acceptedFiles.length, 1);
++  assert.equal(mpRes.acceptedFiles[0].fileName, "vendor-spec.txt");
++  assert.ok(mpRes.bodyText.includes('filename="vendor-spec.txt"'));
++
++  // Forbidden attachment (.env) must be rejected by policy
++  const forbiddenEnvPath = path.join(workspaceRoot, ".env");
++  fs.writeFileSync(forbiddenEnvPath, "SECRET=1", "utf8");
++  await assert.rejects(
++    async () =>
++      shell.dispatchToolCall(
++        "browser.build_multipart_form_payload",
++        {
++          fields: { vendor: "Option Alpha" },
++          fileAttachments: [{ fieldName: "env", filePath: forbiddenEnvPath }]
++        },
++        { workspaceRoot }
++      ),
++    (err) => err.code === "BROWSER_FORBIDDEN_ATTACHMENT"
++  );
++
++  // Verified chunked download with SHA-256 check
++  const crypto = require("node:crypto");
++  const chunks = ["Часть 1: Спецификация ", "Option Alpha — $49/мес."];
++  const expectedSha = crypto
++    .createHash("sha256")
++    .update(Buffer.concat(chunks.map((c) => Buffer.from(c, "utf8"))))
++    .digest("hex");
++
++  const dlRes = await shell.dispatchToolCall(
++    "browser.execute_chunked_download",
++    {
++      fileName: "alpha-chunked-spec.txt",
++      chunks,
++      expectedSha256: expectedSha
++    },
++    { workspaceRoot }
++  );
++
++  assert.equal(dlRes.status, "completed");
++  assert.equal(dlRes.sha256, expectedSha);
++  assert.ok(fs.existsSync(dlRes.savedPath));
++});
++
++test("37. Executive Brief & Atomic Claim Cards Exporter (`executive-brief-and-claim-cards-exporter.cjs` & `browser.export_executive_brief` via `shell.cjs`)", async () => {
++  const workspaceRoot = createTempWorkspace();
++  const shell = createKosworkBrowserShell({ workspaceRoot });
++
++  const sampleReport = {
++    question: "Сравнение Option Alpha и Option Beta по цене и SLA",
++    comparisonRows: [
++      {
++        optionName: "Option Alpha",
++        cells: {
++          Цена: {
++            value: "$49/мес",
++            displayValue: "$49/мес",
++            quote: "С ноября 2026 года тариф Option Alpha составляет $49/мес.",
++            startUtf16: 12,
++            endUtf16: 69,
++            sourceUrl: "https://corpus.local/alpha-2026",
++            sourceTitle: "Прайс Alpha 2026",
++            pageDate: "2026-10-15",
++            eventDate: "2026-11-01",
++            fetchedAt: "2026-11-10T08:00:00.000Z",
++            hasConflict: true
++          },
++          "Голая ссылка без цитаты": {
++            value: "99.99%",
++            displayValue: "99.99%",
++            quote: "",
++            startUtf16: -1,
++            endUtf16: -1,
++            sourceUrl: "https://corpus.local/bare-link"
++          }
++        }
++      }
++    ],
++    contradictions: [
++      {
++        optionName: "Option Alpha",
++        criterion: "Цена",
++        summary: "Расхождение $49/мес против $79/мес"
++      }
++    ],
++    outdatedSources: [
++      {
++        optionName: "Option Alpha",
++        criterion: "Цена",
++        url: "https://corpus.local/alpha-2025",
++        pageDate: "2025-05-10"
++      }
++    ],
++    unavailableSources: [
++      {
++        url: "https://corpus.local/unavailable-503",
++        statusCode: 503,
++        reason: "HTTP 503 Service Unavailable"
++      }
++    ],
++    unknowns: [{ optionName: "Option Beta", criterion: "SLA" }]
++  };
++
++  const briefRes = await shell.dispatchToolCall(
++    "browser.export_executive_brief",
++    {
++      saveToWorkspace: true,
++      slug: "alpha-beta-brief",
++      report: sampleReport
++    },
++    { workspaceRoot }
++  );
++
++  assert.equal(briefRes.bundle.summaryCounts.totalVerifiedClaimCards, 1);
++  assert.equal(briefRes.bundle.summaryCounts.contradictedResolvedCards, 1);
++  assert.equal(briefRes.bundle.summaryCounts.rejectedBareLinkClaimsCount, 1);
++  assert.equal(briefRes.bundle.summaryCounts.unavailableSourcesCount, 1);
++  assert.ok(briefRes.bundle.claimCards[0].claimCardId.startsWith("card-"));
++  assert.ok(fs.existsSync(path.join(workspaceRoot, briefRes.markdownFile.path)));
++  assert.ok(fs.existsSync(path.join(workspaceRoot, briefRes.jsonFile.path)));
++});
+diff --git a/docs/koswork-browser-research.md b/docs/koswork-browser-research.md
+index 9c63641..78a9d45 100644
+--- a/docs/koswork-browser-research.md
++++ b/docs/koswork-browser-research.md
+@@ -7,3 +7,13 @@
+ - **`desktop/windows/browser/contradiction-resolution-matrix.cjs`**:
+   - `buildContradictionResolutionMatrix(claims)`, `renderContradictionMatrixMarkdown(matrix)`, and `saveContradictionResolutionMatrixViaWorkspace({ workspaceRoot, slug, claims })`: groups competing claims per `(optionName, criterion)`, applies temporal precedence (`eventDate > pageDate > fetchedAt`) via `compareFactsForCriterion`, and saves a dedicated side-by-side Markdown (`reports/<slug>.md`) and JSON (`reports/<slug>.json`) Contradiction Resolution Audit Matrix with exact UTF-16 `[startUtf16..endUtf16]` excerpts via `workspace-service.cjs`.
+ - **Exposed via `shell.cjs` (`browser.align_bilingual_claims`, `browser.inspect_page_security`, `browser.build_contradiction_matrix`) and verified in Subtests 34 and 35 (`45/45` total suites passing).**
++
++### Phase 22: WAI-ARIA Accessibility & Landmark Tree Extractor, RFC 7578 Multipart Upload / Verified Chunked Downloader & Executive Brief / Atomic Claim Cards Exporter
++- **`desktop/windows/browser/dom-aria-a11y-tree-extractor.cjs`**:
++  - `extractAriaAccessibilityTree({ html, visibleText })` and `findInteractiveTargetsByAriaRoleAndName(tree, { role, nameQuery, includeDisabled })`: extracts a structured WAI-ARIA landmark (`main`, `navigation`, `banner`, `contentinfo`, `form`, `dialog`, `alert`), interactive control (`button`, `link`, `textbox`, `searchbox`, `checkbox`, `radio`, `combobox`, `file_input`), and live region (`aria-live`, `role="alert"`) tree with resolved `aria-label` / `aria-labelledby` / `aria-describedby` names, exact UTF-16 `[startUtf16..endUtf16]` offsets, and deterministic selectors/bounds.
++- **`desktop/windows/browser/multipart-upload-and-chunk-downloader.cjs`**:
++  - `buildSafeMultipartFormDataPayload({ workspaceRoot, fields, fileAttachments, boundary })`: validates every attached file through `verifyFileSelectionPolicy` (`policy.cjs`), blocks forbidden `.env` / `.exe` / outside-workspace paths (`BROWSER_FORBIDDEN_ATTACHMENT`), computes SHA-256 digests, and produces an RFC 7578 `multipart/form-data` payload.
++  - `executeVerifiedChunkedDownload({ workspaceRoot, fileName, subDir, chunks, expectedSha256, maxBytes, signal })`: streams chunks into a `.part` staging file inside the allowed workspace folder via `resolveAllowedDownloadTarget`, respects `AbortSignal` and `maxBytes`, verifies SHA-256 integrity, and atomically finalizes the file.
++- **`desktop/windows/browser/executive-brief-and-claim-cards-exporter.cjs`**:
++  - `buildExecutiveBriefAndClaimCards(report)` and `saveExecutiveBriefAndClaimCardsViaWorkspace({ workspaceRoot, slug, report })`: generates an Executive Brief (`reports/<slug>-executive-brief.md`) and a machine-verifiable Atomic Claim Cards deck (`reports/<slug>-claim-cards.json`) with `claimCardId` SHA-256 digests, verbatim UTF-16 `[startUtf16..endUtf16]` quotes, distinct `pageDate` / `eventDate` / `fetchedAt`, and explicit bare-link rejections (`BARE_LINK_NOT_PROOF_OF_CLAIM`).
++- **Exposed via `shell.cjs` (`browser.extract_aria_tree`, `browser.build_multipart_form_payload`, `browser.execute_chunked_download`, `browser.export_executive_brief`) and verified in Subtests 36 and 37 (`47/47` total suites passing).**
+-- 
+2.39.5
+

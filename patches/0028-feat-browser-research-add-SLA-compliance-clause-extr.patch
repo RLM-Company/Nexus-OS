@@ -1,0 +1,849 @@
+From e9f9ae9df5db26d8ab540b0292b9a59f3c8d98a9 Mon Sep 17 00:00:00 2001
+From: Kosmora Engineering <eng@kosmora.ai>
+Date: Tue, 10 Nov 2026 12:20:06 +0000
+Subject: [PATCH 28/32] feat(browser-research): add SLA/compliance clause
+ extractor, origin storage partition guard, and Mermaid knowledge graph
+ exporter (Phase 26)
+
+---
+ ...kie-storage-and-origin-isolation-guard.cjs | 166 ++++++++++++++
+ .../mermaid-knowledge-graph-exporter.cjs      | 205 ++++++++++++++++++
+ desktop/windows/browser/shell.cjs             |  48 ++++
+ ...-compliance-and-legal-clause-extractor.cjs | 174 +++++++++++++++
+ .../test/browser-research-acceptance.test.cjs | 166 ++++++++++++++
+ docs/koswork-browser-research.md              |   9 +
+ 6 files changed, 768 insertions(+)
+ create mode 100644 desktop/windows/browser/cookie-storage-and-origin-isolation-guard.cjs
+ create mode 100644 desktop/windows/browser/mermaid-knowledge-graph-exporter.cjs
+ create mode 100644 desktop/windows/browser/sla-compliance-and-legal-clause-extractor.cjs
+
+diff --git a/desktop/windows/browser/cookie-storage-and-origin-isolation-guard.cjs b/desktop/windows/browser/cookie-storage-and-origin-isolation-guard.cjs
+new file mode 100644
+index 0000000..45844c4
+--- /dev/null
++++ b/desktop/windows/browser/cookie-storage-and-origin-isolation-guard.cjs
+@@ -0,0 +1,166 @@
++"use strict";
++
++/**
++ * Koswork Per-Origin Cookie & Storage Partition Isolation Guard
++ * (`desktop/windows/browser/cookie-storage-and-origin-isolation-guard.cjs`).
++ *
++ * Deepens Requirements #4, #6 & #7:
++ * - Isolates browser storage and cookies across two strict partitions:
++ *   1. `"user_browsing"` (normal user browsing state, preserved across research tasks)
++ *   2. `"agent_research_ephemeral"` (ephemeral agent research storage, purgeable without
++ *      touching the user's normal session).
++ * - Enforces per-origin boundaries (`CROSS_ORIGIN_STORAGE_READ_BLOCKED`), blocks script
++ *   access to `HttpOnly` cookies (`COOKIE_HTTPONLY_SCRIPT_ACCESS_DENIED`), and rejects
++ *   insecure `SameSite=None` cookies on non-HTTPS origins (`COOKIE_SAMESITE_NONE_REQUIRES_SECURE`).
++ */
++
++function normalizeOrigin(rawUrl = "") {
++  const u = new URL(String(rawUrl || ""));
++  return u.origin.toLowerCase();
++}
++
++class KosworkOriginStorageIsolationGuard {
++  constructor() {
++    // key: `${partition}||${origin}` -> { cookies: Map, localStorage: Map }
++    this.buckets = new Map();
++  }
++
++  _getBucket(partition = "agent_research_ephemeral", originUrl = "https://corpus.local") {
++    const part =
++      partition === "user_browsing" ? "user_browsing" : "agent_research_ephemeral";
++    const origin = normalizeOrigin(originUrl);
++    const key = `${part}||${origin}`;
++    if (!this.buckets.has(key)) {
++      this.buckets.set(key, {
++        partition: part,
++        origin,
++        cookies: new Map(),
++        localStorage: new Map()
++      });
++    }
++    return this.buckets.get(key);
++  }
++
++  setCookie({
++    partition = "agent_research_ephemeral",
++    originUrl,
++    name,
++    value,
++    httpOnly = false,
++    secure = true,
++    sameSite = "Lax"
++  } = {}) {
++    const origin = normalizeOrigin(originUrl);
++    const isHttps = origin.startsWith("https:");
++    if (String(sameSite).toLowerCase() === "none" && (!secure || !isHttps)) {
++      const err = new Error(
++        `Cookie "${name}" with SameSite=None requires Secure on an https: origin`
++      );
++      err.code = "COOKIE_SAMESITE_NONE_REQUIRES_SECURE";
++      throw err;
++    }
++
++    const bucket = this._getBucket(partition, originUrl);
++    const entry = {
++      name: String(name),
++      value: String(value ?? ""),
++      httpOnly: Boolean(httpOnly),
++      secure: Boolean(secure),
++      sameSite: String(sameSite || "Lax"),
++      updatedAt: new Date().toISOString()
++    };
++    bucket.cookies.set(entry.name, entry);
++    return { status: "ok", partition: bucket.partition, origin: bucket.origin, cookie: entry };
++  }
++
++  readCookie({
++    partition = "agent_research_ephemeral",
++    requesterOriginUrl,
++    targetOriginUrl,
++    name,
++    viaDocumentCookieScript = false
++  } = {}) {
++    const reqOrigin = normalizeOrigin(requesterOriginUrl);
++    const tgtOrigin = normalizeOrigin(targetOriginUrl || requesterOriginUrl);
++    if (reqOrigin !== tgtOrigin) {
++      const err = new Error(
++        `Cross-origin cookie read blocked: ${reqOrigin} cannot read ${tgtOrigin}`
++      );
++      err.code = "CROSS_ORIGIN_STORAGE_READ_BLOCKED";
++      throw err;
++    }
++
++    const bucket = this._getBucket(partition, tgtOrigin);
++    const cookie = bucket.cookies.get(String(name));
++    if (!cookie) return null;
++
++    if (viaDocumentCookieScript && cookie.httpOnly) {
++      const err = new Error(
++        `Script access to HttpOnly cookie "${name}" on ${tgtOrigin} is denied`
++      );
++      err.code = "COOKIE_HTTPONLY_SCRIPT_ACCESS_DENIED";
++      throw err;
++    }
++
++    return cookie;
++  }
++
++  setLocalStorageItem({
++    partition = "agent_research_ephemeral",
++    originUrl,
++    key,
++    value
++  } = {}) {
++    const bucket = this._getBucket(partition, originUrl);
++    bucket.localStorage.set(String(key), String(value ?? ""));
++    return {
++      status: "ok",
++      partition: bucket.partition,
++      origin: bucket.origin,
++      key: String(key)
++    };
++  }
++
++  getLocalStorageItem({
++    partition = "agent_research_ephemeral",
++    requesterOriginUrl,
++    targetOriginUrl,
++    key
++  } = {}) {
++    const reqOrigin = normalizeOrigin(requesterOriginUrl);
++    const tgtOrigin = normalizeOrigin(targetOriginUrl || requesterOriginUrl);
++    if (reqOrigin !== tgtOrigin) {
++      const err = new Error(
++        `Cross-origin localStorage read blocked: ${reqOrigin} cannot read ${tgtOrigin}`
++      );
++      err.code = "CROSS_ORIGIN_STORAGE_READ_BLOCKED";
++      throw err;
++    }
++    const bucket = this._getBucket(partition, tgtOrigin);
++    return bucket.localStorage.has(String(key))
++      ? bucket.localStorage.get(String(key))
++      : null;
++  }
++
++  purgeEphemeralResearchPartition() {
++    let purgedOrigins = 0;
++    for (const [k, bucket] of this.buckets.entries()) {
++      if (bucket.partition === "agent_research_ephemeral") {
++        this.buckets.delete(k);
++        purgedOrigins += 1;
++      }
++    }
++    const remainingUserBuckets = Array.from(this.buckets.values()).filter(
++      (b) => b.partition === "user_browsing"
++    ).length;
++
++    return {
++      purgedOrigins,
++      remainingUserBuckets
++    };
++  }
++}
++
++module.exports = {
++  KosworkOriginStorageIsolationGuard
++};
+diff --git a/desktop/windows/browser/mermaid-knowledge-graph-exporter.cjs b/desktop/windows/browser/mermaid-knowledge-graph-exporter.cjs
+new file mode 100644
+index 0000000..015b7ca
+--- /dev/null
++++ b/desktop/windows/browser/mermaid-knowledge-graph-exporter.cjs
+@@ -0,0 +1,205 @@
++"use strict";
++
++const { createKosworkWorkspaceService } = require("../workspace/workspace-service.cjs");
++
++/**
++ * Koswork Research Knowledge Graph & Mermaid Visual Timeline Exporter
++ * (`desktop/windows/browser/mermaid-knowledge-graph-exporter.cjs`).
++ *
++ * Deepens Requirements #2, #3 & #5:
++ * - Synthesizes a multi-site research report into a directed Provenance Knowledge Graph
++ *   (`nodes`, `edges`) and renders embedded Mermaid `flowchart LR` + chronological
++ *   `timeline` diagrams (`eventDate` vs `pageDate` vs `fetchedAt`) saved via
++ *   `workspace-service.cjs` (`reports/<slug>-knowledge-graph.md` and `.json`).
++ */
++
++function sanitizeMermaidLabel(str = "") {
++  return String(str ?? "")
++    .replace(/["[\]{}()<>|#]/g, " ")
++    .replace(/\s+/g, " ")
++    .trim();
++}
++
++function buildResearchKnowledgeGraphAndMermaidReport(report = {}) {
++  const question = report.question || "Многосайтовое исследование Koswork";
++  const nodes = [];
++  const edges = [];
++  const timelineEvents = [];
++
++  const qNodeId = "Q0";
++  nodes.push({ id: qNodeId, kind: "question", label: question });
++
++  let srcIndex = 1;
++  let claimIndex = 1;
++  const sourceNodeByUrl = new Map();
++
++  function ensureSourceNode(url, title, pageDate, eventDate, fetchedAt, status = "200") {
++    const cleanUrl = String(url || "https://corpus.local/unknown");
++    if (sourceNodeByUrl.has(cleanUrl)) {
++      return sourceNodeByUrl.get(cleanUrl);
++    }
++    const id = `S${srcIndex}`;
++    srcIndex += 1;
++    const node = {
++      id,
++      kind: "source",
++      url: cleanUrl,
++      title: title || cleanUrl,
++      pageDate: pageDate || null,
++      eventDate: eventDate || null,
++      fetchedAt: fetchedAt || null,
++      httpStatus: status
++    };
++    sourceNodeByUrl.set(cleanUrl, node);
++    nodes.push(node);
++    edges.push({ from: qNodeId, to: id, relation: "opened_source" });
++
++    if (eventDate || pageDate) {
++      timelineEvents.push({
++        date: eventDate || pageDate,
++        dateKind: eventDate ? "eventDate" : "pageDate",
++        sourceId: id,
++        url: cleanUrl,
++        title: title || cleanUrl
++      });
++    }
++    return node;
++  }
++
++  for (const row of report.comparisonRows || []) {
++    const optionName = row.optionName || "Option";
++    for (const [criterion, cell] of Object.entries(row.cells || {})) {
++      if (!cell || !cell.quote || !Number.isInteger(cell.startUtf16) || cell.startUtf16 < 0) {
++        continue;
++      }
++      const srcNode = ensureSourceNode(
++        cell.sourceUrl,
++        cell.sourceTitle,
++        cell.pageDate,
++        cell.pageDate && cell.eventDate ? cell.eventDate : cell.eventDate,
++        cell.fetchedAt,
++        "200"
++      );
++      const claimId = `C${claimIndex}`;
++      claimIndex += 1;
++
++      nodes.push({
++        id: claimId,
++        kind: "verified_claim",
++        optionName,
++        criterion,
++        value: cell.displayValue || cell.value || "",
++        quote: cell.quote,
++        startUtf16: cell.startUtf16,
++        endUtf16: cell.endUtf16,
++        sourceUrl: cell.sourceUrl
++      });
++
++      edges.push({
++        from: srcNode.id,
++        to: claimId,
++        relation: `utf16_[${cell.startUtf16}..${cell.endUtf16}]`
++      });
++    }
++  }
++
++  for (const unav of report.unavailableSources || []) {
++    ensureSourceNode(
++      unav.url,
++      `HTTP ${unav.statusCode || 503} Недоступен`,
++      null,
++      null,
++      null,
++      String(unav.statusCode || 503)
++    );
++  }
++
++  timelineEvents.sort((a, b) => String(a.date).localeCompare(String(b.date)));
++
++  const mermaidLines = [
++    "# Граф знаний происхождения данных и хронология источников (Mermaid)",
++    "",
++    `**Исследовательский вопрос:** ${question}`,
++    "",
++    "## 1. Направленный граф происхождения утверждений (`flowchart LR`)",
++    "```mermaid",
++    "flowchart LR",
++    `  ${qNodeId}["${sanitizeMermaidLabel(question)}"]`
++  ];
++
++  for (const node of nodes) {
++    if (node.kind === "source") {
++      mermaidLines.push(
++        `  ${node.id}["${sanitizeMermaidLabel(node.title)} (HTTP ${node.httpStatus}, eventDate: ${node.eventDate || "n/a"}, pageDate: ${node.pageDate || "n/a"})"]`
++      );
++    } else if (node.kind === "verified_claim") {
++      mermaidLines.push(
++        `  ${node.id}["${sanitizeMermaidLabel(node.optionName)} / ${sanitizeMermaidLabel(node.criterion)}: ${sanitizeMermaidLabel(node.value)} [${node.startUtf16}..${node.endUtf16}]"]`
++      );
++    }
++  }
++
++  for (const edge of edges) {
++    mermaidLines.push(`  ${edge.from} -->|${sanitizeMermaidLabel(edge.relation)}| ${edge.to}`);
++  }
++  mermaidLines.push("```", "");
++
++  mermaidLines.push(
++    "## 2. Хронологическая шкала дат источников (`timeline`)",
++    "```mermaid",
++    "timeline",
++    `  title Хронология источников (eventDate / pageDate)`
++  );
++  for (const ev of timelineEvents) {
++    mermaidLines.push(
++      `  ${ev.date} : ${sanitizeMermaidLabel(ev.title)} (${ev.dateKind})`
++    );
++  }
++  mermaidLines.push("```", "");
++
++  return {
++    question,
++    nodesCount: nodes.length,
++    edgesCount: edges.length,
++    timelineEventsCount: timelineEvents.length,
++    nodes,
++    edges,
++    timelineEvents,
++    markdownContent: mermaidLines.join("\n")
++  };
++}
++
++async function saveMermaidKnowledgeGraphViaWorkspace({
++  workspaceRoot,
++  slug = "research-knowledge-graph",
++  report = {},
++  signal = null
++} = {}) {
++  const graphBundle = buildResearchKnowledgeGraphAndMermaidReport(report);
++  const svc = createKosworkWorkspaceService();
++  await svc.connectFolder({ folderPath: workspaceRoot, signal });
++
++  const markdownFile = await svc.createFile({
++    relativePath: `reports/${slug}.md`,
++    content: graphBundle.markdownContent,
++    createParents: true,
++    signal
++  });
++  const jsonFile = await svc.createFile({
++    relativePath: `reports/${slug}.json`,
++    content: JSON.stringify(graphBundle, null, 2) + "\n",
++    createParents: true,
++    signal
++  });
++
++  return {
++    graphBundle,
++    markdownFile,
++    jsonFile
++  };
++}
++
++module.exports = {
++  buildResearchKnowledgeGraphAndMermaidReport,
++  saveMermaidKnowledgeGraphViaWorkspace
++};
+diff --git a/desktop/windows/browser/shell.cjs b/desktop/windows/browser/shell.cjs
+index 53f24de..ed69605 100644
+--- a/desktop/windows/browser/shell.cjs
++++ b/desktop/windows/browser/shell.cjs
+@@ -134,6 +134,17 @@ const {
+   buildSarif210ResearchAuditReport,
+   saveSarifAndJsonSchemaAuditViaWorkspace
+ } = require("./json-schema-and-sarif-audit-exporter.cjs");
++const {
++  extractSlaCommitmentsAndLegalClauses,
++  compareSlaCommitmentsAcrossVendors
++} = require("./sla-compliance-and-legal-clause-extractor.cjs");
++const {
++  KosworkOriginStorageIsolationGuard
++} = require("./cookie-storage-and-origin-isolation-guard.cjs");
++const {
++  buildResearchKnowledgeGraphAndMermaidReport,
++  saveMermaidKnowledgeGraphViaWorkspace
++} = require("./mermaid-knowledge-graph-exporter.cjs");
+ 
+ /**
+  * Shared Tool & Execution Boundary for Koswork Browser (`desktop/windows/browser/shell.cjs`).
+@@ -286,6 +297,24 @@ const BROWSER_RESEARCH_TOOL_DEFINITIONS = Object.freeze([
+       "Записать и агрегировать сетевой водопад вкладок (DNS/TCP/TLS/TTFB/Download) и экономию трафика от повторного использования валидных снимков.",
+     requiredParams: ["events"]
+   },
++  {
++    name: "browser.extract_sla_and_compliance",
++    description:
++      "Извлечь обязательства SLA аптайма, целевые показатели RTO/RPO и сертификаты безопасности (SOC 2 Type II, ISO/IEC 27001, GDPR, HIPAA, ФЗ-152) с точными смещениями UTF-16.",
++    requiredParams: ["tabId"]
++  },
++  {
++    name: "browser.compare_vendor_slas",
++    description:
++      "Сравнить обязательства SLA и сертификаты между поставщиками по верифицированным снимкам с отклонением голых ссылок.",
++    requiredParams: ["vendorSubmissions"]
++  },
++  {
++    name: "browser.export_mermaid_knowledge_graph",
++    description:
++      "Построить граф знаний происхождения утверждений и визуальные диаграммы Mermaid (flowchart LR + timeline дат источников) и сохранить через workspace-service.",
++    requiredParams: ["report"]
++  },
+   {
+     name: "browser.export_sarif_audit",
+     description:
+@@ -846,6 +875,25 @@ function createKosworkBrowserShell(options = {}) {
+         });
+       }
+ 
++      case "browser.extract_sla_and_compliance": {
++        const obs = engine.observePage(args.tabId);
++        return extractSlaCommitmentsAndLegalClauses(obs.snapshot);
++      }
++
++      case "browser.compare_vendor_slas":
++        return compareSlaCommitmentsAcrossVendors(args.vendorSubmissions || []);
++
++      case "browser.export_mermaid_knowledge_graph":
++        if (args.saveToWorkspace && resolvedWorkspaceRoot) {
++          return await saveMermaidKnowledgeGraphViaWorkspace({
++            workspaceRoot: resolvedWorkspaceRoot,
++            slug: args.slug || "research-knowledge-graph",
++            report: args.report || {},
++            signal
++          });
++        }
++        return buildResearchKnowledgeGraphAndMermaidReport(args.report || {});
++
+       case "browser.export_sarif_audit":
+         if (args.saveToWorkspace && resolvedWorkspaceRoot) {
+           return await saveSarifAndJsonSchemaAuditViaWorkspace({
+diff --git a/desktop/windows/browser/sla-compliance-and-legal-clause-extractor.cjs b/desktop/windows/browser/sla-compliance-and-legal-clause-extractor.cjs
+new file mode 100644
+index 0000000..bebd905
+--- /dev/null
++++ b/desktop/windows/browser/sla-compliance-and-legal-clause-extractor.cjs
+@@ -0,0 +1,174 @@
++"use strict";
++
++/**
++ * Koswork SLA Commitments, RPO/RTO & Compliance Certification Clause Extractor
++ * (`desktop/windows/browser/sla-compliance-and-legal-clause-extractor.cjs`).
++ *
++ * Deepens Requirements #2, #3 & #5:
++ * - Extracts uptime SLA percentages (`99.95%`, `99.99%`), RPO/RTO recovery targets
++ *   (`RTO < 15 мин`, `RPO <= 5 min`), and security/privacy compliance certifications
++ *   (`SOC 2 Type II`, `ISO/IEC 27001`, `GDPR`, `HIPAA`, `PCI DSS`, `ФЗ-152`) from
++ *   vendor documentation snapshots with exact UTF-16 `[startUtf16..endUtf16]` offsets
++ *   and distinct `pageDate`, `eventDate`, and `fetchedAt`.
++ * - Compares vendor SLA commitments across multiple options while rejecting bare-link
++ *   claims without a verbatim UTF-16 quote (`BARE_COMPLIANCE_LINK_REJECTED`).
++ */
++
++const CERTIFICATION_PATTERNS = [
++  { canonical: "SOC 2 Type II", re: /\bSOC\s*2(?:\s+Type\s+(?:II|2))?/gi },
++  { canonical: "ISO/IEC 27001", re: /\bISO(?:\/IEC)?\s*27001\b/gi },
++  { canonical: "GDPR", re: /\bGDPR\b/gi },
++  { canonical: "HIPAA", re: /\bHIPAA\b/gi },
++  { canonical: "PCI DSS", re: /\bPCI[\s-]*DSS\b/gi },
++  { canonical: "ФЗ-152", re: /(?:152-ФЗ|ФЗ-152)/gi }
++];
++
++function extractSlaCommitmentsAndLegalClauses(snapshot = {}) {
++  const fullText = String(snapshot.fullTextUtf16 || snapshot.text || "");
++  const uptimeCommitments = [];
++  const recoveryObjectives = [];
++  const certifications = [];
++
++  // 1. Uptime SLA percentages: e.g. "SLA 99.95%", "аптайм 99.99%"
++  const slaRe = /(?:SLA|аптайм|uptime|доступность)[^.\n]{0,40}?(\d{2}\.\d{1,3})\s*%/gi;
++  let m;
++  while ((m = slaRe.exec(fullText)) !== null) {
++    const pct = Number(m[1]);
++    const quote = m[0].trim();
++    const startUtf16 = fullText.indexOf(quote, m.index);
++    const endUtf16 = startUtf16 + quote.length;
++
++    uptimeCommitments.push({
++      uptimePct: pct,
++      quote,
++      startUtf16,
++      endUtf16,
++      url: snapshot.url || "",
++      title: snapshot.title || "",
++      pageDate: snapshot.pageDate || null,
++      eventDate: snapshot.eventDate || null,
++      fetchedAt: snapshot.fetchedAt || null
++    });
++  }
++
++  // 2. RTO / RPO recovery objectives: e.g. "RTO < 15 мин", "RPO <= 5 минут"
++  const rtoRpoRe = /\b(RTO|RPO)\s*(?:<|<=|до|не более|:|=)?\s*(\d+)\s*(мин|минут|min|minutes|сек|sec|ч|hours|hr)/gi;
++  while ((m = rtoRpoRe.exec(fullText)) !== null) {
++    const metric = m[1].toUpperCase();
++    const rawVal = Number(m[2]);
++    const unit = m[3].toLowerCase();
++    const minutes =
++      unit.startsWith("сек") || unit.startsWith("sec")
++        ? Number((rawVal / 60).toFixed(2))
++        : unit.startsWith("ч") || unit.startsWith("h")
++          ? rawVal * 60
++          : rawVal;
++    const quote = m[0].trim();
++    const startUtf16 = fullText.indexOf(quote, m.index);
++    const endUtf16 = startUtf16 + quote.length;
++
++    recoveryObjectives.push({
++      metric,
++      minutes,
++      quote,
++      startUtf16,
++      endUtf16,
++      url: snapshot.url || "",
++      pageDate: snapshot.pageDate || null,
++      eventDate: snapshot.eventDate || null,
++      fetchedAt: snapshot.fetchedAt || null
++    });
++  }
++
++  // 3. Compliance certifications
++  for (const certDef of CERTIFICATION_PATTERNS) {
++    certDef.re.lastIndex = 0;
++    while ((m = certDef.re.exec(fullText)) !== null) {
++      const quote = m[0];
++      const startUtf16 = m.index;
++      const endUtf16 = m.index + quote.length;
++      certifications.push({
++        certification: certDef.canonical,
++        quote,
++        startUtf16,
++        endUtf16,
++        url: snapshot.url || "",
++        pageDate: snapshot.pageDate || null,
++        eventDate: snapshot.eventDate || null,
++        fetchedAt: snapshot.fetchedAt || null
++      });
++    }
++  }
++
++  return {
++    url: snapshot.url || "",
++    title: snapshot.title || "",
++    pageDate: snapshot.pageDate || null,
++    eventDate: snapshot.eventDate || null,
++    fetchedAt: snapshot.fetchedAt || null,
++    uptimeCommitments,
++    recoveryObjectives,
++    certifications
++  };
++}
++
++function compareSlaCommitmentsAcrossVendors(vendorSubmissions = []) {
++  const evaluatedVendors = [];
++  const rejectedVendors = [];
++
++  for (const item of vendorSubmissions || []) {
++    const optionName = String(item?.optionName || "Vendor").trim();
++    if (item?.bareLinkOnly || !item?.snapshot) {
++      rejectedVendors.push({
++        optionName,
++        sourceUrl: item?.sourceUrl || "",
++        code: "BARE_COMPLIANCE_LINK_REJECTED",
++        reason: "Голая ссылка на страницу SLA/безопасности без UTF-16 выдержки не принимается."
++      });
++      continue;
++    }
++
++    const extracted = extractSlaCommitmentsAndLegalClauses(item.snapshot);
++    const bestUptime =
++      extracted.uptimeCommitments.length > 0
++        ? extracted.uptimeCommitments.reduce((best, cur) =>
++            cur.uptimePct > best.uptimePct ? cur : best
++          )
++        : null;
++
++    const rto = extracted.recoveryObjectives.find((r) => r.metric === "RTO") || null;
++    const rpo = extracted.recoveryObjectives.find((r) => r.metric === "RPO") || null;
++
++    evaluatedVendors.push({
++      optionName,
++      bestUptimePct: bestUptime ? bestUptime.uptimePct : null,
++      bestUptimeExcerpt: bestUptime,
++      rtoMinutes: rto ? rto.minutes : null,
++      rpoMinutes: rpo ? rpo.minutes : null,
++      certifications: Array.from(
++        new Set(extracted.certifications.map((c) => c.certification))
++      ),
++      certificationExcerpts: extracted.certifications,
++      pageDate: item.snapshot.pageDate || null,
++      eventDate: item.snapshot.eventDate || null,
++      fetchedAt: item.snapshot.fetchedAt || null
++    });
++  }
++
++  evaluatedVendors.sort(
++    (a, b) => Number(b.bestUptimePct || 0) - Number(a.bestUptimePct || 0)
++  );
++
++  return {
++    evaluatedCount: evaluatedVendors.length,
++    rejectedCount: rejectedVendors.length,
++    highestUptimeVendor: evaluatedVendors[0] ? evaluatedVendors[0].optionName : null,
++    evaluatedVendors,
++    rejectedVendors
++  };
++}
++
++module.exports = {
++  extractSlaCommitmentsAndLegalClauses,
++  compareSlaCommitmentsAcrossVendors
++};
+diff --git a/desktop/windows/test/browser-research-acceptance.test.cjs b/desktop/windows/test/browser-research-acceptance.test.cjs
+index 390e37e..f2f92bc 100644
+--- a/desktop/windows/test/browser-research-acceptance.test.cjs
++++ b/desktop/windows/test/browser-research-acceptance.test.cjs
+@@ -3878,3 +3878,169 @@ test("43. OASIS SARIF 2.1.0 Epistemic Audit & JSON Schema Validator Exporter (`j
+   assert.ok(fs.existsSync(path.join(workspaceRoot, sarifRes.sarifFile.path)));
+   assert.ok(fs.existsSync(path.join(workspaceRoot, sarifRes.schemaFile.path)));
+ });
++
++test("44. SLA Commitments, RPO/RTO & Compliance Certification Extractor (`sla-compliance-and-legal-clause-extractor.cjs`) & Per-Origin Cookie/Storage Partition Isolation Guard (`cookie-storage-and-origin-isolation-guard.cjs`)", async () => {
++  const workspaceRoot = createTempWorkspace();
++  const shell = createKosworkBrowserShell({ workspaceRoot });
++  const engine = shell.engine;
++
++  engine.registerSyntheticSite("https://corpus.local/alpha-sla", {
++    title: "Соглашение об уровне обслуживания Option Alpha",
++    pageDate: "2026-10-20",
++    eventDate: "2026-11-01",
++    text: "Гарантированный аптайм SLA 99.99% для корпоративного плана. Целевое время восстановления RTO < 15 мин и RPO <= 5 мин. Платформа сертифицирована по SOC 2 Type II, ISO/IEC 27001, GDPR и ФЗ-152."
++  });
++
++  engine.registerSyntheticSite("https://corpus.local/beta-sla", {
++    title: "Соглашение об уровне обслуживания Option Beta",
++    pageDate: "2026-10-18",
++    eventDate: "2026-11-01",
++    text: "Базовый аптайм SLA 99.90% при RTO < 60 мин. Поддерживается стандарт GDPR."
++  });
++
++  const navAlpha = await engine.navigate({
++    tabId: "tab-sla-alpha",
++    url: "https://corpus.local/alpha-sla"
++  });
++  const navBeta = await engine.navigate({
++    tabId: "tab-sla-beta",
++    url: "https://corpus.local/beta-sla"
++  });
++
++  const alphaSla = await shell.dispatchToolCall(
++    "browser.extract_sla_and_compliance",
++    { tabId: "tab-sla-alpha" },
++    { workspaceRoot }
++  );
++
++  assert.equal(alphaSla.uptimeCommitments.length, 1);
++  assert.equal(alphaSla.uptimeCommitments[0].uptimePct, 99.99);
++  assert.equal(alphaSla.recoveryObjectives.length, 2);
++  assert.ok(alphaSla.certifications.some((c) => c.certification === "SOC 2 Type II"));
++  assert.ok(alphaSla.certifications.some((c) => c.certification === "ISO/IEC 27001"));
++  assert.ok(alphaSla.certifications.some((c) => c.certification === "ФЗ-152"));
++
++  const cmpSla = await shell.dispatchToolCall(
++    "browser.compare_vendor_slas",
++    {
++      vendorSubmissions: [
++        { optionName: "Option Alpha", snapshot: navAlpha.snapshot },
++        { optionName: "Option Beta", snapshot: navBeta.snapshot },
++        { optionName: "Option Gamma (Bare)", bareLinkOnly: true, sourceUrl: "https://corpus.local/gamma" }
++      ]
++    },
++    { workspaceRoot }
++  );
++
++  assert.equal(cmpSla.evaluatedCount, 2);
++  assert.equal(cmpSla.rejectedCount, 1);
++  assert.equal(cmpSla.highestUptimeVendor, "Option Alpha");
++
++  // Verify Per-Origin Cookie & Storage Partition Isolation Guard
++  const {
++    KosworkOriginStorageIsolationGuard
++  } = require("../browser/cookie-storage-and-origin-isolation-guard.cjs");
++  const guard = new KosworkOriginStorageIsolationGuard();
++
++  guard.setCookie({
++    partition: "user_browsing",
++    originUrl: "https://portal.example.com/dashboard",
++    name: "user_session",
++    value: "usr-token-123",
++    httpOnly: true,
++    secure: true
++  });
++
++  guard.setCookie({
++    partition: "agent_research_ephemeral",
++    originUrl: "https://vendor.example.com/pricing",
++    name: "research_pref",
++    value: "usd",
++    httpOnly: false,
++    secure: true
++  });
++
++  // Cross-origin cookie read must be blocked
++  assert.throws(
++    () =>
++      guard.readCookie({
++        partition: "user_browsing",
++        requesterOriginUrl: "https://attacker.example.org",
++        targetOriginUrl: "https://portal.example.com",
++        name: "user_session"
++      }),
++    (err) => err.code === "CROSS_ORIGIN_STORAGE_READ_BLOCKED"
++  );
++
++  // Script access to HttpOnly cookie must be denied
++  assert.throws(
++    () =>
++      guard.readCookie({
++        partition: "user_browsing",
++        requesterOriginUrl: "https://portal.example.com",
++        targetOriginUrl: "https://portal.example.com",
++        name: "user_session",
++        viaDocumentCookieScript: true
++      }),
++    (err) => err.code === "COOKIE_HTTPONLY_SCRIPT_ACCESS_DENIED"
++  );
++
++  // Purging ephemeral agent research partition preserves normal user_browsing state
++  const purgeRes = guard.purgeEphemeralResearchPartition();
++  assert.equal(purgeRes.purgedOrigins, 1);
++  assert.equal(purgeRes.remainingUserBuckets, 1);
++  const preservedUserCookie = guard.readCookie({
++    partition: "user_browsing",
++    requesterOriginUrl: "https://portal.example.com",
++    targetOriginUrl: "https://portal.example.com",
++    name: "user_session",
++    viaDocumentCookieScript: false
++  });
++  assert.equal(preservedUserCookie.value, "usr-token-123");
++});
++
++test("45. Research Knowledge Graph & Mermaid Visual Timeline Exporter (`mermaid-knowledge-graph-exporter.cjs` & `browser.export_mermaid_knowledge_graph` via `shell.cjs`)", async () => {
++  const workspaceRoot = createTempWorkspace();
++  const shell = createKosworkBrowserShell({ workspaceRoot });
++
++  const kgRes = await shell.dispatchToolCall(
++    "browser.export_mermaid_knowledge_graph",
++    {
++      saveToWorkspace: true,
++      slug: "alpha-beta-knowledge-graph",
++      report: {
++        question: "Визуализация графа доказательств Option Alpha и Option Beta",
++        comparisonRows: [
++          {
++            optionName: "Option Alpha",
++            cells: {
++              Цена: {
++                displayValue: "$49/мес",
++                quote: "Тариф составляет $49/мес",
++                startUtf16: 10,
++                endUtf16: 34,
++                sourceUrl: "https://corpus.local/alpha-2026",
++                sourceTitle: "Прайс Alpha 2026",
++                pageDate: "2026-10-15",
++                eventDate: "2026-11-01",
++                fetchedAt: "2026-11-10T12:00:00.000Z"
++              }
++            }
++          }
++        ],
++        unavailableSources: [
++          { url: "https://corpus.local/down-503", statusCode: 503 }
++        ]
++      }
++    },
++    { workspaceRoot }
++  );
++
++  assert.equal(kgRes.graphBundle.nodesCount, 4); // 1 question + 2 sources + 1 claim
++  assert.equal(kgRes.graphBundle.edgesCount, 3);
++  assert.equal(kgRes.graphBundle.timelineEventsCount, 1);
++  assert.ok(kgRes.graphBundle.markdownContent.includes("flowchart LR"));
++  assert.ok(kgRes.graphBundle.markdownContent.includes("timeline"));
++  assert.ok(fs.existsSync(path.join(workspaceRoot, kgRes.markdownFile.path)));
++  assert.ok(fs.existsSync(path.join(workspaceRoot, kgRes.jsonFile.path)));
++});
+diff --git a/docs/koswork-browser-research.md b/docs/koswork-browser-research.md
+index e2175a6..dae59dc 100644
+--- a/docs/koswork-browser-research.md
++++ b/docs/koswork-browser-research.md
+@@ -44,3 +44,12 @@
+ - **`desktop/windows/browser/json-schema-and-sarif-audit-exporter.cjs`**:
+   - `buildSarif210ResearchAuditReport(report)` and `saveSarifAndJsonSchemaAuditViaWorkspace`: exports an OASIS SARIF 2.1.0 epistemic audit report (`reports/<slug>.sarif.json`) and JSON Schema validation report (`reports/<slug>-schema-validation.json`) with exact UTF-16 `charOffset` and `charLength` across rules `KOSWORK001_CONTRADICTION`, `KOSWORK002_OUTDATED_SOURCE`, `KOSWORK003_UNAVAILABLE_503`, `KOSWORK004_POST_OBS_SUBSTITUTION`, and `KOSWORK005_BARE_LINK_REJECTED`.
+ - **Exposed via `shell.cjs` (`browser.extract_api_and_graphql_specs`, `browser.verify_api_spec_claim`, `browser.profile_tab_network_waterfall`, `browser.export_sarif_audit`) and verified in Subtests 42 and 43 (`53/53` total suites passing).**
++
++### Phase 26: SLA Commitments, RPO/RTO & Compliance Certification Extractor, Per-Origin Cookie/Storage Partition Isolation Guard, and Mermaid Knowledge Graph & Timeline Exporter
++- **`desktop/windows/browser/sla-compliance-and-legal-clause-extractor.cjs`**:
++  - `extractSlaCommitmentsAndLegalClauses(snapshot)` and `compareSlaCommitmentsAcrossVendors`: extracts uptime SLA commitments (`99.99%`, `99.95%`), RTO/RPO recovery targets (`RTO < 15 мин`, `RPO <= 5 мин`), and compliance certifications (`SOC 2 Type II`, `ISO/IEC 27001`, `GDPR`, `HIPAA`, `PCI DSS`, `ФЗ-152`) with exact UTF-16 `[startUtf16..endUtf16]` offsets and distinct `pageDate`/`eventDate`/`fetchedAt`, while rejecting bare compliance links (`BARE_COMPLIANCE_LINK_REJECTED`).
++- **`desktop/windows/browser/cookie-storage-and-origin-isolation-guard.cjs`**:
++  - `KosworkOriginStorageIsolationGuard`: isolates `user_browsing` vs `agent_research_ephemeral` cookie and `localStorage` partitions per origin, blocks cross-origin reads (`CROSS_ORIGIN_STORAGE_READ_BLOCKED`), denies script access to `HttpOnly` cookies (`COOKIE_HTTPONLY_SCRIPT_ACCESS_DENIED`), enforces `Secure` on `SameSite=None`, and purges ephemeral research partitions without disturbing normal user browsing sessions.
++- **`desktop/windows/browser/mermaid-knowledge-graph-exporter.cjs`**:
++  - `buildResearchKnowledgeGraphAndMermaidReport(report)` and `saveMermaidKnowledgeGraphViaWorkspace`: generates a directed Provenance Knowledge Graph (`nodes`, `edges`) and embedded Mermaid `flowchart LR` + chronological `timeline` (`eventDate` vs `pageDate`) saved via `workspace-service.cjs` (`reports/<slug>.md` and `.json`).
++- **Exposed via `shell.cjs` (`browser.extract_sla_and_compliance`, `browser.compare_vendor_slas`, `browser.export_mermaid_knowledge_graph`) and verified in Subtests 44 and 45 (`55/55` total suites passing).**
+-- 
+2.39.5
+

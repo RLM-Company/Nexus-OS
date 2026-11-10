@@ -1,0 +1,973 @@
+From 44b1d2cbd444781e8ecf511028da156e7bbbe5fb Mon Sep 17 00:00:00 2001
+From: Kosmora Engineering <eng@kosmora.ai>
+Date: Sun, 8 Nov 2026 20:44:52 +0000
+Subject: [PATCH 14/32] feat(browser-research): add structured HTML matrix/dl
+ extractor, cross-session evidence vault, and Work executor SQLite sync bridge
+
+---
+ .../windows/browser/evidence-vault-index.cjs  | 168 ++++++++++++++
+ desktop/windows/browser/shell.cjs             | 101 +++++---
+ .../browser/structured-matrix-extractor.cjs   | 211 +++++++++++++++++
+ .../browser/work-executor-sqlite-bridge.cjs   | 153 +++++++++++++
+ .../test/browser-research-acceptance.test.cjs | 216 ++++++++++++++++++
+ 5 files changed, 823 insertions(+), 26 deletions(-)
+ create mode 100644 desktop/windows/browser/evidence-vault-index.cjs
+ create mode 100644 desktop/windows/browser/structured-matrix-extractor.cjs
+ create mode 100644 desktop/windows/browser/work-executor-sqlite-bridge.cjs
+
+diff --git a/desktop/windows/browser/evidence-vault-index.cjs b/desktop/windows/browser/evidence-vault-index.cjs
+new file mode 100644
+index 0000000..9710fb7
+--- /dev/null
++++ b/desktop/windows/browser/evidence-vault-index.cjs
+@@ -0,0 +1,168 @@
++"use strict";
++
++const fs = require("node:fs");
++const path = require("node:path");
++const { writeAtomicJson, readJsonFileSafe } = require("../desktop-state.cjs");
++const { canonicalizeSourceUrl } = require("./provenance-journal.cjs");
++
++/**
++ * Koswork Cross-Session Evidence Vault & Deduplicated Excerpt Index
++ * (`desktop/windows/browser/evidence-vault-index.cjs`).
++ *
++ * Persists verified `(claim -> UTF-16 excerpt -> source snapshot)` triples across
++ * research runs in `<workspaceRoot>/.koswork-research/evidence-vault.json`:
++ * 1. Prevents redundant re-downloads across related multi-site research runs within
++ *    configurable `maxAgeMs` TTL.
++ * 2. Verifies that every stored excerpt still matches its recorded UTF-16 code unit
++ *    length (`endUtf16 - startUtf16 === quote.length`) before returning it.
++ * 3. Supports querying verified evidence by `optionName`, `criterion`, or `canonicalUrl`.
++ */
++class KosworkBrowserEvidenceVault {
++  constructor(options = {}) {
++    if (!options.workspaceRoot) {
++      throw new Error("EVIDENCE_VAULT_REQUIRES_WORKSPACE_ROOT");
++    }
++    this.workspaceRoot = path.resolve(options.workspaceRoot);
++    this.vaultDir = path.join(this.workspaceRoot, ".koswork-research");
++    fs.mkdirSync(this.vaultDir, { recursive: true });
++    this.vaultPath = path.join(this.vaultDir, "evidence-vault.json");
++    this.defaultTtlMs = Math.max(1000, Number(options.defaultTtlMs ?? 300_000));
++    this.state = this._load();
++  }
++
++  _load() {
++    const loaded = readJsonFileSafe(this.vaultPath, null);
++    if (loaded && Array.isArray(loaded.entries)) {
++      return loaded;
++    }
++    return {
++      schemaVersion: "koswork.browser-research.evidence-vault.v1",
++      updatedAt: new Date().toISOString(),
++      entries: []
++    };
++  }
++
++  _save() {
++    this.state.updatedAt = new Date().toISOString();
++    writeAtomicJson(this.vaultPath, this.state);
++  }
++
++  ingestVerifiedClaims(claims = [], { sessionId = null, nowMs = Date.now() } = {}) {
++    let addedCount = 0;
++    let updatedCount = 0;
++
++    for (const c of claims) {
++      if (!c || !c.excerpt || !c.source || !c.source.url) continue;
++      const quote = String(c.excerpt.quote || "");
++      const spanLen = Number(c.excerpt.endUtf16) - Number(c.excerpt.startUtf16);
++      if (!quote || spanLen !== quote.length) {
++        continue;
++      }
++
++      const canonicalUrl = canonicalizeSourceUrl(c.source.url);
++      const dedupeKey = `${canonicalUrl}|${c.optionName || ""}|${c.criterion || ""}|${c.excerpt.startUtf16}..${c.excerpt.endUtf16}`;
++
++      const record = {
++        dedupeKey,
++        sessionId,
++        optionName: c.optionName || null,
++        criterion: c.criterion || null,
++        value: c.value || quote,
++        claim: c.claim || quote,
++        excerpt: {
++          excerptId: c.excerpt.excerptId || `vault-exc-${this.state.entries.length + 1}`,
++          quote,
++          startUtf16: c.excerpt.startUtf16,
++          endUtf16: c.excerpt.endUtf16,
++          lengthUtf16: quote.length,
++          snapshotSha256: c.excerpt.snapshotSha256 || null
++        },
++        source: {
++          url: c.source.url,
++          canonicalUrl,
++          title: c.source.title || c.source.url,
++          pageDate: c.source.pageDate || null,
++          eventDate: c.source.eventDate || null,
++          fetchedAt: c.source.fetchedAt || new Date(nowMs).toISOString()
++        },
++        storedAtMs: nowMs
++      };
++
++      const existingIdx = this.state.entries.findIndex((e) => e.dedupeKey === dedupeKey);
++      if (existingIdx >= 0) {
++        this.state.entries[existingIdx] = record;
++        updatedCount += 1;
++      } else {
++        this.state.entries.push(record);
++        addedCount += 1;
++      }
++    }
++
++    this._save();
++    return {
++      addedCount,
++      updatedCount,
++      totalEntries: this.state.entries.length
++    };
++  }
++
++  queryVerifiedEvidence({
++    optionName = null,
++    criterion = null,
++    url = null,
++    maxAgeMs = this.defaultTtlMs,
++    nowMs = Date.now()
++  } = {}) {
++    const targetCanonicalUrl = url ? canonicalizeSourceUrl(url) : null;
++    const freshHits = [];
++    const staleHits = [];
++
++    for (const entry of this.state.entries) {
++      if (
++        optionName &&
++        String(entry.optionName || "").toLowerCase() !== String(optionName).toLowerCase()
++      ) {
++        continue;
++      }
++      if (
++        criterion &&
++        String(entry.criterion || "").toLowerCase() !== String(criterion).toLowerCase()
++      ) {
++        continue;
++      }
++      if (targetCanonicalUrl && entry.source.canonicalUrl !== targetCanonicalUrl) {
++        continue;
++      }
++
++      // Verify UTF-16 length invariant on read
++      const spanLen = Number(entry.excerpt.endUtf16) - Number(entry.excerpt.startUtf16);
++      if (spanLen !== entry.excerpt.quote.length) {
++        continue;
++      }
++
++      const ageMs = Math.max(0, nowMs - Number(entry.storedAtMs || 0));
++      if (ageMs <= maxAgeMs) {
++        freshHits.push({ ...entry, ageMs, fresh: true });
++      } else {
++        staleHits.push({ ...entry, ageMs, fresh: false });
++      }
++    }
++
++    return {
++      freshCount: freshHits.length,
++      staleCount: staleHits.length,
++      freshHits,
++      staleHits
++    };
++  }
++
++  clearVault() {
++    this.state.entries = [];
++    this._save();
++    return { cleared: true };
++  }
++}
++
++module.exports = {
++  KosworkBrowserEvidenceVault
++};
+diff --git a/desktop/windows/browser/shell.cjs b/desktop/windows/browser/shell.cjs
+index 49a0766..f8a2eeb 100644
+--- a/desktop/windows/browser/shell.cjs
++++ b/desktop/windows/browser/shell.cjs
+@@ -13,33 +13,14 @@ const {
+ } = require("./query-decomposer-and-redirect-tracker.cjs");
+ const { executeMultiStepFormWizard } = require("./multi-step-form-wizard.cjs");
+ const { KosworkHibernatedTabRevalidator } = require("./hibernated-tab-revalidator.cjs");
++const { extractStructuredSpecsFromSnapshot } = require("./structured-matrix-extractor.cjs");
++const { KosworkBrowserEvidenceVault } = require("./evidence-vault-index.cjs");
++const { buildApiSyncBundleFromDesktopCycle } = require("./work-executor-sqlite-bridge.cjs");
+ 
+ /**
+  * Shared Tool & Execution Boundary for Koswork Browser (`desktop/windows/browser/shell.cjs`).
+  *
+  * Kept minimal and isolated in a dedicated integration commit (`browser/shell.cjs` boundary with Codex).
+- * Exposes standard tool descriptors and dispatcher methods for:
+- * - `browser.search`
+- * - `browser.decomposed_search`
+- * - `browser.open_result`
+- * - `browser.navigate`
+- * - `browser.navigate_with_redirects`
+- * - `browser.observe`
+- * - `browser.read_long_page`
+- * - `browser.read_dynamic_page`
+- * - `browser.fill_form`
+- * - `browser.select_files`
+- * - `browser.submit_form`
+- * - `browser.run_form_wizard`
+- * - `browser.download`
+- * - `browser.research_cycle`
+- * - `browser.research_public_smoke`
+- * - `browser.resume_checkpoint`
+- * - `browser.user_highlight_excerpt`
+- * - `browser.reobserve_after_handback`
+- * - `browser.reverify_report`
+- * - `browser.wake_hibernated_tab`
+- * - `browser.cancel`
+  */
+ 
+ const BROWSER_RESEARCH_TOOL_DEFINITIONS = Object.freeze([
+@@ -79,6 +60,12 @@ const BROWSER_RESEARCH_TOOL_DEFINITIONS = Object.freeze([
+       "Пошагово раскрыть динамическую страницу или бесконечную прокрутку с проверкой сохранности смещений UTF-16.",
+     requiredParams: ["tabId"]
+   },
++  {
++    name: "browser.extract_structured_matrix",
++    description:
++      "Извлечь структурированные ячейки сравнения (вариант, критерий, значение) из HTML таблиц <table> и списков <dl>/<dt>/<dd> с точными смещениями UTF-16.",
++    requiredParams: ["tabId"]
++  },
+   {
+     name: "browser.run_form_wizard",
+     description:
+@@ -126,6 +113,24 @@ const BROWSER_RESEARCH_TOOL_DEFINITIONS = Object.freeze([
+     description:
+       "Восстановить выгруженную фоновую вкладку с условной проверкой свежести снимка (ETag / 304 Not Modified).",
+     requiredParams: ["tabId"]
++  },
++  {
++    name: "browser.evidence_vault_ingest",
++    description:
++      "Сохранить верифицированные утверждения и UTF-16 выдержки в межсессионное хранилище доказательств рабочей папки.",
++    requiredParams: ["claims"]
++  },
++  {
++    name: "browser.evidence_vault_query",
++    description:
++      "Запросить ранее верифицированные утверждения и выдержки из межсессионного хранилища с контролем TTL.",
++    requiredParams: []
++  },
++  {
++    name: "browser.export_api_sync_bundle",
++    description:
++      "Сформировать пакет синхронизации десктопного исследовательского цикла для сохранения в SQLite 0064 / API.",
++    requiredParams: ["cycleResult"]
+   }
+ ]);
+ 
+@@ -143,6 +148,8 @@ function createKosworkBrowserShell(options = {}) {
+ 
+   async function dispatchToolCall(toolName, args = {}, context = {}) {
+     const signal = context.signal || null;
++    const resolvedWorkspaceRoot = context.workspaceRoot || engine.allowedWorkspaceRoot;
++
+     switch (toolName) {
+       case "browser.search":
+         return await engine.searchService.search({
+@@ -221,6 +228,18 @@ function createKosworkBrowserShell(options = {}) {
+         });
+       }
+ 
++      case "browser.extract_structured_matrix": {
++        const obs = engine.observePage(args.tabId);
++        const tab = engine.tabs.get(String(args.tabId));
++        return extractStructuredSpecsFromSnapshot({
++          snapshot: obs.snapshot,
++          rawHtml: args.rawHtml || tab?.rawSiteDef?.html || "",
++          defaultOptionName: args.defaultOptionName || "Option",
++          targetOptions: args.targetOptions || [],
++          targetCriteria: args.targetCriteria || []
++        });
++      }
++
+       case "browser.fill_form":
+         return engine.fillForm({
+           tabId: args.tabId,
+@@ -265,7 +284,7 @@ function createKosworkBrowserShell(options = {}) {
+       case "browser.research_cycle":
+         return await executeMultiSiteResearchWorkflow({
+           engine,
+-          workspaceRoot: context.workspaceRoot || engine.allowedWorkspaceRoot,
++          workspaceRoot: resolvedWorkspaceRoot,
+           workspaceService: context.workspaceService || null,
+           workExecutor: context.workExecutor || null,
+           plan: args,
+@@ -275,14 +294,14 @@ function createKosworkBrowserShell(options = {}) {
+       case "browser.research_public_smoke":
+         return await runPublicUnauthenticatedWebSmoke({
+           engine,
+-          workspaceRoot: context.workspaceRoot || engine.allowedWorkspaceRoot,
++          workspaceRoot: resolvedWorkspaceRoot,
+           publicPages: args.publicPages || null,
+           reportSlug: args.reportSlug || "public-unauthenticated-web-smoke"
+         });
+ 
+       case "browser.resume_checkpoint": {
+         const cpManager = new KosworkResearchSessionCheckpointManager({
+-          workspaceRoot: context.workspaceRoot || engine.allowedWorkspaceRoot
++          workspaceRoot: resolvedWorkspaceRoot
+         });
+         return await cpManager.resumeResearchFromCheckpoint({
+           sessionId: args.sessionId,
+@@ -303,7 +322,7 @@ function createKosworkBrowserShell(options = {}) {
+       case "browser.reverify_report":
+         return await reverifyAndRefreshResearchReport({
+           engine,
+-          workspaceRoot: context.workspaceRoot || engine.allowedWorkspaceRoot,
++          workspaceRoot: resolvedWorkspaceRoot,
+           reportSlug: args.reportSlug || "reverified-research-report",
+           previousReportData: args.previousReportData,
+           recoveryProbes: args.recoveryProbes || [],
+@@ -315,6 +334,36 @@ function createKosworkBrowserShell(options = {}) {
+           forceUpstreamCheck: args.forceUpstreamCheck !== false
+         });
+ 
++      case "browser.evidence_vault_ingest": {
++        const vault = new KosworkBrowserEvidenceVault({
++          workspaceRoot: resolvedWorkspaceRoot
++        });
++        return vault.ingestVerifiedClaims(args.claims || [], {
++          sessionId: args.sessionId || null,
++          nowMs: args.nowMs ?? Date.now()
++        });
++      }
++
++      case "browser.evidence_vault_query": {
++        const vault = new KosworkBrowserEvidenceVault({
++          workspaceRoot: resolvedWorkspaceRoot
++        });
++        return vault.queryVerifiedEvidence({
++          optionName: args.optionName || null,
++          criterion: args.criterion || null,
++          url: args.url || null,
++          maxAgeMs: args.maxAgeMs ?? 300_000,
++          nowMs: args.nowMs ?? Date.now()
++        });
++      }
++
++      case "browser.export_api_sync_bundle":
++        return buildApiSyncBundleFromDesktopCycle(args.cycleResult, {
++          sessionId: args.sessionId || null,
++          question: args.question || null,
++          criteria: args.criteria || null
++        });
++
+       case "browser.cancel":
+         return engine.resourceGovernor.cancelAllTasks(args.reason || "cancelled_via_shell");
+ 
+diff --git a/desktop/windows/browser/structured-matrix-extractor.cjs b/desktop/windows/browser/structured-matrix-extractor.cjs
+new file mode 100644
+index 0000000..8b929aa
+--- /dev/null
++++ b/desktop/windows/browser/structured-matrix-extractor.cjs
+@@ -0,0 +1,211 @@
++"use strict";
++
++const { extractVerifiableExcerpt } = require("./document.cjs");
++
++/**
++ * Koswork Structured HTML Matrix (`<table>`) & Definition-List (`<dl>/<dt>/<dd>`) Specification Extractor
++ * (`desktop/windows/browser/structured-matrix-extractor.cjs`).
++ *
++ * Deepens Requirement #2 & #3:
++ * - Extracts structured `(optionName, criterion, value)` cells directly from HTML comparison
++ *   tables (`<table>` in either row-per-option or column-per-option orientation) and `<dl>/<dt>/<dd>`
++ *   specification blocks on an open page snapshot.
++ * - Binds every extracted cell to a verifiable UTF-16 excerpt (`startUtf16`, `endUtf16`, `quote`)
++ *   inside `snapshot.fullTextUtf16` and preserves distinct `pageDate`, `eventDate`, and `fetchedAt`.
++ */
++
++function parseDefinitionListPairsFromHtml(html = "") {
++  const pairs = [];
++  const dlRegex = /<dl\b[^>]*>([\s\S]*?)<\/dl>/gi;
++  let dlMatch;
++  while ((dlMatch = dlRegex.exec(String(html || ""))) !== null) {
++    const inner = dlMatch[1];
++    const itemRegex = /<dt\b[^>]*>([\s\S]*?)<\/dt>\s*<dd\b[^>]*>([\s\S]*?)<\/dd>/gi;
++    let m;
++    while ((m = itemRegex.exec(inner)) !== null) {
++      const term = m[1].replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
++      const def = m[2].replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
++      if (term && def) {
++        pairs.push({ criterion: term, value: def });
++      }
++    }
++  }
++  return pairs;
++}
++
++function extractStructuredSpecsFromSnapshot({
++  snapshot,
++  rawHtml = "",
++  defaultOptionName = "Option",
++  targetOptions = [],
++  targetCriteria = []
++} = {}) {
++  if (!snapshot || !snapshot.fullTextUtf16) {
++    throw new Error("STRUCTURED_MATRIX_EXTRACTOR_REQUIRES_SNAPSHOT");
++  }
++
++  const extractedClaims = [];
++  const optionFilter = new Set(
++    (Array.isArray(targetOptions) ? targetOptions : []).map((o) => String(o).toLowerCase())
++  );
++  const criteriaFilter = new Set(
++    (Array.isArray(targetCriteria) ? targetCriteria : []).map((c) => String(c).toLowerCase())
++  );
++
++  const matchesOption = (cand) =>
++    optionFilter.size === 0 || optionFilter.has(String(cand || "").toLowerCase());
++  const matchesCriterion = (cand) =>
++    criteriaFilter.size === 0 || criteriaFilter.has(String(cand || "").toLowerCase());
++
++  // 1. Inspect `snapshot.tables` (already parsed with UTF-16 cell offsets by `document.cjs`)
++  for (const tbl of snapshot.tables || []) {
++    const headers = (tbl.headers || []).map((h) => String(h || "").trim());
++    const rows = tbl.rows || [];
++    if (headers.length < 2 || rows.length === 0) continue;
++
++    // Detect orientation:
++    // Case A (Row-per-option): headers = ["Вариант", "Цена", "SLA", ...], row[0] = Option Alpha
++    // Case B (Column-per-option): headers = ["Критерий", "Option Alpha", "Option Beta"], row[0] = "Цена"
++    const headerHasOptionNames =
++      optionFilter.size > 0 &&
++      headers.slice(1).some((h) => optionFilter.has(h.toLowerCase()));
++
++    if (headerHasOptionNames) {
++      // Column-per-option matrix
++      for (const row of rows) {
++        const cells = Array.isArray(row.cells) ? row.cells : [];
++        if (cells.length < 2) continue;
++        const criterionName = String(cells[0].text || "").trim();
++        if (!criterionName || !matchesCriterion(criterionName)) continue;
++
++        for (let colIdx = 1; colIdx < Math.min(headers.length, cells.length); colIdx += 1) {
++          const optionName = headers[colIdx];
++          if (!matchesOption(optionName)) continue;
++          const cell = cells[colIdx];
++          const valText = String(cell.text || "").trim();
++          if (!valText) continue;
++
++          const excerpt =
++            extractVerifiableExcerpt(snapshot, {
++              startUtf16: cell.startUtf16,
++              endUtf16: cell.endUtf16
++            }) ||
++            extractVerifiableExcerpt(snapshot, {
++              searchTerm: valText
++            });
++
++          if (excerpt) {
++            extractedClaims.push({
++              claimId: `tbl-col-${extractedClaims.length + 1}`,
++              optionName,
++              criterion: criterionName,
++              value: valText,
++              claim: `${optionName}: ${criterionName} = ${valText}`,
++              extractionKind: "html_table_column_matrix",
++              excerpt,
++              source: {
++                url: snapshot.url,
++                title: snapshot.title,
++                pageDate: snapshot.pageDate,
++                eventDate: snapshot.eventDate,
++                fetchedAt: snapshot.fetchedAt
++              }
++            });
++          }
++        }
++      }
++    } else {
++      // Row-per-option matrix
++      for (const row of rows) {
++        const cells = Array.isArray(row.cells) ? row.cells : [];
++        if (cells.length < 2) continue;
++        const optionName = String(cells[0].text || "").trim();
++        if (!optionName || !matchesOption(optionName)) continue;
++
++        for (let colIdx = 1; colIdx < Math.min(headers.length, cells.length); colIdx += 1) {
++          const criterionName = headers[colIdx];
++          if (!criterionName || !matchesCriterion(criterionName)) continue;
++          const cell = cells[colIdx];
++          const valText = String(cell.text || "").trim();
++          if (!valText) continue;
++
++          const excerpt =
++            extractVerifiableExcerpt(snapshot, {
++              startUtf16: cell.startUtf16,
++              endUtf16: cell.endUtf16
++            }) ||
++            extractVerifiableExcerpt(snapshot, {
++              searchTerm: valText
++            });
++
++          if (excerpt) {
++            extractedClaims.push({
++              claimId: `tbl-row-${extractedClaims.length + 1}`,
++              optionName,
++              criterion: criterionName,
++              value: valText,
++              claim: `${optionName}: ${criterionName} = ${valText}`,
++              extractionKind: "html_table_row_matrix",
++              excerpt,
++              source: {
++                url: snapshot.url,
++                title: snapshot.title,
++                pageDate: snapshot.pageDate,
++                eventDate: snapshot.eventDate,
++                fetchedAt: snapshot.fetchedAt
++              }
++            });
++          }
++        }
++      }
++    }
++  }
++
++  // 2. Inspect `<dl><dt>...</dt><dd>...</dd></dl>` specification blocks if `rawHtml` is provided
++  if (rawHtml) {
++    const dlPairs = parseDefinitionListPairsFromHtml(rawHtml);
++    for (const pair of dlPairs) {
++      if (!matchesCriterion(pair.criterion)) continue;
++      if (!matchesOption(defaultOptionName)) continue;
++
++      const excerpt =
++        extractVerifiableExcerpt(snapshot, {
++          searchTerm: `${pair.criterion} | ${pair.value}`
++        }) ||
++        extractVerifiableExcerpt(snapshot, {
++          searchTerm: pair.value
++        });
++
++      if (excerpt) {
++        extractedClaims.push({
++          claimId: `dl-spec-${extractedClaims.length + 1}`,
++          optionName: defaultOptionName,
++          criterion: pair.criterion,
++          value: pair.value,
++          claim: `${defaultOptionName}: ${pair.criterion} = ${pair.value}`,
++          extractionKind: "html_dl_definition_list",
++          excerpt,
++          source: {
++            url: snapshot.url,
++            title: snapshot.title,
++            pageDate: snapshot.pageDate,
++            eventDate: snapshot.eventDate,
++            fetchedAt: snapshot.fetchedAt
++          }
++        });
++      }
++    }
++  }
++
++  return {
++    url: snapshot.url,
++    pageVersion: snapshot.pageVersion,
++    extractedCount: extractedClaims.length,
++    claims: extractedClaims
++  };
++}
++
++module.exports = {
++  parseDefinitionListPairsFromHtml,
++  extractStructuredSpecsFromSnapshot
++};
+diff --git a/desktop/windows/browser/work-executor-sqlite-bridge.cjs b/desktop/windows/browser/work-executor-sqlite-bridge.cjs
+new file mode 100644
+index 0000000..088e0a4
+--- /dev/null
++++ b/desktop/windows/browser/work-executor-sqlite-bridge.cjs
+@@ -0,0 +1,153 @@
++"use strict";
++
++/**
++ * Koswork Work Executor <-> SQLite / API Session Sync Bridge
++ * (`desktop/windows/browser/work-executor-sqlite-bridge.cjs`).
++ *
++ * Bridges the desktop Browser Research Cycle (`executeMultiSiteResearchWorkflow` /
++ * `KosworkUnifiedTaskCoordinator`) with the backend SQLite schema `0064_koswork_browser_research.sql`
++ * and Fastify API routes (`/api/koswork/browser-research/sessions`):
++ * 1. Serializes a completed or paused desktop research cycle into the exact payload
++ *    contract expected by `KosworkBrowserResearchSessionStore` (`packages/db/src/browser-research-session-store.ts`)
++ *    and `packages/contracts/src/koswork-browser-research.ts`.
++ * 2. Enforces the contract invariant that every `"confirmed"` claim carries a non-empty
++ *    `excerpt` (`startUtf16`, `endUtf16`, `quote`) and distinct `pageDate`, `eventDate`, and `fetchedAt`.
++ */
++
++function buildApiSyncBundleFromDesktopCycle(cycleResult = {}, options = {}) {
++  if (!cycleResult || typeof cycleResult !== "object") {
++    throw new Error("API_SYNC_BRIDGE_REQUIRES_CYCLE_RESULT");
++  }
++
++  const sessionId =
++    options.sessionId ||
++    cycleResult.sessionId ||
++    `brs-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
++
++  const searchRecords = (cycleResult.searchHistory || []).map((s, idx) => ({
++    searchId: s.searchId || `srch-${idx + 1}`,
++    query: s.query || cycleResult.question || "",
++    actor: s.actor === "user" ? "user" : "agent",
++    providerId: s.providerId || "duckduckgo-html",
++    providerEndpoint: s.providerEndpoint || "https://html.duckduckgo.com/html/",
++    totalResults: Number(s.totalResults ?? (s.results || s.items || []).length),
++    searchedAt: s.searchedAt || new Date().toISOString()
++  }));
++
++  const sources = (cycleResult.sources || []).map((src, idx) => ({
++    sourceId: src.sourceVisitId || src.sourceId || `src-${idx + 1}`,
++    searchId: src.searchId || (searchRecords[0] ? searchRecords[0].searchId : null),
++    serpRank: src.serpRank ?? idx + 1,
++    url: src.url,
++    canonicalUrl: src.canonicalUrl || src.url,
++    title: src.title || src.url,
++    httpStatus: Number(src.httpStatus ?? 200),
++    available: Boolean(src.available),
++    pageVersion: Number(src.pageVersion ?? 1),
++    snapshotId: src.snapshotId || `snap-${idx + 1}`,
++    contentSha256: src.contentSha256 || null,
++    tabReceiptId: src.tabReceipt?.receiptId || src.tabReceiptId || null,
++    pageDate: src.pageDate || null,
++    eventDate: src.eventDate || null,
++    fetchedAt: src.fetchedAt || new Date().toISOString()
++  }));
++
++  const confirmedClaims =
++    cycleResult.savedReports?.confirmedClaims || cycleResult.confirmedClaims || [];
++  const unconfirmedClaims =
++    cycleResult.savedReports?.unconfirmedClaims || cycleResult.unconfirmedClaims || [];
++
++  const excerpts = [];
++  const claims = [];
++
++  for (let i = 0; i < confirmedClaims.length; i += 1) {
++    const c = confirmedClaims[i];
++    const exc = c.excerpt;
++    const src = c.source || {};
++    const matchedSource =
++      sources.find((s) => s.url === src.url || s.canonicalUrl === src.url) || sources[0];
++
++    const excerptId = exc?.excerptId || `exc-${i + 1}`;
++    if (exc && exc.quote) {
++      excerpts.push({
++        excerptId,
++        sourceId: matchedSource ? matchedSource.sourceId : `src-ext-${i + 1}`,
++        url: src.url || matchedSource?.url || "",
++        pageVersion: Number(exc.pageVersion ?? matchedSource?.pageVersion ?? 1),
++        snapshotId: exc.snapshotId || matchedSource?.snapshotId || `snap-${i + 1}`,
++        startUtf16: Number(exc.startUtf16 ?? 0),
++        endUtf16: Number(exc.endUtf16 ?? exc.quote.length),
++        lengthUtf16: Number(exc.lengthUtf16 ?? exc.quote.length),
++        quote: exc.quote,
++        pageDate: src.pageDate ?? matchedSource?.pageDate ?? null,
++        eventDate: src.eventDate ?? matchedSource?.eventDate ?? null,
++        fetchedAt: src.fetchedAt ?? matchedSource?.fetchedAt ?? new Date().toISOString()
++      });
++    }
++
++    claims.push({
++      claimId: c.claimId || `claim-${i + 1}`,
++      optionName: c.optionName || null,
++      criterion: c.criterion || null,
++      valueText: String(c.value ?? ""),
++      claimText: c.claim,
++      verificationStatus: "confirmed",
++      excerptId,
++      sourceId: matchedSource ? matchedSource.sourceId : null,
++      sourceUrl: src.url || matchedSource?.url || null,
++      conflictNote: c.conflictNote || null
++    });
++  }
++
++  for (let j = 0; j < unconfirmedClaims.length; j += 1) {
++    const u = unconfirmedClaims[j];
++    claims.push({
++      claimId: u.claimId || `unconf-claim-${j + 1}`,
++      optionName: u.optionName || null,
++      criterion: u.criterion || null,
++      valueText: String(u.value ?? ""),
++      claimText: u.claim || "Неподтверждённое утверждение",
++      verificationStatus: "unconfirmed_bare_link_rejected",
++      excerptId: null,
++      sourceId: null,
++      sourceUrl: u.source?.url || u.sourceUrl || null,
++      conflictNote: u.rejectionReason || "Ссылка без верифицированной UTF-16 выдержки"
++    });
++  }
++
++  return {
++    schemaVersion: "koswork.browser-research.api-sync.v1",
++    sessionId,
++    question: cycleResult.question || options.question || "",
++    status: cycleResult.status || "completed",
++    criteria: cycleResult.criteria || options.criteria || [],
++    searches: searchRecords,
++    sources,
++    excerpts,
++    claims,
++    contradictions: cycleResult.contradictions || [],
++    outdatedFindings: cycleResult.outdatedFindings || [],
++    unavailableSources: cycleResult.unavailableSources || [],
++    substitutionIncidents: cycleResult.substitutionIncidents || [],
++    reportPaths: cycleResult.savedReports
++      ? {
++          markdownPath: cycleResult.savedReports.markdownFile?.path || null,
++          htmlPath: cycleResult.savedReports.htmlFile?.path || null,
++          csvPath: cycleResult.savedReports.csvFile?.path || null,
++          jsonPath: cycleResult.savedReports.comparisonTableFile?.path || null,
++          provPath: cycleResult.savedReports.provFile?.path || null,
++          bibPath: cycleResult.savedReports.bibFile?.path || null,
++          docxPath: cycleResult.savedReports.docxFile?.relativePath || null,
++          xlsxPath: cycleResult.savedReports.xlsxFile?.relativePath || null,
++          pdfPath: cycleResult.savedReports.pdfFile?.relativePath || null,
++          pptxPath: cycleResult.savedReports.pptxFile?.relativePath || null
++        }
++      : null,
++    resourceMetrics: cycleResult.resourceMetrics || null,
++    exportedAt: new Date().toISOString()
++  };
++}
++
++module.exports = {
++  buildApiSyncBundleFromDesktopCycle
++};
+diff --git a/desktop/windows/test/browser-research-acceptance.test.cjs b/desktop/windows/test/browser-research-acceptance.test.cjs
+index 3b33b83..aeceedc 100644
+--- a/desktop/windows/test/browser-research-acceptance.test.cjs
++++ b/desktop/windows/test/browser-research-acceptance.test.cjs
+@@ -1690,3 +1690,219 @@ test("15. Multi-Step Wizard Form & Validation-Aware Runner (`multi-step-form-wiz
+   assert.equal(wake200.pageVersion, 2);
+   assert.equal(wake200.snapshotReused, false);
+ });
++
++test("16. Structured HTML Matrix (`<table>`) & Definition-List (`<dl>/<dt>/<dd>`) Specification Extractor (`structured-matrix-extractor.cjs`)", async () => {
++  const workspaceRoot = createTempWorkspace();
++  const shell = createKosworkBrowserShell({ workspaceRoot });
++  const engine = shell.engine;
++
++  engine.registerSyntheticSite("https://corpus.local/matrix-and-dl-page", {
++    title: "Сводная матрица и паспорт спецификаций",
++    pageDate: "2026-11-07",
++    eventDate: "2026-11-05",
++    html: `
++      <html>
++        <body>
++          <h1>Сравнение тарифов</h1>
++          <table>
++            <thead>
++              <tr><th>Критерий</th><th>Option Alpha</th><th>Option Beta</th></tr>
++            </thead>
++            <tbody>
++              <tr><td>Цена</td><td>$49/мес</td><td>$35/мес</td></tr>
++              <tr><td>SLA</td><td>99.95%</td><td>99.90%</td></tr>
++            </tbody>
++          </table>
++          <h2>Дополнительный паспорт Option Alpha</h2>
++          <dl>
++            <dt>Шифрование</dt><dd>AES-256-GCM + TLS 1.3</dd>
++            <dt>Локальный индекс</dt><dd>SQLite FTS5 + WAL</dd>
++          </dl>
++        </body>
++      </html>
++    `
++  });
++
++  await engine.navigate({
++    tabId: "tab-matrix",
++    url: "https://corpus.local/matrix-and-dl-page"
++  });
++
++  const extracted = await shell.dispatchToolCall("browser.extract_structured_matrix", {
++    tabId: "tab-matrix",
++    defaultOptionName: "Option Alpha",
++    targetOptions: ["Option Alpha", "Option Beta"],
++    targetCriteria: ["Цена", "SLA", "Шифрование", "Локальный индекс"]
++  });
++
++  assert.equal(extracted.extractedCount, 6);
++  const alphaPrice = extracted.claims.find(
++    (c) => c.optionName === "Option Alpha" && c.criterion === "Цена"
++  );
++  assert.ok(alphaPrice);
++  assert.equal(alphaPrice.value, "$49/мес");
++  assert.equal(alphaPrice.extractionKind, "html_table_column_matrix");
++  assert.ok(alphaPrice.excerpt.quote.includes("$49/мес"));
++
++  const alphaEnc = extracted.claims.find(
++    (c) => c.optionName === "Option Alpha" && c.criterion === "Шифрование"
++  );
++  assert.ok(alphaEnc);
++  assert.equal(alphaEnc.value, "AES-256-GCM + TLS 1.3");
++  assert.equal(alphaEnc.extractionKind, "html_dl_definition_list");
++});
++
++test("17. Cross-Session Evidence Vault (`evidence-vault-index.cjs`) & Work Executor <-> SQLite API Sync Bridge (`work-executor-sqlite-bridge.cjs`)", async () => {
++  const workspaceRoot = createTempWorkspace();
++  const shell = createKosworkBrowserShell({ workspaceRoot });
++  const engine = shell.engine;
++
++  engine.registerSyntheticSite("https://corpus.local/vault-source?utm_source=test", {
++    title: "Источник для межсессионного хранилища доказательств",
++    pageDate: "2026-11-07",
++    eventDate: "2026-11-06",
++    text: "Верифицированный факт: максимальный размер пакета индексации составляет 128 МБ."
++  });
++
++  const nav = await engine.navigate({
++    tabId: "tab-vault",
++    url: "https://corpus.local/vault-source?utm_source=test"
++  });
++  const exc = engine.extractExcerpt("tab-vault", {
++    searchTerm: "максимальный размер пакета индексации составляет 128 МБ"
++  });
++
++  const baseNow = 1_762_550_000_000;
++  const ingestRes = await shell.dispatchToolCall(
++    "browser.evidence_vault_ingest",
++    {
++      sessionId: "sess-vault-1",
++      nowMs: baseNow,
++      claims: [
++        {
++          claimId: "c-vault-1",
++          optionName: "Koswork Indexer",
++          criterion: "Размер пакета",
++          value: "128 МБ",
++          claim: "Максимальный размер пакета 128 МБ",
++          excerpt: exc,
++          source: {
++            url: nav.url,
++            title: nav.snapshot.title,
++            pageDate: nav.pageDate,
++            eventDate: nav.eventDate,
++            fetchedAt: nav.fetchedAt
++          }
++        }
++      ]
++    },
++    { workspaceRoot }
++  );
++  assert.equal(ingestRes.addedCount, 1);
++  assert.equal(ingestRes.totalEntries, 1);
++
++  // Query within TTL (e.g. +10s) -> freshHit
++  const freshQuery = await shell.dispatchToolCall(
++    "browser.evidence_vault_query",
++    {
++      optionName: "Koswork Indexer",
++      criterion: "Размер пакета",
++      maxAgeMs: 60_000,
++      nowMs: baseNow + 10_000
++    },
++    { workspaceRoot }
++  );
++  assert.equal(freshQuery.freshCount, 1);
++  assert.equal(freshQuery.staleCount, 0);
++  // Canonical URL stripped ?utm_source=test
++  assert.equal(freshQuery.freshHits[0].source.canonicalUrl, "https://corpus.local/vault-source");
++
++  // Query past TTL (e.g. +120s) -> staleHit
++  const staleQuery = await shell.dispatchToolCall(
++    "browser.evidence_vault_query",
++    {
++      optionName: "Koswork Indexer",
++      criterion: "Размер пакета",
++      maxAgeMs: 60_000,
++      nowMs: baseNow + 120_000
++    },
++    { workspaceRoot }
++  );
++  assert.equal(staleQuery.freshCount, 0);
++  assert.equal(staleQuery.staleCount, 1);
++
++  // Verify Work Executor <-> SQLite 0064 API Sync Bundle generation
++  const syncBundle = await shell.dispatchToolCall("browser.export_api_sync_bundle", {
++    sessionId: "brs-sync-test-01",
++    cycleResult: {
++      question: "Проверка синхронизации с SQLite 0064",
++      status: "completed",
++      criteria: ["Размер пакета"],
++      searchHistory: [
++        {
++          searchId: "srch-sync-1",
++          query: "Koswork Indexer размер пакета",
++          providerId: "duckduckgo-html",
++          providerEndpoint: "https://html.duckduckgo.com/html/",
++          totalResults: 1,
++          searchedAt: nav.fetchedAt
++        }
++      ],
++      sources: [
++        {
++          sourceVisitId: "src-sync-1",
++          searchId: "srch-sync-1",
++          serpRank: 1,
++          url: nav.url,
++          canonicalUrl: nav.snapshot.canonicalUrl,
++          title: nav.snapshot.title,
++          httpStatus: 200,
++          available: true,
++          pageVersion: nav.snapshot.pageVersion,
++          snapshotId: nav.snapshot.snapshotId,
++          contentSha256: nav.snapshot.contentSha256,
++          tabReceipt: nav.tabReceipt,
++          pageDate: nav.pageDate,
++          eventDate: nav.eventDate,
++          fetchedAt: nav.fetchedAt
++        }
++      ],
++      confirmedClaims: [
++        {
++          claimId: "c-vault-1",
++          optionName: "Koswork Indexer",
++          criterion: "Размер пакета",
++          value: "128 МБ",
++          claim: "Максимальный размер пакета 128 МБ",
++          excerpt: exc,
++          source: {
++            url: nav.url,
++            title: nav.snapshot.title,
++            pageDate: nav.pageDate,
++            eventDate: nav.eventDate,
++            fetchedAt: nav.fetchedAt
++          }
++        }
++      ],
++      unconfirmedClaims: [
++        {
++          claimId: "c-bare-link",
++          optionName: "Koswork Indexer",
++          criterion: "Резервный канал",
++          value: "Да",
++          claim: "Голая ссылка без выдержки",
++          source: { url: nav.url },
++          rejectionReason: "BARE_URL_NOT_PROOF"
++        }
++      ]
++    }
++  });
++
++  assert.equal(syncBundle.schemaVersion, "koswork.browser-research.api-sync.v1");
++  assert.equal(syncBundle.sessionId, "brs-sync-test-01");
++  assert.equal(syncBundle.sources.length, 1);
++  assert.equal(syncBundle.excerpts.length, 1);
++  assert.equal(syncBundle.claims.length, 2);
++  assert.equal(syncBundle.claims[0].verificationStatus, "confirmed");
++  assert.equal(syncBundle.claims[1].verificationStatus, "unconfirmed_bare_link_rejected");
++});
+-- 
+2.39.5
+

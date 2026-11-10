@@ -1,0 +1,718 @@
+From faa662750b9fc4c57569a5044a6f5a8649868132 Mon Sep 17 00:00:00 2001
+From: Kosmora Engineering <eng@kosmora.ai>
+Date: Tue, 10 Nov 2026 12:26:25 +0000
+Subject: [PATCH 29/32] feat(browser-research): add SemVer changelog analyzer,
+ magic-byte MIME sniff guard, and RO-Crate 1.1 JSON-LD exporter (Phase 27)
+
+---
+ .../changelog-semver-timeline-analyzer.cjs    | 130 +++++++++++++++
+ ...ntent-disposition-and-mime-sniff-guard.cjs | 138 ++++++++++++++++
+ .../ro-crate-research-object-exporter.cjs     | 155 ++++++++++++++++++
+ desktop/windows/browser/shell.cjs             |  75 +++++++++
+ .../test/browser-research-acceptance.test.cjs | 131 +++++++++++++++
+ docs/koswork-browser-research.md              |   9 +
+ 6 files changed, 638 insertions(+)
+ create mode 100644 desktop/windows/browser/changelog-semver-timeline-analyzer.cjs
+ create mode 100644 desktop/windows/browser/content-disposition-and-mime-sniff-guard.cjs
+ create mode 100644 desktop/windows/browser/ro-crate-research-object-exporter.cjs
+
+diff --git a/desktop/windows/browser/changelog-semver-timeline-analyzer.cjs b/desktop/windows/browser/changelog-semver-timeline-analyzer.cjs
+new file mode 100644
+index 0000000..fe23364
+--- /dev/null
++++ b/desktop/windows/browser/changelog-semver-timeline-analyzer.cjs
+@@ -0,0 +1,130 @@
++"use strict";
++
++/**
++ * Koswork SemVer Release Changelog & Breaking-Change Timeline Analyzer
++ * (`desktop/windows/browser/changelog-semver-timeline-analyzer.cjs`).
++ *
++ * Deepens Requirements #2, #3 & #5:
++ * - Extracts semantic version release blocks (`v1.0.0` .. `v4.2.0 (2026-11-01)`) from
++ *   changelog pages with per-release `eventDate` (distinct from `pageDate` and `fetchedAt`),
++ *   exact UTF-16 `[startUtf16..endUtf16]` offsets, CVE security identifiers, and
++ *   breaking-change / deprecation markers.
++ * - Compares feature/API claims across SemVer releases to detect when an older release's
++ *   claim (`v3.x`) has been superseded or removed by a newer release (`v4.x`).
++ */
++
++function parseSemverTuple(verStr = "") {
++  const m = String(verStr || "")
++    .trim()
++    .replace(/^v/i, "")
++    .match(/^(\d+)\.(\d+)\.(\d+)/);
++  if (!m) return [0, 0, 0];
++  return [Number(m[1]), Number(m[2]), Number(m[3])];
++}
++
++function compareSemverStrings(a = "", b = "") {
++  const [aMaj, aMin, aPat] = parseSemverTuple(a);
++  const [bMaj, bMin, bPat] = parseSemverTuple(b);
++  if (aMaj !== bMaj) return aMaj - bMaj;
++  if (aMin !== bMin) return aMin - bMin;
++  return aPat - bPat;
++}
++
++function extractSemverReleaseChangelog(snapshot = {}) {
++  const fullText = String(snapshot.fullTextUtf16 || snapshot.text || "");
++  const headerRe =
++    /(?:^|\n|\s)(v?\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)\s*(?:\(|—|-|от)?\s*(\d{4}-\d{2}-\d{2})?\s*\)?/g;
++
++  const headers = [];
++  let m;
++  while ((m = headerRe.exec(fullText)) !== null) {
++    const version = m[1].startsWith("v") ? m[1] : `v${m[1]}`;
++    const releaseEventDate = m[2] || snapshot.eventDate || null;
++    const matchText = m[0].trim();
++    const startIdx = fullText.indexOf(matchText, m.index);
++    headers.push({
++      version,
++      releaseEventDate,
++      headerStartUtf16: startIdx >= 0 ? startIdx : m.index
++    });
++  }
++
++  const releases = [];
++  for (let i = 0; i < headers.length; i += 1) {
++    const cur = headers[i];
++    const nextStart =
++      i + 1 < headers.length ? headers[i + 1].headerStartUtf16 : fullText.length;
++    const blockQuote = fullText.slice(cur.headerStartUtf16, nextStart).trim();
++    const startUtf16 = cur.headerStartUtf16;
++    const endUtf16 = startUtf16 + blockQuote.length;
++
++    const hasBreakingChange =
++      /BREAKING\s+CHANGE|несовместим|удален|deprecated|устарел/iu.test(blockQuote);
++    const cveMatches = blockQuote.match(/\bCVE-\d{4}-\d{4,7}\b/gi) || [];
++
++    releases.push({
++      version: cur.version,
++      eventDate: cur.releaseEventDate,
++      pageDate: snapshot.pageDate || null,
++      fetchedAt: snapshot.fetchedAt || null,
++      url: snapshot.url || "",
++      quote: blockQuote,
++      startUtf16,
++      endUtf16,
++      hasBreakingChange,
++      cves: Array.from(new Set(cveMatches.map((c) => c.toUpperCase())))
++    });
++  }
++
++  releases.sort((a, b) => compareSemverStrings(b.version, a.version));
++
++  return {
++    url: snapshot.url || "",
++    title: snapshot.title || "",
++    pageDate: snapshot.pageDate || null,
++    fetchedAt: snapshot.fetchedAt || null,
++    latestVersion: releases[0] ? releases[0].version : null,
++    releasesCount: releases.length,
++    releases
++  };
++}
++
++function verifyBreakingChangesAndDeprecationsAcrossVersions({
++  snapshot = {},
++  featureKeyword = ""
++} = {}) {
++  const parsed = extractSemverReleaseChangelog(snapshot);
++  const kwLower = String(featureKeyword || "").trim().toLowerCase();
++
++  const matchingReleases = parsed.releases.filter((r) =>
++    !kwLower ? true : r.quote.toLowerCase().includes(kwLower)
++  );
++
++  if (matchingReleases.length === 0) {
++    return {
++      found: false,
++      status: "feature_not_mentioned_in_changelog",
++      latestRelease: null,
++      supersededReleases: []
++    };
++  }
++
++  const newest = matchingReleases[0];
++  const older = matchingReleases.slice(1);
++
++  return {
++    found: true,
++    status:
++      older.length > 0 && newest.hasBreakingChange
++        ? "SUPERSEDED_BY_NEWER_SEMVER_RELEASE"
++        : "ACTIVE_IN_LATEST_SEMVER_RELEASE",
++    latestRelease: newest,
++    supersededReleases: older
++  };
++}
++
++module.exports = {
++  compareSemverStrings,
++  extractSemverReleaseChangelog,
++  verifyBreakingChangesAndDeprecationsAcrossVersions
++};
+diff --git a/desktop/windows/browser/content-disposition-and-mime-sniff-guard.cjs b/desktop/windows/browser/content-disposition-and-mime-sniff-guard.cjs
+new file mode 100644
+index 0000000..b5314b8
+--- /dev/null
++++ b/desktop/windows/browser/content-disposition-and-mime-sniff-guard.cjs
+@@ -0,0 +1,138 @@
++"use strict";
++
++const path = require("node:path");
++const crypto = require("node:crypto");
++const {
++  KosworkBrowserPolicyError,
++  resolveAllowedDownloadTarget
++} = require("./policy.cjs");
++
++/**
++ * Koswork Content-Disposition Parser & Magic-Byte MIME Sniffing Guard
++ * (`desktop/windows/browser/content-disposition-and-mime-sniff-guard.cjs`).
++ *
++ * Deepens Requirement #4:
++ * - Parses RFC 6266 / RFC 5987 `Content-Disposition` headers (`filename*=UTF-8''...` and
++ *   `filename="..."`) to determine the safe download filename inside the allowed workspace folder.
++ * - Inspects the first bytes (magic numbers) of downloaded content buffers to block disguised
++ *   Windows PE executables (`0x4D 0x5A` "MZ"), ELF binaries (`0x7F 'E' 'L' 'F'`), and shell/script
++ *   shebangs (`#!`) masquerading under safe `.txt`, `.csv`, or `.pdf` filenames
++ *   (`BROWSER_DISGUISED_EXECUTABLE_PAYLOAD`).
++ */
++
++function parseContentDispositionFilename(headerValue = "", fallbackName = "download.txt") {
++  const raw = String(headerValue || "").trim();
++  if (!raw) return fallbackName;
++
++  // 1. Check RFC 5987 filename*=UTF-8''...
++  const starMatch = raw.match(/filename\*\s*=\s*UTF-8''([^;\r\n]+)/i);
++  if (starMatch && starMatch[1]) {
++    try {
++      return path.basename(decodeURIComponent(starMatch[1].trim()));
++    } catch (_) {
++      return path.basename(starMatch[1].trim());
++    }
++  }
++
++  // 2. Check quoted or unquoted filename="..."
++  const fnMatch = raw.match(/filename\s*=\s*(?:"([^"]+)"|'([^']+)'|([^;\s\r\n]+))/i);
++  if (fnMatch) {
++    const candidate = fnMatch[1] || fnMatch[2] || fnMatch[3] || fallbackName;
++    return path.basename(candidate.trim());
++  }
++
++  return fallbackName;
++}
++
++function sniffBinaryMagicSignature(buffer) {
++  const buf = Buffer.isBuffer(buffer)
++    ? buffer
++    : Buffer.from(String(buffer ?? ""), "utf8");
++
++  if (buf.length >= 2 && buf[0] === 0x4d && buf[1] === 0x5a) {
++    return { kind: "windows_pe_mz", executable: true };
++  }
++  if (
++    buf.length >= 4 &&
++    buf[0] === 0x7f &&
++    buf[1] === 0x45 &&
++    buf[2] === 0x4c &&
++    buf[3] === 0x46
++  ) {
++    return { kind: "linux_elf_binary", executable: true };
++  }
++  if (buf.length >= 2 && buf[0] === 0x23 && buf[1] === 0x21) {
++    return { kind: "script_shebang", executable: true };
++  }
++  if (
++    buf.length >= 5 &&
++    buf.slice(0, 5).toString("ascii") === "%PDF-"
++  ) {
++    return { kind: "pdf_document", executable: false };
++  }
++  if (
++    buf.length >= 4 &&
++    buf[0] === 0x50 &&
++    buf[1] === 0x4b &&
++    buf[2] === 0x03 &&
++    buf[3] === 0x04
++  ) {
++    return { kind: "zip_or_ooxml_container", executable: false };
++  }
++  return { kind: "plain_text_or_data", executable: false };
++}
++
++function verifyDownloadContentDispositionAndMagicBytes({
++  workspaceRoot,
++  subDir = "downloads",
++  contentDispositionHeader = "",
++  fallbackFilename = "download.txt",
++  declaredMimeType = "text/plain",
++  contentBuffer = Buffer.alloc(0)
++} = {}) {
++  const extractedFilename = parseContentDispositionFilename(
++    contentDispositionHeader,
++    fallbackFilename
++  );
++
++  const allowedDownloadDir = path.join(String(workspaceRoot || ""), subDir);
++  const target = resolveAllowedDownloadTarget(extractedFilename, {
++    allowedDownloadDir,
++    allowedWorkspaceRoot: workspaceRoot
++  });
++
++  const buf = Buffer.isBuffer(contentBuffer)
++    ? contentBuffer
++    : Buffer.from(String(contentBuffer ?? ""), "utf8");
++
++  const sniffed = sniffBinaryMagicSignature(buf);
++  if (sniffed.executable) {
++    throw new KosworkBrowserPolicyError(
++      "BROWSER_DISGUISED_EXECUTABLE_PAYLOAD",
++      `Загружаемый файл "${target.filename}" содержит сигнатуру исполняемого кода (${sniffed.kind}), замаскированную под документ.`,
++      {
++        filename: target.filename,
++        declaredMimeType,
++        sniffedKind: sniffed.kind
++      }
++    );
++  }
++
++  const sha256 = crypto.createHash("sha256").update(buf).digest("hex");
++
++  return {
++    allowed: true,
++    filename: target.filename,
++    targetPath: target.targetPath,
++    declaredMimeType,
++    sniffedKind: sniffed.kind,
++    byteLength: buf.byteLength,
++    sha256
++  };
++}
++
++module.exports = {
++  parseContentDispositionFilename,
++  sniffBinaryMagicSignature,
++  verifyDownloadContentDispositionAndMagicBytes
++};
+diff --git a/desktop/windows/browser/ro-crate-research-object-exporter.cjs b/desktop/windows/browser/ro-crate-research-object-exporter.cjs
+new file mode 100644
+index 0000000..3062b0c
+--- /dev/null
++++ b/desktop/windows/browser/ro-crate-research-object-exporter.cjs
+@@ -0,0 +1,155 @@
++"use strict";
++
++const { createKosworkWorkspaceService } = require("../workspace/workspace-service.cjs");
++
++/**
++ * Koswork W3C / ResearchObject.org RO-Crate 1.1 JSON-LD Exporter
++ * (`desktop/windows/browser/ro-crate-research-object-exporter.cjs`).
++ *
++ * Deepens Requirements #1, #3 & #5:
++ * - Packages a multi-site research session into a standard RO-Crate 1.1 JSON-LD
++ *   Metadata Descriptor (`reports/<slug>-ro-crate-metadata.json`) via `workspace-service.cjs`.
++ * - Preserves:
++ *   1. Explicit search adapter provenance (`CreateAction` -> `instrument` with `providerId`).
++ *   2. Opened `WebPage` entities with distinct `datePublished` (`pageDate`),
++ *      `temporalCoverage` (`eventDate`), and `sdDatePublished` (`fetchedAt`).
++ *   3. Verifiable `Quotation` entities with verbatim `text` (`quote`) and exact
++ *      UTF-16 range (`position: "UTF-16 [startUtf16..endUtf16]"`).
++ */
++
++function buildRoCrateMetadataDescriptor({
++  report = {},
++  searchAdapterId = "koswork-configured-search",
++  searchAdapterName = "Configured Search Engine Adapter"
++} = {}) {
++  const question = report.question || "Многосайтовое исследование Koswork Browser";
++  const graph = [
++    {
++      "@id": "ro-crate-metadata.json",
++      "@type": "CreativeWork",
++      conformsTo: { "@id": "https://w3id.org/ro/crate/1.1" },
++      about: { "@id": "./" }
++    },
++    {
++      "@id": "./",
++      "@type": "Dataset",
++      name: question,
++      description:
++        "Верифицированный исследовательский пакет Koswork Browser с UTF-16 выдержками и триадой дат (pageDate, eventDate, fetchedAt).",
++      datePublished: new Date().toISOString(),
++      hasPart: [],
++      mentions: []
++    },
++    {
++      "@id": `#instrument-${searchAdapterId}`,
++      "@type": "SoftwareApplication",
++      identifier: searchAdapterId,
++      name: searchAdapterName
++    },
++    {
++      "@id": "#research-execution-action",
++      "@type": "CreateAction",
++      name: `Выполнение исследовательского цикла: ${question}`,
++      instrument: { "@id": `#instrument-${searchAdapterId}` },
++      result: { "@id": "./" }
++    }
++  ];
++
++  const rootDataset = graph[1];
++  const seenSources = new Set();
++  let quoteCounter = 1;
++
++  for (const row of report.comparisonRows || []) {
++    const optionName = row.optionName || "Option";
++    for (const [criterion, cell] of Object.entries(row.cells || {})) {
++      if (!cell || !cell.quote || !Number.isInteger(cell.startUtf16) || cell.startUtf16 < 0) {
++        continue;
++      }
++      const sourceUrl = String(cell.sourceUrl || "https://corpus.local/unknown");
++      if (!seenSources.has(sourceUrl)) {
++        seenSources.add(sourceUrl);
++        rootDataset.hasPart.push({ "@id": sourceUrl });
++        graph.push({
++          "@id": sourceUrl,
++          "@type": "WebPage",
++          name: cell.sourceTitle || sourceUrl,
++          url: sourceUrl,
++          datePublished: cell.pageDate || null,
++          temporalCoverage: cell.eventDate || null,
++          sdDatePublished: cell.fetchedAt || null
++        });
++      }
++
++      const quoteId = `#quotation-${quoteCounter}`;
++      quoteCounter += 1;
++      rootDataset.mentions.push({ "@id": quoteId });
++      graph.push({
++        "@id": quoteId,
++        "@type": "Quotation",
++        name: `${optionName} — ${criterion}: ${cell.displayValue || cell.value || ""}`,
++        text: cell.quote,
++        position: `UTF-16 [${cell.startUtf16}..${cell.endUtf16}]`,
++        startUtf16: cell.startUtf16,
++        endUtf16: cell.endUtf16,
++        isBasedOn: { "@id": sourceUrl },
++        pageDate: cell.pageDate || null,
++        eventDate: cell.eventDate || null,
++        fetchedAt: cell.fetchedAt || null
++      });
++    }
++  }
++
++  for (const unav of report.unavailableSources || []) {
++    const uUrl = String(unav.url || "https://corpus.local/503");
++    if (!seenSources.has(uUrl)) {
++      seenSources.add(uUrl);
++      graph.push({
++        "@id": uUrl,
++        "@type": "WebPage",
++        name: `Недоступный источник (HTTP ${unav.statusCode || 503})`,
++        url: uUrl,
++        creativeWorkStatus: `Unavailable HTTP ${unav.statusCode || 503}`
++      });
++    }
++  }
++
++  return {
++    "@context": "https://w3id.org/ro/crate/1.1/context",
++    "@graph": graph
++  };
++}
++
++async function saveRoCrateResearchPackageViaWorkspace({
++  workspaceRoot,
++  slug = "research-ro-crate",
++  report = {},
++  searchAdapterId = "koswork-configured-search",
++  searchAdapterName = "Configured Search Engine Adapter",
++  signal = null
++} = {}) {
++  const crate = buildRoCrateMetadataDescriptor({
++    report,
++    searchAdapterId,
++    searchAdapterName
++  });
++  const svc = createKosworkWorkspaceService();
++  await svc.connectFolder({ folderPath: workspaceRoot, signal });
++
++  const jsonLdFile = await svc.createFile({
++    relativePath: `reports/${slug}-ro-crate-metadata.json`,
++    content: JSON.stringify(crate, null, 2) + "\n",
++    createParents: true,
++    signal
++  });
++
++  return {
++    crate,
++    graphEntitiesCount: crate["@graph"].length,
++    jsonLdFile
++  };
++}
++
++module.exports = {
++  buildRoCrateMetadataDescriptor,
++  saveRoCrateResearchPackageViaWorkspace
++};
+diff --git a/desktop/windows/browser/shell.cjs b/desktop/windows/browser/shell.cjs
+index ed69605..89423b6 100644
+--- a/desktop/windows/browser/shell.cjs
++++ b/desktop/windows/browser/shell.cjs
+@@ -145,6 +145,17 @@ const {
+   buildResearchKnowledgeGraphAndMermaidReport,
+   saveMermaidKnowledgeGraphViaWorkspace
+ } = require("./mermaid-knowledge-graph-exporter.cjs");
++const {
++  extractSemverReleaseChangelog,
++  verifyBreakingChangesAndDeprecationsAcrossVersions
++} = require("./changelog-semver-timeline-analyzer.cjs");
++const {
++  verifyDownloadContentDispositionAndMagicBytes
++} = require("./content-disposition-and-mime-sniff-guard.cjs");
++const {
++  buildRoCrateMetadataDescriptor,
++  saveRoCrateResearchPackageViaWorkspace
++} = require("./ro-crate-research-object-exporter.cjs");
+ 
+ /**
+  * Shared Tool & Execution Boundary for Koswork Browser (`desktop/windows/browser/shell.cjs`).
+@@ -309,6 +320,30 @@ const BROWSER_RESEARCH_TOOL_DEFINITIONS = Object.freeze([
+       "Сравнить обязательства SLA и сертификаты между поставщиками по верифицированным снимкам с отклонением голых ссылок.",
+     requiredParams: ["vendorSubmissions"]
+   },
++  {
++    name: "browser.analyze_semver_changelog",
++    description:
++      "Извлечь блоки релизов SemVer из истории изменений (changelog) с датой релиза eventDate, CVE и точными смещениями UTF-16.",
++    requiredParams: ["tabId"]
++  },
++  {
++    name: "browser.verify_semver_feature_status",
++    description:
++      "Проверить актуальность функции или API по цепочке релизов SemVer и выявить перекрытие более новым релизом (SUPERSEDED_BY_NEWER_SEMVER_RELEASE).",
++    requiredParams: ["tabId", "featureKeyword"]
++  },
++  {
++    name: "browser.verify_download_magic_bytes",
++    description:
++      "Проверить заголовок Content-Disposition и магические байты скачиваемого файла для блокировки замаскированных исполняемых файлов (MZ/ELF/#!).",
++    requiredParams: ["contentDispositionHeader"]
++  },
++  {
++    name: "browser.export_ro_crate",
++    description:
++      "Экспортировать исследовательский пакет в стандарт W3C RO-Crate 1.1 JSON-LD (ro-crate-metadata.json) с UTF-16 Quotation и триадой дат через workspace-service.",
++    requiredParams: ["report"]
++  },
+   {
+     name: "browser.export_mermaid_knowledge_graph",
+     description:
+@@ -883,6 +918,46 @@ function createKosworkBrowserShell(options = {}) {
+       case "browser.compare_vendor_slas":
+         return compareSlaCommitmentsAcrossVendors(args.vendorSubmissions || []);
+ 
++      case "browser.analyze_semver_changelog": {
++        const obs = engine.observePage(args.tabId);
++        return extractSemverReleaseChangelog(obs.snapshot);
++      }
++
++      case "browser.verify_semver_feature_status": {
++        const obs = engine.observePage(args.tabId);
++        return verifyBreakingChangesAndDeprecationsAcrossVersions({
++          snapshot: obs.snapshot,
++          featureKeyword: args.featureKeyword || ""
++        });
++      }
++
++      case "browser.verify_download_magic_bytes":
++        return verifyDownloadContentDispositionAndMagicBytes({
++          workspaceRoot: resolvedWorkspaceRoot,
++          subDir: args.subDir || "downloads",
++          contentDispositionHeader: args.contentDispositionHeader || "",
++          fallbackFilename: args.fallbackFilename || "download.txt",
++          declaredMimeType: args.declaredMimeType || "text/plain",
++          contentBuffer: args.contentBuffer || Buffer.alloc(0)
++        });
++
++      case "browser.export_ro_crate":
++        if (args.saveToWorkspace && resolvedWorkspaceRoot) {
++          return await saveRoCrateResearchPackageViaWorkspace({
++            workspaceRoot: resolvedWorkspaceRoot,
++            slug: args.slug || "research-ro-crate",
++            report: args.report || {},
++            searchAdapterId: args.searchAdapterId,
++            searchAdapterName: args.searchAdapterName,
++            signal
++          });
++        }
++        return buildRoCrateMetadataDescriptor({
++          report: args.report || {},
++          searchAdapterId: args.searchAdapterId,
++          searchAdapterName: args.searchAdapterName
++        });
++
+       case "browser.export_mermaid_knowledge_graph":
+         if (args.saveToWorkspace && resolvedWorkspaceRoot) {
+           return await saveMermaidKnowledgeGraphViaWorkspace({
+diff --git a/desktop/windows/test/browser-research-acceptance.test.cjs b/desktop/windows/test/browser-research-acceptance.test.cjs
+index f2f92bc..c096cc4 100644
+--- a/desktop/windows/test/browser-research-acceptance.test.cjs
++++ b/desktop/windows/test/browser-research-acceptance.test.cjs
+@@ -4044,3 +4044,134 @@ test("45. Research Knowledge Graph & Mermaid Visual Timeline Exporter (`mermaid-
+   assert.ok(fs.existsSync(path.join(workspaceRoot, kgRes.markdownFile.path)));
+   assert.ok(fs.existsSync(path.join(workspaceRoot, kgRes.jsonFile.path)));
+ });
++
++test("46. SemVer Release Changelog Timeline Analyzer (`changelog-semver-timeline-analyzer.cjs`) & Content-Disposition / Magic-Byte MIME Sniffing Guard (`content-disposition-and-mime-sniff-guard.cjs`)", async () => {
++  const workspaceRoot = createTempWorkspace();
++  const shell = createKosworkBrowserShell({ workspaceRoot });
++  const engine = shell.engine;
++
++  const changelogText = [
++    "v4.2.0 (2026-11-01) BREAKING CHANGE: устарел и удален эндпоинт /v1/legacy-sync, закрыта уязвимость CVE-2026-4102.",
++    "v3.8.0 (2025-06-15) Добавлен эндпоинт /v1/legacy-sync для пакетной репликации."
++  ].join("\n");
++
++  engine.registerSyntheticSite("https://corpus.local/alpha-changelog", {
++    title: "История релизов Option Alpha",
++    pageDate: "2026-11-02",
++    eventDate: "2026-11-01",
++    text: changelogText
++  });
++
++  await engine.navigate({
++    tabId: "tab-changelog",
++    url: "https://corpus.local/alpha-changelog"
++  });
++
++  const chRes = await shell.dispatchToolCall(
++    "browser.analyze_semver_changelog",
++    { tabId: "tab-changelog" },
++    { workspaceRoot }
++  );
++
++  assert.equal(chRes.latestVersion, "v4.2.0");
++  assert.equal(chRes.releasesCount, 2);
++  assert.equal(chRes.releases[0].eventDate, "2026-11-01");
++  assert.equal(chRes.releases[1].eventDate, "2025-06-15");
++  assert.deepEqual(chRes.releases[0].cves, ["CVE-2026-4102"]);
++
++  const featStatus = await shell.dispatchToolCall(
++    "browser.verify_semver_feature_status",
++    {
++      tabId: "tab-changelog",
++      featureKeyword: "/v1/legacy-sync"
++    },
++    { workspaceRoot }
++  );
++
++  assert.equal(featStatus.found, true);
++  assert.equal(featStatus.status, "SUPERSEDED_BY_NEWER_SEMVER_RELEASE");
++  assert.equal(featStatus.latestRelease.version, "v4.2.0");
++  assert.equal(featStatus.supersededReleases.length, 1);
++  assert.equal(featStatus.supersededReleases[0].version, "v3.8.0");
++
++  // Content-Disposition & Magic-Byte MIME Sniffing Guard
++  const safeCheck = await shell.dispatchToolCall(
++    "browser.verify_download_magic_bytes",
++    {
++      contentDispositionHeader: "attachment; filename*=UTF-8''alpha-spec-2026.pdf",
++      declaredMimeType: "application/pdf",
++      contentBuffer: Buffer.from("%PDF-1.4\nVerified Specification", "utf8")
++    },
++    { workspaceRoot }
++  );
++
++  assert.equal(safeCheck.allowed, true);
++  assert.equal(safeCheck.filename, "alpha-spec-2026.pdf");
++  assert.equal(safeCheck.sniffedKind, "pdf_document");
++
++  // Disguised Windows PE executable ("MZ...") claiming to be a .txt document must be blocked
++  await assert.rejects(
++    async () =>
++      shell.dispatchToolCall(
++        "browser.verify_download_magic_bytes",
++        {
++          contentDispositionHeader: 'attachment; filename="innocent-report.txt"',
++          declaredMimeType: "text/plain",
++          contentBuffer: Buffer.from([0x4d, 0x5a, 0x90, 0x00])
++        },
++        { workspaceRoot }
++      ),
++    (err) => err.code === "BROWSER_DISGUISED_EXECUTABLE_PAYLOAD"
++  );
++});
++
++test("47. W3C / ResearchObject.org RO-Crate 1.1 JSON-LD Exporter (`ro-crate-research-object-exporter.cjs` & `browser.export_ro_crate` via `shell.cjs`)", async () => {
++  const workspaceRoot = createTempWorkspace();
++  const shell = createKosworkBrowserShell({ workspaceRoot });
++
++  const crateRes = await shell.dispatchToolCall(
++    "browser.export_ro_crate",
++    {
++      saveToWorkspace: true,
++      slug: "alpha-beta-ro-crate",
++      searchAdapterId: "koswork-configured-search",
++      searchAdapterName: "Configured Search Engine Adapter",
++      report: {
++        question: "Пакет RO-Crate 1.1: сравнение Option Alpha и Option Beta",
++        comparisonRows: [
++          {
++            optionName: "Option Alpha",
++            cells: {
++              Цена: {
++                displayValue: "$49/мес",
++                quote: "Тариф Option Alpha составляет $49/мес",
++                startUtf16: 12,
++                endUtf16: 49,
++                sourceUrl: "https://corpus.local/alpha-2026",
++                sourceTitle: "Прайс Alpha 2026",
++                pageDate: "2026-10-15",
++                eventDate: "2026-11-01",
++                fetchedAt: "2026-11-10T12:00:00.000Z"
++              }
++            }
++          }
++        ],
++        unavailableSources: [
++          { url: "https://corpus.local/down-503", statusCode: 503 }
++        ]
++      }
++    },
++    { workspaceRoot }
++  );
++
++  assert.equal(crateRes.crate["@context"], "https://w3id.org/ro/crate/1.1/context");
++  assert.ok(crateRes.graphEntitiesCount >= 6);
++  const quotationEntity = crateRes.crate["@graph"].find(
++    (e) => e["@type"] === "Quotation"
++  );
++  assert.ok(quotationEntity);
++  assert.equal(quotationEntity.position, "UTF-16 [12..49]");
++  assert.equal(quotationEntity.pageDate, "2026-10-15");
++  assert.equal(quotationEntity.eventDate, "2026-11-01");
++  assert.ok(fs.existsSync(path.join(workspaceRoot, crateRes.jsonLdFile.path)));
++});
+diff --git a/docs/koswork-browser-research.md b/docs/koswork-browser-research.md
+index dae59dc..665b925 100644
+--- a/docs/koswork-browser-research.md
++++ b/docs/koswork-browser-research.md
+@@ -53,3 +53,12 @@
+ - **`desktop/windows/browser/mermaid-knowledge-graph-exporter.cjs`**:
+   - `buildResearchKnowledgeGraphAndMermaidReport(report)` and `saveMermaidKnowledgeGraphViaWorkspace`: generates a directed Provenance Knowledge Graph (`nodes`, `edges`) and embedded Mermaid `flowchart LR` + chronological `timeline` (`eventDate` vs `pageDate`) saved via `workspace-service.cjs` (`reports/<slug>.md` and `.json`).
+ - **Exposed via `shell.cjs` (`browser.extract_sla_and_compliance`, `browser.compare_vendor_slas`, `browser.export_mermaid_knowledge_graph`) and verified in Subtests 44 and 45 (`55/55` total suites passing).**
++
++### Phase 27: SemVer Release Changelog Timeline Analyzer, Content-Disposition & Magic-Byte MIME Sniffing Guard, and RO-Crate 1.1 JSON-LD Research Object Exporter
++- **`desktop/windows/browser/changelog-semver-timeline-analyzer.cjs`**:
++  - `extractSemverReleaseChangelog(snapshot)` and `verifyBreakingChangesAndDeprecationsAcrossVersions`: extracts SemVer release blocks (`v4.2.0`, `v3.8.0`) with per-release `eventDate` (distinct from `pageDate` and `fetchedAt`), CVE security advisories (`CVE-2026-4102`), breaking-change markers, and exact UTF-16 `[startUtf16..endUtf16]` offsets, automatically flagging features superseded by newer SemVer releases (`SUPERSEDED_BY_NEWER_SEMVER_RELEASE`).
++- **`desktop/windows/browser/content-disposition-and-mime-sniff-guard.cjs`**:
++  - `verifyDownloadContentDispositionAndMagicBytes`: parses RFC 6266 / RFC 5987 `Content-Disposition` headers (`filename*=UTF-8''...` and `filename="..."`), validates target paths via `resolveAllowedDownloadTarget`, and inspects binary magic signatures (`0x4D 0x5A` Windows PE `MZ`, `0x7F 'E' 'L' 'F'`, `#!`) to block disguised executable payloads (`BROWSER_DISGUISED_EXECUTABLE_PAYLOAD`).
++- **`desktop/windows/browser/ro-crate-research-object-exporter.cjs`**:
++  - `buildRoCrateMetadataDescriptor` and `saveRoCrateResearchPackageViaWorkspace`: packages a multi-site research report into a W3C / ResearchObject.org RO-Crate 1.1 JSON-LD descriptor (`reports/<slug>-ro-crate-metadata.json`) with `CreateAction` search adapter provenance, `WebPage` temporal triads (`datePublished` / `temporalCoverage` / `sdDatePublished`), and `Quotation` entities (`UTF-16 [startUtf16..endUtf16]`).
++- **Exposed via `shell.cjs` (`browser.analyze_semver_changelog`, `browser.verify_semver_feature_status`, `browser.verify_download_magic_bytes`, `browser.export_ro_crate`) and verified in Subtests 46 and 47 (`57/57` total suites passing).**
+-- 
+2.39.5
+

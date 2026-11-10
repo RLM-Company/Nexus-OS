@@ -1,0 +1,773 @@
+From 77527f37e569640d4069cd8645ca3c01f4e20580 Mon Sep 17 00:00:00 2001
+From: Kosmora Engineering <eng@kosmora.ai>
+Date: Tue, 10 Nov 2026 14:51:23 +0000
+Subject: [PATCH 31/32] feat(browser-research): add hardware/RPS benchmark
+ extractor, WebSocket/SSE stream observer, and CSL-JSON/RIS exporter (Phase
+ 29)
+
+---
+ ...csl-json-and-ris-bibliography-exporter.cjs | 142 ++++++++++++++
+ .../hardware-and-benchmark-spec-extractor.cjs | 167 +++++++++++++++++
+ desktop/windows/browser/shell.cjs             |  69 +++++++
+ ...websocket-and-sse-live-stream-observer.cjs | 176 ++++++++++++++++++
+ .../test/browser-research-acceptance.test.cjs | 129 +++++++++++++
+ docs/koswork-browser-research.md              |   9 +
+ 6 files changed, 692 insertions(+)
+ create mode 100644 desktop/windows/browser/csl-json-and-ris-bibliography-exporter.cjs
+ create mode 100644 desktop/windows/browser/hardware-and-benchmark-spec-extractor.cjs
+ create mode 100644 desktop/windows/browser/websocket-and-sse-live-stream-observer.cjs
+
+diff --git a/desktop/windows/browser/csl-json-and-ris-bibliography-exporter.cjs b/desktop/windows/browser/csl-json-and-ris-bibliography-exporter.cjs
+new file mode 100644
+index 0000000..81e3dfe
+--- /dev/null
++++ b/desktop/windows/browser/csl-json-and-ris-bibliography-exporter.cjs
+@@ -0,0 +1,142 @@
++"use strict";
++
++const { createKosworkWorkspaceService } = require("../workspace/workspace-service.cjs");
++
++/**
++ * Koswork CSL-JSON (Citation Style Language) & RIS Bibliography Exporter
++ * (`desktop/windows/browser/csl-json-and-ris-bibliography-exporter.cjs`).
++ *
++ * Deepens Requirements #1, #3 & #5:
++ * - Exports verified research sources and their UTF-16 `[startUtf16..endUtf16]` quotes
++ *   into standard reference-manager formats:
++ *   1. CSL-JSON (`reports/<slug>-csl.json`, compatible with Zotero, Mendeley, Pandoc citeproc)
++ *   2. RIS (`reports/<slug>.ris`, Research Information Systems `TY  - ELEC`)
++ *   via `workspace-service.cjs`.
++ * - Preserves distinct `issued` (`pageDate`), `event-date` (`eventDate`), and `accessed`
++ *   (`fetchedAt`) fields on every bibliographic record.
++ */
++
++function parseDateParts(isoStr = "") {
++  const m = String(isoStr || "")
++    .trim()
++    .match(/^(\d{4})-(\d{2})-(\d{2})/);
++  if (!m) return null;
++  return {
++    "date-parts": [[Number(m[1]), Number(m[2]), Number(m[3])]]
++  };
++}
++
++function buildCslJsonAndRisBibliography(report = {}) {
++  const byUrl = new Map();
++
++  for (const row of report.comparisonRows || []) {
++    const optionName = row.optionName || "Option";
++    for (const [criterion, cell] of Object.entries(row.cells || {})) {
++      if (!cell || !cell.quote || !Number.isInteger(cell.startUtf16) || cell.startUtf16 < 0) {
++        continue;
++      }
++      const url = String(cell.sourceUrl || "https://corpus.local/unknown");
++      if (!byUrl.has(url)) {
++        byUrl.set(url, {
++          url,
++          title: cell.sourceTitle || url,
++          pageDate: cell.pageDate || null,
++          eventDate: cell.eventDate || null,
++          fetchedAt: cell.fetchedAt || null,
++          excerpts: []
++        });
++      }
++      byUrl.get(url).excerpts.push({
++        optionName,
++        criterion,
++        value: cell.displayValue || cell.value || "",
++        quote: cell.quote,
++        startUtf16: cell.startUtf16,
++        endUtf16: cell.endUtf16
++      });
++    }
++  }
++
++  const cslItems = [];
++  const risBlocks = [];
++  let idx = 1;
++
++  for (const src of byUrl.values()) {
++    const id = `koswork-ref-${idx}`;
++    idx += 1;
++
++    const noteSummary = src.excerpts
++      .map(
++        (e) =>
++          `${e.optionName} / ${e.criterion} = ${e.value}: «${e.quote}» [UTF-16 ${e.startUtf16}..${e.endUtf16}]`
++      )
++      .join(" | ");
++
++    const cslEntry = {
++      id,
++      type: "webpage",
++      title: src.title,
++      URL: src.url,
++      issued: parseDateParts(src.pageDate),
++      "event-date": parseDateParts(src.eventDate),
++      accessed: parseDateParts(src.fetchedAt),
++      note: noteSummary
++    };
++    cslItems.push(cslEntry);
++
++    const year = String(src.eventDate || src.pageDate || "2026").slice(0, 4);
++    const risLines = [
++      "TY  - ELEC",
++      `ID  - ${id}`,
++      `TI  - ${src.title}`,
++      `UR  - ${src.url}`,
++      `PY  - ${year}`,
++      `DA  - ${src.pageDate || ""}`,
++      `Y2  - ${src.fetchedAt || ""}`,
++      `N1  - eventDate: ${src.eventDate || "n/a"} | ${noteSummary}`,
++      "ER  - "
++    ];
++    risBlocks.push(risLines.join("\n"));
++  }
++
++  return {
++    itemsCount: cslItems.length,
++    cslJson: cslItems,
++    risText: risBlocks.join("\n\n") + "\n"
++  };
++}
++
++async function saveCslJsonAndRisBibliographyViaWorkspace({
++  workspaceRoot,
++  slug = "research-bibliography",
++  report = {},
++  signal = null
++} = {}) {
++  const built = buildCslJsonAndRisBibliography(report);
++  const svc = createKosworkWorkspaceService();
++  await svc.connectFolder({ folderPath: workspaceRoot, signal });
++
++  const cslFile = await svc.createFile({
++    relativePath: `reports/${slug}-csl.json`,
++    content: JSON.stringify(built.cslJson, null, 2) + "\n",
++    createParents: true,
++    signal
++  });
++  const risFile = await svc.createFile({
++    relativePath: `reports/${slug}.ris`,
++    content: built.risText,
++    createParents: true,
++    signal
++  });
++
++  return {
++    ...built,
++    cslFile,
++    risFile
++  };
++}
++
++module.exports = {
++  buildCslJsonAndRisBibliography,
++  saveCslJsonAndRisBibliographyViaWorkspace
++};
+diff --git a/desktop/windows/browser/hardware-and-benchmark-spec-extractor.cjs b/desktop/windows/browser/hardware-and-benchmark-spec-extractor.cjs
+new file mode 100644
+index 0000000..5c3ca35
+--- /dev/null
++++ b/desktop/windows/browser/hardware-and-benchmark-spec-extractor.cjs
+@@ -0,0 +1,167 @@
++"use strict";
++
++/**
++ * Koswork Hardware & Performance Benchmark Throughput Extractor
++ * (`desktop/windows/browser/hardware-and-benchmark-spec-extractor.cjs`).
++ *
++ * Deepens Requirements #2, #3 & #5:
++ * - Extracts throughput metrics (`45 000 RPS`, `120k req/sec`), tail latency percentiles
++ *   (`p50 = 4 мс`, `p95 < 12 мс`, `p99 = 28 ms`), and hardware resource footprints
++ *   (`16 vCPU`, `64 ГБ ОЗУ`) with exact UTF-16 `[startUtf16..endUtf16]` offsets and
++ *   distinct `pageDate`, `eventDate`, and `fetchedAt`.
++ * - Normalizes throughput values to canonical requests-per-second (`normalizedRps`) and
++ *   compares options side-by-side while rejecting bare-link claims (`BARE_BENCHMARK_CLAIM_REJECTED`).
++ */
++
++function extractHardwareAndPerformanceBenchmarks(snapshot = {}) {
++  const fullText = String(snapshot.fullTextUtf16 || snapshot.text || "");
++  const throughputMetrics = [];
++  const latencyMetrics = [];
++  const hardwareSpecs = [];
++
++  // 1. Throughput: e.g. "45000 RPS", "120k req/sec", "85 тыс. запросов/сек"
++  const rpsRe = /(\d+(?:\.\d+)?)\s*(k|тыс\.?)?\s*(RPS|req\/sec|req\/s|запросов\/сек)/giu;
++  let m;
++  while ((m = rpsRe.exec(fullText)) !== null) {
++    const baseNum = Number(m[1]);
++    const mult = m[2] ? 1000 : 1;
++    const normalizedRps = Math.round(baseNum * mult);
++    const quote = m[0].trim();
++    const startUtf16 = fullText.indexOf(quote, m.index);
++    const endUtf16 = startUtf16 + quote.length;
++
++    throughputMetrics.push({
++      normalizedRps,
++      quote,
++      startUtf16,
++      endUtf16,
++      url: snapshot.url || "",
++      pageDate: snapshot.pageDate || null,
++      eventDate: snapshot.eventDate || null,
++      fetchedAt: snapshot.fetchedAt || null
++    });
++  }
++
++  // 2. Latency percentiles: e.g. "p95 < 12 мс", "p99 = 28 ms"
++  const latRe = /\b(p50|p90|p95|p99)\s*(?:<|<=|=|:|составляет)?\s*(\d+(?:\.\d+)?)\s*(мс|ms|сек|sec)/giu;
++  while ((m = latRe.exec(fullText)) !== null) {
++    const percentile = m[1].toLowerCase();
++    const rawVal = Number(m[2]);
++    const unit = m[3].toLowerCase();
++    const latencyMs =
++      unit === "сек" || unit === "sec" ? Number((rawVal * 1000).toFixed(2)) : rawVal;
++    const quote = m[0].trim();
++    const startUtf16 = fullText.indexOf(quote, m.index);
++    const endUtf16 = startUtf16 + quote.length;
++
++    latencyMetrics.push({
++      percentile,
++      latencyMs,
++      quote,
++      startUtf16,
++      endUtf16,
++      url: snapshot.url || "",
++      pageDate: snapshot.pageDate || null,
++      eventDate: snapshot.eventDate || null,
++      fetchedAt: snapshot.fetchedAt || null
++    });
++  }
++
++  // 3. Hardware specs: e.g. "16 vCPU", "64 ГБ ОЗУ", "64 GB RAM"
++  const hwRe = /(\d+)\s*(vCPU|ядер|cores|ГБ\s+ОЗУ|GB\s+RAM)/giu;
++  while ((m = hwRe.exec(fullText)) !== null) {
++    const amount = Number(m[1]);
++    const unit = m[2].trim();
++    const quote = m[0].trim();
++    const startUtf16 = fullText.indexOf(quote, m.index);
++    const endUtf16 = startUtf16 + quote.length;
++
++    hardwareSpecs.push({
++      amount,
++      unit,
++      quote,
++      startUtf16,
++      endUtf16,
++      url: snapshot.url || "",
++      pageDate: snapshot.pageDate || null,
++      eventDate: snapshot.eventDate || null,
++      fetchedAt: snapshot.fetchedAt || null
++    });
++  }
++
++  return {
++    url: snapshot.url || "",
++    title: snapshot.title || "",
++    pageDate: snapshot.pageDate || null,
++    eventDate: snapshot.eventDate || null,
++    fetchedAt: snapshot.fetchedAt || null,
++    throughputMetrics,
++    latencyMetrics,
++    hardwareSpecs
++  };
++}
++
++function compareBenchmarkThroughputAcrossOptions(submissions = []) {
++  const evaluated = [];
++  const rejected = [];
++
++  for (const sub of submissions || []) {
++    const optionName = String(sub?.optionName || "Option").trim();
++    if (sub?.bareLinkOnly || !sub?.snapshot) {
++      rejected.push({
++        optionName,
++        sourceUrl: sub?.sourceUrl || "",
++        code: "BARE_BENCHMARK_CLAIM_REJECTED",
++        reason: "Голая ссылка на бенчмарк без UTF-16 выдержки не принимается."
++      });
++      continue;
++    }
++
++    const extracted = extractHardwareAndPerformanceBenchmarks(sub.snapshot);
++    const topRps =
++      extracted.throughputMetrics.length > 0
++        ? extracted.throughputMetrics.reduce((best, cur) =>
++            cur.normalizedRps > best.normalizedRps ? cur : best
++          )
++        : null;
++
++    if (!topRps) {
++      rejected.push({
++        optionName,
++        sourceUrl: sub.snapshot.url || "",
++        code: "BENCHMARK_RPS_NOT_FOUND",
++        reason: "На странице не найдена подтверждённая метрика пропускной способности (RPS)."
++      });
++      continue;
++    }
++
++    const p95 = extracted.latencyMetrics.find((l) => l.percentile === "p95") || null;
++
++    evaluated.push({
++      optionName,
++      normalizedRps: topRps.normalizedRps,
++      rpsExcerpt: topRps,
++      p95LatencyMs: p95 ? p95.latencyMs : null,
++      p95Excerpt: p95,
++      hardwareSpecs: extracted.hardwareSpecs,
++      pageDate: sub.snapshot.pageDate || null,
++      eventDate: sub.snapshot.eventDate || null,
++      fetchedAt: sub.snapshot.fetchedAt || null
++    });
++  }
++
++  evaluated.sort((a, b) => b.normalizedRps - a.normalizedRps);
++
++  return {
++    evaluatedCount: evaluated.length,
++    rejectedCount: rejected.length,
++    fastestOptionName: evaluated[0] ? evaluated[0].optionName : null,
++    evaluated,
++    rejected
++  };
++}
++
++module.exports = {
++  extractHardwareAndPerformanceBenchmarks,
++  compareBenchmarkThroughputAcrossOptions
++};
+diff --git a/desktop/windows/browser/shell.cjs b/desktop/windows/browser/shell.cjs
+index 18cdf67..58e7b49 100644
+--- a/desktop/windows/browser/shell.cjs
++++ b/desktop/windows/browser/shell.cjs
+@@ -167,6 +167,17 @@ const {
+   buildJUnitXmlAndTap14ResearchReport,
+   saveJUnitAndTapVerificationReportViaWorkspace
+ } = require("./junit-and-tap-verification-exporter.cjs");
++const {
++  extractHardwareAndPerformanceBenchmarks,
++  compareBenchmarkThroughputAcrossOptions
++} = require("./hardware-and-benchmark-spec-extractor.cjs");
++const {
++  KosworkLiveStreamFrameObserver
++} = require("./websocket-and-sse-live-stream-observer.cjs");
++const {
++  buildCslJsonAndRisBibliography,
++  saveCslJsonAndRisBibliographyViaWorkspace
++} = require("./csl-json-and-ris-bibliography-exporter.cjs");
+ 
+ /**
+  * Shared Tool & Execution Boundary for Koswork Browser (`desktop/windows/browser/shell.cjs`).
+@@ -367,6 +378,30 @@ const BROWSER_RESEARCH_TOOL_DEFINITIONS = Object.freeze([
+       "Проверить OAuth 2.0 / OIDC / SAML SSO редирект или popup-окно, заблокировать open-redirect и перевести вкладку в paused_for_user.",
+     requiredParams: ["targetUrl"]
+   },
++  {
++    name: "browser.extract_hardware_benchmarks",
++    description:
++      "Извлечь метрики пропускной способности (RPS), перцентили задержек (p50/p95/p99) и аппаратные характеристики (vCPU, ГБ ОЗУ) с точными смещениями UTF-16.",
++    requiredParams: ["tabId"]
++  },
++  {
++    name: "browser.compare_benchmark_throughput",
++    description:
++      "Сравнить пропускную способность (RPS) и задержку p95 между вариантами по верифицированным снимкам с отклонением голых ссылок.",
++    requiredParams: ["submissions"]
++  },
++  {
++    name: "browser.observe_live_stream_batch",
++    description:
++      "Принять пакет кадров Server-Sent Events (SSE) или WebSocket на вкладке, обновить версионный снимок и вернуть UTF-16 оффсеты кадров.",
++    requiredParams: ["tabId"]
++  },
++  {
++    name: "browser.export_csl_ris_bibliography",
++    description:
++      "Экспортировать библиографию исследования в форматы CSL-JSON (.json) и RIS (.ris) с UTF-16 выдержками и триадой дат через workspace-service.",
++    requiredParams: ["report"]
++  },
+   {
+     name: "browser.export_junit_tap_report",
+     description:
+@@ -1000,6 +1035,40 @@ function createKosworkBrowserShell(options = {}) {
+         });
+       }
+ 
++      case "browser.extract_hardware_benchmarks": {
++        const obs = engine.observePage(args.tabId);
++        return extractHardwareAndPerformanceBenchmarks(obs.snapshot);
++      }
++
++      case "browser.compare_benchmark_throughput":
++        return compareBenchmarkThroughputAcrossOptions(args.submissions || []);
++
++      case "browser.observe_live_stream_batch": {
++        const streamObserver = new KosworkLiveStreamFrameObserver({
++          engine,
++          maxFramesPerBatch: args.maxFramesPerBatch ?? 50,
++          maxStreamBytes: args.maxStreamBytes ?? 256 * 1024
++        });
++        return streamObserver.ingestStreamBatchIntoTabSnapshot({
++          tabId: args.tabId,
++          protocol: args.protocol || "sse",
++          rawSseWireText: args.rawSseWireText || "",
++          frames: args.frames || [],
++          signal
++        });
++      }
++
++      case "browser.export_csl_ris_bibliography":
++        if (args.saveToWorkspace && resolvedWorkspaceRoot) {
++          return await saveCslJsonAndRisBibliographyViaWorkspace({
++            workspaceRoot: resolvedWorkspaceRoot,
++            slug: args.slug || "research-bibliography",
++            report: args.report || {},
++            signal
++          });
++        }
++        return buildCslJsonAndRisBibliography(args.report || {});
++
+       case "browser.export_junit_tap_report":
+         if (args.saveToWorkspace && resolvedWorkspaceRoot) {
+           return await saveJUnitAndTapVerificationReportViaWorkspace({
+diff --git a/desktop/windows/browser/websocket-and-sse-live-stream-observer.cjs b/desktop/windows/browser/websocket-and-sse-live-stream-observer.cjs
+new file mode 100644
+index 0000000..cce029a
+--- /dev/null
++++ b/desktop/windows/browser/websocket-and-sse-live-stream-observer.cjs
+@@ -0,0 +1,176 @@
++"use strict";
++
++const { buildVersionedPageSnapshot } = require("./document.cjs");
++
++/**
++ * Koswork WebSocket & Server-Sent Events (SSE) Live Stream Frame Observer
++ * (`desktop/windows/browser/websocket-and-sse-live-stream-observer.cjs`).
++ *
++ * Deepens Requirements #3, #6 & #7:
++ * - Captures bounded batches of Server-Sent Events (`text/event-stream`) or WebSocket
++ *   text frames on an active browser tab.
++ * - Materializes the accumulated stream frames into a versioned document snapshot
++ *   (`pageVersion + 1`) so live stream messages can be cited with exact UTF-16
++ *   `[startUtf16..endUtf16]` offsets and distinct `eventDate` (from frame event payload)
++ *   vs `pageDate` vs `fetchedAt`.
++ * - Enforces `maxFramesPerBatch` and `maxStreamBytes` resource caps and honours
++ *   `AbortSignal` (`BROWSER_STREAM_CANCELLED`).
++ */
++
++class KosworkLiveStreamFrameObserver {
++  constructor({ engine, maxFramesPerBatch = 50, maxStreamBytes = 256 * 1024 } = {}) {
++    if (!engine) {
++      throw new Error("KosworkLiveStreamFrameObserver requires a browser engine instance");
++    }
++    this.engine = engine;
++    this.maxFramesPerBatch = Number(maxFramesPerBatch || 50);
++    this.maxStreamBytes = Number(maxStreamBytes || 256 * 1024);
++  }
++
++  ingestStreamBatchIntoTabSnapshot({
++    tabId,
++    protocol = "sse",
++    rawSseWireText = "",
++    frames = [],
++    signal = null
++  } = {}) {
++    if (signal && signal.aborted) {
++      const err = new Error("Live stream capture aborted by AbortSignal");
++      err.code = "BROWSER_STREAM_CANCELLED";
++      throw err;
++    }
++
++    const id = String(tabId || "");
++    const tab = this.engine.tabs.get(id);
++    const prevSnapshot = tab?.snapshot;
++    if (!tab || !prevSnapshot) {
++      const err = new Error(`Active tab not found for live stream observation: ${id}`);
++      err.code = "BROWSER_TAB_NOT_FOUND";
++      throw err;
++    }
++
++    const parsedFrames = [];
++    if (rawSseWireText) {
++      const blocks = String(rawSseWireText)
++        .split(/\r?\n\r?\n/)
++        .map((b) => b.trim())
++        .filter(Boolean);
++      for (const blk of blocks) {
++        let eventName = "message";
++        let eventId = null;
++        const dataLines = [];
++        for (const line of blk.split(/\r?\n/)) {
++          if (line.startsWith("event:")) eventName = line.slice(6).trim();
++          else if (line.startsWith("id:")) eventId = line.slice(3).trim();
++          else if (line.startsWith("data:")) dataLines.push(line.slice(5).trim());
++        }
++        const dataText = dataLines.join(" ");
++        if (dataText) {
++          parsedFrames.push({
++            protocol: "sse",
++            eventName,
++            eventId,
++            dataText,
++            eventDate: this._extractIsoDateFromText(dataText)
++          });
++        }
++      }
++    }
++
++    for (const f of frames || []) {
++      const dataText = String(f?.dataText || f?.data || "").trim();
++      if (!dataText) continue;
++      parsedFrames.push({
++        protocol: protocol || "websocket",
++        eventName: f.eventName || "ws_frame",
++        eventId: f.eventId || null,
++        dataText,
++        eventDate: f.eventDate || this._extractIsoDateFromText(dataText)
++      });
++    }
++
++    const boundedFrames = parsedFrames.slice(0, this.maxFramesPerBatch);
++    const formattedLines = [];
++    let accumulatedBytes = 0;
++
++    for (const frame of boundedFrames) {
++      const line = `[STREAM:${frame.protocol.toUpperCase()}:${frame.eventName}] ${frame.dataText}`;
++      const lineBytes = Buffer.byteLength(line, "utf8");
++      if (accumulatedBytes + lineBytes > this.maxStreamBytes) {
++        break;
++      }
++      accumulatedBytes += lineBytes;
++      formattedLines.push(line);
++    }
++
++    const prevText = String(prevSnapshot.fullTextUtf16 || prevSnapshot.text || "");
++    const appendedBlock = formattedLines.join("\n");
++    const updatedText = prevText ? `${prevText}\n${appendedBlock}` : appendedBlock;
++
++    const latestFrameEventDate =
++      boundedFrames
++        .map((f) => f.eventDate)
++        .filter(Boolean)
++        .sort()
++        .pop() || prevSnapshot.eventDate;
++
++    const nextVersion = Number(prevSnapshot.pageVersion ?? 1) + 1;
++    const nextSnapshot = buildVersionedPageSnapshot(
++      {
++        title: prevSnapshot.title,
++        text: updatedText,
++        html: prevSnapshot.html || "",
++        pageDate: prevSnapshot.pageDate,
++        eventDate: latestFrameEventDate,
++        httpStatus: prevSnapshot.httpStatus ?? 200,
++        controls: prevSnapshot.controls || [],
++        frames: prevSnapshot.frames || [],
++        tables: prevSnapshot.tables || []
++      },
++      {
++        tabId: id,
++        pageVersion: nextVersion,
++        url: prevSnapshot.url,
++        fetchedAt: prevSnapshot.fetchedAt
++      }
++    );
++
++    tab.pageVersion = nextVersion;
++    tab.snapshot = nextSnapshot;
++    tab.lastObservation = nextSnapshot;
++
++    const fullNextText = String(nextSnapshot.fullTextUtf16 || nextSnapshot.text || "");
++    const frameReceipts = formattedLines.map((line, idx) => {
++      const startUtf16 = fullNextText.indexOf(line);
++      return {
++        frameIndex: idx + 1,
++        quote: line,
++        startUtf16,
++        endUtf16: startUtf16 >= 0 ? startUtf16 + line.length : -1,
++        eventDate: boundedFrames[idx]?.eventDate || null
++      };
++    });
++
++    return {
++      tabId: id,
++      previousVersion: prevSnapshot.pageVersion ?? 1,
++      nextVersion,
++      ingestedFramesCount: frameReceipts.length,
++      accumulatedBytes,
++      eventDate: nextSnapshot.eventDate,
++      pageDate: nextSnapshot.pageDate,
++      fetchedAt: nextSnapshot.fetchedAt,
++      frameReceipts,
++      snapshot: nextSnapshot
++    };
++  }
++
++  _extractIsoDateFromText(text = "") {
++    const m = String(text || "").match(/\b(\d{4}-\d{2}-\d{2})\b/);
++    return m ? m[1] : null;
++  }
++}
++
++module.exports = {
++  KosworkLiveStreamFrameObserver
++};
+diff --git a/desktop/windows/test/browser-research-acceptance.test.cjs b/desktop/windows/test/browser-research-acceptance.test.cjs
+index 881ca44..e1b8814 100644
+--- a/desktop/windows/test/browser-research-acceptance.test.cjs
++++ b/desktop/windows/test/browser-research-acceptance.test.cjs
+@@ -4323,3 +4323,132 @@ test("49. JUnit XML & TAP v14 Epistemic Verification Exporter (`junit-and-tap-ve
+   assert.ok(fs.existsSync(path.join(workspaceRoot, verRes.junitFile.path)));
+   assert.ok(fs.existsSync(path.join(workspaceRoot, verRes.tapFile.path)));
+ });
++
++test("50. Hardware & Throughput Benchmark Extractor (`hardware-and-benchmark-spec-extractor.cjs`) & WebSocket / SSE Live Stream Frame Observer (`websocket-and-sse-live-stream-observer.cjs`)", async () => {
++  const workspaceRoot = createTempWorkspace();
++  const shell = createKosworkBrowserShell({ workspaceRoot });
++  const engine = shell.engine;
++
++  engine.registerSyntheticSite("https://corpus.local/alpha-bench", {
++    title: "Бенчмарк Option Alpha",
++    pageDate: "2026-10-20",
++    eventDate: "2026-11-01",
++    text: "Кластер Option Alpha (16 vCPU, 64 ГБ ОЗУ) демонстрирует пропускную способность 120k req/sec при задержке p95 < 12 мс."
++  });
++
++  engine.registerSyntheticSite("https://corpus.local/beta-bench", {
++    title: "Бенчмарк Option Beta",
++    pageDate: "2026-10-18",
++    eventDate: "2026-11-01",
++    text: "Кластер Option Beta (8 vCPU, 32 ГБ ОЗУ) показывает 45000 RPS при задержке p95 = 24 мс."
++  });
++
++  const navAlpha = await engine.navigate({
++    tabId: "tab-bench-alpha",
++    url: "https://corpus.local/alpha-bench"
++  });
++  const navBeta = await engine.navigate({
++    tabId: "tab-bench-beta",
++    url: "https://corpus.local/beta-bench"
++  });
++
++  const alphaBench = await shell.dispatchToolCall(
++    "browser.extract_hardware_benchmarks",
++    { tabId: "tab-bench-alpha" },
++    { workspaceRoot }
++  );
++
++  assert.equal(alphaBench.throughputMetrics.length, 1);
++  assert.equal(alphaBench.throughputMetrics[0].normalizedRps, 120000);
++  assert.equal(alphaBench.latencyMetrics.length, 1);
++  assert.equal(alphaBench.latencyMetrics[0].latencyMs, 12);
++  assert.equal(alphaBench.hardwareSpecs.length, 2);
++
++  const cmpBench = await shell.dispatchToolCall(
++    "browser.compare_benchmark_throughput",
++    {
++      submissions: [
++        { optionName: "Option Alpha", snapshot: navAlpha.snapshot },
++        { optionName: "Option Beta", snapshot: navBeta.snapshot },
++        { optionName: "Option Gamma (Bare)", bareLinkOnly: true, sourceUrl: "https://corpus.local/bare" }
++      ]
++    },
++    { workspaceRoot }
++  );
++
++  assert.equal(cmpBench.evaluatedCount, 2);
++  assert.equal(cmpBench.rejectedCount, 1);
++  assert.equal(cmpBench.fastestOptionName, "Option Alpha");
++  assert.equal(cmpBench.evaluated[0].normalizedRps, 120000);
++  assert.equal(cmpBench.evaluated[1].normalizedRps, 45000);
++
++  // Test SSE Live Stream Frame Observer on tab-bench-alpha
++  const sseWire = [
++    "event: telemetry_tick",
++    "id: tick-101",
++    "data: 2026-11-05 Пиковая нагрузка достигла 135000 RPS без деградации SLA",
++    "",
++    "event: telemetry_tick",
++    "id: tick-102",
++    "data: 2026-11-06 Задержка p95 стабилизировалась на уровне 9 мс"
++  ].join("\n");
++
++  const streamRes = await shell.dispatchToolCall(
++    "browser.observe_live_stream_batch",
++    {
++      tabId: "tab-bench-alpha",
++      protocol: "sse",
++      rawSseWireText: sseWire
++    },
++    { workspaceRoot }
++  );
++
++  assert.equal(streamRes.ingestedFramesCount, 2);
++  assert.equal(streamRes.eventDate, "2026-11-06");
++  assert.ok(streamRes.frameReceipts[0].startUtf16 > 0);
++  assert.ok(streamRes.frameReceipts[1].endUtf16 > streamRes.frameReceipts[1].startUtf16);
++});
++
++test("51. CSL-JSON (Citation Style Language) & RIS Bibliography Exporter (`csl-json-and-ris-bibliography-exporter.cjs` & `browser.export_csl_ris_bibliography` via `shell.cjs`)", async () => {
++  const workspaceRoot = createTempWorkspace();
++  const shell = createKosworkBrowserShell({ workspaceRoot });
++
++  const bibRes = await shell.dispatchToolCall(
++    "browser.export_csl_ris_bibliography",
++    {
++      saveToWorkspace: true,
++      slug: "alpha-beta-citations",
++      report: {
++        question: "Библиография CSL-JSON и RIS для Option Alpha",
++        comparisonRows: [
++          {
++            optionName: "Option Alpha",
++            cells: {
++              Цена: {
++                displayValue: "$49/мес",
++                quote: "Тариф Option Alpha составляет $49/мес",
++                startUtf16: 10,
++                endUtf16: 47,
++                sourceUrl: "https://corpus.local/alpha-2026",
++                sourceTitle: "Прайс Alpha 2026",
++                pageDate: "2026-10-15",
++                eventDate: "2026-11-01",
++                fetchedAt: "2026-11-10T14:00:00.000Z"
++              }
++            }
++          }
++        ]
++      }
++    },
++    { workspaceRoot }
++  );
++
++  assert.equal(bibRes.itemsCount, 1);
++  assert.equal(bibRes.cslJson[0].URL, "https://corpus.local/alpha-2026");
++  assert.deepEqual(bibRes.cslJson[0].issued["date-parts"], [[2026, 10, 15]]);
++  assert.deepEqual(bibRes.cslJson[0]["event-date"]["date-parts"], [[2026, 11, 1]]);
++  assert.ok(bibRes.risText.includes("TY  - ELEC"));
++  assert.ok(bibRes.risText.includes("[UTF-16 10..47]"));
++  assert.ok(fs.existsSync(path.join(workspaceRoot, bibRes.cslFile.path)));
++  assert.ok(fs.existsSync(path.join(workspaceRoot, bibRes.risFile.path)));
++});
+diff --git a/docs/koswork-browser-research.md b/docs/koswork-browser-research.md
+index 12110e0..c37a24d 100644
+--- a/docs/koswork-browser-research.md
++++ b/docs/koswork-browser-research.md
+@@ -71,3 +71,12 @@
+ - **`desktop/windows/browser/junit-and-tap-verification-exporter.cjs`**:
+   - `buildJUnitXmlAndTap14ResearchReport(report)` and `saveJUnitAndTapVerificationReportViaWorkspace`: exports multi-site research verification results into CI-ready JUnit XML (`reports/<slug>-junit.xml`) and TAP Version 14 (`reports/<slug>.tap`) files via `workspace-service.cjs`.
+ - **Exposed via `shell.cjs` (`browser.extract_tier_quotas`, `browser.evaluate_workload_quotas`, `browser.inspect_oauth_sso_redirect`, `browser.export_junit_tap_report`) and verified in Subtests 48 and 49 (`59/59` total suites passing).**
++
++### Phase 29: Hardware & Throughput Benchmark Extractor, WebSocket / SSE Live Stream Frame Observer, and CSL-JSON & RIS Bibliography Exporter
++- **`desktop/windows/browser/hardware-and-benchmark-spec-extractor.cjs`**:
++  - `extractHardwareAndPerformanceBenchmarks(snapshot)` and `compareBenchmarkThroughputAcrossOptions`: extracts throughput metrics (`120k req/sec` -> `120000` RPS, `45000 RPS`), tail latency percentiles (`p95 < 12 мс`), and hardware footprints (`16 vCPU`, `64 ГБ ОЗУ`) with exact UTF-16 `[startUtf16..endUtf16]` offsets and distinct `pageDate`/`eventDate`/`fetchedAt`, while rejecting bare benchmark links (`BARE_BENCHMARK_CLAIM_REJECTED`).
++- **`desktop/windows/browser/websocket-and-sse-live-stream-observer.cjs`**:
++  - `KosworkLiveStreamFrameObserver`: ingests bounded batches of Server-Sent Events (`text/event-stream`) and WebSocket frames into a versioned document snapshot (`pageVersion + 1`), computing exact UTF-16 `[startUtf16..endUtf16]` offsets for each stream frame and updating `eventDate` from frame payload dates while respecting `maxFramesPerBatch`, `maxStreamBytes`, and `AbortSignal`.
++- **`desktop/windows/browser/csl-json-and-ris-bibliography-exporter.cjs`**:
++  - `buildCslJsonAndRisBibliography(report)` and `saveCslJsonAndRisBibliographyViaWorkspace`: exports verified research sources and their UTF-16 quotes into standard CSL-JSON (`reports/<slug>-csl.json`, Zotero/Pandoc `citeproc`) and RIS (`reports/<slug>.ris`, `TY  - ELEC`) bibliography files via `workspace-service.cjs`.
++- **Exposed via `shell.cjs` (`browser.extract_hardware_benchmarks`, `browser.compare_benchmark_throughput`, `browser.observe_live_stream_batch`, `browser.export_csl_ris_bibliography`) and verified in Subtests 50 and 51 (`61/61` total suites passing).**
+-- 
+2.39.5
+

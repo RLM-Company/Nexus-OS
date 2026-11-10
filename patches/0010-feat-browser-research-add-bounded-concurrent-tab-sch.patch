@@ -1,0 +1,565 @@
+From e1fa53907cd8f5b84ba811f938a915b0a73102d8 Mon Sep 17 00:00:00 2001
+From: Kosmora Engineering <eng@kosmora.ai>
+Date: Sat, 7 Nov 2026 22:13:56 +0000
+Subject: [PATCH 10/32] feat(browser-research): add bounded concurrent tab
+ scheduler with domain politeness and W3C PROV-JSON + BibTeX report lineage
+ exporter
+
+---
+ .../browser/concurrent-tab-scheduler.cjs      | 175 ++++++++++++++++++
+ .../windows/browser/prov-lineage-exporter.cjs | 128 +++++++++++++
+ .../browser/research-report-builder.cjs       |  17 +-
+ .../test/browser-research-acceptance.test.cjs | 153 +++++++++++++++
+ 4 files changed, 469 insertions(+), 4 deletions(-)
+ create mode 100644 desktop/windows/browser/concurrent-tab-scheduler.cjs
+ create mode 100644 desktop/windows/browser/prov-lineage-exporter.cjs
+
+diff --git a/desktop/windows/browser/concurrent-tab-scheduler.cjs b/desktop/windows/browser/concurrent-tab-scheduler.cjs
+new file mode 100644
+index 0000000..217372e
+--- /dev/null
++++ b/desktop/windows/browser/concurrent-tab-scheduler.cjs
+@@ -0,0 +1,175 @@
++"use strict";
++
++/**
++ * Koswork Bounded Concurrent Tab Scheduler & Domain Politeness Governor
++ * (`desktop/windows/browser/concurrent-tab-scheduler.cjs`).
++ *
++ * Coordinates multi-site research openings and reads across up to `maxConcurrency`
++ * worker slots (`<= engine.resourceGovernor.maxLiveTabs`, default 3):
++ * 1. Enforces per-domain politeness spacing (`minDomainIntervalMs`) so rapid multi-page
++ *    reads never flood a single host.
++ * 2. Supports cooperative cancellation (`AbortSignal`) across queued and active items,
++ *    preserving already-verified results when cancelled mid-batch.
++ * 3. Records per-domain and batch-level scheduling telemetry.
++ */
++class KosworkBrowserTabScheduler {
++  constructor(options = {}) {
++    if (!options.engine) {
++      throw new Error("TAB_SCHEDULER_REQUIRES_BROWSER_ENGINE");
++    }
++    this.engine = options.engine;
++    const governorMax = Number(this.engine.resourceGovernor?.maxLiveTabs ?? 3);
++    this.maxConcurrency = Math.max(
++      1,
++      Math.min(Number(options.maxConcurrency ?? governorMax), governorMax)
++    );
++    this.minDomainIntervalMs = Math.max(0, Number(options.minDomainIntervalMs ?? 25));
++    this.lastDomainAccessMs = new Map(); // hostname -> timestampMs
++  }
++
++  async waitForDomainPoliteness(rawUrl, signal = null) {
++    if (this.minDomainIntervalMs <= 0) return 0;
++
++    let hostname = "local";
++    try {
++      hostname = new URL(String(rawUrl)).hostname.toLowerCase();
++    } catch {
++      hostname = "local";
++    }
++
++    const nowMs = Date.now();
++    const lastMs = this.lastDomainAccessMs.get(hostname) ?? 0;
++    const elapsed = nowMs - lastMs;
++    const waitMs = Math.max(0, this.minDomainIntervalMs - elapsed);
++
++    this.lastDomainAccessMs.set(hostname, nowMs + waitMs);
++
++    if (waitMs > 0) {
++      await new Promise((resolve, reject) => {
++        const timer = setTimeout(resolve, waitMs);
++        if (signal) {
++          if (signal.aborted) {
++            clearTimeout(timer);
++            const err = new Error("SCHEDULER_BATCH_CANCELLED");
++            err.code = "SCHEDULER_BATCH_CANCELLED";
++            return reject(err);
++          }
++          signal.addEventListener(
++            "abort",
++            () => {
++              clearTimeout(timer);
++              const err = new Error("SCHEDULER_BATCH_CANCELLED");
++              err.code = "SCHEDULER_BATCH_CANCELLED";
++              reject(err);
++            },
++            { once: true }
++          );
++        }
++      });
++    }
++
++    return waitMs;
++  }
++
++  /**
++   * Executes a batch of source navigation & extraction tasks across bounded worker slots
++   * (`maxConcurrency <= maxLiveTabs`).
++   */
++  async runSourceBatch(items = [], options = {}) {
++    const signal = options.signal || null;
++    const results = [];
++    const cancelledUrls = [];
++    let cursor = 0;
++    let totalPolitenessWaitMs = 0;
++
++    const worker = async (workerIndex) => {
++      while (cursor < items.length) {
++        if (signal?.aborted) {
++          while (cursor < items.length) {
++            const skipped = items[cursor++];
++            cancelledUrls.push(skipped.url);
++          }
++          break;
++        }
++
++        const itemIndex = cursor++;
++        const item = items[itemIndex];
++        // Give each item its own tabId by default so background tab hibernation (`maxLiveTabs`) is exercised
++        const slotTabId = item.tabId || `sched-tab-${itemIndex + 1}`;
++
++        try {
++          const waitedMs = await this.waitForDomainPoliteness(item.url, signal);
++          totalPolitenessWaitMs += waitedMs;
++
++          const nav = await this.engine.navigate({
++            tabId: slotTabId,
++            url: item.url,
++            actor: item.actor || "agent",
++            signal
++          });
++
++          const excerpts = [];
++          if (nav.available && Array.isArray(item.extractTerms)) {
++            for (const term of item.extractTerms) {
++              const exc = this.engine.extractExcerpt(slotTabId, { searchTerm: term });
++              if (exc) excerpts.push(exc);
++            }
++          }
++
++          results.push({
++            index: itemIndex,
++            workerIndex,
++            status: nav.available ? "ok" : "unavailable",
++            tabId: slotTabId,
++            url: nav.url,
++            httpStatus: nav.httpStatus,
++            available: nav.available,
++            pageDate: nav.pageDate,
++            eventDate: nav.eventDate,
++            fetchedAt: nav.fetchedAt,
++            tabReceipt: nav.tabReceipt,
++            snapshot: nav.snapshot,
++            excerpts
++          });
++        } catch (err) {
++          if (
++            signal?.aborted ||
++            err?.code === "SCHEDULER_BATCH_CANCELLED" ||
++            err?.code === "BROWSER_NAVIGATION_CANCELLED"
++          ) {
++            cancelledUrls.push(item.url);
++          } else {
++            throw err;
++          }
++        }
++      }
++    };
++
++    const workerCount = Math.min(this.maxConcurrency, Math.max(1, items.length));
++    const workers = Array.from({ length: workerCount }, (_, idx) => worker(idx + 1));
++    await Promise.all(workers);
++
++    results.sort((a, b) => a.index - b.index);
++    const resourceMetrics = this.engine.resourceGovernor.getResourceReport();
++
++    return {
++      status: cancelledUrls.length > 0 && results.length === 0 ? "cancelled" : "completed",
++      completedCount: results.length,
++      cancelledCount: cancelledUrls.length,
++      cancelledUrls,
++      maxConcurrencyUsed: workerCount,
++      totalPolitenessWaitMs,
++      liveTabCountAfterBatch: this.engine.resourceGovernor.liveTabs.size,
++      resourceMetrics,
++      results
++    };
++  }
++
++  async executeBatch(items = [], options = {}) {
++    return this.runSourceBatch(items, options);
++  }
++}
++
++module.exports = {
++  KosworkBrowserTabScheduler
++};
+diff --git a/desktop/windows/browser/prov-lineage-exporter.cjs b/desktop/windows/browser/prov-lineage-exporter.cjs
+new file mode 100644
+index 0000000..1a84db1
+--- /dev/null
++++ b/desktop/windows/browser/prov-lineage-exporter.cjs
+@@ -0,0 +1,128 @@
++"use strict";
++
++const { buildProvLineageAndBibtex } = require("../workspace/prov-lineage-and-citation-builder.cjs");
++
++/**
++ * Koswork Browser Research W3C PROV-O Lineage & BibTeX Bibliography Exporter
++ * (`desktop/windows/browser/prov-lineage-exporter.cjs`).
++ *
++ * Maps a completed Browser Research Report into a W3C PROV-JSON graph (`prov:Entity`,
++ * `prov:Activity`, `prov:Agent`, `prov:wasDerivedFrom`) and BibTeX citation bundle (`.bib`),
++ * proving the exact derivation chain:
++ * `claim (Entity) -> wasDerivedFrom -> excerpt (Entity [UTF-16 offsets]) -> wasDerivedFrom -> source (Entity [URL, pageDate, eventDate, fetchedAt])`.
++ */
++function buildBrowserResearchProvAndBibtex(reportSpec = {}) {
++  const entities = [];
++  const activities = [];
++  const agents = [
++    {
++      id: "agent-koswork-browser-research",
++      type: "prov:SoftwareAgent",
++      label: "Koswork Browser Research Engine"
++    }
++  ];
++  const derivations = [];
++  const citations = [];
++
++  const generatedAt = reportSpec.generatedAt || new Date().toISOString();
++  const activityId = "act-multi-site-research-cycle";
++  activities.push({
++    id: activityId,
++    startTimeIso: generatedAt,
++    endTimeIso: generatedAt,
++    label: `Исследовательский цикл: ${reportSpec.question || "Browser Research"}`
++  });
++
++  const seenSourceUrls = new Map();
++  let sourceIndex = 0;
++
++  const registerSourceEntity = (src) => {
++    if (!src || !src.url) return null;
++    if (seenSourceUrls.has(src.url)) {
++      return seenSourceUrls.get(src.url);
++    }
++    sourceIndex += 1;
++    const srcEntityId = `source-${sourceIndex}`;
++    seenSourceUrls.set(src.url, srcEntityId);
++
++    entities.push({
++      id: srcEntityId,
++      type: "prov:Entity",
++      label: `${src.title || src.url} (${src.url}) [pageDate=${src.pageDate || "n/a"}, eventDate=${
++        src.eventDate || "n/a"
++      }, fetchedAt=${src.fetchedAt || generatedAt}]`
++    });
++
++    const yearMatch = String(src.pageDate || src.eventDate || generatedAt).match(/\b(\d{4})\b/);
++    citations.push({
++      key: `kosworkSrc${sourceIndex}`,
++      entryType: "misc",
++      author: src.providerId || "Web Source",
++      title: src.title || src.url,
++      year: yearMatch ? Number(yearMatch[1]) : 2026,
++      url: src.url
++    });
++    return srcEntityId;
++  };
++
++  for (const src of reportSpec.sources || []) {
++    registerSourceEntity(src);
++  }
++
++  for (const claim of reportSpec.confirmedClaims || []) {
++    const exc = claim.excerpt;
++    const src = claim.source;
++    if (!exc || !src) continue;
++
++    const srcEntityId = registerSourceEntity(src);
++
++    const excEntityId = exc.excerptId || `excerpt-${claim.claimId}`;
++    entities.push({
++      id: excEntityId,
++      type: "prov:Entity",
++      label: `UTF-16 [${exc.startUtf16}..${exc.endUtf16}]: "${exc.quote}"`
++    });
++
++    const claimEntityId = claim.claimId || `claim-${entities.length + 1}`;
++    entities.push({
++      id: claimEntityId,
++      type: "prov:Entity",
++      label: claim.claim
++    });
++
++    // Derivation 1: excerpt <- source
++    derivations.push({
++      generatedEntityId: excEntityId,
++      usedEntityId: srcEntityId,
++      activityId
++    });
++
++    // Derivation 2: claim <- excerpt
++    derivations.push({
++      generatedEntityId: claimEntityId,
++      usedEntityId: excEntityId,
++      activityId
++    });
++  }
++
++  const built = buildProvLineageAndBibtex({
++    namespaceUri: "https://koswork.local/browser-research/prov/",
++    entities,
++    activities,
++    agents,
++    derivations,
++    citations
++  });
++
++  const provJsonObject = JSON.parse(built.provJson);
++
++  return {
++    ...built,
++    provJsonObject,
++    bibtex: built.bibtexText
++  };
++}
++
++module.exports = {
++  buildBrowserResearchProvAndBibtex
++};
+diff --git a/desktop/windows/browser/research-report-builder.cjs b/desktop/windows/browser/research-report-builder.cjs
+index 2967a90..3399a0a 100644
+--- a/desktop/windows/browser/research-report-builder.cjs
++++ b/desktop/windows/browser/research-report-builder.cjs
+@@ -6,14 +6,15 @@ const { saveWorkbookToWorkspace } = require("../workspace/excel-workbook-builder
+ const { savePdfReportToWorkspace } = require("../workspace/pdf-report-builder.cjs");
+ const { savePresentationToWorkspace } = require("../workspace/powerpoint-deck-builder.cjs");
+ const { verifyResearchReportIntegrity } = require("./citation-verifier.cjs");
++const { buildBrowserResearchProvAndBibtex } = require("./prov-lineage-exporter.cjs");
+ 
+ /**
+  * Koswork Verifiable Browser Research Report Builder (`desktop/windows/browser/research-report-builder.cjs`).
+  *
+  * Saves Markdown (`.md`), HTML (`.html`), RFC-4180 CSV (`.csv`), JSON (`.json`),
+- * and optional OpenXML Word (`.docx`), Excel (`.xlsx`), PDF 1.4 (`.pdf`), and PowerPoint (`.pptx`)
+- * comparison artifacts through the existing `desktop/windows/workspace/` file APIs,
+- * and runs `verifyResearchReportIntegrity`.
++ * W3C PROV-JSON (`.prov.json`), BibTeX (`.bib`), and optional OpenXML Word (`.docx`),
++ * Excel (`.xlsx`), PDF 1.4 (`.pdf`), and PowerPoint (`.pptx`) comparison artifacts
++ * through the existing `desktop/windows/workspace/` file APIs, and runs `verifyResearchReportIntegrity`.
+  */
+ 
+ function escapeHtml(text) {
+@@ -395,16 +396,19 @@ function renderResearchReportHtml(spec) {
+ 
+ /**
+  * Saves the Markdown report, HTML report, CSV comparison table, JSON comparison matrix,
+- * and optional `.docx`, `.xlsx`, `.pdf`, and `.pptx` files via the existing `desktop/windows/workspace/` services.
++ * W3C PROV-JSON (`.prov.json`), BibTeX (`.bib`), and optional `.docx`, `.xlsx`, `.pdf`, and `.pptx`
++ * files via the existing `desktop/windows/workspace/` services.
+  */
+ async function saveResearchReportsViaWorkspace({
+   workspaceRoot,
+   workspaceService = null,
+   reportSlug = "browser-research-report",
+   reportData,
++  reportSpec,
+   exportOfficeFormats = true,
+   signal = null
+ } = {}) {
++  reportData = reportData || reportSpec || {};
+   let svc = workspaceService;
+   if (!svc) {
+     svc = createKosworkWorkspaceService();
+@@ -446,6 +450,7 @@ async function saveResearchReportsViaWorkspace({
+     enrichedSpec.criteria || [],
+     enrichedSpec.comparisonRows || []
+   );
++  const provAndBib = buildBrowserResearchProvAndBibtex(enrichedSpec);
+   const comparisonTableJson = JSON.stringify(
+     {
+       question: enrichedSpec.question,
+@@ -494,6 +499,8 @@ async function saveResearchReportsViaWorkspace({
+     `reports/${reportSlug}-comparison.json`,
+     comparisonTableJson
+   );
++  const provFile = await writeOrUpdate(`reports/${reportSlug}.prov.json`, provAndBib.provJson);
++  const bibFile = await writeOrUpdate(`reports/${reportSlug}.bib`, provAndBib.bibtexText);
+ 
+   let docxFile = null;
+   let xlsxFile = null;
+@@ -643,6 +650,8 @@ async function saveResearchReportsViaWorkspace({
+     htmlFile,
+     csvFile,
+     comparisonTableFile: tableFile,
++    provFile,
++    bibFile,
+     docxFile,
+     xlsxFile,
+     pdfFile,
+diff --git a/desktop/windows/test/browser-research-acceptance.test.cjs b/desktop/windows/test/browser-research-acceptance.test.cjs
+index ed93871..1e5d794 100644
+--- a/desktop/windows/test/browser-research-acceptance.test.cjs
++++ b/desktop/windows/test/browser-research-acceptance.test.cjs
+@@ -890,3 +890,156 @@ test("8. Self-healing layout shift recovery (`self-healing-navigation.cjs`) & In
+   assert.equal(recoveredCtrl.recovered, true);
+   assert.ok(recoveredCtrl.selectedCandidate.confidence >= 0.75);
+ });
++
++test("9. Concurrent Tab Scheduler (`concurrent-tab-scheduler.cjs`) & W3C PROV-JSON / BibTeX Lineage Exporter (`prov-lineage-exporter.cjs`)", async () => {
++  const { KosworkBrowserTabScheduler } = require("../browser/concurrent-tab-scheduler.cjs");
++  const { buildBrowserResearchProvAndBibtex } = require("../browser/prov-lineage-exporter.cjs");
++  const { saveResearchReportsViaWorkspace } = require("../browser/research-report-builder.cjs");
++
++  const workspaceRoot = createTempWorkspace();
++  const engine = new KosworkBrowserEngine({
++    allowedWorkspaceRoot: workspaceRoot,
++    maxLiveTabs: 3
++  });
++
++  for (let i = 1; i <= 5; i += 1) {
++    engine.registerSyntheticSite(`https://corpus.local/batch-node-${i}`, {
++      title: `Узел пакетного сбора №${i}`,
++      pageDate: "2026-11-07",
++      eventDate: "2026-11-06",
++      text: `Спецификация узла №${i}: пропускная способность составляет ${i * 1000} RPS при задержке ${10 + i} мс.`
++    });
++  }
++
++  const scheduler = new KosworkBrowserTabScheduler({
++    engine,
++    maxConcurrency: 3,
++    minDomainIntervalMs: 10
++  });
++
++  const batchRes = await scheduler.executeBatch([
++    {
++      taskId: "b-1",
++      url: "https://corpus.local/batch-node-1",
++      extractTerms: ["1000 RPS"]
++    },
++    {
++      taskId: "b-2",
++      url: "https://corpus.local/batch-node-2",
++      extractTerms: ["2000 RPS"]
++    },
++    {
++      taskId: "b-3",
++      url: "https://corpus.local/batch-node-3",
++      extractTerms: ["3000 RPS"]
++    },
++    {
++      taskId: "b-4",
++      url: "https://corpus.local/batch-node-4",
++      extractTerms: ["4000 RPS"]
++    },
++    {
++      taskId: "b-5",
++      url: "https://corpus.local/batch-node-5",
++      extractTerms: ["5000 RPS"]
++    }
++  ]);
++
++  assert.equal(batchRes.status, "completed");
++  assert.equal(batchRes.results.length, 5);
++  assert.ok(batchRes.results.every((r) => r.status === "ok" && r.excerpts.length === 1));
++  assert.ok(batchRes.resourceMetrics.liveTabCount <= 3);
++  assert.ok(batchRes.resourceMetrics.hibernatedTabCount >= 2);
++
++  // Verify cooperative AbortSignal cancellation mid-batch
++  const abortController = new AbortController();
++  abortController.abort();
++  const cancelledBatch = await scheduler.executeBatch(
++    [
++      {
++        taskId: "b-cancel",
++        url: "https://corpus.local/batch-node-1",
++        extractTerms: ["1000 RPS"]
++      }
++    ],
++    { signal: abortController.signal }
++  );
++  assert.equal(cancelledBatch.status, "cancelled");
++
++  // Verify W3C PROV-JSON + BibTeX export both standalone and via saveResearchReportsViaWorkspace
++  const firstItem = batchRes.results[0];
++  const provAndBib = buildBrowserResearchProvAndBibtex({
++    sessionId: "res-prov-session-01",
++    question: "Сравнение пропускной способности узлов",
++    confirmedClaims: [
++      {
++        claimId: "claim-node-1",
++        optionName: "Node 1",
++        criterion: "RPS",
++        value: "1000 RPS",
++        claim: "Узел №1 обеспечивает 1000 RPS",
++        excerpt: firstItem.excerpts[0],
++        source: {
++          url: firstItem.url,
++          title: firstItem.snapshot.title,
++          pageDate: firstItem.snapshot.pageDate,
++          eventDate: firstItem.snapshot.eventDate,
++          fetchedAt: firstItem.snapshot.fetchedAt
++        }
++      }
++    ]
++  });
++
++  assert.ok(provAndBib.provJsonObject.prefix.prov);
++  assert.ok(provAndBib.provJsonObject.wasDerivedFrom["_:wdf1"]);
++  assert.ok(provAndBib.provJsonObject.wasDerivedFrom["_:wdf2"]);
++  assert.ok(provAndBib.bibtex.includes("@misc{kosworkSrc1"));
++  assert.ok(provAndBib.bibtex.includes("url = {https://corpus.local/batch-node-1}"));
++
++  const saved = await saveResearchReportsViaWorkspace({
++    workspaceRoot,
++    reportSlug: "prov-lineage-check",
++    reportSpec: {
++      question: "Сравнение пропускной способности узлов",
++      criteria: ["RPS"],
++      comparisonRows: [
++        {
++          optionName: "Node 1",
++          values: {
++            RPS: {
++              displayValue: "1000 RPS",
++              sourceUrl: firstItem.url,
++              startUtf16: firstItem.excerpts[0].startUtf16,
++              endUtf16: firstItem.excerpts[0].endUtf16
++            }
++          }
++        }
++      ],
++      claims: [
++        {
++          claimId: "claim-node-1",
++          optionName: "Node 1",
++          criterion: "RPS",
++          value: "1000 RPS",
++          claim: "Узел №1 обеспечивает 1000 RPS",
++          excerpt: firstItem.excerpts[0],
++          source: {
++            url: firstItem.url,
++            title: firstItem.snapshot.title,
++            pageDate: firstItem.snapshot.pageDate,
++            eventDate: firstItem.snapshot.eventDate,
++            fetchedAt: firstItem.snapshot.fetchedAt
++          }
++        }
++      ],
++      snapshotsByUrl: {
++        [firstItem.url]: firstItem.snapshot
++      }
++    }
++  });
++
++  assert.ok(saved.provFile);
++  assert.ok(saved.bibFile);
++  assert.ok(fs.existsSync(path.join(workspaceRoot, saved.provFile.path)));
++  assert.ok(fs.existsSync(path.join(workspaceRoot, saved.bibFile.path)));
++});
+-- 
+2.39.5
+

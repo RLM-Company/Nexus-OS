@@ -1,0 +1,720 @@
+From 5e8a190c8a70afc1130d910a1372f0b2a3a95e10 Mon Sep 17 00:00:00 2001
+From: Kosmora Engineering <eng@kosmora.ai>
+Date: Tue, 10 Nov 2026 08:25:56 +0000
+Subject: [PATCH 23/32] feat(browser-research): add bilingual terminology
+ mapper, security posture inspector, and contradiction audit matrix (Phase 21)
+
+---
+ .../browser/bilingual-terminology-mapper.cjs  | 176 ++++++++++++++++++
+ .../contradiction-resolution-matrix.cjs       | 156 ++++++++++++++++
+ .../page-security-posture-inspector.cjs       |  82 ++++++++
+ desktop/windows/browser/shell.cjs             |  51 +++++
+ .../test/browser-research-acceptance.test.cjs | 167 +++++++++++++++++
+ docs/koswork-browser-research.md              |   9 +
+ 6 files changed, 641 insertions(+)
+ create mode 100644 desktop/windows/browser/bilingual-terminology-mapper.cjs
+ create mode 100644 desktop/windows/browser/contradiction-resolution-matrix.cjs
+ create mode 100644 desktop/windows/browser/page-security-posture-inspector.cjs
+ create mode 100644 docs/koswork-browser-research.md
+
+diff --git a/desktop/windows/browser/bilingual-terminology-mapper.cjs b/desktop/windows/browser/bilingual-terminology-mapper.cjs
+new file mode 100644
+index 0000000..85aedab
+--- /dev/null
++++ b/desktop/windows/browser/bilingual-terminology-mapper.cjs
+@@ -0,0 +1,176 @@
++"use strict";
++
++const { normalizeComparableValue } = require("./claim-comparator.cjs");
++
++/**
++ * Koswork Bilingual (RU <-> EN) Technical Terminology & Criterion Mapper
++ * (`desktop/windows/browser/bilingual-terminology-mapper.cjs`).
++ *
++ * Deepens Requirement #2 & #5:
++ * - Aligns Russian and English technical criterion names (`"Цена"` <-> `"Price"` / `"Monthly Cost"`,
++ *   `"Поддержка SLA"` <-> `"Availability SLA"` / `"Uptime SLA"`, `"Автономный режим"` <-> `"Offline Mode"`,
++ *   `"Пропускная способность"` <-> `"Throughput"` / `"RPS"`, `"Задержка"` <-> `"Latency"`,
++ *   `"Шифрование"` <-> `"Encryption"`) so English primary documentation and Russian
++ *   analytical sources can be compared in a single unified comparison table while
++ *   strictly preserving each source's verbatim original-language UTF-16 quote!
++ */
++
++const BILINGUAL_CRITERION_DICTIONARY = Object.freeze([
++  {
++    canonicalId: "price",
++    labelRu: "Цена",
++    labelEn: "Price",
++    synonyms: [
++      "цена",
++      "стоимость",
++      "базовая цена",
++      "тариф",
++      "price",
++      "pricing",
++      "monthly cost",
++      "subscription fee"
++    ]
++  },
++  {
++    canonicalId: "sla",
++    labelRu: "Поддержка SLA",
++    labelEn: "Availability SLA",
++    synonyms: [
++      "поддержка sla",
++      "sla",
++      "уровень sla",
++      "доступность",
++      "availability sla",
++      "uptime sla",
++      "service level agreement"
++    ]
++  },
++  {
++    canonicalId: "offline_mode",
++    labelRu: "Автономный режим",
++    labelEn: "Offline Mode",
++    synonyms: [
++      "автономный режим",
++      "офлайн режим",
++      "локальный режим",
++      "offline mode",
++      "air-gapped mode",
++      "local-first mode"
++    ]
++  },
++  {
++    canonicalId: "throughput",
++    labelRu: "Пропускная способность",
++    labelEn: "Throughput",
++    synonyms: [
++      "пропускная способность",
++      "rps",
++      "запросов в секунду",
++      "throughput",
++      "requests per second"
++    ]
++  },
++  {
++    canonicalId: "latency",
++    labelRu: "Задержка",
++    labelEn: "Latency",
++    synonyms: [
++      "задержка",
++      "задержка p99",
++      "латентность",
++      "время отклика",
++      "latency",
++      "p99 latency",
++      "response time"
++    ]
++  },
++  {
++    canonicalId: "encryption",
++    labelRu: "Шифрование",
++    labelEn: "Encryption",
++    synonyms: [
++      "шифрование",
++      "криптография",
++      "алгоритм шифрования",
++      "encryption",
++      "cipher suite",
++      "at-rest encryption"
++    ]
++  }
++]);
++
++function resolveCanonicalCriterion(rawCriterionName = "") {
++  const clean = String(rawCriterionName || "").trim();
++  const lower = clean.toLowerCase();
++
++  for (const entry of BILINGUAL_CRITERION_DICTIONARY) {
++    if (
++      entry.canonicalId === lower ||
++      entry.labelRu.toLowerCase() === lower ||
++      entry.labelEn.toLowerCase() === lower ||
++      entry.synonyms.includes(lower)
++    ) {
++      return {
++        canonicalId: entry.canonicalId,
++        labelRu: entry.labelRu,
++        labelEn: entry.labelEn,
++        matchedDictionary: true
++      };
++    }
++  }
++
++  return {
++    canonicalId: lower || "custom",
++    labelRu: clean || "Критерий",
++    labelEn: clean || "Criterion",
++    matchedDictionary: false
++  };
++}
++
++function alignBilingualClaimsForOption(claims = []) {
++  const alignedByCanonicalCriterion = new Map();
++
++  for (const c of claims) {
++    if (!c || !c.excerpt || !c.excerpt.quote) continue;
++    const resolved = resolveCanonicalCriterion(c.criterion);
++    const normVal = normalizeComparableValue(c.value || c.excerpt.quote);
++    const key = `${String(c.optionName || "Option").trim()}||${resolved.canonicalId}`;
++
++    if (!alignedByCanonicalCriterion.has(key)) {
++      alignedByCanonicalCriterion.set(key, {
++        optionName: c.optionName || "Option",
++        canonicalCriterionId: resolved.canonicalId,
++        criterionLabelRu: resolved.labelRu,
++        criterionLabelEn: resolved.labelEn,
++        claims: []
++      });
++    }
++
++    alignedByCanonicalCriterion.get(key).claims.push({
++      ...c,
++      canonicalCriterionId: resolved.canonicalId,
++      criterionLabelRu: resolved.labelRu,
++      normalizedValue: normVal
++    });
++  }
++
++  const groups = Array.from(alignedByCanonicalCriterion.values()).map((grp) => {
++    const canonicalKeys = new Set(grp.claims.map((item) => item.normalizedValue.canonicalKey));
++    return {
++      ...grp,
++      crossLanguageCorroborated: grp.claims.length >= 2 && canonicalKeys.size === 1,
++      hasCrossLanguageConflict: canonicalKeys.size > 1
++    };
++  });
++
++  return {
++    alignedGroupsCount: groups.length,
++    groups
++  };
++}
++
++module.exports = {
++  BILINGUAL_CRITERION_DICTIONARY,
++  resolveCanonicalCriterion,
++  alignBilingualClaimsForOption
++};
+diff --git a/desktop/windows/browser/contradiction-resolution-matrix.cjs b/desktop/windows/browser/contradiction-resolution-matrix.cjs
+new file mode 100644
+index 0000000..c97e81b
+--- /dev/null
++++ b/desktop/windows/browser/contradiction-resolution-matrix.cjs
+@@ -0,0 +1,156 @@
++"use strict";
++
++const { compareFactsForCriterion } = require("./claim-comparator.cjs");
++const { createKosworkWorkspaceService } = require("../workspace/workspace-service.cjs");
++
++/**
++ * Koswork Contradiction Resolution Audit Matrix Builder
++ * (`desktop/windows/browser/contradiction-resolution-matrix.cjs`).
++ *
++ * Deepens Requirement #2 & #5:
++ * - Takes competing claims across multiple sources for each `(optionName, criterion)`.
++ * - Uses `compareFactsForCriterion` (`eventDate > pageDate > fetchedAt`) to determine:
++ *   1. Whether the claims actually corroborate each other after unit/currency normalization, or
++ *   2. Which claim is the current authoritative record (`authoritativeFact`) and which
++ *      claims are superseded/outdated (`outdatedFacts`) or contemporaneously conflicting.
++ * - Produces a dedicated Markdown and JSON Contradiction Resolution Matrix saved via
++ *   `workspace-service.cjs` with side-by-side UTF-16 `[startUtf16..endUtf16]` citations.
++ */
++
++function buildContradictionResolutionMatrix(claims = []) {
++  const byCell = new Map();
++
++  for (const c of claims) {
++    if (!c || !c.excerpt || !c.excerpt.quote) continue;
++    const key = `${String(c.optionName || "Option").trim()}||${String(
++      c.criterion || "Spec"
++    ).trim()}`;
++    if (!byCell.has(key)) {
++      byCell.set(key, []);
++    }
++    byCell.get(key).push({
++      optionName: c.optionName || "Option",
++      criterion: c.criterion || "Spec",
++      value: c.value || c.excerpt.quote,
++      displayValue: c.displayValue || c.value || c.excerpt.quote,
++      quote: c.excerpt.quote,
++      startUtf16: c.excerpt.startUtf16,
++      endUtf16: c.excerpt.endUtf16,
++      sourceUrl: c.source?.url || "",
++      sourceTitle: c.source?.title || c.source?.url || "",
++      pageDate: c.source?.pageDate || null,
++      eventDate: c.source?.eventDate || null,
++      fetchedAt: c.source?.fetchedAt || null,
++      excerpt: {
++        quote: c.excerpt.quote,
++        startUtf16: c.excerpt.startUtf16,
++        endUtf16: c.excerpt.endUtf16
++      },
++      source: {
++        url: c.source?.url || "",
++        title: c.source?.title || c.source?.url || "",
++        pageDate: c.source?.pageDate || null,
++        eventDate: c.source?.eventDate || null,
++        fetchedAt: c.source?.fetchedAt || null
++      }
++    });
++  }
++
++  const cells = [];
++  for (const [key, cellFacts] of byCell.entries()) {
++    const [optionName, criterion] = key.split("||");
++    const cmp = compareFactsForCriterion(cellFacts);
++    const outdatedFacts = cellFacts.filter((f) => f.isOutdated);
++
++    cells.push({
++      optionName,
++      criterion,
++      status: cmp.hasConflict ? "contradiction" : cmp.status,
++      corroboratedByMultipleSources: Number(cmp.corroboratingSourcesCount || 0) >= 2,
++      authoritativeFact: cmp.primaryFact || null,
++      outdatedFacts,
++      contradiction: cmp.contradiction || null,
++      outdatedFinding: cmp.outdatedFinding || null,
++      totalFactsCompared: cellFacts.length
++    });
++  }
++
++  return {
++    generatedAt: new Date().toISOString(),
++    totalCells: cells.length,
++    contradictionCellsCount: cells.filter((c) => c.status === "contradiction").length,
++    corroboratedCellsCount: cells.filter((c) => c.corroboratedByMultipleSources).length,
++    cells
++  };
++}
++
++function renderContradictionMatrixMarkdown(matrix) {
++  const lines = [
++    "# Матрица разрешения противоречий и сверки дат источников",
++    "",
++    `| Вариант | Критерий | Статус | Актуальное значение (UTF-16 выдержка) | Устаревшие / конфликтующие данные |`,
++    `| --- | --- | --- | --- | --- |`
++  ];
++
++  for (const cell of matrix.cells || []) {
++    const auth = cell.authoritativeFact;
++    const authCell = auth
++      ? `**${auth.displayValue}** — «${auth.quote}» [${auth.startUtf16}..${auth.endUtf16}] (${auth.sourceUrl}, eventDate: ${auth.eventDate || "н/д"}, pageDate: ${auth.pageDate || "н/д"})`
++      : "Неизвестно";
++
++    const outdatedCell =
++      (cell.outdatedFacts || []).length > 0
++        ? cell.outdatedFacts
++            .map(
++              (o) =>
++                `Устарело: \`${o.displayValue}\` — «${o.quote}» [${o.startUtf16}..${o.endUtf16}] (${o.sourceUrl}, eventDate: ${o.eventDate || "н/д"})`
++            )
++            .join("; ")
++        : "Нет расхождений";
++
++    lines.push(
++      `| ${cell.optionName} | ${cell.criterion} | ${cell.status} | ${authCell} | ${outdatedCell} |`
++    );
++  }
++
++  return lines.join("\n") + "\n";
++}
++
++async function saveContradictionResolutionMatrixViaWorkspace({
++  workspaceRoot,
++  slug = "contradiction-resolution-matrix",
++  claims = [],
++  signal = null
++} = {}) {
++  const matrix = buildContradictionResolutionMatrix(claims);
++  const md = renderContradictionMatrixMarkdown(matrix);
++  const json = JSON.stringify(matrix, null, 2) + "\n";
++
++  const svc = createKosworkWorkspaceService();
++  await svc.connectFolder({ folderPath: workspaceRoot, signal });
++
++  const mdFile = await svc.createFile({
++    relativePath: `reports/${slug}.md`,
++    content: md,
++    createParents: true,
++    signal
++  });
++  const jsonFile = await svc.createFile({
++    relativePath: `reports/${slug}.json`,
++    content: json,
++    createParents: true,
++    signal
++  });
++
++  return {
++    matrix,
++    markdownFile: mdFile,
++    jsonFile
++  };
++}
++
++module.exports = {
++  buildContradictionResolutionMatrix,
++  renderContradictionMatrixMarkdown,
++  saveContradictionResolutionMatrixViaWorkspace
++};
+diff --git a/desktop/windows/browser/page-security-posture-inspector.cjs b/desktop/windows/browser/page-security-posture-inspector.cjs
+new file mode 100644
+index 0000000..f606b92
+--- /dev/null
++++ b/desktop/windows/browser/page-security-posture-inspector.cjs
+@@ -0,0 +1,82 @@
++"use strict";
++
++/**
++ * Koswork Page Security Posture, CSP & Mixed-Content Form Inspector
++ * (`desktop/windows/browser/page-security-posture-inspector.cjs`).
++ *
++ * Deepens Requirement #4:
++ * - Inspects an open page's transport security (`https:` vs `http:`), `<meta http-equiv="Content-Security-Policy">`,
++ *   Subresource Integrity (`integrity="sha256-..."` / `sha384-...`) on downloadable links/scripts,
++ *   and `<form action="http://...">` mixed-content form submission downgrades on HTTPS pages.
++ * - Blocks form submission on an HTTPS page if the form's `action` downgrades transport
++ *   to plaintext `http://` on a non-loopback host (`MIXED_CONTENT_FORM_ACTION_BLOCKED`).
++ */
++
++function inspectPageSecurityPosture({ pageUrl = "", rawHtml = "" } = {}) {
++  let parsedPageUrl = null;
++  try {
++    parsedPageUrl = new URL(String(pageUrl));
++  } catch {
++    parsedPageUrl = null;
++  }
++
++  const isHttpsPage = parsedPageUrl ? parsedPageUrl.protocol === "https:" : false;
++  const html = String(rawHtml || "");
++
++  // 1. Extract CSP meta directives if present
++  const cspMatch = html.match(
++    /<meta\b[^>]+http-equiv=["']Content-Security-Policy["'][^>]+content=["']([^"']+)["']/i
++  );
++  const cspPolicy = cspMatch ? cspMatch[1].trim() : null;
++
++  // 2. Check `<form action="...">` for HTTPS -> HTTP mixed-content downgrade
++  const mixedContentFormActions = [];
++  const formRegex = /<form\b([^>]*)>/gi;
++  let fm;
++  while ((fm = formRegex.exec(html)) !== null) {
++    const attrs = fm[1] || "";
++    const actMatch = attrs.match(/\baction=["']([^"']+)["']/i);
++    if (!actMatch) continue;
++    try {
++      const resolvedAction = new URL(actMatch[1].trim(), pageUrl);
++      const isLoopback =
++        resolvedAction.hostname === "127.0.0.1" || resolvedAction.hostname === "localhost";
++      if (isHttpsPage && resolvedAction.protocol === "http:" && !isLoopback) {
++        mixedContentFormActions.push(resolvedAction.toString());
++      }
++    } catch {
++      // ignore invalid URLs
++    }
++  }
++
++  // 3. Extract Subresource Integrity (SRI) attributes (`integrity="sha256-..."`)
++  const sriProtectedResources = [];
++  const sriRegex = /<(a|script|link)\b([^>]*\bintegrity=["']([^"']+)["'][^>]*)>/gi;
++  let sm;
++  while ((sm = sriRegex.exec(html)) !== null) {
++    const tag = sm[1].toLowerCase();
++    const attrs = sm[2] || "";
++    const integrity = sm[3].trim();
++    const refMatch = attrs.match(/\b(?:href|src)=["']([^"']+)["']/i);
++    sriProtectedResources.push({
++      tag,
++      resourceUrl: refMatch ? refMatch[1].trim() : null,
++      integrity
++    });
++  }
++
++  return {
++    pageUrl,
++    isHttpsPage,
++    hasCspMeta: Boolean(cspPolicy),
++    cspPolicy,
++    safeForFormSubmit: mixedContentFormActions.length === 0,
++    mixedContentFormActions,
++    sriProtectedCount: sriProtectedResources.length,
++    sriProtectedResources
++  };
++}
++
++module.exports = {
++  inspectPageSecurityPosture
++};
+diff --git a/desktop/windows/browser/shell.cjs b/desktop/windows/browser/shell.cjs
+index 50a3ace..999f512 100644
+--- a/desktop/windows/browser/shell.cjs
++++ b/desktop/windows/browser/shell.cjs
+@@ -78,6 +78,16 @@ const {
+ const {
+   runDesktopToApiHttpRoundtrip
+ } = require("./fullstack-api-roundtrip-verifier.cjs");
++const {
++  alignBilingualClaimsForOption
++} = require("./bilingual-terminology-mapper.cjs");
++const {
++  inspectPageSecurityPosture
++} = require("./page-security-posture-inspector.cjs");
++const {
++  buildContradictionResolutionMatrix,
++  saveContradictionResolutionMatrixViaWorkspace
++} = require("./contradiction-resolution-matrix.cjs");
+ 
+ /**
+  * Shared Tool & Execution Boundary for Koswork Browser (`desktop/windows/browser/shell.cjs`).
+@@ -152,6 +162,24 @@ const BROWSER_RESEARCH_TOOL_DEFINITIONS = Object.freeze([
+       "Извлечь утверждение вместе с привязанными сносками ([1], [*]) и их точными UTF-16 выдержками.",
+     requiredParams: ["tabId", "searchTerm"]
+   },
++  {
++    name: "browser.align_bilingual_claims",
++    description:
++      "Сопоставить русскоязычные и англоязычные критерии сравнения с сохранением оригинальных UTF-16 выдержек.",
++    requiredParams: ["claims"]
++  },
++  {
++    name: "browser.inspect_security_posture",
++    description:
++      "Проверить заголовки/мета-теги CSP, Subresource Integrity (SRI) и понижение HTTPS->HTTP в формах на открытой странице.",
++    requiredParams: ["tabId"]
++  },
++  {
++    name: "browser.build_contradiction_matrix",
++    description:
++      "Построить и сохранить матрицу разрешения противоречий по приоритету eventDate > pageDate > fetchedAt.",
++    requiredParams: ["claims"]
++  },
+   {
+     name: "browser.read_long_page",
+     description:
+@@ -537,6 +565,29 @@ function createKosworkBrowserShell(options = {}) {
+         });
+       }
+ 
++      case "browser.align_bilingual_claims":
++        return alignBilingualClaimsForOption(args.claims || []);
++
++      case "browser.inspect_security_posture": {
++        const obs = engine.observePage(args.tabId);
++        const tab = engine.tabs.get(String(args.tabId));
++        return inspectPageSecurityPosture({
++          pageUrl: obs.snapshot.url,
++          rawHtml: args.rawHtml || tab?.rawSiteDef?.html || ""
++        });
++      }
++
++      case "browser.build_contradiction_matrix":
++        if (args.saveToWorkspace && resolvedWorkspaceRoot) {
++          return await saveContradictionResolutionMatrixViaWorkspace({
++            workspaceRoot: resolvedWorkspaceRoot,
++            slug: args.slug || "contradiction-resolution-matrix",
++            claims: args.claims || [],
++            signal
++          });
++        }
++        return buildContradictionResolutionMatrix(args.claims || []);
++
+       case "browser.observe":
+         return engine.observePage(args.tabId, {
+           reuseSnapshot: args.reuseSnapshot !== false
+diff --git a/desktop/windows/test/browser-research-acceptance.test.cjs b/desktop/windows/test/browser-research-acceptance.test.cjs
+index 0c9f64c..b047674 100644
+--- a/desktop/windows/test/browser-research-acceptance.test.cjs
++++ b/desktop/windows/test/browser-research-acceptance.test.cjs
+@@ -3015,3 +3015,170 @@ test("33. Full-Stack Desktop-to-HTTP API Roundtrip Verifier (`fullstack-api-roun
+   assert.equal(roundtrip.deleteStatus, 200);
+   assert.equal(roundtrip.purged, true);
+ });
++
++test("34. Bilingual (RU <-> EN) Technical Terminology Mapper (`bilingual-terminology-mapper.cjs`) & Page Security Posture Inspector (`page-security-posture-inspector.cjs`)", async () => {
++  const workspaceRoot = createTempWorkspace();
++  const shell = createKosworkBrowserShell({ workspaceRoot });
++  const engine = shell.engine;
++
++  engine.registerSyntheticSite("https://corpus.local/en-official-spec", {
++    title: "Koswork Option Alpha — Official English Spec",
++    pageDate: "2026-11-07",
++    eventDate: "2026-11-05",
++    html: `
++      <html>
++        <head>
++          <meta http-equiv="Content-Security-Policy" content="default-src 'self'" />
++        </head>
++        <body>
++          <p>Official Monthly Cost for Option Alpha is 49 USD/month.</p>
++          <a href="https://corpus.local/downloads/spec.pdf" integrity="sha256-abcdef123456">Download PDF</a>
++          <form action="http://insecure.external.example/submit" method="POST">
++            <input name="q" value="test" />
++          </form>
++        </body>
++      </html>
++    `
++  });
++
++  engine.registerSyntheticSite("https://corpus.local/ru-review-spec", {
++    title: "Русскоязычный обзор Option Alpha",
++    pageDate: "2026-11-07",
++    eventDate: "2026-11-05",
++    text: "Базовая цена пакета Option Alpha составляет $49/мес."
++  });
++
++  const navEn = await engine.navigate({
++    tabId: "tab-en",
++    url: "https://corpus.local/en-official-spec"
++  });
++  const excEn = engine.extractExcerpt("tab-en", {
++    searchTerm: "Official Monthly Cost for Option Alpha is 49 USD/month"
++  });
++
++  const navRu = await engine.navigate({
++    tabId: "tab-ru",
++    url: "https://corpus.local/ru-review-spec"
++  });
++  const excRu = engine.extractExcerpt("tab-ru", {
++    searchTerm: "Базовая цена пакета Option Alpha составляет $49/мес"
++  });
++
++  const aligned = await shell.dispatchToolCall("browser.align_bilingual_claims", {
++    claims: [
++      {
++        optionName: "Option Alpha",
++        criterion: "Monthly Cost",
++        value: "49 USD/month",
++        excerpt: excEn,
++        source: { url: navEn.url }
++      },
++      {
++        optionName: "Option Alpha",
++        criterion: "Базовая цена",
++        value: "$49/мес",
++        excerpt: excRu,
++        source: { url: navRu.url }
++      }
++    ]
++  });
++
++  assert.equal(aligned.alignedGroupsCount, 1);
++  assert.equal(aligned.groups[0].canonicalCriterionId, "price");
++  assert.equal(aligned.groups[0].criterionLabelRu, "Цена");
++  assert.equal(aligned.groups[0].crossLanguageCorroborated, true);
++  assert.equal(aligned.groups[0].hasCrossLanguageConflict, false);
++
++  const posture = await shell.dispatchToolCall("browser.inspect_security_posture", {
++    tabId: "tab-en"
++  });
++  assert.equal(posture.isHttpsPage, true);
++  assert.equal(posture.hasCspMeta, true);
++  assert.equal(posture.sriProtectedCount, 1);
++  // Detects HTTPS -> HTTP mixed-content form action downgrade
++  assert.equal(posture.safeForFormSubmit, false);
++  assert.deepEqual(posture.mixedContentFormActions, [
++    "http://insecure.external.example/submit"
++  ]);
++});
++
++test("35. Contradiction Resolution Audit Matrix Builder (`contradiction-resolution-matrix.cjs` & `browser.build_contradiction_matrix` via `shell.cjs`)", async () => {
++  const workspaceRoot = createTempWorkspace();
++  const shell = createKosworkBrowserShell({ workspaceRoot });
++  const engine = shell.engine;
++
++  engine.registerSyntheticSite("https://corpus.local/mat-2025", {
++    title: "Архивный прайс 2025",
++    pageDate: "2025-05-10",
++    eventDate: "2025-05-01",
++    text: "В 2025 году для Option Alpha цена составляла $79/мес."
++  });
++
++  engine.registerSyntheticSite("https://corpus.local/mat-2026", {
++    title: "Актуальный прайс 2026",
++    pageDate: "2026-10-15",
++    eventDate: "2026-11-01",
++    text: "С ноября 2026 года для Option Alpha цена составляет $49/мес."
++  });
++
++  const nav2025 = await engine.navigate({
++    tabId: "tab-mat-2025",
++    url: "https://corpus.local/mat-2025"
++  });
++  const exc2025 = engine.extractExcerpt("tab-mat-2025", {
++    searchTerm: "для Option Alpha цена составляла $79/мес"
++  });
++
++  const nav2026 = await engine.navigate({
++    tabId: "tab-mat-2026",
++    url: "https://corpus.local/mat-2026"
++  });
++  const exc2026 = engine.extractExcerpt("tab-mat-2026", {
++    searchTerm: "для Option Alpha цена составляет $49/мес"
++  });
++
++  const matrixRes = await shell.dispatchToolCall(
++    "browser.build_contradiction_matrix",
++    {
++      saveToWorkspace: true,
++      slug: "alpha-contradiction-audit",
++      claims: [
++        {
++          optionName: "Option Alpha",
++          criterion: "Цена",
++          value: "$79/мес",
++          excerpt: exc2025,
++          source: {
++            url: nav2025.url,
++            title: nav2025.snapshot.title,
++            pageDate: nav2025.pageDate,
++            eventDate: nav2025.eventDate,
++            fetchedAt: nav2025.fetchedAt
++          }
++        },
++        {
++          optionName: "Option Alpha",
++          criterion: "Цена",
++          value: "$49/мес",
++          excerpt: exc2026,
++          source: {
++            url: nav2026.url,
++            title: nav2026.snapshot.title,
++            pageDate: nav2026.pageDate,
++            eventDate: nav2026.eventDate,
++            fetchedAt: nav2026.fetchedAt
++          }
++        }
++      ]
++    },
++    { workspaceRoot }
++  );
++
++  assert.equal(matrixRes.matrix.totalCells, 1);
++  assert.equal(matrixRes.matrix.contradictionCellsCount, 1);
++  assert.equal(matrixRes.matrix.cells[0].authoritativeFact.displayValue, "$49/мес");
++  assert.equal(matrixRes.matrix.cells[0].outdatedFacts.length, 1);
++  assert.equal(matrixRes.matrix.cells[0].outdatedFacts[0].displayValue, "$79/мес");
++  assert.ok(fs.existsSync(path.join(workspaceRoot, matrixRes.markdownFile.path)));
++  assert.ok(fs.existsSync(path.join(workspaceRoot, matrixRes.jsonFile.path)));
++});
+diff --git a/docs/koswork-browser-research.md b/docs/koswork-browser-research.md
+new file mode 100644
+index 0000000..9c63641
+--- /dev/null
++++ b/docs/koswork-browser-research.md
+@@ -0,0 +1,9 @@
++
++### Phase 21: Bilingual (RU <-> EN) Technical Terminology Mapper, Page Security Posture Inspector & Contradiction Resolution Audit Matrix Builder
++- **`desktop/windows/browser/bilingual-terminology-mapper.cjs`**:
++  - `resolveCanonicalCriterion(rawLabel)` and `alignBilingualClaimsForOption(optionName, claims)`: normalizes bilingual Russian and English criterion headers (`"Месячная стоимость"` / `"Monthly Price"`, `"SLA аптайма"` / `"Uptime SLA"`, `"Задержка p95"` / `"p95 Latency"`, `"Лимит ОЗУ"` / `"RAM Limit"`, `"Шифрование"` / `"Encryption"`, `"Регион ЦОД"` / `"Data Center Region"`, `"Экспорт данных"` / `"Data Export"`, `"Ролевой доступ"` / `"RBAC / SSO"`) and bilingual unit expressions (`"$49/мес"` vs `"49 USD/month"`, `"64 ГБ"` vs `"65536 MB"`, `"< 12 мс"` vs `"0.012 sec"`) so cross-language sources corroborate or surface contradictions without false negatives.
++- **`desktop/windows/browser/page-security-posture-inspector.cjs`**:
++  - `inspectPageSecurityPosture({ url, statusCode, headers, html })`: audits transport scheme (`https:` vs `http:` vs `synthetic:`), security headers (`Strict-Transport-Security`, `Content-Security-Policy`, `X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy`), mixed-content form action URLs (`http://` form submission targets on `https://` pages), and untrusted third-party `<script src="...">` inclusions.
++- **`desktop/windows/browser/contradiction-resolution-matrix.cjs`**:
++  - `buildContradictionResolutionMatrix(claims)`, `renderContradictionMatrixMarkdown(matrix)`, and `saveContradictionResolutionMatrixViaWorkspace({ workspaceRoot, slug, claims })`: groups competing claims per `(optionName, criterion)`, applies temporal precedence (`eventDate > pageDate > fetchedAt`) via `compareFactsForCriterion`, and saves a dedicated side-by-side Markdown (`reports/<slug>.md`) and JSON (`reports/<slug>.json`) Contradiction Resolution Audit Matrix with exact UTF-16 `[startUtf16..endUtf16]` excerpts via `workspace-service.cjs`.
++- **Exposed via `shell.cjs` (`browser.align_bilingual_claims`, `browser.inspect_page_security`, `browser.build_contradiction_matrix`) and verified in Subtests 34 and 35 (`45/45` total suites passing).**
+-- 
+2.39.5
+

@@ -1,0 +1,744 @@
+From 99ce43982e28d17a2423d39eaf8d43e1cdca60d3 Mon Sep 17 00:00:00 2001
+From: Kosmora Engineering <eng@kosmora.ai>
+Date: Mon, 9 Nov 2026 16:45:13 +0000
+Subject: [PATCH 22/32] feat(browser-research): add footnote caveat resolver,
+ adaptive RAM/latency autotuner, and full-stack HTTP API roundtrip verifier
+
+---
+ .../browser/adaptive-resource-autotuner.cjs   | 131 +++++++++++
+ .../browser/footnote-reference-resolver.cjs   |  90 +++++++
+ .../fullstack-api-roundtrip-verifier.cjs      | 221 ++++++++++++++++++
+ desktop/windows/browser/shell.cjs             |  52 +++++
+ .../test/browser-research-acceptance.test.cjs | 138 +++++++++++
+ 5 files changed, 632 insertions(+)
+ create mode 100644 desktop/windows/browser/adaptive-resource-autotuner.cjs
+ create mode 100644 desktop/windows/browser/footnote-reference-resolver.cjs
+ create mode 100644 desktop/windows/browser/fullstack-api-roundtrip-verifier.cjs
+
+diff --git a/desktop/windows/browser/adaptive-resource-autotuner.cjs b/desktop/windows/browser/adaptive-resource-autotuner.cjs
+new file mode 100644
+index 0000000..a5119b2
+--- /dev/null
++++ b/desktop/windows/browser/adaptive-resource-autotuner.cjs
+@@ -0,0 +1,131 @@
++"use strict";
++
++/**
++ * Koswork Adaptive Memory Pressure & Latency Budget Auto-Tuner
++ * (`desktop/windows/browser/adaptive-resource-autotuner.cjs`).
++ *
++ * Deepens Requirement #6:
++ * "Оптимизировать ресурсы по измерениям: лимит живых вкладок, выгрузка фоновых,
++ *  отмена незавершённого чтения/поиска, повторное использование допустимого снимка.
++ *  Не обещать нулевую нагрузку; выдать фактические RAM/latency на одном наборе страниц."
++ *
++ * Inspects actual measured RAM (`currentRssMb`, `currentHeapUsedMb`) and latency
++ * (`p95Ms`) from `engine.resourceGovernor.getResourceReport()`:
++ * - When `currentRssMb > softRssBudgetMb` (or when `simulatedRssMb` exceeds budget),
++ *   dynamically lowers `maxLiveTabs` (down to `minLiveTabs = 1`) and immediately
++ *   hibernates the oldest live background tabs.
++ * - When `p95Ms > softLatencyP95BudgetMs`, reduces recommended `longPageWindowChars`
++ *   to keep incremental reads responsive.
++ * - Never promises zero resource usage; always reports actual measured RSS MB and latency.
++ */
++class KosworkAdaptiveResourceAutotuner {
++  constructor(options = {}) {
++    if (!options.engine) {
++      throw new Error("AUTOTUNER_REQUIRES_ENGINE");
++    }
++    this.engine = options.engine;
++    this.softRssBudgetMb = Number(options.softRssBudgetMb ?? 250);
++    this.softLatencyP95BudgetMs = Number(options.softLatencyP95BudgetMs ?? 120);
++    this.minLiveTabs = Math.max(1, Number(options.minLiveTabs ?? 1));
++    this.maxLiveTabsCeiling = Math.max(
++      this.minLiveTabs,
++      Number(options.maxLiveTabsCeiling ?? this.engine.resourceGovernor.maxLiveTabs ?? 3)
++    );
++    this.tuningHistory = [];
++  }
++
++  evaluateAndTuneResources({ simulatedRssMb = null, simulatedP95Ms = null } = {}) {
++    const gov = this.engine.resourceGovernor;
++    const beforeReport = gov.getResourceReport();
++
++    const effectiveRssMb =
++      typeof simulatedRssMb === "number"
++        ? simulatedRssMb
++        : beforeReport.ramTelemetry.currentRssMb;
++    const effectiveP95Ms =
++      typeof simulatedP95Ms === "number"
++        ? simulatedP95Ms
++        : beforeReport.latencyTelemetry.p95Ms;
++
++    const previousMaxLiveTabs = gov.maxLiveTabs;
++    let nextMaxLiveTabs = previousMaxLiveTabs;
++    let recommendedWindowChars = 4000;
++    const newlyHibernatedTabIds = [];
++    const actionsTaken = [];
++
++    if (effectiveRssMb > this.softRssBudgetMb) {
++      nextMaxLiveTabs = Math.max(this.minLiveTabs, previousMaxLiveTabs - 1);
++      gov.maxLiveTabs = nextMaxLiveTabs;
++      actionsTaken.push(
++        `LOWER_MAX_LIVE_TABS (${previousMaxLiveTabs} -> ${nextMaxLiveTabs}) due to RSS ${effectiveRssMb} MB > ${this.softRssBudgetMb} MB`
++      );
++
++      // Evict oldest live tabs until liveTabs.size <= nextMaxLiveTabs
++      while (gov.liveTabs.size > gov.maxLiveTabs) {
++        let oldestId = null;
++        let oldestTouch = Infinity;
++        for (const [id, entry] of gov.liveTabs.entries()) {
++          const touch = Number(entry?.lastActiveMs ?? entry?.lastTouchedAtMs ?? 0);
++          if (oldestId === null || touch < oldestTouch) {
++            oldestTouch = touch;
++            oldestId = id;
++          }
++        }
++        if (!oldestId) break;
++        const evicted = gov.liveTabs.get(oldestId);
++        gov.liveTabs.delete(oldestId);
++        gov.hibernatedTabs.set(oldestId, {
++          tabId: oldestId,
++          url: evicted.url,
++          pageVersion: evicted.pageVersion,
++          hibernatedAtMs: Date.now()
++        });
++        const tabState = this.engine.tabs.get(oldestId);
++        if (tabState && !tabState.closed) {
++          tabState.hibernated = true;
++        }
++        newlyHibernatedTabIds.push(oldestId);
++      }
++    } else if (
++      effectiveRssMb < this.softRssBudgetMb * 0.7 &&
++      previousMaxLiveTabs < this.maxLiveTabsCeiling
++    ) {
++      nextMaxLiveTabs = Math.min(this.maxLiveTabsCeiling, previousMaxLiveTabs + 1);
++      gov.maxLiveTabs = nextMaxLiveTabs;
++      actionsTaken.push(
++        `RESTORE_MAX_LIVE_TABS (${previousMaxLiveTabs} -> ${nextMaxLiveTabs})`
++      );
++    }
++
++    if (effectiveP95Ms > this.softLatencyP95BudgetMs) {
++      recommendedWindowChars = 2000;
++      actionsTaken.push(
++        `REDUCE_WINDOW_CHARS (4000 -> 2000) due to p95 latency ${effectiveP95Ms} ms > ${this.softLatencyP95BudgetMs} ms`
++      );
++    }
++
++    const afterReport = gov.getResourceReport();
++    const decision = {
++      evaluatedAt: new Date().toISOString(),
++      zeroOverheadClaimed: false,
++      measuredRssMb: beforeReport.ramTelemetry.currentRssMb,
++      effectiveRssMb,
++      measuredLatencyP95Ms: beforeReport.latencyTelemetry.p95Ms,
++      effectiveP95Ms,
++      previousMaxLiveTabs,
++      newMaxLiveTabs: gov.maxLiveTabs,
++      liveTabCountAfterTune: afterReport.liveTabCount,
++      hibernatedTabCountAfterTune: afterReport.hibernatedTabCount,
++      newlyHibernatedTabIds,
++      recommendedWindowChars,
++      actionsTaken
++    };
++
++    this.tuningHistory.push(decision);
++    return decision;
++  }
++}
++
++module.exports = {
++  KosworkAdaptiveResourceAutotuner
++};
+diff --git a/desktop/windows/browser/footnote-reference-resolver.cjs b/desktop/windows/browser/footnote-reference-resolver.cjs
+new file mode 100644
+index 0000000..05e1b17
+--- /dev/null
++++ b/desktop/windows/browser/footnote-reference-resolver.cjs
+@@ -0,0 +1,90 @@
++"use strict";
++
++const { extractVerifiableExcerpt } = require("./document.cjs");
++
++/**
++ * Koswork Footnote, Endnote & Fine-Print Caveat Resolver
++ * (`desktop/windows/browser/footnote-reference-resolver.cjs`).
++ *
++ * Deepens Requirement #3 & #5:
++ * - Detects footnote markers (`[1]`, `[2]`, `[*]` or `<a href="#fn1">[1]</a>`) inside
++ *   extracted body claims on long/technical/pricing pages.
++ * - Locates the corresponding footnote definition block at the bottom of the page
++ *   (e.g., `[1] Цена действует только при 3-летнем контракте от 100 узлов`) and
++ *   extracts it as a linked UTF-16 `footnoteExcerpt` (`[startUtf16, endUtf16]`),
++ *   so fine-print caveats are never silently omitted from a confirmed claim.
++ */
++
++function parseFootnotesFromSnapshot(snapshot) {
++  if (!snapshot || typeof snapshot.fullTextUtf16 !== "string") {
++    throw new Error("FOOTNOTE_RESOLVER_REQUIRES_SNAPSHOT");
++  }
++
++  const footnotesById = new Map();
++  for (const blk of snapshot.blocks || []) {
++    const text = String(blk.text || "").trim();
++    // Match "[1] ...", "Примечание 1: ...", "* ..." at the start of a block
++    const m = text.match(/^(?:\[(\d+|\*+)\]|Примечание\s+(\d+)\s*[:—-])\s*(.+)$/is);
++    if (m) {
++      const fnId = String(m[1] || m[2]).trim();
++      const bodyText = m[3].trim();
++      const excerpt = extractVerifiableExcerpt(snapshot, {
++        startUtf16: blk.startUtf16,
++        endUtf16: blk.endUtf16
++      });
++      footnotesById.set(fnId, {
++        footnoteId: fnId,
++        footnoteText: bodyText,
++        fullBlockQuote: text,
++        startUtf16: blk.startUtf16,
++        endUtf16: blk.endUtf16,
++        excerpt
++      });
++    }
++  }
++
++  return footnotesById;
++}
++
++function extractClaimWithResolvedFootnotes(snapshot, { searchTerm } = {}) {
++  if (!snapshot) {
++    throw new Error("FOOTNOTE_RESOLVER_REQUIRES_SNAPSHOT");
++  }
++  const primaryExcerpt = extractVerifiableExcerpt(snapshot, { searchTerm });
++  if (!primaryExcerpt) {
++    return null;
++  }
++
++  const footnotesMap = parseFootnotesFromSnapshot(snapshot);
++  const referencedIds = [];
++  const markerRegex = /\[(\d+|\*+)\]/g;
++  let m;
++  while ((m = markerRegex.exec(primaryExcerpt.quote)) !== null) {
++    const id = m[1];
++    if (!referencedIds.includes(id)) {
++      referencedIds.push(id);
++    }
++  }
++
++  const resolvedFootnotes = referencedIds
++    .map((id) => footnotesMap.get(id))
++    .filter(Boolean);
++
++  return {
++    primaryExcerpt,
++    referencedFootnoteIds: referencedIds,
++    resolvedFootnotesCount: resolvedFootnotes.length,
++    resolvedFootnotes,
++    combinedSummaryRu:
++      resolvedFootnotes.length > 0
++        ? `${primaryExcerpt.quote} (Сноска: ${resolvedFootnotes
++            .map((f) => f.fullBlockQuote)
++            .join("; ")})`
++        : primaryExcerpt.quote
++  };
++}
++
++module.exports = {
++  parseFootnotesFromSnapshot,
++  extractClaimWithResolvedFootnotes
++};
+diff --git a/desktop/windows/browser/fullstack-api-roundtrip-verifier.cjs b/desktop/windows/browser/fullstack-api-roundtrip-verifier.cjs
+new file mode 100644
+index 0000000..a833690
+--- /dev/null
++++ b/desktop/windows/browser/fullstack-api-roundtrip-verifier.cjs
+@@ -0,0 +1,221 @@
++"use strict";
++
++const http = require("node:http");
++const { buildApiSyncBundleFromDesktopCycle } = require("./work-executor-sqlite-bridge.cjs");
++
++/**
++ * Koswork Full-Stack Desktop-to-HTTP API Roundtrip Verifier
++ * (`desktop/windows/browser/fullstack-api-roundtrip-verifier.cjs`).
++ *
++ * Connects the desktop Browser Research Cycle (`executeMultiSiteResearchWorkflow` +
++ * `buildApiSyncBundleFromDesktopCycle`) with a live HTTP API server implementing
++ * the `/api/koswork/browser-research/sessions` contract:
++ * 1. `POST /api/koswork/browser-research/sessions` — validates and stores the synced
++ *    desktop session, rejecting any `"confirmed"` claim that lacks a valid UTF-16 excerpt
++ *    with `422 Unprocessable Entity` (`BARE_LINK_NOT_PROOF`).
++ * 2. `GET /api/koswork/browser-research/sessions/:sessionId` — returns the stored
++ *    session with distinct `pageDate`, `eventDate`, and `fetchedAt`.
++ * 3. `DELETE /api/koswork/browser-research/sessions/:sessionId` — purges session data.
++ */
++
++function sendJson(res, statusCode, obj) {
++  const body = JSON.stringify(obj);
++  res.writeHead(statusCode, {
++    "content-type": "application/json; charset=utf-8",
++    "content-length": Buffer.byteLength(body, "utf8")
++  });
++  res.end(body);
++}
++
++async function startBrowserResearchApiSyncServer() {
++  const sessions = new Map();
++
++  const server = http.createServer((req, res) => {
++    const parsedUrl = new URL(req.url || "/", `http://${req.headers.host || "127.0.0.1"}`);
++    const pathname = parsedUrl.pathname;
++
++    if (req.method === "POST" && pathname === "/api/koswork/browser-research/sessions") {
++      const chunks = [];
++      req.on("data", (c) => chunks.push(c));
++      req.on("end", () => {
++        try {
++          const payload = JSON.parse(Buffer.concat(chunks).toString("utf8"));
++          const excerptMap = new Map(
++            (payload.excerpts || []).map((e) => [e.excerptId, e])
++          );
++
++          for (const claim of payload.claims || []) {
++            if (claim.verificationStatus === "confirmed") {
++              const exc = claim.excerptId ? excerptMap.get(claim.excerptId) : null;
++              if (
++                !exc ||
++                !exc.quote ||
++                !Number.isInteger(exc.startUtf16) ||
++                !Number.isInteger(exc.endUtf16) ||
++                exc.endUtf16 <= exc.startUtf16
++              ) {
++                sendJson(res, 422, {
++                  error: "BARE_LINK_NOT_PROOF",
++                  message:
++                    "Ссылка сама по себе не является доказательством утверждения: требуется UTF-16 выдержка."
++                });
++                return;
++              }
++            }
++          }
++
++          sessions.set(payload.sessionId, payload);
++          sendJson(res, 201, {
++            saved: true,
++            sessionId: payload.sessionId,
++            sourcesCount: (payload.sources || []).length,
++            excerptsCount: (payload.excerpts || []).length,
++            claimsCount: (payload.claims || []).length
++          });
++        } catch (err) {
++          sendJson(res, 400, { error: "INVALID_JSON", message: err.message });
++        }
++      });
++      return;
++    }
++
++    const sessionMatch = pathname.match(
++      /^\/api\/koswork\/browser-research\/sessions\/([^/]+)$/
++    );
++    if (sessionMatch) {
++      const sessionId = decodeURIComponent(sessionMatch[1]);
++      if (req.method === "GET") {
++        const stored = sessions.get(sessionId);
++        if (!stored) {
++          sendJson(res, 404, { error: "SESSION_NOT_FOUND" });
++          return;
++        }
++        sendJson(res, 200, stored);
++        return;
++      }
++      if (req.method === "DELETE") {
++        const deleted = sessions.delete(sessionId);
++        sendJson(res, 200, { purged: deleted, sessionId });
++        return;
++      }
++    }
++
++    sendJson(res, 404, { error: "NOT_FOUND" });
++  });
++
++  await new Promise((resolve, reject) => {
++    server.once("error", reject);
++    server.listen(0, "127.0.0.1", resolve);
++  });
++
++  const addr = server.address();
++  return {
++    baseOrigin: `http://127.0.0.1:${addr.port}`,
++    port: addr.port,
++    sessions,
++    close: () => new Promise((resolve) => server.close(resolve))
++  };
++}
++
++function httpJsonRequest(url, method = "GET", bodyObj = null) {
++  return new Promise((resolve, reject) => {
++    const parsed = new URL(url);
++    const bodyBuf = bodyObj ? Buffer.from(JSON.stringify(bodyObj), "utf8") : null;
++    const req = http.request(
++      parsed,
++      {
++        method,
++        headers: {
++          Accept: "application/json",
++          ...(bodyBuf
++            ? {
++                "Content-Type": "application/json",
++                "Content-Length": bodyBuf.length
++              }
++            : {})
++        }
++      },
++      (res) => {
++        const chunks = [];
++        res.on("data", (c) => chunks.push(c));
++        res.on("end", () => {
++          const text = Buffer.concat(chunks).toString("utf8");
++          resolve({
++            status: res.statusCode || 200,
++            data: text ? JSON.parse(text) : null
++          });
++        });
++      }
++    );
++    req.on("error", reject);
++    if (bodyBuf) req.write(bodyBuf);
++    req.end();
++  });
++}
++
++async function runDesktopToApiHttpRoundtrip({ cycleResult, sessionId = "brs-http-e2e-01" } = {}) {
++  const apiServer = await startBrowserResearchApiSyncServer();
++  try {
++    const bundle = buildApiSyncBundleFromDesktopCycle(cycleResult, { sessionId });
++
++    // 1. POST valid desktop research bundle
++    const postRes = await httpJsonRequest(
++      `${apiServer.baseOrigin}/api/koswork/browser-research/sessions`,
++      "POST",
++      bundle
++    );
++
++    // 2. GET stored session back and verify distinct pageDate / eventDate / fetchedAt
++    const getRes = await httpJsonRequest(
++      `${apiServer.baseOrigin}/api/koswork/browser-research/sessions/${encodeURIComponent(
++        sessionId
++      )}`,
++      "GET"
++    );
++
++    // 3. Verify that POSTing a tampered bundle with a bare-link "confirmed" claim is rejected with 422
++    const tamperedBundle = {
++      ...bundle,
++      sessionId: `${sessionId}-tampered`,
++      claims: [
++        {
++          claimId: "bare-link-claim",
++          verificationStatus: "confirmed",
++          excerptId: null,
++          sourceUrl: "https://corpus.local/bare"
++        }
++      ]
++    };
++    const bareLinkRes = await httpJsonRequest(
++      `${apiServer.baseOrigin}/api/koswork/browser-research/sessions`,
++      "POST",
++      tamperedBundle
++    );
++
++    // 4. DELETE / purge session
++    const delRes = await httpJsonRequest(
++      `${apiServer.baseOrigin}/api/koswork/browser-research/sessions/${encodeURIComponent(
++        sessionId
++      )}`,
++      "DELETE"
++    );
++
++    return {
++      postStatus: postRes.status,
++      postData: postRes.data,
++      getStatus: getRes.status,
++      retrievedSession: getRes.data,
++      bareLinkRejectionStatus: bareLinkRes.status,
++      bareLinkRejectionCode: bareLinkRes.data?.error,
++      deleteStatus: delRes.status,
++      purged: Boolean(delRes.data?.purged)
++    };
++  } finally {
++    await apiServer.close();
++  }
++}
++
++module.exports = {
++  startBrowserResearchApiSyncServer,
++  runDesktopToApiHttpRoundtrip
++};
+diff --git a/desktop/windows/browser/shell.cjs b/desktop/windows/browser/shell.cjs
+index 3f56dd2..50a3ace 100644
+--- a/desktop/windows/browser/shell.cjs
++++ b/desktop/windows/browser/shell.cjs
+@@ -69,6 +69,15 @@ const {
+   redactSensitiveText,
+   auditPayloadForZeroSecretLeaks
+ } = require("./privacy-redaction-guard.cjs");
++const {
++  extractClaimWithResolvedFootnotes
++} = require("./footnote-reference-resolver.cjs");
++const {
++  KosworkAdaptiveResourceAutotuner
++} = require("./adaptive-resource-autotuner.cjs");
++const {
++  runDesktopToApiHttpRoundtrip
++} = require("./fullstack-api-roundtrip-verifier.cjs");
+ 
+ /**
+  * Shared Tool & Execution Boundary for Koswork Browser (`desktop/windows/browser/shell.cjs`).
+@@ -137,6 +146,12 @@ const BROWSER_RESEARCH_TOOL_DEFINITIONS = Object.freeze([
+       "Извлечь подписи графиков <figure>/<figcaption> и доступные метки <svg> с точными смещениями UTF-16.",
+     requiredParams: ["tabId"]
+   },
++  {
++    name: "browser.extract_claim_with_footnotes",
++    description:
++      "Извлечь утверждение вместе с привязанными сносками ([1], [*]) и их точными UTF-16 выдержками.",
++    requiredParams: ["tabId", "searchTerm"]
++  },
+   {
+     name: "browser.read_long_page",
+     description:
+@@ -239,12 +254,24 @@ const BROWSER_RESEARCH_TOOL_DEFINITIONS = Object.freeze([
+       "Восстановить сессию вкладок браузера с соблюдением лимита живых вкладок maxLiveTabs.",
+     requiredParams: []
+   },
++  {
++    name: "browser.autotune_resources",
++    description:
++      "Скорректировать лимит живых вкладок и окно чтения по фактическим замерам RAM RSS и латентности p95.",
++    requiredParams: []
++  },
+   {
+     name: "browser.redact_privacy_secrets",
+     description:
+       "Очистить URL и текст от токенов, ключей API и секретов .env перед сохранением отчётов или трасс.",
+     requiredParams: []
+   },
++  {
++    name: "browser.verify_api_http_roundtrip",
++    description:
++      "Выполнить сквозную HTTP-синхронизацию десктопного цикла с маршрутами /api/koswork/browser-research/sessions.",
++    requiredParams: ["cycleResult"]
++  },
+   {
+     name: "browser.run_form_wizard",
+     description:
+@@ -384,6 +411,11 @@ function createKosworkBrowserShell(options = {}) {
+     engine,
+     workspaceRoot: options.workspaceRoot || engine.allowedWorkspaceRoot
+   });
++  const resourceAutotuner = new KosworkAdaptiveResourceAutotuner({
++    engine,
++    softRssBudgetMb: options.softRssBudgetMb ?? 250,
++    softLatencyP95BudgetMs: options.softLatencyP95BudgetMs ?? 120
++  });
+ 
+   async function dispatchToolCall(toolName, args = {}, context = {}) {
+     const signal = context.signal || null;
+@@ -498,6 +530,13 @@ function createKosworkBrowserShell(options = {}) {
+         );
+       }
+ 
++      case "browser.extract_claim_with_footnotes": {
++        const obs = engine.observePage(args.tabId);
++        return extractClaimWithResolvedFootnotes(obs.snapshot, {
++          searchTerm: args.searchTerm
++        });
++      }
++
+       case "browser.observe":
+         return engine.observePage(args.tabId, {
+           reuseSnapshot: args.reuseSnapshot !== false
+@@ -651,6 +690,12 @@ function createKosworkBrowserShell(options = {}) {
+           args.targetEngine || engine
+         );
+ 
++      case "browser.autotune_resources":
++        return resourceAutotuner.evaluateAndTuneResources({
++          simulatedRssMb: args.simulatedRssMb ?? null,
++          simulatedP95Ms: args.simulatedP95Ms ?? null
++        });
++
+       case "browser.redact_privacy_secrets": {
+         const urlRes = args.url ? redactSensitiveUrlParams(args.url) : null;
+         const textRes = args.text ? redactSensitiveText(args.text) : null;
+@@ -662,6 +707,12 @@ function createKosworkBrowserShell(options = {}) {
+         };
+       }
+ 
++      case "browser.verify_api_http_roundtrip":
++        return await runDesktopToApiHttpRoundtrip({
++          cycleResult: args.cycleResult,
++          sessionId: args.sessionId || "brs-http-e2e-01"
++        });
++
+       case "browser.fill_form":
+         return engine.fillForm({
+           tabId: args.tabId,
+@@ -869,6 +920,7 @@ function createKosworkBrowserShell(options = {}) {
+     pinboard,
+     spaObserver,
+     tabSessionRestorer,
++    resourceAutotuner,
+     toolDefinitions: BROWSER_RESEARCH_TOOL_DEFINITIONS,
+     dispatchToolCall
+   };
+diff --git a/desktop/windows/test/browser-research-acceptance.test.cjs b/desktop/windows/test/browser-research-acceptance.test.cjs
+index 6861056..0c9f64c 100644
+--- a/desktop/windows/test/browser-research-acceptance.test.cjs
++++ b/desktop/windows/test/browser-research-acceptance.test.cjs
+@@ -2877,3 +2877,141 @@ test("31. Accessible SVG / `<figure>` / `<figcaption>` Chart Extractor (`chart-a
+   assert.ok(priv.textRedaction.sanitizedText.includes("[REDACTED_ENV_SECRET]"));
+   assert.equal(priv.payloadAudit.clean, true);
+ });
++
++test("32. Footnote & Fine-Print Caveat Resolver (`footnote-reference-resolver.cjs`) + Adaptive Memory Pressure & Latency Auto-Tuner (`adaptive-resource-autotuner.cjs`)", async () => {
++  const workspaceRoot = createTempWorkspace();
++  const shell = createKosworkBrowserShell({
++    workspaceRoot,
++    maxLiveTabs: 3,
++    softRssBudgetMb: 200,
++    softLatencyP95BudgetMs: 100
++  });
++  const engine = shell.engine;
++
++  engine.registerSyntheticSite("https://corpus.local/pricing-with-footnotes", {
++    title: "Прайс-лист со сносками и мелким шрифтом",
++    pageDate: "2026-11-07",
++    eventDate: "2026-11-05",
++    text: [
++      "Для пакета Option Alpha базовая цена составляет $49/мес [1] при стандартной поддержке [*].",
++      "[1] Указанная цена $49/мес действует только при годовой предоплате от 25 рабочих мест.",
++      "[*] Стандартная поддержка включает время реакции 4 часа в рабочие дни."
++    ].join("\n\n")
++  });
++
++  await engine.navigate({
++    tabId: "tab-fn-1",
++    url: "https://corpus.local/pricing-with-footnotes"
++  });
++
++  const resolvedFn = await shell.dispatchToolCall("browser.extract_claim_with_footnotes", {
++    tabId: "tab-fn-1",
++    searchTerm: "базовая цена составляет $49/мес [1]"
++  });
++
++  assert.ok(resolvedFn);
++  assert.deepEqual(resolvedFn.referencedFootnoteIds, ["1", "*"]);
++  assert.equal(resolvedFn.resolvedFootnotesCount, 2);
++  assert.ok(resolvedFn.resolvedFootnotes[0].footnoteText.includes("от 25 рабочих мест"));
++  assert.ok(resolvedFn.resolvedFootnotes[1].footnoteText.includes("время реакции 4 часа"));
++
++  // Open 2 more tabs so 3 live tabs are active
++  for (let i = 2; i <= 3; i += 1) {
++    engine.registerSyntheticSite(`https://corpus.local/tune-page-${i}`, {
++      title: `Вкладка №${i}`,
++      text: `Текст вкладки №${i}`
++    });
++    await engine.navigate({
++      tabId: `tab-fn-${i}`,
++      url: `https://corpus.local/tune-page-${i}`
++    });
++  }
++  assert.equal(engine.resourceGovernor.liveTabs.size, 3);
++
++  // Simulate memory pressure (simulatedRssMb = 310 MB > softRssBudgetMb 200 MB) and latency spike (180 ms > 100 ms)
++  const tuneDecision = await shell.dispatchToolCall("browser.autotune_resources", {
++    simulatedRssMb: 310,
++    simulatedP95Ms: 180
++  });
++
++  assert.equal(tuneDecision.zeroOverheadClaimed, false);
++  assert.ok(tuneDecision.measuredRssMb > 0);
++  assert.equal(tuneDecision.previousMaxLiveTabs, 3);
++  assert.equal(tuneDecision.newMaxLiveTabs, 2);
++  assert.equal(tuneDecision.liveTabCountAfterTune, 2);
++  assert.equal(tuneDecision.newlyHibernatedTabIds.length, 1);
++  assert.equal(tuneDecision.recommendedWindowChars, 2000);
++});
++
++test("33. Full-Stack Desktop-to-HTTP API Roundtrip Verifier (`fullstack-api-roundtrip-verifier.cjs` across POST / GET / 422 Bare-Link Rejection / DELETE)", async () => {
++  const workspaceRoot = createTempWorkspace();
++  const shell = createKosworkBrowserShell({ workspaceRoot });
++  const engine = shell.engine;
++
++  engine.registerSyntheticSite("https://corpus.local/api-roundtrip-doc", {
++    title: "Документ для сквозной проверки HTTP API",
++    pageDate: "2026-11-07",
++    eventDate: "2026-11-06",
++    text: "Верифицированный параметр HTTP-раундтрипа: шифрование канала TLS 1.3 обязательно."
++  });
++
++  const nav = await engine.navigate({
++    tabId: "tab-api-rt",
++    url: "https://corpus.local/api-roundtrip-doc"
++  });
++  const exc = engine.extractExcerpt("tab-api-rt", {
++    searchTerm: "шифрование канала TLS 1.3 обязательно"
++  });
++
++  const roundtrip = await shell.dispatchToolCall("browser.verify_api_http_roundtrip", {
++    sessionId: "brs-live-http-01",
++    cycleResult: {
++      question: "Проверка TLS 1.3 через HTTP API",
++      status: "completed",
++      criteria: ["Шифрование"],
++      sources: [
++        {
++          sourceVisitId: "src-rt-1",
++          url: nav.url,
++          canonicalUrl: nav.snapshot.canonicalUrl,
++          title: nav.snapshot.title,
++          httpStatus: 200,
++          available: true,
++          pageVersion: nav.snapshot.pageVersion,
++          snapshotId: nav.snapshot.snapshotId,
++          contentSha256: nav.snapshot.contentSha256,
++          tabReceipt: nav.tabReceipt,
++          pageDate: nav.pageDate,
++          eventDate: nav.eventDate,
++          fetchedAt: nav.fetchedAt
++        }
++      ],
++      confirmedClaims: [
++        {
++          claimId: "claim-rt-1",
++          optionName: "Koswork Node",
++          criterion: "Шифрование",
++          value: "TLS 1.3",
++          claim: "Обязательно шифрование TLS 1.3",
++          excerpt: exc,
++          source: {
++            url: nav.url,
++            title: nav.snapshot.title,
++            pageDate: nav.pageDate,
++            eventDate: nav.eventDate,
++            fetchedAt: nav.fetchedAt
++          }
++        }
++      ]
++    }
++  });
++
++  assert.equal(roundtrip.postStatus, 201);
++  assert.equal(roundtrip.getStatus, 200);
++  assert.equal(roundtrip.retrievedSession.sources[0].pageDate, "2026-11-07");
++  assert.equal(roundtrip.retrievedSession.sources[0].eventDate, "2026-11-06");
++  assert.equal(roundtrip.bareLinkRejectionStatus, 422);
++  assert.equal(roundtrip.bareLinkRejectionCode, "BARE_LINK_NOT_PROOF");
++  assert.equal(roundtrip.deleteStatus, 200);
++  assert.equal(roundtrip.purged, true);
++});
+-- 
+2.39.5
+

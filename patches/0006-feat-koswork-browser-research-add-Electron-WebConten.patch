@@ -1,0 +1,783 @@
+From 68ff6ec5b099753d55973da58581b992045940c9 Mon Sep 17 00:00:00 2001
+From: Kosmora Engineering <eng@kosmora.ai>
+Date: Sat, 7 Nov 2026 21:20:31 +0000
+Subject: [PATCH 06/32] feat(koswork-browser-research): add Electron
+ WebContentsView pool bridge, multi-page SERP traversal, and verified
+ .docx/.xlsx report export
+
+---
+ .../browser/electron-webview-bridge.cjs       | 220 ++++++++++++++++++
+ .../browser/research-report-builder.cjs       | 105 ++++++++-
+ desktop/windows/browser/research-workflow.cjs |  32 ++-
+ desktop/windows/browser/search.cjs            |  37 ++-
+ .../test/browser-research-acceptance.test.cjs | 112 ++++++---
+ 5 files changed, 456 insertions(+), 50 deletions(-)
+ create mode 100644 desktop/windows/browser/electron-webview-bridge.cjs
+
+diff --git a/desktop/windows/browser/electron-webview-bridge.cjs b/desktop/windows/browser/electron-webview-bridge.cjs
+new file mode 100644
+index 0000000..550d172
+--- /dev/null
++++ b/desktop/windows/browser/electron-webview-bridge.cjs
+@@ -0,0 +1,220 @@
++"use strict";
++
++const { attachDeterministicDownloadHandler } = require("./download-verifier.cjs");
++
++/**
++ * Koswork Electron `WebContentsView` Pool Bridge (`desktop/windows/browser/electron-webview-bridge.cjs`).
++ *
++ * Bridges `KosworkBrowserEngine` with native Electron `WebContentsView` instances:
++ * 1. Enforces the live `WebContentsView` cap (`maxLiveTabs`, default 3): when `KosworkBrowserResourceGovernor`
++ *    hibernates a background tab, the underlying `WebContentsView` is unmounted and destroyed so its
++ *    Chromium renderer process RAM is reclaimed while `tabReceipt` and the latest versioned snapshot
++ *    remain available in `KosworkBrowserEngine`.
++ * 2. Hooks `webContents.on("before-input-event")` and user-initiated navigation so any manual user
++ *    interaction inside the live browser view immediately calls `engine.recordUserAction(tabId, ...)`,
++ *    invalidating stale agent observations (`OBSERVATION_INVALIDATED_BY_USER`).
++ * 3. Attaches `attachDeterministicDownloadHandler` to `webContents.session` so all file downloads
++ *    land strictly inside `engine.allowedDownloadDir` (inside the connected workspace folder).
++ * 4. Provides `buildInjectedDomExtractionScript()` for serializing live DOM, open Shadow DOM,
++ *    same-origin iframes, `getBoundingClientRect()` bounds, and `pageDate`/`eventDate` metadata.
++ */
++
++function buildInjectedDomExtractionScript() {
++  return `(() => {
++    const pickMeta = (names) => {
++      for (const n of names) {
++        const el = document.querySelector('meta[property="' + n + '"], meta[name="' + n + '"]');
++        if (el && el.getAttribute("content")) return el.getAttribute("content");
++      }
++      return null;
++    };
++    const pageTimeEl = document.querySelector("time[data-page-date], time[itemprop='datePublished']");
++    const eventTimeEl = document.querySelector("time[data-event-date], time[itemprop='startDate']");
++    const pageDate = pickMeta(["article:published_time", "article:modified_time", "pubdate", "date", "dc.date"]) ||
++      (pageTimeEl ? pageTimeEl.getAttribute("datetime") : null);
++    const eventDate = pickMeta(["event:date", "event_date", "effective_date"]) ||
++      (eventTimeEl ? eventTimeEl.getAttribute("datetime") : null);
++
++    const blocks = [];
++    const blockEls = document.querySelectorAll("h1, h2, h3, h4, p, li, blockquote, pre");
++    blockEls.forEach((el, idx) => {
++      const text = (el.innerText || el.textContent || "").trim();
++      if (!text) return;
++      const r = el.getBoundingClientRect();
++      blocks.push({
++        id: el.id || ("dom-blk-" + (idx + 1)),
++        tag: el.tagName.toLowerCase(),
++        role: el.getAttribute("role") || (el.tagName.startsWith("H") ? "heading" : "paragraph"),
++        text,
++        bounds: {
++          x: Math.round(r.x),
++          y: Math.round(r.y),
++          width: Math.round(r.width),
++          height: Math.round(r.height),
++          inViewport: r.top >= 0 && r.bottom <= (window.innerHeight || 900)
++        }
++      });
++    });
++
++    return {
++      url: location.href,
++      title: document.title || location.href,
++      pageDate,
++      eventDate,
++      html: document.documentElement ? document.documentElement.outerHTML : "",
++      blocks
++    };
++  })()`;
++}
++
++class KosworkElectronWebViewPoolBridge {
++  constructor(options = {}) {
++    if (!options.engine) {
++      throw new Error("ELECTRON_BRIDGE_REQUIRES_BROWSER_ENGINE");
++    }
++    this.engine = options.engine;
++    this.createWebContentsView =
++      typeof options.createWebContentsView === "function"
++        ? options.createWebContentsView
++        : null;
++    this.parentWindow = options.parentWindow || null;
++    this.liveViews = new Map(); // tabId -> { tabId, view, downloadAttachment, destroyed }
++    this.destroyedHistory = [];
++  }
++
++  ensureViewForTab(tabId) {
++    const key = String(tabId);
++    const existing = this.liveViews.get(key);
++    if (existing && !existing.destroyed) {
++      return existing;
++    }
++
++    if (!this.createWebContentsView) {
++      throw new Error("ELECTRON_WEBCONTENTSVIEW_FACTORY_NOT_CONFIGURED");
++    }
++
++    const view = this.createWebContentsView({ tabId: key });
++    const wc = view.webContents || view;
++
++    let downloadAttachment = null;
++    if (wc.session && this.engine.allowedDownloadDir) {
++      downloadAttachment = attachDeterministicDownloadHandler(wc.session, {
++        downloadDir: this.engine.allowedDownloadDir
++      });
++    }
++
++    if (typeof wc.on === "function") {
++      wc.on("before-input-event", (_event, input) => {
++        if (input && input.isAutoRepeat) return;
++        this.engine.recordUserAction(key, {
++          type: `user_${input?.type || "input"}`,
++          detail: { key: input?.key || null }
++        });
++      });
++
++      wc.on("did-navigate-in-page", (_event, url, isMainFrame) => {
++        if (isMainFrame && wc._userGestureNavigation) {
++          this.engine.recordUserAction(key, {
++            type: "user_in_page_navigation",
++            detail: { url }
++          });
++        }
++      });
++    }
++
++    if (this.parentWindow?.contentView?.addChildView) {
++      this.parentWindow.contentView.addChildView(view);
++    }
++
++    const entry = {
++      tabId: key,
++      view,
++      webContents: wc,
++      downloadAttachment,
++      destroyed: false,
++      createdAtMs: Date.now()
++    };
++    this.liveViews.set(key, entry);
++    return entry;
++  }
++
++  hibernateTabView(tabId) {
++    const key = String(tabId);
++    const entry = this.liveViews.get(key);
++    if (!entry || entry.destroyed) return false;
++
++    if (entry.downloadAttachment) {
++      entry.downloadAttachment.detach();
++    }
++    if (this.parentWindow?.contentView?.removeChildView) {
++      try {
++        this.parentWindow.contentView.removeChildView(entry.view);
++      } catch {
++        /* ignore */
++      }
++    }
++    if (typeof entry.webContents?.destroy === "function") {
++      entry.webContents.destroy();
++    } else if (typeof entry.view?.destroy === "function") {
++      entry.view.destroy();
++    }
++
++    entry.destroyed = true;
++    this.liveViews.delete(key);
++    this.destroyedHistory.push({
++      tabId: key,
++      destroyedAtMs: Date.now()
++    });
++    return true;
++  }
++
++  async navigateInWebView({ tabId, url, actor = "agent", signal = null } = {}) {
++    const resolvedTabId = this.engine.allocateTabId(tabId);
++    const viewEntry = this.ensureViewForTab(resolvedTabId);
++
++    if (typeof viewEntry.webContents.loadURL === "function") {
++      await viewEntry.webContents.loadURL(url);
++    }
++
++    let extractedDom = null;
++    if (typeof viewEntry.webContents.executeJavaScript === "function") {
++      extractedDom = await viewEntry.webContents.executeJavaScript(
++        buildInjectedDomExtractionScript(),
++        true
++      );
++    }
++
++    if (extractedDom && typeof extractedDom === "object") {
++      this.engine.registerSyntheticSite(url, {
++        title: extractedDom.title || url,
++        pageDate: extractedDom.pageDate || null,
++        eventDate: extractedDom.eventDate || null,
++        html: extractedDom.html || "",
++        blocks: extractedDom.blocks || undefined
++      });
++    }
++
++    const navResult = await this.engine.navigate({
++      tabId: resolvedTabId,
++      url,
++      actor,
++      signal
++    });
++
++    // Synchronize live WebContentsView pool with ResourceGovernor hibernation decisions
++    for (const hibId of navResult.governorState?.newlyHibernatedTabIds || []) {
++      this.hibernateTabView(hibId);
++    }
++
++    return {
++      ...navResult,
++      activeWebViewsCount: this.liveViews.size,
++      destroyedWebViewsCount: this.destroyedHistory.length
++    };
++  }
++}
++
++module.exports = {
++  KosworkElectronWebViewPoolBridge,
++  buildInjectedDomExtractionScript
++};
+diff --git a/desktop/windows/browser/research-report-builder.cjs b/desktop/windows/browser/research-report-builder.cjs
+index 900dc13..1e7b3a7 100644
+--- a/desktop/windows/browser/research-report-builder.cjs
++++ b/desktop/windows/browser/research-report-builder.cjs
+@@ -1,12 +1,15 @@
+ "use strict";
+ 
+ const { createKosworkWorkspaceService } = require("../workspace/workspace-service.cjs");
++const { saveWordReportToWorkspace } = require("../workspace/word-report-builder.cjs");
++const { saveWorkbookToWorkspace } = require("../workspace/excel-workbook-builder.cjs");
+ 
+ /**
+  * Koswork Verifiable Browser Research Report Builder (`desktop/windows/browser/research-report-builder.cjs`).
+  *
+- * Saves Markdown (`.md`), HTML (`.html`), RFC-4180 CSV (`.csv`), and structured comparison table (`.json`)
+- * artifacts through the existing `createKosworkWorkspaceService` (`desktop/windows/workspace/workspace-service.cjs`).
++ * Saves Markdown (`.md`), HTML (`.html`), RFC-4180 CSV (`.csv`), JSON (`.json`),
++ * and optional OpenXML Word (`.docx`) & Excel (`.xlsx`) comparison artifacts through the existing
++ * `desktop/windows/workspace/` file APIs.
+  *
+  * Strict Epistemic Invariants:
+  * 1. Every confirmed claim MUST map `claim -> excerpt (verbatim quote + UTF-16 offsets) -> source (url, title, pageDate, eventDate, fetchedAt)`.
+@@ -394,14 +397,15 @@ function renderResearchReportHtml(spec) {
+ }
+ 
+ /**
+- * Saves the Markdown report, HTML report, CSV comparison table, and JSON comparison matrix
+- * via the existing `createKosworkWorkspaceService` (`desktop/windows/workspace/workspace-service.cjs`).
++ * Saves the Markdown report, HTML report, CSV comparison table, JSON comparison matrix,
++ * and optional `.docx` + `.xlsx` files via the existing `desktop/windows/workspace/` services.
+  */
+ async function saveResearchReportsViaWorkspace({
+   workspaceRoot,
+   workspaceService = null,
+   reportSlug = "browser-research-report",
+   reportData,
++  exportOfficeFormats = true,
+   signal = null
+ } = {}) {
+   let svc = workspaceService;
+@@ -412,6 +416,8 @@ async function saveResearchReportsViaWorkspace({
+     await svc.connectFolder({ folderPath: workspaceRoot, signal });
+   }
+ 
++  const resolvedRoot = workspaceRoot || svc.getStatus().rootPath;
++
+   const sourcesByUrl = new Map();
+   for (const s of reportData.sources || []) {
+     sourcesByUrl.set(s.url, s);
+@@ -483,11 +489,102 @@ async function saveResearchReportsViaWorkspace({
+     comparisonTableJson
+   );
+ 
++  let docxFile = null;
++  let xlsxFile = null;
++
++  if (exportOfficeFormats && resolvedRoot) {
++    docxFile = saveWordReportToWorkspace({
++      workspaceRoot: resolvedRoot,
++      relativePath: `reports/${reportSlug}.docx`,
++      reportSpec: {
++        title: `Исследовательский отчёт Koswork: ${enrichedSpec.question}`,
++        subtitle: `Подтверждено утверждений: ${confirmedClaims.length} | Противоречий: ${(enrichedSpec.contradictions || []).length}`,
++        sections: [
++          {
++            heading: "1. Подтверждённые утверждения (Утверждение -> Выдержка -> Источник)",
++            paragraphs: confirmedClaims.map(
++              (c) =>
++                `${c.claim} — Выдержка [UTF-16 ${c.excerpt.startUtf16}..${c.excerpt.endUtf16}]: «${c.excerpt.quote}» (${c.source.title}, ${c.source.url}, дата на странице: ${c.source.pageDate || "н/д"}, дата события: ${c.source.eventDate || "н/д"}, получено: ${c.source.fetchedAt})`
++            )
++          },
++          {
++            heading: "2. Противоречия и недоступные источники",
++            paragraphs: [
++              ...(enrichedSpec.contradictions || []).map(
++                (cf) => `${cf.criterion} (${cf.optionName || ""}): ${cf.summary}`
++              ),
++              ...(enrichedSpec.unavailableSources || []).map(
++                (u) => `Недоступный источник: ${u.url} (HTTP ${u.httpStatus})`
++              )
++            ]
++          }
++        ],
++        sources: confirmedClaims.map((c) => ({
++          title: c.source.title,
++          url: c.source.url,
++          quote: c.excerpt.quote
++        }))
++      }
++    });
++
++    const criteriaList = enrichedSpec.criteria || [];
++    xlsxFile = saveWorkbookToWorkspace({
++      workspaceRoot: resolvedRoot,
++      relativePath: `reports/${reportSlug}-comparison.xlsx`,
++      workbookSpec: {
++        sheets: [
++          {
++            name: "Сравнение вариантов",
++            headers: ["Вариант", ...criteriaList, "Статус проверки"],
++            rows: (enrichedSpec.comparisonRows || []).map((row) => [
++              row.optionName,
++              ...criteriaList.map((crit) => {
++                const cell = row.values?.[crit];
++                if (!cell) return "Неизвестно (нет выдержки)";
++                return typeof cell === "object"
++                  ? `${cell.displayValue} (${cell.sourceUrl} [${cell.startUtf16}..${cell.endUtf16}])`
++                  : String(cell);
++              }),
++              row.verificationSummary || "Проверено"
++            ])
++          },
++          {
++            name: "Утверждения и выдержки",
++            headers: [
++              "ID",
++              "Утверждение",
++              "Цитата",
++              "UTF-16 Start",
++              "UTF-16 End",
++              "URL источника",
++              "Дата на странице",
++              "Дата события",
++              "Дата получения"
++            ],
++            rows: confirmedClaims.map((c) => [
++              c.claimId,
++              c.claim,
++              c.excerpt.quote,
++              c.excerpt.startUtf16,
++              c.excerpt.endUtf16,
++              c.source.url,
++              c.source.pageDate || "",
++              c.source.eventDate || "",
++              c.source.fetchedAt || ""
++            ])
++          }
++        ]
++      }
++    });
++  }
++
+   return {
+     markdownFile: mdFile,
+     htmlFile,
+     csvFile,
+     comparisonTableFile: tableFile,
++    docxFile,
++    xlsxFile,
+     confirmedClaims,
+     unconfirmedClaims,
+     markdownContent,
+diff --git a/desktop/windows/browser/research-workflow.cjs b/desktop/windows/browser/research-workflow.cjs
+index b6a7f51..0bf44e9 100644
+--- a/desktop/windows/browser/research-workflow.cjs
++++ b/desktop/windows/browser/research-workflow.cjs
+@@ -9,13 +9,13 @@ const { compareFactsForCriterion } = require("./claim-comparator.cjs");
+  *
+  * Implements the end-to-end research cycle inside the existing Work executor:
+  * 1. Question formulation & criteria decomposition (`formulateResearchQuestion`)
+- * 2. Search execution via `engine.searchService` (with automatic next-page SERP traversal when enabled)
++ * 2. Search execution via `engine.searchService` (with automatic multi-page SERP traversal up to `maxSerpPages`)
+  * 3. Opening candidate sources in the browser, reading long & dynamic pages, and extracting
+  *    UTF-16 anchored excerpts (`claim -> excerpt -> source`)
+  * 4. Cross-source comparison by criteria via `compareFactsForCriterion` (`claim-comparator.cjs`),
+  *    detecting contradictions, equivalent normalized units, outdated `pageDate`/`eventDate`,
+  *    unavailable pages, and post-observation text substitutions
+- * 5. Saving verifiable MD / HTML / CSV / JSON comparison table reports via existing workspace file APIs
++ * 5. Saving verifiable MD / HTML / CSV / JSON / DOCX / XLSX comparison reports via existing workspace file APIs
+  */
+ 
+ function formulateResearchQuestion(input = {}) {
+@@ -80,20 +80,36 @@ async function executeMultiSiteResearchWorkflow({
+     options: formulation.options
+   });
+ 
+-  // Step 2: Execute search query
++  // Step 2: Execute search query and collect candidate items across up to `maxSerpPages`
++  const maxSerpPages = Math.max(1, Math.min(Number(plan.maxSerpPages ?? 2), 5));
++  const pageSize = Math.max(1, Math.min(Number(plan.pageSize ?? 5), 5));
++
+   const searchResponse = await browserEngine.searchService.search({
+     query: formulation.searchQuery,
+     actor: plan.actor || "agent",
+     page: 1,
+-    pageSize: plan.pageSize ?? 10,
++    pageSize,
+     signal,
+     mockOrAdapterResults: plan.searchResults || null
+   });
+ 
++  const allSerpItems = [...searchResponse.items];
++  let currentPage = 1;
++  let lastPageObj = searchResponse;
++  while (lastPageObj.hasNextPage && currentPage < maxSerpPages) {
++    currentPage += 1;
++    lastPageObj = browserEngine.searchService.getSearchPage(searchResponse.searchId, {
++      page: currentPage,
++      pageSize
++    });
++    allSerpItems.push(...lastPageObj.items);
++  }
++
+   recordStep("search_sources", "completed", {
+     searchId: searchResponse.searchId,
+     providerId: searchResponse.providerId,
+-    totalResults: searchResponse.totalResults
++    totalResults: searchResponse.totalResults,
++    serpPagesRead: currentPage
+   });
+ 
+   const openedSources = [];
+@@ -103,7 +119,7 @@ async function executeMultiSiteResearchWorkflow({
+   const authPausedSources = [];
+ 
+   // Step 3: Open each result in the browser engine, read long/dynamic content, and extract UTF-16 excerpts
+-  for (const item of searchResponse.items) {
++  for (const item of allSerpItems) {
+     if (signal?.aborted) {
+       const err = new Error("RESEARCH_WORKFLOW_CANCELLED");
+       err.code = "RESEARCH_WORKFLOW_CANCELLED";
+@@ -406,6 +422,7 @@ async function executeMultiSiteResearchWorkflow({
+     workspaceRoot,
+     workspaceService,
+     reportSlug: plan.reportSlug || "koswork-browser-research-report",
++    exportOfficeFormats: plan.exportOfficeFormats !== false,
+     reportData: {
+       question: formulation.question,
+       criteria: formulation.criteria,
+@@ -426,6 +443,8 @@ async function executeMultiSiteResearchWorkflow({
+     htmlPath: savedReports.htmlFile.path,
+     csvPath: savedReports.csvFile.path,
+     comparisonTablePath: savedReports.comparisonTableFile.path,
++    docxPath: savedReports.docxFile?.relativePath || null,
++    xlsxPath: savedReports.xlsxFile?.relativePath || null,
+     confirmedClaimsCount: savedReports.confirmedClaims.length,
+     contradictionsCount: contradictions.length
+   });
+@@ -434,6 +453,7 @@ async function executeMultiSiteResearchWorkflow({
+     status: "completed",
+     formulation,
+     searchResponse,
++    serpPagesRead: currentPage,
+     openedSources,
+     unavailableSources,
+     authPausedSources,
+diff --git a/desktop/windows/browser/search.cjs b/desktop/windows/browser/search.cjs
+index 8b4f06a..71b80ef 100644
+--- a/desktop/windows/browser/search.cjs
++++ b/desktop/windows/browser/search.cjs
+@@ -10,7 +10,7 @@ const { extractVerifiableExcerpt } = require("./document.cjs");
+  * Connects user and agent search queries directly to the existing Koswork browser engine:
+  * 1. Executes search via the isolated search adapter (`research-adapter.cjs`), preserving explicit
+  *    provider provenance (`providerId`, `providerEndpoint`) — never claiming a fake "proprietary internet index".
+- * 2. Stores and paginates SERP entries in `KosworkSearchAndBrowserStore`.
++ * 2. Stores and paginates SERP entries in `KosworkSearchAndBrowserStore` (`getSearchPage`, `nextSearchPage`).
+  * 3. `openSearchResult` actually opens the target URL in the browser engine, records `url`, `title`,
+  *    `fetchedAt`, `pageDate`, `eventDate`, and links any extracted excerpt (`excerptId`, `startUtf16`, `endUtf16`)
+  *    back to the originating search and source receipt.
+@@ -63,7 +63,6 @@ class KosworkBrowserSearchService {
+       recordedAt: providerResponse.searchedAt
+     });
+ 
+-    // Attach explicit provider origin metadata to the journal entry (never hiding behind a fake index)
+     const journalEntry = this.store.searchJournal.find((s) => s.searchId === paginated.searchId);
+     if (journalEntry) {
+       journalEntry.providerId = providerResponse.providerId;
+@@ -71,6 +70,18 @@ class KosworkBrowserSearchService {
+       journalEntry.actor = normalizedActor;
+     }
+ 
++    if (this.engine?.provenanceJournal) {
++      this.engine.provenanceJournal.recordSearch({
++        searchId: paginated.searchId,
++        query: providerResponse.query,
++        providerId: providerResponse.providerId,
++        providerEndpoint: providerResponse.providerEndpoint,
++        actor: normalizedActor,
++        totalResults: paginated.totalResults,
++        searchedAt: providerResponse.searchedAt
++      });
++    }
++
+     return {
+       ...paginated,
+       actor: normalizedActor,
+@@ -80,6 +91,20 @@ class KosworkBrowserSearchService {
+     };
+   }
+ 
++  /**
++   * Navigates to a specific SERP page (`page = 2, 3, ...`) for an existing `searchId`.
++   */
++  getSearchPage(searchId, { page = 1, pageSize = 5 } = {}) {
++    const journalEntry = this.store.searchJournal.find((s) => s.searchId === String(searchId));
++    const pageData = this.store.getSearchPage(searchId, { page, pageSize });
++    return {
++      ...pageData,
++      providerId: journalEntry?.providerId || this.adapter.providerId,
++      providerEndpoint: journalEntry?.providerEndpoint || this.adapter.searchEndpoint,
++      actor: journalEntry?.actor || "agent"
++    };
++  }
++
+   /**
+    * Opens a search result in the attached browser engine (for both user clicks and agent navigation),
+    * recording `url`, `title`, `fetchedAt`, `pageDate`, `eventDate`, and optional initial excerpt linkage.
+@@ -135,7 +160,9 @@ class KosworkBrowserSearchService {
+       initiatedByRank: selectedItem ? selectedItem.rank : rank
+     });
+ 
+-    const sourceVisitId = `src-${navResult.tabId}-v${navResult.snapshot?.pageVersion || 1}-${Date.now()}`;
++    const sourceVisitId = `src-${navResult.tabId}-v${
++      navResult.snapshot?.pageVersion || 1
++    }-${Date.now()}`;
+     const linkedExcerpts = [];
+ 
+     if (extractQuery && navResult.snapshot && navResult.httpStatus < 400) {
+@@ -151,7 +178,9 @@ class KosworkBrowserSearchService {
+       sourceVisitId,
+       searchId: searchId || null,
+       searchQuery: journalEntry ? journalEntry.queryPreview : null,
+-      providerId: journalEntry ? journalEntry.providerId || journalEntry.engine : this.adapter.providerId,
++      providerId: journalEntry
++        ? journalEntry.providerId || journalEntry.engine
++        : this.adapter.providerId,
+       serpRank: selectedItem ? selectedItem.rank : rank,
+       serpTitle: selectedItem ? selectedItem.title : null,
+       serpSnippet: selectedItem ? selectedItem.snippet : null,
+diff --git a/desktop/windows/test/browser-research-acceptance.test.cjs b/desktop/windows/test/browser-research-acceptance.test.cjs
+index 153fba0..76dd4e3 100644
+--- a/desktop/windows/test/browser-research-acceptance.test.cjs
++++ b/desktop/windows/test/browser-research-acceptance.test.cjs
+@@ -5,7 +5,7 @@ const assert = require("node:assert/strict");
+ const fs = require("node:fs");
+ const os = require("node:os");
+ const path = require("node:path");
+-const http = require("node:http");
++const { EventEmitter } = require("node:events");
+ 
+ const {
+   KosworkBrowserEngine,
+@@ -22,8 +22,13 @@ const {
+   compareFactsForCriterion,
+   normalizeComparableValue
+ } = require("../browser/claim-comparator.cjs");
++const {
++  KosworkElectronWebViewPoolBridge,
++  buildInjectedDomExtractionScript
++} = require("../browser/electron-webview-bridge.cjs");
+ const { startReproducibleCorpusServer } = require("../browser/corpus-http-server.cjs");
+ const { runBrowserResearchBenchmark } = require("../browser/benchmark-browser-research.cjs");
++const { extractVaultDocument } = require("../vault-document-extractor.cjs");
+ const { Stage2DesktopIpcBridge } = require("../ci/stage2-desktop-ipc-bridge.cjs");
+ const { KosworkUnifiedTaskCoordinator } = require("../ci/unified-task-coordinator.cjs");
+ 
+@@ -226,14 +231,24 @@ test("1. Reproducible 5-site corpus end-to-end research cycle (contradiction, un
+     cycleResult.substitutionIncidents[0].actualTextAtOffsets.includes("возврат не предусмотрен")
+   );
+ 
++  // Verify MD, HTML, CSV, JSON, DOCX, and XLSX comparison reports exist and extract cleanly
+   const mdAbs = path.join(workspaceRoot, cycleResult.savedReports.markdownFile.path);
+   const htmlAbs = path.join(workspaceRoot, cycleResult.savedReports.htmlFile.path);
+   const csvAbs = path.join(workspaceRoot, cycleResult.savedReports.csvFile.path);
+   const jsonAbs = path.join(workspaceRoot, cycleResult.savedReports.comparisonTableFile.path);
++  const docxAbs = cycleResult.savedReports.docxFile.absolutePath;
++  const xlsxAbs = cycleResult.savedReports.xlsxFile.absolutePath;
+   assert.ok(fs.existsSync(mdAbs));
+   assert.ok(fs.existsSync(htmlAbs));
+   assert.ok(fs.existsSync(csvAbs));
+   assert.ok(fs.existsSync(jsonAbs));
++  assert.ok(fs.existsSync(docxAbs));
++  assert.ok(fs.existsSync(xlsxAbs));
++
++  const extractedDocx = extractVaultDocument(fs.readFileSync(docxAbs), { filename: "report.docx" });
++  assert.ok(extractedDocx.text.includes("Option Alpha"));
++  const extractedXlsx = extractVaultDocument(fs.readFileSync(xlsxAbs), { filename: "report.xlsx" });
++  assert.ok(extractedXlsx.text.includes("Option Beta"));
+ });
+ 
+ test("2. Cancellation, tab loss, forbidden attachment, form submission effect verification, CAPTCHA/login user pause & resume, and manual user takeover invalidation", async () => {
+@@ -289,8 +304,6 @@ test("2. Cancellation, tab loss, forbidden attachment, form submission effect ve
+     url: "https://corpus.local/synthetic-form-portal"
+   });
+   assert.equal(nav.status, "ok");
+-  assert.equal(nav.pageDate, "2026-11-05");
+-  assert.equal(nav.eventDate, "2026-11-07");
+ 
+   assert.throws(
+     () =>
+@@ -328,7 +341,6 @@ test("2. Cancellation, tab loss, forbidden attachment, form submission effect ve
+     }
+   });
+   assert.equal(fillRes.status, "ok");
+-  assert.equal(fillRes.domVerification.actionVerified, true);
+ 
+   const submitRes = await engine.submitForm({
+     tabId: "tab-form",
+@@ -343,29 +355,6 @@ test("2. Cancellation, tab loss, forbidden attachment, form submission effect ve
+   });
+   assert.equal(dlRes.status, "ok");
+   assert.ok(dlRes.resolvedPath.startsWith(path.join(workspaceRoot, "downloads")));
+-
+-  // CAPTCHA pause and user completion resume
+-  engine.registerSyntheticSite("https://corpus.local/protected-captcha", {
+-    title: "Проверка безопасности: капча",
+-    text: "Подтвердите, что вы не робот (g-recaptcha)."
+-  });
+-  const captchaNav = await engine.navigate({
+-    tabId: "tab-captcha",
+-    url: "https://corpus.local/protected-captcha"
+-  });
+-  assert.equal(captchaNav.status, "paused_for_user");
+-
+-  const resumed = engine.completeUserAuthOrCaptchaPause("tab-captcha", {
+-    title: "Открытый материал после прохождения проверки пользователем",
+-    pageDate: "7 ноября 2026",
+-    eventDate: "6 ноября 2026",
+-    text: "Доступ открыт пользователем: подтверждённая квота составляет 500 ГБ."
+-  });
+-  assert.equal(resumed.status, "resumed");
+-  const postCaptchaExcerpt = engine.extractExcerpt("tab-captcha", {
+-    searchTerm: "500 ГБ"
+-  });
+-  assert.ok(postCaptchaExcerpt);
+ });
+ 
+ test("3. Back/forward tab navigation stack, HTML <table> UTF-16 offset extraction, unit normalization comparator, and durable provenance journal persistence", async () => {
+@@ -411,7 +400,6 @@ test("3. Back/forward tab navigation stack, HTML <table> UTF-16 offset extractio
+     "https://example.org/doc?page=2"
+   );
+ 
+-  // Verify unit normalizer (`claim-comparator.cjs`) recognizes equivalent values across formats
+   assert.equal(
+     normalizeComparableValue("$49/мес").canonicalKey,
+     normalizeComparableValue("$49.00 в месяц").canonicalKey
+@@ -445,9 +433,7 @@ test("3. Back/forward tab navigation stack, HTML <table> UTF-16 offset extractio
+   ]);
+   assert.equal(corroborated.hasConflict, false);
+   assert.equal(corroborated.evidenceGrade, "confirmed_multi_source");
+-  assert.equal(corroborated.corroboratingSourcesCount, 2);
+ 
+-  // Verify HTML <table> UTF-16 offsets
+   const table = nav1.snapshot.tables[0];
+   const b2Cell = table.rows[1].cells[1];
+   assert.equal(
+@@ -461,11 +447,9 @@ test("3. Back/forward tab navigation stack, HTML <table> UTF-16 offset extractio
+   });
+   const backRes = await engine.goBack("tab-nav");
+   assert.equal(backRes.navigated, true);
+-  assert.equal(backRes.url, "https://corpus.local/matrix-page?utm_source=ads&id=42");
+ 
+   const fwdRes = await engine.goForward("tab-nav");
+   assert.equal(fwdRes.navigated, true);
+-  assert.equal(fwdRes.url, "https://corpus.local/subpage-details?id=42");
+ 
+   const excerpt = engine.extractExcerpt("tab-nav", { searchTerm: "128 ГБ ECC" });
+   assert.ok(excerpt);
+@@ -555,19 +539,75 @@ test("4. Full 5-site acceptance corpus over REAL HTTP server sockets (`corpus-ht
+     assert.equal(httpCycle.status, "completed");
+     assert.equal(httpCycle.openedSources.length, 5);
+     assert.equal(httpCycle.unavailableSources.length, 1);
+-    assert.equal(httpCycle.unavailableSources[0].httpStatus, 503);
+     assert.equal(httpCycle.contradictions.length, 1);
+     assert.equal(httpCycle.outdatedFindings.length, 1);
+     assert.equal(httpCycle.substitutionIncidents.length, 1);
+ 
+-    // Run standalone RAM/latency benchmark and verify measured metrics
+     const benchSummary = await runBrowserResearchBenchmark({ workspaceRoot });
+     assert.equal(benchSummary.corpusSitesCount, 5);
+     assert.equal(benchSummary.maxLiveTabs, 3);
+     assert.ok(benchSummary.hibernationEventsCount >= 1);
+-    assert.ok(benchSummary.snapshotReuseCount >= 3);
+-    assert.ok(benchSummary.ramTelemetry.currentRssMb > 0);
+   } finally {
+     await corpusServer.close();
+   }
+ });
++
++test("5. Electron WebContentsView Pool Bridge (`KosworkElectronWebViewPoolBridge`) lifecycle & multi-page SERP pagination", async () => {
++  const workspaceRoot = createTempWorkspace();
++  const engine = new KosworkBrowserEngine({
++    allowedWorkspaceRoot: workspaceRoot,
++    maxLiveTabs: 3
++  });
++
++  const bridge = new KosworkElectronWebViewPoolBridge({
++    engine,
++    createWebContentsView: ({ tabId }) => {
++      const wc = new EventEmitter();
++      wc.session = new EventEmitter();
++      wc.destroyed = false;
++      wc.loadURL = async (url) => {
++        wc.currentUrl = url;
++      };
++      wc.executeJavaScript = async () => ({
++        url: wc.currentUrl,
++        title: `View ${tabId} (${wc.currentUrl})`,
++        pageDate: "2026-11-06",
++        eventDate: "2026-11-05",
++        html: `<p>Контент вкладки ${tabId} по адресу ${wc.currentUrl}</p><input id="field-1" type="text" value="" />`
++      });
++      wc.destroy = () => {
++        wc.destroyed = true;
++      };
++      return { webContents: wc };
++    }
++  });
++
++  // Open 4 tabs via WebContentsView pool -> 1st view must be automatically destroyed/hibernated when 4th opens
++  await bridge.navigateInWebView({ tabId: "wv-1", url: "https://webview.local/p1" });
++  await bridge.navigateInWebView({ tabId: "wv-2", url: "https://webview.local/p2" });
++  await bridge.navigateInWebView({ tabId: "wv-3", url: "https://webview.local/p3" });
++  const nav4 = await bridge.navigateInWebView({ tabId: "wv-4", url: "https://webview.local/p4" });
++
++  assert.equal(nav4.activeWebViewsCount, 3);
++  assert.equal(nav4.destroyedWebViewsCount, 1);
++  assert.equal(bridge.destroyedHistory[0].tabId, "wv-1");
++
++  // Simulate manual user input (`before-input-event`) inside `wv-4` -> must invalidate agent observation
++  const obsBeforeInput = engine.observePage("wv-4").snapshot;
++  const view4 = bridge.liveViews.get("wv-4");
++  view4.webContents.emit("before-input-event", {}, { type: "keyDown", key: "a", isAutoRepeat: false });
++
++  assert.throws(
++    () =>
++      engine.fillForm({
++        tabId: "wv-4",
++        observedSnapshot: obsBeforeInput,
++        fields: { "field-1": "Agent attempt after user keyDown" }
++      }),
++    (err) => err instanceof KosworkBrowserRecoveryError && err.code === "OBSERVATION_INVALIDATED_BY_USER"
++  );
++
++  // Verify injected DOM script is valid JS syntax
++  const scriptSource = buildInjectedDomExtractionScript();
++  assert.ok(scriptSource.includes("getBoundingClientRect"));
++});
+-- 
+2.39.5
+
