@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
 import type {
   ProjectMemoryEntry,
@@ -73,9 +73,62 @@ export class ProjectMemoryStore {
       .get(id, projectId, ownerId) as Row | undefined;
     return row ? decode(row) : null;
   }
-  create(projectId: string, ownerId: string, input: ProjectMemoryInput): ProjectMemoryEntry | null {
+  create(
+    projectId: string,
+    ownerId: string,
+    input: ProjectMemoryInput,
+    creationKey?: string
+  ): ProjectMemoryEntry | null {
+    this.sqlite.exec("SAVEPOINT project_memory_create");
+    try {
+      const result = this.createAccepted(projectId, ownerId, input, creationKey);
+      this.sqlite.exec("RELEASE project_memory_create");
+      return result;
+    } catch (error) {
+      this.sqlite.exec("ROLLBACK TO project_memory_create; RELEASE project_memory_create");
+      throw error;
+    }
+  }
+  private createAccepted(
+    projectId: string,
+    ownerId: string,
+    input: ProjectMemoryInput,
+    creationKey?: string
+  ): ProjectMemoryEntry | null {
     if (!this.owned(projectId, ownerId, true)) return null;
     this.validate(input);
+    if (
+      creationKey !== undefined &&
+      (typeof creationKey !== "string" || !creationKey.trim() || creationKey.length > 128)
+    )
+      throw new ProjectMemoryConflict("INVALID_MEMORY");
+    const creationHash = creationKey
+      ? createHash("sha256")
+          .update(
+            JSON.stringify([
+              input.title,
+              input.content,
+              input.source.kind,
+              input.source.reference,
+              input.pinned
+            ])
+          )
+          .digest("hex")
+      : null;
+    if (creationKey) {
+      const prior = this.sqlite
+        .prepare(
+          "SELECT id, forgotten, creation_sha256 FROM project_memory WHERE project_id = ? AND owner_id = ? AND creation_key = ?"
+        )
+        .get(projectId, ownerId, creationKey) as
+        { id: string; forgotten: number; creation_sha256: string | null } | undefined;
+      if (prior) {
+        if (prior.forgotten) throw new ProjectMemoryConflict("MEMORY_CREATION_FORGOTTEN");
+        if (prior.creation_sha256 !== creationHash)
+          throw new ProjectMemoryConflict("MEMORY_CREATION_CONFLICT");
+        return this.get(projectId, ownerId, prior.id);
+      }
+    }
     this.validateSource(projectId, ownerId, input);
     if (this.list(projectId, ownerId).length >= 200)
       throw new ProjectMemoryConflict("MEMORY_LIMIT");
@@ -83,7 +136,7 @@ export class ProjectMemoryStore {
       id = randomUUID();
     this.sqlite
       .prepare(
-        "INSERT INTO project_memory (id, project_id, owner_id, version, title, content, source_json, pinned, created_at, updated_at) VALUES (?, ?, ?, 1, ?, ?, ?, ?, ?, ?)"
+        "INSERT INTO project_memory (id, project_id, owner_id, version, title, content, source_json, pinned, created_at, updated_at, creation_key, creation_sha256) VALUES (?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?)"
       )
       .run(
         id,
@@ -94,7 +147,9 @@ export class ProjectMemoryStore {
         JSON.stringify(input.source),
         Number(input.pinned),
         at,
-        at
+        at,
+        creationKey ?? null,
+        creationHash
       );
     return this.get(projectId, ownerId, id);
   }
@@ -145,7 +200,7 @@ export class ProjectMemoryStore {
       });
     const result = this.sqlite
       .prepare(
-        "UPDATE project_memory SET version = version + 1, forgotten = 1, pinned = 0, title = '', content = '', source_json = '{}', updated_at = ? WHERE id = ? AND project_id = ? AND owner_id = ? AND version = ? AND forgotten = 0"
+        "UPDATE project_memory SET version = version + 1, forgotten = 1, pinned = 0, title = '', content = '', source_json = '{}', creation_sha256 = NULL, updated_at = ? WHERE id = ? AND project_id = ? AND owner_id = ? AND version = ? AND forgotten = 0"
       )
       .run(new Date().toISOString(), id, projectId, ownerId, version);
     if (!result.changes) throw new ProjectMemoryConflict("STALE_MEMORY");
