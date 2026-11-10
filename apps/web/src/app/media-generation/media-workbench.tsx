@@ -365,7 +365,7 @@ export function MediaWorkbench({ surface }: { surface: "images" | "video" | "sou
               <WorkspaceIcon name="video" />
               <h3>Здесь появится видео</h3>
               <p>
-                Видеогенерация не подключена. Здесь сохраняется только черновик описания сцены.
+                Видеогенерация не подключена. Здесь можно сохранить описание сцены.
               </p>
               <button type="button" disabled>
                 Сгенерировать видео
