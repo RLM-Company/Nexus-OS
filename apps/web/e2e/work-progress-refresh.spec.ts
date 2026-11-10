@@ -1,5 +1,11 @@
 import { expect, test, type APIRequestContext } from "@playwright/test";
 
+test.afterEach(async ({ page }) => {
+  // Finish active metadata interceptors before context teardown disposes their responses.
+  // Keep handler errors visible; do not use ignoreErrors or retry requests.
+  await page.unrouteAll({ behavior: "wait" });
+});
+
 async function preparedWork(request: APIRequestContext, autonomy: "A1" | "A2" = "A2") {
   const created = await request.post("/api/v1/projects", {
     data: {

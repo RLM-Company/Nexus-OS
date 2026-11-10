@@ -1,6 +1,8 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import type { OfficeOperation, OfficeCursor } from "@cosmora/contracts";
+import { OfficeRangeEditor } from "./office-range-editor";
+import { officeCellValue, validateOfficePlan, type RangeType } from "./office-range";
 type View = {
   version: string;
   cursor?: OfficeCursor;
@@ -78,7 +80,7 @@ export function OfficeDocumentWorkspace() {
   const [find, setFind] = useState("");
   const [replace, setReplace] = useState("");
   const [address, setAddress] = useState("A1");
-  const [valueType, setValueType] = useState("string");
+  const [valueType, setValueType] = useState<RangeType>("string");
   const [sheetName, setSheetName] = useState("");
   const [preview, setPreview] = useState<Preview | null>(null);
   const [result, setResult] = useState<{
@@ -129,6 +131,13 @@ export function OfficeDocumentWorkspace() {
     }
   };
   const queue = (op: OfficeOperation) => {
+    try {
+      validateOfficePlan([...operations, op]);
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "План отклонён");
+      return;
+    }
+    setError("");
     setOperations([...operations, op]);
     setPreview(null);
     setResult(null);
@@ -308,7 +317,7 @@ export function OfficeDocumentWorkspace() {
               </article>
             ))}
           </details>
-          <fieldset disabled={busy}>
+          <fieldset disabled={busy} style={{ minWidth: 0 }}>
             <legend>План правок</legend>
             <label>
               Адрес{" "}
@@ -330,7 +339,7 @@ export function OfficeDocumentWorkspace() {
                   <select
                     aria-label="Тип"
                     value={valueType}
-                    onChange={(e) => setValueType(e.target.value)}
+                    onChange={(e) => setValueType(e.target.value as RangeType)}
                   >
                     <option value="string">Текст (сохраняет ведущие нули)</option>
                     <option value="number">Число</option>
@@ -345,36 +354,21 @@ export function OfficeDocumentWorkspace() {
                 <button
                   type="button"
                   onClick={() => {
-                    if (
-                      valueType === "number" &&
-                      (!replace.trim() || !Number.isFinite(Number(replace)))
-                    ) {
-                      setError("Введите конечное число");
-                      return;
+                    try {
+                      queue({
+                        kind: "set_cell",
+                        target,
+                        address,
+                        value: officeCellValue(replace, valueType)
+                      });
+                    } catch (error) {
+                      setError(error instanceof Error ? error.message : "Ячейка отклонена");
                     }
-                    if (valueType === "boolean" && !/^(true|false)$/.test(replace.trim())) {
-                      setError("Введите true или false");
-                      return;
-                    }
-                    queue({
-                      kind: "set_cell",
-                      target,
-                      address,
-                      value:
-                        valueType === "number"
-                          ? Number(replace)
-                          : valueType === "boolean"
-                            ? replace.trim() === "true"
-                            : valueType === "formula"
-                              ? { formula: replace }
-                              : valueType === "null"
-                                ? null
-                                : replace
-                    });
                   }}
                 >
                   Добавить правку ячейки
                 </button>
+                <OfficeRangeEditor target={target} onAdd={queue} />
                 <label>
                   Новый лист{" "}
                   <input value={sheetName} onChange={(e) => setSheetName(e.target.value)} />
@@ -413,7 +407,7 @@ export function OfficeDocumentWorkspace() {
                       ? `Добавить лист «${op.name}»`
                       : op.kind === "set_cell"
                         ? `${op.target}/${op.address}: ${displayValue(op.value)}`
-                        : `${op.target}: диапазон ${op.start}`}
+                        : `${op.target}: диапазон ${op.start}, ${op.rows.length} × ${op.rows[0]?.length ?? 0}`}
                 </li>
               ))}
             </ol>
