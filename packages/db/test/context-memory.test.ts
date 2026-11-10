@@ -419,6 +419,114 @@ describe("source-backed context memory", () => {
       "MEMORY_TARGET_NOT_FOUND"
     );
   });
+  it("forgets every entry of one chat while other chats, projects and messages stay", () => {
+    const chatEntry = memory.create(
+      input({ scope: "chat", scope_id: "old", content: "Бюджет 19 700 ₽." }),
+      "a"
+    );
+    const otherChat = memory.create(
+      input({ scope: "chat", scope_id: "new", content: "Другой проект." }),
+      "a"
+    );
+    const personal = memory.create(input(), "a");
+    const projectEntry = memory.create(
+      input({ scope: "project", scope_id: "p1", content: "Код 00123." }),
+      "a"
+    );
+    message("keep", "old", "Бюджет 19 700 ₽, кроме доставки.");
+    memory.update(
+      chatEntry.id,
+      1,
+      input({ scope: "chat", scope_id: "old", content: "Бюджет 19 700 ₽, кроме доставки." }),
+      "a"
+    );
+    const result = memory.forgetScope({ kind: "chat", id: "old" }, "a");
+    expect(result).toEqual({
+      target: { kind: "chat", id: "old" },
+      forgotten_entries: 1,
+      removed_versions: 2,
+      removed_memory_index_chunks: 0,
+      original_messages_deleted: false,
+      settings_retained: true
+    });
+    expect(memory.get(chatEntry.id, "a")).toBeNull();
+    expect(memory.get(otherChat.id, "a")).not.toBeNull();
+    expect(memory.get(personal.id, "a")).not.toBeNull();
+    expect(memory.get(projectEntry.id, "a")).not.toBeNull();
+    expect(db.sqlite.prepare("SELECT count(*) n FROM general_chat_messages").get()).toEqual({
+      n: 1
+    });
+    expect(memory.forgetScope({ kind: "project", id: "p1" }, "a").forgotten_entries).toBe(1);
+    expect(memory.get(projectEntry.id, "a")).toBeNull();
+    expect(() => memory.forgetScope({ kind: "chat", id: "other" }, "a")).toThrow(
+      "MEMORY_TARGET_NOT_FOUND"
+    );
+  });
+  it("removes derived index rows of a forgotten chat and never recalls it again", async () => {
+    const entry = memory.create(
+      input({
+        kind: "decision",
+        scope: "chat",
+        scope_id: "old",
+        content: "Согласовали 19 700 ₽, кроме доставки."
+      }),
+      "a"
+    );
+    message("m-old", "old", "Согласовали 19 700 ₽, кроме доставки.");
+    db.sqlite
+      .prepare(
+        "INSERT INTO semantic_index_sources(id,owner_id,reference,encoder,fingerprint,memory_entry_id,complete) VALUES('s1','a',?,'fixture-e5',?,?,1)"
+      )
+      .run("M:" + entry.id, "0".repeat(64), entry.id);
+    db.sqlite
+      .prepare(
+        "INSERT INTO semantic_index_chunks(owner_id,source_id,start_utf16,end_utf16,vector) VALUES('a','s1',0,10,?)"
+      )
+      .run(Buffer.alloc(1536));
+    enable({ use_personal: true, source_chat_ids: ["old"] });
+    expect((await memory.resolveAsync(target, "a", "сколько согласовали")).items.length).toBe(2);
+    expect(memory.forgetScope({ kind: "chat", id: "old" }, "a").removed_memory_index_chunks).toBe(
+      1
+    );
+    expect(db.sqlite.prepare("SELECT count(*) n FROM semantic_index_sources").get()).toEqual({
+      n: 0
+    });
+    expect(db.sqlite.prepare("SELECT count(*) n FROM semantic_index_chunks").get()).toEqual({
+      n: 0
+    });
+    const afterForget = await memory.resolveAsync(target, "a", "сколько согласовали");
+    expect(afterForget.items.some((e) => e.reference.startsWith("M:"))).toBe(false);
+    // Canonical messages are not memory: they return only while the chat grant is active.
+    memory.updateSettings(
+      target,
+      {
+        enabled: true,
+        use_personal: true,
+        source_chat_ids: [],
+        project_ids: [],
+        expected_version: 1
+      },
+      "a"
+    );
+    expect((await memory.resolveAsync(target, "a", "сколько согласовали")).items).toEqual([]);
+    expect(memory.list("a").items).toEqual([]);
+  });
+  it("blocks a scoped forget during active work and keeps the fenced owner intact", () => {
+    memory.create(input({ scope: "chat", scope_id: "old" }), "a");
+    db.sqlite
+      .prepare(
+        "INSERT INTO general_chat_runs(id,chat_id,status,created_at,updated_at) VALUES('r2','old','running',?,?)"
+      )
+      .run(at, at);
+    expect(() => memory.forgetScope({ kind: "chat", id: "old" }, "a")).toThrow("MEMORY_RUN_ACTIVE");
+    db.sqlite.prepare("UPDATE general_chat_runs SET status='cancelled' WHERE id='r2'").run();
+    db.sqlite
+      .prepare(
+        "INSERT INTO kosmora_owner_data_lifecycle(owner_id,epoch,state,operation_id,started_at,updated_at) VALUES('a',1,'deleting','d',?,?)"
+      )
+      .run(at, at);
+    expect(() => memory.forgetScope({ kind: "chat", id: "old" }, "a")).toThrow("OWNER_DATA_FENCED");
+  });
   it("blocks mutations during active work, rejects invalid scope/date and searches Cyrillic case-insensitively", () => {
     memory.create(input({ title: "ЧЁРНЫЙ СТИЛЬ" }), "a");
     expect(memory.list("a", 0, "чёрный").items).toHaveLength(1);
