@@ -848,9 +848,7 @@ async function showProfileStatus() {
     profile: status,
     origin: currentOrigin,
     ownerVerified: Boolean(
-      ownerCache?.owner &&
-        ownerCache.origin === currentOrigin &&
-        Date.now() < ownerCache.expires
+      ownerCache?.owner && ownerCache.origin === currentOrigin && Date.now() < ownerCache.expires
     ),
     identityEpoch,
     downloads: { active: activeDownloads.size },

@@ -35,7 +35,9 @@ test(
       // script itself still refuses any non-hosted environment.
       result = spawnSync("powershell", ["-ExecutionPolicy", "Bypass", ...args], options);
       if (result.error && result.error.code === "ENOENT")
-        return t.skip("pwsh and powershell unavailable; installer lifecycle runs only on disposable hosted runners");
+        return t.skip(
+          "pwsh and powershell unavailable; installer lifecycle runs only on disposable hosted runners"
+        );
     }
     assert.notEqual(result.status, 0);
     assert.match(String(result.stderr) + String(result.stdout), /disposable GitHub-hosted runner/);

@@ -129,7 +129,12 @@ test("без подтверждённого владельца отчёт гов
       {
         ...fullInput,
         ownerVerified: false,
-        profile: { ...fullInput.profile, ok: false, writable: false, reason: "Каталог профиля не позволяет запись." }
+        profile: {
+          ...fullInput.profile,
+          ok: false,
+          writable: false,
+          reason: "Каталог профиля не позволяет запись."
+        }
       },
       { now: FIXED_NOW }
     )

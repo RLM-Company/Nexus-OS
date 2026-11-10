@@ -26,20 +26,23 @@
 ## BACKLOG (уже работает / сломано / отсутствует / требует решения)
 
 ### Уже работает (подтверждено тестами на базовой линии)
-- Синтаксис и каркасы всех модулейincl. browser/*, document-reader, workspace, vault,
-  computer-*, work-cycle (59 files node --check).
+
+- Синтаксис и каркасы всех модулейincl. browser/_, document-reader, workspace, vault,
+  computer-_, work-cycle (59 files node --check).
 - Draft isolation/gate, owner-session, connection-policy, update-policy/service,
-  package-policy, profile-environment, desktop-state/recovery, downloads, computer-*,
-  work-result-* — покрываются тестами (детализация по каждому — в CHECKPOINT.md среза).
+  package-policy, profile-environment, desktop-state/recovery, downloads, computer-_,
+  work-result-_ — покрываются тестами (детализация по каждому — в CHECKPOINT.md среза).
 - Installer lifecycle guard: отказ dev-машине честно проверяется на этом ПК
   (через 5.1 фоллбэк-шелл после фикса).
 - Deep link привязка, single-instance, unsigned-policy (по фиксациям ACCEPTANCE_0.11.2
   и её файлам; по-факту проверяется ниже в срезе 1).
 
 ### Сломано
+
 - (пока) ничего сверх lifecycle-guard — будет дополняться по мере честного аудита.
 
 ### Отсутствует / аудит-статус по очереди задания
+
 1. Свежая установка / первый запуск / deep links / вход-выход / отсутствие повторного
    пароля в сессии — сборка установщика и EXE-приёмка допустимы только в disposable
    CI/VM (guard). Локально проверяется вся логика (deep-link allowlist, owner verification,
@@ -59,6 +62,7 @@
 6. Встроенная диагностика и воспроизводимый сценарий приёмки (installer — VM/CI only).
 
 ### Требует решения владельца / интегратора
+
 - Повышение общей версии package.json (общие файлы) — только отдельный интеграционный
   commit, согласованный с Codex.
 - Запуск nsis-lifecycle / сборка установщика — disposable GitHub-hosted Runner
@@ -69,6 +73,7 @@
 ## Срез 1 (текущая работа): connection lifecycle — данные и владелец
 
 Задача среза: доказать и при необходимости довести, что:
+
 - отмена/новый адрес побеждают запоздалые ответы (не остаются «Подключение…»);
 - обрыв/возврат сети не теряет черновик и не соединяет с чужим владельцем;
 - повторный вход/вторая сессия/второй экземпляр не подменяют текущего owner;

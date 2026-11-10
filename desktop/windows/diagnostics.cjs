@@ -92,10 +92,8 @@ function formatDiagnosticsText(diagnostics) {
   lines.push(headline + (environment ? ` — ${environment}` : ""));
   const flags = [];
   flags.push(app.packaged ? "упакованная сборка" : "сборка из исходников");
-  if (app.secure_storage !== true)
-    flags.push("защищённое хранилище Windows недоступно");
-  if (app.single_instance_lock === false)
-    flags.push("второй экземпляр: блокировка не получена");
+  if (app.secure_storage !== true) flags.push("защищённое хранилище Windows недоступно");
+  if (app.single_instance_lock === false) flags.push("второй экземпляр: блокировка не получена");
   lines.push(`Приложение: ${flags.join("; ")}.`);
 
   const connection = diagnostics.connection ?? {};
@@ -113,7 +111,8 @@ function formatDiagnosticsText(diagnostics) {
   const profileLine = [`Каталог профиля: ${profile.directory || "неизвестен"}`];
   if (profile.ok) {
     profileLine.push("запись возможна, настройки сохраняются");
-    if (profile.redirected) profileLine.push("профиль перенаправлен в LocalCache упакованной среды");
+    if (profile.redirected)
+      profileLine.push("профиль перенаправлен в LocalCache упакованной среды");
   } else {
     profileLine.push("запись невозможна, настройки не сохраняются");
   }
@@ -130,8 +129,7 @@ function formatDiagnosticsText(diagnostics) {
     `Обновления: закреплённый ключ релизов ${updates.pinned_key ? "есть" : "нет"}; автовыполнение обновлений не включено.`
   );
 
-  if (diagnostics.faults.length)
-    lines.push(`Проблемы: ${diagnostics.faults.join(" | ")}.`);
+  if (diagnostics.faults.length) lines.push(`Проблемы: ${diagnostics.faults.join(" | ")}.`);
   else lines.push("Проблемы: не зафиксировано.");
   lines.push(`Отчёт сформирован: ${diagnostics.generated_at}.`);
   return lines.join("\n");
