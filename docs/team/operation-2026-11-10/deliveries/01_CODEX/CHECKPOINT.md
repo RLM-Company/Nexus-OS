@@ -1,10 +1,12 @@
-# Вторая волна — кандидат
+# Вторая волна + O-003
 
-Ветка integration/operation-wave-2-20261110 поверх docs Gemini review a0d258f1
-(сам report #509 ещё ожидает проверки). Включены точные heads #5075a5e2e4d,
-#501b18dd41d. Windows только cherry-pick e3cbd1a8 diagnostics; полный #502
-не сливать без отдельного review. Права/провайдер/сервер не изменены.
-Windows candidate0.27.0; startup faults переданы в diagnostic builder.
-Локально diagnostics5/5 иruntime37/37; API иUI scoped checks выполняются.
-Следующее: общий CI, устранить реальные отказы, merge exact testedhead и отчёт2.
-Далее Media/продолжения и собственная Work/Office/Drive очередь.
+PR510 — WAVE_2, head338ee9a4, exact source heads в WAVE_2.json.
+Включены Coscode proofs/editor continuity, Sites/Games continuity, только
+Windows diagnostics (не весь #502), candidate0.27.0. Требуется общий CI.
+
+O-003 поверх PR510 в ops/codex-work-acceptance-recovery-20261110:
+late mutation ACK уважает новую selection, lost acceptance ACK восстанавливается
+одним GET без повторного POST, integrity conflict показан явно.3e2e добавлены.
+Следующее: проверки/PR, CI, интеграция после PR510; отчёт2 с точнымиSHA.
+Gemini rework_required; источник preserved, патч не активирован.
+VPS/owner-PC и платные вызовы не выполнялись.

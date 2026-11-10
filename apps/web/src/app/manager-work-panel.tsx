@@ -57,6 +57,8 @@ const errors: Record<string, string> = {
   INVALID_PRESENTATION_RESULT:
     "Слайды не прошли локальную проверку формата, количества или размера текста. Автоматического платного повтора нет.",
   INVALID_ARTIFACT_CONTENT: "Файл JSON не прошёл проверку формата. Сохранение остановлено.",
+  ARTIFACT_INTEGRITY_MISMATCH: "Не удалось подтвердить целостность файлов. Результат не принят.",
+  WORK_RESULT_NOT_READY: "Работа ещё не завершена. Принять результат пока нельзя.",
   UNSUPPORTED_ACTION: "План требует недоступных действий. Сейчас поддерживается создание файлов.",
   ROUTE_UNAVAILABLE: "Настроенная модель недоступна для этой роли или задачи.",
   EMERGENCY_STOP: "Работа прервана аварийной остановкой. Проверьте состояние в Центре управления.",
@@ -72,12 +74,21 @@ async function json<T>(url: string, init?: RequestInit): Promise<T> {
       ? AbortSignal.any([init.signal, AbortSignal.timeout(15000)])
       : AbortSignal.timeout(15000)
   });
-  if (!response.ok)
+  if (!response.ok) {
+    let code: unknown;
+    try {
+      code = ((await response.json()) as { error?: unknown }).error;
+    } catch {
+      // Only known error codes are shown; arbitrary server text stays private.
+    }
     throw new Error(
-      response.status === 409
-        ? "Состояние уже изменилось. Обновите его и повторите действие."
-        : "Не удалось выполнить запрос. Проверьте соединение."
+      typeof code === "string" && Object.hasOwn(errors, code)
+        ? errors[code]
+        : response.status === 409
+          ? "Состояние уже изменилось. Обновите его и повторите действие."
+          : "Не удалось выполнить запрос. Проверьте соединение."
     );
+  }
   return response.json() as Promise<T>;
 }
 
@@ -170,11 +181,28 @@ export function ManagerWorkPanel({
       }
     );
   }, [base, selectedWorkId]);
+  const recordMutation = (updated: Work, epoch: number) => {
+    setWorks((current) =>
+      current.some((item) => item.id === updated.id)
+        ? current.map((item) =>
+            item.id === updated.id && item.version <= updated.version ? updated : item
+          )
+        : [updated, ...current].slice(0, 80)
+    );
+    // A later history selection is the current intent. A late command response
+    // updates its own history row without switching the selected task back.
+    if (epoch === mutationEpoch.current) {
+      setSelectedWorkId(updated.id);
+      setWork((previous) =>
+        previous?.id === updated.id && previous.version > updated.version ? previous : updated
+      );
+    }
+  };
   const act = async (action?: "pause" | "resume" | "approve" | "cancel") => {
     if ((!action || action === "resume" || action === "approve") && executionGate !== "clear")
       return;
     if (lock.current) return;
-    mutationEpoch.current++;
+    const epoch = ++mutationEpoch.current;
     lock.current = true;
     setBusy(true);
     setError("");
@@ -202,22 +230,17 @@ export function ManagerWorkPanel({
         headers: { "content-type": "application/json" },
         body: JSON.stringify(body)
       });
-      setSelectedWorkId(updated.id);
-      setWork(updated);
-      setWorks((current) =>
-        current.some((item) => item.id === updated.id)
-          ? current.map((item) => (item.id === updated.id ? updated : item))
-          : [updated, ...current].slice(0, 80)
-      );
+      recordMutation(updated, epoch);
       if (!action) pending.current = null;
     } catch (cause) {
-      setError(
-        cause instanceof Error && cause.name === "TimeoutError"
-          ? "Ответ задерживается. Проверьте задачи проекта: сервер мог уже принять действие."
-          : cause instanceof Error
-            ? cause.message
-            : "Не удалось выполнить действие"
-      );
+      if (epoch === mutationEpoch.current)
+        setError(
+          cause instanceof Error && cause.name === "TimeoutError"
+            ? "Ответ задерживается. Проверьте задачи проекта: сервер мог уже принять действие."
+            : cause instanceof Error
+              ? cause.message
+              : "Не удалось выполнить действие"
+        );
     } finally {
       lock.current = false;
       setBusy(false);
@@ -225,28 +248,41 @@ export function ManagerWorkPanel({
   };
   const acceptResult = async () => {
     if (!work || lock.current || executionGate !== "clear") return;
-    mutationEpoch.current++;
+    const epoch = ++mutationEpoch.current;
     lock.current = true;
     setBusy(true);
     setError("");
     try {
-      const updated = await json<Work>(
-        base + "/" + encodeURIComponent(work.id) + "/result/accept",
-        {
+      const path = base + "/" + encodeURIComponent(work.id);
+      let updated: Work;
+      try {
+        updated = await json<Work>(path + "/result/accept", {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ expected_version: work.version })
+        });
+      } catch (cause) {
+        // The server may have committed acceptance before the response was lost.
+        // Read back the original task once; never send an automatic second POST.
+        try {
+          const current = await json<Work>(path);
+          if (
+            current.id !== work.id ||
+            current.status !== "completed" ||
+            current.stage !== "done" ||
+            typeof current.result_accepted_at !== "string" ||
+            !Number.isFinite(Date.parse(current.result_accepted_at))
+          )
+            throw cause;
+          updated = current;
+        } catch {
+          throw cause;
         }
-      );
-      setSelectedWorkId(updated.id);
-      setWork(updated);
-      setWorks((current) =>
-        current.some((item) => item.id === updated.id)
-          ? current.map((item) => (item.id === updated.id ? updated : item))
-          : [updated, ...current].slice(0, 80)
-      );
+      }
+      recordMutation(updated, epoch);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Не удалось принять результат");
+      if (epoch === mutationEpoch.current)
+        setError(cause instanceof Error ? cause.message : "Не удалось принять результат");
     } finally {
       lock.current = false;
       setBusy(false);
@@ -365,6 +401,7 @@ export function ManagerWorkPanel({
                 key={item.id}
                 aria-pressed={item.id === (selectedWorkId ?? works[0]?.id)}
                 onClick={() => {
+                  mutationEpoch.current++;
                   setSelectedWorkId(item.id);
                   setWork(item);
                   setError("");
