@@ -1,0 +1,8 @@
+
+ RUN  v4.1.11 /workspace/work/Nexus-OS-coscode/packages/tool-runtime
+
+
+ Test Files  4 passed (4)
+      Tests  61 passed (61)
+   Start at  18:39:52
+   Duration  8.06s (transform 390ms, setup 0ms, import 691ms, tests 6.34s, environment 0ms)
