@@ -1,6 +1,10 @@
 import { expect, test, type Page } from "@playwright/test";
 
-async function scenario(page: Page, lostPublish: false | "after-start" | "before-start" = false) {
+async function scenario(
+  page: Page,
+  lostPublish: false | "after-start" | "before-start" = false,
+  proof: { exitCode?: number | null; cleanupVerified?: boolean } = {}
+) {
   let publications = 0;
   let checks = 0;
   let reviews = 0;
@@ -111,7 +115,10 @@ async function scenario(page: Page, lostPublish: false | "after-start" | "before
           status: "passed",
           review_hash: hash,
           stdout: "syntax checked",
-          journal: [{ event: "completed" }]
+          exitCode: 0,
+          cleanupVerified: true,
+          journal: [{ event: "completed" }],
+          ...proof
         }
       };
       data = run;
@@ -343,3 +350,20 @@ test("previews normalized editable diff on an exact snapshot before a fresh revi
   expect(state.checks()).toBe(0);
   expect(state.publications()).toBe(0);
 });
+
+for (const proof of [{ exitCode: 1 }, { exitCode: null }, { cleanupVerified: false }]) {
+  test(`legacy contradictory proof never enables publication: ${JSON.stringify(proof)}`, async ({
+    page
+  }) => {
+    const state = await scenario(page, false, proof);
+    await prepare(page);
+    await expect(page.getByLabel("Результат проверки")).toContainText(
+      "Успех проверки не подтверждён"
+    );
+    await expect(
+      page.getByRole("checkbox", { name: "Подтверждаю создание этой ветки", exact: false })
+    ).toBeDisabled();
+    await expect(page.getByRole("button", { name: "Создать черновик PR в GitHub" })).toBeDisabled();
+    expect(state.publications()).toBe(0);
+  });
+}

@@ -1525,6 +1525,57 @@ describe("Code agent real gateway/GitHub/policy vertical", () => {
     expect(f.githubCalls).toHaveLength(count);
   });
 
+  it("rejects contradictory exit evidence before saving approval and revalidates old durable checks", async () => {
+    for (const exitCode of [1, null]) {
+      const f = await fixture({
+        runner: {
+          run: (input) =>
+            Promise.resolve({
+              status: "passed",
+              snapshotDigest: input.expectedDigest!,
+              exitCode,
+              stdout: "untrusted success",
+              stderr: "",
+              truncated: false,
+              cleanupVerified: true,
+              journal: []
+            })
+        }
+      });
+      const id = await f.start(),
+        reviewed = await f.review(id),
+        reviewHash = reviewed.draft!.plan.review_hash;
+      f.service.check(id, owner, { review_hash: reviewHash, check: "node-test", approve: true });
+      expect((await f.wait(id, "failed")).error).toBe("CHECK_RESULT_INVALID");
+      expect(f.get(id).publication_token).toBeUndefined();
+      await expect(
+        f.service.publish(id, owner, {
+          review_hash: reviewHash,
+          publication_token: randomUUID(),
+          approve: true
+        })
+      ).rejects.toThrow("CHECK_REQUIRED");
+      expect(f.githubCalls.every((c) => c.method === "GET")).toBe(true);
+    }
+    const f = await fixture(),
+      id = await f.start(),
+      reviewed = await f.review(id),
+      reviewHash = reviewed.draft!.plan.review_hash;
+    const checked = await f.check(id, reviewHash);
+    f.store.save(
+      { ...checked, check: { ...checked.check!, exitCode: 1 } },
+      "legacy contradictory fixture"
+    );
+    await expect(
+      f.service.publish(id, owner, {
+        review_hash: reviewHash,
+        publication_token: checked.publication_token!,
+        approve: true
+      })
+    ).rejects.toThrow("CHECK_SNAPSHOT_MISMATCH");
+    expect(f.githubCalls.every((c) => c.method === "GET")).toBe(true);
+  });
+
   it("does not accept a passed check whose container cleanup or snapshot identity was not verified", async () => {
     for (const mismatch of [false, true]) {
       const runner: CodeAgentWorkspaceRunner = {

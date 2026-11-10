@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { CodeCheckEvidence, hasVerifiedCodeCheck } from "./check-evidence";
 import { TerminalOutput } from "../ui/terminal-output";
 import { CodePatchEditor } from "./patch-editor";
 import { codePatchMessages, type CodePatchPreview } from "./patch-client";
@@ -33,6 +34,7 @@ type Run = {
     stderr: string;
     truncated: boolean;
     cleanupVerified?: boolean;
+    exitCode?: number | null;
   };
   patch_diagnostic?: { code: string; path?: string; line?: number };
   error?: string;
@@ -50,6 +52,8 @@ type Run = {
   check?: {
     status: string;
     review_hash: string;
+    exitCode?: number | null;
+    cleanupVerified?: boolean;
     stdout?: string;
     stderr?: string;
     truncated?: boolean;
@@ -90,6 +94,8 @@ const errors: Record<string, string> = {
   GITHUB_NOT_CONFIGURED: "GitHub ещё не подключён на сервере.",
   GITHUB_BASE_CHANGED: "Базовая ветка изменилась. Создайте новую задачу на актуальной версии.",
   EMERGENCY_STOP_ACTIVE: "Действие остановлено аварийным выключателем.",
+  CHECK_RESULT_INVALID:
+    "Исполнитель вернул противоречивый или повреждённый результат. Успех не подтверждён; повторите разрешённую проверку.",
   CODE_AGENT_EXECUTOR_UNAVAILABLE:
     "Изолированный исполнитель недоступен на сервере. Проверка не запускалась."
 };
@@ -374,7 +380,8 @@ export default function CodeAgentPage() {
     !proofDirty &&
     run?.status === "checked" &&
     !!run.publication_token &&
-    run.check?.status === "passed" &&
+    hasVerifiedCodeCheck(run.check) &&
+    !!run.check &&
     run.check.review_hash === review?.review_hash &&
     matchesReview;
   const editable =
@@ -715,7 +722,7 @@ export default function CodeAgentPage() {
             {run.proposal_check && (
               <div aria-label="Автоматическая проверка предложения">
                 <p role="status">
-                  {run.proposal_check.status === "passed"
+                  {hasVerifiedCodeCheck(run.proposal_check)
                     ? "Автоматическая проверка успешна; публикация ожидает review владельца."
                     : run.proposal_check.status === "unavailable"
                       ? "Executor недоступен. Можно повторить выбранную проверку без модели."
@@ -728,10 +735,16 @@ export default function CodeAgentPage() {
                 <p>
                   Проверенный снимок: <code>{run.proposal_check.snapshotDigest}</code>
                 </p>
+                <CodeCheckEvidence check={run.proposal_check} />
                 <TerminalOutput
                   stdout={run.proposal_check.stdout}
                   stderr={run.proposal_check.stderr}
-                  status={run.proposal_check.status}
+                  status={
+                    run.proposal_check.status === "passed" &&
+                    !hasVerifiedCodeCheck(run.proposal_check)
+                      ? "unverified"
+                      : run.proposal_check.status
+                  }
                   truncated={run.proposal_check.truncated}
                 />
               </div>
@@ -928,25 +941,32 @@ export default function CodeAgentPage() {
                 <div aria-label="Результат проверки">
                   <p>
                     Результат:{" "}
-                    {run.check.status === "passed"
+                    {hasVerifiedCodeCheck(run.check)
                       ? "Успешно"
-                      : run.check.status === "failed"
-                        ? "Ошибка"
-                        : run.check.status === "unavailable"
-                          ? "Исполнитель недоступен. Проверьте подключение и повторите проверку."
-                          : run.check.status === "timed_out"
-                            ? "Превышен лимит времени. Можно повторить проверку с новым подтверждением."
-                            : run.check.status === "cancelled"
-                              ? "Проверка отменена. Можно повторить её с новым подтверждением."
-                              : run.check.status}
+                      : run.check.status === "passed"
+                        ? "Успех не подтверждён"
+                        : run.check.status === "failed"
+                          ? "Ошибка"
+                          : run.check.status === "unavailable"
+                            ? "Исполнитель недоступен. Проверьте подключение и повторите проверку."
+                            : run.check.status === "timed_out"
+                              ? "Превышен лимит времени. Можно повторить проверку с новым подтверждением."
+                              : run.check.status === "cancelled"
+                                ? "Проверка отменена. Можно повторить её с новым подтверждением."
+                                : run.check.status}
                   </p>
                   <p>
                     Проверенный снимок: <code>{run.check.snapshotDigest}</code>
                   </p>
+                  <CodeCheckEvidence check={run.check} />
                   <TerminalOutput
                     stdout={run.check.stdout}
                     stderr={run.check.stderr}
-                    status={run.check.status}
+                    status={
+                      run.check.status === "passed" && !hasVerifiedCodeCheck(run.check)
+                        ? "unverified"
+                        : run.check.status
+                    }
                     truncated={run.check.truncated}
                   />
                   {run.check.journal !== undefined && (
