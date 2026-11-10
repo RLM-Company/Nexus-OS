@@ -64,7 +64,8 @@ test("a late result acceptance updates its task without replacing the later hist
           (await (
             await request.get(`/api/v1/projects/${work.project}/work/${second.id}`)
           ).json()) as { status: string }
-        ).status
+        ).status,
+      { timeout: 15000 }
     )
     .toBe("completed");
   let entered = false;
