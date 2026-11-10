@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useCodeEditorNavigationGuard } from "./editor-navigation";
 import { CodeCheckEvidence, hasVerifiedCodeCheck } from "./check-evidence";
 import { TerminalOutput } from "../ui/terminal-output";
 import { CodePatchEditor } from "./patch-editor";
@@ -192,6 +193,8 @@ export default function CodeAgentPage() {
   const [checkType, setCheckType] = useState("syntax");
   const [autoCheck, setAutoCheck] = useState(false);
   const [proofDirty, setProofDirty] = useState(false);
+  const [patchTextDirty, setPatchTextDirty] = useState(false);
+  const confirmDiscard = useCodeEditorNavigationGuard(proofDirty || patchTextDirty);
   const invalidation = useRef<Promise<void> | null>(null);
   const editingInvalidated = useRef(false);
   const linkedRun = useRef<string | null>(null);
@@ -220,6 +223,7 @@ export default function CodeAgentPage() {
     if (restore || proposalIdentity.current !== identity) {
       editingInvalidated.current = false;
       setProofDirty(false);
+      setPatchTextDirty(false);
       proposalIdentity.current = identity;
       const selected = value.draft?.plan.files;
       setEdits(
@@ -311,7 +315,7 @@ export default function CodeAgentPage() {
   }, [project, run?.id, run?.status]);
 
   async function createProject() {
-    if (requestBusy.current) return;
+    if (requestBusy.current || !confirmDiscard()) return;
     requestBusy.current = true;
     setBusy(true);
     setError(null);
@@ -339,8 +343,8 @@ export default function CodeAgentPage() {
     }
   }
 
-  async function action(operation: () => Promise<Run>, reconcile = false) {
-    if (requestBusy.current) return;
+  async function action(operation: () => Promise<Run>, reconcile = false, replacesEditor = false) {
+    if (requestBusy.current || (replacesEditor && !confirmDiscard())) return;
     requestBusy.current = true;
     const actionEpoch = epoch.current;
     setBusy(true);
@@ -378,6 +382,7 @@ export default function CodeAgentPage() {
     );
   const checkingPassed =
     !proofDirty &&
+    !patchTextDirty &&
     run?.status === "checked" &&
     !!run.publication_token &&
     hasVerifiedCodeCheck(run.check) &&
@@ -418,6 +423,7 @@ export default function CodeAgentPage() {
     return pending;
   }
   function applyPreview(preview: CodePatchPreview) {
+    setPatchTextDirty(false);
     setEdits((current) =>
       current.map((file) => {
         const changed = preview.files.find((f) => f.path === file.path);
@@ -445,7 +451,14 @@ export default function CodeAgentPage() {
           <h1>Code-агент</h1>
           <p>Задача → просмотр изменений → разрешённая проверка → черновик PR</p>
         </div>
-        <Link href="/github">GitHub</Link>
+        <Link
+          href="/github"
+          onNavigate={(event) => {
+            if (!confirmDiscard()) event.preventDefault();
+          }}
+        >
+          GitHub
+        </Link>
       </header>
       {error && (
         <p className={styles.notice} role="alert">
@@ -460,6 +473,7 @@ export default function CodeAgentPage() {
               value={project}
               disabled={busy}
               onChange={(event) => {
+                if (!confirmDiscard()) return;
                 setIssueDraft(null);
                 setProject(event.target.value);
               }}
@@ -585,38 +599,42 @@ export default function CodeAgentPage() {
             !issueReady
           }
           onClick={() =>
-            void action(async () => {
-              const input = {
-                task: task.trim(),
-                ...(issueContext ? { issue_context: issueContext } : {}),
-                base_branch: branch.trim(),
-                ...(autoCheck ? { auto_check: { check: checkType, approve: true } } : {}),
-                ...(paths.trim()
-                  ? {
-                      files: paths
-                        .split(/\r?\n/)
-                        .map((p) => p.trim())
-                        .filter(Boolean)
-                    }
-                  : {})
-              };
-              const signature = JSON.stringify([project, input]);
-              if (createAttempt.current?.signature !== signature)
-                createAttempt.current = { signature, id: crypto.randomUUID() };
-              const id = createAttempt.current.id;
-              let value: Run;
-              try {
-                value = await api<Run>(root, { ...input, client_request_id: id });
-              } catch (cause) {
+            void action(
+              async () => {
+                const input = {
+                  task: task.trim(),
+                  ...(issueContext ? { issue_context: issueContext } : {}),
+                  base_branch: branch.trim(),
+                  ...(autoCheck ? { auto_check: { check: checkType, approve: true } } : {}),
+                  ...(paths.trim()
+                    ? {
+                        files: paths
+                          .split(/\r?\n/)
+                          .map((p) => p.trim())
+                          .filter(Boolean)
+                      }
+                    : {})
+                };
+                const signature = JSON.stringify([project, input]);
+                if (createAttempt.current?.signature !== signature)
+                  createAttempt.current = { signature, id: crypto.randomUUID() };
+                const id = createAttempt.current.id;
+                let value: Run;
                 try {
-                  value = await api<Run>(root + "/by-request/" + encodeURIComponent(id));
-                } catch {
-                  throw cause;
+                  value = await api<Run>(root, { ...input, client_request_id: id });
+                } catch (cause) {
+                  try {
+                    value = await api<Run>(root + "/by-request/" + encodeURIComponent(id));
+                  } catch {
+                    throw cause;
+                  }
                 }
-              }
-              createAttempt.current = null;
-              return value;
-            })
+                createAttempt.current = null;
+                return value;
+              },
+              false,
+              true
+            )
           }
         >
           {autoCheck ? "Предложить и проверить исправление" : "Предложить исправление"}
@@ -631,7 +649,7 @@ export default function CodeAgentPage() {
             disabled={busy}
             onChange={(event) => {
               const value = runs.find((item) => item.id === event.target.value);
-              if (value) accept(value, true);
+              if (value && value.id !== run?.id && confirmDiscard()) accept(value, true);
             }}
           >
             {runs.map((item) => (
@@ -800,6 +818,18 @@ export default function CodeAgentPage() {
           {edits.length > 0 && (
             <section className={styles.panel} aria-label="Просмотр изменений">
               <h2>1. Выберите изменения</h2>
+              {patchTextDirty && (
+                <p role="status">
+                  Текст diff ещё не перенесён в выбранные изменения. Проверьте применимость или
+                  отмените правки diff; сохранение выбранных файлов не сохраняет этот черновик.
+                </p>
+              )}
+              {proofDirty && (
+                <p role="status">
+                  Правки ещё не сохранены. Сохраните выбранные изменения перед переходом или
+                  перезагрузкой.
+                </p>
+              )}
               <p className={styles.muted}>
                 Снимите выбор с ненужных файлов. Можно изменить итоговый текст, чтобы принять
                 отдельные изменения. Затем сохраните просмотр.
@@ -814,6 +844,7 @@ export default function CodeAgentPage() {
                   proposalHash={run.proposal_hash}
                   initialDiff={run.proposal_diff}
                   disabled={!editable}
+                  onDraftChange={setPatchTextDirty}
                   onDirty={invalidateProof}
                   onApply={applyPreview}
                 />
