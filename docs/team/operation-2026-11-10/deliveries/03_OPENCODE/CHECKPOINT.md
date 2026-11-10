@@ -176,10 +176,10 @@
     не считает mutable-профильный index якорем доверия — перед «проверенным
     откатом» перепроверяются подпись закреплённым ключом и байты файла
     (208–233). (3) CI — гард требует `trust.publicKeyPem === null` (месседж
-«Unsigned candidate must not silently enable the update channel», 89–94) и
-поведенчески проверяет `check()` → "disabled" с fetcher'ом, бросающим на
-любой сетевой вызов (95–108); туда же NSIS-асерты `oneClick:false`,
-`perMachine:false`, `deleteAppDataOnUninstall:false` — локальные данные
+    «Unsigned candidate must not silently enable the update channel», 89–94) и
+    поведенчески проверяет `check()` → "disabled" с fetcher'ом, бросающим на
+    любой сетевой вызов (95–108); туда же NSIS-асерты `oneClick:false`,
+    `perMachine:false`, `deleteAppDataOnUninstall:false` — локальные данные
     владельца при удалении сохраняются (20–25). Замечание (не нарушение):
     content-length сверяется лишь при наличии заголовка — без него защиту
     полностью держат потоковый лимит и финальная сверка SHA-256/размера
