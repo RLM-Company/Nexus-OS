@@ -1,0 +1,22 @@
+{
+  "slice": "O-002",
+  "pr": 506,
+  "tested_head": "d20fb72efa990d05840ebd0c431e395fc8ce3427",
+  "merge_sha": "619efe6a53b959f70fce43f993b128c9c23677b3",
+  "merged_tree_matches_tested_head": true,
+  "checks": {
+    "monorepo": 130045234962,
+    "browser": 130045234800,
+    "sandbox": 130045234488,
+    "windows": 130045137335,
+    "identity": 130045060990
+  },
+  "checks_result": "5/5 success",
+  "browser_scenarios_passed": 435,
+  "real_chromium_dom_smoke": "passed",
+  "snapshot_tests_local_passed": 26,
+  "new_regressions_failed_before_fix": 4,
+  "owner_device_actions": false,
+  "server_deploy": false,
+  "paid_model_calls": 0
+}
