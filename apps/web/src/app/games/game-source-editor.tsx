@@ -1,24 +1,36 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import {
   GAME_PROJECT_FILES,
+  parseGameProject,
   type GameProject,
   type GameProjectFile
 } from "@cosmora/contracts/game-project";
+import { CanvasComparison } from "../canvas-editor/canvas-comparison";
 import styles from "./game-source.module.css";
 
 export function GameSourceEditor({
   content,
+  baselineContent,
   disabled,
   onChange
 }: {
   content: string;
+  baselineContent: string;
   disabled: boolean;
   onChange: (value: string) => void;
 }) {
   const [selected, setSelected] = useState<GameProjectFile>("game.js");
   const [raw, setRaw] = useState(false);
+  const [showDiff, setShowDiff] = useState(false);
+  const baselineFiles = useMemo(() => {
+    try {
+      return parseGameProject(baselineContent).files;
+    } catch {
+      return [];
+    }
+  }, [baselineContent]);
   let project: GameProject | undefined;
   try {
     const value = JSON.parse(content) as GameProject;
@@ -37,6 +49,7 @@ export function GameSourceEditor({
     /* Raw editing recovers incomplete/imported packages. Empty files stay editable. */
   }
   const file = project?.files.find((item) => item.name === selected);
+  const original = baselineFiles.find((item) => item.name === selected);
   return (
     <section className={styles.editor} aria-label="Файлы игры">
       <div className={styles.tabs} role="group" aria-label="Исходники игры">
@@ -55,6 +68,14 @@ export function GameSourceEditor({
         ))}
         <button type="button" aria-pressed={raw || !project} onClick={() => setRaw(true)}>
           Пакет JSON
+        </button>
+        <button
+          type="button"
+          aria-pressed={showDiff}
+          disabled={raw || !file || !original}
+          onClick={() => setShowDiff((visible) => !visible)}
+        >
+          Сравнить файл
         </button>
       </div>
       <label>
@@ -81,6 +102,22 @@ export function GameSourceEditor({
           }}
         />
       </label>
+      {showDiff && !raw && file && original && (
+        <CanvasComparison
+          before={{
+            label: `Основа файла ${selected}`,
+            title: selected,
+            format: "code",
+            content: original.content
+          }}
+          after={{
+            label: `Черновик файла ${selected}`,
+            title: selected,
+            format: "code",
+            content: file.content
+          }}
+        />
+      )}
       <p>
         JavaScript: game.ctx, game.keys, game.pointer и game.onUpdate(dt). Поле 800 × 500. Код
         выполняется в отдельном Worker; DOM и внешние зависимости недоступны.

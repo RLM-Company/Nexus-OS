@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { strToU8, zipSync } from "fflate";
 import { parseGameProject } from "@cosmora/contracts/game-project";
 import { createGameProjectHtml } from "./game-project-runtime";
@@ -18,6 +18,12 @@ export function GameSourcePreview({ content }: { content: string }) {
     null
   );
   const [error, setError] = useState("");
+  // Unmounting a frame on an edit stops its Worker. Invalidate the old launch as well:
+  // reverting the text must never silently re-execute an earlier srcDoc session.
+  useEffect(() => {
+    setSession(null);
+    setError("");
+  }, [content]);
   const running = !!project && session?.source === content;
   return (
     <section className={styles.preview} aria-label="Запуск проекта игры">
