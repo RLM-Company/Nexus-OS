@@ -1093,3 +1093,126 @@ test("text-page capability belongs to the selected folder and never opens a vaul
   assert.equal(result.content, "Exact selected-folder source 00123");
   assert.equal(result.excerpt_only, false);
 });
+
+test("Work stops at the earliest session or Vault deadline while the planner waits", async (t) => {
+  for (const scenario of [
+    {
+      name: "Vault expires first",
+      age: 25 * 60 * 1000,
+      duration: 30 * 60 * 1000,
+      advance: 5 * 60 * 1000
+    },
+    { name: "session expires first", age: 0, duration: 20, advance: 20 }
+  ])
+    await t.test(scenario.name, async (t) => {
+      t.mock.timers.enable({ apis: ["setTimeout"] });
+      let clock = 0;
+      const f = fixture(t, { now: () => clock });
+      await f.workspace.connect(c, f.signal);
+      await f.grant();
+      clock = scenario.age;
+      t.mock.timers.tick(clock);
+      const cleanup = [];
+      let enter,
+        release,
+        plannerSignal,
+        cancelled = 0;
+      const ready = new Promise((resolve) => {
+        enter = resolve;
+      });
+      const cancel = f.base.cancel;
+      f.base.cancel = () => {
+        cancelled++;
+        cancel();
+      };
+      const driver = createWorkCycleDriver({
+        browser: {
+          stop() {
+            cleanup.push("browser");
+          }
+        },
+        computer: {
+          stop() {
+            cleanup.push("computer");
+          }
+        },
+        identity: async () => c,
+        confirmEnvironment: async () => {
+          throw Error("Unexpected device grant");
+        }
+      });
+      const runner = new ComputerSession({
+        executionMode: "work",
+        driver,
+        workspace: f.workspace,
+        identity: async () => c,
+        confirm: async () => true,
+        notify() {},
+        now: () => clock,
+        planner: {
+          begin: async () => ({ id: "fixture" }),
+          authorize: async () => ({ authorized: true, valid_for_ms: 10000 }),
+          end: async () => {},
+          next: async ({ signal }) => {
+            plannerSignal = signal;
+            enter();
+            return new Promise((resolve) => {
+              release = resolve;
+            });
+          }
+        }
+      });
+      const enable = runner.gate.enable.bind(runner.gate);
+      runner.gate.enable = (args) => enable({ ...args, durationMs: scenario.duration });
+      const pending = runner.run({
+        project: "project",
+        goal: "Read an approved local source",
+        maxSteps: 2
+      });
+      await ready;
+      cleanup.length = 0;
+      clock += scenario.advance;
+      t.mock.timers.tick(scenario.advance);
+      const beforeLateReply = {
+        aborted: plannerSignal.aborted,
+        mounted: f.workspace.vaultState(c),
+        cleanup: [...cleanup],
+        cancelled
+      };
+      release({
+        action: {
+          kind: "work_plan",
+          steps: [{ title: "Inspect source", criteria: "Verify exact quote" }]
+        },
+        message: "Late fixture",
+        requires_confirmation: false
+      });
+      await assert.rejects(pending, /COMPUTER_SESSION_STOPPED|COMPUTER_WORKSPACE_CHANGED/);
+      assert.equal(beforeLateReply.aborted, true);
+      assert.equal(beforeLateReply.mounted, false);
+      assert.deepEqual(beforeLateReply.cleanup, ["browser", "computer"]);
+      assert.equal(beforeLateReply.cancelled, 1);
+      assert.equal(runner.active, null);
+    });
+});
+
+test("Vault remaining permission time is scoped, revoked and never reported as mounted after expiry", async (t) => {
+  let clock = 0;
+  const f = fixture(t, { now: () => clock });
+  assert.equal(f.workspace.grantRemainingMs(c), null);
+  await f.grant();
+  assert.equal(f.workspace.grantRemainingMs(c), 30 * 60 * 1000);
+  clock = 1000;
+  assert.equal(f.workspace.grantRemainingMs(c), 30 * 60 * 1000 - 1000);
+  assert.throws(
+    () => f.workspace.grantRemainingMs({ ...c, owner: "other" }),
+    /COMPUTER_IDENTITY_CHANGED/
+  );
+  f.workspace.revokeVault();
+  assert.equal(f.workspace.grantRemainingMs(c), null);
+  await f.grant();
+  clock += 30 * 60 * 1000;
+  assert.equal(f.workspace.vaultState(c), false);
+  assert.throws(() => f.workspace.grantRemainingMs(c), /COMPUTER_WORKSPACE_CHANGED/);
+  assert.equal(f.workspace.grantRemainingMs(c), null);
+});
