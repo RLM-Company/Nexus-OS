@@ -334,8 +334,24 @@ for (const rejected of [false, true])
     request
   }) => {
     const id = await namedDraft(page, request);
+    await page.getByLabel("Текстовые файлы и код").setInputFiles(fixture);
+    await page.getByRole("button", { name: "Действие с текстом", exact: true }).click();
+    await page.getByRole("menuitem", { name: "Объяснить тему", exact: true }).click();
     const held = await holdSubmission(page, id, rejected);
+    const sent = page.waitForRequest(
+      (request) =>
+        request.method() === "POST" &&
+        new URL(request.url()).pathname === `/api/v1/chats/${id}/messages`
+    );
     await page.getByRole("button", { name: "Отправить", exact: true }).click();
+    const payload = (await sent).postDataJSON() as {
+      text_action: { kind: string };
+      attachments: { name: string; content: string }[];
+    };
+    expect(payload.text_action).toEqual({ kind: "explain" });
+    expect(payload.attachments).toEqual([
+      expect.objectContaining({ name: fixture.name, content: fixture.buffer.toString("utf8") })
+    ]);
     const stream = await held.received;
     const followed = stream
       ? page.waitForRequest(
@@ -358,6 +374,10 @@ for (const rejected of [false, true])
         page.locator(".composer").getByText(/результат запроса неизвестен/)
       ).toBeVisible();
     else await followed;
+    await expect(page.getByRole("button", { name: "Объяснить тему", exact: true })).toBeVisible();
+    await expect(page.getByRole("list", { name: "Прикреплённые файлы" })).toContainText(
+      fixture.name
+    );
     await page.reload();
     await expect(page.getByLabel(label)).toHaveValue(expected);
   });
