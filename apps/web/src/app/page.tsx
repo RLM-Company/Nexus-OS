@@ -123,6 +123,8 @@ type ProjectProposal = {
   content: string;
   assessment: TaskComplexity;
   attachments?: ChatAttachment[];
+  /** Explicitly chosen number of preceding messages carried into the project. */
+  historyCount: 0 | 4 | 8;
 };
 
 type ChatMode = "kosmora" | "work" | "coscode";
@@ -1936,7 +1938,7 @@ export default function Home() {
           ];
           const proposal =
             assessment.requiresProject && isValidChatAttachments(materials)
-              ? { content, assessment, attachments: materials }
+              ? { content, assessment, attachments: materials, historyCount: 0 as const }
               : null;
           setLocalChats((current) => {
             const existing = current.find((chat) => chat.id === accepted.chat.id);
@@ -2047,6 +2049,19 @@ export default function Home() {
     projectPromotionPendingRef.current = true;
     const content = projectProposal.content;
     const sourceChatId = activeLocalChatId;
+    const historyExcerpt =
+      projectProposal.historyCount === 0
+        ? undefined
+        : localChatMessages
+            .filter((message) => message.role === "user" || message.role === "assistant")
+            .slice(0, -1)
+            .slice(-projectProposal.historyCount)
+            .map((message) => ({
+              role: message.role,
+              content: message.content.slice(0, 12_000),
+              created_at: message.created_at
+            }))
+            .filter((item) => item.content.trim().length > 0);
     let epoch = viewEpochRef.current;
     setSending(true);
     setRunPhase("queued");
@@ -2058,7 +2073,8 @@ export default function Home() {
         body: JSON.stringify({
           initial_message: content,
           client_message_id: clientId(),
-          attachments: projectProposal.attachments ?? []
+          attachments: projectProposal.attachments ?? [],
+          ...(historyExcerpt?.length ? { history_excerpt: historyExcerpt } : {})
         })
       });
       if (epoch !== viewEpochRef.current) {
@@ -3253,9 +3269,42 @@ export default function Home() {
                     <small>Оценка сложности · {projectProposal.assessment.score}</small>
                     <strong>Оформить задачу как проект?</strong>
                     <p>
-                      Откроется Менеджер и подготовка мультиагентной команды. Никакие агенты или
-                      внешние действия автоматически не запускаются.
+                      Откроется Менеджер. Никакие агенты или внешние действия автоматически не
+                      запускаются.
                     </p>
+                    <label className="proposal-history">
+                      Перенести историю обсуждения:
+                      <select
+                        aria-label="Объём переносимой истории"
+                        disabled={loading || executionGate !== "clear"}
+                        value={projectProposal.historyCount}
+                        onChange={(event) =>
+                          setLocalChats((current) =>
+                            current.map((chat) =>
+                              chat.id === activeLocalChatId && chat.projectProposal
+                                ? {
+                                    ...chat,
+                                    projectProposal: {
+                                      ...chat.projectProposal,
+                                      historyCount: Number(event.target.value) as 0 | 4 | 8
+                                    }
+                                  }
+                                : chat
+                            )
+                          )
+                        }
+                      >
+                        <option value={0}>Не переносить</option>
+                        <option value={4}>Последние 4 сообщения</option>
+                        <option value={8}>Последние 8 сообщений</option>
+                      </select>
+                    </label>
+                    <small className="proposal-boundaries">
+                      Будет передано: цель, {projectProposal.historyCount} сообщений истории,{" "}
+                      {projectProposal.attachments?.length ?? 0} вложений. Не переносятся: память,
+                      настройки чата и разрешения устройств. История попадёт в проект как цитируемые
+                      данные, а не как инструкции.
+                    </small>
                     <div className="proposal-actions">
                       <button
                         type="button"

@@ -2165,7 +2165,8 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
           request.body.initial_message,
           request.body.client_message_id,
           identityFor(request).owner_id,
-          request.body.attachments
+          request.body.attachments,
+          request.body.history_excerpt
         );
         dependencies.policyStore?.ensureProfile(accepted.project.id);
         dependencies.usageStore?.ensureLimit(accepted.project.id, identityFor(request).owner_id);
