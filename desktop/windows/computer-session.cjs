@@ -205,6 +205,13 @@ class ComputerSession {
       });
       if (state.reference && state.session?.supports_work_reference !== true)
         throw Error("COMPUTER_REFERENCE_UNSUPPORTED");
+      if (
+        state.reference &&
+        this.history.reference(context, project, state.reference.taskId, state.reference.revision)
+          .format === "koswork.confirmed-correction.v1" &&
+        state.session?.supports_work_corrections !== true
+      )
+        throw Error("COMPUTER_REFERENCE_UNSUPPORTED");
       let previousResult = recovery?.previousResult ?? "";
       let approval = null;
       let pendingObservation = null;

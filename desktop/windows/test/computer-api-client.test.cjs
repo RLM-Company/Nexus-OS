@@ -25,6 +25,7 @@ test("native source and document tools require explicit server capability flags"
               ? {}
               : {
                   supports_browser_text_reads: capability,
+                  supports_work_corrections: capability,
                   supports_workspace_read_lines: capability,
                   supports_workspace_text_reads: capability,
                   supports_workspace_documents: capability,
@@ -42,6 +43,7 @@ test("native source and document tools require explicit server capability flags"
       signal: new AbortController().signal
     });
     assert.equal(result.supports_browser_text_reads, capability === true ? true : undefined);
+    assert.equal(result.supports_work_corrections, capability === true ? true : undefined);
     assert.equal(result.supports_workspace_read_lines, capability === true ? true : undefined);
     assert.equal(result.supports_workspace_text_reads, capability === true ? true : undefined);
     assert.equal(result.supports_workspace_documents, capability === true ? true : undefined);
@@ -476,4 +478,29 @@ test("file pages require both current server and selected-folder capability", as
     assert.equal(advertised, server && native ? true : undefined);
     assert.equal(executed, server && native ? 1 : 0);
   }
+});
+
+test("a correction requires its own capability before any reference payload is sent", async () => {
+  let fetches = 0;
+  const client = createComputerApiClient({
+    identity: async () => owner,
+    getSession: () => ({
+      fetch: async () => {
+        fetches++;
+        throw Error("unexpected transport");
+      }
+    })
+  });
+  await assert.rejects(
+    client.next({
+      session: { ...session, supports_work_reference: true },
+      project: "project",
+      step: 0,
+      observation: {},
+      previousResult: "",
+      workReference: { format: "koswork.confirmed-correction.v1", guidance: "fixture" }
+    }),
+    /COMPUTER_REFERENCE_UNSUPPORTED/
+  );
+  assert.equal(fetches, 0);
 });

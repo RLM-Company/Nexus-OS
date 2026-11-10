@@ -145,3 +145,88 @@ test("a shortened source goal remains well-formed and is explicitly labelled", (
   assert.equal(r.source_goal.isWellFormed(), true);
   assert.equal(r.goal_excerpt_only, true);
 });
+
+const correction = {
+  issue: "CSV потерял ведущие нули",
+  guidance: "Сохраняй идентификатор 00123 как текст, цену и исключения переноси дословно.",
+  applies_when: "CSV отчёт по цене и идентификаторам"
+};
+test("owner-confirmed corrections are versioned project data, not successful outcomes", (t) => {
+  const f = fixture(t),
+    id = f.source({ goal: "Подготовь CSV отчёт по цене", status: "failed", accept: false });
+  const draft = f.history.correction(context, id);
+  const saved = f.history.saveCorrection(context, id, draft.revision, correction);
+  const reference = f.history.reference(context, project, id, saved.revision);
+  assert.equal(reference.format, "koswork.confirmed-correction.v1");
+  assert.equal(reference.source_outcome, "failed");
+  assert.equal(reference.source_requires_review, true);
+  assert.equal(reference.guidance, correction.guidance);
+  assert.equal(reference.plan, undefined);
+  assert.equal(f.history.list(context)[0].acceptedAt, null);
+  assert.ok(!JSON.stringify(reference).includes("raw typed private"));
+  const edit = f.history.saveCorrection(context, id, saved.revision, {
+    ...correction,
+    guidance: "Проверь тип идентификатора до экспорта CSV."
+  });
+  assert.notEqual(edit.revision, saved.revision);
+  for (const fn of [
+    () => f.history.reference(context, project, id, saved.revision),
+    () => f.history.saveCorrection(context, id, saved.revision, correction),
+    () => f.history.removeCorrection(context, id, saved.revision)
+  ])
+    assert.throws(fn, /REFERENCE_CHANGED/);
+  assert.throws(() => f.history.reference(context, "other-project", id), /REFERENCE_UNAVAILABLE/);
+  const matches = f.history.suggestCorrections(context, project, "Новый CSV отчёт по цене");
+  assert.equal(matches[0].revision, edit.revision);
+  assert.ok(matches[0].matched_terms.includes("csv"));
+  assert.deepEqual(f.history.suggestCorrections(context, "other-project", "CSV отчёт"), []);
+  assert.deepEqual(
+    f.history.suggestCorrections({ ...context, owner: "other" }, project, "CSV отчёт"),
+    []
+  );
+  f.history.removeCorrection(context, id, edit.revision);
+  assert.equal(f.history.list(context).length, 1);
+  assert.equal(f.history.list(context)[0].correction, undefined);
+  assert.deepEqual(f.history.suggestCorrections(context, project, "CSV отчёт"), []);
+  assert.throws(
+    () => f.history.reference(context, project, id, edit.revision),
+    /REFERENCE_CHANGED/
+  );
+});
+test("corrections reject unsafe text and ineligible sources and share history expiry/clear", (t) => {
+  const f = fixture(t);
+  for (const opts of [
+    { status: "running", accept: false },
+    { status: "paused", accept: false },
+    { goal: "password=fixture-value" }
+  ]) {
+    const id = f.source(opts);
+    assert.throws(() => f.history.correction(context, id), /REFERENCE_UNAVAILABLE/);
+  }
+  const id = f.source({ goal: "CSV отчёт" }),
+    draft = f.history.correction(context, id);
+  for (const invalid of [
+    { ...correction, issue: "" },
+    { ...correction, guidance: "password=fixture-value" },
+    { ...correction, guidance: "x".repeat(801) },
+    { ...correction, applies_when: String.fromCharCode(0xd800) },
+    { ...correction, extra: "injected" }
+  ])
+    assert.throws(() => f.history.saveCorrection(context, id, draft.revision, invalid));
+  const saved = f.history.saveCorrection(context, id, draft.revision, correction);
+  const files = fs.readdirSync(path.join(f.root, "work-tasks-v1"));
+  assert.ok(
+    files.every(
+      (file) =>
+        !fs
+          .readFileSync(path.join(f.root, "work-tasks-v1", file), "utf8")
+          .includes(correction.guidance)
+    )
+  );
+  f.advance(31 * 86400_000);
+  assert.throws(
+    () => f.history.reference(context, project, id, saved.revision),
+    /REFERENCE_CHANGED/
+  );
+  assert.deepEqual(f.history.suggestCorrections(context, project, "CSV отчёт"), []);
+});

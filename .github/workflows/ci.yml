@@ -86,13 +86,16 @@ jobs:
       - name: Verify Koswork browser CDP engine and native-window UI assets
         env:
           KOSWORK_BROWSER_SCREENSHOT: ${{ runner.temp }}/koswork-browser-home.png
+          KOSWORK_CORRECTIONS_SCREENSHOT: ${{ runner.temp }}/koswork-corrections.png
         run: node desktop/windows/ci/browser-dom-smoke.cjs
 
       - name: Preserve Koswork browser preview
         uses: actions/upload-artifact@v4
         with:
           name: koswork-browser-preview
-          path: ${{ runner.temp }}/koswork-browser-home.png
+          path: |
+            ${{ runner.temp }}/koswork-browser-home.png
+            ${{ runner.temp }}/koswork-corrections.png
           if-no-files-found: error
           retention-days: 7
 

@@ -260,6 +260,7 @@ export const ComputerSessionAcceptanceSchema = object({
   supports_workspace_document_reads: Type.Optional(Type.Literal(true)),
   supports_workspace_pdf_reads: Type.Optional(Type.Literal(true)),
   supports_work_reference: Type.Optional(Type.Literal(true)),
+  supports_work_corrections: Type.Optional(Type.Literal(true)),
   supports_browser_text_reads: Type.Optional(Type.Literal(true)),
   execution_mode: Type.Optional(
     Type.Union([Type.Literal("computer"), Type.Literal("browser"), Type.Literal("work")])
@@ -324,7 +325,7 @@ export const CreateComputerSessionSchema = object({
   max_steps: Type.Integer({ minimum: 1, maximum: 90 })
 });
 export type CreateComputerSession = Static<typeof CreateComputerSessionSchema>;
-export const WorkReferenceSchema = object({
+const AcceptedWorkReferenceSchema = object({
   format: Type.Literal("koswork.accepted-example.v1"),
   source_task_id: Type.String({
     pattern: "^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$"
@@ -345,6 +346,34 @@ export const WorkReferenceSchema = object({
   ),
   tool_summary_truncated: Type.Boolean()
 });
+const WorkCorrectionReferenceSchema = object({
+  format: Type.Literal("koswork.confirmed-correction.v1"),
+  source_task_id: Type.String({
+    pattern: "^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$"
+  }),
+  source_project_id: text(160),
+  source_goal: text(500),
+  goal_excerpt_only: Type.Boolean(),
+  source_revision: Type.String({ pattern: "^[a-f0-9]{64}$" }),
+  revision: Type.String({ pattern: "^[a-f0-9]{64}$" }),
+  source_outcome: Type.Union([
+    Type.Literal("completed"),
+    Type.Literal("failed"),
+    Type.Literal("cancelled"),
+    Type.Literal("interrupted"),
+    Type.Literal("step_limit"),
+    Type.Literal("needs_user")
+  ]),
+  source_requires_review: Type.Boolean(),
+  confirmed_at: Type.Integer({ minimum: 0 }),
+  issue: text(400),
+  guidance: text(800),
+  applies_when: text(400)
+});
+export const WorkReferenceSchema = Type.Union([
+  AcceptedWorkReferenceSchema,
+  WorkCorrectionReferenceSchema
+]);
 export const ComputerStepSchema = object({
   work_reference: Type.Optional(WorkReferenceSchema),
   step: Type.Integer({ minimum: 0, maximum: 89 }),

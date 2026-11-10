@@ -15,7 +15,12 @@ const { createBrowserEngine } = require("../browser/engine.cjs"),
   { ComputerSession } = require("../computer-session.cjs");
 async function run() {
   const temporary = fs.mkdtempSync(path.join(os.tmpdir(), "koswork-browser-dom-"));
-  const browser = await chromium.launch({ headless: true });
+  const browser = await chromium.launch({
+    headless: true,
+    ...(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH
+      ? { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH }
+      : {})
+  });
   let engine,
     received = "",
     submissions = 0;
@@ -731,6 +736,177 @@ async function run() {
       await workPreview.locator("body").evaluate((e) => e.scrollWidth > innerWidth),
       false
     );
+    // Real shipped renderer; command responses are fixture data, native IPC is tested separately.
+    const corrections = await browser.newPage({ viewport: { width: 1000, height: 740 } });
+    await corrections.addInitScript(() => {
+      const id = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+      let saved = null,
+        version = "a".repeat(64);
+      window.__correctionCommands = [];
+      window.kosworkBrowser = {
+        onState() {},
+        onEvent() {},
+        command: async (name, input) => {
+          window.__correctionCommands.push({ name, input });
+          if (name === "history")
+            return {
+              items: [
+                {
+                  id,
+                  project: "project",
+                  goal: "Create CSV report",
+                  status: "failed",
+                  correctable: true,
+                  reusable: !!saved,
+                  correction: saved,
+                  correctionRevision: saved ? version : undefined
+                }
+              ]
+            };
+          if (name === "correction")
+            return {
+              taskId: id,
+              project: "project",
+              source_goal: "Create CSV report",
+              revision: version,
+              correction: saved
+            };
+          if (name === "save-correction") {
+            if (input.revision !== version) return { error: "COMPUTER_REFERENCE_CHANGED" };
+            saved = input.correction;
+            version = saved.issue === "Wrong delimiter" ? "b".repeat(64) : "c".repeat(64);
+            return { taskId: id, revision: version, correction: saved };
+          }
+          if (name === "suggest-corrections")
+            return {
+              items: saved
+                ? [
+                    {
+                      taskId: id,
+                      revision: version,
+                      source_goal: "Create CSV report",
+                      ...saved,
+                      matched_terms: ["csv"]
+                    }
+                  ]
+                : []
+            };
+          if (name === "reference")
+            return {
+              project: "project",
+              goal: "Create CSV report",
+              reference: { taskId: id, revision: version }
+            };
+          if (name === "remove-correction") {
+            saved = null;
+            return { removed: true };
+          }
+          if (name === "start") return { status: "completed", summary: "Fixture only" };
+          return {
+            tabs: [],
+            projects: [
+              { id: "project", title: "CSV project" },
+              { id: "other", title: "Other project" }
+            ],
+            downloads: [],
+            taskMode: "work"
+          };
+        }
+      };
+    });
+    await corrections.goto(pathToFileURL(path.join(__dirname, "../browser/browser.html")).href);
+    await corrections.locator("#history-details").evaluate((e) => {
+      e.open = true;
+    });
+    await corrections.getByRole("button", { name: "Сохранить исправление", exact: true }).click();
+    await corrections.locator("#correction-editor").waitFor({ state: "visible" });
+    assert.match(await corrections.locator("#correction-source").innerText(), /CSV project/);
+    await corrections.locator("#correction-issue").fill("Wrong delimiter");
+    await corrections
+      .locator("#correction-guidance")
+      .fill("Use semicolon; <img src=x onerror=alert(1)> is literal text");
+    await corrections.locator("#correction-when").fill("CSV exports");
+    await corrections.locator('#correction-form button[type="submit"]').click();
+    await corrections.locator("#correction-editor").waitFor({ state: "hidden" });
+    await corrections.getByRole("button", { name: "Изменить исправление", exact: true }).waitFor();
+    assert.equal(await corrections.locator("#history img").count(), 0);
+    await corrections.locator("#goal").fill("Create a new CSV report");
+    await corrections.locator("#find-corrections").click();
+    await corrections
+      .getByRole("button", { name: "Выбрать для этой задачи", exact: true })
+      .waitFor();
+    assert.match(
+      await corrections.locator("#correction-matches").innerText(),
+      /Совпали слова: csv/
+    );
+    assert.equal(await corrections.locator("#correction-matches img").count(), 0);
+    await corrections.getByRole("button", { name: "Выбрать для этой задачи", exact: true }).click();
+    await corrections
+      .getByRole("button", { name: "Не использовать исправление", exact: true })
+      .waitFor();
+    assert.equal(await corrections.locator("#goal").inputValue(), "Create a new CSV report");
+    await corrections.getByRole("button", { name: "Изменить исправление", exact: true }).click();
+    await corrections.locator("#correction-issue").fill("Wrong delimiter, revised");
+    await corrections.locator('#correction-form button[type="submit"]').click();
+    await corrections
+      .getByRole("button", { name: "Использовать исправление", exact: true })
+      .waitFor();
+    assert.equal(await corrections.locator("#correction-matches").innerText(), "");
+    await corrections.locator("#find-corrections").click();
+    await corrections.getByRole("button", { name: "Выбрать для этой задачи", exact: true }).click();
+    await corrections
+      .getByRole("button", { name: "Не использовать исправление", exact: true })
+      .waitFor();
+    await corrections.locator("#start").click();
+    await corrections.waitForFunction(() =>
+      window.__correctionCommands.some((x) => x.name === "start")
+    );
+    const correctionRun = await corrections.evaluate(
+      () => window.__correctionCommands.find((x) => x.name === "start").input
+    );
+    assert.equal(correctionRun.goal, "Create a new CSV report");
+    assert.equal(correctionRun.reference.revision, "c".repeat(64));
+    const correctionSaves = await corrections.evaluate(() =>
+      window.__correctionCommands.filter((x) => x.name === "save-correction").map((x) => x.input)
+    );
+    assert.equal(correctionSaves[0].revision, "a".repeat(64));
+    assert.equal(correctionSaves[1].revision, "b".repeat(64));
+    await corrections
+      .getByRole("button", { name: "Использовать исправление", exact: true })
+      .waitFor();
+    await corrections.locator("#find-corrections").click();
+    await corrections.getByRole("button", { name: "Выбрать для этой задачи", exact: true }).click();
+    await corrections
+      .getByRole("button", { name: "Не использовать исправление", exact: true })
+      .waitFor();
+    await corrections.locator("#project").selectOption("other");
+    assert.equal(await corrections.locator("#correction-matches").innerText(), "");
+    await corrections
+      .getByRole("button", { name: "Использовать исправление", exact: true })
+      .waitFor();
+    await corrections.locator("#project").selectOption("project");
+    await corrections.locator("#find-corrections").click();
+    await corrections
+      .getByRole("button", { name: "Выбрать для этой задачи", exact: true })
+      .waitFor();
+    assert.equal(
+      await corrections.locator("body").evaluate((e) => e.scrollWidth > innerWidth),
+      false
+    );
+    if (process.env.KOSWORK_CORRECTIONS_SCREENSHOT)
+      await corrections.screenshot({
+        path: path.resolve(process.env.KOSWORK_CORRECTIONS_SCREENSHOT)
+      });
+    await corrections.getByRole("button", { name: "Удалить исправление", exact: true }).click();
+    await corrections.getByRole("button", { name: "Сохранить исправление", exact: true }).waitFor();
+    assert.equal(
+      await corrections
+        .getByRole("button", { name: "Использовать исправление", exact: true })
+        .count(),
+      0
+    );
+    assert.equal(await corrections.locator("#correction-matches").innerText(), "");
+    assert.match(await corrections.locator("#history").innerText(), /Ошибка/);
     process.stdout.write(
       JSON.stringify({
         status: "passed",
@@ -746,6 +922,8 @@ async function run() {
         page_screenshots: sourceScreenshots,
         ui_viewport: "1280x840",
         owner_desktop_input: false,
+        confirmed_correction_ui:
+          "save/edit CAS, explicit selection with current goal, literal text, run version, project reset and deletion passed; native confirmation is covered by IPC tests",
         accepted_example_ui:
           "explicit selection, current goal preservation, reset after run/project change and literal untrusted labels passed",
         paged_text:

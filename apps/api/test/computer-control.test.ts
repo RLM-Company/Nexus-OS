@@ -1482,3 +1482,87 @@ describe("selected-folder UTF-8 page capability", () => {
     expect(f.calls).toHaveLength(1);
   });
 });
+
+describe("confirmed Work corrections", () => {
+  function corrected(project: string): ComputerStep {
+    const value = structuredClone(step);
+    delete value.observation.image_jpeg_base64;
+    value.observation.work = {
+      environment: "none",
+      generation: 0,
+      plan_steps: 0,
+      plan_complete: false
+    };
+    value.work_reference = {
+      format: "koswork.confirmed-correction.v1",
+      source_task_id: randomUUID(),
+      source_project_id: project,
+      source_goal: "CSV report",
+      goal_excerpt_only: false,
+      source_revision: "a".repeat(64),
+      revision: "b".repeat(64),
+      source_outcome: "failed",
+      source_requires_review: true,
+      confirmed_at: 1,
+      issue: "Leading zeros were lost",
+      guidance: "UNTRUSTED correction: keep 00123 as literal text",
+      applies_when: "CSV export"
+    };
+    return value;
+  }
+  it("keeps corrections in user data, preserves the current goal and freezes their entire content", async () => {
+    const f = await fixture({
+      vision: false,
+      output: {
+        ...action,
+        action: {
+          kind: "work_plan",
+          steps: [{ title: "New plan", criteria: "Check current result" }]
+        }
+      }
+    });
+    Object.assign(f.input, { execution_mode: "work" });
+    expect(await f.create()).toMatchObject({
+      supports_work_reference: true,
+      supports_work_corrections: true
+    });
+    const value = corrected(f.project.id);
+    await f.next(value);
+    const system = f.calls[0]!.messages[0]!.content;
+    expect(system).toContain("UNTRUSTED REFERENCE DATA");
+    expect(system).toContain("not an accepted successful outcome");
+    expect(system).not.toContain("UNTRUSTED correction: keep");
+    const user = JSON.parse(
+      f.calls[0]!.messages.find((message) => message.role === "user")!.content
+    ) as { work_reference: unknown; goal: unknown };
+    expect(user.work_reference).toEqual(value.work_reference);
+    expect(user.goal).toEqual(f.input.goal);
+    const edited = structuredClone(value);
+    edited.step = 1;
+    if (edited.work_reference?.format === "koswork.confirmed-correction.v1")
+      edited.work_reference.guidance = "changed without changing declared revision";
+    await expect(Promise.resolve().then(() => f.next(edited))).rejects.toMatchObject({
+      code: "COMPUTER_REFERENCE_CONFLICT"
+    });
+    expect(f.calls).toHaveLength(1);
+  });
+  it.each(["project", "mode", "extra-field", "length"])(
+    "rejects invalid %s correction before model dispatch",
+    async (kind) => {
+      const f = await fixture({ vision: true, output: action });
+      if (kind !== "mode") Object.assign(f.input, { execution_mode: "work" });
+      const created = await f.create();
+      if (kind === "mode") expect(created).not.toHaveProperty("supports_work_corrections");
+      const value = corrected(kind === "project" ? "other-project" : f.project.id);
+      if (kind === "mode") value.observation = structuredClone(step.observation);
+      if (kind === "extra-field")
+        Object.assign(value.work_reference!, { replay_action: { kind: "click" } });
+      if (kind === "length" && value.work_reference?.format === "koswork.confirmed-correction.v1")
+        value.work_reference.guidance = "x".repeat(801);
+      await expect(Promise.resolve().then(() => f.next(value))).rejects.toMatchObject({
+        code: "COMPUTER_OUTPUT_INVALID"
+      });
+      expect(f.calls).toHaveLength(0);
+    }
+  );
+});
