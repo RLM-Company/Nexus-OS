@@ -122,7 +122,22 @@ test("Studio submits one explicit image request and displays its PNG without an 
   await page.route("**/api/v1/media/capabilities", (route) =>
     route.fulfill({
       json: {
-        capabilities: { image_generation: { ready: true, model: "fixture-image", reason: null } }
+        capabilities: {
+          image_generation: {
+            ready: true,
+            model: "fixture-image",
+            reason: null,
+            constraints: {
+            sizes: ["1024x1024", "1536x1024", "1024x1536"],
+            aspectRatios: ["1:1", "3:2", "2:3"],
+            qualities: ["low", "medium", "high", "auto"],
+            formats: ["png", "jpeg", "webp"],
+            maxCount: 1,
+            maxPromptLength: 2000,
+            supportsReferenceImage: false
+          }
+          }
+        }
       }
     })
   );
@@ -151,6 +166,7 @@ test("Studio submits one explicit image request and displays its PNG without an 
     .getByRole("textbox", { name: "Описание изображения", exact: true })
     .fill("Монохромный постер");
   await expect(page.getByRole("checkbox", { name: /Подтверждаю генерацию/ })).toHaveCount(0);
+  page.on("dialog", (dialog) => void dialog.accept());
   await page.getByRole("button", { name: "Сгенерировать изображение", exact: true }).click();
   await expect(
     page.getByRole("img", { name: "Сгенерированное изображение", exact: true })

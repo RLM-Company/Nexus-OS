@@ -92,7 +92,20 @@ test("media uses generator workspaces, local references and no fake prompt resul
     route.fulfill({
       json: {
         capabilities: {
-          image_generation: { ready: true, model: "gpt-image-1", reason: null },
+          image_generation: {
+            ready: true,
+            model: "gpt-image-1",
+            reason: null,
+            constraints: {
+            sizes: ["1024x1024", "1536x1024", "1024x1536"],
+            aspectRatios: ["1:1", "3:2", "2:3"],
+            qualities: ["low", "medium", "high", "auto"],
+            formats: ["png", "jpeg", "webp"],
+            maxCount: 1,
+            maxPromptLength: 2000,
+            supportsReferenceImage: false
+          }
+          },
           speech: { ready: false },
           transcription: { ready: false }
         }
@@ -109,29 +122,15 @@ test("media uses generator workspaces, local references and no fake prompt resul
     page.getByRole("checkbox", { name: "Подтверждаю генерацию с расходом баланса." })
   ).toHaveCount(0);
   await expect(generate).toBeEnabled();
-  const tinyPng = Buffer.from(
-    await page.evaluate(() => {
-      const canvas = document.createElement("canvas");
-      canvas.width = canvas.height = 16;
-      canvas.getContext("2d")!.fillRect(0, 0, 16, 16);
-      return canvas.toDataURL("image/png").split(",")[1]!;
-    }),
-    "base64"
-  );
-  await page
-    .getByLabel("Файлы референсов", { exact: true })
-    .setInputFiles({ name: "orbit.png", mimeType: "image/png", buffer: tinyPng });
-  await expect(page.getByRole("img", { name: "orbit.png", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: /Добавить референсы/ })).toBeDisabled();
   await expect(
-    page.getByRole("button", { name: "Изменить изображение", exact: true })
-  ).toBeDisabled();
-  await expect(
-    page.getByText("Редактирование изображений пока недоступно", { exact: true })
+    page.getByText("Редактирование по референсам пока не объявлено сервером и отключено.")
   ).toBeVisible();
+  await page.getByRole("button", { name: "3:2 · 1536 × 1024" }).click();
+  await page.getByLabel("Качество изображения").selectOption("high");
+  await page.getByLabel("Формат результата").selectOption("webp");
+  await expect(generate).toBeEnabled();
   await page.screenshot({ path: "../../qa/owner-ui-images.png" });
-  await page.getByRole("button", { name: "Убрать референс orbit.png", exact: true }).click();
-  await page.getByRole("button", { name: "16:9", exact: true }).click();
-  await expect(generate).toBeDisabled();
   for (const width of [390, 1280]) {
     await page.setViewportSize({ width, height: 844 });
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(

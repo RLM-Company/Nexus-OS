@@ -1,0 +1,42 @@
+name: Temporary media e2e fixture formatter
+on:
+  push:
+    branches: ["ops/free-studio-media"]
+permissions:
+  contents: read
+jobs:
+  media-e2e-diagnostics:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.19.0
+          run_install: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Format exact scoped test and workbench files
+        shell: bash
+        run: |
+          pnpm exec prettier --write \
+            apps/web/e2e/owner-ui-media.spec.ts \
+            apps/web/e2e/image-editing.spec.ts \
+            apps/web/e2e/chat-polish-20261025.spec.ts \
+            apps/web/e2e/media-job-recovery.spec.ts \
+            apps/web/src/app/media-generation/media-workbench.tsx
+          for p in \
+            apps/web/e2e/owner-ui-media.spec.ts \
+            apps/web/e2e/image-editing.spec.ts \
+            apps/web/e2e/chat-polish-20261025.spec.ts \
+            apps/web/e2e/media-job-recovery.spec.ts \
+            apps/web/src/app/media-generation/media-workbench.tsx; do
+            printf '__MEDIA_FMT_BEGIN__%s__' "$p"
+            base64 -w0 "$p"
+            printf '__MEDIA_FMT_END__\\n'
+          done
+      - name: Focused web typecheck
+        run: pnpm --filter @cosmora/web typecheck
