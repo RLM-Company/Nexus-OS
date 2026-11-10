@@ -4,6 +4,7 @@ import type { OfficeOperation, OfficeCursor } from "@cosmora/contracts";
 import { OfficeRangeEditor } from "./office-range-editor";
 import { officeCellValue, type RangeType } from "./office-range";
 import { OfficePlanEditor } from "./office-plan-editor";
+import { OfficePlanDraft } from "./office-plan-draft";
 import {
   removeOfficeOperation,
   officeTargetAfterRemoval,
@@ -451,6 +452,13 @@ export function OfficeDocumentWorkspace() {
                   setError(error instanceof Error ? error.message : "Удаление отклонено");
                 }
               }}
+            />
+            <OfficePlanDraft
+              key={`${source.name}:${view.version}`}
+              source={{ name: source.name, version: view.version, existingSheets }}
+              operations={operations}
+              disabled={busy || editingIndex !== null}
+              onRestore={applyPlan}
             />
             <p>
               Файл новой копии: {source.name.replace(/\.(docx|xlsx|pptx)$/i, ".koswork.$1")}. Папку
