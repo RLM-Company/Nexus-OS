@@ -174,7 +174,7 @@ export function CanvasEditor({
       sitePreview={sitePreview}
       gamePreview={gamePreview}
       gameSource={gameSource}
-      onDirtyChange={onDirtyChange}
+      {...(onDirtyChange ? { onDirtyChange } : {})}
     />
   );
 }
