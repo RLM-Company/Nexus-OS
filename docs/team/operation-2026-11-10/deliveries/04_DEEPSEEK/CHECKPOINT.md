@@ -3,7 +3,7 @@
 - **Обновлено:** срез A завершён, готов к интеграции.
 - **BASE_SHA:** `9d972e8ba447f681fbfb49253b73d9f02dd1d325`
 - **Ветка:** `ops/deepseek-memory` (создана от BASE_SHA, `main` на начало работ совпадал с базой).
-- **HEAD_SHA:** `93f4f8ccef9c7d4af51958a4dff261c557ef2dfb` (срез A).
+- **HEAD_SHA:** `5fbc40960e5b3aae2c28df3213443ced1c5c3198` (срез A).
 - **PR:** открывается в `main`, без merge/deploy.
 
 ## Выполнено (срез A)
