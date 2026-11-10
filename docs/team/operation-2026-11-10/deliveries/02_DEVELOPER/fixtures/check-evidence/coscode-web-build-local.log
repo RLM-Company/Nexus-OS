@@ -1,0 +1,1248 @@
+$ node scripts/prepare-pdf-worker.mjs && next build
+▲ Next.js 16.3.1 (Turbopack)
+✓ Running next.config.ts took 47ms
+
+  Creating an optimized production build ...
+
+> Build error occurred
+Error: Turbopack build failed with 35 errors:
+./apps/web/src/app/canvas-editor/canvas-draft-storage.ts:1:1
+Error: Module not found: Can't resolve '@cosmora/contracts/canvas-artifacts'
+[31m[1m>[0m [90m 1 |[0m [36mimport[0m {
+  [90m   |[0m [31m[1m^^^^^^^[0m
+[31m[1m>[0m [90m 2 |[0m   [33mCANVAS_MAX_CONTENT_BYTES[0m,
+  [90m   |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+[31m[1m>[0m [90m 3 |[0m   [33mCANVAS_MAX_TITLE_BYTES[0m,
+  [90m   |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+[31m[1m>[0m [90m 4 |[0m   canvasBytes,
+  [90m   |[0m [31m[1m^^^^^^^^^^^^^^[0m
+[31m[1m>[0m [90m 5 |[0m   canvasHasControlCharacters,
+  [90m   |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+[31m[1m>[0m [90m 6 |[0m   validCanvasFormat,
+  [90m   |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^[0m
+[31m[1m>[0m [90m 7 |[0m   [36mtype[0m [33mCanvasFormat[0m
+  [90m   |[0m [31m[1m^^^^^^^^^^^^^^^^^^^[0m
+[31m[1m>[0m [90m 8 |[0m } [36mfrom[0m [32m"@cosmora/contracts/canvas-artifacts"[0m;
+  [90m   |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m 9 |[0m
+  [90m10 |[0m [36mexport[0m [36mtype[0m [33mCanvasDraft[0m = {
+  [90m11 |[0m   title: string;
+
+
+
+Import traces:
+  Client Component Browser:
+    ./apps/web/src/app/canvas-editor/canvas-draft-storage.ts [Client Component Browser]
+    ./apps/web/src/app/canvas-editor/canvas-editor.tsx [Client Component Browser]
+    ./apps/web/src/app/page.tsx [Client Component Browser]
+    ./apps/web/src/app/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./apps/web/src/app/canvas-editor/canvas-draft-storage.ts [Client Component SSR]
+    ./apps/web/src/app/canvas-editor/canvas-editor.tsx [Client Component SSR]
+    ./apps/web/src/app/page.tsx [Client Component SSR]
+    ./apps/web/src/app/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+./apps/web/src/app/canvas-editor/canvas-editor.tsx:4:1
+Error: Module not found: Can't resolve '@cosmora/contracts/canvas-artifacts'
+  [90m 2 |[0m
+  [90m 3 |[0m [36mimport[0m { useCallback, useEffect, useId, useMemo, useRef, useState } [36mfrom[0m [32m"react"[0m;
+[31m[1m>[0m [90m 4 |[0m [36mimport[0m {
+  [90m   |[0m [31m[1m^^^^^^^[0m
+[31m[1m>[0m [90m 5 |[0m   [33mCANVAS_MAX_CONTENT_BYTES[0m,
+  [90m   |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+[31m[1m>[0m [90m 6 |[0m   [33mCANVAS_MAX_TITLE_BYTES[0m,
+  [90m   |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+[31m[1m>[0m [90m 7 |[0m   canvasBytes,
+  [90m   |[0m [31m[1m^^^^^^^^^^^^^^[0m
+[31m[1m>[0m [90m 8 |[0m   [36mtype[0m [33mCanvasArtifact[0m,
+  [90m   |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^[0m
+[31m[1m>[0m [90m 9 |[0m   [36mtype[0m [33mCanvasFormat[0m,
+  [90m   |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^[0m
+[31m[1m>[0m [90m10 |[0m   [36mtype[0m [33mCanvasRevision[0m,
+  [90m   |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^[0m
+[31m[1m>[0m [90m11 |[0m   [36mtype[0m [33mCanvasSource[0m
+  [90m   |[0m [31m[1m^^^^^^^^^^^^^^^^^^^[0m
+[31m[1m>[0m [90m12 |[0m } [36mfrom[0m [32m"@cosmora/contracts/canvas-artifacts"[0m;
+  [90m   |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m13 |[0m [36mimport[0m styles [36mfrom[0m [32m"./canvas-editor.module.css"[0m;
+  [90m14 |[0m [36mimport[0m { canvasDraftKey, parseCanvasDraft, [36mtype[0m [33mCanvasDraft[0m } [36mfrom[0m [32m"./canvas-draft-storage"[0m;
+  [90m15 |[0m [36mimport[0m { [33mCanvasPreview[0m } [36mfrom[0m [32m"./canvas-preview"[0m;
+
+
+
+Import traces:
+  Client Component Browser:
+    ./apps/web/src/app/canvas-editor/canvas-editor.tsx [Client Component Browser]
+    ./apps/web/src/app/page.tsx [Client Component Browser]
+    ./apps/web/src/app/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./apps/web/src/app/canvas-editor/canvas-editor.tsx [Client Component SSR]
+    ./apps/web/src/app/page.tsx [Client Component SSR]
+    ./apps/web/src/app/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+./apps/web/src/app/canvas-editor/canvas-file-import.ts:1:1
+Error: Module not found: Can't resolve '@cosmora/contracts/canvas-artifacts'
+[31m[1m>[0m [90m 1 |[0m [36mimport[0m {
+  [90m   |[0m [31m[1m^^^^^^^[0m
+[31m[1m>[0m [90m 2 |[0m   [33mCANVAS_MAX_CONTENT_BYTES[0m,
+  [90m   |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+[31m[1m>[0m [90m 3 |[0m   [33mCANVAS_MAX_TITLE_BYTES[0m,
+  [90m   |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+[31m[1m>[0m [90m 4 |[0m   canvasBytes,
+  [90m   |[0m [31m[1m^^^^^^^^^^^^^^[0m
+[31m[1m>[0m [90m 5 |[0m   validateCanvasContent,
+  [90m   |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^[0m
+[31m[1m>[0m [90m 6 |[0m   [36mtype[0m [33mCanvasFormat[0m
+  [90m   |[0m [31m[1m^^^^^^^^^^^^^^^^^^^[0m
+[31m[1m>[0m [90m 7 |[0m } [36mfrom[0m [32m"@cosmora/contracts/canvas-artifacts"[0m;
+  [90m   |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m 8 |[0m [36mimport[0m [36mtype[0m { [33mCanvasDraft[0m } [36mfrom[0m [32m"./canvas-draft-storage"[0m;
+  [90m 9 |[0m
+  [90m10 |[0m [36mconst[0m formats: [33mRecord[0m<string, [33mCanvasFormat[0m> = {
+
+
+
+Import traces:
+  Client Component Browser:
+    ./apps/web/src/app/canvas-editor/canvas-file-import.ts [Client Component Browser]
+    ./apps/web/src/app/canvas-editor/canvas-editor.tsx [Client Component Browser]
+    ./apps/web/src/app/page.tsx [Client Component Browser]
+    ./apps/web/src/app/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./apps/web/src/app/canvas-editor/canvas-file-import.ts [Client Component SSR]
+    ./apps/web/src/app/canvas-editor/canvas-editor.tsx [Client Component SSR]
+    ./apps/web/src/app/page.tsx [Client Component SSR]
+    ./apps/web/src/app/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+./apps/web/src/app/canvas-editor/canvas-file.ts:1:1
+Error: Module not found: Can't resolve '@cosmora/contracts/canvas-artifacts'
+[31m[1m>[0m [90m1 |[0m [36mimport[0m { [33mCANVAS_MAX_CONTENT_BYTES[0m } [36mfrom[0m [32m"@cosmora/contracts/canvas-artifacts"[0m;
+  [90m  |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m2 |[0m [36mimport[0m { decodeStudioDocument } [36mfrom[0m [32m"../decode-chat-attachment"[0m;
+  [90m3 |[0m [36mimport[0m { canvasFileDraft } [36mfrom[0m [32m"./canvas-file-import"[0m;
+  [90m4 |[0m
+
+
+
+Import traces:
+  Client Component Browser:
+    ./apps/web/src/app/canvas-editor/canvas-file.ts [Client Component Browser]
+    ./apps/web/src/app/canvas-editor/canvas-editor.tsx [Client Component Browser]
+    ./apps/web/src/app/page.tsx [Client Component Browser]
+    ./apps/web/src/app/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./apps/web/src/app/canvas-editor/canvas-file.ts [Client Component SSR]
+    ./apps/web/src/app/canvas-editor/canvas-editor.tsx [Client Component SSR]
+    ./apps/web/src/app/page.tsx [Client Component SSR]
+    ./apps/web/src/app/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+./apps/web/src/app/canvas-editor/canvas-search.tsx:3:1
+Error: Module not found: Can't resolve '@cosmora/contracts/canvas-artifacts'
+  [90m1 |[0m ...[32mse client"[0m;
+  [90m2 |[0m ...[36mport[0m { useDeferredValue, useEffect, useMemo, useRef, useState, [36mtype[0m [33mRefObject[0m } [36mfrom[0m [32m"re...[0m
+[31m[1m>[0m [90m3 |[0m ...[36mport[0m { [33mCANVAS_MAX_CONTENT_BYTES[0m, canvasBytes } [36mfrom[0m [32m"@cosmora/contracts/canvas-artifacts"[0m;
+  [90m  |[0m    [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m4 |[0m ...[36mport[0m { [33mMAX_SEARCH_MATCHES[0m, searchText, replaceMatches, [36mtype[0m [33mTextMatch[0m } [36mfrom[0m [32m"./text-sea...[0m
+  [90m5 |[0m ...[36mport[0m styles [36mfrom[0m [32m"./canvas-search.module.css"[0m;
+  [90m6 |[0m ...
+
+
+
+Import traces:
+  Client Component Browser:
+    ./apps/web/src/app/canvas-editor/canvas-search.tsx [Client Component Browser]
+    ./apps/web/src/app/canvas-editor/canvas-editor.tsx [Client Component Browser]
+    ./apps/web/src/app/page.tsx [Client Component Browser]
+    ./apps/web/src/app/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./apps/web/src/app/canvas-editor/canvas-search.tsx [Client Component SSR]
+    ./apps/web/src/app/canvas-editor/canvas-editor.tsx [Client Component SSR]
+    ./apps/web/src/app/page.tsx [Client Component SSR]
+    ./apps/web/src/app/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+./apps/web/src/app/canvas-editor/markdown-toolbar.tsx:3:1
+Error: Module not found: Can't resolve '@cosmora/contracts/canvas-artifacts'
+  [90m1 |[0m [32m"use client"[0m;
+  [90m2 |[0m [36mimport[0m [36mtype[0m { [33mRefObject[0m } [36mfrom[0m [32m"react"[0m;
+[31m[1m>[0m [90m3 |[0m [36mimport[0m { [33mCANVAS_MAX_CONTENT_BYTES[0m, canvasBytes } [36mfrom[0m [32m"@cosmora/contracts/canvas-artifacts"[0m;
+  [90m  |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m4 |[0m [36mimport[0m { editMarkdown, [36mtype[0m [33mMarkdownAction[0m } [36mfrom[0m [32m"./markdown-edit"[0m;
+  [90m5 |[0m [36mimport[0m styles [36mfrom[0m [32m"./markdown-toolbar.module.css"[0m;
+  [90m6 |[0m [36mexport[0m [36mfunction[0m [33mMarkdownToolbar[0m({
+
+
+
+Import traces:
+  Client Component Browser:
+    ./apps/web/src/app/canvas-editor/markdown-toolbar.tsx [Client Component Browser]
+    ./apps/web/src/app/canvas-editor/canvas-editor.tsx [Client Component Browser]
+    ./apps/web/src/app/page.tsx [Client Component Browser]
+    ./apps/web/src/app/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./apps/web/src/app/canvas-editor/markdown-toolbar.tsx [Client Component SSR]
+    ./apps/web/src/app/canvas-editor/canvas-editor.tsx [Client Component SSR]
+    ./apps/web/src/app/page.tsx [Client Component SSR]
+    ./apps/web/src/app/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+./apps/web/src/app/canvas-editor/report-canvas.tsx:3:1
+Error: Module not found: Can't resolve '@cosmora/contracts/canvas-artifacts'
+  [90m 1 |[0m [32m"use client"[0m;
+  [90m 2 |[0m [36mimport[0m { useEffect, useRef, useState } [36mfrom[0m [32m"react"[0m;
+[31m[1m>[0m [90m 3 |[0m [36mimport[0m {
+  [90m   |[0m [31m[1m^^^^^^^[0m
+[31m[1m>[0m [90m 4 |[0m   [33mCANVAS_MAX_CONTENT_BYTES[0m,
+  [90m   |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+[31m[1m>[0m [90m 5 |[0m   [33mCANVAS_MAX_TITLE_BYTES[0m,
+  [90m   |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+[31m[1m>[0m [90m 6 |[0m   canvasBytes,
+  [90m   |[0m [31m[1m^^^^^^^^^^^^^^[0m
+[31m[1m>[0m [90m 7 |[0m   [36mtype[0m [33mCanvasFormat[0m
+  [90m   |[0m [31m[1m^^^^^^^^^^^^^^^^^^^[0m
+[31m[1m>[0m [90m 8 |[0m } [36mfrom[0m [32m"@cosmora/contracts/canvas-artifacts"[0m;
+  [90m   |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m 9 |[0m [36mimport[0m { [33mCanvasEditor[0m, [36mtype[0m [33mCanvasSeed[0m } [36mfrom[0m [32m"./canvas-editor"[0m;
+  [90m10 |[0m [36mimport[0m styles [36mfrom[0m [32m"./report-canvas.module.css"[0m;
+  [90m11 |[0m [36mtype[0m [33mReportCanvasProps[0m = {
+
+
+
+Import traces:
+  Client Component Browser:
+    ./apps/web/src/app/canvas-editor/report-canvas.tsx [Client Component Browser]
+    ./apps/web/src/app/research-workspace/page.tsx [Client Component Browser]
+    ./apps/web/src/app/research-workspace/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./apps/web/src/app/canvas-editor/report-canvas.tsx [Client Component SSR]
+    ./apps/web/src/app/research-workspace/page.tsx [Client Component SSR]
+    ./apps/web/src/app/research-workspace/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+./apps/web/src/app/studio-files.tsx:16:1
+Error: Module not found: Can't resolve '@cosmora/contracts/canvas-artifacts'
+  [90m14 |[0m [36mimport[0m { decodeStudioDocument, decodeChatAttachment } [36mfrom[0m [32m"./decode-chat-attachment"[0m;
+  [90m15 |[0m [36mimport[0m { [33mReportCanvas[0m } [36mfrom[0m [32m"./canvas-editor/report-canvas"[0m;
+[31m[1m>[0m [90m16 |[0m [36mimport[0m { canvasBytes, [33mCANVAS_MAX_CONTENT_BYTES[0m } [36mfrom[0m [32m"@cosmora/contracts/canvas-artifacts"[0m;
+  [90m   |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m17 |[0m [36mimport[0m {
+  [90m18 |[0m   csvEmptyCells,
+  [90m19 |[0m   numericStats,
+
+
+
+Import traces:
+  Client Component Browser:
+    ./apps/web/src/app/studio-files.tsx [Client Component Browser]
+    ./apps/web/src/app/studio-data-workbench.tsx [Client Component Browser]
+    ./apps/web/src/app/workspace-sections.tsx [Client Component Browser]
+    ./apps/web/src/app/page.tsx [Client Component Browser]
+    ./apps/web/src/app/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./apps/web/src/app/studio-files.tsx [Client Component SSR]
+    ./apps/web/src/app/studio-data-workbench.tsx [Client Component SSR]
+    ./apps/web/src/app/workspace-sections.tsx [Client Component SSR]
+    ./apps/web/src/app/page.tsx [Client Component SSR]
+    ./apps/web/src/app/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+./apps/web/src/app/chat-archive-export.ts:2:1
+Error: Module not found: Can't resolve '@cosmora/contracts/chat-attachments'
+  [90m1 |[0m [36mimport[0m { zip, [36mtype[0m [33mZippable[0m } [36mfrom[0m [32m"fflate"[0m;
+[31m[1m>[0m [90m2 |[0m [36mimport[0m { isValidChatAttachments } [36mfrom[0m [32m"@cosmora/contracts/chat-attachments"[0m;
+  [90m  |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m3 |[0m [36mimport[0m { createChatExport, [36mtype[0m [33mChatExportSource[0m } [36mfrom[0m [32m"./chat-export"[0m;
+  [90m4 |[0m
+  [90m5 |[0m [36mexport[0m [36mconst[0m [33mCHAT_ARCHIVE_LIMITS[0m = { bytes: [35m25[0m * [35m1024[0m * [35m1024[0m, attachments: [35m300[0m } [36mas[0m [36mconst[0m;
+
+
+
+Import traces:
+  Client Component Browser:
+    ./apps/web/src/app/chat-archive-export.ts [Client Component Browser]
+    ./apps/web/src/app/chat-export-controls.tsx [Client Component Browser]
+    ./apps/web/src/app/chat-history-actions.tsx [Client Component Browser]
+    ./apps/web/src/app/page.tsx [Client Component Browser]
+    ./apps/web/src/app/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./apps/web/src/app/chat-archive-export.ts [Client Component SSR]
+    ./apps/web/src/app/chat-export-controls.tsx [Client Component SSR]
+    ./apps/web/src/app/chat-history-actions.tsx [Client Component SSR]
+    ./apps/web/src/app/page.tsx [Client Component SSR]
+    ./apps/web/src/app/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+./apps/web/src/app/chat-attachments.tsx:4:1
+Error: Module not found: Can't resolve '@cosmora/contracts/chat-attachments'
+  [90m 2 |[0m
+  [90m 3 |[0m [36mimport[0m { useCallback, useRef, useState } [36mfrom[0m [32m"react"[0m;
+[31m[1m>[0m [90m 4 |[0m [36mimport[0m {
+  [90m   |[0m [31m[1m^^^^^^^[0m
+[31m[1m>[0m [90m 5 |[0m   [33mCHAT_ATTACHMENT_LIMITS[0m,
+  [90m   |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+[31m[1m>[0m [90m 6 |[0m   [33mCHAT_TEXT_EXTENSIONS[0m,
+  [90m   |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^[0m
+[31m[1m>[0m [90m 7 |[0m   isValidChatAttachments,
+  [90m   |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+[31m[1m>[0m [90m 8 |[0m   [36mtype[0m [33mChatAttachment[0m
+  [90m   |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^[0m
+[31m[1m>[0m [90m 9 |[0m } [36mfrom[0m [32m"@cosmora/contracts/chat-attachments"[0m;
+  [90m   |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m10 |[0m [36mimport[0m { decodeChatAttachment } [36mfrom[0m [32m"./decode-chat-attachment"[0m;
+  [90m11 |[0m [36mimport[0m { prepareChatImage } [36mfrom[0m [32m"./prepare-chat-image"[0m;
+  [90m12 |[0m [36mimport[0m { [33mWorkspaceIcon[0m } [36mfrom[0m [32m"./workspace-icons"[0m;
+
+
+
+Import traces:
+  Client Component Browser:
+    ./apps/web/src/app/chat-attachments.tsx [Client Component Browser]
+    ./apps/web/src/app/page.tsx [Client Component Browser]
+    ./apps/web/src/app/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./apps/web/src/app/chat-attachments.tsx [Client Component SSR]
+    ./apps/web/src/app/page.tsx [Client Component SSR]
+    ./apps/web/src/app/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+./apps/web/src/app/composer-draft-storage.ts:1:1
+Error: Module not found: Can't resolve '@cosmora/contracts/chat-attachments'
+[31m[1m>[0m [90m1 |[0m ...[36mt[0m { isValidChatAttachments, [36mtype[0m [33mChatAttachment[0m } [36mfrom[0m [32m"@cosmora/contracts/chat-attachme...[0m
+  [90m  |[0m    [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m2 |[0m ...
+  [90m3 |[0m ...[36mt[0m [36mconst[0m [33mDRAFT_PREFIX[0m = [32m"cosmora:composer-draft:"[0m;
+  [90m4 |[0m ... [33mMATERIAL_PREFIX[0m = [32m"cosmora:composer-materials:"[0m;
+
+
+
+Import traces:
+  Client Component Browser:
+    ./apps/web/src/app/composer-draft-storage.ts [Client Component Browser]
+    ./apps/web/src/app/page.tsx [Client Component Browser]
+    ./apps/web/src/app/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./apps/web/src/app/composer-draft-storage.ts [Client Component SSR]
+    ./apps/web/src/app/page.tsx [Client Component SSR]
+    ./apps/web/src/app/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+./apps/web/src/app/decode-chat-attachment.ts:2:1
+Error: Module not found: Can't resolve '@cosmora/contracts/chat-attachments'
+  [90m 1 |[0m [36mimport[0m { [33mUnzip[0m, [33mUnzipInflate[0m } [36mfrom[0m [32m"fflate"[0m;
+[31m[1m>[0m [90m 2 |[0m [36mimport[0m {
+  [90m   |[0m [31m[1m^^^^^^^[0m
+[31m[1m>[0m [90m 3 |[0m   [33mCHAT_ATTACHMENT_LIMITS[0m,
+  [90m   |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+[31m[1m>[0m [90m 4 |[0m   imageDimensions,
+  [90m   |[0m [31m[1m^^^^^^^^^^^^^^^^^^[0m
+[31m[1m>[0m [90m 5 |[0m   isChatFilename,
+  [90m   |[0m [31m[1m^^^^^^^^^^^^^^^^^[0m
+[31m[1m>[0m [90m 6 |[0m   isChatTextFilename,
+  [90m   |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^[0m
+[31m[1m>[0m [90m 7 |[0m   [36mtype[0m [33mChatAttachment[0m
+  [90m   |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^[0m
+[31m[1m>[0m [90m 8 |[0m } [36mfrom[0m [32m"@cosmora/contracts/chat-attachments"[0m;
+  [90m   |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m 9 |[0m
+  [90m10 |[0m [36mtype[0m [33mDocumentOptions[0m = {
+  [90m11 |[0m   characters: number;
+
+
+
+Import traces:
+  Client Component Browser:
+    ./apps/web/src/app/decode-chat-attachment.ts [Client Component Browser]
+    ./apps/web/src/app/chat-attachments.tsx [Client Component Browser]
+    ./apps/web/src/app/page.tsx [Client Component Browser]
+    ./apps/web/src/app/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./apps/web/src/app/decode-chat-attachment.ts [Client Component SSR]
+    ./apps/web/src/app/chat-attachments.tsx [Client Component SSR]
+    ./apps/web/src/app/page.tsx [Client Component SSR]
+    ./apps/web/src/app/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+./apps/web/src/app/github/page.tsx:5:1
+Error: Module not found: Can't resolve '@cosmora/contracts/chat-attachments'
+  [90m3 |[0m [36mimport[0m [33mLink[0m [36mfrom[0m [32m"next/link"[0m;
+  [90m4 |[0m [36mimport[0m { useEffect, useRef, useState } [36mfrom[0m [32m"react"[0m;
+[31m[1m>[0m [90m5 |[0m [36mimport[0m { isValidChatAttachments } [36mfrom[0m [32m"@cosmora/contracts/chat-attachments"[0m;
+  [90m  |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m6 |[0m [36mimport[0m { [33mLegacyCodeProposalAdapter[0m } [36mfrom[0m [32m"./code-proposal-adapter"[0m;
+  [90m7 |[0m [36mimport[0m { [33mWorkspaceIcon[0m } [36mfrom[0m [32m"../workspace-icons"[0m;
+  [90m8 |[0m [36mimport[0m { [33mFileTree[0m } [36mfrom[0m [32m"../ui/file-tree"[0m;
+
+
+
+Import traces:
+  Client Component Browser:
+    ./apps/web/src/app/github/page.tsx [Client Component Browser]
+    ./apps/web/src/app/github/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./apps/web/src/app/github/page.tsx [Client Component SSR]
+    ./apps/web/src/app/github/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+./apps/web/src/app/page.tsx:61:1
+Error: Module not found: Can't resolve '@cosmora/contracts/chat-attachments'
+  [90m59 |[0m ... [33mKosmoraComposerActionsValue[0m
+  [90m60 |[0m ... [32m"./kosmora-composer-actions"[0m;
+[31m[1m>[0m [90m61 |[0m ... { isValidChatAttachments, [36mtype[0m [33mChatAttachment[0m } [36mfrom[0m [32m"@cosmora/contracts/chat-attachme...[0m
+  [90m   |[0m    [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m62 |[0m ... {
+  [90m63 |[0m ...[33mspaceSections[0m,
+  [90m64 |[0m ...[33m_ITEMS[0m,
+
+
+
+Import traces:
+  Client Component Browser:
+    ./apps/web/src/app/page.tsx [Client Component Browser]
+    ./apps/web/src/app/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./apps/web/src/app/page.tsx [Client Component SSR]
+    ./apps/web/src/app/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+./apps/web/src/app/prepare-chat-image.ts:1:1
+Error: Module not found: Can't resolve '@cosmora/contracts/chat-attachments'
+[31m[1m>[0m [90m1 |[0m [36mimport[0m {
+  [90m  |[0m [31m[1m^^^^^^^[0m
+[31m[1m>[0m [90m2 |[0m   [33mCHAT_ATTACHMENT_LIMITS[0m,
+  [90m  |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+[31m[1m>[0m [90m3 |[0m   imageDimensions,
+  [90m  |[0m [31m[1m^^^^^^^^^^^^^^^^^^[0m
+[31m[1m>[0m [90m4 |[0m   isChatFilename,
+  [90m  |[0m [31m[1m^^^^^^^^^^^^^^^^^[0m
+[31m[1m>[0m [90m5 |[0m   [36mtype[0m [33mChatImageAttachment[0m
+  [90m  |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+[31m[1m>[0m [90m6 |[0m } [36mfrom[0m [32m"@cosmora/contracts/chat-attachments"[0m;
+  [90m  |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m7 |[0m
+  [90m8 |[0m [36mexport[0m [36mconst[0m [33mPHOTO_INPUT_LIMITS[0m = { bytes: [35m20[0m_000_000, edge: [35m12[0m_000, pixels: [35m48[0m_000_000 };
+  [90m9 |[0m
+
+
+
+Import traces:
+  Client Component Browser:
+    ./apps/web/src/app/prepare-chat-image.ts [Client Component Browser]
+    ./apps/web/src/app/chat-attachments.tsx [Client Component Browser]
+    ./apps/web/src/app/page.tsx [Client Component Browser]
+    ./apps/web/src/app/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./apps/web/src/app/prepare-chat-image.ts [Client Component SSR]
+    ./apps/web/src/app/chat-attachments.tsx [Client Component SSR]
+    ./apps/web/src/app/page.tsx [Client Component SSR]
+    ./apps/web/src/app/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+./apps/web/src/app/project-context-panel.tsx:4:1
+Error: Module not found: Can't resolve '@cosmora/contracts/chat-attachments'
+  [90m 2 |[0m
+  [90m 3 |[0m [36mimport[0m { useEffect, useRef, useState } [36mfrom[0m [32m"react"[0m;
+[31m[1m>[0m [90m 4 |[0m [36mimport[0m {
+  [90m   |[0m [31m[1m^^^^^^^[0m
+[31m[1m>[0m [90m 5 |[0m   isValidChatAttachments,
+  [90m   |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+[31m[1m>[0m [90m 6 |[0m   attachmentContextSize,
+  [90m   |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^[0m
+[31m[1m>[0m [90m 7 |[0m   sameChatAttachments,
+  [90m   |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^[0m
+[31m[1m>[0m [90m 8 |[0m   [36mtype[0m [33mChatTextAttachment[0m
+  [90m   |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+[31m[1m>[0m [90m 9 |[0m } [36mfrom[0m [32m"@cosmora/contracts/chat-attachments"[0m;
+  [90m   |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m10 |[0m [36mimport[0m {
+  [90m11 |[0m   [33mChatAttachmentPicker[0m,
+  [90m12 |[0m   [33mChatMessageAttachments[0m,
+
+
+
+Import traces:
+  Client Component Browser:
+    ./apps/web/src/app/project-context-panel.tsx [Client Component Browser]
+    ./apps/web/src/app/page.tsx [Client Component Browser]
+    ./apps/web/src/app/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./apps/web/src/app/project-context-panel.tsx [Client Component SSR]
+    ./apps/web/src/app/page.tsx [Client Component SSR]
+    ./apps/web/src/app/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+./apps/web/src/app/studio-files.tsx:13:1
+Error: Module not found: Can't resolve '@cosmora/contracts/chat-attachments'
+  [90m11 |[0m ...[36me[0m [33mSetStateAction[0m
+  [90m12 |[0m ...[36mm[0m [32m"react"[0m;
+[31m[1m>[0m [90m13 |[0m ...[36mt[0m { [33mCHAT_TEXT_EXTENSIONS[0m, [36mtype[0m [33mChatAttachment[0m } [36mfrom[0m [32m"@cosmora/contracts/chat-attachmen...[0m
+  [90m   |[0m    [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m14 |[0m ...[36mt[0m { decodeStudioDocument, decodeChatAttachment } [36mfrom[0m [32m"./decode-chat-attachment"[0m;
+  [90m15 |[0m ...[36mt[0m { [33mReportCanvas[0m } [36mfrom[0m [32m"./canvas-editor/report-canvas"[0m;
+  [90m16 |[0m ...[36mt[0m { canvasBytes, [33mCANVAS_MAX_CONTENT_BYTES[0m } [36mfrom[0m [32m"@cosmora/contracts/canvas-artifacts"[0m;
+
+
+
+Import traces:
+  Client Component Browser:
+    ./apps/web/src/app/studio-files.tsx [Client Component Browser]
+    ./apps/web/src/app/studio-data-workbench.tsx [Client Component Browser]
+    ./apps/web/src/app/workspace-sections.tsx [Client Component Browser]
+    ./apps/web/src/app/page.tsx [Client Component Browser]
+    ./apps/web/src/app/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./apps/web/src/app/studio-files.tsx [Client Component SSR]
+    ./apps/web/src/app/studio-data-workbench.tsx [Client Component SSR]
+    ./apps/web/src/app/workspace-sections.tsx [Client Component SSR]
+    ./apps/web/src/app/page.tsx [Client Component SSR]
+    ./apps/web/src/app/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+./apps/web/src/app/chat-memory-settings.tsx:4:1
+Error: Module not found: Can't resolve '@cosmora/contracts/chat-memory'
+  [90m2 |[0m
+  [90m3 |[0m [36mimport[0m { useEffect, useId, useRef, useState } [36mfrom[0m [32m"react"[0m;
+[31m[1m>[0m [90m4 |[0m [36mimport[0m { [33mCHAT_MEMORY_MAX_LENGTH[0m, [36mtype[0m [33mChatMemory[0m } [36mfrom[0m [32m"@cosmora/contracts/chat-memory"[0m;
+  [90m  |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m5 |[0m [36mimport[0m { [33mContextMemorySettings[0m } [36mfrom[0m [32m"./context-memory-settings"[0m;
+  [90m6 |[0m
+  [90m7 |[0m [36mconst[0m readMemory = [36masync[0m (response: [33mResponse[0m): [33mPromise[0m<[33mChatMemory[0m> => {
+
+
+
+Import traces:
+  Client Component Browser:
+    ./apps/web/src/app/chat-memory-settings.tsx [Client Component Browser]
+    ./apps/web/src/app/chat-history-actions.tsx [Client Component Browser]
+    ./apps/web/src/app/page.tsx [Client Component Browser]
+    ./apps/web/src/app/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./apps/web/src/app/chat-memory-settings.tsx [Client Component SSR]
+    ./apps/web/src/app/chat-history-actions.tsx [Client Component SSR]
+    ./apps/web/src/app/page.tsx [Client Component SSR]
+    ./apps/web/src/app/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+./apps/web/src/app/project-tables.tsx:5:1
+Error: Module not found: Can't resolve '@cosmora/contracts/data-workspace'
+  [90m3 |[0m [36mimport[0m { useEffect, useRef, useState } [36mfrom[0m [32m"react"[0m;
+  [90m4 |[0m [36mimport[0m [36mtype[0m { [33mCanvasArtifact[0m, [33mCanvasRevision[0m } [36mfrom[0m [32m"@cosmora/contracts/canvas-artifacts"[0m;
+[31m[1m>[0m [90m5 |[0m [36mimport[0m { [33mDATA_SERVER_BYTES[0m, parseDataWorkspace } [36mfrom[0m [32m"@cosmora/contracts/data-workspace"[0m;
+  [90m  |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m6 |[0m [36mimport[0m { [33mCanvasEditor[0m } [36mfrom[0m [32m"./canvas-editor/canvas-editor"[0m;
+  [90m7 |[0m [36mimport[0m styles [36mfrom[0m [32m"./studio-data-workbench.module.css"[0m;
+  [90m8 |[0m [36mimport[0m { [33mSystemMessage[0m } [36mfrom[0m [32m"./ui/kosmora-controls"[0m;
+
+
+
+Import traces:
+  Client Component Browser:
+    ./apps/web/src/app/project-tables.tsx [Client Component Browser]
+    ./apps/web/src/app/studio-data-workbench.tsx [Client Component Browser]
+    ./apps/web/src/app/workspace-sections.tsx [Client Component Browser]
+    ./apps/web/src/app/page.tsx [Client Component Browser]
+    ./apps/web/src/app/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./apps/web/src/app/project-tables.tsx [Client Component SSR]
+    ./apps/web/src/app/studio-data-workbench.tsx [Client Component SSR]
+    ./apps/web/src/app/workspace-sections.tsx [Client Component SSR]
+    ./apps/web/src/app/page.tsx [Client Component SSR]
+    ./apps/web/src/app/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+./apps/web/src/app/studio-data-core.ts:3:1
+Error: Module not found: Can't resolve '@cosmora/contracts/data-workspace'
+  [90m 1 |[0m [36mimport[0m { parseCsv, [36mtype[0m [33mCsvTable[0m } [36mfrom[0m [32m"./studio-csv"[0m;
+  [90m 2 |[0m
+[31m[1m>[0m [90m 3 |[0m [36mimport[0m {
+  [90m   |[0m [31m[1m^^^^^^^[0m
+[31m[1m>[0m [90m 4 |[0m   [33mDATA_LIMITS[0m,
+  [90m   |[0m [31m[1m^^^^^^^^^^^^^^[0m
+[31m[1m>[0m [90m 5 |[0m   validateDataTable,
+  [90m   |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^[0m
+[31m[1m>[0m [90m 6 |[0m   validateDataSettings,
+  [90m   |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^[0m
+[31m[1m>[0m [90m 7 |[0m   [36mtype[0m [33mDataSettings[0m
+  [90m   |[0m [31m[1m^^^^^^^^^^^^^^^^^^^[0m
+[31m[1m>[0m [90m 8 |[0m } [36mfrom[0m [32m"@cosmora/contracts/data-workspace"[0m;
+  [90m   |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m 9 |[0m [36mexport[0m {
+  [90m10 |[0m   [33mDATA_LIMITS[0m,
+  [90m11 |[0m   validateDataTable,
+
+
+
+Import traces:
+  Client Component Browser:
+    ./apps/web/src/app/studio-data-core.ts [Client Component Browser]
+    ./apps/web/src/app/studio-data-workbench.tsx [Client Component Browser]
+    ./apps/web/src/app/workspace-sections.tsx [Client Component Browser]
+    ./apps/web/src/app/page.tsx [Client Component Browser]
+    ./apps/web/src/app/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./apps/web/src/app/studio-data-core.ts [Client Component SSR]
+    ./apps/web/src/app/studio-data-workbench.tsx [Client Component SSR]
+    ./apps/web/src/app/workspace-sections.tsx [Client Component SSR]
+    ./apps/web/src/app/page.tsx [Client Component SSR]
+    ./apps/web/src/app/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+./apps/web/src/app/studio-data-core.ts:9:1
+Error: Module not found: Can't resolve '@cosmora/contracts/data-workspace'
+  [90m 7 |[0m   [36mtype[0m [33mDataSettings[0m
+  [90m 8 |[0m } [36mfrom[0m [32m"@cosmora/contracts/data-workspace"[0m;
+[31m[1m>[0m [90m 9 |[0m [36mexport[0m {
+  [90m   |[0m [31m[1m^^^^^^^[0m
+[31m[1m>[0m [90m10 |[0m   [33mDATA_LIMITS[0m,
+  [90m   |[0m [31m[1m^^^^^^^^^^^^^^[0m
+[31m[1m>[0m [90m11 |[0m   validateDataTable,
+  [90m   |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^[0m
+[31m[1m>[0m [90m12 |[0m   validateDataSettings,
+  [90m   |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^[0m
+[31m[1m>[0m [90m13 |[0m   parseDataWorkspace,
+  [90m   |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^[0m
+[31m[1m>[0m [90m14 |[0m   [36mtype[0m [33mDataWorkspace[0m,
+  [90m   |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^[0m
+[31m[1m>[0m [90m15 |[0m   [36mtype[0m [33mDataType[0m,
+  [90m   |[0m [31m[1m^^^^^^^^^^^^^^^^[0m
+[31m[1m>[0m [90m16 |[0m   [36mtype[0m [33mDataOperator[0m,
+  [90m   |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^[0m
+[31m[1m>[0m [90m17 |[0m   [36mtype[0m [33mDataFilter[0m,
+  [90m   |[0m [31m[1m^^^^^^^^^^^^^^^^^^[0m
+[31m[1m>[0m [90m18 |[0m   [36mtype[0m [33mDataSort[0m,
+  [90m   |[0m [31m[1m^^^^^^^^^^^^^^^^[0m
+[31m[1m>[0m [90m19 |[0m   [36mtype[0m [33mDataChart[0m,
+  [90m   |[0m [31m[1m^^^^^^^^^^^^^^^^^[0m
+[31m[1m>[0m [90m20 |[0m   [36mtype[0m [33mDataSettings[0m
+  [90m   |[0m [31m[1m^^^^^^^^^^^^^^^^^^^[0m
+[31m[1m>[0m [90m21 |[0m } [36mfrom[0m [32m"@cosmora/contracts/data-workspace"[0m;
+  [90m   |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m22 |[0m [36mexport[0m [36mtype[0m [33mDataStats[0m = {
+  [90m23 |[0m   count: number;
+  [90m24 |[0m   missing: number;
+
+
+
+Import traces:
+  Client Component Browser:
+    ./apps/web/src/app/studio-data-core.ts [Client Component Browser]
+    ./apps/web/src/app/studio-data-workbench.tsx [Client Component Browser]
+    ./apps/web/src/app/workspace-sections.tsx [Client Component Browser]
+    ./apps/web/src/app/page.tsx [Client Component Browser]
+    ./apps/web/src/app/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./apps/web/src/app/studio-data-core.ts [Client Component SSR]
+    ./apps/web/src/app/studio-data-workbench.tsx [Client Component SSR]
+    ./apps/web/src/app/workspace-sections.tsx [Client Component SSR]
+    ./apps/web/src/app/page.tsx [Client Component SSR]
+    ./apps/web/src/app/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+./apps/web/src/app/games/game-html.ts:1:1
+Error: Module not found: Can't resolve '@cosmora/contracts/game-package'
+[31m[1m>[0m [90m1 |[0m [36mimport[0m { parseGamePackage, [36mtype[0m [33mGamePackage[0m } [36mfrom[0m [32m"@cosmora/contracts/game-package"[0m;
+  [90m  |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m2 |[0m
+  [90m3 |[0m [90m// Trusted, fixed runtime. Model output is JSON data and is never executable source.[0m
+  [90m4 |[0m [36mconst[0m runtime = [33mString[0m.raw[32m`(() => {[0m
+
+
+
+Import traces:
+  Client Component Browser:
+    ./apps/web/src/app/games/game-html.ts [Client Component Browser]
+    ./apps/web/src/app/games/game-preview.tsx [Client Component Browser]
+    ./apps/web/src/app/canvas-editor/canvas-editor.tsx [Client Component Browser]
+    ./apps/web/src/app/page.tsx [Client Component Browser]
+    ./apps/web/src/app/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./apps/web/src/app/games/game-html.ts [Client Component SSR]
+    ./apps/web/src/app/games/game-preview.tsx [Client Component SSR]
+    ./apps/web/src/app/canvas-editor/canvas-editor.tsx [Client Component SSR]
+    ./apps/web/src/app/page.tsx [Client Component SSR]
+    ./apps/web/src/app/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+./apps/web/src/app/games/game-preview.tsx:4:1
+Error: Module not found: Can't resolve '@cosmora/contracts/game-package'
+  [90m2 |[0m
+  [90m3 |[0m [36mimport[0m { useMemo, useState } [36mfrom[0m [32m"react"[0m;
+[31m[1m>[0m [90m4 |[0m [36mimport[0m { parseGamePackage } [36mfrom[0m [32m"@cosmora/contracts/game-package"[0m;
+  [90m  |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m5 |[0m [36mimport[0m { createGameHtml } [36mfrom[0m [32m"./game-html"[0m;
+  [90m6 |[0m [36mimport[0m styles [36mfrom[0m [32m"../sites/sites.module.css"[0m;
+  [90m7 |[0m
+
+
+
+Import traces:
+  Client Component Browser:
+    ./apps/web/src/app/games/game-preview.tsx [Client Component Browser]
+    ./apps/web/src/app/canvas-editor/canvas-editor.tsx [Client Component Browser]
+    ./apps/web/src/app/page.tsx [Client Component Browser]
+    ./apps/web/src/app/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./apps/web/src/app/games/game-preview.tsx [Client Component SSR]
+    ./apps/web/src/app/canvas-editor/canvas-editor.tsx [Client Component SSR]
+    ./apps/web/src/app/page.tsx [Client Component SSR]
+    ./apps/web/src/app/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+./apps/web/src/app/games/game-project-runtime.ts:1:1
+Error: Module not found: Can't resolve '@cosmora/contracts/game-project'
+[31m[1m>[0m [90m1 |[0m [36mimport[0m { parseGameProject, [36mtype[0m [33mGameProject[0m } [36mfrom[0m [32m"@cosmora/contracts/game-project"[0m;
+  [90m  |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m2 |[0m [36mimport[0m { staticSiteDocument } [36mfrom[0m [32m"../sites/site-preview"[0m;
+  [90m3 |[0m
+  [90m4 |[0m [90m// Only this fixed program executes in the iframe. Project JavaScript executes in a worker,[0m
+
+
+
+Import traces:
+  Client Component Browser:
+    ./apps/web/src/app/games/game-project-runtime.ts [Client Component Browser]
+    ./apps/web/src/app/games/game-source-preview.tsx [Client Component Browser]
+    ./apps/web/src/app/canvas-editor/canvas-editor.tsx [Client Component Browser]
+    ./apps/web/src/app/page.tsx [Client Component Browser]
+    ./apps/web/src/app/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./apps/web/src/app/games/game-project-runtime.ts [Client Component SSR]
+    ./apps/web/src/app/games/game-source-preview.tsx [Client Component SSR]
+    ./apps/web/src/app/canvas-editor/canvas-editor.tsx [Client Component SSR]
+    ./apps/web/src/app/page.tsx [Client Component SSR]
+    ./apps/web/src/app/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+./apps/web/src/app/games/game-source-editor.tsx:4:1
+Error: Module not found: Can't resolve '@cosmora/contracts/game-project'
+  [90m 2 |[0m
+  [90m 3 |[0m [36mimport[0m { useState } [36mfrom[0m [32m"react"[0m;
+[31m[1m>[0m [90m 4 |[0m [36mimport[0m {
+  [90m   |[0m [31m[1m^^^^^^^[0m
+[31m[1m>[0m [90m 5 |[0m   [33mGAME_PROJECT_FILES[0m,
+  [90m   |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^[0m
+[31m[1m>[0m [90m 6 |[0m   [36mtype[0m [33mGameProject[0m,
+  [90m   |[0m [31m[1m^^^^^^^^^^^^^^^^^^^[0m
+[31m[1m>[0m [90m 7 |[0m   [36mtype[0m [33mGameProjectFile[0m
+  [90m   |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^[0m
+[31m[1m>[0m [90m 8 |[0m } [36mfrom[0m [32m"@cosmora/contracts/game-project"[0m;
+  [90m   |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m 9 |[0m [36mimport[0m styles [36mfrom[0m [32m"./game-source.module.css"[0m;
+  [90m10 |[0m
+  [90m11 |[0m [36mexport[0m [36mfunction[0m [33mGameSourceEditor[0m({
+
+
+
+Import traces:
+  Client Component Browser:
+    ./apps/web/src/app/games/game-source-editor.tsx [Client Component Browser]
+    ./apps/web/src/app/canvas-editor/canvas-editor.tsx [Client Component Browser]
+    ./apps/web/src/app/page.tsx [Client Component Browser]
+    ./apps/web/src/app/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./apps/web/src/app/games/game-source-editor.tsx [Client Component SSR]
+    ./apps/web/src/app/canvas-editor/canvas-editor.tsx [Client Component SSR]
+    ./apps/web/src/app/page.tsx [Client Component SSR]
+    ./apps/web/src/app/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+./apps/web/src/app/games/game-source-preview.tsx:5:1
+Error: Module not found: Can't resolve '@cosmora/contracts/game-project'
+  [90m3 |[0m [36mimport[0m { useMemo, useState } [36mfrom[0m [32m"react"[0m;
+  [90m4 |[0m [36mimport[0m { strToU8, zipSync } [36mfrom[0m [32m"fflate"[0m;
+[31m[1m>[0m [90m5 |[0m [36mimport[0m { parseGameProject } [36mfrom[0m [32m"@cosmora/contracts/game-project"[0m;
+  [90m  |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m6 |[0m [36mimport[0m { createGameProjectHtml } [36mfrom[0m [32m"./game-project-runtime"[0m;
+  [90m7 |[0m [36mimport[0m styles [36mfrom[0m [32m"../sites/sites.module.css"[0m;
+  [90m8 |[0m
+
+
+
+Import traces:
+  Client Component Browser:
+    ./apps/web/src/app/games/game-source-preview.tsx [Client Component Browser]
+    ./apps/web/src/app/canvas-editor/canvas-editor.tsx [Client Component Browser]
+    ./apps/web/src/app/page.tsx [Client Component Browser]
+    ./apps/web/src/app/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./apps/web/src/app/games/game-source-preview.tsx [Client Component SSR]
+    ./apps/web/src/app/canvas-editor/canvas-editor.tsx [Client Component SSR]
+    ./apps/web/src/app/page.tsx [Client Component SSR]
+    ./apps/web/src/app/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+./apps/web/src/app/graph-workspace/read-context-comparison.ts:6:1
+Error: Module not found: Can't resolve '@cosmora/contracts/intelligence-graph-context'
+  [90m4 |[0m ...[33mligenceGraphModelContext[0m
+  [90m5 |[0m ...[32m"@cosmora/contracts"[0m;
+[31m[1m>[0m [90m6 |[0m ...{ isIntelligenceGraphSavedContextStatus } [36mfrom[0m [32m"@cosmora/contracts/intelligence-graph-co...[0m
+  [90m  |[0m    [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m7 |[0m ...{ compareGraphContexts } [36mfrom[0m [32m"./context-comparison"[0m;
+  [90m8 |[0m ...
+  [90m9 |[0m ...[33meview[0m = [33mIntelligenceGraphContextPreview[0m & { state: [33mIntelligenceGraphContextState[0m };
+
+
+
+Import traces:
+  Client Component Browser:
+    ./apps/web/src/app/graph-workspace/read-context-comparison.ts [Client Component Browser]
+    ./apps/web/src/app/graph-workspace/graph-context-panel.tsx [Client Component Browser]
+    ./apps/web/src/app/graph-workspace/page.tsx [Client Component Browser]
+    ./apps/web/src/app/graph-workspace/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./apps/web/src/app/graph-workspace/read-context-comparison.ts [Client Component SSR]
+    ./apps/web/src/app/graph-workspace/graph-context-panel.tsx [Client Component SSR]
+    ./apps/web/src/app/graph-workspace/page.tsx [Client Component SSR]
+    ./apps/web/src/app/graph-workspace/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+./apps/web/src/app/graph-workspace/saved-context-status.tsx:3:1
+Error: Module not found: Can't resolve '@cosmora/contracts/intelligence-graph-context'
+  [90m1 |[0m [32m"use client"[0m;
+  [90m2 |[0m [36mimport[0m { useEffect, useState } [36mfrom[0m [32m"react"[0m;
+[31m[1m>[0m [90m3 |[0m [36mimport[0m {
+  [90m  |[0m [31m[1m^^^^^^^[0m
+[31m[1m>[0m [90m4 |[0m   isIntelligenceGraphSavedContextStatus,
+  [90m  |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+[31m[1m>[0m [90m5 |[0m   [36mtype[0m [33mIntelligenceGraphSavedContextStatus[0m
+  [90m  |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+[31m[1m>[0m [90m6 |[0m } [36mfrom[0m [32m"@cosmora/contracts/intelligence-graph-context"[0m;
+  [90m  |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m7 |[0m
+  [90m8 |[0m [36mexport[0m [36mfunction[0m [33mSavedContextStatus[0m({
+  [90m9 |[0m   url,
+
+
+
+Import traces:
+  Client Component Browser:
+    ./apps/web/src/app/graph-workspace/saved-context-status.tsx [Client Component Browser]
+    ./apps/web/src/app/graph-workspace/graph-context-panel.tsx [Client Component Browser]
+    ./apps/web/src/app/graph-workspace/page.tsx [Client Component Browser]
+    ./apps/web/src/app/graph-workspace/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./apps/web/src/app/graph-workspace/saved-context-status.tsx [Client Component SSR]
+    ./apps/web/src/app/graph-workspace/graph-context-panel.tsx [Client Component SSR]
+    ./apps/web/src/app/graph-workspace/page.tsx [Client Component SSR]
+    ./apps/web/src/app/graph-workspace/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+./apps/web/src/app/graph-workspace/page.tsx:5:1
+Error: Module not found: Can't resolve '@cosmora/contracts/intelligence-graph-package'
+  [90m 3 |[0m [36mimport[0m { useEffect, useState } [36mfrom[0m [32m"react"[0m;
+  [90m 4 |[0m [36mimport[0m [33mLink[0m [36mfrom[0m [32m"next/link"[0m;
+[31m[1m>[0m [90m 5 |[0m [36mimport[0m {
+  [90m   |[0m [31m[1m^^^^^^^[0m
+[31m[1m>[0m [90m 6 |[0m   parseIntelligenceGraphPackage,
+  [90m   |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+[31m[1m>[0m [90m 7 |[0m   [33mINTELLIGENCE_GRAPH_PACKAGE_MAX_BYTES[0m,
+  [90m   |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+[31m[1m>[0m [90m 8 |[0m   [36mtype[0m [33mIntelligenceGraphPortablePackage[0m
+  [90m   |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+[31m[1m>[0m [90m 9 |[0m } [36mfrom[0m [32m"@cosmora/contracts/intelligence-graph-package"[0m;
+  [90m   |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m10 |[0m [36mimport[0m [36mtype[0m {
+  [90m11 |[0m   [33mIntelligenceGraphSummary[0m,
+  [90m12 |[0m   [33mIntelligenceGraphWorkspaceExplanation[0m,
+
+
+
+Import traces:
+  Client Component Browser:
+    ./apps/web/src/app/graph-workspace/page.tsx [Client Component Browser]
+    ./apps/web/src/app/graph-workspace/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./apps/web/src/app/graph-workspace/page.tsx [Client Component SSR]
+    ./apps/web/src/app/graph-workspace/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+./apps/web/src/app/presentations/model.ts:35:1
+Error: Module not found: Can't resolve '@cosmora/contracts/presentation-package'
+  [90m33 |[0m ...[36mtype[0m [33mDeckRevision[0m = [33mDeckRevisionSummary[0m & { slides: [33mSlide[0m[] };
+  [90m34 |[0m ...
+[31m[1m>[0m [90m35 |[0m ...{ presentationSlideOverflow [36mas[0m slideOverflow } [36mfrom[0m [32m"@cosmora/contracts/presentation-pa...[0m
+  [90m   |[0m    [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m36 |[0m ...
+  [90m37 |[0m ...[36mconst[0m newSlide = (layout: [33mLayout[0m = [32m"content"[0m): [33mSlide[0m => ({
+  [90m38 |[0m ...rypto.randomUUID(),
+
+
+
+Import traces:
+  Client Component Browser:
+    ./apps/web/src/app/presentations/model.ts [Client Component Browser]
+    ./apps/web/src/app/presentations/page.tsx [Client Component Browser]
+    ./apps/web/src/app/presentations/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./apps/web/src/app/presentations/model.ts [Client Component SSR]
+    ./apps/web/src/app/presentations/page.tsx [Client Component SSR]
+    ./apps/web/src/app/presentations/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+./apps/web/src/app/presentations/package.ts:2:1
+Error: Module not found: Can't resolve '@cosmora/contracts/presentation-package'
+  [90m1 |[0m [36mimport[0m [36mtype[0m { [33mDeck[0m } [36mfrom[0m [32m"./model"[0m;
+[31m[1m>[0m [90m2 |[0m [36mimport[0m {
+  [90m  |[0m [31m[1m^^^^^^^[0m
+[31m[1m>[0m [90m3 |[0m   parsePresentationPackage,
+  [90m  |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+[31m[1m>[0m [90m4 |[0m   [36mtype[0m [33mPresentationPackage[0m
+  [90m  |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+[31m[1m>[0m [90m5 |[0m } [36mfrom[0m [32m"@cosmora/contracts/presentation-package"[0m;
+  [90m  |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m6 |[0m [36mexport[0m {
+  [90m7 |[0m   parsePresentationPackage,
+  [90m8 |[0m   [33mPRESENTATION_IMPORT_BYTES[0m,
+
+
+
+Import traces:
+  #1 [Client Component Browser]:
+    ./apps/web/src/app/presentations/package.ts [Client Component Browser]
+    ./apps/web/src/app/presentations/page.tsx [Client Component Browser]
+    ./apps/web/src/app/presentations/page.tsx [Server Component]
+
+  #2 [Client Component SSR]:
+    ./apps/web/src/app/presentations/package.ts [Client Component SSR]
+    ./apps/web/src/app/presentations/page.tsx [Client Component SSR]
+    ./apps/web/src/app/presentations/page.tsx [Server Component]
+
+  #3 [Client Component Browser]:
+    ./apps/web/src/app/presentations/package.ts [Client Component Browser]
+    ./apps/web/src/app/presentations/presentation-import.tsx [Client Component Browser]
+    ./apps/web/src/app/presentations/page.tsx [Client Component Browser]
+    ./apps/web/src/app/presentations/page.tsx [Server Component]
+
+  #4 [Client Component SSR]:
+    ./apps/web/src/app/presentations/package.ts [Client Component SSR]
+    ./apps/web/src/app/presentations/presentation-import.tsx [Client Component SSR]
+    ./apps/web/src/app/presentations/page.tsx [Client Component SSR]
+    ./apps/web/src/app/presentations/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+./apps/web/src/app/presentations/package.ts:6:1
+Error: Module not found: Can't resolve '@cosmora/contracts/presentation-package'
+  [90m 4 |[0m   [36mtype[0m [33mPresentationPackage[0m
+  [90m 5 |[0m } [36mfrom[0m [32m"@cosmora/contracts/presentation-package"[0m;
+[31m[1m>[0m [90m 6 |[0m [36mexport[0m {
+  [90m   |[0m [31m[1m^^^^^^^[0m
+[31m[1m>[0m [90m 7 |[0m   parsePresentationPackage,
+  [90m   |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+[31m[1m>[0m [90m 8 |[0m   [33mPRESENTATION_IMPORT_BYTES[0m,
+  [90m   |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+[31m[1m>[0m [90m 9 |[0m   [36mtype[0m [33mPresentationPackage[0m
+  [90m   |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+[31m[1m>[0m [90m10 |[0m } [36mfrom[0m [32m"@cosmora/contracts/presentation-package"[0m;
+  [90m   |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m11 |[0m
+  [90m12 |[0m [36mexport[0m [36mfunction[0m presentationPackage(
+  [90m13 |[0m   deck: [33mPick[0m<[33mDeck[0m, [32m"title"[0m | [32m"theme"[0m | [32m"slides"[0m>
+
+
+
+Import traces:
+  #1 [Client Component Browser]:
+    ./apps/web/src/app/presentations/package.ts [Client Component Browser]
+    ./apps/web/src/app/presentations/page.tsx [Client Component Browser]
+    ./apps/web/src/app/presentations/page.tsx [Server Component]
+
+  #2 [Client Component SSR]:
+    ./apps/web/src/app/presentations/package.ts [Client Component SSR]
+    ./apps/web/src/app/presentations/page.tsx [Client Component SSR]
+    ./apps/web/src/app/presentations/page.tsx [Server Component]
+
+  #3 [Client Component Browser]:
+    ./apps/web/src/app/presentations/package.ts [Client Component Browser]
+    ./apps/web/src/app/presentations/presentation-import.tsx [Client Component Browser]
+    ./apps/web/src/app/presentations/page.tsx [Client Component Browser]
+    ./apps/web/src/app/presentations/page.tsx [Server Component]
+
+  #4 [Client Component SSR]:
+    ./apps/web/src/app/presentations/package.ts [Client Component SSR]
+    ./apps/web/src/app/presentations/presentation-import.tsx [Client Component SSR]
+    ./apps/web/src/app/presentations/page.tsx [Client Component SSR]
+    ./apps/web/src/app/presentations/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+./apps/web/src/app/presentations/page.tsx:18:1
+Error: Module not found: Can't resolve '@cosmora/contracts/presentation-package'
+  [90m16 |[0m [36mimport[0m { [33mPresentationSearch[0m } [36mfrom[0m [32m"./presentation-search"[0m;
+  [90m17 |[0m [36mimport[0m { [33mPresentationWork[0m } [36mfrom[0m [32m"./presentation-work"[0m;
+[31m[1m>[0m [90m18 |[0m [36mimport[0m {
+  [90m   |[0m [31m[1m^^^^^^^[0m
+[31m[1m>[0m [90m19 |[0m   presentationWorkReference,
+  [90m   |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+[31m[1m>[0m [90m20 |[0m   [36mtype[0m [33mPresentationWorkReference[0m
+  [90m   |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+[31m[1m>[0m [90m21 |[0m } [36mfrom[0m [32m"@cosmora/contracts/presentation-package"[0m;
+  [90m   |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m22 |[0m [36mimport[0m { [33mPresentationImport[0m } [36mfrom[0m [32m"./presentation-import"[0m;
+  [90m23 |[0m [36mimport[0m { [33mPresentationHistory[0m } [36mfrom[0m [32m"./presentation-history"[0m;
+  [90m24 |[0m [36mimport[0m { [33mSlidePreview[0m } [36mfrom[0m [32m"./slide-preview"[0m;
+
+
+
+Import traces:
+  Client Component Browser:
+    ./apps/web/src/app/presentations/page.tsx [Client Component Browser]
+    ./apps/web/src/app/presentations/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./apps/web/src/app/presentations/page.tsx [Client Component SSR]
+    ./apps/web/src/app/presentations/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+./apps/web/src/app/work-manager-dag.tsx:8:1
+Error: Module not found: Can't resolve '@cosmora/contracts/work-plan-package'
+  [90m 6 |[0m [36mimport[0m [33mLink[0m [36mfrom[0m [32m"next/link"[0m;
+  [90m 7 |[0m [36mimport[0m { [33mAcceptedSkillView[0m } [36mfrom[0m [32m"./accepted-skill-view"[0m;
+[31m[1m>[0m [90m 8 |[0m [36mimport[0m {
+  [90m   |[0m [31m[1m^^^^^^^[0m
+[31m[1m>[0m [90m 9 |[0m   [33mWORK_PLAN_PACKAGE_MAX_BYTES[0m,
+  [90m   |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+[31m[1m>[0m [90m10 |[0m   parseWorkPlanPackageText,
+  [90m   |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+[31m[1m>[0m [90m11 |[0m   [36mtype[0m [33mWorkPlanPackage[0m
+  [90m   |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^[0m
+[31m[1m>[0m [90m12 |[0m } [36mfrom[0m [32m"@cosmora/contracts/work-plan-package"[0m;
+  [90m   |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m13 |[0m [36mimport[0m [36mtype[0m { [33mWorkDag[0m, [33mWorkDagNodeInput[0m, [33mWorkDagControl[0m } [36mfrom[0m [32m"@cosmora/contracts"[0m;
+  [90m14 |[0m [36mimport[0m [36mtype[0m { [33mWorkPriority[0m } [36mfrom[0m [32m"@cosmora/contracts/work-schedule"[0m;
+  [90m15 |[0m [36mimport[0m {
+
+
+
+Import traces:
+  Client Component Browser:
+    ./apps/web/src/app/work-manager-dag.tsx [Client Component Browser]
+    ./apps/web/src/app/manager-work-panel.tsx [Client Component Browser]
+    ./apps/web/src/app/page.tsx [Client Component Browser]
+    ./apps/web/src/app/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./apps/web/src/app/work-manager-dag.tsx [Client Component SSR]
+    ./apps/web/src/app/manager-work-panel.tsx [Client Component SSR]
+    ./apps/web/src/app/page.tsx [Client Component SSR]
+    ./apps/web/src/app/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+./apps/web/src/app/workflow-panel.tsx:4:1
+Error: Module not found: Can't resolve '@cosmora/contracts/workflows'
+  [90m 2 |[0m
+  [90m 3 |[0m [36mimport[0m { useEffect, useRef, useState } [36mfrom[0m [32m"react"[0m;
+[31m[1m>[0m [90m 4 |[0m [36mimport[0m {
+  [90m   |[0m [31m[1m^^^^^^^[0m
+[31m[1m>[0m [90m 5 |[0m   parseWorkflowPackage,
+  [90m   |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^[0m
+[31m[1m>[0m [90m 6 |[0m   validateWorkflowDefinition,
+  [90m   |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+[31m[1m>[0m [90m 7 |[0m   validateWorkflowInputs,
+  [90m   |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+[31m[1m>[0m [90m 8 |[0m   [36mtype[0m [33mWorkflowDefinitionInput[0m,
+  [90m   |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+[31m[1m>[0m [90m 9 |[0m   [36mtype[0m [33mWorkflowDefinition[0m,
+  [90m   |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+[31m[1m>[0m [90m10 |[0m   [36mtype[0m [33mWorkflowParameter[0m,
+  [90m   |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+[31m[1m>[0m [90m11 |[0m   [36mtype[0m [33mWorkflowRun[0m
+  [90m   |[0m [31m[1m^^^^^^^^^^^^^^^^^^[0m
+[31m[1m>[0m [90m12 |[0m } [36mfrom[0m [32m"@cosmora/contracts/workflows"[0m;
+  [90m   |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m13 |[0m [36mimport[0m [36mtype[0m { [33mWorkDag[0m } [36mfrom[0m [32m"@cosmora/contracts"[0m;
+  [90m14 |[0m [36mimport[0m styles [36mfrom[0m [32m"./work-manager.module.css"[0m;
+  [90m15 |[0m [36mimport[0m { [33mWorkflowRunResults[0m } [36mfrom[0m [32m"./workflow-run-results"[0m;
+
+
+
+Import traces:
+  Client Component Browser:
+    ./apps/web/src/app/workflow-panel.tsx [Client Component Browser]
+    ./apps/web/src/app/work-manager-dag.tsx [Client Component Browser]
+    ./apps/web/src/app/manager-work-panel.tsx [Client Component Browser]
+    ./apps/web/src/app/page.tsx [Client Component Browser]
+    ./apps/web/src/app/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./apps/web/src/app/workflow-panel.tsx [Client Component SSR]
+    ./apps/web/src/app/work-manager-dag.tsx [Client Component SSR]
+    ./apps/web/src/app/manager-work-panel.tsx [Client Component SSR]
+    ./apps/web/src/app/page.tsx [Client Component SSR]
+    ./apps/web/src/app/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+    at <unknown> (./apps/web/src/app/canvas-editor/canvas-draft-storage.ts:1:1)
+    at <unknown> (https://nextjs.org/docs/messages/module-not-found)
+    at <unknown> (./apps/web/src/app/canvas-editor/canvas-editor.tsx:4:1)
+    at <unknown> (https://nextjs.org/docs/messages/module-not-found)
+    at <unknown> (./apps/web/src/app/canvas-editor/canvas-file-import.ts:1:1)
+    at <unknown> (https://nextjs.org/docs/messages/module-not-found)
+    at <unknown> (./apps/web/src/app/canvas-editor/canvas-file.ts:1:1)
+    at <unknown> (https://nextjs.org/docs/messages/module-not-found)
+    at <unknown> (./apps/web/src/app/canvas-editor/canvas-search.tsx:3:1)
+    at <unknown> (https://nextjs.org/docs/messages/module-not-found)
+    at <unknown> (./apps/web/src/app/canvas-editor/markdown-toolbar.tsx:3:1)
+    at <unknown> (https://nextjs.org/docs/messages/module-not-found)
+    at <unknown> (./apps/web/src/app/canvas-editor/report-canvas.tsx:3:1)
+    at <unknown> (https://nextjs.org/docs/messages/module-not-found)
+    at <unknown> (./apps/web/src/app/studio-files.tsx:16:1)
+    at <unknown> (https://nextjs.org/docs/messages/module-not-found)
+    at <unknown> (./apps/web/src/app/chat-archive-export.ts:2:1)
+    at <unknown> (https://nextjs.org/docs/messages/module-not-found)
+    at <unknown> (./apps/web/src/app/chat-attachments.tsx:4:1)
+    at <unknown> (https://nextjs.org/docs/messages/module-not-found)
+    at <unknown> (./apps/web/src/app/composer-draft-storage.ts:1:1)
+    at <unknown> (https://nextjs.org/docs/messages/module-not-found)
+    at <unknown> (./apps/web/src/app/decode-chat-attachment.ts:2:1)
+    at <unknown> (https://nextjs.org/docs/messages/module-not-found)
+    at <unknown> (./apps/web/src/app/github/page.tsx:5:1)
+    at <unknown> (https://nextjs.org/docs/messages/module-not-found)
+    at <unknown> (./apps/web/src/app/page.tsx:61:1)
+    at <unknown> (https://nextjs.org/docs/messages/module-not-found)
+    at <unknown> (./apps/web/src/app/prepare-chat-image.ts:1:1)
+    at <unknown> (https://nextjs.org/docs/messages/module-not-found)
+    at <unknown> (./apps/web/src/app/project-context-panel.tsx:4:1)
+    at <unknown> (https://nextjs.org/docs/messages/module-not-found)
+    at <unknown> (./apps/web/src/app/studio-files.tsx:13:1)
+    at <unknown> (https://nextjs.org/docs/messages/module-not-found)
+    at <unknown> (./apps/web/src/app/chat-memory-settings.tsx:4:1)
+    at <unknown> (https://nextjs.org/docs/messages/module-not-found)
+    at <unknown> (./apps/web/src/app/project-tables.tsx:5:1)
+    at <unknown> (https://nextjs.org/docs/messages/module-not-found)
+    at <unknown> (./apps/web/src/app/studio-data-core.ts:3:1)
+    at <unknown> (https://nextjs.org/docs/messages/module-not-found)
+    at <unknown> (./apps/web/src/app/studio-data-core.ts:9:1)
+    at <unknown> (https://nextjs.org/docs/messages/module-not-found)
+    at <unknown> (./apps/web/src/app/games/game-html.ts:1:1)
+    at <unknown> (https://nextjs.org/docs/messages/module-not-found)
+    at <unknown> (./apps/web/src/app/games/game-preview.tsx:4:1)
+    at <unknown> (https://nextjs.org/docs/messages/module-not-found)
+    at <unknown> (./apps/web/src/app/games/game-project-runtime.ts:1:1)
+    at <unknown> (https://nextjs.org/docs/messages/module-not-found)
+    at <unknown> (./apps/web/src/app/games/game-source-editor.tsx:4:1)
+    at <unknown> (https://nextjs.org/docs/messages/module-not-found)
+    at <unknown> (./apps/web/src/app/games/game-source-preview.tsx:5:1)
+    at <unknown> (https://nextjs.org/docs/messages/module-not-found)
+    at <unknown> (./apps/web/src/app/graph-workspace/read-context-comparison.ts:6:1)
+    at <unknown> (https://nextjs.org/docs/messages/module-not-found)
+    at <unknown> (./apps/web/src/app/graph-workspace/saved-context-status.tsx:3:1)
+    at <unknown> (https://nextjs.org/docs/messages/module-not-found)
+    at <unknown> (./apps/web/src/app/graph-workspace/page.tsx:5:1)
+    at <unknown> (https://nextjs.org/docs/messages/module-not-found)
+    at <unknown> (./apps/web/src/app/presentations/model.ts:35:1)
+    at <unknown> (https://nextjs.org/docs/messages/module-not-found)
+    at <unknown> (./apps/web/src/app/presentations/package.ts:2:1)
+    at <unknown> (https://nextjs.org/docs/messages/module-not-found)
+    at <unknown> (./apps/web/src/app/presentations/package.ts:6:1)
+    at <unknown> (https://nextjs.org/docs/messages/module-not-found)
+    at <unknown> (./apps/web/src/app/presentations/page.tsx:18:1)
+    at <unknown> (https://nextjs.org/docs/messages/module-not-found)
+    at <unknown> (./apps/web/src/app/work-manager-dag.tsx:8:1)
+    at <unknown> (https://nextjs.org/docs/messages/module-not-found)
+    at <unknown> (./apps/web/src/app/workflow-panel.tsx:4:1)
+    at <unknown> (https://nextjs.org/docs/messages/module-not-found)
+/workspace/work/Nexus-OS-coscode/apps/web:
+[ERR_PNPM_RECURSIVE_RUN_FIRST_FAIL] @cosmora/web@0.1.0 build: `node scripts/prepare-pdf-worker.mjs && next build`
+Exit status 1

@@ -1,0 +1,111 @@
+{
+  "operation": "Kosmora launch",
+  "started_on": "2026-11-10",
+  "timezone": "Europe/Moscow",
+  "baseline_sha": "9d972e8ba447f681fbfb49253b73d9f02dd1d325",
+  "product_slices_accepted": 0,
+  "assignments": [
+    {
+      "id": "01_CODEX",
+      "executor": "Codex",
+      "sphere": "Kosmora, Koswork и интеграция выпуска",
+      "file": "01_CODEX.md",
+      "branch_prefix": "ops/codex-kosmora-koswork",
+      "status": "in_progress",
+      "dispatch_confirmed": true,
+      "head_sha": "619efe6a53b959f70fce43f993b128c9c23677b3",
+      "pr": 506,
+      "current_slice": null,
+      "integrated_slices": ["O-001", "O-002"]
+    },
+    {
+      "id": "02_DEVELOPER",
+      "executor": "Разработчик + GPT Plus",
+      "sphere": "Coscode: полноценное пространство разработки",
+      "file": "02_DEVELOPER.md",
+      "branch_prefix": "ops/developer-coscode",
+      "status": "received_pending_review",
+      "dispatch_confirmed": true,
+      "head_sha": "e8e64f3df571cc23e2cddb18b5734f741ee8cb3d",
+      "pr": 507
+    },
+    {
+      "id": "03_OPENCODE",
+      "executor": "OpenCode",
+      "sphere": "Windows-приложение и локальная платформа",
+      "file": "03_OPENCODE.md",
+      "branch_prefix": "ops/opencode-windows",
+      "status": "follow_up_review",
+      "dispatch_confirmed": true,
+      "head_sha": "fd0b385348359c361d02214bf99b2dd850ac7d19",
+      "pr": 502,
+      "integrated_source_sha": "c0b1439b692834f80e6a806d56e4b2f515651578"
+    },
+    {
+      "id": "04_DEEPSEEK",
+      "executor": "DeepSeek Harness",
+      "sphere": "Память, контекст и качество извлечения",
+      "file": "04_DEEPSEEK.md",
+      "branch_prefix": "ops/deepseek-memory",
+      "status": "prepared",
+      "dispatch_confirmed": false,
+      "head_sha": null,
+      "pr": null
+    },
+    {
+      "id": "05_GEMINI",
+      "executor": "Gemini",
+      "sphere": "Браузер и Deep Research",
+      "file": "05_GEMINI.md",
+      "branch_prefix": "ops/gemini-browser-research",
+      "status": "rework_required",
+      "dispatch_confirmed": true,
+      "head_sha": null,
+      "pr": null,
+      "delivery_kind": "google_doc_patch",
+      "reference_sha": "b992e6397da8a6acd446714e9ef3ff1b188e377d",
+      "rework_dispatched": false
+    },
+    {
+      "id": "06_CLAUDE",
+      "executor": "Claude",
+      "sphere": "Специализации, стиль и обучение на обратной связи",
+      "file": "06_CLAUDE.md",
+      "branch_prefix": "ops/claude-specializations",
+      "status": "prepared",
+      "dispatch_confirmed": false,
+      "head_sha": null,
+      "pr": null
+    },
+    {
+      "id": "07_FREE_MEDIA",
+      "executor": "Обычный чат GPT — Media",
+      "sphere": "Studio: изображения и видео",
+      "file": "07_FREE_MEDIA.md",
+      "branch_prefix": "ops/free-studio-media",
+      "status": "received_pending_review",
+      "dispatch_confirmed": true,
+      "head_sha": "04f0fdabb40b87c821dc941fa7127d8230afc825",
+      "pr": 504
+    },
+    {
+      "id": "08_FREE_BUILDERS",
+      "executor": "Обычный чат GPT — Builders",
+      "sphere": "Studio: сайты и разработка игр",
+      "file": "08_FREE_BUILDERS.md",
+      "branch_prefix": "ops/free-studio-builders",
+      "status": "follow_up_review",
+      "dispatch_confirmed": true,
+      "head_sha": "606ed1eb876073745cad941d688bf067b3de7e9f",
+      "pr": 501,
+      "integrated_source_sha": "5c5f6e37e36a8a7ee4bdf240ac1c1d5d5d56b903"
+    }
+  ],
+  "started_confirmed_by_owner": true,
+  "integration_candidate": null,
+  "current_main": "619efe6a53b959f70fce43f993b128c9c23677b3",
+  "integrated_product_slices": 3,
+  "integrated_maintenance_slices": 1,
+  "live_release_accepted": false,
+  "integrated_wave": 505
+}

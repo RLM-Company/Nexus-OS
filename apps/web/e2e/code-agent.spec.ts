@@ -1,6 +1,11 @@
 import { expect, test, type Page } from "@playwright/test";
 
-async function scenario(page: Page, lostPublish: false | "after-start" | "before-start" = false) {
+async function scenario(
+  page: Page,
+  lostPublish: false | "after-start" | "before-start" = false,
+  proof: { exitCode?: number | null; cleanupVerified?: boolean } = {},
+  expectedReview: (review: number) => string = () => "export const value = 3;"
+) {
   let publications = 0;
   let checks = 0;
   let reviews = 0;
@@ -78,7 +83,7 @@ async function scenario(page: Page, lostPublish: false | "after-start" | "before
       reviews++;
       const input = route.request().postDataJSON();
       expect(input.proposal_hash).toBe("p".repeat(64));
-      expect(input.files).toEqual([{ path: "src/value.js", content: "export const value = 3;" }]);
+      expect(input.files).toEqual([{ path: "src/value.js", content: expectedReview(reviews) }]);
       run = {
         ...run,
         status: "review",
@@ -111,7 +116,10 @@ async function scenario(page: Page, lostPublish: false | "after-start" | "before
           status: "passed",
           review_hash: hash,
           stdout: "syntax checked",
-          journal: [{ event: "completed" }]
+          exitCode: 0,
+          cleanupVerified: true,
+          journal: [{ event: "completed" }],
+          ...proof
         }
       };
       data = run;
@@ -161,7 +169,11 @@ async function scenario(page: Page, lostPublish: false | "after-start" | "before
       body: JSON.stringify(data)
     });
   });
-  return { publications: () => publications, checks: () => checks };
+  return {
+    publications: () => publications,
+    checks: () => checks,
+    snapshot: () => structuredClone(run)
+  };
 }
 
 async function prepare(page: Page) {
@@ -341,5 +353,178 @@ test("previews normalized editable diff on an exact snapshot before a fresh revi
   await page.getByRole("button", { name: "Сохранить выбранные изменения" }).click();
   await expect(page.getByRole("button", { name: "Создать черновик PR в GitHub" })).toBeDisabled();
   expect(state.checks()).toBe(0);
+  expect(state.publications()).toBe(0);
+});
+
+for (const proof of [{ exitCode: 1 }, { exitCode: null }, { cleanupVerified: false }]) {
+  test(`legacy contradictory proof never enables publication: ${JSON.stringify(proof)}`, async ({
+    page
+  }) => {
+    const state = await scenario(page, false, proof);
+    await prepare(page);
+    await expect(page.getByLabel("Результат проверки")).toContainText(
+      "Успех проверки не подтверждён"
+    );
+    await expect(
+      page.getByRole("checkbox", { name: "Подтверждаю создание этой ветки", exact: false })
+    ).toBeDisabled();
+    await expect(page.getByRole("button", { name: "Создать черновик PR в GitHub" })).toBeDisabled();
+    expect(state.publications()).toBe(0);
+  });
+}
+
+test("dirty project changes and new tasks require an explicit discard; cancelling retains exact edits", async ({
+  page
+}) => {
+  const state = await scenario(page);
+  await page.route("**/api/v1/projects", (route) =>
+    route.fulfill({
+      json: {
+        items: [
+          { id: "project-1", title: "Первый" },
+          { id: "project-2", title: "Второй" }
+        ]
+      }
+    })
+  );
+  let creates = 0;
+  page.on("request", (r) => {
+    if (r.method() === "POST" && new URL(r.url()).pathname.endsWith("/code-agent")) creates++;
+  });
+  await prepare(page);
+  const editor = page.getByLabel("+ Итоговое содержимое: src/value.js");
+  await editor.fill("export const value = 99;");
+  page.once("dialog", (d) => d.dismiss());
+  await page.getByRole("combobox", { name: "Проект", exact: true }).selectOption("project-2");
+  await expect(page.getByRole("combobox", { name: "Проект", exact: true })).toHaveValue(
+    "project-1"
+  );
+  await expect(editor).toHaveValue("export const value = 99;");
+  page.once("dialog", (d) => d.dismiss());
+  await page.getByRole("button", { name: "Предложить исправление", exact: true }).click();
+  expect(creates).toBe(1);
+  await expect(editor).toHaveValue("export const value = 99;");
+  page.once("dialog", (d) => d.accept());
+  await page.getByRole("combobox", { name: "Проект", exact: true }).selectOption("project-2");
+  await expect(page.getByRole("combobox", { name: "Проект", exact: true })).toHaveValue(
+    "project-2"
+  );
+  await expect(editor).toHaveValue("export const value = 3;");
+  expect(state.publications()).toBe(0);
+});
+
+test("dirty history selection can be cancelled; confirmed discard opens only the selected saved task", async ({
+  page
+}) => {
+  const state = await scenario(page);
+  await prepare(page);
+  const first = state.snapshot();
+  const second = {
+    ...first,
+    id: "run-2",
+    task: "Вторая задача",
+    draft: undefined,
+    check: undefined,
+    publication_token: undefined
+  };
+  await page.route("**/api/v1/projects/*/code-agent", (route) =>
+    route.request().method() === "GET"
+      ? route.fulfill({ json: { items: [first, second] } })
+      : route.fallback()
+  );
+  await page.reload();
+  const editor = page.getByLabel("+ Итоговое содержимое: src/value.js");
+  await expect(editor).toHaveValue("export const value = 3;");
+  await editor.fill("export const value = 99;");
+  page.once("dialog", (d) => d.dismiss());
+  await page.getByRole("combobox", { name: "Сохранённые задачи" }).selectOption("run-2");
+  await expect(page.getByRole("combobox", { name: "Сохранённые задачи" })).toHaveValue("run-1");
+  await expect(editor).toHaveValue("export const value = 99;");
+  page.once("dialog", (d) => d.accept());
+  await page.getByRole("combobox", { name: "Сохранённые задачи" }).selectOption("run-2");
+  await expect(editor).toHaveValue("export const value = 2;");
+  expect(state.publications()).toBe(0);
+});
+
+test("declining native reload preserves the unsaved text without a new model or publish call", async ({
+  page
+}) => {
+  const state = await scenario(page, false, {}, (n) =>
+    n === 1 ? "export const value = 3;" : "export const value = 99;"
+  );
+  let creates = 0;
+  page.on("request", (r) => {
+    if (r.method() === "POST" && new URL(r.url()).pathname.endsWith("/code-agent")) creates++;
+  });
+  await prepare(page);
+  const editor = page.getByLabel("+ Итоговое содержимое: src/value.js");
+  await editor.fill("export const value = 99;");
+  const dialogPromise = page.waitForEvent("dialog");
+  const reload = page.evaluate(() => window.location.reload());
+  const dialog = await dialogPromise;
+  expect(dialog.type()).toBe("beforeunload");
+  await dialog.dismiss();
+  await reload;
+  await expect(editor).toHaveValue("export const value = 99;");
+  await page.getByRole("button", { name: "Сохранить выбранные изменения", exact: true }).click();
+  await expect(page.getByText("Правки ещё не сохранены.", { exact: false })).toHaveCount(0);
+  await page.reload();
+  await expect(editor).toHaveValue("export const value = 99;");
+  expect(creates).toBe(1);
+  expect(state.publications()).toBe(0);
+});
+
+test("the Code page GitHub link respects a declined discard", async ({ page }) => {
+  await scenario(page);
+  await prepare(page);
+  const editor = page.getByLabel("+ Итоговое содержимое: src/value.js");
+  await editor.fill("export const value = 99;");
+  page.once("dialog", (d) => d.dismiss());
+  await page.getByRole("link", { name: "GitHub", exact: true }).click();
+  await expect(page).toHaveURL(/\/code-agent$/);
+  await expect(editor).toHaveValue("export const value = 99;");
+});
+
+test("explicit review checkpoint survives normal reload without another generation or publication", async ({
+  page
+}) => {
+  const state = await scenario(page, false, {}, (n) =>
+    n === 1 ? "export const value = 3;" : "export const value = 99;"
+  );
+  let creates = 0;
+  page.on("request", (r) => {
+    if (r.method() === "POST" && new URL(r.url()).pathname.endsWith("/code-agent")) creates++;
+  });
+  await prepare(page);
+  const editor = page.getByLabel("+ Итоговое содержимое: src/value.js");
+  await editor.fill("export const value = 99;");
+  await page.getByRole("button", { name: "Сохранить выбранные изменения", exact: true }).click();
+  await expect(page.getByText("Правки ещё не сохранены.", { exact: false })).toHaveCount(0);
+  await page.reload();
+  await expect(editor).toHaveValue("export const value = 99;");
+  expect(creates).toBe(1);
+  expect(state.publications()).toBe(0);
+});
+
+test("unapplied raw diff remains dirty after saving selected files and can be discarded explicitly", async ({
+  page
+}) => {
+  const state = await scenario(page);
+  await prepare(page);
+  await page.getByText("Редактировать минимальный diff", { exact: true }).click();
+  const raw = page.getByLabel("Редактируемый unified diff", { exact: true });
+  await raw.fill("UNAPPLIED LOCAL PATCH");
+  await page.getByRole("button", { name: "Сохранить выбранные изменения", exact: true }).click();
+  await expect(page.getByText("Текст diff ещё не перенесён", { exact: false })).toBeVisible();
+  page.once("dialog", (d) => d.dismiss());
+  await page.getByRole("link", { name: "GitHub", exact: true }).click();
+  await expect(raw).toHaveValue("UNAPPLIED LOCAL PATCH");
+  await page.getByRole("button", { name: "Отменить правки diff", exact: true }).click();
+  await expect(page.getByText("Текст diff ещё не перенесён", { exact: false })).toHaveCount(0);
+  await expect(page.getByLabel("+ Итоговое содержимое: src/value.js")).toHaveValue(
+    "export const value = 3;"
+  );
+  await expect(page.getByRole("button", { name: "Создать черновик PR в GitHub" })).toBeDisabled();
+  expect(state.checks()).toBe(1);
   expect(state.publications()).toBe(0);
 });
