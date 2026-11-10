@@ -77,7 +77,11 @@ function createVaultWorkspace({ base, vault, now = Date.now }) {
     supportsDocuments: (context) => Boolean(base.snapshot(context)),
     supportsDocumentReads: (context) => Boolean(base.snapshot(context)),
     supportsPdfReads: (context) => base.supportsPdfReads?.(context) === true,
-    vaultState: (c) => Boolean(allowed(c)),
+    vaultState: (c) => Boolean(allowed(c) && lease.expires > now()),
+    grantRemainingMs(c) {
+      snapshot(c); // Recheck owner, binding and expiry before disclosing a live lease.
+      return lease ? Math.max(0, lease.expires - now()) : null;
+    },
     async connect(c, signal) {
       revoke();
       return base.connect(c, signal);

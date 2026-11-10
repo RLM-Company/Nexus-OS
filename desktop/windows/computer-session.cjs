@@ -154,6 +154,21 @@ class ComputerSession {
       if (this.active !== state || state.controller.signal.aborted)
         throw Error("COMPUTER_SESSION_STOPPED");
       state.grant = this.gate.enable({ ...context, project, goal });
+      const workspaceRemaining = this.workspace?.grantRemainingMs?.(context);
+      if (
+        workspaceRemaining != null &&
+        (!Number.isFinite(workspaceRemaining) || workspaceRemaining < 0)
+      )
+        throw Error("COMPUTER_WORKSPACE_CHANGED");
+      // Stop pending work at the earliest active permission deadline. A source
+      // mounted before task consent may expire before this session's own grant.
+      state.expiryTimer = setTimeout(
+        () => {
+          if (this.active === state) this.stop();
+        },
+        Math.max(0, Math.min(state.grant.expires - this.gate.now(), workspaceRemaining ?? Infinity))
+      );
+      state.expiryTimer.unref?.();
       await this.assertLive(state);
       if (this.executionMode === "work") this.driver.begin({ context, goal, recovery });
       if (
@@ -632,6 +647,7 @@ class ComputerSession {
       throw error;
     } finally {
       const wasAborted = state.controller.signal.aborted;
+      clearTimeout(state.expiryTimer);
       this.gate.stop();
       state.controller.abort();
       let cleanupFailed = false;
@@ -669,6 +685,7 @@ class ComputerSession {
     }
   }
   stop() {
+    clearTimeout(this.active?.expiryTimer);
     this.gate.stop();
     this.active?.controller.abort();
     // A broken workspace cancel must not skip native input cleanup (or vice versa).
