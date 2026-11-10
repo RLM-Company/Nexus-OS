@@ -39,9 +39,10 @@ const { createDraftSessionGate } = require("./draft-session-gate.cjs");
 const { createDownloadCenter } = require("./download-center.cjs");
 const { createVaultConsole } = require("./vault-console.cjs");
 const { createLocalVault } = require("./local-vault.cjs");
+const { buildDiagnostics, formatDiagnosticsText } = require("./diagnostics.cjs");
 const { createVaultWorkspace } = require("./vault-workspace.cjs");
 const { safeWorkspaceRoute, isLoginOrLogout, isExplicitLogout } = require("./desktop-recovery.cjs");
-const { evaluateProfile, profileStatusText } = require("./profile-environment.cjs");
+const { evaluateProfile } = require("./profile-environment.cjs");
 const updateTrust = require("./update-trust.json");
 const { createSmokePayload, isSmokeMode, writeSmokeMarker } = require("./smoke-mode.cjs");
 const {
@@ -832,6 +833,30 @@ async function nativeLogout() {
 async function showProfileStatus() {
   const status = evaluateProfile(app.getPath("userData"));
   status.faults = startupFaults.filter((fault) => fault !== status.reason);
+  // The dialog shows environment and session facts only: no owner identifier,
+  // cookies, file names or download paths ever enter the diagnostics text.
+  const diagnostics = buildDiagnostics({
+    app: {
+      version: app.getVersion(),
+      electron: process.versions.electron ?? null,
+      node: process.versions.node,
+      platform: process.platform,
+      arch: process.arch,
+      packaged: app.isPackaged === true,
+      hasSingleInstanceLock: gotSingleInstanceLock,
+      secureStorage: process.platform === "win32" && safeStorage.isEncryptionAvailable()
+    },
+    profile: status,
+    origin: currentOrigin,
+    ownerVerified: Boolean(
+      ownerCache?.owner &&
+        ownerCache.origin === currentOrigin &&
+        Date.now() < ownerCache.expires
+    ),
+    identityEpoch,
+    downloads: { active: activeDownloads.size },
+    updates: { pinnedKey: typeof updateTrust.publicKeyPem === "string" }
+  });
   await dialog.showMessageBox(mainWindow, {
     type: "info",
     title: "Состояние локального профиля Kosmora",
@@ -841,7 +866,7 @@ async function showProfileStatus() {
         : status.ok
           ? "Профиль работает."
           : "Профиль работает с ограничениями.",
-    detail: profileStatusText(status)
+    detail: formatDiagnosticsText(diagnostics)
   });
 }
 
