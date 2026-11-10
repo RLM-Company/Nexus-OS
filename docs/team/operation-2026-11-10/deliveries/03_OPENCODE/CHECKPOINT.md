@@ -200,6 +200,20 @@
     Electron 44, 52–59) и «Redirect was cancelled» = отказ авторизации,
     никогда не offline-фолбэк (66–71). Расхождений с очередью «обновление»
     нет: обе ветки доверяют только проверенному same-origin ответу.
+20. **Интеграционная волна Codex на main и merge-разрешение (коммит
+    `e964e7da`)**: main получил обновления за ночь — guard portability из #502
+    (`ef54c468`), диагностику = мой срез 2 (`0358acd2`), Windows 0.27 candidate
+    с faults-контрактом (`9a971e22`, `338ee9a4`, `37b552d9`) — ветка стала
+    CONFLICTING ровно по двум файлам (`main.cjs`, `package.json`); остальное
+    авто-merged. Разрешено по правилу «новые контракты main сохранять, свои
+    дельты вернуть»: `main.cjs` — require `session-cleanup` держит наш (у main
+    соперника нет), `faults: status.faults` держит main (поддержка поля видна в
+    авто-merged `diagnostics.cjs` и его тестах); `package.json` — union: их
+    цепочка check + наш `node --check session-cleanup.cjs` в той же позиции,
+    их build.files + наш `"session-cleanup.cjs"`. Детерминированный резолвер
+    в `tmp/` (не коммитится; никаких автопиков). Проверки после: `node --check
+    main.cjs`, package.json parse, prettier clean (оба файла), `npm run check`
+    → exit 0, **443 теста / 0 fail**; PR #502 снова на CI.
 
 ## Что делать следующему запуску (в порядке приоритета)1. **Если фоновый прогон №2 завершится** (see shell-нотификация): проверь
 
