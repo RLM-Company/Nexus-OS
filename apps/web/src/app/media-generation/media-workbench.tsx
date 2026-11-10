@@ -3,7 +3,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { ChatImageAttachment } from "@cosmora/contracts";
 import { prepareChatImage } from "../prepare-chat-image";
 import { WorkspaceIcon } from "../workspace-icons";
-import { MediaGenerationPanel } from "./media-panel";
+import { MediaGenerationPanel, useMediaCapabilities } from "./media-panel";
+import { IMAGE_SIZE_FOR_RATIO, resolveImageOptions } from "./media-image-options";
 import { SpeechStudio } from "../voice/voice-playback";
 import styles from "./media-workbench.module.css";
 
@@ -12,6 +13,9 @@ export function MediaWorkbench({ surface }: { surface: "images" | "video" | "sou
   const video = surface === "video";
   const [prompt, setPrompt] = useState("");
   const [ratio, setRatio] = useState("1:1");
+  const [quality, setQuality] = useState("low");
+  const [format, setFormat] = useState("png");
+  const capabilities = useMediaCapabilities();
   const [style, setStyle] = useState("Авто");
   const [duration, setDuration] = useState("5");
   const [references, setReferences] = useState<Reference[]>([]);
@@ -39,6 +43,10 @@ export function MediaWorkbench({ surface }: { surface: "images" | "video" | "sou
           setStyle(value.style);
         if (typeof value.duration === "string" && ["5", "10", "15"].includes(value.duration))
           setDuration(value.duration);
+        if (typeof value.quality === "string" && ["low", "medium", "high", "auto"].includes(value.quality))
+          setQuality(value.quality);
+        if (typeof value.format === "string" && ["png", "jpeg", "webp"].includes(value.format))
+          setFormat(value.format);
       }
     } catch {
       /* The workspace also works when browser storage is unavailable. */
@@ -48,11 +56,11 @@ export function MediaWorkbench({ surface }: { surface: "images" | "video" | "sou
   useEffect(() => {
     if (!hydrated) return;
     try {
-      sessionStorage.setItem(draftKey, JSON.stringify({ prompt, ratio, style, duration }));
+      sessionStorage.setItem(draftKey, JSON.stringify({ prompt, ratio, style, duration, quality, format }));
     } catch {
       /* No generation or network request is triggered by saving a local draft. */
     }
-  }, [draftKey, hydrated, prompt, ratio, style, duration]);
+  }, [draftKey, hydrated, prompt, ratio, style, duration, quality, format]);
   useEffect(
     () => () => {
       epoch.current++;
@@ -97,11 +105,13 @@ export function MediaWorkbench({ surface }: { surface: "images" | "video" | "sou
     const controller = new AbortController();
     void fetch(`/api/v1/media/assets/${id}`, { signal: controller.signal })
       .then(async (response) => {
-        if (!response.ok || !response.headers.get("content-type")?.startsWith("image/png"))
-          throw Error();
+        const mime = response.headers.get("content-type")?.split(";")[0]?.trim();
+        if (!response.ok || (mime !== "image/png" && mime !== "image/jpeg")) throw Error();
         const blob = await response.blob();
         if (!controller.signal.aborted)
-          await read([new File([blob], `kosmora-${id}.png`, { type: "image/png" })], true);
+          await read([
+            new File([blob], `kosmora-${id}.${mime === "image/png" ? "png" : "jpg"}`, { type: mime })
+          ], true);
       })
       .catch(() => {
         if (!controller.signal.aborted) setError("Не удалось открыть исходное изображение.");
@@ -122,10 +132,16 @@ export function MediaWorkbench({ surface }: { surface: "images" | "video" | "sou
         <SpeechStudio />
       </section>
     );
+  const imageConstraints = capabilities?.image_generation.constraints;
+  const imageOptions = resolveImageOptions(imageConstraints, {
+    aspect_ratio: ratio,
+    quality,
+    format
+  });
   const blocked = reading
     ? "Проверяем референсы…"
-    : ratio !== "1:1"
-      ? "Текущий маршрут создаёт PNG 1024 × 1024. Для другого формата нужен соответствующий маршрут генерации."
+    : !video && !imageOptions
+      ? "Сервер не объявил доступные параметры изображения. Запуск заблокирован."
       : undefined;
   const description = !prompt.trim()
     ? ""
@@ -142,7 +158,7 @@ export function MediaWorkbench({ surface }: { surface: "images" | "video" | "sou
         <h2>{video ? "Создание видео" : "Создание изображений"}</h2>
         <p>
           {video
-            ? "Сцена, движение камеры и референсы в одном рабочем окне."
+            ? "Видеопровайдер не подключён: можно сохранить только текстовый черновик сцены."
             : "Создавайте изображения по описанию, сохраняйте результат и возвращайтесь к нему в галерее."}
         </p>
       </header>
@@ -191,6 +207,7 @@ export function MediaWorkbench({ surface }: { surface: "images" | "video" | "sou
               ))}
             </div>
           )}
+          {!video && (
           <div className={styles.references}>
             <div className={styles.sectionTitle}>
               <h3>Референсы</h3>
@@ -211,7 +228,11 @@ export function MediaWorkbench({ surface }: { surface: "images" | "video" | "sou
             <button
               className={styles.upload}
               type="button"
-              disabled={reading || references.length >= 2}
+              disabled={
+                reading ||
+                references.length >= 2 ||
+                capabilities?.image_editing?.ready !== true
+              }
               onClick={() => input.current?.click()}
             >
               <WorkspaceIcon name="paperclip" />
@@ -241,26 +262,56 @@ export function MediaWorkbench({ surface }: { surface: "images" | "video" | "sou
               </div>
             )}
             <p className={styles.hint}>
-              Референсы используются при нажатии «Изменить изображение». Исходные файлы сохраняются
-              у вас.
+              {capabilities?.image_editing?.ready === true
+                ? "Референсы передаются только после явного запуска редактирования; исходные файлы остаются у вас."
+                : "Редактирование по референсам пока не объявлено сервером и отключено."}
             </p>
             {error && <p role="alert">{error}</p>}
           </div>
-          <fieldset className={styles.ratios}>
-            <legend>Соотношение сторон</legend>
-            <div>
-              {["1:1", "16:9", "9:16", "4:3"].map((value) => (
-                <button
-                  type="button"
-                  key={value}
-                  aria-pressed={ratio === value}
-                  onClick={() => setRatio(value)}
+          )}
+          {!video && imageOptions && imageConstraints && (
+            <>
+              <fieldset className={styles.ratios}>
+                <legend>Соотношение сторон</legend>
+                <div>
+                  {imageConstraints.aspectRatios.map((value) => (
+                    <button
+                      type="button"
+                      key={value}
+                      aria-pressed={imageOptions.aspect_ratio === value}
+                      onClick={() => setRatio(value)}
+                    >
+                      {value} · {IMAGE_SIZE_FOR_RATIO[value].replace("x", " × ")}
+                    </button>
+                  ))}
+                </div>
+              </fieldset>
+              <label className={styles.field}>
+                Качество
+                <select
+                  aria-label="Качество изображения"
+                  value={imageOptions.quality}
+                  onChange={(event) => setQuality(event.target.value)}
                 >
-                  {value}
-                </button>
-              ))}
-            </div>
-          </fieldset>
+                  {imageConstraints.qualities.map((value) => (
+                    <option key={value} value={value}>{value}</option>
+                  ))}
+                </select>
+              </label>
+              <label className={styles.field}>
+                Формат результата
+                <select
+                  aria-label="Формат результата"
+                  value={imageOptions.format}
+                  onChange={(event) => setFormat(event.target.value)}
+                >
+                  {imageConstraints.formats.map((value) => (
+                    <option key={value} value={value}>{value.toUpperCase()}</option>
+                  ))}
+                </select>
+              </label>
+            </>
+          )}
           <label className={styles.field}>
             Стиль
             <select
@@ -289,8 +340,10 @@ export function MediaWorkbench({ surface }: { surface: "images" | "video" | "sou
           )}
           <p className={styles.hint}>
             {video
-              ? "Параметры подготовлены для подключения видеомодели."
-              : "Доступный маршрут: PNG · 1024 × 1024. Стиль передаётся в описании."}
+              ? "Видеогенерация не подключена. Черновик не запускает провайдера."
+              : imageOptions
+                ? `Маршрут: ${imageOptions.format.toUpperCase()} · ${IMAGE_SIZE_FOR_RATIO[imageOptions.aspect_ratio].replace("x", " × ")}. Стиль передаётся в описании.`
+                : "Параметры появятся только после подтверждения от API."}
           </p>
         </section>
         <section className={styles.result} aria-label="Результат генерации">
@@ -317,6 +370,13 @@ export function MediaWorkbench({ surface }: { surface: "images" | "video" | "sou
                 data_base64
               }))}
               onUseResult={(file) => read([file], true)}
+              onRestoreParameters={(saved) => {
+                setRatio(saved.aspect_ratio);
+                setQuality(saved.quality);
+                setFormat(saved.format);
+              }}
+              capabilities={capabilities}
+              options={imageOptions}
             />
           )}
         </section>
