@@ -39,6 +39,7 @@ const { createDraftSessionGate } = require("./draft-session-gate.cjs");
 const { createDownloadCenter } = require("./download-center.cjs");
 const { createVaultConsole } = require("./vault-console.cjs");
 const { createLocalVault } = require("./local-vault.cjs");
+const { clearBrowserSessionData } = require("./session-cleanup.cjs");
 const { buildDiagnostics, formatDiagnosticsText } = require("./diagnostics.cjs");
 const { createVaultWorkspace } = require("./vault-workspace.cjs");
 const { safeWorkspaceRoute, isLoginOrLogout, isExplicitLogout } = require("./desktop-recovery.cjs");
@@ -618,8 +619,7 @@ async function openOrigin(origin, { persist = false } = {}) {
         computerWorkspace.forget();
         await kosworkWorkCycle?.forget();
         await kosworkBrowser?.forget();
-        await browserSession.clearStorageData();
-        await browserSession.clearCache();
+        await clearBrowserSessionData(() => browserSession);
       } catch {
         await showConnection(
           "Смена сервера отменена: невозможно очистить локальные данные предыдущего сервера."
@@ -819,8 +819,7 @@ async function nativeLogout() {
   preferences.update({ lastPath: "/" });
   const browserSession = session.fromPartition(SESSION_PARTITION, { cache: true });
   try {
-    await browserSession.clearStorageData();
-    await browserSession.clearCache();
+    await clearBrowserSessionData(() => browserSession);
     if (currentOrigin && mainWindow && !mainWindow.isDestroyed())
       await mainWindow.loadURL(currentOrigin + "/login");
   } catch {
@@ -929,7 +928,17 @@ function startConnectivityMonitor() {
   connectivityTimer.unref?.();
 }
 
-function clearDraftsForHostedLogout(url) {
+function warnSessionResidueAfterLogout() {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  void dialog.showMessageBox(mainWindow, {
+    type: "warning",
+    title: "Сеанс очищен не полностью",
+    message:
+      "Не удалось очистить локальные остатки браузерного сеанса при выходе. Выйдите через меню «Выйти и удалить локальные данные…» и повторите вход."
+  });
+}
+
+function clearDraftsForHostedLogout(url, { alsoClearSession = false } = {}) {
   if (!isExplicitLogout(url, currentOrigin)) return true;
   // A first-party /logout navigation is an explicit exit, including when
   // a hosted page handles it without using the native menu.
@@ -951,6 +960,15 @@ function clearDraftsForHostedLogout(url) {
     void kosworkWorkCycle?.forget().catch(() => {});
     void kosworkBrowser?.forget().catch(() => {});
     preferences.update({ lastPath: "/" });
+    // Timing matters: the storage wipe must never run at will-navigate, where it
+    // could delete the session cookie before the server's own /logout request
+    // completes. Callers pass alsoClearSession only after navigation committed
+    // (did-navigate paths), so hosted logout reaches the same residue cleanup as
+    // the native menu exit.
+    if (alsoClearSession)
+      void clearBrowserSessionData(() =>
+        session.fromPartition(SESSION_PARTITION, { cache: true })
+      ).catch(warnSessionResidueAfterLogout);
     return true;
   } catch {
     void dialog.showMessageBox(mainWindow, {
@@ -1011,11 +1029,18 @@ function installNavigationGuards(window) {
       kosworkWorkCycle?.invalidate();
       kosworkBrowser?.invalidate();
       draftSessionGate.reset();
+      // The /logout navigation landed, so the server response already cleared its
+      // session cookie: now the local residue can reach the menu-exit parity safely.
+      if (isExplicitLogout(url, currentOrigin))
+        void clearBrowserSessionData(() =>
+          session.fromPartition(SESSION_PARTITION, { cache: true })
+        ).catch(warnSessionResidueAfterLogout);
     } else void restoreAfterAuthentication();
   });
   window.webContents.on("did-navigate-in-page", (_event, url) => {
     // SPA history transitions can bypass will-navigate.
-    if (isExplicitLogout(url, currentOrigin)) void clearDraftsForHostedLogout(url);
+    if (isExplicitLogout(url, currentOrigin))
+      void clearDraftsForHostedLogout(url, { alsoClearSession: true });
     persistRoute(url);
     if (isLoginOrLogout(url, currentOrigin)) {
       vaultConsole?.invalidate();
