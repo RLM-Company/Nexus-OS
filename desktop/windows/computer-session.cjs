@@ -243,6 +243,10 @@ class ComputerSession {
           observation = { ...observation, browser: { ...observation.browser } };
           delete observation.browser.read_text;
         }
+        if (observation.browser?.find_text && state.session.supports_browser_text_find !== true) {
+          observation = { ...observation, browser: { ...observation.browser } };
+          delete observation.browser.find_text;
+        }
         if (state.workspace)
           observation = {
             ...observation,
@@ -322,6 +326,8 @@ class ComputerSession {
         )
           throw Error("COMPUTER_ACTION_INVALID");
         if (action.kind === "browser_read_text" && observation.browser?.read_text !== true)
+          throw Error("COMPUTER_ACTION_INVALID");
+        if (action.kind === "browser_find_text" && observation.browser?.find_text !== true)
           throw Error("COMPUTER_ACTION_INVALID");
         if (
           action.kind === "workspace_read_text" &&

@@ -1414,6 +1414,39 @@ describe("bounded browser text capability", () => {
     });
 });
 
+describe("browser literal find capability", () => {
+  for (const capable of [false, true])
+    it(`requires native find capability: ${capable}`, async () => {
+      const f = await fixture({
+        vision: false,
+        output: {
+          ...action,
+          action: {
+            kind: "browser_find_text",
+            query: "00123",
+            case_sensitive: false,
+            offset_utf16: 0,
+            expected_version: null
+          }
+        }
+      });
+      Object.assign(f.input, { execution_mode: "browser" });
+      expect(await f.create()).toMatchObject({ supports_browser_text_find: true });
+      const value = structuredClone(step);
+      delete value.observation.image_jpeg_base64;
+      value.observation.browser = {
+        tab_id: "a".repeat(12),
+        generation: 0,
+        read_text: true,
+        ...(capable ? { find_text: true as const } : {})
+      };
+      if (capable) {
+        expect(await f.next(value)).toMatchObject({ action: { kind: "browser_find_text" } });
+        expect(f.calls[0]!.messages[0]!.content).toContain("complete_scan_from_offset");
+      } else await expect(f.next(value)).rejects.toThrow("OUTPUT_INVALID");
+    });
+});
+
 describe("selected-folder UTF-8 page capability", () => {
   for (const capable of [false, true])
     it(`requires agreed text-page capability: ${capable}`, async () => {

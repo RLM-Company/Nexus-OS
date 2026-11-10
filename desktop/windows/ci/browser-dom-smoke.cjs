@@ -521,6 +521,33 @@ async function run() {
     } while (cursor !== null);
     assert.equal(articleResult, article);
     assert.equal(articleResult.includes("reader-secret"), false);
+    const found = await engine.execute(
+      {
+        kind: "browser_find_text",
+        query: "00123",
+        case_sensitive: true,
+        offset_utf16: 0,
+        expected_version: firstExcerpt.version
+      },
+      await engine.observe(abort),
+      abort
+    );
+    assert.equal(found.matches.length, 1);
+    assert.equal(found.matches[0].quote, "00123");
+    assert.equal(found.matches[0].start_utf16, article.indexOf("00123"));
+    assert.equal(found.version, firstExcerpt.version);
+    const omitted = await engine.execute(
+      {
+        kind: "browser_find_text",
+        query: "reader-secret",
+        case_sensitive: false,
+        offset_utf16: 0,
+        expected_version: null
+      },
+      await engine.observe(abort),
+      abort
+    );
+    assert.equal(omitted.matches.length, 0);
     await page
       .locator("p")
       .first()

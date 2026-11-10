@@ -25,6 +25,7 @@ test("native source and document tools require explicit server capability flags"
               ? {}
               : {
                   supports_browser_text_reads: capability,
+                  supports_browser_text_find: capability,
                   supports_work_corrections: capability,
                   supports_workspace_read_lines: capability,
                   supports_workspace_text_reads: capability,
@@ -43,6 +44,7 @@ test("native source and document tools require explicit server capability flags"
       signal: new AbortController().signal
     });
     assert.equal(result.supports_browser_text_reads, capability === true ? true : undefined);
+    assert.equal(result.supports_browser_text_find, capability === true ? true : undefined);
     assert.equal(result.supports_work_corrections, capability === true ? true : undefined);
     assert.equal(result.supports_workspace_read_lines, capability === true ? true : undefined);
     assert.equal(result.supports_workspace_text_reads, capability === true ? true : undefined);
@@ -411,6 +413,68 @@ test("page reader is advertised only after server capability negotiation and can
     assert.equal(seen.read_text, capability === true ? true : undefined);
     assert.equal(executions, capability === true ? 1 : 0);
     assert.equal(native.browser.read_text, true);
+  }
+});
+
+test("browser find requires explicit server negotiation and cannot bypass it", async () => {
+  for (const capability of [undefined, true]) {
+    const native = {
+      observation_id: "find",
+      active_window: "tab:0",
+      width: 960,
+      height: 740,
+      description: "{}",
+      browser: { tab_id: "a".repeat(12), generation: 0, read_text: true, find_text: true }
+    };
+    let seen,
+      executions = 0;
+    const runner = new ComputerSession({
+      executionMode: "browser",
+      identity: async () => owner,
+      confirm: async () => true,
+      notify() {},
+      driver: {
+        observe: async () => native,
+        execute: async () => {
+          executions++;
+          return { matches: [] };
+        },
+        stop() {}
+      },
+      planner: {
+        begin: async () => ({
+          id: "fixture",
+          supports_browser_text_reads: true,
+          supports_browser_text_find: capability
+        }),
+        authorize: async () => ({ authorized: true, valid_for_ms: 10000 }),
+        end: async () => {},
+        next: async ({ observation }) => {
+          seen = observation.browser;
+          return {
+            action: {
+              kind: "browser_find_text",
+              query: "00123",
+              case_sensitive: true,
+              offset_utf16: 0,
+              expected_version: null
+            },
+            message: "fixture",
+            requires_confirmation: false
+          };
+        }
+      }
+    });
+    if (capability) await runner.run({ project: "project", goal: "Find text", maxSteps: 1 });
+    else
+      await assert.rejects(
+        runner.run({ project: "project", goal: "Find text", maxSteps: 1 }),
+        /COMPUTER_ACTION_INVALID/
+      );
+    assert.equal(seen.find_text, capability === true ? true : undefined);
+    assert.equal(seen.read_text, true);
+    assert.equal(native.browser.find_text, true);
+    assert.equal(executions, capability === true ? 1 : 0);
   }
 });
 
