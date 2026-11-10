@@ -174,7 +174,7 @@ test("compares a selected game file against its saved version and never restarts
 
   await code.fill(edited);
   await expect(diff).toContainText("Добавлено строк:");
-  await expect(diff).toContainText("Удалено строк:");
+  await expect(diff).toContainText("удалено строк:");
   await canvas.getByRole("button", { name: "styles.css", exact: true }).click();
   await expect(diff).toContainText("Содержимое совпадает побайтно.");
   await canvas.getByRole("button", { name: "game.js", exact: true }).click();
