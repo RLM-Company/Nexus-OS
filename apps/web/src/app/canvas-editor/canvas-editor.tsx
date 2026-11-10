@@ -113,7 +113,8 @@ export function CanvasEditor({
   initialDraft,
   sitePreview = false,
   gamePreview = false,
-  gameSource = false
+  gameSource = false,
+  onDirtyChange
 }: {
   projectId: string;
   initialArtifactId?: string;
@@ -121,6 +122,7 @@ export function CanvasEditor({
   sitePreview?: boolean;
   gamePreview?: boolean;
   gameSource?: boolean;
+  onDirtyChange?: (dirty: boolean) => void;
 }) {
   const [scope, setScope] = useState<{ projectId: string; ownerScope: string } | null>(null);
   const [scopeError, setScopeError] = useState("");
@@ -172,6 +174,7 @@ export function CanvasEditor({
       sitePreview={sitePreview}
       gamePreview={gamePreview}
       gameSource={gameSource}
+      {...(onDirtyChange ? { onDirtyChange } : {})}
     />
   );
 }
@@ -183,7 +186,8 @@ function ScopedCanvasEditor({
   initialDraft,
   sitePreview = false,
   gamePreview = false,
-  gameSource = false
+  gameSource = false,
+  onDirtyChange
 }: {
   projectId: string;
   ownerScope: string;
@@ -192,6 +196,7 @@ function ScopedCanvasEditor({
   sitePreview?: boolean;
   gamePreview?: boolean;
   gameSource?: boolean;
+  onDirtyChange?: (dirty: boolean) => void;
 }) {
   const lifecycle = useRef<AbortController | null>(null);
   useEffect(() => {
@@ -262,6 +267,9 @@ function ScopedCanvasEditor({
         draft.content !== loaded.revision.content ||
         draft.baseVersion !== loaded.artifact.version
       : draft.title !== emptyDraft.title || draft.format !== emptyDraft.format || !!draft.content);
+  useEffect(() => {
+    onDirtyChange?.(dirty);
+  }, [dirty, onDirtyChange]);
   const reviewedDraftMatches =
     review?.kind === "conflict" &&
     draft.title === review.after.title &&
