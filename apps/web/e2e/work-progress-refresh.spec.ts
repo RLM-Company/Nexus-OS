@@ -53,6 +53,67 @@ async function preparedWork(request: APIRequestContext, autonomy: "A1" | "A2" = 
   };
 }
 
+test("manual memory creation retry recovers a lost acknowledgement without a duplicate", async ({
+  page,
+  request
+}) => {
+  const work = await preparedWork(request);
+  const path = `/api/v1/projects/${work.project}/memory`;
+  const payloads: { client_creation_id: string }[] = [];
+  let accepted = "";
+  await page.route(
+    (url) => url.pathname === path,
+    async (route) => {
+      if (route.request().method() !== "POST") return route.continue();
+      payloads.push(route.request().postDataJSON() as (typeof payloads)[number]);
+      if (payloads.length !== 1) return route.continue();
+      const response = await route.fetch();
+      expect(response.status()).toBe(201);
+      accepted = ((await response.json()) as { id: string }).id;
+      await route.fulfill({ status: 503, json: { error: "Lost acknowledgement" } });
+    }
+  );
+  await page.goto(`/?project=${work.project}&view=plan`);
+  const memory = page.getByRole("region", { name: "Память проекта", exact: true });
+  const fill = async () => {
+    await memory.getByLabel("Название записи", { exact: true }).fill("Keep the figures");
+    await memory
+      .getByLabel("Содержание записи", { exact: true })
+      .fill("19 700 ₽, кроме доставки; код 00123.");
+  };
+  await fill();
+  const add = memory.getByRole("button", { name: "Добавить в память", exact: true });
+  await add.click();
+  await expect(memory.getByText("Не удалось сохранить память", { exact: true })).toBeVisible();
+  await expect(
+    memory.locator("li").filter({ has: page.getByText("Keep the figures", { exact: true }) })
+  ).toHaveCount(1);
+  const retry = page.waitForResponse(
+    (response) =>
+      new URL(response.url()).pathname === path && response.request().method() === "POST"
+  );
+  await add.click();
+  const retried = await retry;
+  expect(retried.status()).toBe(201);
+  expect(((await retried.json()) as { id: string }).id).toBe(accepted);
+  expect(payloads[1]).toEqual(payloads[0]);
+  await expect(memory.getByLabel("Название записи", { exact: true })).toHaveValue("");
+  expect(
+    ((await (await request.get(path)).json()) as { items: { id: string }[] }).items.map(
+      (entry) => entry.id
+    )
+  ).toEqual([accepted]);
+  await fill();
+  const next = page.waitForResponse(
+    (response) =>
+      new URL(response.url()).pathname === path && response.request().method() === "POST"
+  );
+  await add.click();
+  expect((await next).status()).toBe(201);
+  expect(payloads[2]!.client_creation_id).not.toBe(payloads[0]!.client_creation_id);
+  expect(((await (await request.get(path)).json()) as { items: unknown[] }).items).toHaveLength(2);
+});
+
 test("project memory clears recovered read warnings without hiding rejected writes", async ({
   page,
   request

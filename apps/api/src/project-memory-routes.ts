@@ -1,8 +1,9 @@
 import {
   ProjectMemoryControlSchema,
-  ProjectMemoryInputSchema,
+  ProjectMemoryCreateSchema,
   ProjectMemoryUpdateSchema,
   type IdentityContext,
+  type ProjectMemoryCreate,
   type ProjectMemoryInput
 } from "@cosmora/contracts";
 import { ProjectMemoryConflict, type ProjectMemoryStore, type ProjectStore } from "@cosmora/db";
@@ -48,13 +49,14 @@ export function registerProjectMemoryRoutes(options: {
       throw error;
     }
   };
-  app.post<{ Params: Params; Body: ProjectMemoryInput }>(
+  app.post<{ Params: Params; Body: ProjectMemoryCreate }>(
     base,
-    { schema: { params, body: ProjectMemoryInputSchema } },
+    { schema: { params, body: ProjectMemoryCreateSchema } },
     (req, reply) => {
       if (!owned(req)) return reply.code(404).send({ error: "PROJECT_NOT_FOUND" });
+      const { client_creation_id, ...input } = req.body;
       const result = handle(() =>
-        memory.create(req.params.projectId, identityFor(req).owner_id, req.body)
+        memory.create(req.params.projectId, identityFor(req).owner_id, input, client_creation_id)
       );
       if (result.error) return reply.code(409).send({ error: result.error });
       return result.value
