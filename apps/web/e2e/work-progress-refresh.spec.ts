@@ -53,6 +53,66 @@ async function preparedWork(request: APIRequestContext, autonomy: "A1" | "A2" = 
   };
 }
 
+test("project memory clears recovered read warnings without hiding rejected writes", async ({
+  page,
+  request
+}) => {
+  const work = await preparedWork(request);
+  const path = `/api/v1/projects/${work.project}/memory`;
+  let fail = false;
+  await page.route(
+    (url) => url.pathname === path,
+    async (route) => {
+      if (route.request().method() === "POST")
+        return route.fulfill({ status: 409, json: { error: "MEMORY_BUSY" } });
+      if (route.request().method() === "GET" && fail)
+        return route.fulfill({ status: 503, json: { error: "Temporarily unavailable" } });
+      return route.continue();
+    }
+  );
+  await page.goto(`/?project=${work.project}&view=plan`);
+  const memory = page.getByRole("region", { name: "Память проекта", exact: true });
+  await expect(memory.getByText("Записей по запросу нет.", { exact: true })).toBeVisible();
+  const refresh = memory.getByRole("button", { name: "Обновить память", exact: true });
+  const warning = memory.getByText("Не удалось загрузить память проекта", { exact: true });
+  fail = true;
+  await refresh.click();
+  await expect(warning).toBeVisible();
+  fail = false;
+  await refresh.click();
+  await expect(warning).toBeHidden();
+  await memory.getByLabel("Название записи", { exact: true }).fill("Owner requirement");
+  await memory
+    .getByLabel("Содержание записи", { exact: true })
+    .fill("Keep all stated constraints.");
+  await memory.getByRole("button", { name: "Добавить в память", exact: true }).click();
+  const rejected = memory.getByText(
+    "Запись изменилась или достигнут лимит. Обновите список и повторите действие.",
+    { exact: true }
+  );
+  await expect(rejected).toBeVisible();
+  const refreshed = page.waitForResponse(
+    (response) => new URL(response.url()).pathname === path && response.request().method() === "GET"
+  );
+  await refresh.click();
+  expect((await refreshed).status()).toBe(200);
+  await expect(rejected).toBeVisible();
+  fail = true;
+  const failed = page.waitForResponse(
+    (response) => new URL(response.url()).pathname === path && response.request().method() === "GET"
+  );
+  await refresh.click();
+  expect((await failed).status()).toBe(503);
+  await expect(rejected).toBeVisible();
+  fail = false;
+  const recovered = page.waitForResponse(
+    (response) => new URL(response.url()).pathname === path && response.request().method() === "GET"
+  );
+  await refresh.click();
+  expect((await recovered).status()).toBe(200);
+  await expect(rejected).toBeVisible();
+});
+
 test("unchanged completed progress does not refetch on a timer", async ({ page, request }) => {
   const work = await preparedWork(request);
   let reads = 0;

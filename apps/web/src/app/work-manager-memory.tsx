@@ -19,6 +19,7 @@ export function WorkManagerMemory({ projectId }: { projectId: string }) {
   const [editing, setEditing] = useState<ProjectMemoryEntry | null>(null);
   const [busy, setBusy] = useState(false),
     [error, setError] = useState("");
+  const [readError, setReadError] = useState("");
   const [revision, setRevision] = useState(0);
   const lock = useRef(false);
   const epoch = useRef(0);
@@ -29,6 +30,7 @@ export function WorkManagerMemory({ projectId }: { projectId: string }) {
     setItems([]);
     setQuery("");
     setError("");
+    setReadError("");
   }, [projectId]);
   useEffect(() => {
     const controller = new AbortController();
@@ -41,12 +43,14 @@ export function WorkManagerMemory({ projectId }: { projectId: string }) {
         .then(async (response) => {
           if (!response.ok) throw new Error("MEMORY_UNAVAILABLE");
           const result = (await response.json()) as { items: ProjectMemoryEntry[] };
-          if (!controller.signal.aborted && current === epoch.current) {
+          if (!controller.signal.aborted && current === epoch.current && !lock.current) {
             setItems(result.items);
+            setReadError("");
           }
         })
         .catch(() => {
-          if (!controller.signal.aborted) setError("Не удалось загрузить память проекта");
+          if (!controller.signal.aborted && current === epoch.current && !lock.current)
+            setReadError("Не удалось загрузить память проекта");
         });
     }, 250);
     return () => {
@@ -122,9 +126,9 @@ export function WorkManagerMemory({ projectId }: { projectId: string }) {
       <button disabled={busy} onClick={() => setRevision((r) => r + 1)}>
         Обновить память
       </button>
-      {error && (
+      {(error || readError) && (
         <p role="alert" className={styles.error}>
-          {error}
+          {error || readError}
         </p>
       )}
       <ul className={styles.entries}>
