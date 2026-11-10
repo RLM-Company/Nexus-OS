@@ -20,6 +20,7 @@ import { createHash } from "node:crypto";
 import { Buffer } from "node:buffer";
 import { Worker } from "node:worker_threads";
 import { pathToFileURL, fileURLToPath } from "node:url";
+import { createRequire } from "node:module";
 import { dirname, join, relative } from "node:path";
 import { performance } from "node:perf_hooks";
 
@@ -125,9 +126,9 @@ if (mode === "--digest") {
   process.exit(0);
 }
 
-const modelDir = mode;
-const manifestPath = rest[0];
-const [output, comparePath] = rest.slice(1);
+// Full-run arguments; --probe consumes the same <model-dir> <manifest> shape
+// but writes no report.
+const [modelDir, manifestPath, output, comparePath] = mode === "--probe" ? rest : [mode, ...rest];
 if (!modelDir || !manifestPath) {
   console.error(
     "MODELS REQUIRED: usage: bench-experience-llm-distill.mjs <installed-model-dir> <manifest.json> <report.json> [previous.json]\n" +
@@ -163,18 +164,25 @@ if (verifiedFiles === 0)
     "operator records digests after install: bench --digest <dir>"
   );
 
+// Runtime library resolution: the worker runs from scripts/ where workspace
+// packages are not resolvable by bare specifier, so the bench resolves the
+// exact node-ESM entry once (declared dependency of the workspace, installed
+// via apps/api) and passes the concrete file path into the worker.
+const transformersPackage = await resolveTransformersPackage();
+
 const worker = new Worker(new URL("./experience-llm-worker.mjs", import.meta.url), {
   workerData: {
     modelDir: modelDir,
     dtype: manifest.dtype ?? "q4",
-    intraThreads: manifest.intra_threads ?? 2
+    intraThreads: manifest.intra_threads ?? 2,
+    transformersEntry: transformersPackage.entry
   }
 });
 worker.on("error", (error) => {
   console.error("WORKER_ERROR", String(error?.message ?? error));
   process.exit(3);
 });
-const askOnce = (promptList) =>
+const askOnce = (promptList, maxNewTokens = 700) =>
   new Promise((resolve, reject) => {
     const id = Math.random().toString(36).slice(2);
     const onMessage = (message) => {
@@ -184,8 +192,97 @@ const askOnce = (promptList) =>
       else resolve(message.answers[0]);
     };
     worker.on("message", onMessage);
-    worker.postMessage({ id: id, op: "generate", conversations: [promptList], maxNewTokens: 700 });
+    worker.postMessage({
+      id: id,
+      op: "generate",
+      conversations: [promptList],
+      maxNewTokens: maxNewTokens
+    });
   });
+
+async function resolveTransformersPackage() {
+  const anchors = [
+    join(here, "..", "apps", "api", "package.json"),
+    join(here, "..", "package.json")
+  ];
+  let entryFile = null;
+  for (const base of anchors) {
+    try {
+      entryFile = createRequire(base).resolve("@huggingface/transformers");
+      break;
+    } catch {
+      // Try the next anchor; the last one failing resolves to the friendly error.
+    }
+  }
+  if (!entryFile)
+    fail(
+      "LLM_TRANSFORMERS_MISSING",
+      "pnpm install first: the declared offline runtime library @huggingface/transformers is required; numbers are never produced without the real runtime"
+    );
+  // Walk up from the resolved entry file to the package directory (the
+  // package.json subpath is often not exported, so direct resolution fails).
+  let dir = dirname(entryFile);
+  let pkg = null;
+  let pkgJsonPath = null;
+  for (;;) {
+    try {
+      const parsed = JSON.parse(await readFile(join(dir, "package.json"), "utf8"));
+      if (parsed.name === "@huggingface/transformers") {
+        pkg = parsed;
+        pkgJsonPath = join(dir, "package.json");
+        break;
+      }
+    } catch {
+      // Not the package directory yet.
+    }
+    const parent = dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  if (!pkg)
+    fail(
+      "LLM_TRANSFORMERS_MISSING",
+      "package.json of @huggingface/transformers not found above " + entryFile
+    );
+  const dot = pkg.exports?.["."];
+  const entryRel =
+    dot?.node?.import?.default ??
+    (typeof dot?.import === "string" ? dot.import : (dot?.import?.default ?? null)) ??
+    (typeof dot === "string" ? dot : null) ??
+    pkg.main ??
+    null;
+  if (!entryRel) fail("LLM_TRANSFORMERS_MISSING", "no node import entry in " + pkgJsonPath);
+  return { entry: join(dir, entryRel), version: pkg.version };
+}
+
+if (mode === "--probe") {
+  // Cheap end-to-end smoke test: manifest verifies, the ONNX session loads,
+  // one tiny greedy generation answers. Not a measurement; nothing is
+  // committed, so the frozen full-run protocol stays untouched.
+  const started = performance.now();
+  const answer = await askOnce(
+    [
+      { role: "system", content: "Return the JSON object only." },
+      { role: "user", content: 'Return exactly: {"format":"probe.v1","ok":true}' }
+    ],
+    24
+  );
+  console.log(
+    JSON.stringify(
+      {
+        mode: "probe",
+        transformers_js_version: transformersPackage.version,
+        answer_bytes: byteLen(answer),
+        answer_preview: answer.slice(0, 120),
+        ms: Math.round((performance.now() - started) * 1000) / 1000
+      },
+      null,
+      2
+    )
+  );
+  await worker.terminate();
+  process.exit(0);
+}
 
 const evaluateCase = async (c) => {
   const messages = [
@@ -344,6 +441,7 @@ const report = {
     node: process.version,
     platform: process.platform,
     arch: process.arch,
+    transformers_js_version: transformersPackage.version,
     rss_snapshot_mib: Math.round((process.memoryUsage().rss / 1048576) * 100) / 100
   },
   cases: cases
