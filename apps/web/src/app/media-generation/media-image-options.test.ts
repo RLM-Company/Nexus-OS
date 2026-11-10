@@ -18,9 +18,13 @@ describe("Studio image provider negotiation", () => {
   it("accepts only complete supported provider constraints and sends correct aspect option", () => {
     const constraints = parseImageConstraints(advertised);
     expect(constraints).not.toBeNull();
-    expect(resolveImageOptions(constraints, {
-      aspect_ratio: "3:2", quality: "high", format: "webp"
-    })).toEqual({ aspect_ratio: "3:2", quality: "high", format: "webp" });
+    expect(
+      resolveImageOptions(constraints, {
+        aspect_ratio: "3:2",
+        quality: "high",
+        format: "webp"
+      })
+    ).toEqual({ aspect_ratio: "3:2", quality: "high", format: "webp" });
     expect(IMAGE_SIZE_FOR_RATIO["3:2"]).toBe("1536x1024");
   });
   it("never exposes invalid, absent, mismatched or fictitious options", () => {
@@ -44,8 +48,12 @@ describe("Studio image provider negotiation", () => {
       qualities: ["medium"],
       formats: ["jpeg"]
     });
-    expect(resolveImageOptions(constraints, {
-      aspect_ratio: "16:9", quality: "ultra", format: "png"
-    })).toEqual({ aspect_ratio: "3:2", quality: "medium", format: "jpeg" });
+    expect(
+      resolveImageOptions(constraints, {
+        aspect_ratio: "16:9",
+        quality: "ultra",
+        format: "png"
+      })
+    ).toEqual({ aspect_ratio: "3:2", quality: "medium", format: "jpeg" });
   });
 });

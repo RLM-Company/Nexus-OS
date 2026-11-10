@@ -43,7 +43,10 @@ export function MediaWorkbench({ surface }: { surface: "images" | "video" | "sou
           setStyle(value.style);
         if (typeof value.duration === "string" && ["5", "10", "15"].includes(value.duration))
           setDuration(value.duration);
-        if (typeof value.quality === "string" && ["low", "medium", "high", "auto"].includes(value.quality))
+        if (
+          typeof value.quality === "string" &&
+          ["low", "medium", "high", "auto"].includes(value.quality)
+        )
           setQuality(value.quality);
         if (typeof value.format === "string" && ["png", "jpeg", "webp"].includes(value.format))
           setFormat(value.format);
@@ -56,7 +59,10 @@ export function MediaWorkbench({ surface }: { surface: "images" | "video" | "sou
   useEffect(() => {
     if (!hydrated) return;
     try {
-      sessionStorage.setItem(draftKey, JSON.stringify({ prompt, ratio, style, duration, quality, format }));
+      sessionStorage.setItem(
+        draftKey,
+        JSON.stringify({ prompt, ratio, style, duration, quality, format })
+      );
     } catch {
       /* No generation or network request is triggered by saving a local draft. */
     }
@@ -109,9 +115,14 @@ export function MediaWorkbench({ surface }: { surface: "images" | "video" | "sou
         if (!response.ok || (mime !== "image/png" && mime !== "image/jpeg")) throw Error();
         const blob = await response.blob();
         if (!controller.signal.aborted)
-          await read([
-            new File([blob], `kosmora-${id}.${mime === "image/png" ? "png" : "jpg"}`, { type: mime })
-          ], true);
+          await read(
+            [
+              new File([blob], `kosmora-${id}.${mime === "image/png" ? "png" : "jpg"}`, {
+                type: mime
+              })
+            ],
+            true
+          );
       })
       .catch(() => {
         if (!controller.signal.aborted) setError("Не удалось открыть исходное изображение.");
@@ -208,66 +219,64 @@ export function MediaWorkbench({ surface }: { surface: "images" | "video" | "sou
             </div>
           )}
           {!video && (
-          <div className={styles.references}>
-            <div className={styles.sectionTitle}>
-              <h3>Референсы</h3>
-              <span>{references.length} / 2</span>
-            </div>
-            <input
-              ref={input}
-              type="file"
-              accept="image/png,image/jpeg"
-              multiple
-              hidden
-              aria-label="Файлы референсов"
-              onChange={(event) => {
-                void read(Array.from(event.target.files ?? []));
-                event.target.value = "";
-              }}
-            />
-            <button
-              className={styles.upload}
-              type="button"
-              disabled={
-                reading ||
-                references.length >= 2 ||
-                capabilities?.image_editing?.ready !== true
-              }
-              onClick={() => input.current?.click()}
-            >
-              <WorkspaceIcon name="paperclip" />
-              {reading ? "Проверяем…" : "Добавить референсы"}
-              <small>PNG, JPEG · до 20 МБ</small>
-            </button>
-            {references.length > 0 && (
-              <div className={styles.thumbnails}>
-                {references.map((file) => (
-                  <figure key={file.id}>
-                    {/* References leave the browser only after an explicit generation click. */}
-                    <img src={file.url} alt={file.name} />
-                    <figcaption title={file.name}>{file.name}</figcaption>
-                    <button
-                      type="button"
-                      aria-label={`Убрать референс ${file.name}`}
-                      onClick={() => {
-                        URL.revokeObjectURL(file.url);
-                        refs.current = refs.current.filter((item) => item.id !== file.id);
-                        setReferences(refs.current);
-                      }}
-                    >
-                      <WorkspaceIcon name="close" />
-                    </button>
-                  </figure>
-                ))}
+            <div className={styles.references}>
+              <div className={styles.sectionTitle}>
+                <h3>Референсы</h3>
+                <span>{references.length} / 2</span>
               </div>
-            )}
-            <p className={styles.hint}>
-              {capabilities?.image_editing?.ready === true
-                ? "Референсы передаются только после явного запуска редактирования; исходные файлы остаются у вас."
-                : "Редактирование по референсам пока не объявлено сервером и отключено."}
-            </p>
-            {error && <p role="alert">{error}</p>}
-          </div>
+              <input
+                ref={input}
+                type="file"
+                accept="image/png,image/jpeg"
+                multiple
+                hidden
+                aria-label="Файлы референсов"
+                onChange={(event) => {
+                  void read(Array.from(event.target.files ?? []));
+                  event.target.value = "";
+                }}
+              />
+              <button
+                className={styles.upload}
+                type="button"
+                disabled={
+                  reading || references.length >= 2 || capabilities?.image_editing?.ready !== true
+                }
+                onClick={() => input.current?.click()}
+              >
+                <WorkspaceIcon name="paperclip" />
+                {reading ? "Проверяем…" : "Добавить референсы"}
+                <small>PNG, JPEG · до 20 МБ</small>
+              </button>
+              {references.length > 0 && (
+                <div className={styles.thumbnails}>
+                  {references.map((file) => (
+                    <figure key={file.id}>
+                      {/* References leave the browser only after an explicit generation click. */}
+                      <img src={file.url} alt={file.name} />
+                      <figcaption title={file.name}>{file.name}</figcaption>
+                      <button
+                        type="button"
+                        aria-label={`Убрать референс ${file.name}`}
+                        onClick={() => {
+                          URL.revokeObjectURL(file.url);
+                          refs.current = refs.current.filter((item) => item.id !== file.id);
+                          setReferences(refs.current);
+                        }}
+                      >
+                        <WorkspaceIcon name="close" />
+                      </button>
+                    </figure>
+                  ))}
+                </div>
+              )}
+              <p className={styles.hint}>
+                {capabilities?.image_editing?.ready === true
+                  ? "Референсы передаются только после явного запуска редактирования; исходные файлы остаются у вас."
+                  : "Редактирование по референсам пока не объявлено сервером и отключено."}
+              </p>
+              {error && <p role="alert">{error}</p>}
+            </div>
           )}
           {!video && imageOptions && imageConstraints && (
             <>
@@ -294,7 +303,9 @@ export function MediaWorkbench({ surface }: { surface: "images" | "video" | "sou
                   onChange={(event) => setQuality(event.target.value)}
                 >
                   {imageConstraints.qualities.map((value) => (
-                    <option key={value} value={value}>{value}</option>
+                    <option key={value} value={value}>
+                      {value}
+                    </option>
                   ))}
                 </select>
               </label>
@@ -306,7 +317,9 @@ export function MediaWorkbench({ surface }: { surface: "images" | "video" | "sou
                   onChange={(event) => setFormat(event.target.value)}
                 >
                   {imageConstraints.formats.map((value) => (
-                    <option key={value} value={value}>{value.toUpperCase()}</option>
+                    <option key={value} value={value}>
+                      {value.toUpperCase()}
+                    </option>
                   ))}
                 </select>
               </label>
@@ -352,8 +365,7 @@ export function MediaWorkbench({ surface }: { surface: "images" | "video" | "sou
               <WorkspaceIcon name="video" />
               <h3>Здесь появится видео</h3>
               <p>
-                Видеогенерация пока не подключена. Описание, параметры и референсы можно подготовить
-                здесь.
+                Видеогенерация не подключена. Здесь сохраняется только черновик описания сцены.
               </p>
               <button type="button" disabled>
                 Сгенерировать видео

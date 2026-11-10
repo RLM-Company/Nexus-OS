@@ -4,7 +4,12 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import styles from "./media-panel.module.css";
 import { WorkspaceIcon } from "../workspace-icons";
 import type { ChatImageAttachment } from "@cosmora/contracts";
-import { parseImageConstraints, resolveImageOptions, type ImageConstraints, type ImageRequestOptions } from "./media-image-options";
+import {
+  parseImageConstraints,
+  resolveImageOptions,
+  type ImageConstraints,
+  type ImageRequestOptions
+} from "./media-image-options";
 
 export type MediaJob = {
   id: string;
@@ -37,24 +42,28 @@ const statusName: Record<MediaJob["status"], string> = {
   cancelled: "Отменено"
 };
 const mediaErrorName = (code: string | null) =>
-  ({
-    timeout: "Истекло время ожидания провайдера. Исход операции может быть неизвестен: повтор автоматически не выполняется.",
-    INTERRUPTED: "Сервис был перезапущен. Задача прервана и не запускается повторно.",
-    invalid_key: "Провайдер не принял учётные данные.",
-    insufficient_funds: "У провайдера недостаточно средств или квоты.",
-    rate_limit: "Провайдер ограничил частоту запросов.",
-    invalid_mime: "Провайдер вернул файл неподходящего формата.",
-    corrupt_response: "Провайдер вернул повреждённый результат.",
-    provider_error: "Провайдер не выполнил запрос.",
-    capability_unavailable: "Провайдер не поддерживает выбранную операцию.",
-    MEDIA_BUSY: "Другая задача ещё выполняется. Проверьте историю.",
-    MEDIA_LIMIT: "Достигнут лимит операций.",
-    IDEMPOTENCY_CONFLICT: "Для этого идентификатора запуска изменены описание или параметры. Новый платный запрос не выполнен.",
-    IMAGE_EDITING_UNAVAILABLE: "Редактирование по референсу не подключено.",
-    MEDIA_UNAVAILABLE: "Генерация сейчас недоступна.",
-    CONSENT_REQUIRED: "Не подтверждён платный запуск.",
-    EXPLICIT_HEADER_REQUIRED: "Не подтверждён платный запуск."
-  } as Record<string, string>)[code ?? ""] ?? (code ? `Ошибка: ${code}` : "");
+  (
+    ({
+      timeout:
+        "Истекло время ожидания провайдера. Исход операции может быть неизвестен: повтор автоматически не выполняется.",
+      INTERRUPTED: "Сервис был перезапущен. Задача прервана и не запускается повторно.",
+      invalid_key: "Провайдер не принял учётные данные.",
+      insufficient_funds: "У провайдера недостаточно средств или квоты.",
+      rate_limit: "Провайдер ограничил частоту запросов.",
+      invalid_mime: "Провайдер вернул файл неподходящего формата.",
+      corrupt_response: "Провайдер вернул повреждённый результат.",
+      provider_error: "Провайдер не выполнил запрос.",
+      capability_unavailable: "Провайдер не поддерживает выбранную операцию.",
+      MEDIA_BUSY: "Другая задача ещё выполняется. Проверьте историю.",
+      MEDIA_LIMIT: "Достигнут лимит операций.",
+      IDEMPOTENCY_CONFLICT:
+        "Для этого идентификатора запуска изменены описание или параметры. Новый платный запрос не выполнен.",
+      IMAGE_EDITING_UNAVAILABLE: "Редактирование по референсу не подключено.",
+      MEDIA_UNAVAILABLE: "Генерация сейчас недоступна.",
+      CONSENT_REQUIRED: "Не подтверждён платный запуск.",
+      EXPLICIT_HEADER_REQUIRED: "Не подтверждён платный запуск."
+    }) as Record<string, string>
+  )[code ?? ""] ?? (code ? `Ошибка: ${code}` : "");
 
 const unavailableName = (reason: string | null) =>
   ({
@@ -124,17 +133,21 @@ export function useMediaJob(recoveryKind?: "image") {
     const data = (await response.json()) as { items?: MediaJob[] };
     const items = Array.isArray(data.items) ? data.items : [];
     const found = pendingId.current
-      ? items.find((item) =>
-          item.kind === recoveryKind && item.client_request_id === pendingId.current
+      ? items.find(
+          (item) => item.kind === recoveryKind && item.client_request_id === pendingId.current
         )
-      : items.find((item) => item.kind === recoveryKind && ["queued", "running"].includes(item.status));
+      : items.find(
+          (item) => item.kind === recoveryKind && ["queued", "running"].includes(item.status)
+        );
     if (found) {
       setJob(found);
       setUnknown(false);
       setError(null);
     } else if (pendingId.current) {
       setUnknown(true);
-      setError("Не удалось подтвердить исход предыдущего запуска. Повтор автоматически не выполняется.");
+      setError(
+        "Не удалось подтвердить исход предыдущего запуска. Повтор автоматически не выполняется."
+      );
     }
   }, [recoveryKind]);
 
@@ -152,7 +165,9 @@ export function useMediaJob(recoveryKind?: "image") {
       .catch(() => {
         if (alive && pendingId.current) {
           setUnknown(true);
-          setError("Историю пока не удалось проверить. Предыдущий запрос нельзя считать отменённым.");
+          setError(
+            "Историю пока не удалось проверить. Предыдущий запрос нельзя считать отменённым."
+          );
         }
       })
       .finally(() => {
@@ -191,7 +206,8 @@ export function useMediaJob(recoveryKind?: "image") {
           }
         })
         .catch(() => {
-          if (active) setError("Не удалось проверить статус задачи. Это не повод запускать её снова.");
+          if (active)
+            setError("Не удалось проверить статус задачи. Это не повод запускать её снова.");
         });
     }, 1200);
     return () => {
@@ -209,7 +225,12 @@ export function useMediaJob(recoveryKind?: "image") {
     ) => {
       if (starting.current || recovering || (job && ["queued", "running"].includes(job.status)))
         return;
-      if (!window.confirm("Запустить генерацию через провайдера? Операция может расходовать оплачиваемый лимит."))
+      if (
+        kind === "image" &&
+        !window.confirm(
+          "Запустить генерацию через провайдера? Операция может расходовать оплачиваемый лимит."
+        )
+      )
         return;
       starting.current = true;
       setSubmitting(true);
@@ -247,16 +268,29 @@ export function useMediaJob(recoveryKind?: "image") {
         if (!response.ok) {
           let code: string | null = null;
           try {
-            const body = (await response.json()) as { error?: { code?: unknown; reason?: unknown } };
-            code = typeof body.error?.reason === "string" ? body.error.reason
-              : typeof body.error?.code === "string" ? body.error.code : null;
+            const body = (await response.json()) as {
+              error?: { code?: unknown; reason?: unknown };
+            };
+            code =
+              typeof body.error?.reason === "string"
+                ? body.error.reason
+                : typeof body.error?.code === "string"
+                  ? body.error.code
+                  : null;
           } catch {
             /* A non-JSON server error is still a rejected request. */
           }
-          if (response.status >= 500) throw new Error("Исход запуска неизвестен: сервер сообщил об ошибке. Проверьте историю.");
+          if (response.status >= 500)
+            throw new Error(
+              "Исход запуска неизвестен: сервер сообщил об ошибке. Проверьте историю."
+            );
           if (!previousId && storageKey) {
             pendingId.current = null;
-            try { sessionStorage.removeItem(storageKey); } catch { /* Optional storage. */ }
+            try {
+              sessionStorage.removeItem(storageKey);
+            } catch {
+              /* Optional storage. */
+            }
           }
           setUnknown(Boolean(previousId));
           setError(mediaErrorName(code) || `Сервер отказал в запуске (${response.status}).`);
@@ -305,7 +339,18 @@ export function useMediaJob(recoveryKind?: "image") {
     }
   }, [refresh]);
 
-  return { job, setJob, error, setError, start, cancel, submitting, recovering, unknown, checkUnknown };
+  return {
+    job,
+    setJob,
+    error,
+    setError,
+    start,
+    cancel,
+    submitting,
+    recovering,
+    unknown,
+    checkUnknown
+  };
 }
 
 export function MediaGenerationPanel({
@@ -404,11 +449,15 @@ export function MediaGenerationPanel({
       <p>Созданное изображение появится здесь. Его можно скачать и открыть из истории.</p>
       {unknown && (
         <p role="alert">
-          Предыдущий запуск мог дойти до провайдера. Автоматического повтора нет.
-          При повторном нажатии используется прежний идентификатор (изменённые параметры сервер отклонит).
+          Предыдущий запуск мог дойти до провайдера. Автоматического повтора нет. При повторном
+          нажатии используется прежний идентификатор (изменённые параметры сервер отклонит).
         </p>
       )}
-      {unknown && <button type="button" onClick={() => void checkUnknown()}>Проверить историю без запуска</button>}
+      {unknown && (
+        <button type="button" onClick={() => void checkUnknown()}>
+          Проверить историю без запуска
+        </button>
+      )}
       <p role="status" className={styles.status}>
         {ready
           ? "Kosmora Studio · готово к генерации"
@@ -419,8 +468,8 @@ export function MediaGenerationPanel({
       {blockedReason && <p role="status">{blockedReason}</p>}
       {prompt.trim().length > (constraints?.maxPromptLength ?? 2000) && (
         <p role="alert">
-          Максимальная длина описания — {constraints?.maxPromptLength ?? 2000} символов.
-          Текст не обрезается незаметно.
+          Максимальная длина описания — {constraints?.maxPromptLength ?? 2000} символов. Текст не
+          обрезается незаметно.
         </p>
       )}
       <div className={styles.actions}>
@@ -464,7 +513,11 @@ export function MediaGenerationPanel({
           <WorkspaceIcon name="images" />
           <strong>От идеи — к изображению</strong>
           <span>Опишите сцену и нажмите «Сгенерировать изображение».</span>
-          <small>{options ? `${options.format.toUpperCase()} · ${options.aspect_ratio}` : "Параметры недоступны"}</small>
+          <small>
+            {options
+              ? `${options.format.toUpperCase()} · ${options.aspect_ratio}`
+              : "Параметры недоступны"}
+          </small>
         </div>
       )}
       {job && (
@@ -505,10 +558,14 @@ export function MediaGenerationPanel({
           <h4>История изображений</h4>
           {history.map((item) => (
             <div key={item.id} className={styles.actions}>
-              <button type="button" onClick={() => { setJob(item); restoreParameters(item); }}>
-                {showImage(item) && (
-                  <img src={mediaAssetUrl(item.id)} alt="" loading="lazy" />
-                )}
+              <button
+                type="button"
+                onClick={() => {
+                  setJob(item);
+                  restoreParameters(item);
+                }}
+              >
+                {showImage(item) && <img src={mediaAssetUrl(item.id)} alt="" loading="lazy" />}
                 {new Date(item.created_at).toLocaleString("ru")} · {statusName[item.status]}
                 {typeof item.parameters?.size === "string" ? ` · ${item.parameters.size}` : ""}
               </button>

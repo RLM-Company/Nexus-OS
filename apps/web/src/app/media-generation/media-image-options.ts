@@ -39,7 +39,10 @@ export function parseImageConstraints(input: unknown): ImageConstraints | null {
   if (!input || typeof input !== "object" || Array.isArray(input)) return null;
   const raw = input as Record<string, unknown>;
   const sizes = supported(raw.sizes, Object.values(IMAGE_SIZE_FOR_RATIO));
-  const aspectRatios = supported(raw.aspectRatios, Object.keys(IMAGE_SIZE_FOR_RATIO) as ImageRatio[]);
+  const aspectRatios = supported(
+    raw.aspectRatios,
+    Object.keys(IMAGE_SIZE_FOR_RATIO) as ImageRatio[]
+  );
   const qualities = supported(raw.qualities, ["low", "medium", "high", "auto"]);
   const formats = supported(raw.formats, ["png", "jpeg", "webp"]);
   if (
@@ -69,10 +72,14 @@ export function parseImageConstraints(input: unknown): ImageConstraints | null {
 
 export function resolveImageOptions(
   constraints: ImageConstraints | null | undefined,
-  preferred: Partial<Record<keyof ImageRequestOptions, string>>
+  preferred: Partial<Record<keyof ImageRequestOptions, string | undefined>>
 ): ImageRequestOptions | null {
   if (!constraints) return null;
-  const pick = <T extends string>(values: readonly T[], current: string | undefined, fallback: T): T =>
+  const pick = <T extends string>(
+    values: readonly T[],
+    current: string | undefined,
+    fallback: T
+  ): T =>
     values.find((value) => value === current) ??
     values.find((value) => value === fallback) ??
     values[0]!;
