@@ -57,7 +57,9 @@ function createOfficeWorkspace({ read, create, identity }) {
       for (const [key, value] of plans) if (value.expires < Date.now()) plans.delete(key);
       if (plans.size >= 8) plans.delete(plans.keys().next().value);
       inspectOffice(options.outputPath, result.buffer);
-      const receipt = {
+      // Snapshot nested operation values as well as metadata. Neither a caller's
+      // input objects nor a returned preview may alter the approved transaction.
+      const receipt = structuredClone({
         plan_id: id,
         path: options.relativePath,
         output_path: options.outputPath,
@@ -67,7 +69,7 @@ function createOfficeWorkspace({ read, create, identity }) {
         diff: result.diff,
         rejected_changes: [],
         representation: result.representation
-      };
+      });
       if (Buffer.byteLength(JSON.stringify(receipt)) > 14000)
         throw Error("WORKSPACE_OFFICE_VIEW_LIMIT");
       plans.set(id, {
@@ -76,7 +78,7 @@ function createOfficeWorkspace({ read, create, identity }) {
         identity: identity(options),
         expires: Date.now() + 10 * 60 * 1000
       });
-      return receipt;
+      return structuredClone(receipt);
     },
     describe(options) {
       const plan = plans.get(options.planId);
