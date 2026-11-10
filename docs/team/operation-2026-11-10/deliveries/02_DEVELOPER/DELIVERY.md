@@ -1,3 +1,92 @@
+# 02_DEVELOPER: второй срез — несохранённые правки Coscode
+
+10 ноября 2026, Москва. Статус срезов 1 и 2: **готово к интеграции**.
+Полная автономная сфера ещё не завершена; backlog и точка продолжения ниже.
+
+- Branch `ops/developer-coscode`, [PR #507](https://github.com/RLM-Company/Nexus-OS/pull/507).
+- BASE_SHA второго среза `e8e64f3df571cc23e2cddb18b5734f741ee8cb3d`.
+- HEAD_SHA кода второго среза `5a5e2e4d3c5cd04c2556c2d065a0cdf8dd8ff62b`.
+- Code tree `faf27b8017d0e91a6fdc06a2a11f64a5a67c5920`; GitHub tree и локальный
+  index совпали. Итоговый docs/artifacts head фиксируется в PR/передаче.
+
+## Пользовательский сценарий второго среза
+
+Entrypoint тот же `/code-agent`. Раньше смена задачи/проекта или reload молча
+теряли локальные edits. Теперь контролы самой страницы требуют явного discard:
+проект, сохранённая задача, новая задача/Code-проект и GitHub Link. Native
+reload/close используют beforeunload. Отказ от перехода сохраняет точный текст.
+Подтверждённый discard открывает выбранное сохранённое состояние. Модель,
+публикация и новое выполнение при отказе не запускаются.
+
+Выбранные изменения по-прежнему сохраняются прежним review endpoint/store и
+восстанавливаются после reload. Автосохранение или второй task store не вводились.
+Неприменённый raw diff имеет отдельный dirty-флаг: сохранение выбранных файлов
+не выдаётся за сохранение сырого патча. Есть «Отменить правки diff»; отмена
+сбрасывает только локальный текст патча и не возвращает старый proof/approval.
+Публикация блокируется, пока raw diff не перенесён или не отменён явно.
+
+Изменены только `apps/web/src/app/code-agent/{page.tsx,patch-editor.tsx,editor-navigation.ts}`
+и `apps/web/e2e/code-agent.spec.ts`. Новых API/contracts/DB/dependencies/permissions нет.
+Next bundled guides use-client и Link/onNavigate прочитаны, дизайн/CSS не менялись.
+Общие файлы вторым срезом не менялись; первый CI integration описан ниже.
+
+## Фактическая проверка второго среза
+
+- Production browser **15 PASS**, workers1/retries0,
+  `/tmp/coscode-navigation-delivery-browser.log`. Проверены отмена переходов,
+  подтверждённый discard, native reload cancel → отдельный review save → reload,
+  сохранность точных edits, raw draft/explicit discard и отсутствие дополнительной
+  генерации/публикации. UI API/GitHub — явные route fixtures, не live publish.
+- Web lint/typecheck и production build прошли до browser в последовательной && цепочке.
+  Во время прогона среда перезапустилась и session registry потеряла ID; процесс
+  продолжил выполнение, полный итог 15 PASS сохранён в логе. Отдельный CLI exit
+  после перезапуска недоступен и не подменяется выдуманным exit0.
+- Дополнительный strict typecheck самого E2E файла прошёл. Первый вызов отказал с
+  TS5112 (TypeScript6 требует --ignoreConfig при явном списке файлов); исправлена
+  команда, а не отключены типы. Staged diff/secrets проверки прошли до публикации.
+- Полный frozen gate/real Git/OCI относятся к первому срезу ниже. Второй срез
+  меняет только UI, их результаты не выдаются за повтор всех backend тестов.
+
+История browser-ошибок сохранена в fixtures/editor-navigation: 11/2, 12/1,
+12/1, 13/1, 14/1 до итоговых 15 PASS. Сначала fixture перехватывала документ
+вместо только API. Затем её hardcoded expectation принимало лишь value=3,
+поэтому намеренный review value=99 оставался без ответа. Первичная гипотеза
+о native reload/AbortController была неверна; этот продуктовый код не оставлен.
+После точного expected review в fixture цельный сценарий прошёл. Последний отказ
+14/1 выявил неверное расположение raw-diff пояснения в скрывающемся после review
+блоке; сообщение перенесено в постоянную область редактора. Повторные запуски
+сопровождались этими конкретными изменениями, не скрывают исходные failures.
+
+## Границы второго среза и следующий шаг
+
+Guard покрывает только контролы самого Coscode и native unload. Общая SPA-навигация
+sidebar/router/back-forward не интегрирована; её канонический guard остаётся у Codex.
+Не заявляется автоматическое сохранение raw diff при закрытии: его нужно перенести
+в выбранные изменения либо явно отменить; оставление страницы требует discard.
+Live foreign publish/модель/owner PC/VPS/merge/deploy не выполнялись.
+
+Следующий приоритет: ссылка на run вне последних 20 задач сейчас может выбрать
+list.items[0] вместо запрошенного run. Это замечено по коду initial load handler,
+отдельный сценарий ещё не прогонялся. Проверить exact linked lookup, owner/project
+404 и поздний ответ после смены проекта, затем внедрить через текущий GET/store.
+Context больших repo, secret paths и bounded repair остаются в BACKLOG.
+
+Для воспроизведения второго среза после production build:
+
+```sh
+pnpm --filter @cosmora/web lint
+pnpm --filter @cosmora/web typecheck
+pnpm --filter @cosmora/web build
+KOSMORA_E2E_PRODUCTION=1 KOSMORA_E2E_CHROMIUM_EXECUTABLE=/usr/bin/chromium \
+  pnpm --filter @cosmora/web exec playwright test -c playwright.acceptance.config.ts e2e/code-agent.spec.ts
+pnpm --filter @cosmora/web exec tsc --ignoreConfig --noEmit --strict --target ES2024 --module NodeNext --moduleResolution NodeNext --skipLibCheck --esModuleInterop e2e/code-agent.spec.ts
+```
+
+Откат второго среза — revert `5a5e2e4`, затем его docs. Review/task данные не удаляются.
+Неприменённые локальные drafts не объявляются серверным checkpoint.
+
+---
+
 # 02_DEVELOPER: Coscode — доказательства проверок и отмена OCI
 
 Исполнитель: Разработчик + GPT Plus. 10 ноября 2026, Москва.
