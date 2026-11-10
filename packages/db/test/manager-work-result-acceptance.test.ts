@@ -117,4 +117,77 @@ describe("manager work result acceptance", () => {
     expect(() => store.acceptResult("w1", "a", "owner-a", 7)).toThrow("OWNER_DATA_FENCED");
     expect(() => store.acceptResult("w1", "a", "owner-a", 7)).toThrow(ManagerWorkConflict);
   });
+
+  const publishResult = () => {
+    const work = insertWork({
+      status: "running",
+      stage: "publish",
+      draft: { files: [{ name: "result.md", content: "Заявка 00123\r\nГотово 🌙" }] }
+    });
+    store.runtime.checkpoint(work);
+    store.publish(work.id, work.owner_id, work.draft!);
+    return store.save({ ...work, status: "completed", stage: "done" });
+  };
+
+  it("accepts an intact modern result without changing published bytes", () => {
+    const work = publishResult();
+    const before = store.file(work.id, "a", "result.md");
+    const accepted = store.acceptResult(work.id, "a", "owner-a", work.version);
+    expect(accepted.result_accepted_at).toBeTruthy();
+    expect(store.file(work.id, "a", "result.md")).toBe(before);
+    const repeated = store.acceptResult(work.id, "a", "another-actor", accepted.version);
+    expect(repeated).toEqual(accepted);
+  });
+
+  it.each([
+    "missing-file",
+    "extra-file",
+    "changed-file",
+    "missing-version",
+    "unpublished",
+    "bad-hash",
+    "bad-size",
+    "foreign-project",
+    "missing-draft",
+    "duplicate-draft"
+  ])("refuses acceptance of a %s result atomically", (damage) => {
+    const work = publishResult();
+    if (damage === "missing-file") db.sqlite.prepare("DELETE FROM manager_work_files").run();
+    if (damage === "extra-file")
+      db.sqlite
+        .prepare(
+          "INSERT INTO manager_work_files(execution_id,name,content) VALUES('w1','extra.txt','extra')"
+        )
+        .run();
+    if (damage === "changed-file")
+      db.sqlite.prepare("UPDATE manager_work_files SET content='changed'").run();
+    if (damage === "missing-version") db.sqlite.prepare("DELETE FROM work_artifact_versions").run();
+    if (damage === "unpublished")
+      db.sqlite.prepare("UPDATE work_artifact_versions SET published=0").run();
+    if (damage === "bad-hash")
+      db.sqlite.prepare("UPDATE work_artifact_versions SET sha256=?").run("0".repeat(64));
+    if (damage === "bad-size") db.sqlite.prepare("UPDATE work_artifact_versions SET bytes=1").run();
+    if (damage === "foreign-project") {
+      db.sqlite
+        .prepare(
+          "INSERT INTO projects(id,owner_id,title,status,created_at,updated_at) VALUES('p2','b','P2','ACTIVE',?,?)"
+        )
+        .run(at, at);
+      db.sqlite.prepare("UPDATE work_artifact_versions SET project_id='p2'").run();
+    }
+    if (damage === "missing-draft" || damage === "duplicate-draft") {
+      const modified = structuredClone(work);
+      modified.draft =
+        damage === "missing-draft" ? null : { files: [...work.draft!.files, ...work.draft!.files] };
+      db.sqlite
+        .prepare("UPDATE manager_work SET state_json=? WHERE id='w1'")
+        .run(JSON.stringify(modified));
+    }
+    const before = store.get("w1", "a");
+    expect(() => store.acceptResult("w1", "a", "owner-a", work.version)).toThrow(
+      "ARTIFACT_INTEGRITY_MISMATCH"
+    );
+    expect(store.get("w1", "a")).toEqual(before);
+    expect(store.get("w1", "a")?.result_accepted_at).toBeUndefined();
+  });
 });

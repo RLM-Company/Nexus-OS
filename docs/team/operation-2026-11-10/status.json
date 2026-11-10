@@ -11,10 +11,11 @@
       "sphere": "Kosmora, Koswork и интеграция выпуска",
       "file": "01_CODEX.md",
       "branch_prefix": "ops/codex-kosmora-koswork",
-      "status": "prepared",
-      "dispatch_confirmed": false,
+      "status": "in_progress",
+      "dispatch_confirmed": true,
       "head_sha": null,
-      "pr": null
+      "pr": null,
+      "current_slice": "O-001"
     },
     {
       "id": "02_DEVELOPER",
@@ -93,5 +94,6 @@
       "head_sha": null,
       "pr": null
     }
-  ]
+  ],
+  "started_confirmed_by_owner": true
 }

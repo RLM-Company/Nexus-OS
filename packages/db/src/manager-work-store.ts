@@ -439,6 +439,30 @@ export class ManagerWorkStore {
         throw new ManagerWorkConflict("WORK_RESULT_NOT_READY");
       // Repeat acceptance returns the stored record without a second event or version.
       if (state.result_accepted_at) return state;
+      // A completion flag alone is not evidence that the modern result is still
+      // available. Verify the complete published set in this same transaction.
+      // Pre-checkpoint historical records retain their existing acceptance path.
+      const modern =
+        state.draft !== null ||
+        this.sqlite.prepare("SELECT 1 FROM work_checkpoints WHERE work_id = ? LIMIT 1").get(id) ||
+        this.sqlite
+          .prepare("SELECT 1 FROM work_artifact_versions WHERE work_id = ? LIMIT 1")
+          .get(id);
+      if (modern) {
+        const files = state.draft?.files ?? [];
+        const published = this.sqlite
+          .prepare("SELECT name FROM manager_work_files WHERE execution_id = ?")
+          .all(id) as { name: string }[];
+        const versions = this.runtime.artifacts(state.project_id, ownerId, id);
+        if (
+          files.length === 0 ||
+          new Set(files.map((file) => file.name)).size !== files.length ||
+          published.length !== files.length ||
+          versions.length !== files.length ||
+          files.some((file) => this.file(id, ownerId, file.name) !== file.content)
+        )
+          throw new ManagerWorkConflict("ARTIFACT_INTEGRITY_MISMATCH");
+      }
       const next = structuredClone(state);
       next.result_accepted_at = new Date().toISOString();
       next.result_accepted_by = actorId;
