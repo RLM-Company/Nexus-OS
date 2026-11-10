@@ -732,3 +732,111 @@ test("large native results become explicit valid excerpts without repeating thei
   assert.equal(f.executions.length, 1);
   assert.equal(modelSteps, 2);
 });
+
+test("grant expiry actively aborts an outstanding planner request and stops native cleanup paths", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const f = fixture();
+  let clock = 0,
+    enter,
+    release,
+    requestSignal,
+    stopped = 0,
+    cancelled = 0;
+  const ready = new Promise((resolve) => {
+    enter = resolve;
+  });
+  f.session.gate.now = () => clock;
+  const enable = f.session.gate.enable.bind(f.session.gate);
+  f.session.gate.enable = (args) => enable({ ...args, durationMs: 20 });
+  f.session.workspace = {
+    snapshot: () => null,
+    cancel: () => {
+      cancelled++;
+    }
+  };
+  f.driver.stop = () => {
+    stopped++;
+  };
+  f.planner.next = async ({ signal }) => {
+    requestSignal = signal;
+    enter();
+    return new Promise((resolve) => {
+      release = resolve;
+    });
+  };
+  const pending = f.session.run({ project: context.project, goal: context.goal });
+  await ready;
+  clock = 20;
+  t.mock.timers.tick(20);
+  const abortedAtExpiry = requestSignal.aborted,
+    stopsAtExpiry = stopped,
+    cancelsAtExpiry = cancelled;
+  await assert.rejects(
+    f.session.run({ project: context.project, goal: context.goal }),
+    /COMPUTER_BUSY/
+  );
+  release(proposal({ kind: "type_text", text: "late fixture" }));
+  await assert.rejects(pending, /COMPUTER_SESSION_STOPPED/);
+  assert.equal(abortedAtExpiry, true);
+  assert.equal(stopsAtExpiry, 1);
+  assert.equal(cancelsAtExpiry, 1);
+  assert.equal(f.executions.length, 0);
+  assert.equal(f.session.active, null);
+  f.planner.next = async () => proposal({ kind: "done", summary: "Fresh approved run" });
+  assert.equal(
+    (await f.session.run({ project: context.project, goal: context.goal })).status,
+    "completed"
+  );
+  assert.equal(f.confirmations.length, 2);
+});
+
+test("grant expiry closes waiting consent and human checkpoints without a resume or native input", async (t) => {
+  for (const phase of ["consent", "human checkpoint"])
+    await t.test(phase, async (t) => {
+      t.mock.timers.enable({ apis: ["setTimeout"] });
+      const f = fixture();
+      let clock = 0,
+        enter,
+        release,
+        requests = 0,
+        signal;
+      const ready = new Promise((resolve) => {
+        enter = resolve;
+      });
+      f.session.gate.now = () => clock;
+      const enable = f.session.gate.enable.bind(f.session.gate);
+      f.session.gate.enable = (args) => enable({ ...args, durationMs: 20 });
+      f.session.allowHumanResume = true;
+      f.session.confirm = async (value) => {
+        if (value.kind === "session") return true;
+        signal = value.signal;
+        enter();
+        return new Promise((resolve) => {
+          release = resolve;
+        });
+      };
+      f.session.notify = (value) => {
+        if (value.phase === "awaiting_user") {
+          signal = f.session.active.controller.signal;
+          enter();
+        }
+      };
+      f.planner.next = async () => {
+        requests++;
+        return phase === "consent"
+          ? proposal({ kind: "press", keys: ["ENTER"] }, true)
+          : proposal({ kind: "ask_user", question: "Fixture manual checkpoint" });
+      };
+      const pending = f.session.run({ project: context.project, goal: context.goal });
+      await ready;
+      clock = 20;
+      t.mock.timers.tick(20);
+      const abortedAtExpiry = signal.aborted;
+      if (release) release(true);
+      await assert.rejects(pending, /COMPUTER_SESSION_STOPPED/);
+      assert.equal(abortedAtExpiry, true);
+      assert.equal(f.session.resume(), false);
+      assert.equal(f.executions.length, 0);
+      assert.equal(requests, 1);
+    });
+});

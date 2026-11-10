@@ -571,3 +571,28 @@ select:focus-visible {
     transition: none !important;
   }
 }
+
+#correction-editor,
+#correction-suggestions {
+  border-top: 1px solid var(--line);
+  margin-top: 12px;
+  padding-top: 12px;
+}
+#correction-editor textarea {
+  width: 100%;
+  resize: vertical;
+  padding: 8px;
+  color: inherit;
+  background: #141414;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+#correction-editor label {
+  display: block;
+  margin-top: 8px;
+}
+#correction-matches p,
+.correction-text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

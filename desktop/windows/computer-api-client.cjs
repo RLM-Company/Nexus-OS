@@ -127,6 +127,7 @@ function createComputerApiClient({ identity, getSession }) {
           throw Error("COMPUTER_LIVE_MODEL_REQUIRED");
         if (result.supports_browser_text_reads === true) session.supports_browser_text_reads = true;
         if (result.supports_work_reference === true) session.supports_work_reference = true;
+        if (result.supports_work_corrections === true) session.supports_work_corrections = true;
         if (result.supports_workspace_text_reads === true)
           session.supports_workspace_text_reads = true;
         if (result.supports_workspace_read_lines === true)
@@ -151,6 +152,11 @@ function createComputerApiClient({ identity, getSession }) {
     },
     async next({ session, project, step, observation, previousResult, workReference, signal }) {
       if (workReference && session.supports_work_reference !== true)
+        throw Error("COMPUTER_REFERENCE_UNSUPPORTED");
+      if (
+        workReference?.format === "koswork.confirmed-correction.v1" &&
+        session.supports_work_corrections !== true
+      )
         throw Error("COMPUTER_REFERENCE_UNSUPPORTED");
       const result = await request(`${root(project)}/${encodeURIComponent(session.id)}/step`, {
         method: "POST",
