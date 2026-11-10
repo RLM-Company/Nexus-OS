@@ -23,7 +23,9 @@ test("recovers a committed result acceptance after a lost response without a sec
   await page.goto(`/?project=${work.project}&view=plan`);
   const manager = page.getByRole("region", { name: "Выполнение задачи Manager", exact: true });
   await manager.getByRole("button", { name: "Принять результат", exact: true }).click();
-  await expect(manager.getByText(/Результат принят владельцем/)).toBeVisible();
+  await expect(
+    manager.getByRole("status").filter({ hasText: /Результат принят владельцем/ })
+  ).toBeVisible();
   await expect(manager.getByRole("alert")).toHaveCount(0);
   await page.clock.fastForward(3000);
   expect(posts).toBe(1);
@@ -103,7 +105,9 @@ test("a late result acceptance updates its task without replacing the later hist
       manager.getByRole("button", { name: "Принять результат", exact: true })
     ).toBeEnabled();
     await firstButton.click();
-    await expect(manager.getByText(/Результат принят владельцем/)).toBeVisible();
+    await expect(
+      manager.getByRole("status").filter({ hasText: /Результат принят владельцем/ })
+    ).toBeVisible();
   } finally {
     release();
   }
