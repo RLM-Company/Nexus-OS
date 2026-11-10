@@ -80,6 +80,7 @@ export function SitesWorkbench({
   kind?: "website" | "game" | "game_project";
 }) {
   const [projectId, setProjectId] = useState(initialProjectId ?? "");
+  const [editorDirty, setEditorDirty] = useState(false);
   const game = kind !== "website";
   useEffect(() => {
     if (initialProjectId) setProjectId((current) => current || initialProjectId);
@@ -99,7 +100,22 @@ export function SitesWorkbench({
       </header>
       <label>
         {game ? "Проект игры" : "Проект сайта"}
-        <select value={projectId} onChange={(event) => setProjectId(event.target.value)}>
+        <select
+          value={projectId}
+          onChange={(event) => {
+            const nextProjectId = event.target.value;
+            if (nextProjectId === projectId) return;
+            if (
+              editorDirty &&
+              !window.confirm(
+                "Несохранённые изменения остаются только в черновике браузера. Сначала сохраните версию или скачайте файл. Всё равно переключить проект?"
+              )
+            )
+              return;
+            setEditorDirty(false);
+            setProjectId(nextProjectId);
+          }}
+        >
           <option value="">Выберите проект</option>
           {projects.map((project) => (
             <option key={project.id} value={project.id}>
@@ -113,6 +129,8 @@ export function SitesWorkbench({
           key={`${kind}:${projectId}`}
           projectId={projectId}
           kind={kind}
+          editorDirty={editorDirty}
+          onEditorDirtyChange={setEditorDirty}
           canGenerate={projects.some(
             (project) => project.id === projectId && project.status === "ACTIVE"
           )}
@@ -130,11 +148,15 @@ export function SitesWorkbench({
 function SiteProject({
   projectId,
   canGenerate,
-  kind
+  kind,
+  editorDirty,
+  onEditorDirtyChange
 }: {
   projectId: string;
   canGenerate: boolean;
   kind: "website" | "game" | "game_project";
+  editorDirty: boolean;
+  onEditorDirtyChange: (value: boolean) => void;
 }) {
   const game = kind !== "website";
   const sourceProject = kind === "game_project";
@@ -409,14 +431,27 @@ function SiteProject({
                   </button>
                 )}
                 {selected.status === "completed" &&
+                  !!selected.draft &&
                   (sourceProject ||
-                    selected.draft?.files[0]?.name === (game ? "game.json" : "index.html")) && (
+                    selected.draft.files[0]?.name === (game ? "game.json" : "index.html")) && (
                     <button
                       type="button"
                       disabled={busy}
-                      onClick={() =>
+                      onClick={() => {
+                        const storageId = `${kind}:${selected.id}`;
+                        // Re-seeding the same Canvas resets its initialization effect
+                        // and can silently replace unsaved edits. A repeated open is a no-op.
+                        if (seed?.storageId === storageId) return;
+                        if (
+                          editorDirty &&
+                          !window.confirm(
+                            "Есть несохранённые изменения. Сохраните версию или скачайте исходники перед открытием другого результата. Всё равно открыть?"
+                          )
+                        )
+                          return;
+                        onEditorDirtyChange(false);
                         setSeed({
-                          storageId: `${kind}:${selected.id}`,
+                          storageId,
                           title: selected.plan?.summary.slice(0, 60) || (game ? "Игра" : "Сайт"),
                           format: game ? "code" : "html",
                           content: sourceProject
@@ -426,7 +461,7 @@ function SiteProject({
                                 2
                               )
                             : selected.draft!.files[0]!.content
-                        })
+                        });
                       }
                     >
                       {game ? "Открыть игру в редакторе" : "Открыть сайт в редакторе"}
@@ -440,6 +475,7 @@ function SiteProject({
       <CanvasEditor
         key={seed?.storageId ?? `${kind}-library`}
         projectId={projectId}
+        onDirtyChange={onEditorDirtyChange}
         sitePreview={!game}
         gamePreview={kind === "game"}
         gameSource={sourceProject}
