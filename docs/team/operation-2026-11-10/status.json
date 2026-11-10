@@ -1,0 +1,97 @@
+{
+  "operation": "Kosmora launch",
+  "started_on": "2026-11-10",
+  "timezone": "Europe/Moscow",
+  "baseline_sha": "9d972e8ba447f681fbfb49253b73d9f02dd1d325",
+  "product_slices_accepted": 0,
+  "assignments": [
+    {
+      "id": "01_CODEX",
+      "executor": "Codex",
+      "sphere": "Kosmora, Koswork и интеграция выпуска",
+      "file": "01_CODEX.md",
+      "branch_prefix": "ops/codex-kosmora-koswork",
+      "status": "prepared",
+      "dispatch_confirmed": false,
+      "head_sha": null,
+      "pr": null
+    },
+    {
+      "id": "02_DEVELOPER",
+      "executor": "Разработчик + GPT Plus",
+      "sphere": "Coscode: полноценное пространство разработки",
+      "file": "02_DEVELOPER.md",
+      "branch_prefix": "ops/developer-coscode",
+      "status": "prepared",
+      "dispatch_confirmed": false,
+      "head_sha": null,
+      "pr": null
+    },
+    {
+      "id": "03_OPENCODE",
+      "executor": "OpenCode",
+      "sphere": "Windows-приложение и локальная платформа",
+      "file": "03_OPENCODE.md",
+      "branch_prefix": "ops/opencode-windows",
+      "status": "prepared",
+      "dispatch_confirmed": false,
+      "head_sha": null,
+      "pr": null
+    },
+    {
+      "id": "04_DEEPSEEK",
+      "executor": "DeepSeek Harness",
+      "sphere": "Память, контекст и качество извлечения",
+      "file": "04_DEEPSEEK.md",
+      "branch_prefix": "ops/deepseek-memory",
+      "status": "prepared",
+      "dispatch_confirmed": false,
+      "head_sha": null,
+      "pr": null
+    },
+    {
+      "id": "05_GEMINI",
+      "executor": "Gemini",
+      "sphere": "Браузер и Deep Research",
+      "file": "05_GEMINI.md",
+      "branch_prefix": "ops/gemini-browser-research",
+      "status": "prepared",
+      "dispatch_confirmed": false,
+      "head_sha": null,
+      "pr": null
+    },
+    {
+      "id": "06_CLAUDE",
+      "executor": "Claude",
+      "sphere": "Специализации, стиль и обучение на обратной связи",
+      "file": "06_CLAUDE.md",
+      "branch_prefix": "ops/claude-specializations",
+      "status": "prepared",
+      "dispatch_confirmed": false,
+      "head_sha": null,
+      "pr": null
+    },
+    {
+      "id": "07_FREE_MEDIA",
+      "executor": "Обычный чат GPT — Media",
+      "sphere": "Studio: изображения и видео",
+      "file": "07_FREE_MEDIA.md",
+      "branch_prefix": "ops/free-studio-media",
+      "status": "prepared",
+      "dispatch_confirmed": false,
+      "head_sha": null,
+      "pr": null
+    },
+    {
+      "id": "08_FREE_BUILDERS",
+      "executor": "Обычный чат GPT — Builders",
+      "sphere": "Studio: сайты и разработка игр",
+      "file": "08_FREE_BUILDERS.md",
+      "branch_prefix": "ops/free-studio-builders",
+      "status": "prepared",
+      "dispatch_confirmed": false,
+      "head_sha": null,
+      "pr": null
+    }
+  ]
+}
