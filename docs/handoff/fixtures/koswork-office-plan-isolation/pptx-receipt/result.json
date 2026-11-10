@@ -1,0 +1,25 @@
+{
+  "format": "pptx",
+  "mutation": "receipt",
+  "source_version": "sha256:1b865441bf0e31bc3a66ea613a3e5a7e81ec0befc98ada2e5e92a4b4038ac012",
+  "new_version": "sha256:23ac52edc212d346907ac7fc6732d5fc8ca24e4f233c03f3688fa985a08da760",
+  "sha256": "23ac52edc212d346907ac7fc6732d5fc8ca24e4f233c03f3688fa985a08da760",
+  "approved_path": "approved.pptx",
+  "actual_path": "approved.pptx",
+  "executed_changes": [
+    {
+      "kind": "replace_text",
+      "target": "slide:1/shape:2",
+      "find": "Компания А",
+      "replace": "Компания Б",
+      "before": "Компания А",
+      "after": "Компания Б"
+    }
+  ],
+  "original_preserved": true,
+  "unexpected_path_absent": true,
+  "readback_verified": true,
+  "real_model_called": false,
+  "visual_render_verified": false,
+  "text": "[Slide 1]\nКомпания Б\n19 700 ₽; 00123; 07.11.2026; кроме доставки\n[Slide 2]\nБез правок\n19 700 ₽; 00123; 07.11.2026; кроме доставки\n"
+}

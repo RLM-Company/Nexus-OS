@@ -23,7 +23,7 @@ function assetPath(url, root, manifest) {
     return null;
   const key = u.pathname.slice(1);
   if (
-    !["index.html", "reader.js"].includes(key) &&
+    !["index.html", "reader.js", "ocr-layout.mjs"].includes(key) &&
     !(key.startsWith("vendor/") && Object.hasOwn(manifest.files, key.slice(7)))
   )
     return null;

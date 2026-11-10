@@ -24,7 +24,7 @@ export type CsvSelection = {
 
 const DELIMITERS = [",", ";", "\t", "|"] as const;
 
-function parseWithDelimiter(text: string, delimiter: string): string[][] {
+export function parseWithDelimiter(text: string, delimiter: string): string[][] {
   const rows: string[][] = [];
   let row: string[] = [];
   let field = "";

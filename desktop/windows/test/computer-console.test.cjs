@@ -338,3 +338,42 @@ test("stopping during a late directory picker response cannot restore access", a
   assert.equal((await request).error, "COMPUTER_IDENTITY_CHANGED");
   assert.equal(revoked, 1);
 });
+
+test("availability stays a passive snapshot: no actions, no confirmations", async () => {
+  const f = await fixture();
+  const availability = f.handlers.get("koswork:computer-availability");
+  const report = await availability(f.trusted);
+  // Snapshot content: identity, idle state, stop-state, workspace name, helper.
+  assert.equal(report.idle, true);
+  assert.equal(report.ownerVerified, true);
+  assert.equal(report.gateBusy, false);
+  assert.ok("helperReady" in report && "reason" in report);
+  assert.equal(typeof report.workspaceFolder, "object"); // null without a connected workspace
+  // Availability reads must not contact the model, spawn the helper or resize
+  // permissions: no dialogs, no direct computer actions.
+  assert.equal(f.calls.filter((entry) => entry.kind === "dialog").length, 0);
+  assert.equal(f.calls.filter((entry) => ["run", "resume"].includes(entry.kind)).length, 0);
+});
+
+test("an untrusted caller cannot read the availability snapshot", async () => {
+  const f = await fixture();
+  const availability = f.handlers.get("koswork:computer-availability");
+  const foreign = {
+    sender: "foreign-webContents",
+    senderFrame: { url: pathToFileURL("https://attacker.example").toString() }
+  };
+  assert.equal((await availability(foreign)).error, "Недоверенный источник.");
+});
+
+test("a closed or rejected workspace answers with a computer code, not a crash", async () => {
+  const f = await fixture({
+    workspace: {
+      snapshot: () => {
+        throw Error("COMPUTER_WORKSPACE_CHANGED");
+      }
+    }
+  });
+  const report = await f.handlers.get("koswork:computer-availability")(f.trusted);
+  assert.equal(report.reason, "COMPUTER_WORKSPACE_CHANGED");
+  assert.equal(report.ownerVerified, true);
+});

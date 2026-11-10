@@ -1,3 +1,4 @@
+import { OfficeWorkspaceActions } from "./office-workspace.js";
 import { Type, type Static, type TSchema } from "typebox";
 
 const object = <T extends Record<string, TSchema>>(properties: T) =>
@@ -102,6 +103,7 @@ export const ComputerActionSchema = Type.Union([
     mode: Type.Union([Type.Literal("name"), Type.Literal("text")]),
     query: text(200)
   }),
+  ...OfficeWorkspaceActions,
   object({ kind: Type.Literal("workspace_read"), path: text(512) }),
   object({
     kind: Type.Literal("workspace_read_text"),
@@ -252,6 +254,8 @@ export type ComputerDecision = Static<typeof ComputerDecisionSchema>;
 export const ComputerSessionAcceptanceSchema = object({
   supports_workspace_read_lines: Type.Optional(Type.Literal(true)),
   supports_workspace_text_reads: Type.Optional(Type.Literal(true)),
+  supports_workspace_office_pages: Type.Optional(Type.Literal(true)),
+  supports_workspace_office_edits: Type.Optional(Type.Literal(true)),
   supports_workspace_documents: Type.Optional(Type.Literal(true)),
   supports_workspace_document_reads: Type.Optional(Type.Literal(true)),
   supports_workspace_pdf_reads: Type.Optional(Type.Literal(true)),
@@ -295,6 +299,8 @@ export const ComputerObservationSchema = object({
       name: text(180),
       read_lines: Type.Optional(Type.Literal(true)),
       read_text_pages: Type.Optional(Type.Literal(true)),
+      office_pages: Type.Optional(Type.Literal(true)),
+      edit_office: Type.Optional(Type.Literal(true)),
       create_documents: Type.Optional(Type.Literal(true)),
       read_documents: Type.Optional(Type.Literal(true)),
       read_pdf: Type.Optional(Type.Literal(true))

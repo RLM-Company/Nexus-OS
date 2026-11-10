@@ -1,0 +1,111 @@
+{
+  "source_version": "sha256:f35a111949d86f3f000ac9c3cd1da4d7ff2a10663e1e905c9862235a16b932fb",
+  "version": "sha256:014c4e83b84afb67e814aa6e964e42b22b660624b6f744fdb067ea7deb13ea81",
+  "sha256": "014c4e83b84afb67e814aa6e964e42b22b660624b6f744fdb067ea7deb13ea81",
+  "diff": [
+    {
+      "kind": "replace_text",
+      "target": "paragraph:3",
+      "find": "Компания А",
+      "replace": "Компания В",
+      "before": "Компания А — 19 700 ₽; 00123; 07.11.2026; кроме доставки",
+      "after": "Компания В — 19 700 ₽; 00123; 07.11.2026; кроме доставки"
+    }
+  ],
+  "rejected_changes": [],
+  "representation": {
+    "kind": "office_text",
+    "format": "docx",
+    "version": "openxml-text-v1",
+    "complete_document": false,
+    "sha256": "bfe67838069ae0d66c23f2a0af0dc363c2678761090b7d1deedec8f93be19b19",
+    "limitations": [
+      "Text extraction only; images, charts, formatting, notes and headers are not included. Formulas are not evaluated; numeric/date cells retain stored values."
+    ]
+  },
+  "bytes": "UEsDBBQAAAgIAAAAIQD5yAzNBQEAAB8CAAATAAAAW0NvbnRlbnRfVHlwZXNdLnhtbJWRy04DMQxFfyXKFs2ksEAIddoFjyV0UT4gSjzTiMSObLdM/x5NW7pApRLr+zhX9nw5lmx2wJIIO3vbzqwBDBQTDp39WL82D9aIeow+E0Jn9yB2uZiv9xXEjCWjdHajWh+dk7CB4qWlCjiW3BMXr9ISD6768OkHcHez2b0LhAqojU4ddjF/ht5vs5qXUQGPOxiyWPN0NE6szvpacwpeE6HbYfxFaU6EliEfPLJJVW7Gkq27SJiUvwGn3PsOmFMEs/Ksb75AZ90XcXSRwrYAanu95sJO6vsU4Jyf2ipTAJGEQ8ntWSk+4c2VHZHCiqmKC8Tw/x0/95rSTWWqwJrgfDF3ePDiG1BLAwQUAAAICAAAACEAUwOArtMAAAC+AQAACwAAAF9yZWxzLy5yZWxzjZDRSgMxEEV/Jcx7N1sfikjTvojQN5H1A4ZkdjeYZMJMqtu/F8SilQp9HS7nnjvb/ZKTeSfRyMXBuuvBUPEcYpkcvA5Pq3sw2rAETFzIwYkU9rvtCyVskYvOsapZcirqYG6tPlirfqaM2nGlsuQ0smRs2rFMtqJ/w4nsXd9vrPxmwCXTHIIDOYQ1mOFU6RY2j2P09Mj+mKm0KxV/EmAGlImagw+WYMP3uVtyAnvFJlPDgA1vN/p/rT3DrGehVRWuJC2S/kgF9s/CVb8SZyl78ffdJ1BLAwQUAAAICAAAACEAIodpgtkAAAAoAQAAEQAAAGRvY1Byb3BzL2NvcmUueG1sZc8xTsQwEAXQq0TuN5NQIBQ52Y6GhgIOYI2HbLS2x7Jnl9BxEy5BEBKCM5gboV1BGtr/v5709Xb2rjpSyhOHXrV1oyoKyHYKY6/u7643V6rKYoI1jgP16omy2g4aY4ec6DZxpCQT5Wr2LuQOY692IrEDyLgjb3LNkcLs3QMnbyTXnEaIBvdmJLhomkvwJMYaMXACN3EV1S9pcSXjIbkzYBHIkacgGdq6BTVoi51M4mgoL9/PZSmv5aN8lbeylM/yXhYN6+A0xURGOA03nB857c/tX6bh37vhB1BLAwQUAAAICAAAACEAVgsAwKUBAABaAwAAEQAAAHdvcmQvZG9jdW1lbnQueG1spVNLbtswEL0KwX1Fyi5sR7aUXXYFArQ9gCzRkgDxA5KJnKxcb7soUHTVTXuEIIhSw02cK4yukJMElOA4zQcFks0MHjjvMyA52Z/zEh0zbQopQux7FCMmEpkWIgvx508H70YYGRuLNC6lYCE+YQbvR5MqSGVyxJmwaM5LYYIqxLm1KiDEJDnjsfGkYmLOy5nUPLbGkzojldSp0jJhxhQi4yXpUTogPC4EdpJTmZ64rlzRbTls25REE3KPWsvAqDhhIVaaGaaPGY7gV7OAGi7gL2zgEmq4hhXUjmc7dlvVGwx+Qw1rOIcV/IFVs2y+/kf8JZ2fsIEruIEzF7H5huD7P0KviIZuFz+Qv4eGlKLb5fUYUer3+mNEh57vez3aG4wRrJtFa1wjuIBN86VZwhmcwxpWz+5hp2XbOt/k0WpR6/AMkWyHn1J2AV/mkc6R3Psblthud5V9PEWVe2m+v0cHGFVBHmJ/MOqPMOkGPsQaVYGVys3037sRXWS53cGptFbyHS7Z7MFpzuKU6RAP6cjBmZT2AcyObAsp7u5kG41sny7ZfYvoDlBLAwQUAAAICAAAACEA1K7A6QUAAAADAAAAEwAAAHdvcmQvbWVkaWEvdGVzdC5iaW5jaPgPAFBLAQIUABQAAAgIAAAAIQD5yAzNBQEAAB8CAAATAAAAAAAAAAAAAAAAAAAAAABbQ29udGVudF9UeXBlc10ueG1sUEsBAhQAFAAACAgAAAAhAFMDgK7TAAAAvgEAAAsAAAAAAAAAAAAAAAAANgEAAF9yZWxzLy5yZWxzUEsBAhQAFAAACAgAAAAhACKHaYLZAAAAKAEAABEAAAAAAAAAAAAAAAAAMgIAAGRvY1Byb3BzL2NvcmUueG1sUEsBAhQAFAAACAgAAAAhAFYLAMClAQAAWgMAABEAAAAAAAAAAAAAAAAAOgMAAHdvcmQvZG9jdW1lbnQueG1sUEsBAhQAFAAACAgAAAAhANSuwOkFAAAAAwAAABMAAAAAAAAAAAAAAAAADgUAAHdvcmQvbWVkaWEvdGVzdC5iaW5QSwUGAAAAAAUABQA5AQAARAUAAAAA",
+  "readback": {
+    "sha256": "014c4e83b84afb67e814aa6e964e42b22b660624b6f744fdb067ea7deb13ea81",
+    "version": "sha256:014c4e83b84afb67e814aa6e964e42b22b660624b6f744fdb067ea7deb13ea81",
+    "size": 1683,
+    "representation": {
+      "kind": "office_text",
+      "format": "docx",
+      "version": "openxml-text-v1",
+      "complete_document": false,
+      "sha256": "bfe67838069ae0d66c23f2a0af0dc363c2678761090b7d1deedec8f93be19b19",
+      "limitations": [
+        "Text extraction only; images, charts, formatting, notes and headers are not included. Formulas are not evaluated; numeric/date cells retain stored values."
+      ]
+    },
+    "cursor": {
+      "target_offset": 0,
+      "content_offset": 0
+    },
+    "total_targets": 8,
+    "targets": [
+      {
+        "id": "paragraph:1",
+        "text": "Предложение",
+        "text_offset": 0,
+        "total_text_utf16": 11,
+        "text_excerpt_only": false
+      },
+      {
+        "id": "paragraph:2",
+        "text": "Реквизиты",
+        "text_offset": 0,
+        "total_text_utf16": 9,
+        "text_excerpt_only": false
+      },
+      {
+        "id": "paragraph:3",
+        "text": "Компания В — 19 700 ₽; 00123; 07.11.2026; кроме доставки",
+        "text_offset": 0,
+        "total_text_utf16": 56,
+        "text_excerpt_only": false
+      },
+      {
+        "id": "table:1",
+        "text": "0012319 700 ₽",
+        "text_offset": 0,
+        "total_text_utf16": 13,
+        "text_excerpt_only": false
+      },
+      {
+        "id": "table:1/row:1/cell:1",
+        "text": "00123",
+        "text_offset": 0,
+        "total_text_utf16": 5,
+        "text_excerpt_only": false
+      },
+      {
+        "id": "table:1/row:1/cell:2",
+        "text": "19 700 ₽",
+        "text_offset": 0,
+        "total_text_utf16": 8,
+        "text_excerpt_only": false
+      },
+      {
+        "id": "paragraph:4",
+        "text": "00123",
+        "text_offset": 0,
+        "total_text_utf16": 5,
+        "text_excerpt_only": false
+      },
+      {
+        "id": "paragraph:5",
+        "text": "19 700 ₽",
+        "text_offset": 0,
+        "total_text_utf16": 8,
+        "text_excerpt_only": false
+      }
+    ],
+    "next_cursor": null,
+    "targets_excerpt_only": false
+  },
+  "changed_parts": ["word/document.xml"],
+  "original_preserved": true,
+  "real_model_called": false,
+  "rendered": false
+}

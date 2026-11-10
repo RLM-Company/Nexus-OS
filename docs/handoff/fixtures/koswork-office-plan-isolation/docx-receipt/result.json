@@ -1,0 +1,33 @@
+{
+  "format": "docx",
+  "mutation": "receipt",
+  "source_version": "sha256:f35a111949d86f3f000ac9c3cd1da4d7ff2a10663e1e905c9862235a16b932fb",
+  "new_version": "sha256:3d64fd25ffa22af115d6407d668bd9b025f97d09df46d68b3d539b511d098b1c",
+  "sha256": "3d64fd25ffa22af115d6407d668bd9b025f97d09df46d68b3d539b511d098b1c",
+  "approved_path": "approved.docx",
+  "actual_path": "approved.docx",
+  "executed_changes": [
+    {
+      "kind": "replace_text",
+      "target": "paragraph:3",
+      "find": "Компания А",
+      "replace": "Компания Б",
+      "before": "Компания А — 19 700 ₽; 00123; 07.11.2026; кроме доставки",
+      "after": "Компания Б — 19 700 ₽; 00123; 07.11.2026; кроме доставки"
+    },
+    {
+      "kind": "replace_text",
+      "target": "table:1/row:1/cell:2",
+      "find": "19 700",
+      "replace": "19 700 за комплект",
+      "before": "19 700 ₽",
+      "after": "19 700 за комплект ₽"
+    }
+  ],
+  "original_preserved": true,
+  "unexpected_path_absent": true,
+  "readback_verified": true,
+  "real_model_called": false,
+  "visual_render_verified": false,
+  "text": "Предложение\nРеквизиты\nКомпания Б — 19 700 ₽; 00123; 07.11.2026; кроме доставки\n00123\n\t19 700 за комплект ₽\n\t\n"
+}

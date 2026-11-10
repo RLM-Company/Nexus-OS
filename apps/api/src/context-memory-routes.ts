@@ -128,6 +128,12 @@ export function registerContextMemoryRoutes(
       { schema: { params: targetParams } },
       (r) => store.clearUsage(target(r.params), owner(r))
     );
+    // Forget every entry attached to this chat/project. Canonical messages stay.
+    routes.delete<{ Params: TargetParams }>(
+      base + "/entries",
+      { schema: { params: targetParams } },
+      (r) => store.forgetScope(target(r.params), owner(r))
+    );
     routes.get<{ Params: TargetParams }>(
       base + "/profile-candidates",
       { schema: { params: targetParams } },

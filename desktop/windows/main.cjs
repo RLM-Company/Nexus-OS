@@ -41,6 +41,7 @@ const { createVaultConsole } = require("./vault-console.cjs");
 const { createLocalVault } = require("./local-vault.cjs");
 const { createVaultWorkspace } = require("./vault-workspace.cjs");
 const { safeWorkspaceRoute, isLoginOrLogout, isExplicitLogout } = require("./desktop-recovery.cjs");
+const { evaluateProfile, profileStatusText } = require("./profile-environment.cjs");
 const updateTrust = require("./update-trust.json");
 const { createSmokePayload, isSmokeMode, writeSmokeMarker } = require("./smoke-mode.cjs");
 const {
@@ -66,11 +67,28 @@ const guiAcceptanceMode = isGuiAcceptanceMode(process.argv);
 if (guiAcceptanceMode) assertGuiAcceptanceEnvironment({ isPackaged: app.isPackaged });
 
 // Keep the existing profile and Chromium partition across the product rename.
-const profileDirectory = path.join(app.getPath("appData"), "cosmora-windows-desktop");
-fs.mkdirSync(profileDirectory, { recursive: true });
-app.setPath("userData", profileDirectory);
-app.setPath("sessionData", profileDirectory);
-app.setName("Kosmora");
+// A profile that the packaged environment or the OS refuses is degraded, never
+// silent: the window still opens and explains the situation (see profile-environment).
+const baseAppDataDirectory = app.getPath("appData");
+const nominalProfileDirectory = path.join(baseAppDataDirectory, "cosmora-windows-desktop");
+const startupProfile = evaluateProfile(nominalProfileDirectory);
+const profileDirectory = startupProfile.ok
+  ? nominalProfileDirectory
+  : // Degraded transient workspace so the recovery screen itself can paint.
+    fs.mkdtempSync(path.join(app.getPath("temporary"), "cosmora-profile-"));
+const startupFaults = [];
+if (startupProfile.ok) {
+  fs.mkdirSync(profileDirectory, { recursive: true });
+  app.setPath("userData", profileDirectory);
+  app.setPath("sessionData", profileDirectory);
+  app.setName("Kosmora");
+  if (startupProfile.redirected) startupFaults.push(startupProfile.reason);
+} else {
+  app.setPath("userData", profileDirectory);
+  app.setPath("sessionData", profileDirectory);
+  app.setName("Kosmora");
+  startupFaults.push(startupProfile.reason);
+}
 
 const preferences = createPreferenceStore(profileDirectory);
 const localTextCodec = {
@@ -122,11 +140,15 @@ let saveWindowTimer = null;
 let pendingDeepLink = deepLinkFromArgv(process.argv);
 let updates = null;
 let currentOrigin = null;
-let connectionMessage = "";
+let connectionMessage = startupFaults.length ? startupFaults.join(" ") : "";
 let restoringInitialPage = false;
 let isQuitting = false;
 let downloadPolicyInstalled = false;
 const connectionAttemptGate = createLatestAttemptGate();
+// Stages of the current connection attempt. Cancellation is offered while the
+// health check is still running; once the origin switch starts mutating local
+// data, superseding it would leave inconsistent state, so it runs to completion.
+let connectionAttemptPhase = "idle";
 
 const smokeMode = isSmokeMode(process.argv);
 const gotSingleInstanceLock = smokeMode ? true : app.requestSingleInstanceLock();
@@ -151,23 +173,29 @@ const downloadCenter =
       })
     : null;
 
+function tryCreateVaultConsole() {
+  try {
+    return createVaultConsole({
+      profileDirectory,
+      codec: localTextCodec,
+      getEpoch: () => identityEpoch,
+      getMainWindow: () => mainWindow,
+      getSession: () => session.fromPartition(SESSION_PARTITION, { cache: true }),
+      identity: async () => {
+        const owner = await verifiedOwner({ allowCachedWrite: true });
+        return owner && currentOrigin ? { owner, origin: currentOrigin } : null;
+      }
+    });
+  } catch (cause) {
+    startupFaults.push(
+      `Локальное хранилище (окно) недоступно: ${cause instanceof Error ? cause.message : String(cause)}.`
+    );
+    return null;
+  }
+}
+
 const vaultConsole =
-  gotSingleInstanceLock && !smokeMode && !guiAcceptanceMode
-    ? createVaultConsole({
-        BrowserWindow,
-        ipcMain,
-        dialog,
-        profileDirectory,
-        codec: localTextCodec,
-        getEpoch: () => identityEpoch,
-        getMainWindow: () => mainWindow,
-        getSession: () => session.fromPartition(SESSION_PARTITION, { cache: true }),
-        identity: async () => {
-          const owner = await verifiedOwner({ allowCachedWrite: true });
-          return owner && currentOrigin ? { owner, origin: currentOrigin } : null;
-        }
-      })
-    : null;
+  gotSingleInstanceLock && !smokeMode && !guiAcceptanceMode ? tryCreateVaultConsole() : null;
 const taskGate = createTaskGate();
 const browserWorkspace = createComputerWorkspace({
   pdfReader,
@@ -218,7 +246,25 @@ const workCycleBaseWorkspace = createComputerWorkspace({
 });
 const workCycleWorkspace = createVaultWorkspace({
   base: workCycleBaseWorkspace,
-  vault: createLocalVault({ userDataPath: profileDirectory, codec: localTextCodec })
+  // If the profile rejects the local vault, the work cycle still runs with the
+  // ordinary workspace; vault operations fail loudly instead of quietly.
+  vault: (() => {
+    try {
+      return createLocalVault({ userDataPath: profileDirectory, codec: localTextCodec });
+    } catch (cause) {
+      startupFaults.push(
+        `Локальное хранилище Koswork недоступно: ${cause instanceof Error ? cause.message : String(cause)}.`
+      );
+      return new Proxy(
+        {},
+        {
+          get: () => () => {
+            throw Error("VAULT_PROFILE_UNAVAILABLE");
+          }
+        }
+      );
+    }
+  })()
 });
 const kosworkWorkCycle =
   gotSingleInstanceLock && !smokeMode && !guiAcceptanceMode
@@ -536,6 +582,7 @@ async function probeServer(browserSession, origin) {
 
 async function openOrigin(origin, { persist = false } = {}) {
   const generation = connectionAttemptGate.begin();
+  connectionAttemptPhase = "probe";
   const browserSession = session.fromPartition(SESSION_PARTITION, { cache: true });
   try {
     const probe = await probeServer(browserSession, origin);
@@ -550,6 +597,8 @@ async function openOrigin(origin, { persist = false } = {}) {
     const previousOrigin = currentOrigin;
     if (persist && previousOrigin && previousOrigin !== origin) {
       // Switching origins is an explicit trust-boundary change, not a page navigation.
+      // From here cancellation is refused: the switch is committed to completion.
+      connectionAttemptPhase = "commit";
       identityEpoch++;
       computerConsole?.invalidate();
       kosworkWorkCycle?.invalidate();
@@ -586,6 +635,7 @@ async function openOrigin(origin, { persist = false } = {}) {
           (preferences.get().restorePage ? preferences.get().lastPath : "/");
     if (requestedRoute !== "/") deferredRoute = requestedRoute;
     currentOrigin = origin;
+    connectionAttemptPhase = "load";
     restoringInitialPage = true;
     try {
       await mainWindow.loadURL(origin);
@@ -619,8 +669,19 @@ async function openOrigin(origin, { persist = false } = {}) {
       return { ok: false, message: "Сервер доступен, но интерфейс Kosmora не открылся." };
     }
   } finally {
-    if (connectionAttemptGate.isCurrent(generation)) restoringInitialPage = false;
+    if (connectionAttemptGate.isCurrent(generation)) {
+      restoringInitialPage = false;
+      connectionAttemptPhase = "idle";
+    }
     connectionAttemptGate.finish(generation);
+    // Every terminal outcome publishes fresh state so the connection page can
+    // never keep a busy latch after the attempt has ended.
+    try {
+      if (!connectionAttemptGate.isInFlight() && mainWindow && !mainWindow.isDestroyed())
+        mainWindow.webContents.send("cosmora:connection-state-changed");
+    } catch {
+      /* the window may already be closing; the next render will re-read state */
+    }
   }
 }
 
@@ -766,6 +827,38 @@ async function nativeLogout() {
       "Не удалось полностью завершить браузерный сеанс. Проверьте подключение и повторите выход."
     );
   }
+}
+
+async function showProfileStatus() {
+  const status = evaluateProfile(app.getPath("userData"));
+  status.faults = startupFaults.filter((fault) => fault !== status.reason);
+  await dialog.showMessageBox(mainWindow, {
+    type: "info",
+    title: "Состояние локального профиля Kosmora",
+    message:
+      status.ok && status.faults.length
+        ? "Профиль работает с ограничениями."
+        : status.ok
+          ? "Профиль работает."
+          : "Профиль работает с ограничениями.",
+    detail: profileStatusText(status)
+  });
+}
+
+async function showGettingStarted() {
+  await dialog.showMessageBox(mainWindow, {
+    type: "info",
+    title: "Начало работы с Kosmora",
+    message: "Установить → Открыть → Сервер → Вход → Инструменты.",
+    detail:
+      "1. Установка: запустите проверенный Kosmora-Setup.exe и проверьте издателя Windows. Ярлыки создаются в «Пуск» и на рабочем столе.\n" +
+      "2. Открыть: запустите «Kosmora» через ярлык или меню «Пуск»; окно открывается всегда, даже если сервер недоступен.\n" +
+      "3. Сервер: укажите HTTPS-адрес сервера Kosmora (например, https://13.141.51.16) и нажмите «Открыть Kosmora». Проверку можно отменить кнопкой «Отмена»; сохранённый адрес не меняется, пока новый не проверен.\n" +
+      "4. Вход: открывается обычная страница входа Kosmora в окне приложения. Вводите данные только там; оболочка Windows пароли не обрабатывает и не хранит.\n" +
+      "5. Инструменты: локальное хранилище («Koswork → Локальное хранилище…»), браузер Koswork и управление компьютером включаются отдельным подтверждением для каждой задачи. Остановка задачи: Ctrl+Alt+Shift+K или «Koswork → Остановить управление».\n" +
+      "Диагностика состояния профиля и хранилищ: «Kosmora → Состояние локального профиля…».",
+    noLink: true
+  });
 }
 
 function startConnectivityMonitor() {
@@ -1030,11 +1123,24 @@ function createMenu() {
         { label: "Выйти и удалить локальные данные…", click: () => void nativeLogout() },
         { type: "separator" },
         {
+          label: "Состояние локального профиля…",
+          click: () => void showProfileStatus()
+        },
+        {
           label: "Выход",
           click: () => {
             isQuitting = true;
             app.quit();
           }
+        }
+      ]
+    },
+    {
+      label: "Справка",
+      submenu: [
+        {
+          label: "Начало работы…",
+          click: () => void showGettingStarted()
         }
       ]
     },
@@ -1487,6 +1593,36 @@ ipcMain.handle("cosmora:retry", async (event) => {
   if (!saved.saved) return { ok: false, message: "Сначала укажите сервер Kosmora." };
   currentOrigin = saved.origin;
   return openOrigin(saved.origin);
+});
+
+ipcMain.handle("cosmora:cancel-connect", (event) => {
+  if (!isTrustedConnectionEvent(event))
+    return { ok: false, message: "Недоверенный источник запроса." };
+  // Cancellation only fences the health-check stage. Once the switch has
+  // started mutating local data, the attempt runs to completion to keep the
+  // profile consistent; the user sees that result instead.
+  if (connectionAttemptPhase !== "probe") {
+    connectionMessage =
+      "Проверка уже завершилась или выполняется смена сервера — дождитесь результата.";
+    return {
+      ok: false,
+      stale: true,
+      message: connectionMessage
+    };
+  }
+  const canceled = connectionAttemptGate.cancelPending();
+  const saved = readSavedOrigin();
+  if (canceled) {
+    connectionMessage = "Проверка подключения отменена. Сохранённый адрес не изменён.";
+    connectionAttemptPhase = "idle";
+  }
+  try {
+    if (mainWindow && !mainWindow.isDestroyed())
+      mainWindow.webContents.send("cosmora:connection-state-changed");
+  } catch {
+    /* window closing; renderer state read will re-sync on next open */
+  }
+  return { ok: canceled, origin: saved.origin, saved: saved.saved };
 });
 
 if (gotSingleInstanceLock) {

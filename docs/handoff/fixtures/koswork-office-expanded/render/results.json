@@ -1,0 +1,71 @@
+[
+  {
+    "format": "docx",
+    "source_office_sha256": "51e41708bc3b241a2bde88c4f524b65146b42bba281c7d532bfb9c3130bab3f2",
+    "command": [
+      "soffice",
+      "-env:UserInstallation=file:///workspace/work/Nexus-OS/work/office-expanded-lo-profile",
+      "--headless",
+      "--convert-to",
+      "pdf",
+      "--outdir",
+      "docs/handoff/fixtures/koswork-office-expanded/render/docx",
+      "docs/handoff/fixtures/koswork-office-expanded/utf16be.updated.docx"
+    ],
+    "exit_code": 0,
+    "stdout": "convert /workspace/work/Nexus-OS/docs/handoff/fixtures/koswork-office-expanded/utf16be.updated.docx as a Writer document -> /workspace/work/Nexus-OS/docs/handoff/fixtures/koswork-office-expanded/render/docx/utf16be.updated.pdf using filter : writer_pdf_Export\n",
+    "stderr": "",
+    "pdf_exists": true,
+    "pdftotext_exit_code": 0,
+    "required_literals_present": true,
+    "office_binary_preserved": true,
+    "text_artifact": "docx/rendered.json",
+    "text_serialization": "lossless_json"
+  },
+  {
+    "format": "xlsx",
+    "source_office_sha256": "378cf66fb9e26798c55117dc557292d96b12f173aeb50146d3f579190fc9be80",
+    "command": [
+      "soffice",
+      "-env:UserInstallation=file:///workspace/work/Nexus-OS/work/office-expanded-lo-profile",
+      "--headless",
+      "--convert-to",
+      "pdf",
+      "--outdir",
+      "docs/handoff/fixtures/koswork-office-expanded/render/xlsx",
+      "docs/handoff/fixtures/koswork-office-expanded/utf16be.updated.xlsx"
+    ],
+    "exit_code": 0,
+    "stdout": "convert /workspace/work/Nexus-OS/docs/handoff/fixtures/koswork-office-expanded/utf16be.updated.xlsx as a Calc document -> /workspace/work/Nexus-OS/docs/handoff/fixtures/koswork-office-expanded/render/xlsx/utf16be.updated.pdf using filter : calc_pdf_Export\n",
+    "stderr": "",
+    "pdf_exists": true,
+    "pdftotext_exit_code": 0,
+    "required_literals_present": true,
+    "office_binary_preserved": true,
+    "text_artifact": "xlsx/rendered.json",
+    "text_serialization": "lossless_json"
+  },
+  {
+    "format": "pptx",
+    "source_office_sha256": "b7e0027b9317943a22441f3401b426550c51833cecb044f75d52ff5ff1db9886",
+    "command": [
+      "soffice",
+      "-env:UserInstallation=file:///workspace/work/Nexus-OS/work/office-expanded-lo-profile",
+      "--headless",
+      "--convert-to",
+      "pdf",
+      "--outdir",
+      "docs/handoff/fixtures/koswork-office-expanded/render/pptx",
+      "docs/handoff/fixtures/koswork-office-expanded/utf16le.updated.pptx"
+    ],
+    "exit_code": 0,
+    "stdout": "convert /workspace/work/Nexus-OS/docs/handoff/fixtures/koswork-office-expanded/utf16le.updated.pptx as a Impress document -> /workspace/work/Nexus-OS/docs/handoff/fixtures/koswork-office-expanded/render/pptx/utf16le.updated.pdf using filter : impress_pdf_Export\n",
+    "stderr": "",
+    "pdf_exists": true,
+    "pdftotext_exit_code": 0,
+    "required_literals_present": true,
+    "office_binary_preserved": true,
+    "text_artifact": "pptx/rendered.json",
+    "text_serialization": "lossless_json"
+  }
+]

@@ -564,6 +564,40 @@ export class ContextMemoryStore {
       return { forgotten: true as const, original_messages_deleted: false as const };
     });
   }
+  /** Erase every owned entry attached to one chat or project. Canonical messages,
+   * settings and usage receipts deliberately stay; derived index rows are removed by
+   * the schema triggers and any surviving vector is revalidated against its source. */
+  forgetScope(target: MemoryTarget, owner: string) {
+    return this.transaction(owner, () => {
+      this.owned(target, owner);
+      const column = target.kind === "chat" ? "chat_id" : "project_id";
+      const scalar = (sql: string) =>
+        Number((this.db.prepare(sql).get(owner, target.kind, target.id) as { n: number }).n);
+      const versions = scalar(
+        "SELECT count(*) n FROM context_memory_versions v JOIN context_memory_entries e ON e.id=v.entry_id " +
+          `WHERE e.owner_id=? AND e.scope=? AND e.${column}=?`
+      );
+      const chunks = scalar(
+        "SELECT count(*) n FROM semantic_index_chunks c JOIN semantic_index_sources s ON s.id=c.source_id AND s.owner_id=c.owner_id " +
+          `JOIN context_memory_entries e ON e.id=s.memory_entry_id WHERE e.owner_id=? AND e.scope=? AND e.${column}=?`
+      );
+      const deleted = Number(
+        this.db
+          .prepare(
+            `DELETE FROM context_memory_entries WHERE owner_id=? AND scope=? AND ${column}=?`
+          )
+          .run(owner, target.kind, target.id).changes
+      );
+      return {
+        target,
+        forgotten_entries: deleted,
+        removed_versions: versions,
+        removed_memory_index_chunks: chunks,
+        original_messages_deleted: false as const,
+        settings_retained: true as const
+      };
+    });
+  }
   versions(id: string, owner: string) {
     if (!this.get(id, owner)) throw new ContextMemoryError(404, "MEMORY_NOT_FOUND");
     return (

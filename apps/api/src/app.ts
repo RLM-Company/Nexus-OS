@@ -1,3 +1,4 @@
+import { registerDocumentWorkspaceRoutes } from "./document-workspace-routes.js";
 import { registerGithubIssueRoutes } from "./github-issue-routes.js";
 import type { ContextMemoryRanker } from "@cosmora/contracts";
 import type { IndexedMemoryRecall } from "@cosmora/db";
@@ -890,6 +891,7 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
     registerCodeAgentRoutes(app, code, identityFor);
     app.addHook("preClose", () => code.stop());
   }
+  registerDocumentWorkspaceRoutes(app, identityFor);
   if (dependencies.documentLibrary)
     registerDocumentLibraryRoutes(app, dependencies.documentLibrary, identityFor);
   if (dependencies.documentAnswerService)
@@ -1480,6 +1482,7 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
       modelGateway: dependencies.modelGateway,
       chat: dependencies.chat,
       ...(dependencies.accountStore ? { accountStore: dependencies.accountStore } : {}),
+      search: dependencies.webSearch ?? new WebSearch(),
       runtimeMetrics,
       activeRuns,
       runObservers,
@@ -2162,7 +2165,8 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
           request.body.initial_message,
           request.body.client_message_id,
           identityFor(request).owner_id,
-          request.body.attachments
+          request.body.attachments,
+          request.body.history_excerpt
         );
         dependencies.policyStore?.ensureProfile(accepted.project.id);
         dependencies.usageStore?.ensureLimit(accepted.project.id, identityFor(request).owner_id);

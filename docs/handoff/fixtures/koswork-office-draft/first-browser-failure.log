@@ -1,0 +1,73 @@
+[WebServer] (node:45199) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:45213) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:45213) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:45233) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] $ tsc -p tsconfig.build.json
+[WebServer] (node:45260) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] $ node scripts/prepare-pdf-worker.mjs && next build
+[WebServer] (node:45286) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:45286) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:45336) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:45337) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:45363) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] $ next start -H 127.0.0.1
+[WebServer] (node:45378) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+
+Running 8 tests using 1 worker
+
+(node:45397) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  1 [chromium] › e2e/office-draft.spec.ts:59:7 › DOCX restores only the explicitly saved plan, requires fresh preview and downloads verified real bytes (2.6s)
+  ✓  2 [chromium] › e2e/office-draft.spec.ts:59:7 › XLSX restores only the explicitly saved plan, requires fresh preview and downloads verified real bytes (2.8s)
+  ✓  3 [chromium] › e2e/office-draft.spec.ts:59:7 › PPTX restores only the explicitly saved plan, requires fresh preview and downloads verified real bytes (2.1s)
+  ✓  4 [chromium] › e2e/office-draft.spec.ts:213:5 › changed source version refuses restoration and overwrite; another filename never receives its plan (1.6s)
+  ✓  5 [chromium] › e2e/office-draft.spec.ts:254:5 › stale tabs cannot overwrite, restore or delete a newer draft; explicit refresh restores the newer plan (2.8s)
+  ✘  6 [chromium] › e2e/office-draft.spec.ts:295:5 › invalid or expired local records cannot restore and explicit deletion leaves the editor plan intact (1.8s)
+(node:45760) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  7 [chromium] › e2e/office-draft.spec.ts:331:5 › quota and unavailable storage preserve the saved record and current plan without model requests (1.7s)
+  ✓  8 [chromium] › e2e/office-draft.spec.ts:362:5 › unfinished edits cannot be persisted; clearing the plan keeps the saved draft until explicit deletion (1.8s)
+
+
+  1) [chromium] › e2e/office-draft.spec.ts:295:5 › invalid or expired local records cannot restore and explicit deletion leaves the editor plan intact
+
+    Error: expect(received).toBeNull()
+
+    Received: "{\"schema\":1,\"revision\":\"f43a3727-0641-45ec-94e0-10dae00f9f3c\",\"savedAt\":1794310289915,\"name\":\"offer.docx\",\"source_version\":\"sha256:f35a111949d86f3f000ac9c3cd1da4d7ff2a10663e1e905c9862235a16b932fb\",\"existingSheets\":0,\"operations\":[{\"kind\":\"replace_text\",\"target\":\"paragraph:3\",\"find\":\"Компания А\",\"replace\":\"Компания В\"}],\"preview_token\":\"forbidden\"}"
+
+      320 |     .getByRole("button", { name: "Удалить сохранённый черновик", exact: true })
+      321 |     .click();
+    > 322 |   expect(await record(page)).toBeNull();
+          |                              ^
+      323 |   await expect(editor.getByRole("list", { name: "План правок" }).getByRole("listitem")).toHaveCount(
+      324 |     1
+      325 |   );
+        at /workspace/work/Nexus-OS-office-integration/apps/web/e2e/office-draft.spec.ts:322:30
+
+    Error Context: test-results/office-draft-invalid-or-ex-e2362-aves-the-editor-plan-intact-chromium/error-context.md
+
+    attachment #2: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results/office-draft-invalid-or-ex-e2362-aves-the-editor-plan-intact-chromium/trace.zip
+    Usage:
+
+        pnpm exec playwright show-trace test-results/office-draft-invalid-or-ex-e2362-aves-the-editor-plan-intact-chromium/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  1 failed
+    [chromium] › e2e/office-draft.spec.ts:295:5 › invalid or expired local records cannot restore and explicit deletion leaves the editor plan intact
+  7 passed (40.8s)
+undefined
+/workspace/work/Nexus-OS-office-integration/apps/web:
+[ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL] Command failed with exit code 1: playwright test -c playwright.office-composer.config.ts e2e/office-draft.spec.ts

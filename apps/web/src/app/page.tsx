@@ -29,7 +29,14 @@ import { ChatSearchTrigger } from "./chat-search-trigger";
 import { ProjectTitleEditor } from "./project-title-editor";
 import { QuickSwitcher } from "./quick-switcher";
 import { pinsFirst } from "./pinned-navigation";
-import { clearComposerDraft, readComposerDraft, saveComposerDraft } from "./composer-draft-storage";
+import {
+  captureComposerDraft,
+  clearComposerDraft,
+  clearComposerDraftIfUnchanged,
+  readComposerDraft
+} from "./composer-draft-storage";
+import { useLiveComposerText } from "./use-live-composer-text";
+import { useBrowserComposerDraft } from "./use-browser-composer-draft";
 import {
   desktopDraftBridge,
   nativeDraftScope,
@@ -47,6 +54,10 @@ import {
   ChatMessageAttachments,
   useChatAttachments
 } from "./chat-attachments";
+import {
+  KosmoraComposerActions,
+  type KosmoraComposerActionsValue
+} from "./kosmora-composer-actions";
 import { isValidChatAttachments, type ChatAttachment } from "@cosmora/contracts/chat-attachments";
 import {
   WorkspaceSections,
@@ -112,6 +123,8 @@ type ProjectProposal = {
   content: string;
   assessment: TaskComplexity;
   attachments?: ChatAttachment[];
+  /** Explicitly chosen number of preceding messages carried into the project. */
+  historyCount: 0 | 4 | 8;
 };
 
 type ChatMode = "kosmora" | "work" | "coscode";
@@ -532,7 +545,11 @@ export default function Home() {
   const [policySignals, setPolicySignals] = useState<PolicySignals>(EMPTY_POLICY_SIGNALS);
   const [demoRuns, setDemoRuns] = useState<DemoManagerRun[]>([]);
   const [demoActionPending, setDemoActionPending] = useState(false);
-  const [draft, setDraft] = useState("");
+  const [draft, setDraft, latestDraftRef] = useLiveComposerText();
+  const [composerActions, setComposerActions] = useState<KosmoraComposerActionsValue>({
+    web_search: false,
+    text_action: null
+  });
   const [draftStorageReadyKey, setDraftStorageReadyKey] = useState<string | null>(null);
   const [draftNotice, setDraftNotice] = useState<string | null>(null);
   const [draftRecoveryNotice, setDraftRecoveryNotice] = useState<string | null>(null);
@@ -621,11 +638,49 @@ export default function Home() {
     activeLocalChatId
   );
   const chatAttachments = useChatAttachments(`${composerDraftKey}:${viewEpochRef.current}`);
-  const pendingComposeRef = useRef<{ prompt: string; files: ChatAttachment[] } | null>(null);
-  const acceptedDraftRef = useRef<{ key: string; text: string } | null>(null);
+  const pendingComposeRef = useRef<{
+    prompt: string;
+    files: ChatAttachment[];
+    epoch: number;
+  } | null>(null);
+  const acceptedDraftRef = useRef<{
+    key: string;
+    text: string;
+    revision: number;
+    files: ChatAttachment[];
+  } | null>(null);
   const pendingComposerFocusRef = useRef(false);
   const draftRecoveryKeyRef = useRef<string | null>(null);
   const attachmentScope = `${composerDraftKey}:${viewEpochRef.current}`;
+  const draftEpoch = viewEpochRef.current;
+  const saveBrowserDraft = useBrowserComposerDraft(() => {
+    if (
+      desktopDraftBridge(window) ||
+      draftStorageReadyKey !== attachmentScope ||
+      viewEpochRef.current !== draftEpoch
+    )
+      return null;
+    const latest = latestDraftRef.current;
+    if (
+      acceptedDraftRef.current?.key === composerDraftKey &&
+      acceptedDraftRef.current.revision === latest.revision &&
+      acceptedDraftRef.current.text === latest.text &&
+      acceptedDraftRef.current.files === chatAttachments.snapshotFiles()
+    )
+      return null;
+    return {
+      key: composerDraftKey,
+      text: latest.text,
+      revision: latest.revision,
+      files: chatAttachments.snapshotFiles()
+    };
+  }, setDraftNotice);
+  const updateDraftFromInput = (event: FormEvent<HTMLTextAreaElement>) => {
+    setDraftRecoveryNotice(null);
+    const value = event.currentTarget.value;
+    if (latestDraftRef.current.text !== value) setDraft(value);
+    saveBrowserDraft();
+  };
 
   useEffect(() => {
     const field = composerRef.current;
@@ -703,6 +758,7 @@ export default function Home() {
   useLocalVaultContext(
     initialRouteReady &&
       !loading &&
+      !sending &&
       surface === "manager" &&
       draftStorageReadyKey === attachmentScope,
     draft,
@@ -711,13 +767,19 @@ export default function Home() {
 
   useEffect(() => {
     const pending = pendingComposeRef.current;
-    if (!pending || draftStorageReadyKey !== attachmentScope) return;
+    if (
+      !pending ||
+      pending.epoch !== viewEpochRef.current ||
+      attachmentScope !== `${composerDraftKey}:${pending.epoch}` ||
+      draftStorageReadyKey !== attachmentScope
+    )
+      return;
     pendingComposeRef.current = null;
     setDraft(pending.prompt);
     chatAttachments.replace(pending.files);
     pendingComposerFocusRef.current = true;
     // Consume only after the new chat scope and its draft hydration have settled.
-  }, [attachmentScope, chatAttachments, draftStorageReadyKey]);
+  }, [attachmentScope, chatAttachments, composerDraftKey, draftStorageReadyKey]);
 
   useEffect(() => {
     if (
@@ -748,10 +810,12 @@ export default function Home() {
         // before React has committed the empty composer after acceptance.
         if (
           acceptedDraftRef.current?.key === composerDraftKey &&
-          acceptedDraftRef.current.text === draft
+          acceptedDraftRef.current.revision === latestDraftRef.current.revision &&
+          acceptedDraftRef.current.text === latestDraftRef.current.text &&
+          acceptedDraftRef.current.files === chatAttachments.snapshotFiles()
         )
           return;
-        native.flush(scope, draft);
+        if (viewEpochRef.current === draftEpoch) native.flush(scope, latestDraftRef.current.text);
       };
       window.addEventListener("pagehide", flush);
       let cancelled = false;
@@ -759,14 +823,17 @@ export default function Home() {
         // A POST still in flight can have been accepted even if its HTTP response was lost.
         // Do not race a delayed autosave against a server-acknowledged clear.
         if (
+          viewEpochRef.current !== draftEpoch ||
           submitPendingRef.current ||
           (acceptedDraftRef.current?.key === composerDraftKey &&
-            acceptedDraftRef.current.text === draft)
+            acceptedDraftRef.current.revision === latestDraftRef.current.revision &&
+            acceptedDraftRef.current.text === latestDraftRef.current.text &&
+            acceptedDraftRef.current.files === chatAttachments.snapshotFiles())
         )
           return;
-        if (!draft) acceptedDraftRef.current = null;
+        if (!latestDraftRef.current.text) acceptedDraftRef.current = null;
         void native
-          .save(scope, draft)
+          .save(scope, latestDraftRef.current.text)
           .then((result) => {
             if (!cancelled)
               setDraftNotice(
@@ -783,14 +850,17 @@ export default function Home() {
         window.removeEventListener("pagehide", flush);
       };
     }
-    try {
-      setDraftNotice(
-        saveComposerDraft(window.localStorage, composerDraftKey, draft, chatAttachments.files)
-      );
-    } catch {
-      setDraftNotice("Сохранение черновика в этом браузере недоступно.");
-    }
-  }, [attachmentScope, composerDraftKey, draft, draftStorageReadyKey, chatAttachments.files]);
+    saveBrowserDraft();
+  }, [
+    attachmentScope,
+    composerDraftKey,
+    draft,
+    draftStorageReadyKey,
+    chatAttachments.files,
+    saveBrowserDraft,
+    draftEpoch,
+    latestDraftRef
+  ]);
 
   useEffect(() => {
     try {
@@ -1544,13 +1614,36 @@ export default function Home() {
         setSending(false);
         setActiveRunId(null);
         setRunPhase("failed");
-        setError(
-          failure.data.error_code === "RELAY_UNAVAILABLE"
-            ? "Перевод не выполнен. Запрос не отправлен без English Relay. Можно выключить перевод и отправить исходный запрос вручную."
-            : failure.data.error_code === "USAGE_LIMIT_EXCEEDED"
-              ? "Лимит токенов достигнут. Измените квоту в персональных настройках."
+        const code = failure.data.error_code;
+        if (code === "USAGE_LIMIT_EXCEEDED") {
+          // The quota is a cumulative owner setting without a reset period.
+          // Report the real counted numbers from the existing usage endpoint,
+          // point at the breakdown, and never invent a renewal date.
+          setError("Лимит токенов достигнут. Прогон остановлен; текст сохранён в поле ввода.");
+          void api<{
+            summary: { total_counted_tokens: number; max_total_tokens: number | null };
+          }>("/api/v1/personal-settings/usage")
+            .then((usage) => {
+              const used = usage.summary.total_counted_tokens;
+              const limit = usage.summary.max_total_tokens;
+              const counted =
+                limit === null
+                  ? `Учтено ${used.toLocaleString("ru-RU")} токенов.`
+                  : `Учтено ${used.toLocaleString("ru-RU")} из ${limit.toLocaleString("ru-RU")} токенов.`;
+              setError(
+                `Лимит токенов достигнут. Прогон остановлен; текст сохранён в поле ввода. ${counted} Разбивка по запросам — в личных настройках, раздел «Использование». Период обновления лимита не задан.`
+              );
+            })
+            .catch(() => {
+              /* Keep the honest fallback above when usage is unavailable. */
+            });
+        } else {
+          setError(
+            code === "RELAY_UNAVAILABLE"
+              ? "Перевод не выполнен. Запрос не отправлен без English Relay. Можно выключить перевод и отправить исходный запрос вручную."
               : "Ответ завершился с ошибкой. Внутренние детали скрыты."
-        );
+          );
+        }
         void refreshGeneralChat(chatIdForRun).catch(() => undefined);
       });
       source.addEventListener("run.cancelled", () => {
@@ -1729,7 +1822,9 @@ export default function Home() {
 
   const submit = async (event?: FormEvent, voiceContent?: string): Promise<void> => {
     event?.preventDefault();
-    const content = (voiceContent ?? draft).trim();
+    const submitted = { ...latestDraftRef.current, files: chatAttachments.snapshotFiles() };
+    const recoverableDraft = voiceContent ?? submitted.text;
+    const content = recoverableDraft.trim();
     if (
       !content ||
       sending ||
@@ -1742,6 +1837,50 @@ export default function Home() {
     )
       return;
     submitPendingRef.current = true;
+    const submittedEpoch = viewEpochRef.current;
+    saveBrowserDraft();
+    let stored: ReturnType<typeof captureComposerDraft> | null = null;
+    try {
+      if (!desktopDraftBridge(window))
+        stored = captureComposerDraft(window.localStorage, composerDraftKey);
+    } catch {
+      /* Unavailable storage must not block sending. */
+    }
+    const acknowledgeDraft = (): boolean => {
+      acceptedDraftRef.current = { key: composerDraftKey, ...submitted };
+      const changed =
+        submittedEpoch === viewEpochRef.current &&
+        (submitted.revision !== latestDraftRef.current.revision ||
+          submitted.files !== chatAttachments.snapshotFiles());
+      const native = desktopDraftBridge(window);
+      const scope = nativeDraftScope(composerDraftKey);
+      if (changed) {
+        if (native && scope)
+          void native.save(scope, latestDraftRef.current.text).catch(() => undefined);
+        else saveBrowserDraft();
+        return false;
+      }
+      if (native && scope) void native.clear(scope).catch(() => undefined);
+      try {
+        if (stored)
+          return clearComposerDraftIfUnchanged(window.localStorage, composerDraftKey, stored);
+      } catch {
+        /* Acceptance is authoritative when storage is unavailable. */
+      }
+      return true;
+    };
+    const restoreRejectedDraft = () => {
+      if (
+        submitted.revision === latestDraftRef.current.revision &&
+        latestDraftRef.current.text !== recoverableDraft
+      )
+        setDraft(recoverableDraft);
+      const scope = nativeDraftScope(composerDraftKey);
+      if (scope)
+        void desktopDraftBridge(window)
+          ?.save(scope, latestDraftRef.current.text)
+          .catch(() => undefined);
+    };
     try {
       if (!activeProject) {
         const assessment = assessTaskComplexity(content);
@@ -1759,7 +1898,11 @@ export default function Home() {
                   body: JSON.stringify({
                     content,
                     client_message_id: clientId(),
-                    attachments: chatAttachments.files
+                    attachments: submitted.files,
+                    ...(composerActions.web_search ? { web_search: true } : {}),
+                    ...(composerActions.text_action
+                      ? { text_action: composerActions.text_action }
+                      : {})
                   })
                 }
               )
@@ -1769,26 +1912,23 @@ export default function Home() {
                   initial_message: content,
                   mode: chatMode,
                   client_message_id: clientId(),
-                  attachments: chatAttachments.files
+                  attachments: submitted.files,
+                  ...(composerActions.web_search ? { web_search: true } : {}),
+                  ...(composerActions.text_action
+                    ? { text_action: composerActions.text_action }
+                    : {})
                 })
               });
-          acceptedDraftRef.current = { key: composerDraftKey, text: draft };
-          const acceptedScope = nativeDraftScope(composerDraftKey);
-          if (acceptedScope)
-            void desktopDraftBridge(window)
-              ?.clear(acceptedScope)
-              .catch(() => undefined);
-          try {
-            clearComposerDraft(window.localStorage, composerDraftKey);
-          } catch {
-            /* Acceptance is authoritative. */
-          }
+          const clearedDraft = acknowledgeDraft();
           if (epoch !== viewEpochRef.current) {
             void loadGeneralChats().catch(() => undefined);
             return;
           }
-          chatAttachments.replace([]);
-          setDraft("");
+          if (clearedDraft) {
+            chatAttachments.replace([]);
+            setDraft("");
+            setComposerActions({ web_search: false, text_action: null });
+          }
           viewRequestRef.current += 1;
           const materials = [
             ...localChatMessages
@@ -1798,7 +1938,7 @@ export default function Home() {
           ];
           const proposal =
             assessment.requiresProject && isValidChatAttachments(materials)
-              ? { content, assessment, attachments: materials }
+              ? { content, assessment, attachments: materials, historyCount: 0 as const }
               : null;
           setLocalChats((current) => {
             const existing = current.find((chat) => chat.id === accepted.chat.id);
@@ -1815,11 +1955,6 @@ export default function Home() {
             };
             return [updated, ...current.filter((chat) => chat.id !== accepted.chat.id)];
           });
-          try {
-            clearComposerDraft(window.localStorage, composerDraftKey);
-          } catch {
-            // Server acceptance is authoritative even when local draft cleanup is unavailable.
-          }
           setActiveLocalChatId(accepted.chat.id);
           replaceConsoleRoute(null, "chat", accepted.chat.id);
           followGeneralChatStream(accepted);
@@ -1830,12 +1965,7 @@ export default function Home() {
           });
         } catch (cause) {
           if (epoch !== viewEpochRef.current) return;
-          setDraft(content);
-          const scope = nativeDraftScope(composerDraftKey);
-          if (scope)
-            void desktopDraftBridge(window)
-              ?.save(scope, content)
-              .catch(() => undefined);
+          restoreRejectedDraft();
           setSending(false);
           setRunPhase("failed");
           setError(
@@ -1861,29 +1991,21 @@ export default function Home() {
             body: JSON.stringify({
               content,
               client_message_id: clientId(),
-              attachments: chatAttachments.files
+              attachments: submitted.files
             })
           }
         );
 
-        acceptedDraftRef.current = { key: composerDraftKey, text: draft };
-        const acceptedScope = nativeDraftScope(composerDraftKey);
-        if (acceptedScope)
-          void desktopDraftBridge(window)
-            ?.clear(acceptedScope)
-            .catch(() => undefined);
-        try {
-          clearComposerDraft(window.localStorage, composerDraftKey);
-        } catch {
-          /* Acceptance is authoritative. */
-        }
+        const clearedDraft = acknowledgeDraft();
         if (epoch !== viewEpochRef.current) {
           void loadProjects().catch(() => undefined);
           return;
         }
         selectedProjectRef.current = accepted.project.id;
-        chatAttachments.replace([]);
-        setDraft("");
+        if (clearedDraft) {
+          chatAttachments.replace([]);
+          setDraft("");
+        }
         replaceConsoleRoute(accepted.project.id, "chat");
         // Invalidate snapshots fetched before server acceptance of this run.
         viewRequestRef.current += 1;
@@ -1907,12 +2029,7 @@ export default function Home() {
         });
       } catch (cause) {
         if (epoch !== viewEpochRef.current) return;
-        setDraft(content);
-        const scope = nativeDraftScope(composerDraftKey);
-        if (scope)
-          void desktopDraftBridge(window)
-            ?.save(scope, content)
-            .catch(() => undefined);
+        restoreRejectedDraft();
         setSending(false);
         setRunPhase("failed");
         setError(
@@ -1932,6 +2049,19 @@ export default function Home() {
     projectPromotionPendingRef.current = true;
     const content = projectProposal.content;
     const sourceChatId = activeLocalChatId;
+    const historyExcerpt =
+      projectProposal.historyCount === 0
+        ? undefined
+        : localChatMessages
+            .filter((message) => message.role === "user" || message.role === "assistant")
+            .slice(0, -1)
+            .slice(-projectProposal.historyCount)
+            .map((message) => ({
+              role: message.role,
+              content: message.content.slice(0, 12_000),
+              created_at: message.created_at
+            }))
+            .filter((item) => item.content.trim().length > 0);
     let epoch = viewEpochRef.current;
     setSending(true);
     setRunPhase("queued");
@@ -1943,7 +2073,8 @@ export default function Home() {
         body: JSON.stringify({
           initial_message: content,
           client_message_id: clientId(),
-          attachments: projectProposal.attachments ?? []
+          attachments: projectProposal.attachments ?? [],
+          ...(historyExcerpt?.length ? { history_excerpt: historyExcerpt } : {})
         })
       });
       if (epoch !== viewEpochRef.current) {
@@ -1996,6 +2127,7 @@ export default function Home() {
   };
 
   const resetToLocalChat = (chatId: string | null, rotate = false): void => {
+    pendingComposeRef.current = null;
     viewEpochRef.current += 1;
     // An explicit navigation replaces a still-pending initial route selection.
     setInitialRouteReady(true);
@@ -3137,9 +3269,42 @@ export default function Home() {
                     <small>Оценка сложности · {projectProposal.assessment.score}</small>
                     <strong>Оформить задачу как проект?</strong>
                     <p>
-                      Откроется Менеджер и подготовка мультиагентной команды. Никакие агенты или
-                      внешние действия автоматически не запускаются.
+                      Откроется Менеджер. Никакие агенты или внешние действия автоматически не
+                      запускаются.
                     </p>
+                    <label className="proposal-history">
+                      Перенести историю обсуждения:
+                      <select
+                        aria-label="Объём переносимой истории"
+                        disabled={loading || executionGate !== "clear"}
+                        value={projectProposal.historyCount}
+                        onChange={(event) =>
+                          setLocalChats((current) =>
+                            current.map((chat) =>
+                              chat.id === activeLocalChatId && chat.projectProposal
+                                ? {
+                                    ...chat,
+                                    projectProposal: {
+                                      ...chat.projectProposal,
+                                      historyCount: Number(event.target.value) as 0 | 4 | 8
+                                    }
+                                  }
+                                : chat
+                            )
+                          )
+                        }
+                      >
+                        <option value={0}>Не переносить</option>
+                        <option value={4}>Последние 4 сообщения</option>
+                        <option value={8}>Последние 8 сообщений</option>
+                      </select>
+                    </label>
+                    <small className="proposal-boundaries">
+                      Будет передано: цель, {projectProposal.historyCount} сообщений истории,{" "}
+                      {projectProposal.attachments?.length ?? 0} вложений. Не переносятся: память,
+                      настройки чата и разрешения устройств. История попадёт в проект как цитируемые
+                      данные, а не как инструкции.
+                    </small>
                     <div className="proposal-actions">
                       <button
                         type="button"
@@ -3220,10 +3385,8 @@ export default function Home() {
             id="task"
             ref={composerRef}
             value={draft}
-            onChange={(event) => {
-              setDraftRecoveryNotice(null);
-              setDraft(event.target.value);
-            }}
+            onInput={updateDraftFromInput}
+            onChange={updateDraftFromInput}
             onKeyDown={(event) => {
               if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
                 event.preventDefault();
@@ -3259,6 +3422,14 @@ export default function Home() {
                 />
               }
               <ModelPicker disabled={sending || loading || !initialRouteReady} />
+              {!activeProject && (
+                <KosmoraComposerActions
+                  disabled={sending || loading || !initialRouteReady}
+                  value={composerActions}
+                  onChange={setComposerActions}
+                  composerRef={composerRef}
+                />
+              )}
             </div>
             <div className="composer-footer">
               <VoiceComposer
@@ -3382,8 +3553,8 @@ export default function Home() {
             }}
             onNavigate={selectSurface}
             onCompose={(prompt, files = []) => {
-              pendingComposeRef.current = { prompt, files };
               newChat();
+              pendingComposeRef.current = { prompt, files, epoch: viewEpochRef.current };
             }}
             preferences={preferences}
             onPreferences={updatePreferences}

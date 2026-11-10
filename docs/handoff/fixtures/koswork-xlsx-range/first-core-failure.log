@@ -1,0 +1,56 @@
+$ pnpm format:check && pnpm check:secrets && pnpm lint && pnpm typecheck && pnpm test && pnpm test:deploy && pnpm test:connection && pnpm test:live-acceptance-guards && pnpm test:secrets && pnpm test:media-acceptance && pnpm build && pnpm test:privacy && pnpm test:profile
+$ prettier --check .
+Checking formatting...
+All matched files use Prettier code style!
+$ node scripts/check-secrets.mjs
+Secret scan passed.
+$ turbo run lint
+• turbo 2.10.11
+
+   • Packages in scope: @cosmora/api, @cosmora/config, @cosmora/contracts, @cosmora/core, @cosmora/db, @cosmora/model-gateway, @cosmora/policy-engine, @cosmora/tool-runtime, @cosmora/web
+   • Running lint in 9 packages
+   • Remote caching disabled, using shared worktree cache
+
+@cosmora/contracts:lint: cache hit, replaying logs cf4e44b94b8f0b7d
+@cosmora/contracts:lint: $ eslint src test
+@cosmora/config:lint: cache hit, replaying logs 333363d9765f3394
+@cosmora/config:lint: $ eslint src test
+@cosmora/web:lint: cache miss, executing f738e29b3a723175
+@cosmora/policy-engine:lint: cache hit, replaying logs ad98b4584230ac6b
+@cosmora/policy-engine:lint: $ eslint src test
+@cosmora/model-gateway:lint: cache hit, replaying logs 725cc7721fb974c8
+@cosmora/model-gateway:lint: $ eslint src test
+@cosmora/core:lint: cache hit, replaying logs ee945f9988fbdc4b
+@cosmora/core:lint: $ eslint src test
+@cosmora/db:lint: cache hit, replaying logs cb328b75aae1e4d9
+@cosmora/db:lint: $ eslint src test drizzle.config.ts
+@cosmora/tool-runtime:lint: cache hit, replaying logs c145cb026ec3efd6
+@cosmora/tool-runtime:lint: $ eslint src test
+@cosmora/api:lint: cache hit, replaying logs f5ade478a90fa1fd
+@cosmora/api:lint: $ eslint src test
+@cosmora/web:lint: $ eslint src
+@cosmora/web:lint:
+@cosmora/web:lint: /workspace/work/Nexus-OS-office-integration/apps/web/src/app/office-range.test.ts
+@cosmora/web:lint:   74:37  error  Unsafe argument of type `any[]` assigned to a parameter of type `({ replace: string; find: string; target: string; kind: "replace_text"; } | { value: string | number | boolean | { formula: string; } | null; target: string; address: string; kind: "set_cell"; } | { ...; } | { ...; })[]`  @typescript-eslint/no-unsafe-argument
+@cosmora/web:lint:   75:37  error  Unsafe argument of type `any[]` assigned to a parameter of type `({ replace: string; find: string; target: string; kind: "replace_text"; } | { value: string | number | boolean | { formula: string; } | null; target: string; address: string; kind: "set_cell"; } | { ...; } | { ...; })[]`  @typescript-eslint/no-unsafe-argument
+@cosmora/web:lint:   79:7   error  Unsafe argument of type `any[][]` assigned to a parameter of type `string[][]`                                                                                                                                                                                                                 @typescript-eslint/no-unsafe-argument
+@cosmora/web:lint:   79:40  error  Unsafe return of a value of type `any[]`                                                                                                                                                                                                                                                       @typescript-eslint/no-unsafe-return
+@cosmora/web:lint:   80:7   error  Unsafe argument of type `any[]` assigned to a parameter of type `("string" | "number" | "boolean" | "null" | "formula")[]`                                                                                                                                                                     @typescript-eslint/no-unsafe-argument
+@cosmora/web:lint:   83:37  error  Unsafe argument of type `any[]` assigned to a parameter of type `({ replace: string; find: string; target: string; kind: "replace_text"; } | { value: string | number | boolean | { formula: string; } | null; target: string; address: string; kind: "set_cell"; } | { ...; } | { ...; })[]`  @typescript-eslint/no-unsafe-argument
+@cosmora/web:lint:
+@cosmora/web:lint: /workspace/work/Nexus-OS-office-integration/apps/web/src/app/office-range.ts
+@cosmora/web:lint:   93:11  error  There is no `cause` attached to the symptom error being thrown  preserve-caught-error
+@cosmora/web:lint:
+@cosmora/web:lint: ✖ 7 problems (7 errors, 0 warnings)
+@cosmora/web:lint:
+@cosmora/web:lint: [ELIFECYCLE] Command failed with exit code 1.
+@cosmora/web#lint:  ERROR  command (/workspace/work/Nexus-OS-office-integration/apps/web) /opt/codex/runtimes/codex-primary-runtime/dependencies/bin/fallback/pnpm run lint exited (1)
+
+ Tasks:    8 successful, 9 total
+Cached:    8 cached, 9 total
+  Time:    21.833s
+Failed:    @cosmora/web#lint
+
+ ERROR  run failed: command  exited (1)
+[ELIFECYCLE] Command failed with exit code 1.
+[ELIFECYCLE] Command failed with exit code 1.

@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import {
   CHAT_ATTACHMENT_LIMITS,
   CHAT_TEXT_EXTENSIONS,
@@ -25,16 +25,25 @@ export function useChatAttachments(scope: string) {
     reading: boolean;
     error: string | null;
   }>({ scope, files: [], reading: false, error: null });
+  const latest = useRef(state);
+  const publish = (next: typeof state) => {
+    latest.current = next;
+    setState(next);
+  };
+  const snapshotFiles = useCallback(
+    () => (latest.current.scope === scopeRef.current ? latest.current.files : []),
+    []
+  );
   const files = state.scope === scope ? state.files : [];
   const reading = state.scope === scope && state.reading;
   const error = state.scope === scope ? state.error : null;
   const replace = (next: ChatAttachment[]): void => {
     operationRef.current += 1;
-    setState({ scope, files: next, reading: false, error: null });
+    publish({ scope, files: next, reading: false, error: null });
   };
   const add = async (selected: File[]): Promise<void> => {
     const operation = ++operationRef.current;
-    setState({ scope, files, reading: true, error: null });
+    publish({ scope, files, reading: true, error: null });
     try {
       if (files.length + selected.length > CHAT_ATTACHMENT_LIMITS.files) {
         throw new Error("Можно прикрепить до 4 файлов.");
@@ -55,11 +64,11 @@ export function useChatAttachments(scope: string) {
         );
       }
       if (scopeRef.current === scope && operationRef.current === operation) {
-        setState({ scope, files: next, reading: false, error: null });
+        publish({ scope, files: next, reading: false, error: null });
       }
     } catch (cause) {
       if (scopeRef.current === scope && operationRef.current === operation) {
-        setState({
+        publish({
           scope,
           files,
           reading: false,
@@ -68,7 +77,7 @@ export function useChatAttachments(scope: string) {
       }
     }
   };
-  return { files, reading, error, add, replace };
+  return { files, reading, error, add, replace, snapshotFiles };
 }
 
 export function ChatAttachmentPicker({

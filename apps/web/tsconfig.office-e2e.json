@@ -1,0 +1,18 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "incremental": false,
+    "noEmit": true
+  },
+  "include": [
+    "e2e/office-workspace.spec.ts",
+    "e2e/office-range.spec.ts",
+    "e2e/office-plan.spec.ts",
+    "e2e/office-draft.spec.ts",
+    "playwright.office-composer.config.ts",
+    "e2e/office-composer-integration.spec.ts",
+    "e2e/document-upload-queue.spec.ts",
+    "playwright.document-upload.config.ts"
+  ],
+  "exclude": ["node_modules"]
+}
