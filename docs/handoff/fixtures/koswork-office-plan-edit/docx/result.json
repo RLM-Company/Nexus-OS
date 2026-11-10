@@ -1,0 +1,109 @@
+{
+  "source_version": "sha256:f35a111949d86f3f000ac9c3cd1da4d7ff2a10663e1e905c9862235a16b932fb",
+  "new_version": "sha256:2ff8c8b76132a4938a6318c0f426effa891ed0e0c45b1114622938f306fdd1c6",
+  "sha256": "2ff8c8b76132a4938a6318c0f426effa891ed0e0c45b1114622938f306fdd1c6",
+  "executed_changes": [
+    {
+      "kind": "replace_text",
+      "target": "paragraph:3",
+      "find": "Компания А",
+      "replace": "Компания В",
+      "before": "Компания А — 19 700 ₽; 00123; 07.11.2026; кроме доставки",
+      "after": "Компания В — 19 700 ₽; 00123; 07.11.2026; кроме доставки"
+    },
+    {
+      "kind": "replace_text",
+      "target": "table:1/row:1/cell:2",
+      "find": "19 700",
+      "replace": "19 700 за комплект",
+      "before": "19 700 ₽",
+      "after": "19 700 за комплект ₽"
+    }
+  ],
+  "rejected_changes": [],
+  "changed_parts": ["word/document.xml"],
+  "original_preserved": true,
+  "readback_verified": true,
+  "real_model_called": false,
+  "visual_render_verified": false,
+  "readback": {
+    "sha256": "2ff8c8b76132a4938a6318c0f426effa891ed0e0c45b1114622938f306fdd1c6",
+    "version": "sha256:2ff8c8b76132a4938a6318c0f426effa891ed0e0c45b1114622938f306fdd1c6",
+    "size": 1702,
+    "representation": {
+      "kind": "office_text",
+      "format": "docx",
+      "version": "openxml-text-v1",
+      "complete_document": false,
+      "sha256": "5618e9f94605a853c9ecf36450c4810fcb19babaa9720de0996478bd655e311e",
+      "limitations": [
+        "Text extraction only; images, charts, formatting, notes and headers are not included. Formulas are not evaluated; numeric/date cells retain stored values."
+      ]
+    },
+    "cursor": {
+      "target_offset": 0,
+      "content_offset": 0
+    },
+    "total_targets": 8,
+    "targets": [
+      {
+        "id": "paragraph:1",
+        "text": "Предложение",
+        "text_offset": 0,
+        "total_text_utf16": 11,
+        "text_excerpt_only": false
+      },
+      {
+        "id": "paragraph:2",
+        "text": "Реквизиты",
+        "text_offset": 0,
+        "total_text_utf16": 9,
+        "text_excerpt_only": false
+      },
+      {
+        "id": "paragraph:3",
+        "text": "Компания В — 19 700 ₽; 00123; 07.11.2026; кроме доставки",
+        "text_offset": 0,
+        "total_text_utf16": 56,
+        "text_excerpt_only": false
+      },
+      {
+        "id": "table:1",
+        "text": "0012319 700 за комплект ₽",
+        "text_offset": 0,
+        "total_text_utf16": 25,
+        "text_excerpt_only": false
+      },
+      {
+        "id": "table:1/row:1/cell:1",
+        "text": "00123",
+        "text_offset": 0,
+        "total_text_utf16": 5,
+        "text_excerpt_only": false
+      },
+      {
+        "id": "table:1/row:1/cell:2",
+        "text": "19 700 за комплект ₽",
+        "text_offset": 0,
+        "total_text_utf16": 20,
+        "text_excerpt_only": false
+      },
+      {
+        "id": "paragraph:4",
+        "text": "00123",
+        "text_offset": 0,
+        "total_text_utf16": 5,
+        "text_excerpt_only": false
+      },
+      {
+        "id": "paragraph:5",
+        "text": "19 700 за комплект ₽",
+        "text_offset": 0,
+        "total_text_utf16": 20,
+        "text_excerpt_only": false
+      }
+    ],
+    "next_cursor": null,
+    "targets_excerpt_only": false
+  }
+}

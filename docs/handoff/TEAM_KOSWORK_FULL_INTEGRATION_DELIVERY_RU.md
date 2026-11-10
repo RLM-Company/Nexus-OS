@@ -1,5 +1,22 @@
 # Итоговая интеграция рабочих документов Koswork
 
+Продолжение 10 ноября: изменение/удаление отдельной правки, смешанные типы ячеек
+при правке диапазона, зависимости новых листов, изолированный черновик и сброс
+прежнего preview/download после правок. Сохранён main
+`5e14b6bb761c4903b49471b75f5eb7e138befb52`. Итоговые локальные проверки:
+70/70 browser без retry, native 395 PASS / 1 Windows-only SKIP,
+`pnpm check:core` exit 0 (281 web PASS, API 952 PASS из cache).
+Реальные входы/выходы DOCX/XLSX/PPTX, PDF, команды и откат —
+[Office plan editor handoff](TEAM_KOSWORK_OFFICE_PLAN_EDITOR_DELIVERY_RU.md).
+
+Продолжение 10 ноября: редактирование и удаление отдельных операций Office,
+изолированный черновик, dependency-safe удаление новых листов и сброс старого
+preview/download. Сохранён main `5e14b6bb761c4903b49471b75f5eb7e138befb52`.
+Итоговые локальные проверки: 70/70 browser без retry, 395 native PASS +
+1 Windows-only SKIP, `pnpm check:core` exit 0 (281 web, API 952 из cache).
+Входы/выходы трёх форматов, PDF, команды и границы —
+[Office plan editor handoff](TEAM_KOSWORK_OFFICE_PLAN_EDITOR_DELIVERY_RU.md).
+
 Продолжение 10 ноября: диапазоны XLSX подключены к существующей панели файлов —
 вставка таблицы, явные типы столбцов, общий план, preview, подтверждение и
 проверенная новая копия. Реальные XLSX/PDF/readback и история проверок —
