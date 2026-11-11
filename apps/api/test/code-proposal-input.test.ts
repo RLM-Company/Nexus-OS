@@ -3,6 +3,7 @@ import {
   applyCodeExactEdits,
   codePromptFiles,
   decodeCodeProposal,
+  searchCodeContextPaths,
   selectCodeContextPaths
 } from "../src/code-agent/proposal-input.js";
 
@@ -93,5 +94,42 @@ describe("single text proposal input", () => {
     expect(() => selectCodeContextPaths(many.map((e) => e.path).join(" "), [], many)).toThrow(
       "WORKSPACE_LIMIT"
     );
+  });
+  it("searches literal safe paths deterministically with bounded results and explicit completeness", () => {
+    const paths = Array.from({ length: 40 }, (_, i) => ({ path: `src/module-${i}.ts` })).reverse();
+    paths.push({ path: ".npmrc" }, { path: ".ssh/module-key" });
+    const result = searchCodeContextPaths({ query: " MODULE " }, paths);
+    expect(result.files).toHaveLength(32);
+    expect(result.total_count).toBe(40);
+    expect(result.partial).toBe(true);
+    expect(result.files[0]).toBe("src/module-0.ts");
+    expect(result.files[31]).toBe("src/module-37.ts");
+    expect(searchCodeContextPaths({ query: ".npmrc" }, paths)).toEqual({
+      files: [],
+      total_count: 0,
+      partial: false
+    });
+    expect(searchCodeContextPaths({ query: "module.*" }, paths)).toEqual({
+      files: [],
+      total_count: 0,
+      partial: false
+    });
+    expect(searchCodeContextPaths({ query: "module-39.ts" }, paths)).toEqual({
+      files: ["src/module-39.ts"],
+      total_count: 1,
+      partial: false
+    });
+    for (const value of [
+      null,
+      [],
+      {},
+      { query: "" },
+      { query: "   " },
+      { query: "x".repeat(161) },
+      { query: "a\n" },
+      { query: 42 },
+      { query: "a", limit: 100000 }
+    ])
+      expect(() => searchCodeContextPaths(value, paths)).toThrow("INVALID_TOOL_CALL");
   });
 });

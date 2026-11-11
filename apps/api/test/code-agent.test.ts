@@ -1096,6 +1096,35 @@ describe("Code agent real gateway/GitHub/policy vertical", () => {
     expect(f.providerCalls).toHaveLength(1);
     expect(f.githubCalls.every((call) => call.method === "GET")).toBe(true);
   });
+  it("negotiates bounded path search, reads the selected immutable hit and persists the resulting proposal", async () => {
+    const f = await fixture({
+      extraTreePaths: 22000,
+      additionalTreePaths: [".npmrc", ".ssh/config"],
+      responses: [
+        toolResponse("search_files", { query: "ADD.TEST" }, "search"),
+        toolResponse("read_file", { path: "src/add.test.js" }, "read"),
+        proposalResponse()
+      ]
+    });
+    const id = await f.start();
+    const run = await f.wait(id, "proposed");
+    const messages = f.providerCalls[1]!.messages as Array<{ role: string; content: string }>;
+    const searchResult = JSON.parse(
+      messages.filter((m) => m.role === "tool").at(-1)!.content
+    ) as unknown;
+    expect(searchResult).toEqual({ files: ["src/add.test.js"], total_count: 1, partial: false });
+    const definitions = f.providerCalls[0]!.tools as Array<{ function: { name: string } }>;
+    expect(definitions.some((tool) => tool.function.name === "search_files")).toBe(true);
+    expect(run.base_sha).toBe(head);
+    expect(run.snapshot.map((file) => file.path)).toEqual(["src/add.js", "src/add.test.js"]);
+    expect(run.proposal).toEqual(
+      changes.map((file) => ({ ...file, before: originals[file.path] }))
+    );
+    expect(f.providerCalls).toHaveLength(3);
+    expect(f.githubCalls.filter((call) => call.path.startsWith("/git/trees/"))).toHaveLength(1);
+    expect(f.githubCalls.filter((call) => call.path.startsWith("/git/blobs/"))).toHaveLength(2);
+    expect(f.githubCalls.every((call) => call.method === "GET")).toBe(true);
+  });
   it("refuses a truncated existence index before file reads or model dispatch", async () => {
     const f = await fixture({ truncatedTree: true });
     const id = await f.start();
