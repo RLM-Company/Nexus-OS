@@ -14,6 +14,7 @@ Canvas integration: один key из selected artifact ID и server version.
 Backend, DB, contracts, sandbox и общий executor не менялись.
 
 CI #42982669501 на CODE_HEAD:
+
 - Browser acceptance: SUCCESS, Chromium 445/445 и дополнительные 3/3, 5/5, 4/4.
 - Code sandbox isolation: SUCCESS.
 - Verify monorepo: FAILED на Prettier чужого
