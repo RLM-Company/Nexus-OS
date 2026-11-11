@@ -301,6 +301,49 @@ main.cjs`, package.json parse, prettier clean (оба файла), `npm run chec
     canonical 10538 байт до/после); тело #523 дополнено. Порядок дальше:
     merge #523 первым → main проходит format-gate → пуш локального
     ops-док-коммита перезапускает CI #525 → зелёный.
+27. **Повторный CI #523 — зелёный 3/3** (Verify monorepo 4m18s, Browser
+    acceptance 9m16s, Code sandbox 33s; run 42985500695): формат-фикс
+    `73bf04f1` подтверждён; #523 готов к merge владельцем.
+28. **Аудит vault-UI кластера (`vault-console` / `vault-workspace` /
+    `vault-preload` + рендерер) — нарушений нет, код не менялся**. Покрытие
+    сверено с item 10 (там — только хранилище `local-vault`); здесь — слой
+    окна/аренды:
+    - `vault-preload.cjs`: единственный frozen-мост `kosmoraVault.command`,
+      один канал — минимальная поверхность;
+    - `vault-console.cjs`: `trusted()` = sender + senderFrame + mainFrame +
+      URL === страница (fail-closed); `authorized()` перепроверяет epoch,
+      identity и binding и вызывается ЗАНОВО после каждого диалога (выбор
+      папки/файла, экспорт, remove, send) — TOCTOU-узор; окно: sandbox,
+      contextIsolation, отдельная partition `kosmora-local-vault`, deny
+      window-open, запрет navigate/redirect; import: lstat (isFile, не
+      symlink, nlink=1, ≤10 МБ) + O_NOFOLLOW + fstat-перепроверка ino/dev/size;
+      snapshot: redirect manual + равенство URL + content-type JSON + потолок
+      4 МБ + re-auth после fetch; export: флаг `wx` и mode 0600 (без
+      перезаписи); busy-сериализация; честные сообщения без секретов;
+    - `main.cjs` проводка (1420s): `isTrustedRemoteEvent` (main-окно,
+      same-origin, не login/logout) на `kosmora:vault-open/-read-context/
+-ack-context`; read-context перепроверяет trust ПОСЛЕ await;
+    - `vault-workspace.cjs`: аренда контекст-связная (owner+origin), 30 мин,
+      revision-fingerprint (любое изменение хранилища отзывает), префикс
+      `.kosmora-vault` строго readonly (только list/find/read; запись,
+      upload и protected-path отклоняются), валидация курсоров/фингерпринтов
+      против устаревших страниц, выдача ограничена 14 000 байт JSON,
+      обрезка сниппетов уважает границы UTF-8/UTF-16;
+    - рендерер `vault.html/js`: CSP `default-src 'none'; connect-src 'none';
+img-src 'none'`; весь динамический контент через textContent/
+      createElement — безопасно при враждебных именах файлов; честный текст
+      окна («Файлы в папке не зашифрованы»);
+    - тесты: критичные поведения консоли покрыты внутри
+      `local-vault.test.cjs` («native console rejects remote/subframe
+      commands…», «rechecks identity after a delayed folder dialog»);
+      механика аренды — `vault-workspace.test.cjs` (1238 строк). Отдельного
+      `vault-console.test.cjs` нет — замечание зафиксировано, действий не
+      требует.
+      Остальные модули без упоминания в аудите (карта): `draft-store`,
+      `preload.cjs`, `tool-result`, `checkpoint-text`, `computer-api-client`,
+      `computer-preload`, `computer-workspace`, `computer-session` (Codex),
+      work-кластер (`work-cycle-*`, `work-experience`, `work-result`,
+      `work-retry-guard` — пересечение с Codex/desc).
 
 ## Что делать следующему запуску (в порядке приоритета)
 
