@@ -63,6 +63,8 @@ function render(entries) {
     if (entry.status === "active") actions.append(action("Отменить", () => api.cancel(entry.id)));
     if (entry.status === "completed")
       actions.append(action("Показать в папке", () => api.reveal(entry.id)));
+    if (entry.status === "interrupted" && entry.retryable)
+      actions.append(action("Повторить", () => api.retry(entry.id)));
     li.append(actions);
     list.append(li);
   }

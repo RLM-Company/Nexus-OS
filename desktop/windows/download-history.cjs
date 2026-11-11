@@ -195,6 +195,10 @@ function createDownloadHistoryStore(directory) {
       const record = find(scope, id);
       return record?.status === "completed" ? record.savePath : null;
     },
+    statusOf(scope, id) {
+      const record = find(scope, id);
+      return record ? record.status : null;
+    },
     clearFinished(scope) {
       records = records.filter((e) => e.scope !== scope || e.status === "active");
       save();

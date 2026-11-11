@@ -246,30 +246,220 @@ main.cjs`, package.json parse, prettier clean (оба файла), `npm run chec
     (measurement-only), внедрение — решение владельца» (`59176fba`); PR #515
     открыт только с отчётом, merge не делать. Фикстура v1 и bench во время
     прогона не менялись.
+23. **Решение владельца исполнено: PR #502 и PR #515 слиты в main**. #502 —
+    merged 07:19:47Z после полностью зелёного CI на `cdf442eb`; #515 — 07:20:45Z
+    следом (mergeable подтверждён после пересчёта; конфликт очередей разрешён
+    ранее union-ом в `9b1cb0a1`: текст main с экстрактивной дистилляцией и
+    conformance-панелью сохранён, добавлена дельта «LLM-поворот измерён,
+    REPRODUCED true», семантическая оценка — подготовлена). Авто-merge на
+    уровне репо отключён GitHub'ом — мержено вручную по явному решению
+    владельца. Прогон №3 (фикстура v2 semantics, 4 кейса, measurement-only,
+    без reference-аргумента — базу создаёт сам прогон) запущен в фоне; ему
+    предшествовал протокольный шаг 1 — флаг `--fixture` в bench (`fe2e981d`,
+    дефолт v1 не изменён, prettier-clean, node --check pass). На момент записи
+    закрыт первый кейс v2 (`conditional-anchors-all-safe`, partial 1/4).
+24. **Прогон №3 завершён; отчёт оформлен (PR #523, merge — решение владельца)**.
+    4/4 кейса, exit 0, partial удалён bench'ем; отчёт data-only
+    `experience-llm-distill-semantics-2026-11-10-report.json` закоммичен в
+    desc-ветке (`dd9158bd`), протокол дополнен итогом (статус-блок обновлён).
+    Честные числа: parse_ok 3/4, deterministic_pairs 4, forbidden_carried 2,
+    relevant_carried 11/14, declared_lost recovered 2/3, fabricated_file_tokens
+    0, stale_step_leak 4, within_budget 3/4, median_reduction 1 (extractive
+    0.7935). Это НЕ воспроизведение прогона №1 (другая фикстура, другой sha).
+25. **Срез «Повторить» для прерванных загрузок — реализован (явное одобрение
+    владельца, VISUAL_WAITLIST п. 1)**. Ретрай возможен только пока главный
+    процесс помнит исходный URL в памяти сессии: `download-center.cjs` хранит
+    `retrySources` (id → {url, origin, epoch}, потолок 50; запись при capture из
+    первого элемента redirect-цепочки — она уже прошла полный policy-gate;
+    удаление при завершении, кроме interrupted; полная очистка при invalidate).
+    Ручной IPC `cosmora:downloads:retry` перепроверяет: авторизацию окна
+    (sender/frame/url/origin/epoch/owner), актуальность origin/epoch источника,
+    `history.statusOf(scope, id) === "interrupted"` (новый метод в
+    `download-history.cjs`), живое главное окно с разрешённой same-origin
+    страницей (`isAllowedRemoteNavigation`); повтор идёт через
+    `webContents.downloadURL()` БЕЗ навигации и заново проходит весь
+    will-download policy-gate (fail-closed). URL не попадает ни на диск, ни в
+    рендерер — контракт окна «Ссылки скачивания не сохраняются» соблюдён; в
+    public-записи только булев флаг `retryable`. Рендерер: кнопка «Повторить»
+    только у interrupted с `retryable`, общий стиль `button`, компоновка не
+    менялась. Тесты: 4 новых в download-center (happy path с проверкой «URL не
+    на диске», отказы completed/unknown/stale-owner/stale-origin, требование
+    разрешённой страницы, очистка при invalidate) + `statusOf` в
+    download-history; `npm run check` → **448 тестов / 0 fail**, prettier clean.
+    Ограничение зафиксировано в DELIVERY: после рестарта приложения ретрая нет.
+26. **Диагностика CI-fail на #525: поломка format-gate на уровне main; фикс
+    передан в #523 (`73bf04f1`)**. Лог job 130397877659 (run 42983102536):
+    шаг «Run quality gate» → `pnpm check:core` → `prettier --check .` падает на
+    `docs/research/experience-llm-distill-2026-11-10.json`. Это первый отчёт
+    дистилляции из моего коммита `316405d0` (desc-ветка, 10.11): закоммичен без
+    prettier и через merge #515 (`d047ce12`) попал в main; в ops-ветке файла нет
+    (не существовал на BASE_SHA), поэтому чинить на ops = add/add-конфликт.
+    Тот же fail уже горел на #523 (job 130395167198) — раннее предположение
+    «CI на desc-ветке нет» было ошибочным, исправлено. #502 зелёный честно
+    (`316405d0` не предок его merge-ref). Фикс: `prettier --write` файла на
+    desc-ветке (`73bf04f1`), контент не менялся (JSON.parse deep-equal,
+    canonical 10538 байт до/после); тело #523 дополнено. Порядок дальше:
+    merge #523 первым → main проходит format-gate → пуш локального
+    ops-док-коммита перезапускает CI #525 → зелёный.
+27. **Повторный CI #523 — зелёный 3/3** (Verify monorepo 4m18s, Browser
+    acceptance 9m16s, Code sandbox 33s; run 42985500695): формат-фикс
+    `73bf04f1` подтверждён; #523 готов к merge владельцем.
+28. **Аудит vault-UI кластера (`vault-console` / `vault-workspace` /
+    `vault-preload` + рендерер) — нарушений нет, код не менялся**. Покрытие
+    сверено с item 10 (там — только хранилище `local-vault`); здесь — слой
+    окна/аренды:
+    - `vault-preload.cjs`: единственный frozen-мост `kosmoraVault.command`,
+      один канал — минимальная поверхность;
+    - `vault-console.cjs`: `trusted()` = sender + senderFrame + mainFrame +
+      URL === страница (fail-closed); `authorized()` перепроверяет epoch,
+      identity и binding и вызывается ЗАНОВО после каждого диалога (выбор
+      папки/файла, экспорт, remove, send) — TOCTOU-узор; окно: sandbox,
+      contextIsolation, отдельная partition `kosmora-local-vault`, deny
+      window-open, запрет navigate/redirect; import: lstat (isFile, не
+      symlink, nlink=1, ≤10 МБ) + O_NOFOLLOW + fstat-перепроверка ino/dev/size;
+      snapshot: redirect manual + равенство URL + content-type JSON + потолок
+      4 МБ + re-auth после fetch; export: флаг `wx` и mode 0600 (без
+      перезаписи); busy-сериализация; честные сообщения без секретов;
+    - `main.cjs` проводка (1420s): `isTrustedRemoteEvent` (main-окно,
+      same-origin, не login/logout) на `kosmora:vault-open/-read-context/
+-ack-context`; read-context перепроверяет trust ПОСЛЕ await;
+    - `vault-workspace.cjs`: аренда контекст-связная (owner+origin), 30 мин,
+      revision-fingerprint (любое изменение хранилища отзывает), префикс
+      `.kosmora-vault` строго readonly (только list/find/read; запись,
+      upload и protected-path отклоняются), валидация курсоров/фингерпринтов
+      против устаревших страниц, выдача ограничена 14 000 байт JSON,
+      обрезка сниппетов уважает границы UTF-8/UTF-16;
+    - рендерер `vault.html/js`: CSP `default-src 'none'; connect-src 'none';
+img-src 'none'`; весь динамический контент через textContent/
+      createElement — безопасно при враждебных именах файлов; честный текст
+      окна («Файлы в папке не зашифрованы»);
+    - тесты: критичные поведения консоли покрыты внутри
+      `local-vault.test.cjs` («native console rejects remote/subframe
+      commands…», «rechecks identity after a delayed folder dialog»);
+      механика аренды — `vault-workspace.test.cjs` (1238 строк). Отдельного
+      `vault-console.test.cjs` нет — замечание зафиксировано, действий не
+      требует.
+29. **Аудит мостов и хелперов (`preload.cjs`, `draft-store.cjs`,
+    `tool-result.cjs`, `checkpoint-text.cjs` + draft-проводка main.cjs) —
+    нарушений нет, код не менялся**:
+    - `preload.cjs`: для file:-страницы только connection-мост; для
+      hosted-контента (http/https) четыре bounded-моста — vault
+      (open/read/ack/onContext), draft (load/save/clear/flush), computer
+      open, work open/onResult; никакого screen/keyboard/mouse/shell/
+      filesystem RPC; наблюдение (не нарушение): `Object.freeze` применён
+      только к `kosmoraDesktopVault`, остальные три моста без freeze
+      (defense-in-depth несимметрия; поверхность API при этом фиксирована
+      contextBridge);
+    - `draft-store.cjs`: DPAPI-codec обязателен (отказ без защищённого
+      хранилища — честный); имена файлов sha256(origin\0owner) — та же схема
+      изоляции scope, что у vault/downloads; validateDraft отклоняет
+      credentials-тексты (Bearer/пароли/api-key/токены/GitHub-PAT/sk-/PEM)
+      от локального сохранения; чтение перепроверяет binding ВНУТРИ
+      шифротекста (ownerId+origin+scope+savedAt) — скопированный шифротекст
+      другого пользователя/scope не восстанавливается; запись атомарная и
+      bounded (40 записей, 5.3 МБ, 30 дней, newest-first); clearAll удаляет
+      только файлы вида `[0-9a-f]{64}.json`;
+    - draft-проводка main.cjs (1519s): все четыре канала за
+      `isTrustedRemoteEvent`; save/clear — epoch/origin перепроверки внутри
+      очереди + `draftSessionGate.allowWrite` (documentVersion+origin+owner+
+      scope); `draft-flush` (pagehide, best-effort) намеренно без сетевого
+      roundtrip — переиспользует ТОЛЬКО ранее серверно-подтверждённого
+      неистёкшего владельца из gate + кросс-чек ownerCache (owner/origin/
+      expires), синхронная запись шифротекста, без plaintext-фоллбека и
+      скрытых ретраев; rationale задокументировано в коде;
+    - `tool-result.cjs`: полный receipt при ≤16000 байт; иначе честный
+      excerpt с `excerpt_only: true`, `original_characters` и инструкцией
+      «не проигрывать действие заново, не выдумывать значения» — контракт
+      нетронутых «квитанций» соблюдён; покрытие — computer-control.test;
+    - `checkpoint-text.cjs`: общий SENSITIVE-фильтр для целей/планов Work;
+      прямых тестов нет (наблюдение; семейство регулярок покрыто через
+      draft-store.test);
+    - покрытие: draft-store.test / draft-isolation.test /
+      draft-session-gate.test / gui-acceptance.test; computer-control.test.
+      Карта остатка после этого аудита: `computer-api-client`,
+      `computer-preload`, `computer-workspace`, `computer-session` (Codex),
+      work-кластер (`work-cycle-*`, `work-experience`, `work-result`,
+      `work-retry-guard` — пересечение с Codex/desc).
+30. **Аудит computer-остатка (`computer-preload.cjs`, `computer-api-client.cjs`,
+    `computer-workspace.cjs` + каналы в `computer-console.cjs`) — нарушений
+    нет, код не менялся**. Консоль/политика/история/драйвер уже покрыты
+    прежними аудитами (item 10-серия); здесь — оставшаяся тройка:
+    - `computer-preload.cjs`: фиксированный набор invoke-каналов
+      (availability/workspace/browser/projects/start/stop/resume/history/
+      recover/accept/clearHistory + onStatus/onPrefill) — прямого RPC за
+      пределами списка нет; наблюдение: без `Object.freeze` (та же
+      defense-in-depth несимметрия, что у остальных мостов);
+    - `computer-api-client.cjs`: route только `/api/v1/…` без `?`, `#`, `\`;
+      130-секундный дедлайн + внешний signal через `AbortSignal.any`;
+      identity берётся ДО запроса с `expected`-binding (origin+owner) и
+      ПОСЛЕ ответа (смена идентичности отклоняет уже обработанный сервером
+      результат — TOCTOU-узор); redirect manual, равенство response.url,
+      content-type JSON, bounded чтение (200 КБ, reader.cancel в finally),
+      UTF-8 fatal-декодирование (мусор не подменяет текст молча); коды
+      ошибок сервера пропускаются только через whitelist; `begin`: случайный
+      client_secret (32 байта base64url), ответ обязан совпасть по id,
+      planner обязан быть model_gateway/provider (mock отклоняется —
+      честное COMPUTER_LIVE_MODEL_REQUIRED), при сбое — best-effort DELETE
+      с тем же id/token («cancellation is safe… never recreate or retry»);
+      `next`: строгая валидация decision_source (kind/mode, provider_id≠
+      mock, session_id, step, run_id-UUID, длины provider/model);
+      `authorize`: sha256-хэш действия; `end`: DELETE с 5-секундным
+      дедлайном; покрытие — computer-api-client.test;
+    - `computer-workspace.cjs`: codec обязателен (fail-closed); scope-привязка
+      owner+origin на snapshot до и после операции; uploadFile/reserveDownload/
+      verifyDownload — через `resolveSafeWorkspaceTarget` (root-scoped),
+      no-overwrite (`wx`, mode 0600, до 100 попыток), санитизация имени
+      (win32 basename, управляющие символы → `_`, хвостовые точки/пробелы,
+      ≤150), verifyDownload — двойная стат-перепроверка (size/mtime/ino/dev)
+      с bounded-receipt; `execute`: binding до/после, bounded параметры
+      (30 записей/15 результатов/10 КБ чтение), `workspace_update` требует
+      полного чтения версии перед заменой (честная ошибка конфликта),
+      `result.rootPath` вырезается из выдачи (путь серверу не утекает),
+      выдача ограничена 15000 байт; workspace/*-внутренности — зона Codex
+      (граница аудита: обёртка); покрытие — computer-workspace.test;
+    - каналы workspace-status/select в console: `trusted(event)` +
+      `checkedContext` + identity-перепроверка после диалога выбора папки;
+      при ошибке — invalidate.
+      На этом map остатка (в-sphere): пусто; вне границы остались только
+      `computer-session` и work-кластер (Codex/desc — их аудируют их пакеты).
+31. **Срез: паритет hosted-выхода для URL с query/hash — реализован (явное
+    одобрение владельца; закрывает единственную записанную функциональную
+    недоделку)**. `isExplicitLogout` (desktop-recovery.cjs) ранее требовал
+    `!u.hash && !u.search`, поэтому `/logout?reason=…`, `/logout#…`,
+    `/logout?next=…` не считались явным выходом. Частичный паритет уже
+    покрывал такие URL через `isLoginOrLogout` в did-navigate (epoch++,
+    invalidate поверхностей, сброс draft-gate), но файлы черновиков и данные
+    браузерного сеанса после такого выхода оставались. Теперь дискриминатор —
+    тот же same-origin + точный путь `/logout`|`/signout`; query/hash больше
+    не дисквалифицируют, subpath и чужой origin не проходят. Направление
+    fail-safe: потребители (clearDraftsForHostedLogout в will-navigate и
+    did-navigate-in-page, clearBrowserSessionData в did-navigate) — очистка
+    «больше, не меньше»; clearDraftsForHostedLogout идемпотентен (двойное
+    срабатывание безопасно), тайминг alsoClearSession сохранён (wipe не
+    раньше коммита навигации). Тестовый кейс «logout?next=чужой-origin»
+    перевёрнут в true с rationale (cleanup не следует за redirect-целью);
+    добавлены кейсы ?reason=, #top, ?step=, logout/other → false.
+    `npm run check` → **448 тестов / 0 fail**, prettier clean.
 
 ## Что делать следующему запуску (в порядке приоритета)
 
-1. **PR #502 (ops/opencode-windows)**: все 4 чека зелёные на `0bff0f3c`
-   (Verify monorepo, Browser acceptance, NSIS installer lifecycle, Code
-   sandbox). Merge — владелец/Codex. После любого нового main: проверить новые
-   общие контракты ПРЕЖДЕ чем разрешать конфликты (не автопик своей версии).
+1. **Merge #523 (desc)** — после фикса `73bf04f1` CI должен быть зелёным; это
+   чинит format-gate main для ВСЕХ будущих PR. Merge только владельцем;
+   строки очередей и внедрение дистилляции — отдельные решения владельца.
 
-2. **PR #515 (desc/experience-llm-turn-20261110)**: measurement-only поставка —
-   отчёты прогонов №1/№2 (REPRODUCED true), фикстура v2 semantics + протокол,
-   обновлённые строки очередей. Merge — только владелец; при ревью отчёты и
-   фикстуры не редактировать.
+2. **Затем CI #525**: после merge #523 запушить локальный ops-док-коммит
+   (CHECKPOINT item 26) — пуш перезапустит Verify monorepo на чистом main →
+   все 4 чека зелёные → merge #525 владельцем/Codex. Если вместо пуша владелец
+   нажмёт «Re-run failed jobs» после merge #523 — эффект тот же.
 
-3. **Если владелец решит продолжить дистилляцию**: следующий шаг — прогон
-   фикстуры v2 (semantics) по протоколу
-   `docs/research/experience-llm-distill-semantics-2026-11-10.md`; рестарт
-   только по RESUME-механике bench (partial после каждого кейса), weights вне
-   репо, bench не в CI, во время активного прогона фикстуру и bench не менять.
+3. **После любого нового main**: проверить новые общие контракты ПРЕЖДЕ чем
+   разрешать конфликты (не автопик своей версии).
 
-4. **Следующий вертикальный срез ops-сферы**: очереди 1–4 аудит-завершены без
-   нарушений (см. пункт 10), срез 6 реализован (п. 11), logout-паритет (п. 13)
-   и guard графа упаковки (п. 14) — реализованы. Дальше по очереди владельца:
-   оставшиеся installer-этапы (upgrade/uninstall) — только VM/CI; любые новые
-   видимые функции — через VISUAL_WAITLIST и решение владельца.
+4. **Дальше по очереди владельца**: live-приёмка (cookie gateway, DPAPI,
+   reconnect при живом сервере) остаётся отложенной; installer-этапы
+   upgrade/uninstall уже покрыты заданием NSIS в CI (Fresh / Upgrade+uninstall /
+   SHA-256 артефакта); любые новые видимые функции — через VISUAL_WAITLIST и
+   решение владельца.
 
 ## Границы (не нарушать)
 
