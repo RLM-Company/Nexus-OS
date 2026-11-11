@@ -2,7 +2,7 @@
 
 Status: **в работе** until CI verification; at most **готово к интеграции** after fixture checks.
 BASE_SHA: `9d972e8ba447f681fbfb49253b73d9f02dd1d325`
-HEAD_SHA: last reviewed code snapshot `1a9e7c04fc65d50b61eeba54bd8a1e84b64614c1`; use PR #504 for final formatted-report commit SHA.
+HEAD_SHA: latest code snapshot `ebacd5de9119e56911d2a010b7b574cf8c2a2685`; read PR #504 for final verified formatter/report commit SHA.
 Branch: `ops/free-studio-media`; draft PR: https://github.com/RLM-Company/Nexus-OS/pull/504.
 
 ## Scenario before
@@ -50,3 +50,13 @@ No dependency, migration, shared contract, provider key, budget configuration or
 ## Limitations / next step
 
 Backend metadata keeps only prompt hash and lengths; it intentionally never stores source reference bytes. Reload recovery uses owner-scoped job history and a pending ID, not replayed content. If a submission is ambiguous and no server job is visible yet, the UI retains the same ID; it cannot prove provider cancellation or safely infer zero charge. Check latest PR #504 CI, especially browser suite. Fix media-local failures; then pass to Codex for integration. No ownership of other Studio modes. Video remains unavailable.
+
+## Third vertical slice — honest budget and full owned history (2026-11-11)
+
+**Before:** image gallery was silently limited to eight items, failed history GET could appear empty, budget state (including `uncertain`) was never shown, and a reference deep link fetched source assets even if editing adapter was disabled.
+
+**After:** Image history is accessible in eight-result batches via `Показать ещё изображения`; owner-scoped GET failures are shown with read-only retry and no stale gallery. Image and Sound show real per-job `budget_state` labels, and explicit notices for reserved/uncertain states without invented currency values. A disabled editing adapter prevents deep-link reference GET; WebP previews/downloads remain available without pretending to enable unsupported edit inputs. This is display-only and does **not** change shared billing/hold state or authorise a paid retry.
+
+**Changed scope:** new `apps/web/src/app/media-generation/media-budget-status.ts` and `.test.ts`; modified `media-panel.tsx`, `media-workbench.tsx`, `apps/web/src/app/voice/voice-playback.tsx`; new `apps/web/e2e/media-budget-history.spec.ts`.
+
+**Evidence:** GitHub Actions `43015849304`: `pnpm --filter @cosmora/web typecheck` **PASS**, selected Vitest **5/5 PASS**, Playwright six mock-only scenarios **6/6 PASS (43.2s)**, selected file Prettier **PASS**. No paid provider call. Last full browser suite `42982674639` **PASS**; sandbox **PASS**; monorepo Prettier fails on unrelated upstream research JSON, not in 07_FREE_MEDIA diff. Main advanced 111 commits since original base, no Media/Sound source overlaps at verification. Draft PR remains unmerged. No changes to migrations, schema, dependencies, credentials, budgets, shared gateway, deployment or other Studio modes.

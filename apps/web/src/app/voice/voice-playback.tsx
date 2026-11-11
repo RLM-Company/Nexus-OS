@@ -267,9 +267,7 @@ function SavedSpeech() {
         <div key={item.id} className={styles.voice}>
           <small>
             {new Date(item.created_at).toLocaleString("ru")} · {item.status}
-            {mediaBudgetLabel(item.budget_state)
-              ? ` · ${mediaBudgetLabel(item.budget_state)}`
-              : ""}
+            {mediaBudgetLabel(item.budget_state) ? ` · ${mediaBudgetLabel(item.budget_state)}` : ""}
           </small>
           {item.status === "done" && item.asset?.mime === "audio/mpeg" && (
             <>

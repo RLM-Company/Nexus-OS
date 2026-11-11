@@ -632,28 +632,26 @@ export function MediaGenerationPanel({
           <p>Сохранённых изображений пока нет.</p>
         )}
         {history.slice(0, historyLimit).map((item) => (
-            <div key={item.id} className={styles.actions}>
-              <button
-                type="button"
-                onClick={() => {
-                  setJob(item);
-                  restoreParameters(item);
-                }}
-              >
-                {showImage(item) && <img src={mediaAssetUrl(item.id)} alt="" loading="lazy" />}
-                {new Date(item.created_at).toLocaleString("ru")} · {statusName[item.status]}
-                {typeof item.parameters?.size === "string" ? ` · ${item.parameters.size}` : ""}
-                {mediaBudgetLabel(item.budget_state)
-                  ? ` · ${mediaBudgetLabel(item.budget_state)}`
-                  : ""}
-              </button>
-              {item.status === "done" && (
-                <a href={`${mediaAssetUrl(item.id)}?download=1`}>Скачать</a>
-              )}
-              <button type="button" onClick={() => void remove(item.id)}>
-                Удалить
-              </button>
-            </div>
+          <div key={item.id} className={styles.actions}>
+            <button
+              type="button"
+              onClick={() => {
+                setJob(item);
+                restoreParameters(item);
+              }}
+            >
+              {showImage(item) && <img src={mediaAssetUrl(item.id)} alt="" loading="lazy" />}
+              {new Date(item.created_at).toLocaleString("ru")} · {statusName[item.status]}
+              {typeof item.parameters?.size === "string" ? ` · ${item.parameters.size}` : ""}
+              {mediaBudgetLabel(item.budget_state)
+                ? ` · ${mediaBudgetLabel(item.budget_state)}`
+                : ""}
+            </button>
+            {item.status === "done" && <a href={`${mediaAssetUrl(item.id)}?download=1`}>Скачать</a>}
+            <button type="button" onClick={() => void remove(item.id)}>
+              Удалить
+            </button>
+          </div>
         ))}
         {history.length > historyLimit && (
           <button type="button" onClick={() => setHistoryLimit((value) => value + 8)}>

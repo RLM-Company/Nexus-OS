@@ -25,12 +25,8 @@ test("uncertain image budget is visible on the result and in owned history witho
     if (request.url().endsWith("/api/v1/media/images") && request.method() === "POST") paidPosts++;
   });
   await page.goto("/?surface=images");
-  await expect(
-    page.getByText(/Итоговый расход не подтверждён провайдером/)
-  ).toBeVisible();
-  await expect(
-    page.getByRole("button", { name: /Расход не подтверждён/ })
-  ).toBeVisible();
+  await expect(page.getByText(/Итоговый расход не подтверждён провайдером/)).toBeVisible();
+  await expect(page.getByRole("button", { name: /Расход не подтверждён/ })).toBeVisible();
   expect(paidPosts).toBe(0);
 });
 
@@ -54,7 +50,9 @@ test("uncertain MP3 budget is shown in Sound and its owner-scoped history", asyn
   await expect(page.getByRole("link", { name: "Скачать MP3" }).first()).toBeVisible();
 });
 
-test("image history reveals all owned results in batches without any paid POST", async ({ page }) => {
+test("image history reveals all owned results in batches without any paid POST", async ({
+  page
+}) => {
   const history = Array.from({ length: 11 }, (_, index) => ({
     id: `aaaaaaaa-aaaa-4aaa-8aaa-${String(index + 1).padStart(12, "0")}`,
     kind: "image",
@@ -66,9 +64,7 @@ test("image history reveals all owned results in batches without any paid POST",
   }));
   let paidPosts = 0;
   await installOfflineImageCapabilities(page);
-  await page.route("**/api/v1/media/jobs", (route) =>
-    route.fulfill({ json: { items: history } })
-  );
+  await page.route("**/api/v1/media/jobs", (route) => route.fulfill({ json: { items: history } }));
   page.on("request", (request) => {
     if (request.url().includes("/api/v1/media/") && request.method() === "POST") paidPosts++;
   });
@@ -101,9 +97,7 @@ test("a reference deep link cannot preload an image when editing is unavailable"
   let assetReads = 0;
   let paidPosts = 0;
   await installOfflineImageCapabilities(page);
-  await page.route("**/api/v1/media/jobs", (route) =>
-    route.fulfill({ json: { items: [] } })
-  );
+  await page.route("**/api/v1/media/jobs", (route) => route.fulfill({ json: { items: [] } }));
   await page.route("**/api/v1/media/assets/**", (route) => {
     assetReads++;
     return route.fulfill({ status: 403 });
@@ -154,9 +148,7 @@ test("WebP remains downloadable while unavailable as an editing reference", asyn
       }
     })
   );
-  await page.route("**/api/v1/media/jobs", (route) =>
-    route.fulfill({ json: { items: [done] } })
-  );
+  await page.route("**/api/v1/media/jobs", (route) => route.fulfill({ json: { items: [done] } }));
   await page.route("**/api/v1/media/assets/**", (route) => route.fulfill({ status: 404 }));
   await page.goto("/?surface=images");
   await expect(page.getByRole("link", { name: "Скачать WEBP" })).toBeVisible();
