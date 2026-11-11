@@ -37,11 +37,21 @@ BASE_SHA: f9eb45285f3473bfd3fe9a73939c1903dc696b3b.
 - Уход из patch editor блокирует поздний preview/invalidate-review и изменение новой задачи.
 - Production UI22PASS, web lint/types/build и strict E2E types; после main — см. DELIVERY.
 
+## Исправлено четвёртым срезом (проверки см. DELIVERY)
+
+- Полное tree22 002 путей больше не отклоняется произвольным порогом20k;
+  transport8MB и count100k остаются ограниченными, файлы/модель читаются выборочно.
+- Полный existence index сохранён; unread existing path не принимается за новый.
+- Credential config/private dirs/SSH key paths исключены из prompt/read/diff.
+- Legacy checkpoint с запрещённым путём не допускается к review/check/publish;
+  данные не удаляются. Cancel/revoke/truncated проверены scoped API.
+
 ## Не завершено / следующий приоритет
 
-- Большой repo: `service.ts:propose` отказывает при truncated tree или >20000,
-  до выборочного чтения. Исследовать текущий GitHub adapter и тестовый контракт
-  до выбора способа безопасного subtree/search; не обходить отсутствующий tree.
+- В прежний tool cycle добавить bounded literal search_files по безопасному
+  immutable индексу (без новых reads/permissions). Точного поиска пока нет.
+- Truncated tree остаётся отказом; безопасный subtree traversal требует отдельного
+  общего GitHub adapter integration и полного existence coverage.
 
 - Сквозная приёмка tmp Git выполнена первым срезом: input/output/patch/receipt
   сохранены в fixtures/check-evidence. Локально4/5 OCI (старый setup timeout),
@@ -49,7 +59,8 @@ BASE_SHA: f9eb45285f3473bfd3fe9a73939c1903dc696b3b.
   Неполный локальный запуск остаётся4/5; его failure сохранён.
 - Общий sidebar/router/back-forward dirty guard — не интегрирован.
   Raw diff не сохраняется автоматически; применить или явно отменить.
-- Проверить полноту контекста больших репозиториев и secret-path исключения.
+- После текущих secret-path guards остаётся содержательный аудит секретов внутри
+  произвольного допустимого исходника; фильтр имени не гарантирует чистое содержимое.
 - GitHub adapter: 23 fixture-теста прошли в объединённом root test, включая lost
   PR response/read reconciliation без повторного publish, точный review, owner/base
   fences и сохранение file mode. Live push/PR в целевой репозиторий не выполнялся.

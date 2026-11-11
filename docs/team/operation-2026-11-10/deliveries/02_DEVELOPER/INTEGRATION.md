@@ -28,3 +28,10 @@ merge589eb311 после обзора manager-work-store / cloud snapshot accept
 требование целостности полного набора checkpoint/artifacts сохранено, legacy
 не расширен. Чужие Games/desktop/reports в этом merge не редактировались.
 Итоговый tree870f2aaeb5c7c882e2b919ac5a767c0a7afe6963.
+
+## Контекст большого репозитория, 11 ноября
+
+Main5e01c4f принят merge2bbb4aa. Source d467fdb + fixture0591ed1 меняют только
+code-agent/API tests, code-agent-diff/runtime tests и локальные сообщения Coscode.
+Общий GitHub client (включая response limit8MB), contracts/DB/registration/navigation
+не менялись. ПутьTREE_LIMIT для truncated tree сохранён. Новых полномочий нет.

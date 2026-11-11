@@ -1,3 +1,103 @@
+# 02_DEVELOPER: безопасный контекст большого репозитория
+
+11 ноября 2026, Москва. Исполнитель: Разработчик + GPT Plus.
+Статус поставленного среза: **готово к интеграции**.
+Branch `ops/developer-coscode`, [PR #507](https://github.com/RLM-Company/Nexus-OS/pull/507).
+BASE_SHA продолжения `cd4c4ad4a1e1eaad3b9c6ad25c16114ba5fe9899`.
+Новый main `5e01c4fddf2bfc87c7e60b82bae5259f154ce879` просмотрен и принят
+merge `2bbb4aa9dde1665f830a832f0aa9df3e94777cec`, чужие правки сохранены.
+Source `d467fdb08c2b45e0d84da17ffcb20541be7b84aa`; исправление fixture
+`0591ed11e7a3e45dbd2ec199d6732c88a8b015fa`.
+Code tree `a27ca3ea0521880ea6d9e75444ec3761f42d53b8` совпал локально и на GitHub.
+Итоговый docs HEAD указывается в PR.
+
+## Пользовательский путь до / после
+
+Entrypoint `/code-agent` → выбор задачи/файлов → существующий create route →
+`CodeAgentService.propose` → текущий GitHub adapter → выбранный immutable blob →
+bounded model context → предложение → preview-diff → review → executor/checkpoint.
+Раньше полное дерево22 002 путей останавливалось с TREE_LIMIT до чтения файла.
+Теперь полные деревья допускаются до100 000 записей в пределах прежних8 MB
+HTTP response adapter. Этот transport limit не увеличен. Читается выбранный
+файл; полный индекс существования сохраняется для отказа при попытке выдать
+непрочитанный существующий файл за новый. Вход модели остаётся <=128 путей/12 KB,
+прочитанные файлы <=40/500 KB. Base SHA и snapshot digest сохраняются.
+
+Усечённое дерево по-прежнему отклоняется до blob/model; неполный индекс не выдаётся
+за доказательство отсутствия файла. Cancellation и отзыв policy во время tree
+retrieval останавливают последующее чтение. Нового GitHub client/runtime/store нет.
+
+Фильтр чтения и diff теперь также запрещает credential config paths (.npmrc,
+.netrc, .pypirc, .envrc, .yarnrc/.yarnrc.yml), приватные директории .ssh/.aws/
+.azure/.kube/.docker, обычные SSH private-key names и p12/pfx/jks/keystore.
+Старые .env/.git/secret/credential/pem/key ограничения сохранены. Это фильтр путей,
+не универсальное доказательство отсутствия секретов в произвольном исходнике.
+Старый snapshot с запрещённым путём блокирует review/automatic check/check/publish,
+но остаётся сохранённым владельцу. Его нельзя «исправить» молчаливым удалением
+поддерживающих файлов и повторным использованием старого proof.
+
+## Изменённые файлы и интеграция
+
+- `apps/api/src/code-agent/service.ts`: лимит полного tree и safe-context fence.
+- `apps/api/test/code-agent.test.ts`: large-tree/preview/check, truncated,
+  cancel/revoke, forbidden tool-read и legacy checkpoint сценарии.
+- `packages/tool-runtime/src/code-agent-diff.ts` и его scoped test: запрет путей.
+- `apps/web/src/app/code-agent/patch-client.ts`: объяснения TREE_LIMIT и
+  CONTEXT_PATH_FORBIDDEN в существующем разделе; дизайн не менялся.
+
+Общих client/contracts/DB/registration/navigation/dependencies/migrations не меняли.
+Нового integration commit кроме принятого main не требуется. Исторический CI
+integrationfcc183d остаётся отдельным. Откат: revert source d467fdb и fixture0591ed1;
+не откатывать принятый чужой main и не удалять checkpoints.
+
+## Проверки и воспроизведение
+
+Перед исправлением: runtime path baseline14 FAIL/25 PASS; large-tree baseline1 FAIL
+с фактическим TREE_LIMIT. После: runtime diff39 PASS; API Coscode62 PASS.
+Первый полный core остановился с exit2 на TS2379 нового теста: optional digest
+назначался обязательному полю при exactOptionalPropertyTypes. Исправлен fixture,
+без отключения типов; baseline и первый gate сохраняются в fixtures/safe-context.
+Итог повторного gate приводится отдельно после завершения.
+
+```sh
+pnpm --filter @cosmora/tool-runtime exec vitest run test/code-agent-diff.test.ts
+pnpm --filter @cosmora/api exec vitest run test/code-agent.test.ts
+pnpm check:core
+KOSMORA_E2E_PRODUCTION=1 KOSMORA_E2E_CHROMIUM_EXECUTABLE=/usr/bin/chromium \
+  pnpm --filter @cosmora/web exec playwright test -c playwright.acceptance.config.ts e2e/code-agent.spec.ts --workers=1 --retries=0
+```
+
+Fixtures задаются в scoped tests: `originals`, `changes`, extraTreePaths22000,
+additionalTreePaths и truncatedTree. Gateway/GitHub transport и executor в API
+сценариях заменены fixtures; service, parsing/diff, policy и SQLite store настоящие.
+Настоящая модель и live target GitHub publish не вызывались. Проверки настоящего
+Git/OCI из предыдущего среза остаются отдельно с указанными SHA, не подменяют
+текущие synthetic executor результаты.
+
+## Итоговые проверки source0591ed1
+
+`pnpm check:core` после исправления fixture: **exit0**. Свежие API997/web290/
+runtime86 PASS; DB205/config17/contracts206/policy43/gateway151/core387 — Turbo
+cache replay. Format/secrets/lint/types/build и deploy/connection/live guards/
+vector-scale/media/privacy/profile завершились успешно. Пять opt-in OCI здесь
+пропущены; внешний CI source0591ed1 выполнил их отдельно: **5/5 PASS**,
+run42969991364/job130356081326. API identity42969991356 success.
+Общий Verify monorepo/Browser acceptance ещё выполнялись при последней проверке;
+их итог не подменяется scoped результатами. Production Chromium22/22 PASS, exit0,
+workers1/retries0 на том же code0591ed1 после core; логи сохранены.
+
+## Оставшиеся границы и следующий шаг
+
+Поиск по остальному индексу пока не доступен модели: list_files возвращает короткую
+выборку, read_file требует точный путь. Следующий scoped срез — ограниченный
+literal search_files в прежнем tool cycle после существующего gateway negotiation,
+без новых GitHub запросов, blob reads или прав. Для усечённого tree остаётся честный
+отказ; безопасная subtree strategy потребует отдельного adapter integration.
+Полная автономная сфера не завершена. Общая SPA-навигация и bounded repair остаются
+в backlog; live model/foreign publish/owner PC/VPS/merge/deploy не выполнялись.
+
+---
+
 # 02_DEVELOPER: третий срез — точная задача и изоляция поздних ответов
 
 Исполнитель: Разработчик + GPT Plus. 10 ноября 2026, Москва.
