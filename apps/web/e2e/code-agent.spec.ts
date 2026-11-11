@@ -153,6 +153,8 @@ async function scenario(
       };
       data = run;
     } else if (url.pathname.endsWith("/repair")) {
+      throw new Error("Versioned web must never dispatch the legacy paid repair route");
+    } else if (url.pathname.endsWith("/repair-v2")) {
       const input = route.request().postDataJSON();
       if (input.expected_run_version !== run.version) {
         await route.fulfill({ status: 409, json: { error: { code: "STALE_CHECK" } } });

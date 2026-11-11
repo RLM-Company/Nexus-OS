@@ -1112,7 +1112,7 @@ export default function CodeAgentPage() {
                     reviewHash={review.review_hash}
                     repair={(request) =>
                       void action(() =>
-                        api<Run>(`${root}/${encodeURIComponent(run.id)}/repair`, request)
+                        api<Run>(`${root}/${encodeURIComponent(run.id)}/repair-v2`, request)
                       )
                     }
                   />

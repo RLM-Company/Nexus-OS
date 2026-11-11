@@ -397,7 +397,7 @@ export function registerCodeAgentRoutes(
       approve: true;
     };
   }>(
-    base + "/:id/repair",
+    base + "/:id/repair-v2",
     {
       schema: {
         params,

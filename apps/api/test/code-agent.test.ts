@@ -2895,7 +2895,11 @@ describe("bounded explicit check-feedback repair", () => {
     const request = await failedRepair(f);
     const before = f.get(request.id);
     const { id, ...payload } = request;
-    const response = await f.app.inject({ method: "POST", url: `${f.base}/${id}/repair`, payload });
+    const response = await f.app.inject({
+      method: "POST",
+      url: `${f.base}/${id}/repair-v2`,
+      payload
+    });
     expect(response.statusCode).toBe(200);
     f.service.repair(id, owner, payload);
     const result = await f.wait(id, "proposed");
@@ -3152,7 +3156,12 @@ it.skipIf(!process.env.CODE_AGENT_TEST_IMAGE)(
     const { id, ...payload } = await failedRepair(f);
     const before = f.get(id);
     expect(before.check).toMatchObject({ status: "failed", exitCode: 1, cleanupVerified: true });
-    f.service.repair(id, owner, payload);
+    const accepted = await f.app.inject({
+      method: "POST",
+      url: `${f.base}/${id}/repair-v2`,
+      payload
+    });
+    expect(accepted.statusCode).toBe(200);
     const after = await f.wait(id, "proposed");
     expect(after.base_sha).toBe(baseSha);
     expect(after.proposal_check).toMatchObject({
@@ -3246,17 +3255,25 @@ it("requires a valid source version before reserving a repair and rejects a chan
   const { id, ...payload } = await failedRepair(f);
   const { expected_run_version, ...oldClient } = payload;
   const before = f.get(id);
+  for (const legacyPayload of [oldClient, payload]) {
+    const legacy = await f.app.inject({
+      method: "POST",
+      url: `${f.base}/${id}/repair`,
+      payload: legacyPayload
+    });
+    expect(legacy.statusCode).toBe(404);
+  }
   expect(f.service.view(before).capabilities.repair_once).toBe(2);
   const missing = await f.app.inject({
     method: "POST",
-    url: `${f.base}/${id}/repair`,
+    url: `${f.base}/${id}/repair-v2`,
     payload: oldClient
   });
   expect(missing.statusCode).toBe(400);
   for (const version of [0, -1, 1.5, Number.MAX_SAFE_INTEGER + 1]) {
     const invalid = await f.app.inject({
       method: "POST",
-      url: `${f.base}/${id}/repair`,
+      url: `${f.base}/${id}/repair-v2`,
       payload: { ...payload, expected_run_version: version }
     });
     expect(invalid.statusCode).toBe(400);
