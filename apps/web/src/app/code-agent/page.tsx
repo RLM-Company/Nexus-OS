@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useCodeEditorNavigationGuard } from "./editor-navigation";
+import { CodeRepairControl } from "./repair-control";
 import { CodeCheckEvidence, hasVerifiedCodeCheck } from "./check-evidence";
 import { TerminalOutput } from "../ui/terminal-output";
 import { CodePatchEditor } from "./patch-editor";
@@ -17,6 +18,19 @@ type FileChange = { path: string; before: string | null; content: string };
 type Run = {
   id: string;
   status: string;
+  capabilities?: { repair_once?: number };
+  repair_request?: {
+    review_hash: string;
+    state: string;
+    source_snapshot_digest: string;
+    source_check: {
+      status: string;
+      stdout: string;
+      stderr: string;
+      truncated: boolean;
+      exitCode?: number | null;
+    };
+  };
   task: string;
   base_branch: string;
   base_sha: string;
@@ -53,6 +67,7 @@ type Run = {
   check?: {
     status: string;
     review_hash: string;
+    check_type?: "syntax" | "node-test";
     exitCode?: number | null;
     cleanupVerified?: boolean;
     stdout?: string;
@@ -971,6 +986,26 @@ export default function CodeAgentPage() {
             </section>
           )}
 
+          {run.repair_request && (
+            <section className={styles.panel} aria-label="Попытка исправления">
+              <h2>Попытка исправления использована</h2>
+              <p>
+                {run.repair_request.state === "proposed"
+                  ? "Новый diff подготовлен. Просмотрите его и сохраните новый просмотр."
+                  : "Автоматический повтор модели отключён. Проверьте статус задачи; сохранённые правки доступны для ручного продолжения."}
+              </p>
+              <details>
+                <summary>Исходная ошибка и версия</summary>
+                <p>
+                  Просмотр: <code>{run.repair_request.review_hash}</code>
+                </p>
+                <p>
+                  Снимок: <code>{run.repair_request.source_snapshot_digest}</code>
+                </p>
+                <TerminalOutput {...run.repair_request.source_check} />
+              </details>
+            </section>
+          )}
           {review && (
             <section className={styles.panel} aria-label="Проверка и публикация">
               <h2>2. Запустите разрешённую проверку</h2>
@@ -1057,6 +1092,25 @@ export default function CodeAgentPage() {
                   )}
                 </div>
               )}
+              {run.capabilities?.repair_once === 1 &&
+                !run.repair_request &&
+                run.status === "checked" &&
+                run.check?.status === "failed" &&
+                run.check.cleanupVerified === true &&
+                (run.check.exitCode ?? 0) > 0 &&
+                run.check.check_type &&
+                run.check.review_hash === review.review_hash && (
+                  <CodeRepairControl
+                    key={`${run.id}:${review.review_hash}`}
+                    disabled={!editable || !matchesReview || proofDirty || patchTextDirty}
+                    reviewHash={review.review_hash}
+                    repair={(request) =>
+                      void action(() =>
+                        api<Run>(`${root}/${encodeURIComponent(run.id)}/repair`, request)
+                      )
+                    }
+                  />
+                )}
               <hr />
               <h2>3. Создайте черновик PR</h2>
               <p>

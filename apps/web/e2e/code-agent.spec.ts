@@ -4,16 +4,24 @@ import { isWorkspaceWrite } from "./fixtures/navigation-writes";
 async function scenario(
   page: Page,
   lostPublish: false | "after-start" | "before-start" = false,
-  proof: { exitCode?: number | null; cleanupVerified?: boolean } = {},
-  expectedReview: (review: number) => string = () => "export const value = 3;"
+  proof: {
+    exitCode?: number | null;
+    cleanupVerified?: boolean;
+    status?: string;
+    check_type?: "syntax" | "node-test";
+  } = {},
+  expectedReview: (review: number) => string = () => "export const value = 3;",
+  repairCapability = false
 ) {
   let publications = 0;
   let checks = 0;
   let reviews = 0;
+  let repairs = 0;
   let created = false;
   let run: Record<string, unknown> = {
     id: "run-1",
     status: "proposed",
+    ...(repairCapability ? { capabilities: { repair_once: 1 } } : {}),
     task: "Исправь неверный результат",
     base_branch: "main",
     base_sha: "a".repeat(40),
@@ -69,7 +77,7 @@ async function scenario(
       const input = route.request().postDataJSON();
       expect(input.base_sha).toBe("a".repeat(40));
       expect(input.snapshot_digest).toBe("s".repeat(64));
-      expect(input.proposal_hash).toBe("p".repeat(64));
+      expect(input.proposal_hash).toBe(run.proposal_hash);
       expect(input.diff).toContain("@@ -1,9 +1,9 @@");
       data = {
         files: [
@@ -96,7 +104,7 @@ async function scenario(
         return;
       }
       reviews++;
-      expect(input.proposal_hash).toBe("p".repeat(64));
+      expect(input.proposal_hash).toBe(run.proposal_hash);
       expect(input.files).toEqual([{ path: "src/value.js", content: expectedReview(reviews) }]);
       run = {
         ...run,
@@ -135,6 +143,44 @@ async function scenario(
           journal: [{ event: "completed" }],
           ...proof
         }
+      };
+      data = run;
+    } else if (url.pathname.endsWith("/repair")) {
+      repairs++;
+      expect(repairCapability).toBe(true);
+      expect(repairs).toBe(1);
+      const source = run.draft as { plan: { review_hash: string } };
+      expect(route.request().postDataJSON()).toEqual({
+        review_hash: source.plan.review_hash,
+        client_request_id: expect.stringMatching(/^[a-f0-9-]{36}$/u),
+        approve: true
+      });
+      run = {
+        ...run,
+        status: "proposed",
+        proposal_hash: "q".repeat(64),
+        proposal: [
+          {
+            path: "src/value.js",
+            before: "export const value = 1;",
+            content: "export const value = 4;"
+          }
+        ],
+        proposal_diff:
+          "--- a/src/value.js\n+++ b/src/value.js\n@@ -1 +1 @@\n-export const value = 1;\n+export const value = 4;\n",
+        repair_request: {
+          review_hash: source.plan.review_hash,
+          state: "proposed",
+          source_snapshot_digest: "s".repeat(64),
+          source_check: {
+            ...(run.check as object),
+            stdout: "syntax checked",
+            stderr: "fixture failure"
+          }
+        },
+        draft: undefined,
+        check: undefined,
+        publication_token: undefined
       };
       data = run;
     } else if (url.pathname.endsWith("/publish")) {
@@ -186,6 +232,7 @@ async function scenario(
   return {
     publications: () => publications,
     checks: () => checks,
+    repairs: () => repairs,
     snapshot: () => structuredClone(run),
     concurrentReview: () => {
       const draft = run.draft as { plan: { review_hash: string; files: unknown[] } };
@@ -965,5 +1012,60 @@ test("an unavailable project from a link cannot fall back to another owned proje
   await expect(page.getByRole("combobox", { name: "Проект", exact: true })).toHaveValue("");
   await expect(page.getByRole("region", { name: "Состояние задачи" })).toHaveCount(0);
   expect(runReads).toBe(1); // The document itself; no scoped Code API request was made.
+  expect(state.publications()).toBe(0);
+});
+
+test("explicit bounded repair requires approval, shows a new diff and requires a fresh review", async ({
+  page
+}) => {
+  const state = await scenario(
+    page,
+    false,
+    { status: "failed", exitCode: 1, check_type: "syntax" },
+    (n) => `export const value = ${n === 1 ? 3 : 4};`,
+    true
+  );
+  await prepare(page);
+  const repair = page.getByRole("button", {
+    name: "Исправить по результату проверки",
+    exact: true
+  });
+  await expect(repair).toBeDisabled();
+  expect(state.repairs()).toBe(0);
+  await page
+    .getByRole("checkbox", { name: "Разрешаю одну дополнительную модельную попытку", exact: false })
+    .check();
+  await repair.click();
+  await expect(page.getByLabel("Попытка исправления", { exact: true })).toContainText(
+    "Новый diff подготовлен"
+  );
+  await expect(page.getByLabel("+ Итоговое содержимое: src/value.js")).toHaveValue(
+    "export const value = 4;"
+  );
+  await expect(page.getByLabel("Проверка и публикация")).toHaveCount(0);
+  await expect(repair).toHaveCount(0);
+  await page.getByRole("button", { name: "Сохранить выбранные изменения" }).click();
+  await expect(page.getByRole("button", { name: "Создать черновик PR в GitHub" })).toBeDisabled();
+  await page.reload();
+  await expect(page.getByLabel("Попытка исправления", { exact: true })).toContainText(
+    "Попытка исправления использована"
+  );
+  await expect(repair).toHaveCount(0);
+  expect(state.repairs()).toBe(1);
+  expect(state.publications()).toBe(0);
+  expect(state.checks()).toBe(1);
+});
+
+test("a server without repair capability never receives the new command", async ({ page }) => {
+  const state = await scenario(page, false, {
+    status: "failed",
+    exitCode: 1,
+    check_type: "syntax"
+  });
+  await prepare(page);
+  await expect(
+    page.getByRole("button", { name: "Исправить по результату проверки", exact: true })
+  ).toHaveCount(0);
+  expect(state.repairs()).toBe(0);
   expect(state.publications()).toBe(0);
 });

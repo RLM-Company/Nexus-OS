@@ -390,6 +390,27 @@ export function registerCodeAgentRoutes(
   );
   app.post<{
     Params: Params;
+    Body: { review_hash: string; client_request_id: string; approve: true };
+  }>(
+    base + "/:id/repair",
+    {
+      schema: {
+        params,
+        body: Type.Object(
+          {
+            review_hash: hash,
+            client_request_id: Type.String({ format: "uuid" }),
+            approve: Type.Literal(true)
+          },
+          { additionalProperties: false }
+        )
+      }
+    },
+    (request, reply) =>
+      handle(() => service.repair(request.params.id, owned(request).owner_id, request.body), reply)
+  );
+  app.post<{
+    Params: Params;
     Body: { review_hash: string; publication_token: string; approve: true };
   }>(
     base + "/:id/publish",

@@ -46,11 +46,25 @@ export interface CodeAgentRun {
   rejected_proposal_text?: string;
   output_checkpoint?: ModelOutputCheckpoint;
   auto_check_requested?: "syntax" | "node-test";
-  proposal_check?: (CodeAgentCheckResult & { proposal_hash: string }) | undefined;
+  proposal_check?:
+    | (CodeAgentCheckResult & { proposal_hash: string; check_type?: "syntax" | "node-test" })
+    | undefined;
   draft_id?: string;
   draft?: GithubDraft;
   publication_token?: string | undefined;
-  check?: (CodeAgentCheckResult & { review_hash: string }) | undefined;
+  check?:
+    | (CodeAgentCheckResult & { review_hash: string; check_type?: "syntax" | "node-test" })
+    | undefined;
+  /** A single explicitly authorized paid repair. Retained after failure/restart; never replayed. */
+  repair_request?: {
+    client_request_id: string;
+    review_hash: string;
+    source_snapshot_digest: string;
+    source_draft_id: string;
+    check_type: "syntax" | "node-test";
+    source_check: CodeAgentCheckResult;
+    state: "started" | "proposed";
+  };
   error?: string | undefined;
   provider_diagnostic?: string | undefined;
   log: Array<{ at: string; event: string }>;
