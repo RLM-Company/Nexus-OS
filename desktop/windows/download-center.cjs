@@ -3,6 +3,7 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const { pathToFileURL } = require("node:url");
+const { isAllowedRemoteNavigation } = require("./connection-policy.cjs");
 const { createDownloadHistoryStore, downloadScope } = require("./download-history.cjs");
 
 /** Only this trusted Electron main process owns DownloadItems, file paths and shell access. */
@@ -22,12 +23,35 @@ function createDownloadCenter({
   const history = createDownloadHistoryStore(profileDirectory);
   const pageURL = pathToFileURL(path.join(__dirname, "downloads.html")).toString();
   const live = new Map();
+  const MAX_RETRY_SOURCES = 50;
+  // Session-only memory of the original request URL per download id. Retrying
+  // an interrupted download re-requests the same origin route through the
+  // owning window; links are never persisted (the downloads window states
+  // "Ссылки скачивания не сохраняются") and every retry re-runs the full
+  // will-download policy gate, which stays fail-closed.
+  const retrySources = new Map();
   let window = null;
   let windowScope = null;
   let windowOrigin = null;
   let windowEpoch = null;
   let windowOwner = null;
 
+  function retryable(id) {
+    const source = retrySources.get(id);
+    if (!source) return false;
+    const main = getMainWindow();
+    return Boolean(
+      source.origin === getOrigin() &&
+      source.epoch === getIdentityEpoch() &&
+      main &&
+      typeof main.isDestroyed === "function" &&
+      !main.isDestroyed() &&
+      typeof main.webContents?.getURL === "function" &&
+      isAllowedRemoteNavigation(main.webContents.getURL(), getOrigin())
+    );
+  }
+  const listFor = (scope) =>
+    history.list(scope).map((entry) => ({ ...entry, retryable: retryable(entry.id) }));
   function emit(refreshMenu = true) {
     if (refreshMenu) onChange();
     if (
@@ -37,7 +61,7 @@ function createDownloadCenter({
       windowOrigin === getOrigin() &&
       windowEpoch === getIdentityEpoch()
     ) {
-      window.webContents.send("cosmora:downloads:changed", history.list(windowScope));
+      window.webContents.send("cosmora:downloads:changed", listFor(windowScope));
     }
   }
   function trusted(event) {
@@ -122,7 +146,7 @@ function createDownloadCenter({
     nextWindow.webContents.on("will-redirect", (event) => event.preventDefault());
     nextWindow.webContents.on("did-finish-load", () => {
       if (window === nextWindow)
-        nextWindow.webContents.send("cosmora:downloads:changed", history.list(scope));
+        nextWindow.webContents.send("cosmora:downloads:changed", listFor(scope));
     });
     nextWindow.on("closed", () => {
       if (window === nextWindow) {
@@ -158,9 +182,23 @@ function createDownloadCenter({
     let current = null;
     let finished = null;
     let lastPersisted = 0;
+    // The will-download gate already validated the entire redirect chain as
+    // same-origin; Chromium's chain starts with the original request URL, so
+    // either endpoint is origin-safe. Remembering the original route enables a
+    // later manual retry of the same resource; nothing is written to disk.
+    const chain = typeof item.getURLChain === "function" ? item.getURLChain() : [];
+    const originalURL =
+      chain.length > 0 ? chain[0] : typeof item.getURL === "function" ? item.getURL() : null;
+    if (typeof originalURL === "string" && /^https?:\/\//i.test(originalURL)) {
+      while (retrySources.size >= MAX_RETRY_SOURCES) {
+        retrySources.delete(retrySources.keys().next().value);
+      }
+      retrySources.set(id, { url: originalURL, origin, epoch });
+    }
     function finish(state) {
       if (finished) return;
       finished = state;
+      if (state !== "interrupted") retrySources.delete(id);
       if (!current) return;
       live.delete(id);
       const sameOwner = current.origin === getOrigin() && current.epoch === getIdentityEpoch();
@@ -245,6 +283,7 @@ function createDownloadCenter({
   function invalidate({ forget = false, origin = null, owner = null } = {}) {
     const previousScope = windowScope;
     if (window && !window.isDestroyed()) window.destroy();
+    retrySources.clear();
     for (const [id, entry] of live) {
       try {
         entry.item.cancel();
@@ -284,7 +323,7 @@ function createDownloadCenter({
   function registerIpc() {
     ipcMain.handle("cosmora:downloads:list", async (event) => {
       const scope = await authorize(event);
-      return scope ? { ok: true, entries: history.list(scope) } : { ok: false, entries: [] };
+      return scope ? { ok: true, entries: listFor(scope) } : { ok: false, entries: [] };
     });
     ipcMain.handle("cosmora:downloads:cancel", async (event, id) => {
       const scope = await authorize(event);
@@ -317,6 +356,31 @@ function createDownloadCenter({
       } catch {
         return { ok: false };
       }
+    });
+    ipcMain.handle("cosmora:downloads:retry", async (event, id) => {
+      const scope = await authorize(event);
+      if (!scope || typeof id !== "string" || id.length !== 36) return { ok: false };
+      // The renderer never supplies a URL: the main process re-requests the
+      // route it captured for this exact download, and only while that memory
+      // is still bound to the current origin, epoch and verified owner scope.
+      const source = retrySources.get(id);
+      if (!source || source.origin !== getOrigin() || source.epoch !== getIdentityEpoch())
+        return { ok: false };
+      if (history.statusOf(scope, id) !== "interrupted") return { ok: false };
+      const main = getMainWindow();
+      if (!main || typeof main.isDestroyed !== "function" || main.isDestroyed())
+        return { ok: false };
+      if (
+        typeof main.webContents?.getURL !== "function" ||
+        typeof main.webContents?.downloadURL !== "function" ||
+        !isAllowedRemoteNavigation(main.webContents.getURL(), getOrigin())
+      )
+        return { ok: false };
+      // downloadURL() does not navigate: the attempt goes through the same
+      // will-download gate as a user-initiated download and either creates a
+      // new tracked download or is prevented.
+      main.webContents.downloadURL(source.url);
+      return { ok: true };
     });
   }
   registerIpc();

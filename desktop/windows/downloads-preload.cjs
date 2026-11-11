@@ -8,6 +8,7 @@ contextBridge.exposeInMainWorld(
   Object.freeze({
     list: () => ipcRenderer.invoke("cosmora:downloads:list"),
     cancel: (id) => ipcRenderer.invoke("cosmora:downloads:cancel", id),
+    retry: (id) => ipcRenderer.invoke("cosmora:downloads:retry", id),
     reveal: (id) => ipcRenderer.invoke("cosmora:downloads:reveal", id),
     clear: () => ipcRenderer.invoke("cosmora:downloads:clear"),
     onChanged: (listener) => {
