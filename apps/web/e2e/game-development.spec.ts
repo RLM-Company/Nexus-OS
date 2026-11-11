@@ -181,6 +181,8 @@ test("compares a selected game file against its saved version and never restarts
 
   await canvas.getByRole("button", { name: "Сохранить версию", exact: true }).click();
   await expect(canvas.getByRole("status")).toContainText("Сохранена новая версия");
+  // Saving starts a new per-version edit session, so comparison is re-opened explicitly.
+  await canvas.getByRole("button", { name: "Сравнить файл", exact: true }).click();
   await expect(diff).toContainText("Содержимое совпадает побайтно.");
   const zipDownload = page.waitForEvent("download");
   await canvas.getByRole("button", { name: "Скачать проект ZIP", exact: true }).click();
