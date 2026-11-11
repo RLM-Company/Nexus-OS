@@ -54,6 +54,33 @@ describe("production memory packing", () => {
     expect(byteLength(result)).toBe(size);
     expect(() => fitContextMemory(input, size - 1)).toThrow(MemoryContextIncompleteError);
   });
+  it("fits mandatory context at its exact boundary when matching evidence is omitted", () => {
+    const pinned = item("required", true);
+    const match = { ...item("x".repeat(4000)), matched: true };
+    const input = {
+      ...bundle([pinned, match]),
+      matched_items: 1,
+      answer_evidence: "matched" as const
+    };
+    const expected = {
+      ...input,
+      items: [pinned],
+      omitted: 1,
+      matched_items: 0,
+      answer_evidence: "absent" as const
+    };
+    const limit = exactSize(expected);
+    expect(fitContextMemory(input, limit)).toEqual({ ...expected, bytes: limit });
+    expect(() => fitContextMemory(input, limit - 1)).toThrow(MemoryContextIncompleteError);
+  });
+  it("counts matching evidence once when merging duplicate excerpts", () => {
+    const evidence = { ...item("matching fact"), matched: true };
+    const input = { ...bundle([evidence]), matched_items: 1, answer_evidence: "matched" as const };
+    const merged = mergeContextMemory(input, input)!;
+    expect(merged.items).toEqual([evidence]);
+    expect(merged.matched_items).toBe(1);
+    expect(merged.bytes).toBe(byteLength(merged));
+  });
   it("is independent of property order and literal marker-like user text", () => {
     const original = bundle([item("__kosmora_items_marker_7b4a__\n__kosmora_bytes_marker_91d2__")]);
     original.target.id = "__kosmora_items_marker_7b4a__";

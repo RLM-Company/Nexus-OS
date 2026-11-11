@@ -29,6 +29,7 @@ const compatible = (a: Evidence, b: Evidence) =>
 const absorb = (container: Evidence, covered: Evidence): Evidence => ({
   ...container,
   ...(covered.priority ? { priority: true } : {}),
+  ...(covered.matched ? { matched: true } : {}),
   ...(container.sequence === undefined && covered.sequence !== undefined
     ? { sequence: covered.sequence }
     : {}),
