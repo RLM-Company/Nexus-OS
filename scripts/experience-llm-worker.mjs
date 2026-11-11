@@ -10,11 +10,16 @@
 // are stored in the repository. This worker is bench infrastructure only and
 // does not touch product code or any product runtime.
 import { isMainThread, parentPort, workerData } from "node:worker_threads";
+import { pathToFileURL } from "node:url";
 
 if (isMainThread) throw new Error("LLM_WORKER_MAIN_THREAD");
 if (!workerData?.modelDir) throw new Error("LLM_MODEL_DIR_REQUIRED");
+// The bench resolves the exact node-ESM entry of @huggingface/transformers
+// (a workspace dependency) and passes it in workerData; a scripts/ worker
+// cannot resolve workspace packages by bare specifier.
+if (!workerData?.transformersEntry) throw new Error("LLM_TRANSFORMERS_ENTRY_REQUIRED");
 
-const { env, pipeline } = await import("@huggingface/transformers");
+const { env, pipeline } = await import(pathToFileURL(workerData.transformersEntry));
 env.allowRemoteModels = false;
 env.allowLocalModels = true;
 env.useFSCache = false;

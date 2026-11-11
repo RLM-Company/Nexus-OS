@@ -1,0 +1,51 @@
+
+ RUN  v4.1.11 /workspace/work/Nexus-OS-coscode/apps/api
+
+ ❯ test/code-agent.test.ts (63 tests | 1 failed) 11316ms
+     × negotiates bounded path search, reads the selected immutable hit and persists the resulting proposal 357ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  test/code-agent.test.ts > Code agent real gateway/GitHub/policy vertical > negotiates bounded path search, reads the selected immutable hit and persists the resulting proposal
+AssertionError: expected [ { path: 'src/add.js', …(2) }, …(1) ] to deeply equal [ { path: 'src/add.js', …(1) }, …(1) ]
+
+- Expected
++ Received
+
+@@ -1,12 +1,16 @@
+  [
+    {
++     "before": "export const add = (a,b) => a-b;
++ ",
+      "content": "export const add = (a,b) => a+b;
+  ",
+      "path": "src/add.js",
+    },
+    {
++     "before": "import {add} from './add.js';
++ ",
+      "content": "import {add} from './add.js';
+  import assert from 'node:assert/strict';
+  assert.equal(add(2,3),5);
+  ",
+      "path": "src/add.test.js",
+
+ ❯ test/code-agent.test.ts:1120:26
+    1118|     expect(run.base_sha).toBe(head);
+    1119|     expect(run.snapshot.map((file) => file.path)).toEqual(["src/add.js…
+    1120|     expect(run.proposal).toEqual(changes);
+       |                          ^
+    1121|     expect(f.providerCalls).toHaveLength(3);
+    1122|     expect(f.githubCalls.filter((call) => call.path.startsWith("/git/t…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed | 1 passed (2)
+      Tests  1 failed | 70 passed (71)
+   Start at  06:12:41
+   Duration  15.12s (transform 1.49s, setup 0ms, import 3.51s, tests 11.33s, environment 0ms)
+
+undefined
+/workspace/work/Nexus-OS-coscode/apps/api:
+[ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL] Command failed with exit code 1: vitest run test/code-proposal-input.test.ts test/code-agent.test.ts

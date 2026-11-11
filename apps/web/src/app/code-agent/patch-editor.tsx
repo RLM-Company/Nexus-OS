@@ -1,5 +1,5 @@
 "use client";
-import { useRef, useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import { codePatchRequest, type CodePatchPreview } from "./patch-client";
 
 /** Reusable Code adapter; parsing always happens on the server's immutable snapshot. */
@@ -20,12 +20,19 @@ export function CodePatchEditor(props: {
     [busy, setBusy] = useState(false);
   const [preview, setPreview] = useState<CodePatchPreview | null>(null);
   const version = useRef(0);
+  useLayoutEffect(
+    () => () => {
+      version.current++;
+    },
+    []
+  );
   async function verify() {
     const captured = version.current;
     setBusy(true);
     setError(null);
     try {
       await props.onDirty();
+      if (version.current !== captured) return;
       const result = await codePatchRequest<CodePatchPreview>(
         props.project,
         `/${encodeURIComponent(props.id)}/preview-diff`,

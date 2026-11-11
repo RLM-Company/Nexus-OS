@@ -1,0 +1,17 @@
+GitHub CI run42969991364, job130356081326, code HEAD0591ed11e7a3e45dbd2ec199d6732c88a8b015fa.
+Excerpt: test execution; provisioning and checkout omitted.
+2026-11-11T06:06:10.0775110Z  RUN  v4.1.11 /home/runner/work/Nexus-OS/Nexus-OS/packages/tool-runtime
+2026-11-11T06:06:10.0776937Z
+2026-11-11T06:06:12.6622929Z  ✓ test/code-agent-git.oci.test.ts (1 test) 2348ms
+2026-11-11T06:06:12.6625327Z    ✓ real temporary Git repository: exact multi-file patch, real failure/success/cancel and preserved source  2346ms
+2026-11-11T06:06:20.2507538Z  ✓ test/code-agent-workspace.oci.test.ts (4 tests) 7445ms
+2026-11-11T06:06:20.2509390Z      ✓ executes the failing bug and the selected corrected snapshot  1140ms
+2026-11-11T06:06:20.2510656Z      ✓ runs non-root with no host socket, no writable snapshot and no external network  576ms
+2026-11-11T06:06:20.2512413Z      ✓ preserves Unicode paths and content in the immutable snapshot  547ms
+2026-11-11T06:06:20.2514127Z      ✓ times out and removes a container including descendant processes  5179ms
+2026-11-11T06:06:20.2533016Z
+2026-11-11T06:06:20.2545640Z  Test Files  2 passed (2)
+2026-11-11T06:06:20.2546593Z       Tests  5 passed (5)
+2026-11-11T06:06:20.2547314Z    Start at  06:06:10
+2026-11-11T06:06:20.2548559Z    Duration  10.16s (transform 78ms, setup 0ms, import 127ms, tests 9.79s, environment 0ms)
+2026-11-11T06:06:20.2549335Z

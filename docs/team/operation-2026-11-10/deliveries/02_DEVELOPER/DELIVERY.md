@@ -1,3 +1,376 @@
+# 02_DEVELOPER: поиск в безопасном immutable индексе
+
+11 ноября 2026, Москва. Исполнитель: Разработчик + GPT Plus.
+Статус поставки: **готово к интеграции**.
+Branch `ops/developer-coscode`, [PR #507](https://github.com/RLM-Company/Nexus-OS/pull/507).
+BASE_SHA `b457cf9655d2c8001249c9c34e0180dcc58d97de`, включает сохранённый main
+`4b74f2694d6281887cecdccddaeff994549ec8f0` (последнее продвижение main — только
+канонические отчёты; они приняты без правок). Source HEAD
+`4eb1b83ccd3f16aa79a4de6cfd8fa063b053fb81`, code tree
+`f99c5cd4c85c3546cc21c1c6d4dfd6d1ba995b3e` совпали локально и на GitHub.
+Финальный docs HEAD фиксируется в PR.
+
+## Что изменилось и где вызывается
+
+Entrypoint: существующий `/code-agent` → create route → `CodeAgentService.propose` →
+`gateway.assertRoute` tool negotiation → текущий model/tool cycle → `search_files` →
+`read_file` immutable blob → проверенный patch → сохранённый proposal/store.
+Раньше list_files показывал лишь короткую выборку; модель не могла искать пути
+по остальному индексу без знания точного имени. Теперь search_files принимает
+буквальный case-insensitive query (1–160 символов; непустой после trim), возвращает
+до32 безопасных путей и total_count/partial. Это поиск имён/путей, не содержимого.
+Regex/произвольный shell/URL/папки ПК не принимаются и не исполняются.
+
+Используется уже разрешённый индекс текущего repo/base SHA. Во время поиска нет
+GitHub/network/blob reads. Дальнейшее read_file по-прежнему требует найденный
+обычный blob, проходит прежние guards и сохраняет точные исходные bytes.
+Секретные пути исключаются также самим search helper. Definition выдаётся только
+в существующем toolMode после gateway negotiation; tools-free fallback сохранён.
+Нового client/work runtime/capability/store нет. Общий лимит6 tool-turns и owner
+budget остались прежними; следующая модельная итерация учитывается тем же gateway.
+Поиск локальный, но это не обещание бесплатности всего модельного цикла.
+
+Изменённые файлы: `apps/api/src/code-agent/{service,proposal-input}.ts`,
+`apps/api/test/{code-agent,code-proposal-input}.test.ts`. UI/contracts/DB/migrations/
+регистрация/зависимости/общий GitHub client не менялись. Откат — revert4eb1b83;
+сохранённые задачи и чужой main не удалять. Прерванный run не переигрывается скрыто.
+
+## Проверки и реальные границы
+
+Scoped API+helper **71 PASS** (Code63 + input8), lint/types предварительно прошли.
+Сквозная fixture: полное tree22 002 обычных путей +2 запрещённых; search ADD.TEST →
+точный hit src/add.test.js → immutable read → durable proposal с before/content.
+Всего3 model fixture turns,1tree и2blob reads; поиск не добавил GitHub запросов.
+Unit проверяет32-hit bound/completeness, literal вместоregex, case/trim,
+credential exclusion и отказ для пустых/oversize/control/лишних полей.
+Существующие cancellation/policy/privacy/fallback/API сценарии повторены в scoped
+наборе. Отдельный новый тест достижения6-turn budget не добавлялся; лимит кода
+не менялся. Реальная модель/GitHub provider/executor в API fixtures не вызывались.
+
+Первый scoped прогон:70PASS/1FAIL — тест ожидал proposal без сохранённого before.
+Ожидание исправлено с проверкой точных preimage bytes. Первый core:exit1 на
+no-control-regex; заменён способ проверки управляющих символов на charCodeAt,
+правило lint не отключено. Прежние ошибки сохранены в fixtures/path-search.
+После исправления scoped lint/types/API71PASS, exit0; полный gate — ниже.
+
+```sh
+pnpm --filter @cosmora/api exec vitest run test/code-proposal-input.test.ts test/code-agent.test.ts
+pnpm --filter @cosmora/api typecheck
+pnpm check:core
+```
+
+Для provider без tools используется прежний single-response путь, search_files ему
+не передаётся. Живая model/GitHub target публикация не выполнялась. Предыдущий UI
+receipt22PASS относится к source0591ed1; этот срез не меняет web и не объявляет его
+за повторную browser-приёмку search tool. Настоящий tmp Git/OCI receipt — отдельно.
+
+## Итоговый gate source4eb1b83
+
+Полный `pnpm check:core` после charCodeAt исправления: **exit0**. Свежие API999
+PASS (включая Code63/input8 и GitHub adapter23). Web290/runtime86/DB205 и
+config17/contracts206/policy43/gateway151/core387 — Turbo cache replay, не новые
+прогоны. Format/secrets/lint/types/build/deploy/connection/live guards/vector-scale/
+media/privacy/profile прошли. Пять opt-in OCI пропущены в root test и отдельно
+выполнены GitHub CI: **5/5 PASS**, run42971336480/job130360371529 на том же
+source4eb1b83. API identity42971336594 success. Verify monorepo и общий Browser
+acceptance ещё выполнялись при последнем чтении; не объявляются пройденными.
+
+В текущей среде pnpm запускался с `pnpm_config_verify_deps_before_run=''` при уже
+готовых pinned dependencies, чтобы избежать автоматического повторного install.
+Никакие lint/types/tests/build не отключены. Diff/формат/secret scan проверены;
+.log дополнительно просканированы по шаблонам ключей. Логи ошибок, успехов и
+exit-файлы сохранены в fixtures/path-search; receipt содержит хеши артефактов.
+
+## Следующая точка
+
+Проверить существующий путь исправления после failed check: UI review/edit →
+retryProposalCheck/check → сохранение proof. Сначала воспроизвести failure → точная
+правка → новый review/check → восстановление checkpoint; не строить второй runtime
+и не добавлять скрытый model retry. Затем закрыть конкретно найденные пробелы
+bounded repair. Truncated tree, общая SPA-навигация и live target publish остаются
+ограничениями из BACKLOG. Полная автономная сфера не объявляется завершённой.
+
+---
+
+# 02_DEVELOPER: безопасный контекст большого репозитория
+
+11 ноября 2026, Москва. Исполнитель: Разработчик + GPT Plus.
+Статус поставленного среза: **готово к интеграции**.
+Branch `ops/developer-coscode`, [PR #507](https://github.com/RLM-Company/Nexus-OS/pull/507).
+BASE_SHA продолжения `cd4c4ad4a1e1eaad3b9c6ad25c16114ba5fe9899`.
+Новый main `5e01c4fddf2bfc87c7e60b82bae5259f154ce879` просмотрен и принят
+merge `2bbb4aa9dde1665f830a832f0aa9df3e94777cec`, чужие правки сохранены.
+Source `d467fdb08c2b45e0d84da17ffcb20541be7b84aa`; исправление fixture
+`0591ed11e7a3e45dbd2ec199d6732c88a8b015fa`.
+Code tree `a27ca3ea0521880ea6d9e75444ec3761f42d53b8` совпал локально и на GitHub.
+Итоговый docs HEAD указывается в PR.
+
+## Пользовательский путь до / после
+
+Entrypoint `/code-agent` → выбор задачи/файлов → существующий create route →
+`CodeAgentService.propose` → текущий GitHub adapter → выбранный immutable blob →
+bounded model context → предложение → preview-diff → review → executor/checkpoint.
+Раньше полное дерево22 002 путей останавливалось с TREE_LIMIT до чтения файла.
+Теперь полные деревья допускаются до100 000 записей в пределах прежних8 MB
+HTTP response adapter. Этот transport limit не увеличен. Читается выбранный
+файл; полный индекс существования сохраняется для отказа при попытке выдать
+непрочитанный существующий файл за новый. Вход модели остаётся <=128 путей/12 KB,
+прочитанные файлы <=40/500 KB. Base SHA и snapshot digest сохраняются.
+
+Усечённое дерево по-прежнему отклоняется до blob/model; неполный индекс не выдаётся
+за доказательство отсутствия файла. Cancellation и отзыв policy во время tree
+retrieval останавливают последующее чтение. Нового GitHub client/runtime/store нет.
+
+Фильтр чтения и diff теперь также запрещает credential config paths (.npmrc,
+.netrc, .pypirc, .envrc, .yarnrc/.yarnrc.yml), приватные директории .ssh/.aws/
+.azure/.kube/.docker, обычные SSH private-key names и p12/pfx/jks/keystore.
+Старые .env/.git/secret/credential/pem/key ограничения сохранены. Это фильтр путей,
+не универсальное доказательство отсутствия секретов в произвольном исходнике.
+Старый snapshot с запрещённым путём блокирует review/automatic check/check/publish,
+но остаётся сохранённым владельцу. Его нельзя «исправить» молчаливым удалением
+поддерживающих файлов и повторным использованием старого proof.
+
+## Изменённые файлы и интеграция
+
+- `apps/api/src/code-agent/service.ts`: лимит полного tree и safe-context fence.
+- `apps/api/test/code-agent.test.ts`: large-tree/preview/check, truncated,
+  cancel/revoke, forbidden tool-read и legacy checkpoint сценарии.
+- `packages/tool-runtime/src/code-agent-diff.ts` и его scoped test: запрет путей.
+- `apps/web/src/app/code-agent/patch-client.ts`: объяснения TREE_LIMIT и
+  CONTEXT_PATH_FORBIDDEN в существующем разделе; дизайн не менялся.
+
+Общих client/contracts/DB/registration/navigation/dependencies/migrations не меняли.
+Нового integration commit кроме принятого main не требуется. Исторический CI
+integrationfcc183d остаётся отдельным. Откат: revert source d467fdb и fixture0591ed1;
+не откатывать принятый чужой main и не удалять checkpoints.
+
+## Проверки и воспроизведение
+
+Перед исправлением: runtime path baseline14 FAIL/25 PASS; large-tree baseline1 FAIL
+с фактическим TREE_LIMIT. После: runtime diff39 PASS; API Coscode62 PASS.
+Первый полный core остановился с exit2 на TS2379 нового теста: optional digest
+назначался обязательному полю при exactOptionalPropertyTypes. Исправлен fixture,
+без отключения типов; baseline и первый gate сохраняются в fixtures/safe-context.
+Итог повторного gate приводится отдельно после завершения.
+
+```sh
+pnpm --filter @cosmora/tool-runtime exec vitest run test/code-agent-diff.test.ts
+pnpm --filter @cosmora/api exec vitest run test/code-agent.test.ts
+pnpm check:core
+KOSMORA_E2E_PRODUCTION=1 KOSMORA_E2E_CHROMIUM_EXECUTABLE=/usr/bin/chromium \
+  pnpm --filter @cosmora/web exec playwright test -c playwright.acceptance.config.ts e2e/code-agent.spec.ts --workers=1 --retries=0
+```
+
+Fixtures задаются в scoped tests: `originals`, `changes`, extraTreePaths22000,
+additionalTreePaths и truncatedTree. Gateway/GitHub transport и executor в API
+сценариях заменены fixtures; service, parsing/diff, policy и SQLite store настоящие.
+Настоящая модель и live target GitHub publish не вызывались. Проверки настоящего
+Git/OCI из предыдущего среза остаются отдельно с указанными SHA, не подменяют
+текущие synthetic executor результаты.
+
+## Итоговые проверки source0591ed1
+
+`pnpm check:core` после исправления fixture: **exit0**. Свежие API997/web290/
+runtime86 PASS; DB205/config17/contracts206/policy43/gateway151/core387 — Turbo
+cache replay. Format/secrets/lint/types/build и deploy/connection/live guards/
+vector-scale/media/privacy/profile завершились успешно. Пять opt-in OCI здесь
+пропущены; внешний CI source0591ed1 выполнил их отдельно: **5/5 PASS**,
+run42969991364/job130356081326. API identity42969991356 success.
+Общий Verify monorepo/Browser acceptance ещё выполнялись при последней проверке;
+их итог не подменяется scoped результатами. Production Chromium22/22 PASS, exit0,
+workers1/retries0 на том же code0591ed1 после core; логи сохранены.
+
+## Оставшиеся границы и следующий шаг
+
+Поиск по остальному индексу пока не доступен модели: list_files возвращает короткую
+выборку, read_file требует точный путь. Следующий scoped срез — ограниченный
+literal search_files в прежнем tool cycle после существующего gateway negotiation,
+без новых GitHub запросов, blob reads или прав. Для усечённого tree остаётся честный
+отказ; безопасная subtree strategy потребует отдельного adapter integration.
+Полная автономная сфера не завершена. Общая SPA-навигация и bounded repair остаются
+в backlog; live model/foreign publish/owner PC/VPS/merge/deploy не выполнялись.
+
+---
+
+# 02_DEVELOPER: третий срез — точная задача и изоляция поздних ответов
+
+Исполнитель: Разработчик + GPT Plus. 10 ноября 2026, Москва.
+Статус поставленных срезов: **готово к интеграции**. Вся автономная сфера ещё не завершена.
+
+- Branch `ops/developer-coscode`, [PR #507](https://github.com/RLM-Company/Nexus-OS/pull/507).
+- Исходный BASE_SHA `f9eb45285f3473bfd3fe9a73939c1903dc696b3b`, контрольный `9d972e8` — его предок.
+- BASE_SHA третьего среза `ab2c39d1df641cc8ae74f060e911e522403b09db`.
+- HEAD_SHA исходников третьего среза `30e19446989dae92ed692a60f593d67cbb716389`.
+- После просмотра общих DB/result-acceptance контрактов принят новый main
+  `f9da6e83c8764949d7a478649b8d680517f1c320`, без конфликтов и без правок чужого кода.
+- HEAD_SHA объединённого кода `589eb3110c6a123f6dcf612f666269b5bd56468e`;
+  tree `870f2aaeb5c7c882e2b919ac5a767c0a7afe6963` совпал локально и на GitHub.
+  Финальный commit только отчётов указывается в PR; самоссылочный SHA в файл не вставляется.
+
+## До / после и действующий entrypoint
+
+`/code-agent?project=…&run=…` раньше искал run лишь среди последних 20 записей,
+затем молча открывал последнюю чужую для этой ссылки задачу. Теперь точная запись
+догружается существующим owner/project-bound GET. При 404 или несовпавшем ID
+показан отказ, другая задача не выбирается. Недоступный project из ссылки также
+не подменяется первым собственным проектом и не вызывает scoped reads.
+
+Переключение проекта/задачи/нового запуска меняет epoch запросов. Поздние ответы
+не восстанавливают прежнюю задачу и не очищают ошибки новой. Unmount редактора
+и смена версии отменяют применимость старого preview/invalidate-review ответа;
+после ухода он не может начать новый preview или внести файлы в другую задачу.
+Сохраняется прежний серверный review/task checkpoint, второй store не создавался.
+
+Изменены `apps/web/src/app/code-agent/page.tsx`, `patch-editor.tsx` и
+`apps/web/e2e/code-agent.spec.ts`. Новых API/contracts/DB/dependencies нет.
+Входы/ответы UI сценариев — явные fixtures внутри E2E; реальная модель не вызывалась.
+Проверяются реальные production UI и запросы через существующие контракты,
+но не live GitHub publish. Прочие срезы и настоящий Git/OCI receipt описаны ниже.
+
+## Проверки третьего среза
+
+На исходниках `30e1944` последовательные web lint, typecheck, strict E2E types,
+production build и **22 browser PASS**, workers=1/retries=0; сохранён exit=0.
+Логи в `fixtures/linked-context/`. Дополнительные сценарии: старая deep link,
+недоступный project/run, неверный ID ответа, позднее завершение после выбора
+другой задачи и поздний invalidate-review при уходе из редактора.
+
+Первый strict E2E typecheck обнаружил TS2345 в двух Promise(requestAnimationFrame).
+Исправлены callbacks тестов, проверка повторена; исходный отказ не объявляется успехом.
+После этого прошли 21, затем с добавленным unavailable-project тестом 22 сценария.
+Проверки объединённого кода после нового main приводятся отдельным разделом ниже.
+
+## Приёмка после объединения с main
+
+На code HEAD `589eb3110c6a123f6dcf612f666269b5bd56468e`:
+
+- `pnpm check:core` **exit0**: format/secrets/lint/types, unit tests,
+  deploy/connection/live-guards/secrets/vector-scale/media-acceptance, build,
+  privacy и profile. Свежие API992/web290/runtime71/DB205 PASS; пять opt-in OCI
+  пропущены здесь и отдельно выполнены внешним job. Config17/contracts206/
+  policy43/gateway151/core387 — Turbo cache replay, не новые прогоны.
+- В свежем API-наборе `code-agent.test.ts`57 и `github-integration.test.ts`23 PASS.
+  Adapter fixtures покрывают lost PR response/reconciliation без дублирующего
+  publish, exact review/base/owner fences и сохранение режима файлов.
+- Production Chromium **22 PASS, exit0**, workers1/retries0, после завершения gate:
+  `KOSMORA_E2E_PRODUCTION=1 KOSMORA_E2E_CHROMIUM_EXECUTABLE=/usr/bin/chromium pnpm --filter @cosmora/web exec playwright test -c playwright.acceptance.config.ts e2e/code-agent.spec.ts --workers=1 --retries=0`.
+- Перед этим ошибочно запущен default Playwright config без executable override:
+  **22 launch failures, exit1**, отсутствовал bundled Chromium executable.
+  Тестовые действия не начинались. Сбой сохранён в coscode-merged-browser.log;
+  исправлены команда/config, браузер не устанавливался и проверки не отключались.
+- GitHub CI run [42886979305](https://github.com/RLM-Company/Nexus-OS/actions/runs/42886979305):
+  **Code sandbox isolation5/5 PASS** (job130077931797), **Verify monorepo success**.
+  API identity run42886979286 success. Общий Browser acceptance оставался in_progress
+  при последней проверке; не объявляется пройденным. Эти receipts относятся к code
+  HEAD589eb31, не к последующему commit только отчётов.
+- `git diff --check`, формат отчётов и secret scan прошли. `.log` дополнительно
+  проверены по шаблонам секретов, поскольку штатный scanner их не включает.
+
+Полные локальные логи и отдельные exit-файлы находятся в fixtures/linked-context.
+Скрипты pnpm в этой среде запускались с `pnpm_config_verify_deps_before_run=''`,
+чтобы не инициировать повторный install при готовых pinned dependencies; сами
+lint/types/tests/build не отключались. Зависимости/lockfile не менялись.
+
+## Интеграция, откат и оставшиеся границы
+
+Общий integration по-прежнему только CI commit `fcc183d`; подробности в INTEGRATION.
+Входящий main принят отдельным merge, DB/облако/другие команды сохранены как есть.
+Откат третьего среза: revert `30e1944`; не откатывать чужой main и не удалять runs.
+Миграций и изменения полномочий нет. Общая SPA-навигация, context больших repo,
+аудит secret-path фильтрации и ограниченное исправление по ошибкам остаются в BACKLOG.
+Live модель/foreign publish, стенд ПК владельца, merge/deploy не выполнялись.
+
+---
+
+# 02_DEVELOPER: второй срез — несохранённые правки Coscode
+
+10 ноября 2026, Москва. Статус срезов 1 и 2: **готово к интеграции**.
+Полная автономная сфера ещё не завершена; backlog и точка продолжения ниже.
+
+- Branch `ops/developer-coscode`, [PR #507](https://github.com/RLM-Company/Nexus-OS/pull/507).
+- BASE_SHA второго среза `e8e64f3df571cc23e2cddb18b5734f741ee8cb3d`.
+- HEAD_SHA кода второго среза `5a5e2e4d3c5cd04c2556c2d065a0cdf8dd8ff62b`.
+- Code tree `faf27b8017d0e91a6fdc06a2a11f64a5a67c5920`; GitHub tree и локальный
+  index совпали. Итоговый docs/artifacts head фиксируется в PR/передаче.
+
+## Пользовательский сценарий второго среза
+
+Entrypoint тот же `/code-agent`. Раньше смена задачи/проекта или reload молча
+теряли локальные edits. Теперь контролы самой страницы требуют явного discard:
+проект, сохранённая задача, новая задача/Code-проект и GitHub Link. Native
+reload/close используют beforeunload. Отказ от перехода сохраняет точный текст.
+Подтверждённый discard открывает выбранное сохранённое состояние. Модель,
+публикация и новое выполнение при отказе не запускаются.
+
+Выбранные изменения по-прежнему сохраняются прежним review endpoint/store и
+восстанавливаются после reload. Автосохранение или второй task store не вводились.
+Неприменённый raw diff имеет отдельный dirty-флаг: сохранение выбранных файлов
+не выдаётся за сохранение сырого патча. Есть «Отменить правки diff»; отмена
+сбрасывает только локальный текст патча и не возвращает старый proof/approval.
+Публикация блокируется, пока raw diff не перенесён или не отменён явно.
+
+Изменены только `apps/web/src/app/code-agent/{page.tsx,patch-editor.tsx,editor-navigation.ts}`
+и `apps/web/e2e/code-agent.spec.ts`. Новых API/contracts/DB/dependencies/permissions нет.
+Next bundled guides use-client и Link/onNavigate прочитаны, дизайн/CSS не менялись.
+Общие файлы вторым срезом не менялись; первый CI integration описан ниже.
+
+## Фактическая проверка второго среза
+
+- Production browser **15 PASS**, workers1/retries0,
+  `/tmp/coscode-navigation-delivery-browser.log`. Проверены отмена переходов,
+  подтверждённый discard, native reload cancel → отдельный review save → reload,
+  сохранность точных edits, raw draft/explicit discard и отсутствие дополнительной
+  генерации/публикации. UI API/GitHub — явные route fixtures, не live publish.
+- Web lint/typecheck и production build прошли до browser в последовательной && цепочке.
+  Во время прогона среда перезапустилась и session registry потеряла ID; процесс
+  продолжил выполнение, полный итог 15 PASS сохранён в логе. Отдельный CLI exit
+  после перезапуска недоступен и не подменяется выдуманным exit0.
+- Дополнительный strict typecheck самого E2E файла прошёл. Первый вызов отказал с
+  TS5112 (TypeScript6 требует --ignoreConfig при явном списке файлов); исправлена
+  команда, а не отключены типы. Staged diff/secrets проверки прошли до публикации.
+- Полный frozen gate/real Git/OCI относятся к первому срезу ниже. Второй срез
+  меняет только UI, их результаты не выдаются за повтор всех backend тестов.
+
+История browser-ошибок сохранена в fixtures/editor-navigation: 11/2, 12/1,
+12/1, 13/1, 14/1 до итоговых 15 PASS. Сначала fixture перехватывала документ
+вместо только API. Затем её hardcoded expectation принимало лишь value=3,
+поэтому намеренный review value=99 оставался без ответа. Первичная гипотеза
+о native reload/AbortController была неверна; этот продуктовый код не оставлен.
+После точного expected review в fixture цельный сценарий прошёл. Последний отказ
+14/1 выявил неверное расположение raw-diff пояснения в скрывающемся после review
+блоке; сообщение перенесено в постоянную область редактора. Повторные запуски
+сопровождались этими конкретными изменениями, не скрывают исходные failures.
+
+## Границы второго среза и следующий шаг
+
+Guard покрывает только контролы самого Coscode и native unload. Общая SPA-навигация
+sidebar/router/back-forward не интегрирована; её канонический guard остаётся у Codex.
+Не заявляется автоматическое сохранение raw diff при закрытии: его нужно перенести
+в выбранные изменения либо явно отменить; оставление страницы требует discard.
+Live foreign publish/модель/owner PC/VPS/merge/deploy не выполнялись.
+
+Историческая точка продолжения второго среза (закрыта третьим): ссылка на run вне последних 20 задач могла выбрать
+list.items[0] вместо запрошенного run. Это замечено по коду initial load handler,
+отдельный сценарий ещё не прогонялся. Проверить exact linked lookup, owner/project
+404 и поздний ответ после смены проекта, затем внедрить через текущий GET/store.
+Context больших repo, secret paths и bounded repair остаются в BACKLOG.
+
+Для воспроизведения второго среза после production build:
+
+```sh
+pnpm --filter @cosmora/web lint
+pnpm --filter @cosmora/web typecheck
+pnpm --filter @cosmora/web build
+KOSMORA_E2E_PRODUCTION=1 KOSMORA_E2E_CHROMIUM_EXECUTABLE=/usr/bin/chromium \
+  pnpm --filter @cosmora/web exec playwright test -c playwright.acceptance.config.ts e2e/code-agent.spec.ts
+pnpm --filter @cosmora/web exec tsc --ignoreConfig --noEmit --strict --target ES2024 --module NodeNext --moduleResolution NodeNext --skipLibCheck --esModuleInterop e2e/code-agent.spec.ts
+```
+
+Откат второго среза — revert `5a5e2e4`, затем его docs. Review/task данные не удаляются.
+Неприменённые локальные drafts не объявляются серверным checkpoint.
+
+---
+
 # 02_DEVELOPER: Coscode — доказательства проверок и отмена OCI
 
 Исполнитель: Разработчик + GPT Plus. 10 ноября 2026, Москва.

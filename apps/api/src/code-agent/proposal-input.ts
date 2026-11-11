@@ -1,3 +1,4 @@
+import { isSafeCodeAgentDiffPath } from "@cosmora/tool-runtime";
 import { CodeAgentError } from "./store.js";
 
 /** Line labels belong to the prompt, never to the canonical snapshot or patch. */
@@ -134,4 +135,27 @@ export function selectCodeContextPaths(
     .filter((e) => ranked.length <= 8 || e.score > 0)
     .slice(0, 8)
     .map((e) => e.path);
+}
+
+/** Literal metadata search only: immutable paths, no regex, blob reads or permissions. */
+export function searchCodeContextPaths(input: unknown, entries: Array<{ path: string }>) {
+  if (!input || typeof input !== "object" || Array.isArray(input))
+    throw new CodeAgentError("INVALID_TOOL_CALL");
+  const args = input as Record<string, unknown>;
+  if (
+    Object.keys(args).length !== 1 ||
+    typeof args.query !== "string" ||
+    !args.query.trim() ||
+    args.query.length > 160 ||
+    [...args.query].some((char) => char.charCodeAt(0) < 32 || char.charCodeAt(0) === 127)
+  )
+    throw new CodeAgentError("INVALID_TOOL_CALL");
+  const query = args.query.trim().toLowerCase();
+  const matches = entries
+    .filter(
+      (entry) => isSafeCodeAgentDiffPath(entry.path) && entry.path.toLowerCase().includes(query)
+    )
+    .map((entry) => entry.path)
+    .sort();
+  return { files: matches.slice(0, 32), total_count: matches.length, partial: matches.length > 32 };
 }

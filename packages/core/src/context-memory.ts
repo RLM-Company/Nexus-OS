@@ -19,15 +19,38 @@ const checkedSize = (value: number): number => {
   if (!Number.isSafeInteger(value) || value < 0) throw new RangeError("Unsafe memory size");
   return value;
 };
+const hasMatchSummary = (bundle: ContextMemoryBundle) =>
+  bundle.answer_evidence !== undefined || bundle.matched_items !== undefined;
+const matchSummary = (count: number) => ({
+  matched_items: count,
+  answer_evidence: count > 0 ? ("matched" as const) : ("absent" as const)
+});
 
 /** Replace numeric/array lengths, not text markers: property order and user text
  * cannot affect the accounting. The bytes field counts its own decimal digits.
  */
-function bundleSizer(bundle: ContextMemoryBundle): (arrayBytes: number, omitted: number) => number {
+function bundleSizer(bundle: ContextMemoryBundle, trackMatches = false) {
+  const emptySummary = matchSummary(0);
   const base =
-    utf8.encode(JSON.stringify({ ...bundle, items: [], omitted: 0, bytes: 0 })).length - 4;
-  return (arrayBytes, omitted) => {
-    const fixed = checkedSize(base + arrayBytes + String(checkedSize(omitted)).length);
+    utf8.encode(
+      JSON.stringify({
+        ...bundle,
+        ...(trackMatches ? emptySummary : {}),
+        items: [],
+        omitted: 0,
+        bytes: 0
+      })
+    ).length - 4;
+  return (arrayBytes: number, omitted: number, matches = 0) => {
+    const summaryDelta = trackMatches
+      ? String(matches).length -
+        1 +
+        matchSummary(matches).answer_evidence.length -
+        emptySummary.answer_evidence.length
+      : 0;
+    const fixed = checkedSize(
+      base + arrayBytes + String(checkedSize(omitted)).length + summaryDelta
+    );
     let bytes = checkedSize(fixed + 1);
     for (;;) {
       const next = checkedSize(fixed + String(bytes).length);
@@ -49,45 +72,39 @@ export function fitContextMemory(
   if (!Number.isSafeInteger(availableBytes)) throw new RangeError("Invalid memory byte budget");
   const compacted = compactContextEvidence(bundle.items);
   const totalOmitted = checkedSize(checkedSize(bundle.omitted) + compacted.length);
-  const measure = bundleSizer(bundle);
+  const trackMatches = hasMatchSummary(bundle);
+  const measure = bundleSizer(bundle, trackMatches);
   const priority = (item: ContextMemoryBundle["items"][number]) =>
     item.priority || item.memory_kind === "constraint";
   const ordered = rankContextEvidence(compacted, query);
   const selected: ContextMemoryBundle["items"] = [];
   let arrayBytes = 2;
   let bytes = 0;
+  let selectedMatched = 0;
   for (const item of ordered) {
     const candidateArrayBytes = checkedSize(
       arrayBytes + (selected.length ? 1 : 0) + utf8.encode(JSON.stringify(item)).length
     );
-    const candidateBytes = measure(candidateArrayBytes, totalOmitted - selected.length - 1);
+    const candidateMatched = selectedMatched + Number(Boolean(item.matched));
+    const candidateBytes = measure(
+      candidateArrayBytes,
+      totalOmitted - selected.length - 1,
+      candidateMatched
+    );
     if (candidateBytes <= availableBytes) {
       selected.push(item);
       arrayBytes = candidateArrayBytes;
       bytes = candidateBytes;
+      selectedMatched = candidateMatched;
     } else if (priority(item)) throw new MemoryContextIncompleteError();
   }
-  const selectedMatched = selected.reduce(
-    (n, item) => checkedSize(n + Number(Boolean(item.matched))),
-    0
-  );
-  // Preserve the exact wire shape of older fixtures: only emit the honesty
-  // fields when the caller supplied them, otherwise adding them would silently
-  // change the measured byte size of the bundle.
-  const honesty =
-    bundle.answer_evidence === undefined && bundle.matched_items === undefined
-      ? {}
-      : {
-          matched_items: selectedMatched,
-          answer_evidence: selectedMatched > 0 ? ("matched" as const) : ("absent" as const)
-        };
   return selected.length
     ? {
         ...bundle,
         items: selected,
         omitted: totalOmitted - selected.length,
         bytes,
-        ...honesty
+        ...(trackMatches ? matchSummary(selectedMatched) : {})
       }
     : undefined;
 }
@@ -103,10 +120,8 @@ export function mergeContextMemory(
       throw new Error("MEMORY_TARGET_MISMATCH");
   }
   const hybrid = present.find((b) => b.retrieval === "hybrid");
-  const honestyProvided = present.some(
-    (b) => b.answer_evidence !== undefined || b.matched_items !== undefined
-  );
-  const matched = present.reduce((n, b) => checkedSize(n + checkedSize(b.matched_items ?? 0)), 0);
+  const items = compactContextEvidence(present.flatMap((b) => b.items));
+  const matched = items.filter((item) => item.matched).length;
   const result: ContextMemoryBundle = {
     ...first,
     ...(hybrid
@@ -115,17 +130,12 @@ export function mergeContextMemory(
           ...(hybrid.semantic_retrieval ? { semantic_retrieval: hybrid.semantic_retrieval } : {})
         }
       : {}),
-    items: compactContextEvidence(present.flatMap((b) => b.items)),
+    items,
     bytes: 0,
     budget_bytes: present.reduce((n, b) => checkedSize(n + checkedSize(b.budget_bytes)), 0),
     omitted: present.reduce((n, b) => checkedSize(n + checkedSize(b.omitted)), 0),
     priority_omitted: present.reduce((n, b) => checkedSize(n + checkedSize(b.priority_omitted)), 0),
-    ...(honestyProvided
-      ? {
-          matched_items: matched,
-          answer_evidence: matched > 0 ? ("matched" as const) : ("absent" as const)
-        }
-      : {})
+    ...(present.some(hasMatchSummary) ? matchSummary(matched) : {})
   };
   const arrayBytes = result.items.reduce(
     (size, item, index) =>
