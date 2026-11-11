@@ -380,6 +380,48 @@ img-src 'none'`; весь динамический контент через tex
       `computer-preload`, `computer-workspace`, `computer-session` (Codex),
       work-кластер (`work-cycle-*`, `work-experience`, `work-result`,
       `work-retry-guard` — пересечение с Codex/desc).
+30. **Аудит computer-остатка (`computer-preload.cjs`, `computer-api-client.cjs`,
+    `computer-workspace.cjs` + каналы в `computer-console.cjs`) — нарушений
+    нет, код не менялся**. Консоль/политика/история/драйвер уже покрыты
+    прежними аудитами (item 10-серия); здесь — оставшаяся тройка:
+    - `computer-preload.cjs`: фиксированный набор invoke-каналов
+      (availability/workspace/browser/projects/start/stop/resume/history/
+      recover/accept/clearHistory + onStatus/onPrefill) — прямого RPC за
+      пределами списка нет; наблюдение: без `Object.freeze` (та же
+      defense-in-depth несимметрия, что у остальных мостов);
+    - `computer-api-client.cjs`: route только `/api/v1/…` без `?`, `#`, `\`;
+      130-секундный дедлайн + внешний signal через `AbortSignal.any`;
+      identity берётся ДО запроса с `expected`-binding (origin+owner) и
+      ПОСЛЕ ответа (смена идентичности отклоняет уже обработанный сервером
+      результат — TOCTOU-узор); redirect manual, равенство response.url,
+      content-type JSON, bounded чтение (200 КБ, reader.cancel в finally),
+      UTF-8 fatal-декодирование (мусор не подменяет текст молча); коды
+      ошибок сервера пропускаются только через whitelist; `begin`: случайный
+      client_secret (32 байта base64url), ответ обязан совпасть по id,
+      planner обязан быть model_gateway/provider (mock отклоняется —
+      честное COMPUTER_LIVE_MODEL_REQUIRED), при сбое — best-effort DELETE
+      с тем же id/token («cancellation is safe… never recreate or retry»);
+      `next`: строгая валидация decision_source (kind/mode, provider_id≠
+      mock, session_id, step, run_id-UUID, длины provider/model);
+      `authorize`: sha256-хэш действия; `end`: DELETE с 5-секундным
+      дедлайном; покрытие — computer-api-client.test;
+    - `computer-workspace.cjs`: codec обязателен (fail-closed); scope-привязка
+      owner+origin на snapshot до и после операции; uploadFile/reserveDownload/
+      verifyDownload — через `resolveSafeWorkspaceTarget` (root-scoped),
+      no-overwrite (`wx`, mode 0600, до 100 попыток), санитизация имени
+      (win32 basename, управляющие символы → `_`, хвостовые точки/пробелы,
+      ≤150), verifyDownload — двойная стат-перепроверка (size/mtime/ino/dev)
+      с bounded-receipt; `execute`: binding до/после, bounded параметры
+      (30 записей/15 результатов/10 КБ чтение), `workspace_update` требует
+      полного чтения версии перед заменой (честная ошибка конфликта),
+      `result.rootPath` вырезается из выдачи (путь серверу не утекает),
+      выдача ограничена 15000 байт; workspace/*-внутренности — зона Codex
+      (граница аудита: обёртка); покрытие — computer-workspace.test;
+    - каналы workspace-status/select в console: `trusted(event)` +
+      `checkedContext` + identity-перепроверка после диалога выбора папки;
+      при ошибке — invalidate.
+      На этом map остатка (в-sphere): пусто; вне границы остались только
+      `computer-session` и work-кластер (Codex/desc — их аудируют их пакеты).
 
 ## Что делать следующему запуску (в порядке приоритета)
 
