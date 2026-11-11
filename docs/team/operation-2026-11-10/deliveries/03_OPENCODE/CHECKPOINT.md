@@ -258,29 +258,51 @@ main.cjs`, package.json parse, prettier clean (оба файла), `npm run chec
     предшествовал протокольный шаг 1 — флаг `--fixture` в bench (`fe2e981d`,
     дефолт v1 не изменён, prettier-clean, node --check pass). На момент записи
     закрыт первый кейс v2 (`conditional-anchors-all-safe`, partial 1/4).
+24. **Прогон №3 завершён; отчёт оформлен (PR #523, merge — решение владельца)**.
+    4/4 кейса, exit 0, partial удалён bench'ем; отчёт data-only
+    `experience-llm-distill-semantics-2026-11-10-report.json` закоммичен в
+    desc-ветке (`dd9158bd`), протокол дополнен итогом (статус-блок обновлён).
+    Честные числа: parse_ok 3/4, deterministic_pairs 4, forbidden_carried 2,
+    relevant_carried 11/14, declared_lost recovered 2/3, fabricated_file_tokens
+    0, stale_step_leak 4, within_budget 3/4, median_reduction 1 (extractive
+    0.7935). Это НЕ воспроизведение прогона №1 (другая фикстура, другой sha).
+25. **Срез «Повторить» для прерванных загрузок — реализован (явное одобрение
+    владельца, VISUAL_WAITLIST п. 1)**. Ретрай возможен только пока главный
+    процесс помнит исходный URL в памяти сессии: `download-center.cjs` хранит
+    `retrySources` (id → {url, origin, epoch}, потолок 50; запись при capture из
+    первого элемента redirect-цепочки — она уже прошла полный policy-gate;
+    удаление при завершении, кроме interrupted; полная очистка при invalidate).
+    Ручной IPC `cosmora:downloads:retry` перепроверяет: авторизацию окна
+    (sender/frame/url/origin/epoch/owner), актуальность origin/epoch источника,
+    `history.statusOf(scope, id) === "interrupted"` (новый метод в
+    `download-history.cjs`), живое главное окно с разрешённой same-origin
+    страницей (`isAllowedRemoteNavigation`); повтор идёт через
+    `webContents.downloadURL()` БЕЗ навигации и заново проходит весь
+    will-download policy-gate (fail-closed). URL не попадает ни на диск, ни в
+    рендерер — контракт окна «Ссылки скачивания не сохраняются» соблюдён; в
+    public-записи только булев флаг `retryable`. Рендерер: кнопка «Повторить»
+    только у interrupted с `retryable`, общий стиль `button`, компоновка не
+    менялась. Тесты: 4 новых в download-center (happy path с проверкой «URL не
+    на диске», отказы completed/unknown/stale-owner/stale-origin, требование
+    разрешённой страницы, очистка при invalidate) + `statusOf` в
+    download-history; `npm run check` → **448 тестов / 0 fail**, prettier clean.
+    Ограничение зафиксировано в DELIVERY: после рестарта приложения ретрая нет.
 
 ## Что делать следующему запуску (в порядке приоритета)
 
-1. **Дождаться прогона №3** (фикстура v2 semantics, фоновый; при обрыве —
-   RESUME той же командой с `--fixture packages/db/test/fixtures/semantic-
-experience-distill-semantics-evaluation.json`). По завершении: сверить
-   реальные числа, закоммитить отчёт
-   `docs/research/experience-llm-distill-semantics-2026-11-10-report.json` в
-   desc-ветку; сравнение с прогоном №1 — только по общим метрикам (это не
-   воспроизведение). Строки очередей и внедрение — решение владельца.
+1. **PR #523 (desc)**: отчёт прогона №3 (semantics v2) — merge только владельцем;
+   строки очередей и внедрение — отдельное решение владельца.
 
-2. **PR #502 и PR #515 слиты в main** (07:19Z / 07:20Z 2026-11-11). Пушу в
-   `ops/opencode-windows` после merge не входят ни в один PR — следующие
-   правки delivery-документов ждут следующей интеграционной волны (как п. 20).
+2. **Срез «Повторить»**: код и тесты на ветке `ops/opencode-windows`, PR открыт
+   (см. DELIVERY, срез 5); merge — владелец/Codex. После любого нового main:
+   проверить новые общие контракты ПРЕЖДЕ чем разрешать конфликты (не автопик
+   своей версии).
 
-3. **После любого нового main**: проверить новые общие контракты ПРЕЖДЕ чем
-   разрешать конфликты (не автопик своей версии).
-
-4. **Следующий вертикальный срез ops-сферы**: очереди 1–4 аудит-завершены без
-   нарушений (см. пункт 10), срез 6 реализован (п. 11), logout-паритет (п. 13)
-   и guard графа упаковки (п. 14) — реализованы. Дальше по очереди владельца:
-   оставшиеся installer-этапы (upgrade/uninstall) — только VM/CI; любые новые
-   видимые функции — через VISUAL_WAITLIST и решение владельца.
+3. **Дальше по очереди владельца**: live-приёмка (cookie gateway, DPAPI,
+   reconnect при живом сервере) остаётся отложенной; installer-этапы
+   upgrade/uninstall уже покрыты заданием NSIS в CI (Fresh / Upgrade+uninstall /
+   SHA-256 артефакта); любые новые видимые функции — через VISUAL_WAITLIST и
+   решение владельца.
 
 ## Границы (не нарушать)
 
