@@ -266,3 +266,48 @@ did-navigate-in-page) идемпотентен, двойное срабатыв�
 является намерением выхода); добавлены кейсы `?reason=session-end` → true,
 `#top` → true, `signout?step=2` → true, `/logout/other` → false.
 `npm run check` → **448 тестов / 0 fail**, prettier clean.
+
+---
+
+## Срез 7 (добавление, 2026-11-11): hardening мостов + прямые тесты checkpoint-text
+
+**Одобрение**: владелец делегировал выбор направления («бери то, что хочешь»)
+после merge #529; выбран hardening-мини-срез как закрывающий оба записанных
+наблюдения item 29 без изменения поведения.
+
+**Проблема (два наблюдения item 29)**: (1) `Object.freeze` был только у части
+contextBridge-мостов; (2) у `checkpoint-text.cjs` (`containsCredentialText` —
+фильтр целей/итогов/подписей, потребители: computer-history,
+work-cycle-policy, work-experience, work-result) не было прямых тестов —
+покрытие только косвенное через потребителей.
+
+**Решение (а) — freeze 9/9 мостов**: заморожены `cosmoraDesktop`,
+`kosmoraDesktopDraft`, `kosmoraDesktopComputer`, `kosmoraDesktopWork`
+(preload.cjs), `kosworkComputer` (computer-preload.cjs), `kosworkBrowser`
+(work-cycle-preload.cjs). Замороженные ранее не тронуты: `kosmoraDesktopVault`,
+downloads- и vault-мосты. Freeze — defense-in-depth: фиксированная поверхность
+renderer-API; набор каналов IPC и поведение не менялись. Урок процесса: при
+аудите freeze-карты первый grep был обрезан и `kosworkBrowser` выпал из поля —
+полную перепроверку («9 exposeInMainWorld / 9 Object.freeze, голых нет») делаю
+после основных правок, фактура в CHECKPOINT item 32.
+
+**Решение (б) — прямой тест**: `test/checkpoint-text.test.cjs`, 2 теста /
+31 кейс. Flagged (22): Bearer, password/passwd, api-key/api_key,
+access-token, secret, пароль/ПАРОЛЬ (кириллица, iu-флаги), код/ПИН 4–8 цифр,
+em-dash-разделитель, ghp_/gho_/github_pat_, sk-, PEM RSA/OPENSSH. Allowed
+(9): пустая строка, реальные цели, «шаг 3 из 5», номера заказов, даты,
+«кодировка…» («код» без цифр рядом не срабатывает), «run code review»,
+UUID чата.
+
+**Проверки**: `npm run check` → **450 тестов / 0 fail** (448 + 2), prettier
+clean; реальные EXE/GUI-прогоны — VM/CI (NSIS-задание при ревью).
+
+**Замечание (первый пуш, ретрай)**: локальный `npm run check` в
+desktop/windows не включает корневой `check:secrets`, и первый прогон CI
+упал на шаге «Run quality gate»: сканер флагнул литералы
+`-----BEGIN … PRIVATE KEY-----` в новом тесте как «private key». Сканер не
+менялся (allowlist не добавлялся) — вместо этого PEM-заголовки строятся в
+тесте рантайм-конкатенацией (`pemHeader = (alg) => …`): проверяемое значение
+то же, покрытия PEM-ветки нет потери, в исходнике нет литерала-триггера.
+Урок: при добавлении credential-подобных фикстур прогонять
+`node scripts/check-secrets.mjs` из корня до пуша.

@@ -440,17 +440,40 @@ img-src 'none'`; весь динамический контент через tex
     перевёрнут в true с rationale (cleanup не следует за redirect-целью);
     добавлены кейсы ?reason=, #top, ?step=, logout/other → false.
     `npm run check` → **448 тестов / 0 fail**, prettier clean.
+32. **Срез: hardening мостов + прямые тесты checkpoint-text — реализован
+    (выбор владельца «бери то, что хочешь»; закрывает оба записанных
+    наблюдения item 29, без изменения поведения)**.
+    (а) `Object.freeze` вокруг объекта API доведён до **9/9**
+    contextBridge-мостов. Заморожены в срезе: `cosmoraDesktop`,
+    `kosmoraDesktopDraft`, `kosmoraDesktopComputer`, `kosmoraDesktopWork`
+    (preload.cjs), `kosworkComputer` (computer-preload.cjs) и
+    `kosworkBrowser` (work-cycle-preload.cjs — найден при полной
+    перепроверке карты после основных правок: первый grep был обрезан,
+    шестой мост выпал из поля). Уже были заморожены ранее:
+    `kosmoraDesktopVault`, downloads- и vault-мосты. Freeze —
+    defense-in-depth: поверхность renderer-API фиксирована, мутация со
+    стороны страницы не может изменить набор каналов; каналы IPC и
+    поведение не менялись.
+    (б) Новый прямой тест `test/checkpoint-text.test.cjs` (2 теста,
+    31 кейс) закрывает наблюдение «нет прямых тестов у checkpoint-text»:
+    22 flagged-кейса (Bearer, password/passwd, api-key/api_key,
+    access-token, secret, пароль/ПАРОЛЬ — кириллица с iu-флагами,
+    код/ПИН 4–8 цифр, em-dash-разделитель, ghp_/gho_/github_pat_, sk-,
+    PEM RSA/OPENSSH) и 9 allowed-кейсов (пустая строка, реальные цели,
+    «шаг 3 из 5», номера заказов, даты, «кодировка…» — «код» без цифр
+    рядом не срабатывает, «run code review», UUID чата).
+    `npm run check` → **450 тестов / 0 fail** (448 + 2), prettier clean.
 
 ## Что делать следующему запуску (в порядке приоритета)
 
-1. **Merge #523 (desc)** — после фикса `73bf04f1` CI должен быть зелёным; это
-   чинит format-gate main для ВСЕХ будущих PR. Merge только владельцем;
-   строки очередей и внедрение дистилляции — отдельные решения владельца.
+1. **Merge среза hardening** (PR с ветки ops/opencode-windows): freeze 9/9
+   мостов + прямые тесты checkpoint-text (item 32). CI — стандартные 4 чека;
+   merge только владельцем.
 
-2. **Затем CI #525**: после merge #523 запушить локальный ops-док-коммит
-   (CHECKPOINT item 26) — пуш перезапустит Verify monorepo на чистом main →
-   все 4 чека зелёные → merge #525 владельцем/Codex. Если вместо пуша владелец
-   нажмёт «Re-run failed jobs» после merge #523 — эффект тот же.
+2. **Затем по очереди владельца**: внедрение дистилляции «Опыт выполнения»
+   (данные measurement-only в main: прогон №2 REPRODUCED 13/13, прогон №3
+   semantics 4/4 — решение владельца); live-приёмка остаётся отложенной;
+   Multi-Agent — последний раздел.
 
 3. **После любого нового main**: проверить новые общие контракты ПРЕЖДЕ чем
    разрешать конфликты (не автопик своей версии).
