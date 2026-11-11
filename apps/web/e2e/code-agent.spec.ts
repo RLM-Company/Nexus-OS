@@ -316,18 +316,62 @@ test("selects and edits real server proposal, binds check to review and requires
 });
 
 test("an old editor cannot overwrite or invalidate a newer saved review", async ({ page }) => {
-  const state = await scenario(page);
+  const state = await scenario(page, false, {}, (n) => `export const value = ${n === 1 ? 3 : 4};`);
   await prepare(page);
   state.concurrentReview();
   const before = state.snapshot();
   await page.getByLabel("+ Итоговое содержимое: src/value.js").fill("export const value = 4;");
-  await expect(page.getByRole("alert")).toContainText("Предложение или просмотр изменились");
+  await expect(page.getByRole("main").getByRole("alert")).toContainText(
+    "Предложение или просмотр изменились"
+  );
   await page.getByRole("button", { name: "Сохранить выбранные изменения" }).click();
-  await expect(page.getByRole("alert")).toContainText("Предложение или просмотр изменились");
+  await expect(page.getByRole("main").getByRole("alert")).toContainText(
+    "Предложение или просмотр изменились"
+  );
   await expect(page.getByLabel("+ Итоговое содержимое: src/value.js")).toHaveValue(
     "export const value = 4;"
   );
   expect(state.snapshot()).toEqual(before);
+  expect(state.publications()).toBe(0);
+  page.once("dialog", (dialog) => void dialog.dismiss());
+  await page.getByRole("button", { name: "Загрузить сохранённые правки" }).click();
+  await expect(page.getByLabel("+ Итоговое содержимое: src/value.js")).toHaveValue(
+    "export const value = 4;"
+  );
+  page.once("dialog", (dialog) => void dialog.accept());
+  await page.getByRole("button", { name: "Загрузить сохранённые правки" }).click();
+  await expect(page.getByLabel("+ Итоговое содержимое: src/value.js")).toHaveValue(
+    "export const value = 99;"
+  );
+  await page.getByLabel("+ Итоговое содержимое: src/value.js").fill("export const value = 4;");
+  await page.getByRole("button", { name: "Сохранить выбранные изменения" }).click();
+  await expect(page.getByText("Просмотр соответствует выбранным изменениям.")).toBeVisible();
+  expect(state.snapshot().draft).toMatchObject({
+    plan: { files: [{ path: "src/value.js", content: "export const value = 4;" }] }
+  });
+  expect(state.publications()).toBe(0);
+});
+
+test("explicit checkpoint restoration also discards unapplied raw diff without restoring old proof", async ({
+  page
+}) => {
+  const state = await scenario(page);
+  await prepare(page);
+  await page.getByText("Редактировать минимальный diff", { exact: true }).click();
+  const raw = page.getByLabel("Редактируемый unified diff");
+  const original = await raw.inputValue();
+  await raw.fill(original + "# unsaved raw draft\n");
+  await expect.poll(() => state.snapshot().status).toBe("review");
+  page.once("dialog", (dialog) => void dialog.dismiss());
+  await page.getByRole("button", { name: "Загрузить сохранённые правки" }).click();
+  await expect(raw).toHaveValue(original + "# unsaved raw draft\n");
+  page.once("dialog", (dialog) => void dialog.accept());
+  await page.getByRole("button", { name: "Загрузить сохранённые правки" }).click();
+  await expect(raw).toHaveValue(original);
+  await page.getByText("Редактировать минимальный diff", { exact: true }).click();
+  await expect(raw).toBeVisible();
+  expect(state.snapshot().check).toBeUndefined();
+  expect(state.checks()).toBe(1);
   expect(state.publications()).toBe(0);
 });
 

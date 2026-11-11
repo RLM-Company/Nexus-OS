@@ -197,6 +197,7 @@ export default function CodeAgentPage() {
   const [autoCheck, setAutoCheck] = useState(false);
   const [proofDirty, setProofDirty] = useState(false);
   const [patchTextDirty, setPatchTextDirty] = useState(false);
+  const [editorRevision, setEditorRevision] = useState(0);
   const confirmDiscard = useCodeEditorNavigationGuard(proofDirty || patchTextDirty);
   const invalidation = useRef<Promise<void> | null>(null);
   const editingInvalidated = useRef(false);
@@ -225,6 +226,7 @@ export default function CodeAgentPage() {
     }
     const identity = `${value.id}:${value.proposal_hash ?? ""}`;
     if (restore || proposalIdentity.current !== identity) {
+      if (restore) setEditorRevision((version) => version + 1);
       editingInvalidated.current = false;
       editorReviewHash.current = value.draft?.plan.review_hash ?? null;
       invalidation.current = null;
@@ -378,7 +380,7 @@ export default function CodeAgentPage() {
     try {
       const value = await operation();
       if (epoch.current !== actionEpoch) return;
-      accept(value);
+      accept(value, replacesEditor);
       if (reconcile && !["uncertain", "publishing"].includes(value.status)) {
         markPublication(project, value.id, false);
         setUnknownPublish(false);
@@ -711,6 +713,14 @@ export default function CodeAgentPage() {
               >
                 Обновить состояние
               </button>
+              <button
+                disabled={!editable || !run.proposal}
+                onClick={() =>
+                  void action(() => api<Run>(`${root}/${encodeURIComponent(run.id)}`), false, true)
+                }
+              >
+                Загрузить сохранённые правки
+              </button>
               {["running", "checking"].includes(run.status) && (
                 <button
                   disabled={busy}
@@ -873,7 +883,7 @@ export default function CodeAgentPage() {
               </p>
               {run.proposal_diff && run.proposal_snapshot_digest && run.proposal_hash && (
                 <CodePatchEditor
-                  key={`${run.id}:${run.proposal_hash}`}
+                  key={`${run.id}:${run.proposal_hash}:${editorRevision}`}
                   project={project}
                   id={run.id}
                   baseSha={run.base_sha}

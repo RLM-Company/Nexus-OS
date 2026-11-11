@@ -1,6 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { setImmediate as nextTurn } from "node:timers/promises";
 import { readFileSync } from "node:fs";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import Fastify from "fastify";
 import { loadServerConfig } from "@cosmora/config";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -120,6 +123,7 @@ const entry = (toolCalling: boolean): ModelRegistryEntry => ({
 
 async function fixture(
   options: {
+    databaseFile?: string;
     clock?: RuntimeClock;
     operationTimeoutMs?: number;
     providerDelayMs?: number;
@@ -139,7 +143,7 @@ async function fixture(
     registryNow?: number;
   } = {}
 ) {
-  const database = openDatabase(":memory:");
+  const database = openDatabase(options.databaseFile ?? ":memory:");
   await runMigrations(database);
   const projects = new ProjectStore(database.sqlite),
     policy = new PolicyStore(database.sqlite),
@@ -1101,8 +1105,11 @@ describe("Code agent real gateway/GitHub/policy vertical", () => {
     expect(f.githubCalls.every((call) => call.method === "GET")).toBe(true);
   });
   it("conflicts stale editors before writes or proof invalidation, then restores a repaired checkpoint", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "coscode-repair-checkpoint-"));
+    const databaseFile = join(directory, "task.sqlite");
     let calls = 0;
     const f = await fixture({
+      databaseFile,
       runner: {
         run: (input) =>
           Promise.resolve({
@@ -1117,6 +1124,7 @@ describe("Code agent real gateway/GitHub/policy vertical", () => {
           })
       }
     });
+    resources.push(() => rm(directory, { recursive: true, force: true }));
     const id = await f.start();
     const first = await f.review(id);
     const oldHash = first.draft!.plan.review_hash;
@@ -1157,6 +1165,21 @@ describe("Code agent real gateway/GitHub/policy vertical", () => {
     );
     expect(restored.publication_token).toBe(checked.publication_token);
     expect(f.providerCalls).toHaveLength(3);
+    await f.service.stop();
+    const reopened = openDatabase(databaseFile);
+    try {
+      const recovered = new CodeAgentStore(reopened.sqlite);
+      recovered.recover();
+      const saved = recovered.get(id, owner)!;
+      expect(saved.status).toBe("checked");
+      expect(saved.check).toEqual(before.check);
+      expect(saved.publication_token).toBe(checked.publication_token);
+      const draft = new GithubDraftStore(reopened.sqlite).get(saved.draft_id!, owner)!;
+      expect(draft.plan.files.map(({ path, content }) => ({ path, content }))).toEqual(edits);
+      expect(recovered.get(id, "another-owner")).toBeNull();
+    } finally {
+      reopened.close();
+    }
   });
   it("negotiates bounded path search, reads the selected immutable hit and persists the resulting proposal", async () => {
     const f = await fixture({
