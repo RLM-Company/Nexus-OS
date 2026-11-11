@@ -1,12 +1,107 @@
 # DELIVERY — 03_OPENCODE · срез 1: восстановление базовой линии и приёмка guard'а installer lifecycle
 
 - Статус: **готово к интеграции** (дальнейшие статусы подтверждает Codex).
-- Ветка: `ops/opencode-windows` · PR: открывается этим же запуском (см. DIRECT-ссылку в конце).
+- Ветка: `ops/opencode-windows` · PR: **#502** https://github.com/RLM-Company/Nexus-OS/pull/502
 - BASE_SHA: `9d972e8ba447f681fbfb49253b73d9f02dd1d325` (= origin/main на 10.11.2026,
-  сверено `git merge-base --is-ancestor` → true).
-- Код-коммит: `9e7c6c07` — fix(acceptance): verify installer guard refusal without pwsh.
+  сверено `git merge-base --is-ancestor` → true; по факту 10.11 origin/main вырос до
+  `f9eb4528` — docs/operation-#500, сфера desktop/windows НЕ изменилась, конфликтов нет).
+- Код-коммиты: `9e7c6c07` guard-фикс; `e3cbd1a8` диагностика; `dea0fb14` hosted-logout
+  паритет очистки сеанса.
 - HEAD_SHA: последний коммит ветки (docs-коммит этой передачи), точное значение — в
-  описании PR (вычисляется фактом коммита; содержательный код — 9e7c6c07).
+  описании PR.
+
+---
+
+## Срез 4 (добавление): guard полноты графа упаковки
+
+**Найденный пробел**: мои новые модули `diagnostics.cjs` и `session-cleanup.cjs`
+(требуемые main.cjs) отсутствовали в `pkg.build.files` (include-набор electron-builder)
+и в списке `ci/verify-unsigned-policy.cjs` — упакованный EXE падал бы на старте
+(`Cannot find module`). Существующий guard это не ловил: он проверяет только «свой»
+фиксированный список и не защищает от рассинхронизации его с реальным графом
+`require` из main.cjs.
+
+**Стало**:
+
+- оба файла добавлены в `package.json` (build.files) и в список
+  `ci/verify-unsigned-policy.cjs` (двойная фиксация, как у соседних модулей);
+- новый `ci/check-package-graph.cjs`: статический обход графа локальных
+  `require("./…")` от `main.cjs` (56 скриптов) против `build.files` + wildcard'ы,
+  double-use как CLI (`process.exitCode` при пропусках) и как модуль;
+- постоянный тест `test/package-graph.test.cjs`: (1) граф полный — каждый
+  достижимый require внутри build.files («упакованный EXE обязан находить все свои
+  модули»), (2) новые/исполнительные модули включены ЯВНО (не wildcard'ом).
+  Теперь пропавший из пакета модуль ловится в самом `npm run check`, а не в CI.
+
+**Изменённые файлы**: `desktop/windows/package.json`, `desktop/windows/ci/verify-unsigned-policy.cjs`,
+`desktop/windows/ci/check-package-graph.cjs` (новый), `desktop/windows/test/package-graph.test.cjs` (новый).
+
+**Фактические проверки**: `node ci/check-package-graph.cjs` → «files walked: 56; misses: 0»;
+`npm run check` → exit 0 (**443 теста, 0 fail**).
+
+---
+
+# Срез 3 (добавление): паритет очистки браузерного сеанса при hosted-выходе
+
+**Найденный пробел** (аудит.logout-оркестрации): native-меню «Выйти и удалить локальные
+данные…» выполняет `clearStorageData` + `clearCache`, а hosted-first-party `/logout`
+(включая SPA-переходы) — только черновики/историю/владельца. Остатки
+localStorage/cache прежнего владельца могли доживать до следующего входа на тот же
+origin (partition привязан к origin, не к владельцу).
+
+**Стало**: новый `desktop/windows/session-cleanup.cjs` (`clearBrowserSessionData` —
+фиксированный порядок storage→cache, ошибки не гасятся, 3 теста на контракт) и
+включение очистки в обе пост-навигационные точки hosted-выхода
+(`did-navigate` full-doc по явному `/logout`, `did-navigate-in-page` по SPA-выходу)
+с честным предупреждением при неудаче. **Решённая проблема тайминга**: очистка
+ни при каких путях не отправляется из `will-navigate` — там она могла бы удалить
+session cookie ДО ухода запроса `/logout` на сервер и сервер не смог бы инвалидировать
+владельца. Меню-выход и origin-switch переведены на тот же helper (устранено
+тройное дублирование с риском дрифта).
+
+**Изменённые файлы**: `desktop/windows/session-cleanup.cjs` (новый),
+`desktop/windows/test/session-cleanup.test.cjs` (новый), `desktop/windows/main.cjs`
+(require + 4 точки очистки + `warnSessionResidueAfterLogout`), `desktop/windows/package.json` (check).
+
+**Фактические проверки**: `node --test test/session-cleanup.test.cjs` → 3 pass;
+`npm run check` → exit 0 (**441 тестов, 0 fail**).
+
+---
+
+# Срез 2 (добавление): вертикальный срез «встроенная диагностика» (очередь №6)
+
+Пользовательский путь: меню **Application → «Состояние локального профиля…»** →
+содержательный отчёт нативного диалога (без изменений web-UI и компоновки; пункт меню уже существовал).
+
+**Было**: диалог показывал только профиль (каталог/запись/MSIX-redirect) — версии,
+состояние подключения/владельца, активные загрузки и ключ обновлений вне диалога.
+
+**Стало**: тот же диалог содержит полный отчёт: версия/окружение (упаковка, secure
+storage, single-instance lock), активный сервер + подтверждение владельца в этой
+генерации identity, каталог профиля + причины, активные загрузки (счётчик), состояние
+ключа релизов, отдельный блок неисправностей и время отчёта.
+
+**Границы secret-безопасности** (покрыты тестами `test/diagnostics.test.cjs`):
+
+- никогда не включаются: id владельца, cookies, токены, имена/пути пользовательских
+  файлов и скачанных артефактов;
+- origin приводится к чистому `scheme://host[:port]` (query/`access_token=…` отбрасываются);
+- неизвестные поля входа игнорируются by-design; управляющие символы и длина
+  неисправностей ограничиваются (240/срез, max 8);
+- детерминированный текст при фиксированном времени (инъекция `now`).
+
+**Изменённые файлы**: `desktop/windows/diagnostics.cjs` (новый, чистый/инъекционный);
+`desktop/windows/test/diagnostics.test.cjs` (новый, 5 тестов);
+`desktop/windows/main.cjs` (require + `showProfileStatus`, message-инварианты прежние,
+`profileStatusText` для диалога больше не используется); `desktop/windows/package.json`
+(`node --check diagnostics.cjs` в check-цепочке).
+
+**Фактические проверки**: `node --test test/diagnostics.test.cjs` → 5 pass / 0 fail;
+`npm run check` → exit 0 (60 синтаксис-проверок + 438 тестов, 0 fail).
+
+---
+
+# Срез 1 (основная передача)
 
 ## Сценарий до/после (конкретный)
 
@@ -92,7 +187,8 @@ skip только если отсутствуют оба шелла (чисто 
 
 ## Следующий шаг (очередь владельца)
 
-Срез 2/3: вертикальная реализация по сфере downloads/local profile/credential storage
-(owner/origin isolation, версии, non-overwrite, контролируемая очистка logout) —
-начать с чтения `download-center.cjs`, `download-history.cjs`, `local-vault.cjs`,
-`profile-environment.cjs` и их тестов, затем добивать найденные gaps срезом с тестами.
+Аудиты очереди 1–4 завершены без найденных нарушений (детализация — CHECKPOINT.md);
+срез 6 (диагностика) реализован коммитом `e3cbd1a8`. Следующие шаги: если владелец
+одобрит — UI-идея «Повторить» в Центре загрузок записана в VISUAL_WAITLIST (не в
+этой петле); installer-проверки upgrade/uninstall и воспроизводимый сценарий
+приёмки — в VM/CI; при новых срочных gap'ах — вертикальные срезы по очереди.

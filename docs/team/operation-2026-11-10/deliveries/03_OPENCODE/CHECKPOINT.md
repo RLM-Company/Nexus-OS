@@ -72,28 +72,204 @@
 - Правила пакета прежние: без фейковых чисел (exit 2/3), weights вне репо, bench не
   в CI, PR только с отчётом, решение о внедрении — за владельцем.
 
+## Выполнено после первой записи CHECKPOINT (дополнение 10.11)
+
+9. **Страница PR: #502** https://github.com/RLM-Company/Nexus-OS/pull/502 —
+   MERGEABLE, CI 4 задачи запущены. Ветки: коммиты `9e7c6c07` (код),
+   `c0b1439b` (docs), затем `e3cbd1a8` (диагностика).
+10. **Аудит очереди №4 (downloads/local profile/credential storage) — нарушений нет**:
+    - `local-vault.cjs`: scope = sha256([origin, owner]) → отдельные `vault-<scope>.json`
+      и `Kosmora-vault-<scope24>`; non-overwrite через content-addressed id (sha256);
+      atomic temp+fsync+rename; anti-TOCTOU чтение (O_NOFOLLOW, nlink=1, ino/dev);
+      blob-первым-перед-manifest; изоляция owner/origin, dedupe, hardlink-защита и
+      tamper — покрыты local-vault.test.cjs (24 сценария);
+    - `download-history.cjs`: scope sha256(origin\0owner), v1-формат, active→interrupted
+      при рестарте (crash recovery), bounded 50 (active не выселяются),
+      credential-redaction в серверных именах файлов; download-center.test /
+      download-history.test — 13 сценариев (owner switch / server switch,
+      epoch-гонка, отказ без owner и др.);
+    - `main.cjs` logout-оркестрация (native menu 800s, hosted /logout 907s): identityEpoch++,
+      invalidate поверхностей, forget по owner+origin, clearStorageData/clearCache,
+      failure → honest dialog; смена origin — commit-phase без отмены (полная очистка
+      предыдущего сервера);
+    - `profile-environment.cjs`: probe-write отказа/MSIX/redirect, ничего не мигрирует.
+11. **Срез 6 — встроенная диагностика (вертикальный срез, реализован)**:
+    - новый `desktop/windows/diagnostics.cjs` (чистый, инъекционный): app-факты,
+      подключение (origin + владелец в генерации), профиль, активные загрузки,
+      pinned ключ релизов, неисправности; секреты (id владельца, cookies, токены,
+      имена/пути файлов) не собираются by-design; origin → чистый schema://host:port;
+      неизвестные поля входа игнорируются; ограничение неисправностей 240 симв./8 шт.;
+      детерминированный вывод при фиксированном now;
+    - `main.cjs`: require + `showProfileStatus` показывает отчёт в СУЩЕСТВУЮЩЕМ
+      нативном пункте меню (message-инварианты прежние; profileStatusText более
+      не используется диалогом; ownerVerified — строго ownerCache bound к origin и не
+      истёк);
+    - `test/diagnostics.test.cjs`: 5 тестов (стабильность формата, отсутствие утечек
+      секретов при «испачканном» входе, обрезка неисправностей, кривые типы без
+      выдуманных значений, прямое сообщение о непроверенном входе);
+    - `package.json`: `node --check diagnostics.cjs` в check-цепочке;
+    - **npm run check: exit 0, 438 тестов (0 fail)**.
+12. VISUAL_WAITLIST.md записан: идея «Повторить» в Центре загрузок — только решение
+    владельца.
+13. **Срез 3 — hosted-logout паритет очистки сеанса (реализован, коммит `dea0fb14`)**:
+    найденный пробел — меню-выход чистил `clearStorageData`+`clearCache`, hosted
+    first-party `/logout` — только черновики/историю. Новый `session-cleanup.cjs`
+    (фиксированный порядок, ошибки не гасятся, 3 теста), очистка подключена к
+    did-navigate (full-doc явный /logout) и did-navigate-in-page (SPA) — НИКОГДА из
+    will-navigate, чтобы не удалить session cookie до ухода серверного /logout
+    запроса; меню-выход и origin-switch переведены на тот же helper (устранено
+    тройное дублирование). **npm run check: exit 0, 441 тестов (0 fail)**.
+14. **Срез 4 — guard полноты графа упаковки (реализован, коммит `2ee7079a`)**:
+    пропущенные из build.files модули (`diagnostics.cjs`, `session-cleanup.cjs`)
+    делали бы EXE неработоспособным; существующий preflight ловил только свой
+    список. Новый `ci/check-package-graph.cjs` обходит граф require'ов от main.cjs
+    (56 файлов) против build.files + тест package-graph (2 сценария) — теперь это
+    часть `npm run check`. **npm run check: exit 0, 443 теста (0 fail)**.
+15. **Аудит `ci/gui-acceptance-fixture.cjs` (509 строк) завершён — нарушений не
+    найдено**: воспроизводимый сценарий приёмки упакованного EXE, две фазы
+    (first-launch; relaunch-and-recovery). Гарды подтверждены: явный отказ вне
+    подготовленной GUI-среды (стр. 335), workRoot заперт в RUNNER_TEMP с отказом
+    иначе (336–340), EXE обязан быть установленным Kosmora.exe внутри workRoot
+    (341–352), папка загрузок только новая + отказ чистить перенаправленный путь
+    (353–356; 470–473), spawn с per-process таймаутом и windowsHide (299–331),
+    враждебный и валидный deep-link через второй инстанс (365–369); ассерты
+    покрывают восстановление origin/route, owner-B изоляцию, offline-recovery и
+    logout-очистку (397–443); при падении пишется сводный отчёт с чекпойнтами
+    (445–464). Нюанс (не нарушение): конфиг и отчёты фаз лежат в системном tmpdir
+    с runId-именами и убираются в finally (358–362; 465–474); жёсткий краш
+    процесса оставит файлы в %TEMP% — для hosted-раннера незначимо.
+16. **Пакет «семантическая оценка содержимого» подготовлен (data-only, коммит на
+    desc-ветке)**: фикстура v2
+    `packages/db/test/fixtures/semantic-experience-distill-semantics-evaluation.json`
+    — НОВЫЙ файл; v1 не тронут, RESUME прогона №2 (fixture_sha256) в безопасности
+    (фикстура хешируется как один файл, ссылка в bench — ровно одна, стр. 68).
+    Кейсы encoding'ают условия/отрицания/причинность как must-carry анкеры
+    (relevant_literals) и «перевёртыши» как ловушки (forbidden_literals,
+    документировано: ловушки намеренно вне исходника). Точка применения —
+    расширение bench'а флагом `--fixture` ПОСЛЕ завершения прогона №2; решение о
+    внедрении за владельцем.
+17. **Аудит `desktop/windows/desktop-recovery.cjs` (103 строки) — нарушений не
+    найдено**: восстановление хранит только минимальное first-party UI-состояние.
+    `safeWorkspaceRoute` — строгий белый список: только статические пути, известные
+    view/surface, UUID-валидация project/chat, запрет hash/backslash/`..`/%-encoding
+    в пути и НЕизвестных query-ключей, каноническая пере-сериализация параметров
+    (стр. 25–81) — произвольные query при сохранении не выживают. `isLoginOrLogout`
+    — same-origin login/logout/signin/signout (83–90); `isExplicitLogout` — только
+    plain-`/logout` и plain-`/signout` без hash/query (92–101). Замечание (не
+    нарушение): hosted-выход с query/hash (`/logout?reason=…`) в явный набор не
+    попадает — storage-очистка среза 3 для него не сработает (меню-выход покрывает
+    этот край). Ослабление набора — возможное будущее изменение интерфейса;
+    фикс-объём в срез не входил; решение за владельцем.
+18. **Аудит очереди «обновление»: `update-policy.cjs` (107 строк) +
+    `update-service.cjs` (238 строк) + CI-гард `ci/verify-unsigned-policy.cjs` —
+    нарушений не найдено**. Правило «unsigned не превращать в автообновление»
+    держится на трёх уровнях: (1) политика манифеста — fail-closed без
+    закреплённого ключа («Обновления отключены»), фиксированный набор полей,
+    Ed25519 над canonicalJson (с проверкой прототипа объектов), expires-свежесть,
+    same-origin path-only `.exe` без query/hash/credentials, потолок пакета
+    300 МБ (36–98); (2) сервис — fetch c `redirect:"manual"` и отказом на любой
+    3xx/изменённый URL (13–30), манифест ≤ 16 КиБ (9, 32–49), stage()
+    переподтверждает подписанный манифест и активный origin перед записью и
+    после неё (123–134, 183–185), временный файл `wx` 0o600 с потоковым лимитом
+    ≤ подписанного размера и финальным SHA-256, атомарный rename (139–186);
+    исполнение установщика из приложения не происходит (182). `previousVerified`
+    не считает mutable-профильный index якорем доверия — перед «проверенным
+    откатом» перепроверяются подпись закреплённым ключом и байты файла
+    (208–233). (3) CI — гард требует `trust.publicKeyPem === null` (месседж
+    «Unsigned candidate must not silently enable the update channel», 89–94) и
+    поведенчески проверяет `check()` → "disabled" с fetcher'ом, бросающим на
+    любой сетевой вызов (95–108); туда же NSIS-асерты `oneClick:false`,
+    `perMachine:false`, `deleteAppDataOnUninstall:false` — локальные данные
+    владельца при удалении сохраняются (20–25). Замечание (не нарушение):
+    content-length сверяется лишь при наличии заголовка — без него защиту
+    полностью держат потоковый лимит и финальная сверка SHA-256/размера
+    (151–153, 165, 180).
+19. **Аудит кластера «права»: `draft-session-gate.cjs` (41 строка) +
+    `owner-session.cjs` (81 строка) — нарушений не найдено**. Гейт черновиков:
+    одна пара {origin, owner} на версию документа, доступ к scope только после
+    его фактической загрузки в документе, `reset()` на каждой навигации
+    (12–24, 25–29, 30–37) — страница не может молча сменить владельца или
+    тронуть не-загруженный scope. Верификация владельца: same-origin
+    `/api/v1/identity/sessions`, отказ на не-200/изменённый URL/redirect
+    (`redirect:"manual"`), строгий content-type JSON, 32 КиБ потолок
+    одновременно по content-length И по реальному потоку (23–38), разбор +
+    `activeOwnerFromSessions` с отказом при любой аномалии; транспортная ошибка
+    честно даёт "offline" — отказ авторизации и offline не смешиваются.
+    Electron-адаптер
+    пиннинг пустого `response.url` только у себя (документированный квест
+    Electron 44, 52–59) и «Redirect was cancelled» = отказ авторизации,
+    никогда не offline-фолбэк (66–71). Расхождений с очередью «обновление»
+    нет: обе ветки доверяют только проверенному same-origin ответу.
+20. **Интеграционная волна Codex на main и merge-разрешение (коммит
+    `e964e7da`)**: main получил обновления за ночь — guard portability из #502
+    (`ef54c468`), диагностику = мой срез 2 (`0358acd2`), Windows 0.27 candidate
+    с faults-контрактом (`9a971e22`, `338ee9a4`, `37b552d9`) — ветка стала
+    CONFLICTING ровно по двум файлам (`main.cjs`, `package.json`); остальное
+    авто-merged. Разрешено по правилу «новые контракты main сохранять, свои
+    дельты вернуть»: `main.cjs` — require `session-cleanup` держит наш (у main
+    соперника нет), `faults: status.faults` держит main (поддержка поля видна в
+    авто-merged `diagnostics.cjs` и его тестах); `package.json` — union: их
+    цепочка check + наш `node --check session-cleanup.cjs` в той же позиции,
+    их build.files + наш `"session-cleanup.cjs"`. Детерминированный резолвер
+    в `tmp/` (не коммитится; никаких автопиков). Проверки после: `node --check
+main.cjs`, package.json parse, prettier clean (оба файла), `npm run check`
+    → exit 0, **443 теста / 0 fail**; PR #502 снова на CI.
+21. **Дельта-аудит `connection-policy.cjs` (146 строк) + полный аудит
+    `smoke-mode.cjs` (66 строк) — нарушений не найдено**. Первая очередь уже
+    покрывала `normalizeServerOrigin` (HTTPS для remote, HTTP только loopback,
+    отказ user:pass, origin-only — CHECKPOINT п. 1 очереди №1). Дельта:
+    `isSafeExternalUrl` — во внешний шелл уходят только https/http/mailto без
+    учётных данных в URL; `javascript:`, `file:`, `chrome-…` блокированы
+    (50–57); загрузки проверяют ВСЮ цепочку redirect'ов на same-origin или
+    same-origin `blob:` (59–73); имена загрузок чистятся от Windows-запрещённых
+    символов, trailing dots/spaces, потолок 180 (75–83), перезапись запрещена —
+    суффикс «(1)» (85–96); generation-gate отменяет superseded-попытки — они не
+    могут ни записать, ни перечитать решение (98–134). Нюанс (не нарушение):
+    зарезервированные имена (CON, NUL, COM1) не экранируются — их честно
+    отвергает fs. `smoke-mode.cjs`: вход только по явному флагу argv
+    `--cosmora-smoke-test`, без env-автовключений (9–11); payload строго из
+    упакованного win32/x64 с абсолютными путями (23–43); маркер пишется только
+    в tempdir с regex-allowlist `cosmora-smoke-…json` и 0o600 (46–64) — на
+    машине владельца приёмочный режим не открывается ни под каким видом.
+22. **LLM-дистилляция: прогон №2 завершён — REPRODUCED true (desc-ветка,
+    PR #515)**. RESUME-рестарт после обрыва сервера дошёл до конца: 13/13
+    кейсов, повтор воспроизвёл метрики первого прогона (жадное декодирование;
+    parse_ok 10/13, within_budget 10/13, median_reduction 1,
+    fabricated_file_tokens 1, stale_step_leak 16, declared_lost 2/recover 1 —
+    ограничения честно перечислены в теле PR #515). Инцидент по пути: обрыв
+    вчерашнего вечера оставил живой zombie-процесс прогона (PID 13468, ~1.1 ГБ,
+    застрял на последнем кейсе на ~10 ч, partial не обновлялся) — он выдавил
+    рестарт в OOM (exit 134, свободно было 0.6 ГБ); процесс убит, partial цел,
+    рестарт с `--max-old-space-size=2048` прошёл успешно. Отчёт
+    `-repeat.json` закоммичен (`356efc41`), partial удалён самим bench; строки
+    очередей «Опыт выполнения» в RUFLO/GEMINI-доках обновлены — «измерена
+    (measurement-only), внедрение — решение владельца» (`59176fba`); PR #515
+    открыт только с отчётом, merge не делать. Фикстура v1 и bench во время
+    прогона не менялись.
+
 ## Что делать следующему запуску (в порядке приоритета)
 
-1. **Если фоновый прогон №2 завершится** (see shell-нотификация): проверь
-   `REPRODUCED true/false`. При true: коммит отчёта `-repeat.json` в
-   desc-ветку, обнови строки очередей «Опыт выполнения» в
-   `docs/product/RUFLO_ADOPTION_SCOPE_RU.md` и
-   `docs/product/GEMINI_NOVEMBER_ADOPTION_RU.md`, открой PR desc-ветки
-   (ТОЛЬКО с отчётом, merge не делать). При false: разбери расхождение
-   (какие поля), не выдавай выборку за дубль.
-2. **Если прогон ещё идёт/потерян**: рестарт только по RESUME-механике
-   (partial-файл `<output>.partial.json` продолжит кейсы; общий прогон ~3.5-4 ч,
-   по кейсу ~17 мин). Запуск из Nexus-OS-чекута:
-   `node scripts/bench-experience-llm-distill.mjs "%TEMP%\opencode\models\qwen25-05b-q4" docs/research/experience-llm-distill-manifest-2026-11-10.json docs/research/experience-llm-distill-2026-11-10-repeat.json docs/research/experience-llm-distill-2026-11-10.json`
-   (output ≠ предыдущий путь — compare читает предыдущий отчёт ДО записи).
-3. **Следующий вертикальный срез ops-сферы**: downloads/local profile/credential
-   storage (очередь владельца №4): owner/origin isolation, версии, non-overwrite,
-   контролируемая очистка logout. Начать с reading `download-center.cjs`,
-   `download-history.cjs`, `local-vault.cjs`, `profile-environment.cjs` + их тесты;
-   искать gaps и реализовать срезом.
-4. Периодически recheck mergeable у PR №489/№491 (desc, старый протокол).
-5. После любого нового main: проверить новые общие контракты ПРЕЖДЕ чем
-   разрешать конфликты (не автопик своей версии).
+1. **PR #502 (ops/opencode-windows)**: все 4 чека зелёные на `0bff0f3c`
+   (Verify monorepo, Browser acceptance, NSIS installer lifecycle, Code
+   sandbox). Merge — владелец/Codex. После любого нового main: проверить новые
+   общие контракты ПРЕЖДЕ чем разрешать конфликты (не автопик своей версии).
+
+2. **PR #515 (desc/experience-llm-turn-20261110)**: measurement-only поставка —
+   отчёты прогонов №1/№2 (REPRODUCED true), фикстура v2 semantics + протокол,
+   обновлённые строки очередей. Merge — только владелец; при ревью отчёты и
+   фикстуры не редактировать.
+
+3. **Если владелец решит продолжить дистилляцию**: следующий шаг — прогон
+   фикстуры v2 (semantics) по протоколу
+   `docs/research/experience-llm-distill-semantics-2026-11-10.md`; рестарт
+   только по RESUME-механике bench (partial после каждого кейса), weights вне
+   репо, bench не в CI, во время активного прогона фикстуру и bench не менять.
+
+4. **Следующий вертикальный срез ops-сферы**: очереди 1–4 аудит-завершены без
+   нарушений (см. пункт 10), срез 6 реализован (п. 11), logout-паритет (п. 13)
+   и guard графа упаковки (п. 14) — реализованы. Дальше по очереди владельца:
+   оставшиеся installer-этапы (upgrade/uninstall) — только VM/CI; любые новые
+   видимые функции — через VISUAL_WAITLIST и решение владельца.
 
 ## Границы (не нарушать)
 

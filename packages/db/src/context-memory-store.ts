@@ -60,7 +60,14 @@ type SourceMessage = {
   content: string;
   created_at: string;
 };
-type RecallCandidate = { evidence: ContextMemoryEvidence; score: number; required?: boolean };
+type RecallCandidate = {
+  evidence: ContextMemoryEvidence;
+  score: number;
+  required?: boolean;
+  /** True only when the item actually matched the query, not merely retained
+   * as a mandatory constraint/preference. Drives answer_evidence. */
+  matched?: boolean;
+};
 const hash = (s: string) => createHash("sha256").update(s).digest("hex");
 const bytes = (s: string) => Buffer.byteLength(s, "utf8");
 const words = (s: string) =>
@@ -915,7 +922,9 @@ export class ContextMemoryStore {
       priority_omitted: 0,
       bytes: 0,
       budget_bytes: budget,
-      retrieval: "lexical"
+      retrieval: "lexical",
+      answer_evidence: "absent",
+      matched_items: 0
     };
     if (!settings.enabled) return this.measure(bundle);
     this.owned(target, owner, true);
@@ -957,6 +966,7 @@ export class ContextMemoryStore {
         continue;
       candidates.push({
         required: entry.pinned || entry.kind === "constraint",
+        matched: overlap > 0,
         score: overlap * 10 + (entry.pinned ? 100 : 0) + (stable ? 5 : 0),
         evidence: {
           reference: "M:" + entry.id,
@@ -1012,6 +1022,7 @@ export class ContextMemoryStore {
         };
         candidates.push({
           score: indexes.length * 3,
+          matched: indexes.length > 0,
           evidence: {
             reference: (kind === "chat_message" ? "H:g:" : "H:p:") + message.id,
             kind: "history",
@@ -1028,7 +1039,8 @@ export class ContextMemoryStore {
   }
   private pack(bundle: ContextMemoryBundle, candidates: RecallCandidate[]) {
     const seen = new Set<string>();
-    for (const { evidence, required } of candidates.sort(
+    let matched = 0;
+    for (const { evidence, required, matched: isMatch } of candidates.sort(
       (a, b) => Number(Boolean(b.required)) - Number(Boolean(a.required)) || b.score - a.score
     )) {
       // Identical wording does not make a hypothesis a fact or an assistant a user.
@@ -1050,8 +1062,11 @@ export class ContextMemoryStore {
         if (required) bundle.priority_omitted++;
         continue;
       }
-      bundle.items.push(evidence);
+      bundle.items.push(isMatch ? { ...evidence, matched: true } : evidence);
+      if (isMatch) matched++;
     }
+    bundle.matched_items = matched;
+    bundle.answer_evidence = matched > 0 ? "matched" : "absent";
     return this.measure(bundle);
   }
 
@@ -1214,6 +1229,11 @@ export class ContextMemoryStore {
       return this.resolve(target, owner, query, excludeMessageIds, budget);
     }
     signal?.throwIfAborted();
+    // Re-read authority after the async encoder round-trip. A privacy fence,
+    // owner switch or target deletion during inference must fail closed instead
+    // of emitting the pre-await pool (settings.version alone is not enough).
+    this.active(owner);
+    this.owned(target, owner, true);
     return this.fuseSemantic(
       target,
       owner,
@@ -1239,16 +1259,29 @@ export class ContextMemoryStore {
     limited: boolean,
     index?: SemanticIndexInfo
   ): ContextMemoryBundle {
+    // This runs after an async encoder round-trip. Re-check the owner and the
+    // target before emitting any recalled material: a privacy fence, an owner
+    // switch or a deleted/archived target must not leak pre-await evidence.
+    this.active(owner);
+    this.owned(target, owner, true);
     const current = this.resolve(target, owner, query, excludeMessageIds, budget);
     const settings = this.settings(target, owner);
     const grants = this.grants(target, settings, owner);
     const excluded = new Set(excludeMessageIds);
     if (!settings.enabled || settings.version !== settingsVersion) return current;
+    const queryTerms = words(query);
+    const lexicalMatch = (evidence: ContextMemoryEvidence) => {
+      const text = (evidence.title + "\n" + evidence.text).normalize("NFKC").toLocaleLowerCase();
+      return queryTerms.some((term) => text.includes(term));
+    };
     const candidates: RecallCandidate[] = current.items.map((evidence, rank) => ({
       evidence,
       required: evidence.priority || evidence.memory_kind === "constraint",
+      matched: lexicalMatch(evidence),
       score: 1 / (60 + rank + 1)
     }));
+    // Semantic hits passing the gate + full source revalidation are also real
+    // answers and are marked matched on their candidates below.
     const seen = new Set<string>();
     const ordered = matches
       .filter((m) => Number.isFinite(m.score))
@@ -1286,11 +1319,14 @@ export class ContextMemoryStore {
       seen.add(evidence.reference);
       const existing = candidates.find((c) => c.evidence.reference === evidence.reference);
       const semanticScore = 1 / (60 + seen.size);
-      if (existing && existing.evidence.text === evidence.text) existing.score += semanticScore;
-      else
+      if (existing && existing.evidence.text === evidence.text) {
+        existing.score += semanticScore;
+        existing.matched = true;
+      } else
         candidates.push({
           evidence,
           score: semanticScore,
+          matched: true,
           required: evidence.priority || evidence.memory_kind === "constraint"
         });
     }
@@ -1298,7 +1334,7 @@ export class ContextMemoryStore {
     candidates.forEach((c, i) => {
       c.evidence = { ...c.evidence, retrieval_rank: i + 1 };
     });
-    return this.pack(
+    const result = this.pack(
       {
         ...current,
         items: [],
@@ -1313,6 +1349,7 @@ export class ContextMemoryStore {
       },
       candidates
     );
+    return result;
   }
   semanticScope(target: MemoryTarget, owner: string) {
     const settings = this.settings(target, owner);

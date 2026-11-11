@@ -316,6 +316,10 @@ export class SemanticHistoryIndex implements IndexedMemoryRecall {
         if (after < summary.upper) await yieldLoop(undefined, { signal: sig });
       }
       sig.throwIfAborted();
+      // Re-validate the owner/target authority after the async embed + index
+      // scan. If the owner was fenced or the target changed hands meanwhile,
+      // degrade to a fresh lexical resolve instead of merging pre-await hits.
+      a.semanticScope(target, owner);
       const matches: { evidence: ContextMemoryEvidence; score: number }[] = [];
       for (const hit of best.values()) {
         const source = a.semanticSource(target, owner, hit.reference);

@@ -98,6 +98,9 @@ export interface ContextMemoryEvidence {
   sequence?: number;
   /** Trusted hybrid retrieval order, not model confidence or source authority. */
   retrieval_rank?: number;
+  /** Set by recall when this item actually answered the query, not merely kept
+   * as a mandatory constraint/preference. Drives the bundle honesty signal. */
+  matched?: boolean;
 }
 export interface ContextMemoryBundle {
   format: "kosmora.context-memory.v1";
@@ -109,6 +112,16 @@ export interface ContextMemoryBundle {
   bytes: number;
   budget_bytes: number;
   retrieval: "lexical" | "hybrid";
+  /** Machine-readable honesty signal. "absent" means no recalled source actually
+   * answers the current question: the items may still contain mandatory
+   * constraints/preferences that must stay in context, but they are NOT an answer
+   * or a confirmation. Never set "matched" from topical similarity alone.
+   * Optional for older fixtures; the active store always sets it. */
+  answer_evidence?: "matched" | "absent";
+  /** How many items actually matched the query (query-term overlap or a passing
+   * semantic gate), excluding items kept only because they are mandatory.
+   * Optional for older fixtures; the active store always sets it. */
+  matched_items?: number;
   semantic_retrieval?: {
     encoder: string;
     candidates: number;
