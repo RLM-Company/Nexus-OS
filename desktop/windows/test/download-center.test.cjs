@@ -44,12 +44,19 @@ class TestWindow extends EventEmitter {
   }
 }
 class Item extends EventEmitter {
-  constructor(name, file) {
+  constructor(name, file, url = "https://kosmora.test/files/report.pdf") {
     super();
     this.name = name;
     this.file = file;
     this.received = 0;
     this.total = 0;
+    this.urls = [url];
+  }
+  getURL() {
+    return this.urls[this.urls.length - 1];
+  }
+  getURLChain() {
+    return this.urls.slice();
   }
   getFilename() {
     return this.name;
@@ -81,7 +88,7 @@ async function fixture(callback) {
   const shown = [];
   const active = new Map();
   let count = 0;
-  const mainWindow = { type: "remote" };
+  let mainWindow = { type: "remote" };
   const center = createDownloadCenter({
     BrowserWindow: TestWindow,
     ipcMain: {
@@ -117,6 +124,9 @@ async function fixture(callback) {
       count: () => count,
       setOwner: (name) => {
         currentOwner = name;
+      },
+      setMainWindow: (value) => {
+        mainWindow = value;
       },
       setOrigin: (value) => {
         origin = value;
@@ -256,4 +266,106 @@ test("an identity epoch change during verification cannot record the old downloa
     assert.equal(item.cancelled, true);
     await t.center.show();
     assert.deepEqual((await t.invoke("list", t.trustedEvent())).entries, []);
+  }));
+
+const remoteMain = (downloaded, pageURL = "https://kosmora.test/app") => ({
+  isDestroyed: () => false,
+  webContents: {
+    getURL: () => pageURL,
+    downloadURL: (url) => downloaded.push(url)
+  }
+});
+
+test("an interrupted download is retried from session memory through the owning window", async () =>
+  fixture(async (t) => {
+    await t.center.show();
+    const downloaded = [];
+    t.setMainWindow(remoteMain(downloaded));
+    const id = randomUUID();
+    const item = new Item("big.zip", path.join(t.directory, "big.zip"));
+    t.active.set(id, item);
+    t.center.capture(id, item);
+    await tick();
+    item.received = 128;
+    item.total = 1024;
+    item.finish("interrupted");
+    const entries = (await t.invoke("list", t.trustedEvent())).entries;
+    assert.equal(entries[0].status, "interrupted");
+    assert.equal(entries[0].retryable, true);
+    // No link persistence: the public entry and stored metadata never carry a URL.
+    assert.equal(Object.hasOwn(entries[0], "url"), false);
+    const stored = fs.readFileSync(path.join(t.directory, "download-history.json"), "utf8");
+    assert.ok(!stored.includes("files/report.pdf"));
+    assert.equal((await t.invoke("retry", t.trustedEvent(), id)).ok, true);
+    assert.deepEqual(downloaded, ["https://kosmora.test/files/report.pdf"]);
+  }));
+
+test("retry denies completed, unknown and stale-owner/stale-origin sources", async () =>
+  fixture(async (t) => {
+    await t.center.show();
+    const downloaded = [];
+    t.setMainWindow(remoteMain(downloaded));
+    const completedId = randomUUID();
+    const completed = new Item("done.txt", path.join(t.directory, "done.txt"));
+    t.active.set(completedId, completed);
+    t.center.capture(completedId, completed);
+    await tick();
+    completed.finish();
+    assert.equal((await t.invoke("retry", t.trustedEvent(), completedId)).ok, false);
+    assert.equal((await t.invoke("retry", t.trustedEvent(), randomUUID())).ok, false);
+    const staleId = randomUUID();
+    const stale = new Item("stale.bin", path.join(t.directory, "stale.bin"));
+    t.active.set(staleId, stale);
+    t.center.capture(staleId, stale);
+    await tick();
+    stale.finish("interrupted");
+    // Origin changed after the interruption: the remembered route is no longer current.
+    t.setOrigin("https://elsewhere.test");
+    assert.equal((await t.invoke("retry", t.trustedEvent(), staleId)).ok, false);
+    // Owner switched: authorize re-verifies and the scope no longer matches.
+    t.setOrigin("https://kosmora.test");
+    t.setOwner("bob");
+    assert.equal((await t.invoke("retry", t.trustedEvent(), staleId)).ok, false);
+    assert.deepEqual(downloaded, []);
+  }));
+
+test("retry requires the main window to still show an allowed same-origin page", async () =>
+  fixture(async (t) => {
+    await t.center.show();
+    const downloaded = [];
+    const main = remoteMain(downloaded);
+    t.setMainWindow(main);
+    const id = randomUUID();
+    const item = new Item("image.iso", path.join(t.directory, "image.iso"));
+    t.active.set(id, item);
+    t.center.capture(id, item);
+    await tick();
+    item.finish("interrupted");
+    main.webContents.getURL = () => "https://elsewhere.test/other";
+    assert.equal((await t.invoke("retry", t.trustedEvent(), id)).ok, false);
+    main.webContents.getURL = () => "https://kosmora.test/app";
+    main.isDestroyed = () => true;
+    assert.equal((await t.invoke("retry", t.trustedEvent(), id)).ok, false);
+    t.setMainWindow({ type: "remote" });
+    assert.equal((await t.invoke("retry", t.trustedEvent(), id)).ok, false);
+    assert.deepEqual(downloaded, []);
+  }));
+
+test("invalidate clears remembered retry routes", async () =>
+  fixture(async (t) => {
+    await t.center.show();
+    const downloaded = [];
+    t.setMainWindow(remoteMain(downloaded));
+    const id = randomUUID();
+    const item = new Item("gone.bin", path.join(t.directory, "gone.bin"));
+    t.active.set(id, item);
+    t.center.capture(id, item);
+    await tick();
+    item.finish("interrupted");
+    t.center.invalidate({});
+    await t.center.show();
+    assert.equal((await t.invoke("retry", t.trustedEvent(), id)).ok, false);
+    const entries = (await t.invoke("list", t.trustedEvent())).entries;
+    assert.equal(entries.find((entry) => entry.id === id)?.retryable ?? false, false);
+    assert.deepEqual(downloaded, []);
   }));

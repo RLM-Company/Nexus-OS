@@ -136,3 +136,19 @@ test("server filenames containing URLs or auth query fragments are redacted", ()
     assert.ok(!stored.includes("secret-value"));
     assert.ok(!stored.includes("access_token"));
   }));
+
+test("statusOf exposes only the state, never the path, and is scope isolated", () =>
+  fixture((folder) => {
+    const store = createDownloadHistoryStore(folder);
+    const id = randomUUID();
+    const saved = path.join(folder, "done.txt");
+    assert.equal(store.start(scopeA, id, "done.txt", 0, 4), true);
+    assert.equal(store.statusOf(scopeA, id), "active");
+    assert.equal(store.statusOf(scopeB, id), null);
+    assert.equal(store.statusOf(scopeA, randomUUID()), null);
+    assert.equal(store.finish(scopeA, id, "completed", 4, 4, saved), true);
+    assert.equal(store.statusOf(scopeA, id), "completed");
+    assert.equal(Object.hasOwn(store.list(scopeA)[0], "savePath"), false);
+    assert.equal(store.finish(scopeA, id, "interrupted", 4, 4), false);
+    assert.equal(store.statusOf(scopeA, id), "completed");
+  }));
