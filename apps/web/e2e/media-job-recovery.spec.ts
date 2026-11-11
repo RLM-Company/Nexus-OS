@@ -195,3 +195,29 @@ test("a completed PNG remains downloadable but edit action requires a live editi
   await expect(page.getByText("Редактирование результата пока не подключено.")).toBeVisible();
   expect(posts).toBe(0);
 });
+
+test("an unreadable history blocks fresh paid images until owner history is verified", async ({
+  page
+}) => {
+  let historyAvailable = false;
+  let posts = 0;
+  await page.route("**/api/v1/media/capabilities", (route) =>
+    route.fulfill({ json: capabilityResponse })
+  );
+  await page.route("**/api/v1/media/jobs", (route) =>
+    route.fulfill(historyAvailable ? { json: { items: [] } } : { status: 503 })
+  );
+  await page.route("**/api/v1/media/images", (route) => {
+    posts++;
+    return route.fulfill({ status: 503 });
+  });
+  await page.goto("/?surface=images");
+  await page.getByLabel("Описание изображения", { exact: true }).fill("Лунная станция");
+  await expect(page.getByText(/Новый платный запуск заблокирован до подтверждения/)).toBeVisible();
+  const generate = page.getByRole("button", { name: "Сгенерировать изображение" });
+  await expect(generate).toBeDisabled();
+  historyAvailable = true;
+  await page.getByRole("button", { name: "Проверить историю без запуска" }).click();
+  await expect(generate).toBeEnabled();
+  expect(posts).toBe(0);
+});

@@ -123,29 +123,40 @@ export function useMediaJob(recoveryKind?: "image") {
   const [submitting, setSubmitting] = useState(false);
   const [recovering, setRecovering] = useState(Boolean(recoveryKind));
   const [unknown, setUnknown] = useState(false);
+  const [historyUnverified, setHistoryUnverified] = useState(false);
   const [job, setJob] = useState<MediaJob | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   // GET never dispatches or spends. Recover an already accepted request after a reload.
   const refresh = useCallback(async () => {
-    const response = await fetch("/api/v1/media/jobs", { cache: "no-store" });
-    if (!response.ok) throw new Error("Не удалось получить историю задач.");
-    const data = (await response.json()) as { items?: MediaJob[] };
-    const items = Array.isArray(data.items) ? data.items : [];
-    const found = pendingId.current
-      ? items.find(
-          (item) => item.kind === recoveryKind && item.client_request_id === pendingId.current
-        )
-      : items.find((item) => item.kind === recoveryKind);
-    if (found) {
-      setJob(found);
-      setUnknown(false);
-      setError(null);
-    } else if (pendingId.current) {
-      setUnknown(true);
-      setError(
-        "Не удалось подтвердить исход предыдущего запуска. Повтор автоматически не выполняется."
-      );
+    try {
+      const response = await fetch("/api/v1/media/jobs", { cache: "no-store" });
+      if (!response.ok) throw new Error("Не удалось получить историю задач.");
+      const data = (await response.json()) as { items?: MediaJob[] };
+      const items = Array.isArray(data.items) ? data.items : [];
+      const found = pendingId.current
+        ? items.find(
+            (item) => item.kind === recoveryKind && item.client_request_id === pendingId.current
+          )
+        : items.find((item) => item.kind === recoveryKind);
+      setHistoryUnverified(false);
+      if (found) {
+        setJob(found);
+        setUnknown(false);
+        setError(null);
+      } else if (pendingId.current) {
+        setUnknown(true);
+        setError(
+          "Не удалось подтвердить исход предыдущего запуска. Повтор автоматически не выполняется."
+        );
+      } else {
+        setUnknown(false);
+        setError(null);
+      }
+    } catch (cause) {
+      // An unreadable history cannot establish that no paid request is still running.
+      setHistoryUnverified(true);
+      throw cause;
     }
   }, [recoveryKind]);
 
@@ -161,10 +172,10 @@ export function useMediaJob(recoveryKind?: "image") {
     }
     void refresh()
       .catch(() => {
-        if (alive && pendingId.current) {
-          setUnknown(true);
+        if (alive) {
+          if (pendingId.current) setUnknown(true);
           setError(
-            "Историю пока не удалось проверить. Предыдущий запрос нельзя считать отменённым."
+            "Историю пока не удалось проверить. Новый платный запуск заблокирован до проверки."
           );
         }
       })
@@ -221,7 +232,12 @@ export function useMediaJob(recoveryKind?: "image") {
       references: readonly ChatImageAttachment[] = [],
       options?: ImageRequestOptions
     ) => {
-      if (starting.current || recovering || (job && ["queued", "running"].includes(job.status)))
+      if (
+        starting.current ||
+        recovering ||
+        historyUnverified ||
+        (job && ["queued", "running"].includes(job.status))
+      )
         return;
       if (
         kind === "image" &&
@@ -313,7 +329,7 @@ export function useMediaJob(recoveryKind?: "image") {
         setSubmitting(false);
       }
     },
-    [job, recovering, refresh, storageKey]
+    [historyUnverified, job, recovering, refresh, storageKey]
   );
 
   const cancel = useCallback(async () => {
@@ -347,6 +363,7 @@ export function useMediaJob(recoveryKind?: "image") {
     submitting,
     recovering,
     unknown,
+    historyUnverified,
     checkUnknown
   };
 }
@@ -369,8 +386,18 @@ export function MediaGenerationPanel({
   options: ImageRequestOptions | null;
 }) {
   const caps = capabilities;
-  const { job, setJob, error, start, cancel, submitting, recovering, unknown, checkUnknown } =
-    useMediaJob("image");
+  const {
+    job,
+    setJob,
+    error,
+    start,
+    cancel,
+    submitting,
+    recovering,
+    unknown,
+    historyUnverified,
+    checkUnknown
+  } = useMediaJob("image");
   const [history, setHistory] = useState<MediaJob[]>([]);
   const [revision, setRevision] = useState(0);
   const [referenceLoading, setReferenceLoading] = useState(false);
@@ -452,7 +479,13 @@ export function MediaGenerationPanel({
           нажатии используется прежний идентификатор (изменённые параметры сервер отклонит).
         </p>
       )}
-      {unknown && (
+      {historyUnverified && (
+        <p role="alert">
+          Историю заданий проверить не удалось. Новый платный запуск заблокирован до подтверждения
+          состояния задач.
+        </p>
+      )}
+      {(unknown || historyUnverified) && (
         <button type="button" onClick={() => void checkUnknown()}>
           Проверить историю без запуска
         </button>
@@ -479,6 +512,7 @@ export function MediaGenerationPanel({
             Boolean(blockedReason) ||
             submitting ||
             recovering ||
+            historyUnverified ||
             referenceLoading ||
             !prompt.trim() ||
             prompt.trim().length > (constraints?.maxPromptLength ?? 2000) ||

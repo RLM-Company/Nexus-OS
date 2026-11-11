@@ -1,0 +1,32 @@
+name: Temporary media verification and formatting
+on:
+  push:
+    branches: ["ops/free-studio-media"]
+permissions:
+  contents: read
+jobs:
+  format-media:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.19.0
+          run_install: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Format and print exact scoped sources
+        shell: bash
+        run: |
+          pnpm exec prettier --write apps/web/e2e/media-job-recovery.spec.ts apps/web/src/app/media-generation/media-panel.tsx
+          for p in apps/web/e2e/media-job-recovery.spec.ts apps/web/src/app/media-generation/media-panel.tsx; do
+            printf '__MEDIA_FMT_BEGIN__%s__' "$p"
+            base64 -w0 "$p"
+            printf '__MEDIA_FMT_END__\\n'
+          done
+      - name: Verify web types
+        run: pnpm --filter @cosmora/web typecheck
