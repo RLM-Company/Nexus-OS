@@ -55,11 +55,7 @@
       "forbidden_declared": 0,
       "forbidden_carried": [],
       "relevant_declared": 3,
-      "relevant_carried_strong": [
-        "итоги-квартала.xlsx",
-        "резюме-квартала.docx",
-        "графики.txt"
-      ],
+      "relevant_carried_strong": ["итоги-квартала.xlsx", "резюме-квартала.docx", "графики.txt"],
       "declared_lost_recovered": [],
       "fabricated_file_tokens": [],
       "stale_step_leak_ngrams": 0,
@@ -76,13 +72,9 @@
       "reduction": 0.9983,
       "kept_steps": 3,
       "forbidden_declared": 2,
-      "forbidden_carried": [
-        "\\\\server-archive"
-      ],
+      "forbidden_carried": ["\\\\server-archive"],
       "relevant_declared": 1,
-      "relevant_carried_strong": [
-        "сборка-отчёта.docx"
-      ],
+      "relevant_carried_strong": ["сборка-отчёта.docx"],
       "declared_lost_recovered": [],
       "fabricated_file_tokens": [],
       "stale_step_leak_ngrams": 0,
@@ -106,9 +98,7 @@
         "Архив/справки"
       ],
       "relevant_declared": 1,
-      "relevant_carried_strong": [
-        "реестр-контрагентов.xlsx"
-      ],
+      "relevant_carried_strong": ["реестр-контрагентов.xlsx"],
       "declared_lost_recovered": [],
       "fabricated_file_tokens": [],
       "stale_step_leak_ngrams": 6,
@@ -125,15 +115,11 @@
       "reduction": 0.8439,
       "kept_steps": 3,
       "forbidden_declared": 2,
-      "forbidden_carried": [
-        "SM-2026-1104-7758"
-      ],
+      "forbidden_carried": ["SM-2026-1104-7758"],
       "relevant_declared": 1,
       "relevant_carried_strong": [],
       "declared_lost_recovered": [],
-      "fabricated_file_tokens": [
-        "journal-schedule.xlsx"
-      ],
+      "fabricated_file_tokens": ["journal-schedule.xlsx"],
       "stale_step_leak_ngrams": 0,
       "ms": 344087.181,
       "answer_preview": "{\n    \"format\": \"koswork.accepted-example.v1\",\n    \"source_task_id\": \"0f1e2d3c-4b5a-4698-b7c6-d5e4f3a2b1c0\",\n    \"source_project_id\": \"demo-weekly-desk\",\n    \"accepted_at\": 1762531200000,\n    \"outcome\": \"owner_accepted\",\n    \"source_goal\": "
@@ -148,17 +134,9 @@
       "reduction": 1,
       "kept_steps": 3,
       "forbidden_declared": 4,
-      "forbidden_carried": [
-        "55.755827",
-        "37.617634",
-        "53.900608",
-        "27.558972"
-      ],
+      "forbidden_carried": ["55.755827", "37.617634", "53.900608", "27.558972"],
       "relevant_declared": 2,
-      "relevant_carried_strong": [
-        "карточка-маршрута.docx",
-        "схема-этажа.txt"
-      ],
+      "relevant_carried_strong": ["карточка-маршрута.docx", "схема-этажа.txt"],
       "declared_lost_recovered": [],
       "fabricated_file_tokens": [],
       "stale_step_leak_ngrams": 3,
@@ -184,9 +162,7 @@
         "ревизия 9f2e7c1a"
       ],
       "relevant_declared": 1,
-      "relevant_carried_strong": [
-        "перечень-аудита.docx"
-      ],
+      "relevant_carried_strong": ["перечень-аудита.docx"],
       "declared_lost_recovered": [],
       "fabricated_file_tokens": [],
       "stale_step_leak_ngrams": 3,
@@ -224,13 +200,8 @@
       "forbidden_declared": 1,
       "forbidden_carried": [],
       "relevant_declared": 2,
-      "relevant_carried_strong": [
-        "чек-лист.docx",
-        "статус-таблица.xlsx"
-      ],
-      "declared_lost_recovered": [
-        "чек-лист.docx"
-      ],
+      "relevant_carried_strong": ["чек-лист.docx", "статус-таблица.xlsx"],
+      "declared_lost_recovered": ["чек-лист.docx"],
       "fabricated_file_tokens": [],
       "stale_step_leak_ngrams": 0,
       "ms": 370159.229,
@@ -246,15 +217,9 @@
       "reduction": 1,
       "kept_steps": 3,
       "forbidden_declared": 2,
-      "forbidden_carried": [
-        "Архив/ноябрь",
-        "#4567"
-      ],
+      "forbidden_carried": ["Архив/ноябрь", "#4567"],
       "relevant_declared": 2,
-      "relevant_carried_strong": [
-        "склад-учёт.xlsx",
-        "сводка-склада.docx"
-      ],
+      "relevant_carried_strong": ["склад-учёт.xlsx", "сводка-склада.docx"],
       "declared_lost_recovered": [],
       "fabricated_file_tokens": [],
       "stale_step_leak_ngrams": 2,
@@ -273,9 +238,7 @@
       "forbidden_declared": 0,
       "forbidden_carried": [],
       "relevant_declared": 1,
-      "relevant_carried_strong": [
-        "сводный-обзор.docx"
-      ],
+      "relevant_carried_strong": ["сводный-обзор.docx"],
       "declared_lost_recovered": [],
       "fabricated_file_tokens": [],
       "stale_step_leak_ngrams": 0,
@@ -292,15 +255,9 @@
       "reduction": 1,
       "kept_steps": 2,
       "forbidden_declared": 2,
-      "forbidden_carried": [
-        "ivan@example.com",
-        "@assistant_bot"
-      ],
+      "forbidden_carried": ["ivan@example.com", "@assistant_bot"],
       "relevant_declared": 2,
-      "relevant_carried_strong": [
-        "квартальное резюме",
-        "резюме-совета.docx"
-      ],
+      "relevant_carried_strong": ["квартальное резюме", "резюме-совета.docx"],
       "declared_lost_recovered": [],
       "fabricated_file_tokens": [],
       "stale_step_leak_ngrams": 2,
