@@ -5,8 +5,11 @@
 - **BASE_SHA:** `9d972e8ba447f681fbfb49253b73d9f02dd1d325`
 - **Ветка:** `ops/deepseek-memory` (создана от BASE_SHA; перед срезами B/C влит
   `main` `d423d64`, 46 коммитов, конфликтов нет).
-- **PR:** [#513](https://github.com/RLM-Company/Nexus-OS/pull/513), без merge/deploy.
-- **HEAD_SHA:** см. `git log -1` ветки (финальный коммит срезов B/C).
+- **PR (срез A):** [#513](https://github.com/RLM-Company/Nexus-OS/pull/513) — **MERGED** Codex 11 ноября (`ec24ce4`).
+- **PR (срезы B/C):** открывается новый PR из этой ветки в `main`; без merge/deploy.
+- **HEAD_SHA:** см. `git log -1` ветки (финальный коммит срезов B/C + merge main).
+- **main при завершении:** `d047ce1`; ветка синхронизирована дважды, diff
+  против `main` содержит только B/C.
 - **Финальный CI:** `42892932896` — все четыре проверки pass (Verify monorepo 5m5s,
   Browser acceptance 9m13s, Code sandbox isolation, identity-tests).
 - **main при завершении:** `5e01c4f` (ушёл вперёд на 10+ коммитов; мои файлы

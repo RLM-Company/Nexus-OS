@@ -3,15 +3,17 @@
 - **Статус:** готово к интеграции (дальнейшие статусы подтверждает Codex).
 - **BASE_SHA:** `9d972e8ba447f681fbfb49253b73d9f02dd1d325` (совпадает с `main` на начало работ).
 - **HEAD_SHA:** `5fbc40960e5b3aae2c28df3213443ced1c5c3198`.
-- **Branch / PR:** `ops/deepseek-memory` → [PR #513](https://github.com/RLM-Company/Nexus-OS/pull/513) в `main`, `CLEAN / MERGEABLE / OPEN`, без merge/deploy.
+- **Branch / PR:** `ops/deepseek-memory` → [PR #513](https://github.com/RLM-Company/Nexus-OS/pull/513) (срез A) **смержен Codex** 11 ноября, `mergedAt 2026-11-11T06:57:22Z`, merge commit `ec24ce4`. Срезы B/C идут отдельным PR (см. CHECKPOINT), без самостоятельного merge/deploy.
 - **ID отчётов:** `04_DEEPSEEK`.
-- **Финальный CI** (run `42892932896`): `Verify monorepo` pass 5m5s,
+- **Синхронизация:** перед B/C влит `main` `d423d64` (46 коммитов), после
+  обнаружения мерджа #513 влит `main` `d047ce1` ещё раз. Итоговый diff ветки
+  против `main` содержит **только срезы B/C** — дублирования кода среза A нет.
+- **Финальный CI среза A** (run `42892932896`): `Verify monorepo` pass 5m5s,
   `Browser acceptance` pass 9m13s, `Code sandbox isolation` pass,
   `identity-tests` pass — все четыре проверки зелёные.
 - **Завершение:** срезы A, B и C выполнены; петля по памяти закрыта.
   `memory-panel.json` содержит фактические измерения с ограничениями.
-- **HEAD_SHA (код):** обновлён после срезов B/C; см. `git log -1` ветки и
-  `CHECKPOINT.md`.
+- **HEAD_SHA (код):** см. `git log -1` ветки и `CHECKPOINT.md`.
 
 ## Сценарий до / после
 
