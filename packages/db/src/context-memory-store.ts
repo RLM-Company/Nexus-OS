@@ -392,6 +392,7 @@ export class ContextMemoryStore {
       expires_at: row.expires_at,
       version: row.version,
       source,
+      expired: row.expires_at !== null && Date.parse(row.expires_at) <= this.now(),
       source_status: !source
         ? "manual"
         : !message
