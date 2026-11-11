@@ -75,7 +75,13 @@ export function GoogleDriveBackupControls({
   const [items, setItems] = useState<Backup[]>([]),
     [sources, setSources] = useState<{ id: string; title: string; mode: string }[]>([]);
   const [files, setFiles] = useState<
-      { id: string; name: string; source_project?: string; source_version?: number }[]
+      {
+        id: string;
+        name: string;
+        source_project?: string;
+        source_version?: number;
+        is_office?: number;
+      }[]
     >([]),
     [all, setAll] = useState(true),
     [results, setResults] = useState(true);
@@ -464,6 +470,14 @@ export function GoogleDriveBackupControls({
                   {f.name}
                   {f.source_project ? ` · ${f.source_project} · v${f.source_version ?? 1}` : ""}
                 </a>
+                {f.is_office === 1 && (
+                  <>
+                    {" "}
+                    <a href={`/?surface=files&officeRestore=${encodeURIComponent(f.id)}`}>
+                      Открыть в Koswork
+                    </a>
+                  </>
+                )}
               </li>
             ))}
           </ul>

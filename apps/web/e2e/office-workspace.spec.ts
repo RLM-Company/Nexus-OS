@@ -1,11 +1,10 @@
 import { createRequire } from "node:module";
+import { createHash, randomUUID } from "node:crypto";
 import { resolve } from "node:path";
 import { readFile } from "node:fs/promises";
 import { expect, test } from "@playwright/test";
 import { unzipSync, strFromU8 } from "fflate";
-test("file panel downloads the verified DOCX and retries saving those same bytes to Drive", async ({
-  page
-}, info) => {
+test("file panel saves and reopens a verified DOCX from Drive", async ({ page }, info) => {
   const backups: unknown[] = [];
   await page.route("**/api/v1/storage/drive/backups", async (route) => {
     backups.push(route.request().postDataJSON());
@@ -60,6 +59,18 @@ test("file panel downloads the verified DOCX and retries saving those same bytes
   expect(xml.replace(/<[^>]+>/g, "")).toContain("Компания Б");
   expect(download.suggestedFilename()).toBe("offer.koswork.docx");
   await page.screenshot({ path: info.outputPath("office-copy.png"), fullPage: true });
+  const restoredId = randomUUID();
+  const version = "sha256:" + createHash("sha256").update(bytes).digest("hex");
+  await page.route(`**/api/v1/storage/drive/restored-files/${restoredId}/office`, (route) =>
+    route.fulfill({
+      json: { name: download.suggestedFilename(), bytes: bytes.toString("base64"), version }
+    })
+  );
+  await page.goto(`/?surface=files&officeRestore=${restoredId}`);
+  await expect(editor.getByText(`offer.koswork.docx · ${version}`, { exact: true })).toBeVisible();
+  await expect(editor.getByLabel("Адрес", { exact: true })).toBeEnabled();
+  await expect(editor.getByText(/Файл новой копии: offer\.koswork\.docx/)).toBeVisible();
+  expect(backups).toHaveLength(2);
 });
 for (const format of ["xlsx", "pptx"] as const)
   test(`file panel edits and exports ${format} bytes`, async ({ page }) => {

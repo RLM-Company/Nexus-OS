@@ -253,6 +253,14 @@ describe("complete Drive snapshots and restore", () => {
       const downloaded = await get(`/restored-files/${saved.files[0]!.id}`);
       expect(downloaded.statusCode).toBe(200);
       expect(downloaded.rawPayload).toEqual(original);
+      const office = await get(`/restored-files/${saved.files[0]!.id}/office`);
+      expect(office.statusCode, office.body).toBe(200);
+      expect(office.json()).toEqual({
+        name,
+        bytes: original.toString("base64"),
+        version: "sha256:" + snapshotHash(original)
+      });
+      expect(runtime.bundleStore.file("other-owner", saved.files[0]!.id)).toBeUndefined();
       expect((await post(`/backups/${backup.id}/restore`, restore)).json()).toEqual(saved);
     }
     expect(google.uploads).toBe(2);
@@ -292,6 +300,7 @@ describe("complete Drive snapshots and restore", () => {
     expect(download.body).toBe("<script>not executed</script>");
     expect(download.headers["content-type"]).toContain("application/octet-stream");
     expect(download.headers["content-disposition"]).toContain("attachment;");
+    expect((await get(`/restored-files/${result.files[0]!.id}/office`)).statusCode).toBe(404);
     expect(
       (await post(`/backups/${item.id}/restore`, { token: p.token, operation_id: op })).json()
     ).toEqual(result);

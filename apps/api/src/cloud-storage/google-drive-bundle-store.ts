@@ -386,7 +386,7 @@ export class GoogleDriveBundleStore {
       throw new DriveStorageError("BACKUP_INVALID");
     return this.db
       .prepare(
-        "SELECT id,name,source_project,source_version,restore_id,created_at,length(CAST(content AS BLOB)) AS bytes FROM drive_restored_files WHERE owner_id=? ORDER BY created_at DESC,id LIMIT 200 OFFSET ?"
+        "SELECT id,name,source_project,source_version,restore_id,created_at,length(CAST(content AS BLOB)) AS bytes,typeof(content)='blob' AS is_office FROM drive_restored_files WHERE owner_id=? ORDER BY created_at DESC,id LIMIT 200 OFFSET ?"
       )
       .all(owner, offset);
   }

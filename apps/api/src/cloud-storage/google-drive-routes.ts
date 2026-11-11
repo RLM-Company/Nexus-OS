@@ -5,7 +5,7 @@ import type { GoogleDriveConnectionView, IdentityContext } from "@cosmora/contra
 import { DRIVE_OFFICE_FILE_MAX_BYTES, DRIVE_OFFICE_FILE_MAX_NAME } from "@cosmora/contracts";
 import { DriveStorageError } from "./google-drive.js";
 import type { GoogleDriveRuntime } from "./google-drive-runtime.js";
-import { selectedOfficeFile } from "./google-drive-snapshot.js";
+import { selectedOfficeFile, snapshotHash } from "./google-drive-snapshot.js";
 
 export const DRIVE_ROUTE = "/api/v1/storage/drive";
 export const safeDriveLogUrl = (url: string) =>
@@ -310,6 +310,22 @@ export function registerGoogleDriveRoutes(
       (r) => {
         const items = runtime?.bundleStore.files(identityFor(r).owner_id, r.query.offset) ?? [];
         return { items, has_more: items.length === 200 };
+      }
+    );
+    routes.get<{ Params: { id: string } }>(
+      DRIVE_ROUTE + "/restored-files/:id/office",
+      { schema: { params } },
+      (r) => {
+        const file = runtime?.bundleStore.file(identityFor(r).owner_id, r.params.id);
+        if (!(file?.content instanceof Uint8Array)) throw new DriveStorageError("BACKUP_NOT_FOUND");
+        const bytes = Buffer.from(file.content);
+        if (bytes.length > DRIVE_OFFICE_FILE_MAX_BYTES || snapshotHash(bytes) !== file.sha256)
+          throw new DriveStorageError("BACKUP_INVALID");
+        return {
+          name: file.name,
+          bytes: bytes.toString("base64"),
+          version: "sha256:" + file.sha256
+        };
       }
     );
     routes.get<{ Params: { id: string } }>(
