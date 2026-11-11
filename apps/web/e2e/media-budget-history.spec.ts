@@ -236,3 +236,28 @@ test("malformed owned Sound history blocks MP3 dispatch with a paid consent chec
   await expect(page.getByText(/История MP3 пока недоступна/)).toBeVisible();
   expect(paidPosts).toBe(0);
 });
+
+test("Sound clears stale saved MP3 rows if a later owner history refresh is malformed", async ({
+  page
+}) => {
+  const saved = {
+    id: firstId,
+    kind: "speech",
+    status: "done",
+    created_at: when,
+    error_code: null,
+    asset: { mime: "audio/mpeg", extension: "mp3", bytes: 3 }
+  };
+  let malformed = false;
+  await installOfflineImageCapabilities(page);
+  await page.route("**/api/v1/media/jobs", (route) =>
+    route.fulfill({ json: malformed ? { items: "invalid" } : { items: [saved] } })
+  );
+  await page.goto("/?surface=sound");
+  const gallery = page.getByRole("heading", { name: "Сохранённые озвучивания" }).locator("..");
+  await expect(gallery.getByRole("link", { name: "Скачать MP3" })).toBeVisible();
+  malformed = true;
+  await gallery.getByRole("button", { name: "Обновить историю MP3" }).click();
+  await expect(gallery.getByText(/Не удалось загрузить историю MP3/)).toBeVisible();
+  await expect(gallery.getByRole("link", { name: "Скачать MP3" })).toHaveCount(0);
+});

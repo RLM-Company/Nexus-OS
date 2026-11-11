@@ -214,6 +214,7 @@ function SavedSpeech() {
   const [historyError, setHistoryError] = useState("");
   const [actionError, setActionError] = useState("");
   const [loading, setLoading] = useState(true);
+  const [historyRevision, setHistoryRevision] = useState(0);
   useEffect(() => {
     let active = true;
     const load = async () => {
@@ -226,8 +227,11 @@ function SavedSpeech() {
           setHistoryError("");
         }
       } catch {
-        if (active)
+        if (active) {
+          // Do not keep another owner's cached rows visible after an unverified refresh.
+          setItems([]);
           setHistoryError("Не удалось загрузить историю MP3. Это не значит, что записей нет.");
+        }
       } finally {
         if (active) setLoading(false);
       }
@@ -238,7 +242,7 @@ function SavedSpeech() {
       active = false;
       window.clearInterval(interval);
     };
-  }, []);
+  }, [historyRevision]);
   const remove = async (id: string) => {
     if (!window.confirm("Удалить MP3 и запись истории? Учёт расходов не удаляется.")) return;
     try {
@@ -257,6 +261,9 @@ function SavedSpeech() {
       {loading && <small role="status">Загружаем историю MP3…</small>}
       {historyError && <small role="alert">{historyError}</small>}
       {actionError && <small role="alert">{actionError}</small>}
+      <button type="button" onClick={() => setHistoryRevision((value) => value + 1)}>
+        Обновить историю MP3
+      </button>
       {!loading && !historyError && items.length === 0 && (
         <small>Сохранённых записей пока нет.</small>
       )}
