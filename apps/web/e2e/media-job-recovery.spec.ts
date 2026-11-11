@@ -312,3 +312,48 @@ test("Sound blocks paid speech on unreadable owner history until a read-only che
   await expect(generate).toBeEnabled();
   expect(posts).toBe(0);
 });
+
+test("Sound keeps its unsent text draft across Studio navigation and reload", async ({ page }) => {
+  let paidPosts = 0;
+  await page.route("**/api/v1/media/capabilities", (route) =>
+    route.fulfill({
+      json: {
+        capabilities: {
+          image_generation: { ready: false, model: null, reason: "PAID_EXECUTION_DISABLED" },
+          speech: { ready: false, model: null, reason: "PAID_EXECUTION_DISABLED" },
+          transcription: { ready: false, model: null, reason: "PAID_EXECUTION_DISABLED" }
+        }
+      }
+    })
+  );
+  await page.route("**/api/v1/media/jobs", (route) => route.fulfill({ json: { items: [] } }));
+  page.on("request", (request) => {
+    if (request.url().includes("/api/v1/media/") && request.method() === "POST") paidPosts++;
+  });
+  await page.goto("/?surface=sound");
+  await page.getByLabel("Текст для озвучивания").fill("Черновик локальной озвучки");
+  await page.goto("/?surface=images");
+  await page.goto("/?surface=sound");
+  await expect(page.getByLabel("Текст для озвучивания")).toHaveValue("Черновик локальной озвучки");
+  await page.reload();
+  await expect(page.getByLabel("Текст для озвучивания")).toHaveValue("Черновик локальной озвучки");
+  expect(paidPosts).toBe(0);
+});
+
+test("Sound distinguishes unavailable owned MP3 history from an empty history", async ({ page }) => {
+  await page.route("**/api/v1/media/capabilities", (route) =>
+    route.fulfill({
+      json: {
+        capabilities: {
+          image_generation: { ready: false, model: null, reason: "PAID_EXECUTION_DISABLED" },
+          speech: { ready: false, model: null, reason: "PAID_EXECUTION_DISABLED" },
+          transcription: { ready: false, model: null, reason: "PAID_EXECUTION_DISABLED" }
+        }
+      }
+    })
+  );
+  await page.route("**/api/v1/media/jobs", (route) => route.fulfill({ status: 503 }));
+  await page.goto("/?surface=sound");
+  await expect(page.getByText(/Не удалось загрузить историю MP3/)).toBeVisible();
+  await expect(page.getByText("Сохранённых записей пока нет.")).toHaveCount(0);
+});

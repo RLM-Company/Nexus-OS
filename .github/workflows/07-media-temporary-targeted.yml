@@ -22,8 +22,8 @@ jobs:
       - name: Format exact media sources and export for PR commit
         shell: bash
         run: |
-          pnpm exec prettier --write apps/web/e2e/workspace-product-flows.spec.ts apps/web/e2e/media-job-recovery.spec.ts apps/web/src/app/media-generation/media-panel.tsx apps/web/src/app/voice/voice-playback.tsx apps/web/src/app/media-generation/media-workbench.tsx
-          for p in apps/web/e2e/workspace-product-flows.spec.ts apps/web/e2e/media-job-recovery.spec.ts apps/web/src/app/media-generation/media-panel.tsx apps/web/src/app/voice/voice-playback.tsx apps/web/src/app/media-generation/media-workbench.tsx; do
+          pnpm exec prettier --write apps/web/e2e/workspace-product-flows.spec.ts apps/web/e2e/media-job-recovery.spec.ts apps/web/src/app/media-generation/media-panel.tsx apps/web/src/app/voice/voice-playback.tsx apps/web/src/app/media-generation/media-workbench.tsx apps/web/src/app/voice/voice.module.css docs/team/operation-2026-11-10/deliveries/07_FREE_MEDIA/BACKLOG.md docs/team/operation-2026-11-10/deliveries/07_FREE_MEDIA/CHECKPOINT.md docs/team/operation-2026-11-10/deliveries/07_FREE_MEDIA/DELIVERY.md
+          for p in apps/web/e2e/workspace-product-flows.spec.ts apps/web/e2e/media-job-recovery.spec.ts apps/web/src/app/media-generation/media-panel.tsx apps/web/src/app/voice/voice-playback.tsx apps/web/src/app/media-generation/media-workbench.tsx apps/web/src/app/voice/voice.module.css docs/team/operation-2026-11-10/deliveries/07_FREE_MEDIA/BACKLOG.md docs/team/operation-2026-11-10/deliveries/07_FREE_MEDIA/CHECKPOINT.md docs/team/operation-2026-11-10/deliveries/07_FREE_MEDIA/DELIVERY.md; do
             printf '__MEDIA_FMT_BEGIN__%s__' "$p"
             base64 -w0 "$p"
             printf '__MEDIA_FMT_END__\\n'
@@ -36,4 +36,4 @@ jobs:
         env:
           KOSMORA_E2E_PRODUCTION: "1"
           NEXT_TELEMETRY_DISABLED: "1"
-        run: pnpm --filter @cosmora/web exec playwright test e2e/media-job-recovery.spec.ts e2e/workspace-product-flows.spec.ts --grep "lost speech|Sound blocks|restores separate media settings" --project chromium
+        run: pnpm --filter @cosmora/web exec playwright test e2e/media-job-recovery.spec.ts e2e/workspace-product-flows.spec.ts --grep "lost speech|Sound blocks|Sound keeps|Sound distinguishes|restores separate media settings" --project chromium

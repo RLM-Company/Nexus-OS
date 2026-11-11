@@ -162,3 +162,13 @@
   color: inherit;
   text-decoration: underline;
 }
+
+/* Sound Studio uses inline job controls/history, not the chat voice popover geometry. */
+.studio > .voice,
+.saved > .voice {
+  position: static;
+  width: 100%;
+  max-height: none;
+  overflow: visible;
+  box-shadow: none;
+}

@@ -204,16 +204,28 @@ export function VoicePlayback({ text }: { text: string }) {
 
 function SavedSpeech() {
   const [items, setItems] = useState<MediaJob[]>([]);
+  const [historyError, setHistoryError] = useState("");
+  const [actionError, setActionError] = useState("");
+  const [loading, setLoading] = useState(true);
   useEffect(() => {
     let active = true;
     const load = async () => {
       try {
         const response = await fetch("/api/v1/media/jobs", { cache: "no-store" });
-        if (!response.ok) return;
-        const result = (await response.json()) as { items: MediaJob[] };
-        if (active) setItems(result.items.filter((item) => item.kind === "speech").slice(0, 20));
+        if (!response.ok) throw new Error("Failed to fetch owner's speech jobs");
+        const result = (await response.json()) as { items?: MediaJob[] };
+        if (active) {
+          setItems(
+            (Array.isArray(result.items) ? result.items : [])
+              .filter((item) => item.kind === "speech")
+              .slice(0, 20)
+          );
+          setHistoryError("");
+        }
       } catch {
-        /* History remains empty while unavailable. */
+        if (active) setHistoryError("Не удалось загрузить историю MP3. Это не значит, что записей нет.");
+      } finally {
+        if (active) setLoading(false);
       }
     };
     void load();
@@ -235,10 +247,15 @@ function SavedSpeech() {
       window.alert("Не удалось удалить запись.");
     }
   };
-  if (items.length === 0) return <small>Сохранённых записей пока нет.</small>;
   return (
     <div className={styles.saved}>
       <h4>Сохранённые озвучивания</h4>
+      {loading && <small role="status">Загружаем историю MP3…</small>}
+      {historyError && <small role="alert">{historyError}</small>}
+      {actionError && <small role="alert">{actionError}</small>}
+      {!loading && !historyError && items.length === 0 && (
+        <small>Сохранённых записей пока нет.</small>
+      )}
       {items.map((item) => (
         <div key={item.id} className={styles.voice}>
           <small>
@@ -256,14 +273,19 @@ function SavedSpeech() {
               onClick={() => {
                 void fetch(`/api/v1/media/jobs/${encodeURIComponent(item.id)}`, {
                   method: "DELETE"
-                }).then((response) => {
-                  if (response.ok)
+                })
+                  .then((response) => {
+                    if (!response.ok) throw new Error("Cancellation failed");
+                    setActionError("");
                     setItems((list) =>
                       list.map((entry) =>
                         entry.id === item.id ? { ...entry, status: "cancelled" } : entry
                       )
                     );
-                });
+                  })
+                  .catch(() => {
+                    setActionError("Не удалось подтвердить отмену MP3. Проверьте статус задачи.");
+                  });
               }}
             >
               Отменить
@@ -280,6 +302,24 @@ function SavedSpeech() {
 
 export function SpeechStudio() {
   const [text, setText] = useState("");
+  const [hydrated, setHydrated] = useState(false);
+  useEffect(() => {
+    try {
+      const saved = sessionStorage.getItem("kosmora:media:speech-draft.v1");
+      if (saved && saved.length <= 4096) setText(saved);
+    } catch {
+      /* Local text remains editable when session storage is disabled. */
+    }
+    setHydrated(true);
+  }, []);
+  useEffect(() => {
+    if (!hydrated) return;
+    try {
+      sessionStorage.setItem("kosmora:media:speech-draft.v1", text);
+    } catch {
+      /* No paid request is issued by saving a local draft. */
+    }
+  }, [hydrated, text]);
   return (
     <section className={styles.studio}>
       <h3>Озвучивание текста</h3>
@@ -291,6 +331,7 @@ export function SpeechStudio() {
         Текст для озвучивания
         <textarea
           value={text}
+          disabled={!hydrated}
           maxLength={4096}
           rows={5}
           onChange={(event) => setText(event.target.value)}
