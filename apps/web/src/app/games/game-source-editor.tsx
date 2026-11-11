@@ -103,8 +103,7 @@ export function GameSourceEditor({
       if (archive.size > GAME_ARCHIVE_MAX_BYTES) throw new Error("archive too large");
       const bytes = new Uint8Array(await archive.arrayBuffer());
       if (!mounted.current) return;
-      if (currentSource.current !== startedWith)
-        throw new Error("source changed during read");
+      if (currentSource.current !== startedWith) throw new Error("source changed during read");
       const recovered = readGameProjectArchive(bytes);
       if (recovered === startedWith) return;
       if (
@@ -275,9 +274,7 @@ export function GameSourceEditor({
       </label>
       {restoreError && <p role="alert">{restoreError}</p>}
       {restoring && <p role="status">Проверяю архив…</p>}
-      <p>
-        ZIP восстанавливает исходники без выполнения кода. Сохраните новую версию в Canvas.
-      </p>
+      <p>ZIP восстанавливает исходники без выполнения кода. Сохраните новую версию в Canvas.</p>
       <p>
         Отмена и повтор действуют только для выбранного файла до переключения версии; сохранённые
         версии доступны в истории Canvas. Не более {HISTORY_LIMIT} локальных шагов на файл.
