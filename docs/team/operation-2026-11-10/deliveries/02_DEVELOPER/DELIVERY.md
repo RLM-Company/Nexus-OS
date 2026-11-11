@@ -1,3 +1,97 @@
+# 02_DEVELOPER: поиск в безопасном immutable индексе
+
+11 ноября 2026, Москва. Исполнитель: Разработчик + GPT Plus.
+Статус поставки: **готово к интеграции**.
+Branch `ops/developer-coscode`, [PR #507](https://github.com/RLM-Company/Nexus-OS/pull/507).
+BASE_SHA `b457cf9655d2c8001249c9c34e0180dcc58d97de`, включает сохранённый main
+`4b74f2694d6281887cecdccddaeff994549ec8f0` (последнее продвижение main — только
+канонические отчёты; они приняты без правок). Source HEAD
+`4eb1b83ccd3f16aa79a4de6cfd8fa063b053fb81`, code tree
+`f99c5cd4c85c3546cc21c1c6d4dfd6d1ba995b3e` совпали локально и на GitHub.
+Финальный docs HEAD фиксируется в PR.
+
+## Что изменилось и где вызывается
+
+Entrypoint: существующий `/code-agent` → create route → `CodeAgentService.propose` →
+`gateway.assertRoute` tool negotiation → текущий model/tool cycle → `search_files` →
+`read_file` immutable blob → проверенный patch → сохранённый proposal/store.
+Раньше list_files показывал лишь короткую выборку; модель не могла искать пути
+по остальному индексу без знания точного имени. Теперь search_files принимает
+буквальный case-insensitive query (1–160 символов; непустой после trim), возвращает
+до32 безопасных путей и total_count/partial. Это поиск имён/путей, не содержимого.
+Regex/произвольный shell/URL/папки ПК не принимаются и не исполняются.
+
+Используется уже разрешённый индекс текущего repo/base SHA. Во время поиска нет
+GitHub/network/blob reads. Дальнейшее read_file по-прежнему требует найденный
+обычный blob, проходит прежние guards и сохраняет точные исходные bytes.
+Секретные пути исключаются также самим search helper. Definition выдаётся только
+в существующем toolMode после gateway negotiation; tools-free fallback сохранён.
+Нового client/work runtime/capability/store нет. Общий лимит6 tool-turns и owner
+budget остались прежними; следующая модельная итерация учитывается тем же gateway.
+Поиск локальный, но это не обещание бесплатности всего модельного цикла.
+
+Изменённые файлы: `apps/api/src/code-agent/{service,proposal-input}.ts`,
+`apps/api/test/{code-agent,code-proposal-input}.test.ts`. UI/contracts/DB/migrations/
+регистрация/зависимости/общий GitHub client не менялись. Откат — revert4eb1b83;
+сохранённые задачи и чужой main не удалять. Прерванный run не переигрывается скрыто.
+
+## Проверки и реальные границы
+
+Scoped API+helper **71 PASS** (Code63 + input8), lint/types предварительно прошли.
+Сквозная fixture: полное tree22 002 обычных путей +2 запрещённых; search ADD.TEST →
+точный hit src/add.test.js → immutable read → durable proposal с before/content.
+Всего3 model fixture turns,1tree и2blob reads; поиск не добавил GitHub запросов.
+Unit проверяет32-hit bound/completeness, literal вместоregex, case/trim,
+credential exclusion и отказ для пустых/oversize/control/лишних полей.
+Существующие cancellation/policy/privacy/fallback/API сценарии повторены в scoped
+наборе. Отдельный новый тест достижения6-turn budget не добавлялся; лимит кода
+не менялся. Реальная модель/GitHub provider/executor в API fixtures не вызывались.
+
+Первый scoped прогон:70PASS/1FAIL — тест ожидал proposal без сохранённого before.
+Ожидание исправлено с проверкой точных preimage bytes. Первый core:exit1 на
+no-control-regex; заменён способ проверки управляющих символов на charCodeAt,
+правило lint не отключено. Прежние ошибки сохранены в fixtures/path-search.
+После исправления scoped lint/types/API71PASS, exit0; полный gate — ниже.
+
+```sh
+pnpm --filter @cosmora/api exec vitest run test/code-proposal-input.test.ts test/code-agent.test.ts
+pnpm --filter @cosmora/api typecheck
+pnpm check:core
+```
+
+Для provider без tools используется прежний single-response путь, search_files ему
+не передаётся. Живая model/GitHub target публикация не выполнялась. Предыдущий UI
+receipt22PASS относится к source0591ed1; этот срез не меняет web и не объявляет его
+за повторную browser-приёмку search tool. Настоящий tmp Git/OCI receipt — отдельно.
+
+## Итоговый gate source4eb1b83
+
+Полный `pnpm check:core` после charCodeAt исправления: **exit0**. Свежие API999
+PASS (включая Code63/input8 и GitHub adapter23). Web290/runtime86/DB205 и
+config17/contracts206/policy43/gateway151/core387 — Turbo cache replay, не новые
+прогоны. Format/secrets/lint/types/build/deploy/connection/live guards/vector-scale/
+media/privacy/profile прошли. Пять opt-in OCI пропущены в root test и отдельно
+выполнены GitHub CI: **5/5 PASS**, run42971336480/job130360371529 на том же
+source4eb1b83. API identity42971336594 success. Verify monorepo и общий Browser
+acceptance ещё выполнялись при последнем чтении; не объявляются пройденными.
+
+В текущей среде pnpm запускался с `pnpm_config_verify_deps_before_run=''` при уже
+готовых pinned dependencies, чтобы избежать автоматического повторного install.
+Никакие lint/types/tests/build не отключены. Diff/формат/secret scan проверены;
+.log дополнительно просканированы по шаблонам ключей. Логи ошибок, успехов и
+exit-файлы сохранены в fixtures/path-search; receipt содержит хеши артефактов.
+
+## Следующая точка
+
+Проверить существующий путь исправления после failed check: UI review/edit →
+retryProposalCheck/check → сохранение proof. Сначала воспроизвести failure → точная
+правка → новый review/check → восстановление checkpoint; не строить второй runtime
+и не добавлять скрытый model retry. Затем закрыть конкретно найденные пробелы
+bounded repair. Truncated tree, общая SPA-навигация и live target publish остаются
+ограничениями из BACKLOG. Полная автономная сфера не объявляется завершённой.
+
+---
+
 # 02_DEVELOPER: безопасный контекст большого репозитория
 
 11 ноября 2026, Москва. Исполнитель: Разработчик + GPT Plus.

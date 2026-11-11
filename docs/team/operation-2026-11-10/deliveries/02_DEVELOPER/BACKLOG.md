@@ -46,10 +46,17 @@ BASE_SHA: f9eb45285f3473bfd3fe9a73939c1903dc696b3b.
 - Legacy checkpoint с запрещённым путём не допускается к review/check/publish;
   данные не удаляются. Cancel/revoke/truncated проверены scoped API.
 
+## Исправлено пятым срезом (проверки см. DELIVERY)
+
+- search_files в прежнем negotiated tool cycle: literal query1–160, result<=32,
+  total_count/partial; безопасный immutable index без дополнительных remote reads.
+- Поиск → exact read → durable patch доказан scoped API, tools-free fallback сохранён.
+
 ## Не завершено / следующий приоритет
 
-- В прежний tool cycle добавить bounded literal search_files по безопасному
-  immutable индексу (без новых reads/permissions). Точного поиска пока нет.
+- Следующий приоритет — приёмка failed-check → точная owner/model правка → новый
+  review/check → checkpoint recovery. Сначала повторить существующее сильное поведение
+  retryProposalCheck/check и не добавлять скрытую платную перегенерацию.
 - Truncated tree остаётся отказом; безопасный subtree traversal требует отдельного
   общего GitHub adapter integration и полного existence coverage.
 

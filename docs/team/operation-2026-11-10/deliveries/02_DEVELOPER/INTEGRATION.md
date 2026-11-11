@@ -35,3 +35,12 @@ Main5e01c4f принят merge2bbb4aa. Source d467fdb + fixture0591ed1 меня�
 code-agent/API tests, code-agent-diff/runtime tests и локальные сообщения Coscode.
 Общий GitHub client (включая response limit8MB), contracts/DB/registration/navigation
 не менялись. ПутьTREE_LIMIT для truncated tree сохранён. Новых полномочий нет.
+
+## Поиск путей, 11 ноября
+
+Source4eb1b83: только Code service/helper/scoped tests. search_files — definition
+в прежнем gateway-negotiated tools array и обработчик в прежнем6-turn cycle;
+не новый public API/tool-runtime registry. Tools-free route не получает definition.
+Metadata read использует уже разрешённый immutable index; policy/owner/project
+fences, лимиты и budget не расширены. Общие файлы не менялись. Main4b74f26
+(канонические отчёты) сохранён mergeb457cf9 без авторских правок.
