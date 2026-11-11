@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   GAME_PROJECT_FILES,
   parseGameProject,
@@ -9,6 +9,23 @@ import {
 } from "@cosmora/contracts/game-project";
 import { CanvasComparison } from "../canvas-editor/canvas-comparison";
 import styles from "./game-source.module.css";
+
+type FileHistory = { past: string[]; future: string[] };
+const HISTORY_LIMIT = 40;
+
+/** Only the selected file changes; adjacent source files remain byte-identical. */
+function replaceSource(project: GameProject, selected: GameProjectFile, content: string): string {
+  return JSON.stringify(
+    {
+      ...project,
+      files: project.files.map((item) =>
+        item.name === selected ? { ...item, content } : item
+      )
+    },
+    null,
+    2
+  );
+}
 
 export function GameSourceEditor({
   content,
@@ -24,6 +41,20 @@ export function GameSourceEditor({
   const [selected, setSelected] = useState<GameProjectFile>("game.js");
   const [raw, setRaw] = useState(false);
   const [showDiff, setShowDiff] = useState(false);
+  const [histories, setHistories] = useState<Partial<Record<GameProjectFile, FileHistory>>>({});
+  const lastEmitted = useRef<string | null>(null);
+  const lastInput = useRef<{ file: GameProjectFile; type: string; at: number } | null>(null);
+  // Revisions/imports/raw package updates are external sources: never undo into
+  // an old artifact or silently apply a stale snapshot to another project.
+  useEffect(() => {
+    if (lastEmitted.current === content) {
+      lastEmitted.current = null;
+      return;
+    }
+    lastEmitted.current = null;
+    lastInput.current = null;
+    setHistories({});
+  }, [content]);
   const baselineFiles = useMemo(() => {
     try {
       return parseGameProject(baselineContent).files;
@@ -50,6 +81,60 @@ export function GameSourceEditor({
   }
   const file = project?.files.find((item) => item.name === selected);
   const original = baselineFiles.find((item) => item.name === selected);
+  const history = histories[selected];
+  const emit = (next: string) => {
+    lastEmitted.current = next;
+    onChange(next);
+  };
+  const changeSelected = (value: string, type: string) => {
+    if (!project || !file || file.content === value) return;
+    const now = performance.now();
+    const previous = lastInput.current;
+    const grouped =
+      (type === "insertText" || type === "deleteContentBackward") &&
+      previous?.file === selected &&
+      previous.type === type &&
+      now - previous.at < 700;
+    setHistories((current) => {
+      const state = current[selected] ?? { past: [], future: [] };
+      return {
+        ...current,
+        [selected]: {
+          past: grouped && state.past.length
+            ? state.past
+            : [...state.past.slice(-(HISTORY_LIMIT - 1)), file.content],
+          future: []
+        }
+      };
+    });
+    lastInput.current = { file: selected, type, at: now };
+    emit(replaceSource(project, selected, value));
+  };
+  const travel = (direction: "undo" | "redo") => {
+    if (disabled || !project || !file) return;
+    const state = histories[selected];
+    const stack = direction === "undo" ? state?.past : state?.future;
+    const previous = stack?.at(-1);
+    if (previous === undefined) return;
+    lastInput.current = null;
+    setHistories((current) => {
+      const latest = current[selected]!;
+      return {
+        ...current,
+        [selected]:
+          direction === "undo"
+            ? {
+                past: latest.past.slice(0, -1),
+                future: [...latest.future.slice(-(HISTORY_LIMIT - 1)), file.content]
+              }
+            : {
+                past: [...latest.past.slice(-(HISTORY_LIMIT - 1)), file.content],
+                future: latest.future.slice(0, -1)
+              }
+      };
+    });
+    emit(replaceSource(project, selected, previous));
+  };
   return (
     <section className={styles.editor} aria-label="Файлы игры">
       <div className={styles.tabs} role="group" aria-label="Исходники игры">
@@ -61,13 +146,35 @@ export function GameSourceEditor({
             onClick={() => {
               setSelected(item.name);
               setRaw(false);
+              lastInput.current = null;
             }}
           >
             {item.name}
           </button>
         ))}
-        <button type="button" aria-pressed={raw || !project} onClick={() => setRaw(true)}>
+        <button
+          type="button"
+          aria-pressed={raw || !project}
+          onClick={() => {
+            setRaw(true);
+            lastInput.current = null;
+          }}
+        >
           Пакет JSON
+        </button>
+        <button
+          type="button"
+          disabled={disabled || raw || !file || !history?.past.length}
+          onClick={() => travel("undo")}
+        >
+          Отменить правку файла
+        </button>
+        <button
+          type="button"
+          disabled={disabled || raw || !file || !history?.future.length}
+          onClick={() => travel("redo")}
+        >
+          Повторить правку файла
         </button>
         <button
           type="button"
@@ -86,19 +193,12 @@ export function GameSourceEditor({
           value={!raw && file ? file.content : content}
           onChange={(event) => {
             if (!raw && project && file)
-              onChange(
-                JSON.stringify(
-                  {
-                    ...project,
-                    files: project.files.map((item) =>
-                      item.name === selected ? { ...item, content: event.target.value } : item
-                    )
-                  },
-                  null,
-                  2
-                )
-              );
-            else onChange(event.target.value);
+              changeSelected(event.target.value, (event.nativeEvent as InputEvent).inputType);
+            else {
+              setHistories({});
+              lastInput.current = null;
+              emit(event.target.value);
+            }
           }}
         />
       </label>
@@ -118,6 +218,10 @@ export function GameSourceEditor({
           }}
         />
       )}
+      <p>
+        Отмена и повтор действуют только для выбранного файла до переключения версии; сохранённые
+        версии доступны в истории Canvas. Не более {HISTORY_LIMIT} локальных шагов на файл.
+      </p>
       <p>
         JavaScript: game.ctx, game.keys, game.pointer и game.onUpdate(dt). Поле 800 × 500. Код
         выполняется в отдельном Worker; DOM и внешние зависимости недоступны.

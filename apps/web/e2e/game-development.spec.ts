@@ -199,3 +199,55 @@ test("compares a selected game file against its saved version and never restarts
     .click();
   await expect(code).toHaveValue(edited);
 });
+
+test("undo and redo affect only the selected game file; saving and reload keep both edits", async ({
+  page,
+  request
+}) => {
+  const { id, canvas, code } = await open(page, request);
+  await canvas.getByRole("button", { name: "Сохранить версию", exact: true }).click();
+  await expect(canvas.getByRole("status")).toContainText("Артефакт создан");
+  const originalCode = await code.inputValue();
+  const changedCode = originalCode.replace("let x=80", "let x=240");
+  expect(changedCode).not.toBe(originalCode);
+  const undo = canvas.getByRole("button", { name: "Отменить правку файла", exact: true });
+  const redo = canvas.getByRole("button", { name: "Повторить правку файла", exact: true });
+  await expect(undo).toBeDisabled();
+  await code.fill(changedCode);
+  await expect(undo).toBeEnabled();
+  await undo.click();
+  await expect(code).toHaveValue(originalCode);
+  await redo.click();
+  await expect(code).toHaveValue(changedCode);
+
+  await canvas.getByRole("button", { name: "styles.css", exact: true }).click();
+  const styles = canvas.getByRole("textbox", { name: "styles.css", exact: true });
+  const originalStyles = await styles.inputValue();
+  const changedStyles = originalStyles + "\n#game-stage { border: 1px solid #222; }";
+  await styles.fill(changedStyles);
+  await undo.click();
+  await expect(styles).toHaveValue(originalStyles);
+  await redo.click();
+  await expect(styles).toHaveValue(changedStyles);
+
+  await canvas.getByRole("button", { name: "game.js", exact: true }).click();
+  await expect(code).toHaveValue(changedCode);
+  await undo.click();
+  await expect(code).toHaveValue(originalCode);
+  await canvas.getByRole("button", { name: "styles.css", exact: true }).click();
+  await expect(styles).toHaveValue(changedStyles);
+  await canvas.getByRole("button", { name: "game.js", exact: true }).click();
+  await redo.click();
+  await expect(code).toHaveValue(changedCode);
+  await canvas.getByRole("button", { name: "Сохранить версию", exact: true }).click();
+  await expect(canvas.getByRole("status")).toContainText("Сохранена новая версия");
+  await page.reload();
+  await page.getByRole("combobox", { name: "Проект игры", exact: true }).selectOption(id);
+  await canvas
+    .getByRole("navigation", { name: "Артефакты проекта" })
+    .getByRole("button", { name: /Звёздный пилот.*v2/ })
+    .click();
+  await expect(code).toHaveValue(changedCode);
+  await canvas.getByRole("button", { name: "styles.css", exact: true }).click();
+  await expect(styles).toHaveValue(changedStyles);
+});
