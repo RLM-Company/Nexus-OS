@@ -87,6 +87,16 @@ describe("research v1, source-grounded workflow", () => {
       )
     ).toHaveLength(1);
   });
+  it("keeps room for distinct evidence when a page repeats the same excerpt", () => {
+    const repeated = "Стоимость тарифа Alpha составляет 50 рублей за месяц при годовой оплате.";
+    const alternative = "Стоимость тарифа Alpha при помесячной оплате составляет 70 рублей.";
+    expect(
+      researchPassages(
+        [repeated, repeated, repeated, alternative].join("\n"),
+        "Стоимость тарифа Alpha"
+      )
+    ).toEqual([repeated, alternative]);
+  });
   it("enforces robots permissions including longest allow rule", () => {
     const rules = "User-agent: *\nDisallow: /private\nAllow: /private/public";
     expect(robotsPermits(rules, "/private/no")).toBe(false);
