@@ -1,12 +1,16 @@
-# Вторая волна + O-003
+# Отчёт №2 завершён
 
-PR510 — WAVE_2, head338ee9a4, exact source heads в WAVE_2.json.
-Включены Coscode proofs/editor continuity, Sites/Games continuity, только
-Windows diagnostics (не весь #502), candidate0.27.0. Требуется общий CI.
+Продуктовый main5e01c4fddf2bfc87c7e60b82bae5259f154ce879, дерево совпадает
+с testedheadae2568e9. PR510 и 511 merged. WAVE_2.json/O-003_ACCEPTANCE.json
+фиксируют exact source/test/merge и проверенные jobs. Windows candidate0.27.0.
 
-O-003 поверх PR510 в ops/codex-work-acceptance-recovery-20261110:
-late mutation ACK уважает новую selection, lost acceptance ACK восстанавливается
-одним GET без повторного POST, integrity conflict показан явно.3e2e добавлены.
-Следующее: проверки/PR, CI, интеграция после PR510; отчёт2 с точнымиSHA.
-Gemini rework_required; источник preserved, патч не активирован.
-VPS/owner-PC и платные вызовы не выполнялись.
+O-003 приёмка: поздний ACK уважает выбор; один GET при потерянном POST, без
+автоповтора;3 браузерных регрессии прошли в общем 448 прогоне.
+
+Очередь: новые heads #507cd4c4ad4 и #5024651fd68, Media50404f0fdab, затем
+собственный Office/Drive workflow. ПолныйWindowsPRнепринят: толькоguard и
+diagnostics e3cbd1a8. Packagegraphguardнастаром 1a3f8a62 не видит missingrequire
+(реальныйpureprobe),logoutнадопроверитьприбыстромповторномвходе. Новыеheads
+могут уже содержатьисправления — сравнить, не повторять старый диагноз вслепую.
+Gemini rework_required, source reference сохранён, обратнонеотправляли.
+VPS,owner-PC,liveprovider отложены. Документальныйотчёт 2 готовится отдельнымPR.

@@ -1,5 +1,5 @@
 {
-  "state": "candidate",
+  "state": "integrated",
   "baseline": "f9da6e83c8764949d7a478649b8d680517f1c320",
   "sources": [
     {
@@ -46,5 +46,15 @@
   "windows_candidate": "0.27.0",
   "server_deploy": false,
   "owner_device_actions": false,
-  "paid_model_calls": 0
+  "paid_model_calls": 0,
+  "pr": 510,
+  "tested_head": "9a971e22862f8ffdebee4fb2de3e131473521934",
+  "merge_sha": "c738a4d4d1418140f3cf12cfb0e74056f3a250dd",
+  "merge_tree_matches_tested_head": true,
+  "checks_result": "5/5 success",
+  "browser_scenarios_passed": 445,
+  "real_oci_tests_passed": 5,
+  "native_local_tests_passed": 438,
+  "browser_flaky_retries": 0,
+  "packaging_integration_fix": "diagnostics.cjs explicitly included in build.files and required preflight list"
 }
