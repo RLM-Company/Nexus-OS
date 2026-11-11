@@ -33,6 +33,21 @@ bundle не ломаются, точный байтовый учёт `fitContext
 - После async `embed` + сканирования индекса добавлен `a.semanticScope(target, owner)`
   (внутри — `owned()`), fail closed при смене владельца/fence.
 
+## apps/web (срез B, клиентская часть)
+
+- `apps/web/src/app/memory-selection-reason.ts` — новый чистый модуль.
+- `apps/web/src/app/context-memory-settings.tsx` — только функциональные строки
+  в существующем `<section aria-label="Подобранный контекст">`: статус
+  `answer_evidence` и причина выбора. Компоновка, палитра, типографика, CSS,
+  сайдбар и чат **не менялись**; `VISUAL_WAITLIST.md` не требуется.
+- `apps/web/src/app/memory-selection-reason.test.ts` — тест хелпера.
+
+## scripts (срез C, measurement-only)
+
+- `scripts/measure-memory-panel.mjs` — не подключён в runtime, запускается
+  вручную; требует собранного `@cosmora/db` (`dist`). Внешний провайдер не
+  вызывается. Это измеритель, а не новый memory store.
+
 ## Чего НЕ трогали
 
 `app.ts`, `server.ts`, DB registration/migrations, gateway, auth, work-cycle,
