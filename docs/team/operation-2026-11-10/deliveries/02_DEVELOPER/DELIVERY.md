@@ -1,3 +1,81 @@
+# 02_DEVELOPER: восстановление усечённого дерева GitHub
+
+11 ноября 2026, Москва. Branch ops/developer-coscode, [PR #519](https://github.com/RLM-Company/Nexus-OS/pull/519).
+Статус кода: **готово к интеграции**, общий quality gate заблокирован upstream format.
+BASE_SHA `4a6b9cfbf79e9d9144852fea3cf43bf9d726dda5` после принятия main
+`d047ce125f623c64d2615a6235dfdcd1c8e70a55`. Новые optional memory contracts,
+store ownership revalidation и чужой Windows source сохранены без авторских правок.
+Integration `b22b4f3f42a3b7bb202c72cc8f9ddc200c5b2f1e` отдельно меняет общий adapter.
+Scoped source HEAD `39cad6b69c1771f78c78908c4183b4c6af885e4e`, code tree
+`e73b1ab02e899f64105d8fbb6ab9bb4fed53a920` совпали локально и на GitHub.
+
+## До / после и entrypoint
+
+`/code-agent` → create → текущие service/GitHub adapter → recursive tree.
+Раньше truncated=true давал TREE_LIMIT, не позволяя получить полный existence index.
+Теперь существующий adapter при таком результате читает nonrecursive tree объекты
+по закреплённым SHA, собирает полный индекс и только тогда возвращает truncated=false.
+Оригинальный partial recursive список не смешивается с восстановленным. Scope и
+opaque repo/base привязки сохраняются. После этого прежние selection/search/read
+получают безопасные blob paths, proposal → preview/review/check сохраняют результат.
+
+<=128 nodes,100k entries,8MB expanded metadata,30swhole deadline; каждый HTTP response
+по-прежнему <=8MB/15s. При исчерпании traversal budget или усечённом child возвращается
+original truncated=true, поэтому отсутствие файла не выдумывается. Wrong SHA,
+unsafe component/duplicate/ancestor cycle отклоняются; один tree SHA под разными
+prefixes поддерживается. Это bounded recovery, не обещание читать любой размер repo.
+
+Optional GithubReadScope(signal/allowed) проходит через status/tree/file/prepare/
+branchTree. Проверяется до/после HTTP и при чтении body. Code service передаёт
+существующие active/external controller и authorityChecks: отмена/privacy/policy
+не создают второй permissions runtime. Publish использует свой прежний allowed
+predicate также для metadata; write retry не добавлен. Full existence index теперь
+включает директории: folder нельзя выдать за новый обычный файл. Secret/symlink blobs
+не читаются. Прочитанные files/исходные bytes и новый proof сохраняются прежним store.
+
+## Проверки и фактический upstream blocker
+
+- Adapter+existing GitHub+Code96PASS; после service binding —100PASS (Code68,
+  GitHub23, tree9). Success: recovered tree→selected blobs→proposal→review→check;
+  folder overwrite refusal; cancel/revoke during child retrieval без blob/model;
+  malformed/cyclic/shared tree, nonrecursive truncation и bounded traversal.
+- Scoped lint/types/format прошли. Провайдер GitHub/model/runner в этих API tests —
+  явные fixtures; parsing/service/guards/store настоящие, live publish не выполнялся.
+- Полный pnpm check:core **exit1**: Prettier отклонил пришедший из main файл
+  `docs/research/experience-llm-distill-2026-11-10.json`. Это чужой исследовательский
+  artifact; его bytes и .prettierignore не менялись. Gate НЕ объявляется пройденным.
+- Остаток core выполнен явной последовательностью после scoped format и завершён
+  **exit0**: secrets/lint/types/test/deploy/connection/live guards/secrets/vector-scale/
+  media/build/privacy/profile. Fresh API1014/web290/runtime86/core389/DB214/contracts206/
+  gateway151/policy43 PASS; config17 — cache replay;5 opt-in OCI skipped в root test.
+  stdout целиком собран из exec session, profile (redirected отдельно) приложен.
+  Это не обход failed formatter и не зелёный общий CI.
+- Web component этим срезом не менялся, добавлены только два error messages.
+  UI24PASS относится к d8290f6 из предыдущего среза, не к новому browser-прогону.
+
+Команды: pnpm --filter @cosmora/api exec vitest run test/code-agent.test.ts
+test/code-agent-github-tree.test.ts test/github-integration.test.ts; pnpm check:core
+(зафиксированный отказ); затем каждая оставшаяся команда из package.json check:core
+после format:check отдельно. Полные логи/exit/hash receipts — fixtures/tree-recovery.
+В этой среде pnpm_config_verify_deps_before_run='' при готовых pinned deps.
+
+## Интеграция и откат
+
+Common file только apps/api/src/github-integration.ts; scoped tree test и INTEGRATION
+в том же integration commit. Scoped service/test/error messages отдельным commit.
+Оба применить вместе. Нет DB/migrations/dependencies/new executor/tool registry.
+Callbacks не попадают в сериализованный ChangePlan. Откат: scoped source, затем
+integration; source/base/checkpoint/чужие файлы не удалять. Upstream format blocker
+передан на согласование Codex через этот отчёт; авторские данные не форматировать
+попутно, manifest может быть привязан к их исходным bytes.
+
+Осталось: modern-browser history guard и explicit bounded model repair по реальному
+failed check. Старый manual repair/free check retry и новые checkpoint controls
+сохранены. Полная сфера ещё не завершена; real model/target publish/owner PC/VPS/
+merge/deploy не выполнялись. Далее — точная точка в CHECKPOINT.
+
+---
+
 # 02_DEVELOPER: конфликт review и восстановление исправленного checkpoint
 
 11 ноября 2026, Москва. Статус этого среза: **готово к интеграции**.

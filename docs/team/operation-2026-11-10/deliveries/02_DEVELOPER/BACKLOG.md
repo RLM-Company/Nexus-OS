@@ -59,13 +59,20 @@ BASE_SHA: f9eb45285f3473bfd3fe9a73939c1903dc696b3b.
 - Failure→repair→new proof→stop/recover через отдельный file SQLite connection
   проверен; API64, coreexit0, Chromium24PASS. Это ещё не automatic model repair.
 
+## Исправлено седьмым срезом (готово к интеграции; upstream format blocker)
+
+- Bounded immutable nonrecursive recovery при truncated tree, полный индекс без
+  выдуманной полноты; callback scope в текущем adapter и service authority gates.
+- Code68/GitHub23/tree9=100PASS. Все gates после format прошли; общий coreexit1
+  на чужом main research JSON сохранён, не объявляется успехом.
+
 ## Не завершено / следующий приоритет
 
 - Следующий приоритет — приёмка failed-check → точная owner/model правка → новый
   review/check → checkpoint recovery. Сначала повторить существующее сильное поведение
   retryProposalCheck/check и не добавлять скрытую платную перегенерацию.
-- Truncated tree остаётся отказом; безопасный subtree traversal требует отдельного
-  общего GitHub adapter integration и полного existence coverage.
+- Tree recovery реализован; случаи за128nodes/100k/8MB/30s остаются честным
+  ограничением с original truncated=true. Общий formatter main blocked чужим artifact.
 
 - Сквозная приёмка tmp Git выполнена первым срезом: input/output/patch/receipt
   сохранены в fixtures/check-evidence. Локально4/5 OCI (старый setup timeout),
