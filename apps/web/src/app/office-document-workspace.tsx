@@ -119,6 +119,7 @@ export function OfficeDocumentWorkspace() {
   const [busy, setBusy] = useState(false);
   const abort = useRef<AbortController | null>(null);
   const generation = useRef(0);
+  const lastDriveOperation = useRef<string | null>(null);
   const cancel = () => {
     generation.current++;
     abort.current?.abort();
@@ -259,6 +260,8 @@ export function OfficeDocumentWorkspace() {
   const saveToDrive = () => {
     if (!result?.drive || result.drive.verified || busy) return;
     const { name, drive } = result;
+    const retryUpload = lastDriveOperation.current === drive.operationId;
+    lastDriveOperation.current = drive.operationId;
     void run(async (signal, current) => {
       const response = await fetch("/api/v1/storage/drive/backups", {
         method: "POST",
@@ -267,6 +270,7 @@ export function OfficeDocumentWorkspace() {
           operation_id: drive.operationId,
           chat_ids: [],
           include_results: false,
+          ...(retryUpload ? { retry_upload: true } : {}),
           office_file: { name, bytes: drive.bytes }
         }),
         signal,

@@ -39,7 +39,7 @@ export class GoogleDriveBundles {
   resume(owner: string) {
     this.#blocked.delete(owner);
   }
-  save(owner: string, operation: string, selection: SnapshotSelection) {
+  save(owner: string, operation: string, selection: SnapshotSelection, retryUpload = false) {
     return this.job(owner, async (context) => {
       let row = this.store.find(owner, operation);
       if (row && row.selection_sha !== selectionHash(selection))
@@ -52,7 +52,7 @@ export class GoogleDriveBundles {
           captureSnapshot(this.store.db, owner, selection)
         );
       if (row.state === "verified") return bundleView(row);
-      return this.send(context, row.id, false);
+      return this.send(context, row.id, retryUpload);
     });
   }
   retry(owner: string, id: string) {

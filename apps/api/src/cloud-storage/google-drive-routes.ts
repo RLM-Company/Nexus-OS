@@ -214,6 +214,7 @@ export function registerGoogleDriveRoutes(
         file_ids?: string[];
         include_results: boolean;
         office_file?: { name: string; bytes: string };
+        retry_upload?: boolean;
       };
     }>(
       DRIVE_ROUTE + "/backups",
@@ -232,6 +233,7 @@ export function registerGoogleDriveRoutes(
                 })
               ),
               include_results: Type.Boolean(),
+              retry_upload: Type.Optional(Type.Boolean()),
               office_file: Type.Optional(
                 Type.Object(
                   {
@@ -250,14 +252,21 @@ export function registerGoogleDriveRoutes(
         }
       },
       (r) =>
-        bundles().save(identityFor(r).owner_id, r.body.operation_id, {
-          include_results: r.body.include_results,
-          ...(r.body.chat_ids ? { chat_ids: r.body.chat_ids } : {}),
-          ...(r.body.file_ids ? { file_ids: r.body.file_ids } : {}),
-          ...(r.body.office_file
-            ? { office_file: selectedOfficeFile(r.body.office_file.name, r.body.office_file.bytes) }
-            : {})
-        })
+        bundles().save(
+          identityFor(r).owner_id,
+          r.body.operation_id,
+          {
+            include_results: r.body.include_results,
+            ...(r.body.chat_ids ? { chat_ids: r.body.chat_ids } : {}),
+            ...(r.body.file_ids ? { file_ids: r.body.file_ids } : {}),
+            ...(r.body.office_file
+              ? {
+                  office_file: selectedOfficeFile(r.body.office_file.name, r.body.office_file.bytes)
+                }
+              : {})
+          },
+          r.body.retry_upload
+        )
     );
     for (const action of ["retry", "preview", "discard", "cancel-preview"] as const)
       routes.post<{ Params: { id: string } }>(
