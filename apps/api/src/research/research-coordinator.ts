@@ -39,7 +39,7 @@ export class ResearchCoordinator {
   }
   launch(run: ResearchRun): boolean {
     if (
-      (!this.search.configured && !run.sources.length) ||
+      (!this.search.configured && !run.candidates.length && !run.sources.length) ||
       this.store.isFenced(run.owner_id) ||
       this.active.has(run.id) ||
       this.active.size >= 2 ||
@@ -139,6 +139,7 @@ export class ResearchCoordinator {
     const timed = AbortSignal.any([outer, AbortSignal.timeout(RESEARCH_LIMITS.maxRunMilliseconds)]);
     let run = this.activeUpdate(id, owner, ["queued", "paused"], (state) => {
       state.attempts++;
+      state.error_code = null;
       state.status = state.candidates.length || state.sources.length ? "reading" : "searching";
       state.stage =
         state.status === "reading" ? "Продолжаем проверку источников" : "Поиск через SearxNG";
@@ -201,6 +202,14 @@ export class ResearchCoordinator {
           return;
         }
         if (error instanceof ResearchNetworkError) {
+          if (error.code === "SOURCE_TEMPORARY" && run.attempts < RESEARCH_LIMITS.maxAttempts) {
+            this.activeUpdate(id, owner, ["reading"], (state) => {
+              state.status = "paused";
+              state.error_code = "SOURCE_TEMPORARY";
+              state.stage = `Источник ${state.next_index + 1} временно недоступен. Можно продолжить с него.`;
+            });
+            return;
+          }
           status =
             error.code === "ROBOTS_DENIED"
               ? "robots_denied"
