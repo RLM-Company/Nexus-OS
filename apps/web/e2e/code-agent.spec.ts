@@ -1,4 +1,5 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Page, type Route } from "@playwright/test";
+import { isWorkspaceWrite } from "./fixtures/navigation-writes";
 
 async function scenario(
   page: Page,
@@ -204,8 +205,8 @@ async function scenario(
   };
 }
 
-async function prepare(page: Page) {
-  await page.goto("/code-agent");
+async function prepare(page: Page, navigate = true) {
+  if (navigate) await page.goto("/code-agent");
   await page.getByLabel("Задача", { exact: true }).fill("Исправь неверный результат");
   await page.getByRole("button", { name: "Предложить исправление" }).click();
   await expect(page.getByLabel("Просмотр изменений")).toContainText("export const value = 1;");
@@ -372,6 +373,112 @@ test("explicit checkpoint restoration also discards unapplied raw diff without r
   await expect(raw).toBeVisible();
   expect(state.snapshot().check).toBeUndefined();
   expect(state.checks()).toBe(1);
+  expect(state.publications()).toBe(0);
+});
+
+test("same-document Forward can be cancelled with exact edits retained, then explicitly confirmed", async ({
+  page
+}) => {
+  const state = await scenario(page);
+  await page.goto("/code-agent");
+  await expect(page.getByRole("combobox", { name: "Проект", exact: true })).toHaveValue(
+    "project-1"
+  );
+  const disconnected = (route: Route) =>
+    route.fulfill({
+      json: { configured: false, repository: "RLM-Company/Nexus-OS", default_branch: null }
+    });
+  await page.route("**/api/v1/github/status", disconnected);
+  const response = page.waitForResponse(
+    (r) => new URL(r.url()).pathname === "/api/v1/github/status"
+  );
+  await page.getByRole("link", { name: "GitHub", exact: true }).click();
+  await response;
+  await expect(page).toHaveURL(/\/github$/);
+  await page.unroute("**/api/v1/github/status", disconnected);
+  await page.evaluate(() => history.back());
+  await expect(page).toHaveURL(/\/code-agent$/);
+  await prepare(page, false);
+  expect(await page.evaluate(() => "navigation" in window)).toBe(true);
+  expect(
+    await page.evaluate(() =>
+      navigation.entries().some((entry) => entry.url?.endsWith("/github") && entry.sameDocument)
+    )
+  ).toBe(true);
+  await page.route("**/api/v1/github/status", disconnected);
+  await page.getByLabel("+ Итоговое содержимое: src/value.js").fill("export const value = 4;");
+  await expect.poll(() => state.snapshot().status).toBe("review");
+  let dialogs = 0;
+  page.once("dialog", (dialog) => {
+    dialogs++;
+    void dialog.dismiss();
+  });
+  await page.evaluate(() => history.forward());
+  await expect.poll(() => dialogs, { timeout: 5000 }).toBe(1);
+  await expect(page).toHaveURL(/\/code-agent$/);
+  await expect(page.getByLabel("+ Итоговое содержимое: src/value.js")).toHaveValue(
+    "export const value = 4;"
+  );
+  await page.getByLabel("+ Итоговое содержимое: src/value.js").click();
+  let accepted = 0;
+  page.once("dialog", (dialog) => {
+    accepted++;
+    void dialog.accept();
+  });
+  await page.goForward();
+  await expect.poll(() => accepted, { timeout: 5000 }).toBe(1);
+  await expect(page).toHaveURL(/\/github$/);
+  expect(state.publications()).toBe(0);
+});
+
+test("browser Back can be cancelled with edits visible, then explicitly confirmed without workspace writes", async ({
+  page
+}) => {
+  await page.goto("/?surface=code");
+  const link = page
+    .locator(".coscode-space-tools")
+    .getByRole("link", { name: "Репозиторий и изменения", exact: true });
+  await expect(link).toHaveAttribute("href", "/code-agent");
+  const state = await scenario(page);
+  await link.click();
+  await expect(page).toHaveURL(/\/code-agent$/);
+  await prepare(page, false);
+  expect(
+    await page.evaluate(() =>
+      navigation
+        .entries()
+        .some((entry) => entry.url && new URL(entry.url).pathname === "/" && entry.sameDocument)
+    )
+  ).toBe(true);
+  const editor = page.getByLabel("+ Итоговое содержимое: src/value.js");
+  await editor.fill("export const value = 4;");
+  await editor.click();
+  await expect.poll(() => state.snapshot().status).toBe("review");
+  const writes: string[] = [];
+  page.on("request", (request) => {
+    if (isWorkspaceWrite(request)) writes.push(request.url());
+  });
+  let declined = 0;
+  page.once("dialog", (dialog) => {
+    declined++;
+    void dialog.dismiss();
+  });
+  await page.goBack({ waitUntil: "commit", timeout: 2000 }).catch(() => null);
+  expect(declined).toBe(1);
+  await expect(page).toHaveURL(/\/code-agent$/);
+  await expect(editor).toBeVisible();
+  await expect(editor).toHaveValue("export const value = 4;");
+  await page.unroute("**/api/v1/**");
+  await editor.click();
+  let accepted = 0;
+  page.once("dialog", (dialog) => {
+    accepted++;
+    void dialog.accept();
+  });
+  await page.goBack();
+  expect(accepted).toBe(1);
+  await expect(page).toHaveURL((url) => url.pathname === "/");
+  expect(writes).toEqual([]);
   expect(state.publications()).toBe(0);
 });
 
