@@ -68,3 +68,14 @@ shared subtrees с разными prefixes допустимы. При непол
 Общий JSON contract tree остаётся прежним; callbacks не сериализуются в ChangePlan.
 Scoped adapter+GitHub+Code96PASS, lint/types exit0. Service binding к существующим
 authorityChecks/controller поставляется отдельным scoped commit; без второго runtime.
+
+## One-attempt repair, source3936e5f
+
+Только scoped API/web. `repair_once:1` в GET view разрешает web показать новую
+команду; old API без capability не получает POST repair. Optional check_type и
+repair_request живут в прежнем run JSON; схема/миграции/DB registration не меняются.
+Поставлять API+web вместе. Новых tools registry/общих contracts/gateway permissions
+нет; модельная попытка идёт без tools через текущий маршрут и общий ownerBudget.
+Возврат proposal требует нового review; старый token отзывается атомарно. Не менять
+postflight необратимого GitHub publish на blanket отказ — его reconciliation сохранён.
+Общий adapter по-прежнему только отдельный b22b4f3. Новых интеграционных файлов нет.

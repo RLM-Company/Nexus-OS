@@ -1,5 +1,12 @@
 # Coscode: проверенный backlog
 
+Итог 11 ноября: согласованный сценарий завершён до статуса «готово к интеграции».
+Source3936e5f, Draft PR519. Failed-check → одна явно разрешённая модельная попытка →
+новый diff → реальный повтор той же проверки → свежий review подключён к продукту.
+Реальный OCI API/Git сценарий PASS; root check:core exit0. Браузерный результат
+и точные commands/receipts — в актуальной верхней части DELIVERY.md.
+Список ниже сохраняет историю срезов, а не утверждает завершение release/live.
+
 Исполнитель: Разработчик + GPT Plus. Branch: ops/developer-coscode.
 BASE_SHA: f9eb45285f3473bfd3fe9a73939c1903dc696b3b.
 База 9d972e8ba447f681fbfb49253b73d9f02dd1d325 — предок фактического main.
@@ -73,13 +80,19 @@ BASE_SHA: f9eb45285f3473bfd3fe9a73939c1903dc696b3b.
   workspace writes проверены production26PASS. Shell/history/router не переписаны.
 - Старые браузеры/uncancelable platform events — честная compatibility boundary.
 
-## Не завершено / следующий приоритет
+## Девятый срез: исправление после проверки (готово к интеграции)
 
-- Следующий приоритет — приёмка failed-check → точная owner/model правка → новый
-  review/check → checkpoint recovery. Сначала повторить существующее сильное поведение
-  retryProposalCheck/check и не добавлять скрытую платную перегенерацию.
-- Tree recovery реализован; случаи за128nodes/100k/8MB/30s остаются честным
-  ограничением с original truncated=true. Общий formatter main blocked чужим artifact.
+- Existing gateway/ownerBudget/executor, exact working bytes владельца и одна попытка.
+- Server capability, отдельное подтверждение, idempotency UUID, запрет replay после
+  restart/unknown, сохранённая ошибка и новый review перед token/publication.
+- Fast tool-only authority revoke исправлен внутри действующего guarded model scope.
+- Старый upstream formatter blocker исправлен владельцем файла в main и принят merge;
+  новый root coreexit0. Новых продуктовых блоков вне поручения не создаём.
+
+## Оставшиеся подтверждённые границы
+
+- Tree recovery за128nodes/100k/8MB/30s заканчивается честным отказом.
+- Node syntax/node-test ограничены выбранным snapshot; не произвольный build стека.
 
 - Сквозная приёмка tmp Git выполнена первым срезом: input/output/patch/receipt
   сохранены в fixtures/check-evidence. Локально4/5 OCI (старый setup timeout),

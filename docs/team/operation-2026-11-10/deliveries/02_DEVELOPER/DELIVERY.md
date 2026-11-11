@@ -1,3 +1,157 @@
+# 02_DEVELOPER: законченный путь исправления Coscode
+
+11 ноября 2026, Москва. Статус: **готово к интеграции**. Ветка
+`ops/developer-coscode`, [Draft PR #519](https://github.com/RLM-Company/Nexus-OS/pull/519).
+Публикация своей ветки подтверждена на настоящем GitHub; merge/deploy не выполнялись.
+
+- Контрольная база владельца: `9d972e8ba447f681fbfb49253b73d9f02dd1d325`.
+- Фактическая исходная main: `f9eb45285f3473bfd3fe9a73939c1903dc696b3b` (контрольная база — предок).
+- Main перед текущим source: `abbcee7eab47d7e8ded86a0cfb1567a133b3a76a`;
+  merge BASE_SHA текущего среза: `be85aef8b394a8a6489239def4399dfd59595a19`.
+- Source HEAD_SHA: `3936e5f7ebe7abe7780e82debaac71a15743710f`,
+  tree `9e4fd6b0382e12c789027b68862aeb42498c98f3` совпадает локально и на GitHub.
+  Финальный docs HEAD указан в PR/history (самоссылка SHA в собственном commit не создаётся).
+- Финальная сверка: main `026b0dfbf42823c2aeef5da41801378ffc8d6c7a` сохранена
+  merge `7900ce6f95abbeb789e3b2a74194a5bd2ed32492` (tree59cf949a). Только11
+  OpenCode Windows/download/report files; Coscode и общие API/contracts не менялись.
+  Полный core и browser относятся к source3936e5f, после этого merge повторены
+  общий format/secret/diff check. Чужой Windows функциональный прогон не заявляется.
+
+## Что теперь работает
+
+Существующий `/code-agent` → project/task/issue → bounded immutable context →
+точные edits/diff → сохранённый review → текущий OCI/HTTP executor → строгий proof →
+отдельное разрешение branch/commit/Draft PR. Работа остаётся в прежних run/store,
+manager/gateway/ownerBudget и executor; переносить код из ответа вручную не нужно.
+Ранее доставлены exact deep links, поиск безопасных путей, восстановление усечённого
+GitHub tree, конфликт устаревшего review, загрузка checkpoint и защита локальных
+правок. Ниже сохранена история этих срезов; её старые blockers не описывают новый итог.
+
+Теперь после реальной неудачной проверки есть явный путь:
+**разрешение дополнительного модельного расхода → одна попытка → новый diff → та же
+проверка → новый просмотр владельцем**. Запрос отправляется только при capability
+`repair_once:1`; старый сервер не получает новую команду от web. Сервер проверяет
+owner/project, текущий review, failed exit>0, cleanup, digest и сохранённый check_type.
+Старый proof без check_type требует свежей проверки. Неподдержанный набор файлов
+(NO_SUPPORTED_CHECK_FILES) отказывается до генерации.
+
+Рабочий контекст — исходный snapshot плюс выбранные сохранённые правки владельца.
+Разрешены только точные уникальные edits существующих прочитанных байтов; модель
+не получает tools, не создаёт произвольные пути и не заменяет весь файл. Все
+выбранные изменения сохраняются, diff строится относительно оригинальной базы.
+Результат модели не считается успехом: повторный запуск проходит через прежний
+изолированный runner. Старые draft/check/publication_token атомарно отделяются от
+нового предложения; токен возможен только после нового review точных проверенных
+байтов. Предыдущая ошибка, review hash, draft ID и digest остаются в run JSON.
+
+UUID запроса сохраняется до dispatch. Повтор того же UUID возвращает состояние,
+другой UUID после резерва получает REPAIR_LIMIT. Ошибка, timeout, отмена или restart
+не дают скрытого второго модельного вызова. При отказе точной замены прежний review
+и выбранные байты остаются доступны. Политика повторно проверяется внутри model
+scope после ответа: быстрый tool-only ответ при отзыве доступа не становится patch;
+фактически полученный usage при этом не теряется.
+
+## Изменённые файлы и контракт
+
+Текущий source commit меняет `apps/api/src/code-agent/{service,store,routes}.ts`,
+`apps/api/test/code-agent.test.ts`, `apps/web/src/app/code-agent/{page.tsx,patch-client.ts}`,
+новый `repair-control.tsx` и `apps/web/e2e/code-agent.spec.ts`.
+POST `.../code-agent/:id/repair` принимает `{review_hash,client_request_id,approve:true}`.
+`check_type` и `repair_request` — optional поля прежнего run JSON: миграции и новые
+таблицы не нужны. Dependencies/lockfile/provider/квоты/права не менялись.
+Общий adapter из tree-среза вынесен отдельно в `b22b4f3` и описан в INTEGRATION.md.
+Оболочка чата, sidebar, global CSS и другие сферы не изменялись.
+
+## Воспроизводимая приёмка
+
+- Scoped API/GitHub/tree: **115 PASS, 1 opt-in SKIP**, exit0.
+- Отдельный настоящий OCI API/Git repair: **1 PASS**, exit0 (остальные83 skipped
+  по `-t`, не объявляются заново пройденными).
+- `pnpm check:core`: **exit0** на source3936e5f. Format/secrets/lint/typecheck/test/
+  deploy/connection/live-guards/secret-tests/vector-scale/media/build/privacy/profile
+  прошли. API1029PASS+1opt-inSKIP и web290PASS выполнены заново; неизменённые
+  config17/contracts206/policy43/core389/gateway151/DB214/runtime86+5opt-inSKIP —
+  подтверждённые Turbo cache hits. Build API/web выполнены заново (7/9 cache).
+- Strict E2E TypeScript exit0, web/API types exit0. Production Chromium156:
+  **28/28 PASS**, workers1/retries0, exit0,53.9s.
+- На source3936e5f GitHub CI job130510197652 **Code sandbox isolation PASS,5/5**;
+  identity boundary также success. Остальные удалённые jobs на момент локального
+  итога ещё выполнялись; общий remote CI success здесь не подразумевается.
+- `git diff --check`, локальный/GitHub tree equality и проверка секретов перед
+  публикацией выполнены; финальный docs-only формат/secret check отмечен в provenance.
+
+Все команды запускались из checkout с pinned dependencies, с
+`pnpm_config_verify_deps_before_run=''` (без auto-install):
+
+```sh
+pnpm --filter @cosmora/api exec vitest run test/code-agent.test.ts test/code-agent-github-tree.test.ts test/github-integration.test.ts
+pnpm --filter @cosmora/api typecheck
+pnpm --filter @cosmora/web typecheck
+pnpm --filter @cosmora/web exec tsc --ignoreConfig --noEmit --strict --target ES2024 --module NodeNext --moduleResolution NodeNext --skipLibCheck --esModuleInterop e2e/code-agent.spec.ts
+pnpm check:core
+KOSMORA_E2E_PRODUCTION=1 KOSMORA_E2E_CHROMIUM_EXECUTABLE=/usr/bin/chromium pnpm --filter @cosmora/web exec playwright test -c playwright.acceptance.config.ts e2e/code-agent.spec.ts --workers=1 --retries=0
+```
+
+Отдельный реальный OCI API сценарий (существующий разрешённый local image; без pull):
+
+```sh
+CODE_AGENT_TEST_IMAGE=sha256:280af3207172947339cc2e8c9d2efac585716fd906af49f57d6fdf0dbb829a73 CODE_AGENT_TEST_EXECUTABLE=/usr/local/bin/docker CODE_AGENT_REPAIR_REPORT_DIR=/tmp/coscode-new-repair-receipt pnpm --filter @cosmora/api exec vitest run test/code-agent.test.ts -t 'real OCI API repair'
+```
+
+Нужен доступ к отдельному Docker sandbox; удалённый daemon/owner PC не используется.
+При заданных DOCKER_HOST/CONTEXT/TLS selectors запускать с очищенными selectors для
+местного unix socket, сохраняя Docker credentials. Образ — официальный Node24.22.2,
+registry digest `node@sha256:01d566e8d94d8c619591d78652babfccd3c6992a3dffa9ed5ab39e11cf6c70e9`.
+В стандартном root test этот opt-in сценарий явно skipped; отдельно он реально прошёл.
+`fixtures/bounded-repair/` содержит input/reviewed/output/changes.patch/receipt,
+неудачные исходные прогоны, финальные логи и provenance. В логах нормализованы только LF, хвостовые пробелы и пустой EOF; hashes сырых логов сохранены в provenance. Temp Git base/source digest
+настоящие. Node получил failed1 → passed0, очистка true, patch применён через git
+apply --check/--index к двум файлам, marker00123 и README сохранены. Gateway/бюджет/
+SQLite/код модуля настоящие; внешняя модель и GitHub transport заменены fixtures.
+Фактический дополнительный модельный запрос один. Live модель не вызывалась.
+
+Ошибки не спрятаны повтором: baseline tool-only revoke принял proposed вместо failed;
+после scopedModel postcheck регрессия прошла. Первый новый API прогон76/4 выявил
+undefined результат guarded metadata и ошибочное ожидание Fastify additional-property
+400 (Fastify удаляет лишние поля); metadata теперь возвращает JSON proof, предположение
+теста удалено. Следующий80/80 и расширенный115/115 прошли. Первый scoped lint нашёл
+две лишние assertions и prefer-const; исправлены без изменения поведения. Исторический
+общий formatter failure на чужом research JSON исправлен владельцем файла в main
+73bf04f и сохранён через merge abbcee7; исходник/ignore нами не обходился.
+
+## Запуск продукта, интеграция и откат
+
+Поставить API+web вместе. В существующем Code разделе подключённого репозитория
+создать/открыть задачу, просмотреть выбранные изменения, сохранить review, разрешить
+Node check. После failed proof поставить отдельный checkbox дополнительной попытки,
+нажать «Исправить по результату проверки», просмотреть новый diff и сохранить новый
+review. Успешный автоматический proof переиспользуется только для этих точных байтов;
+дальнейшая публикация требует отдельного подтверждения владельца.
+
+Интегратору принять отдельный adapter commit перед scoped service; новых DB steps нет.
+Revert source3936e5f выключает новую попытку; JSON fields остаются инертными, данные
+не удаляются. Публиковавшиеся ранее внешние PR/refs автоматически не откатываются.
+Откат tree-adapter отдельно согласовать с общими потребителями INTEGRATION.md.
+
+## Фактически оставшиеся границы
+
+- Live вызов платной модели и push/PR в чужой целевой репозиторий не разрешены и не
+  выполнялись. GitHub publish/idempotency/lost-response проверены adapter fixtures.
+- Node syntax/node-test выполняются по выбранным поддерживаемым файлам, без сети,
+  install и произвольного shell. Это не произвольный build любого стека.
+- Tree восстановление ограничено128nodes/100k entries/8MB/30s; за пределом честный отказ.
+- SPA traversal guard проверен Chromium156. Старые browsers без Navigation API и
+  uncancelable platform events не гарантируют guard; raw diff автоматически не хранится.
+- Filename guards не гарантируют отсутствие секретного содержимого в произвольном
+  разрешённом исходнике; владельцу выбирать только разрешённые файлы.
+- При неизвестном исходе модельного запроса автоматического replay нет; сохранённый
+  review можно доработать вручную и повторить бесплатную проверку. Merge/release/live
+  приёмку подтверждает интегратор. Наш максимум — готово к интеграции.
+
+---
+
+## История предыдущих срезов (результаты и blockers на соответствующих версиях)
+
 # 02_DEVELOPER: сохранность правок при Back/Forward
 
 11 ноября 2026, Москва. **Готово к интеграции** в PR519, branch ops/developer-coscode.
