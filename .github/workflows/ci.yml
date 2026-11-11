@@ -161,4 +161,4 @@ jobs:
       - name: Verify real OCI execution, isolation and descendant cleanup
         env:
           CODE_AGENT_TEST_RUNTIME: docker
-        run: pnpm --filter @cosmora/tool-runtime exec vitest run test/code-agent-workspace.oci.test.ts --maxWorkers=1
+        run: pnpm --filter @cosmora/tool-runtime exec vitest run test/code-agent-workspace.oci.test.ts test/code-agent-git.oci.test.ts --maxWorkers=1

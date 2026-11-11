@@ -97,6 +97,8 @@ export type SnapshotSelection = {
  * cloud model context, credentials or unselected file bodies are read here.
  * The legacy no-file_ids include_results=true selection keeps all completed Work
  * results; a request that supplies file_ids is a distinct explicit selection.
+ * Only pre-checkpoint files without any artifact version qualify for the legacy
+ * path. Lost or unpublished modern evidence must never downgrade to that path.
  */
 const RESULT_METADATA_SQL = `
   SELECT 'kosmora' AS kind, a.id AS source_key, a.name AS name,
@@ -117,8 +119,9 @@ const RESULT_METADATA_SQL = `
     JOIN projects p ON p.id=w.project_id
    WHERE p.owner_id=? AND w.owner_id=?
      AND json_extract(w.state_json,'$.status')='completed'
+     AND NOT EXISTS(SELECT 1 FROM work_checkpoints c WHERE c.work_id=w.id)
      AND NOT EXISTS(SELECT 1 FROM work_artifact_versions a
-                    WHERE a.work_id=w.id AND a.name=f.name AND a.published=1)
+                    WHERE a.work_id=w.id AND a.name=f.name)
 `;
 export type DriveResultSource = {
   id: string;
@@ -213,8 +216,9 @@ function readSelectedResultBody(
             WHERE p.owner_id=? AND w.owner_id=?
               AND json_extract(w.state_json,'$.status')='completed'
               AND f.execution_id || char(31) || f.name || char(31) || coalesce(CAST(w.version AS TEXT),'')=?
+              AND NOT EXISTS(SELECT 1 FROM work_checkpoints c WHERE c.work_id=w.id)
               AND NOT EXISTS(SELECT 1 FROM work_artifact_versions a
-                             WHERE a.work_id=w.id AND a.name=f.name AND a.published=1) LIMIT 1`
+                             WHERE a.work_id=w.id AND a.name=f.name) LIMIT 1`
           )
           .get(owner, owner, source.sourceKey)
   ) as { content: unknown; version: unknown; sha256: unknown; bytes: unknown } | undefined;

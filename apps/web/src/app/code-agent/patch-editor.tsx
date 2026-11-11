@@ -12,6 +12,7 @@ export function CodePatchEditor(props: {
   initialDiff: string;
   disabled: boolean;
   onDirty: () => Promise<void>;
+  onDraftChange?: (dirty: boolean) => void;
   onApply: (preview: CodePatchPreview) => void;
 }) {
   const [text, setText] = useState(props.initialDiff),
@@ -64,6 +65,7 @@ export function CodePatchEditor(props: {
           onChange={(e) => {
             version.current++;
             setText(e.target.value);
+            props.onDraftChange?.(e.target.value !== props.initialDiff);
             setPreview(null);
             setError(null);
             void props
@@ -76,6 +78,18 @@ export function CodePatchEditor(props: {
       </label>
       <button disabled={props.disabled || busy || !text} onClick={() => void verify()}>
         {busy ? "Проверяем применимость…" : "Проверить diff и перенести в выбранные изменения"}
+      </button>
+      <button
+        disabled={props.disabled || busy || text === props.initialDiff}
+        onClick={() => {
+          version.current++;
+          setText(props.initialDiff);
+          setPreview(null);
+          setError(null);
+          props.onDraftChange?.(false);
+        }}
+      >
+        Отменить правки diff
       </button>
       {error && <p role="alert">{error}</p>}
       {preview && (

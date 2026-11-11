@@ -298,6 +298,52 @@ describe("complete Drive snapshots and restore", () => {
     expect(google.urls.every((u) => !new URL(u).searchParams.has("q"))).toBe(true);
   });
 
+  it.each([
+    { damage: "unpublished", checkpoint: false },
+    { damage: "unpublished", checkpoint: true },
+    { damage: "missing", checkpoint: true }
+  ])(
+    "never downgrades $damage modern result evidence (checkpoint=$checkpoint) to legacy",
+    async ({ damage, checkpoint }) => {
+      insertLegacy();
+      if (checkpoint)
+        db.sqlite
+          .prepare(
+            "INSERT INTO work_checkpoints(work_id,version,state_json) VALUES('source-work',1,'{}')"
+          )
+          .run();
+      if (damage === "missing")
+        db.sqlite.prepare("DELETE FROM work_artifact_versions WHERE id='artifact'").run();
+      else
+        db.sqlite
+          .prepare("UPDATE work_artifact_versions SET published=0 WHERE id='artifact'")
+          .run();
+      const sources = await loadSources();
+      expect(sources.files.filter((file) => file.name === "report.html")).toEqual([]);
+      expect(sources.files.map((file) => file.name)).toEqual(checkpoint ? [] : ["legacy.txt"]);
+      expect(google.uploads).toBe(0);
+    }
+  );
+
+  it("rejects an old legacy selection after modern checkpoints appear without uploading it", async () => {
+    insertLegacy();
+    const old = (await loadSources()).files.find((file) => file.name === "legacy.txt")!;
+    db.sqlite
+      .prepare(
+        "INSERT INTO work_checkpoints(work_id,version,state_json) VALUES('source-work',1,'{}')"
+      )
+      .run();
+    const response = await post("/backups", {
+      operation_id: randomUUID(),
+      chat_ids: [],
+      include_results: false,
+      file_ids: [old.id]
+    });
+    expect(response.statusCode).toBe(409);
+    expect(response.json()).toMatchObject({ error: { code: "DRIVE_OPERATION_CONFLICT" } });
+    expect(google.uploads).toBe(0);
+  });
+
   it("keeps stored legacy hashes and treats explicit file selections as a distinct operation identity", async () => {
     insertLegacy();
     expect(selectionHash({ include_results: true, chat_ids: ["b", "a"] })).toBe(

@@ -149,3 +149,53 @@ game.onUpdate=()=>{game.ctx.fillRect(0,0,20,20);};`);
   await canvas.getByRole("button", { name: "Остановить игру", exact: true }).click();
   await expect(page.locator('iframe[title="Проект игры Kosmora"]')).toHaveCount(0);
 });
+
+test("compares a selected game file against its saved version and never restarts on source revert", async ({
+  page,
+  request
+}) => {
+  const { id, canvas, code, frame } = await open(page, request);
+  await canvas.getByRole("button", { name: "Сохранить версию", exact: true }).click();
+  await expect(canvas.getByRole("status")).toContainText("Артефакт создан");
+  const original = await code.inputValue();
+  const edited = original.replace("let x=80", "let x=160");
+  expect(edited).not.toBe(original);
+  await canvas.getByRole("button", { name: "Запустить игру", exact: true }).click();
+  await expect(frame.locator("#game-status")).toHaveText("Игра запущена");
+
+  await code.fill(edited);
+  await expect(page.locator('iframe[title="Проект игры Kosmora"]')).toHaveCount(0);
+  await code.fill(original);
+  // A reverted source must not revive the previous Worker without a user click.
+  await expect(page.locator('iframe[title="Проект игры Kosmora"]')).toHaveCount(0);
+  await canvas.getByRole("button", { name: "Сравнить файл", exact: true }).click();
+  const diff = canvas.getByRole("region", { name: "Сравнение текста", exact: true });
+  await expect(diff).toContainText("Содержимое совпадает побайтно.");
+
+  await code.fill(edited);
+  await expect(diff).toContainText("Добавлено строк: 1; удалено строк: 1.");
+  await canvas.getByRole("button", { name: "styles.css", exact: true }).click();
+  await expect(diff).toContainText("Содержимое совпадает побайтно.");
+  await canvas.getByRole("button", { name: "game.js", exact: true }).click();
+  await expect(diff).toContainText("Добавлено строк:");
+
+  await canvas.getByRole("button", { name: "Сохранить версию", exact: true }).click();
+  await expect(canvas.getByRole("status")).toContainText("Сохранена новая версия");
+  await expect(diff).toContainText("Содержимое совпадает побайтно.");
+  const zipDownload = page.waitForEvent("download");
+  await canvas.getByRole("button", { name: "Скачать проект ZIP", exact: true }).click();
+  const zip = unzipSync(await readFile(await (await zipDownload).path()));
+  expect(strFromU8(zip["game.js"]!)).toBe(edited);
+  const projectData = JSON.parse(strFromU8(zip["project.json"]!)) as {
+    files: { name: string; content: string }[];
+  };
+  expect(projectData.files.find((entry) => entry.name === "game.js")?.content).toBe(edited);
+
+  await page.reload();
+  await page.getByRole("combobox", { name: "Проект игры", exact: true }).selectOption(id);
+  await canvas
+    .getByRole("navigation", { name: "Артефакты проекта" })
+    .getByRole("button", { name: /Звёздный пилот.*v2/ })
+    .click();
+  await expect(code).toHaveValue(edited);
+});

@@ -1,4 +1,6 @@
+export { validateCodeAgentCheckResult, isVerifiedCodeAgentCheck } from "./code-agent-result.js";
 import { spawn } from "node:child_process";
+import { setTimeout as cleanupDelay } from "node:timers/promises";
 import { createHash, randomUUID } from "node:crypto";
 import { isAbsolute } from "node:path";
 import { codeAgentSnapshotArchive, redactCodeAgentOutput } from "./code-agent-snapshot.js";
@@ -298,6 +300,9 @@ export function createCodeAgentWorkspaceRunner(
           HOME: "/nonexistent"
         };
         let child: ReturnType<typeof spawn> | undefined;
+        let childStage: Stage | undefined;
+        const setupSettlement = new AbortController();
+        let creationUncertain = false;
         const stdout: Buffer[] = [];
         const stderr: Buffer[] = [];
         let retained = 0;
@@ -353,13 +358,29 @@ export function createCodeAgentWorkspaceRunner(
           // stopped container; it can never launch repository code after cancellation.
           // Explicit daemon removal also stops descendants even after the CLI is killed.
           termination = removeResources();
-          if (child?.pid) {
+          const killChild = () => {
+            if (!child?.pid) return;
             try {
               process.kill(-child.pid, "SIGKILL");
             } catch {
               child.kill("SIGKILL");
             }
-          }
+          };
+          if (
+            childStage === "volume" ||
+            childStage === "loader-create" ||
+            childStage === "create"
+          ) {
+            // Killing the CLI is not an acknowledgement from the daemon. Let an already
+            // submitted create settle; stopped prevents every following start. A missing
+            // acknowledgement stays uncertain even if an early absence probe was empty.
+            void cleanupDelay(8_000, undefined, { signal: setupSettlement.signal, ref: false })
+              .then(() => {
+                creationUncertain = true;
+                killChild();
+              })
+              .catch(() => undefined);
+          } else killChild();
         };
         const collect = (output: Buffer[], chunk: Buffer) => {
           const remaining = Math.max(0, outputBytes - retained);
@@ -386,12 +407,21 @@ export function createCodeAgentWorkspaceRunner(
         const finish = async (exitCode: number | null, unavailable: boolean) => {
           if (settled) return;
           settled = true;
+          setupSettlement.abort();
           clearTimeout(timer);
           input.signal?.removeEventListener("abort", cancel);
           await termination;
           // Normal completion also removes the stopped container. Never retain a snapshot
           // mount after this request, and retry removal after an interrupted create/start.
-          const cleanupVerified = await removeResources();
+          // An interrupted daemon create can finish after the first rm. Retry only
+          // labelled cleanup/probes, never create/start or repository execution.
+          let cleanupVerified = false;
+          for (let attempt = 0; attempt < 4; attempt++) {
+            cleanupVerified = await removeResources();
+            if (cleanupVerified) break;
+            if (attempt < 3) await cleanupDelay(100);
+          }
+          cleanupVerified = cleanupVerified && !creationUncertain;
           if (!cleanupVerified) {
             quarantined = true;
             log("unavailable", "container_cleanup_unverified");
@@ -430,6 +460,7 @@ export function createCodeAgentWorkspaceRunner(
         };
         type Stage = "volume" | "loader-create" | "load" | "create" | "start";
         const launch = (arguments_: string[], stage: Stage) => {
+          childStage = stage;
           child = spawn(executable, arguments_, {
             shell: false,
             detached: true,
