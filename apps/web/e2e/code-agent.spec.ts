@@ -49,6 +49,13 @@ async function scenario(
         data = run;
       }
     } else if (url.pathname.endsWith("/invalidate-review")) {
+      const input = route.request().postDataJSON();
+      const parent =
+        (run.draft as { plan: { review_hash: string } } | undefined)?.plan.review_hash ?? null;
+      if (input.expected_review_hash !== parent) {
+        await route.fulfill({ status: 409, json: { error: { code: "STALE_REVIEW" } } });
+        return;
+      }
       run = {
         ...run,
         status: run.draft ? "review" : "proposed",
@@ -80,8 +87,14 @@ async function scenario(
         resultDigest: "r".repeat(64)
       };
     } else if (url.pathname.endsWith("/review")) {
-      reviews++;
       const input = route.request().postDataJSON();
+      const parent =
+        (run.draft as { plan: { review_hash: string } } | undefined)?.plan.review_hash ?? null;
+      if (input.expected_review_hash !== parent) {
+        await route.fulfill({ status: 409, json: { error: { code: "STALE_REVIEW" } } });
+        return;
+      }
+      reviews++;
       expect(input.proposal_hash).toBe("p".repeat(64));
       expect(input.files).toEqual([{ path: "src/value.js", content: expectedReview(reviews) }]);
       run = {
@@ -172,7 +185,22 @@ async function scenario(
   return {
     publications: () => publications,
     checks: () => checks,
-    snapshot: () => structuredClone(run)
+    snapshot: () => structuredClone(run),
+    concurrentReview: () => {
+      const draft = run.draft as { plan: { review_hash: string; files: unknown[] } };
+      run = {
+        ...run,
+        draft: {
+          ...draft,
+          plan: {
+            ...draft.plan,
+            review_hash: "remote-review",
+            files: [{ path: "src/value.js", content: "export const value = 99;" }]
+          }
+        },
+        publication_token: "remote-token"
+      };
+    }
   };
 }
 
@@ -285,6 +313,22 @@ test("selects and edits real server proposal, binds check to review and requires
   );
   expect(state.publications()).toBe(1);
   expect(state.checks()).toBe(2);
+});
+
+test("an old editor cannot overwrite or invalidate a newer saved review", async ({ page }) => {
+  const state = await scenario(page);
+  await prepare(page);
+  state.concurrentReview();
+  const before = state.snapshot();
+  await page.getByLabel("+ Итоговое содержимое: src/value.js").fill("export const value = 4;");
+  await expect(page.getByRole("alert")).toContainText("Предложение или просмотр изменились");
+  await page.getByRole("button", { name: "Сохранить выбранные изменения" }).click();
+  await expect(page.getByRole("alert")).toContainText("Предложение или просмотр изменились");
+  await expect(page.getByLabel("+ Итоговое содержимое: src/value.js")).toHaveValue(
+    "export const value = 4;"
+  );
+  expect(state.snapshot()).toEqual(before);
+  expect(state.publications()).toBe(0);
 });
 
 test("does not retry lost publication and reconciles it explicitly", async ({ page }) => {

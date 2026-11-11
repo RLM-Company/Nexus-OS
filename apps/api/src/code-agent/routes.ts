@@ -304,12 +304,21 @@ export function registerCodeAgentRoutes(
         reply
       )
   );
-  app.post<{ Params: Params; Body: { proposal_hash: string } }>(
+  app.post<{
+    Params: Params;
+    Body: { proposal_hash: string; expected_review_hash?: string | null };
+  }>(
     base + "/:id/invalidate-review",
     {
       schema: {
         params,
-        body: Type.Object({ proposal_hash: hash }, { additionalProperties: false })
+        body: Type.Object(
+          {
+            proposal_hash: hash,
+            expected_review_hash: Type.Optional(Type.Union([hash, Type.Null()]))
+          },
+          { additionalProperties: false }
+        )
       }
     },
     (request, reply) =>
@@ -318,7 +327,8 @@ export function registerCodeAgentRoutes(
           service.invalidateReview(
             request.params.id,
             owned(request).owner_id,
-            request.body.proposal_hash
+            request.body.proposal_hash,
+            request.body.expected_review_hash
           ),
         reply
       )
@@ -334,13 +344,24 @@ export function registerCodeAgentRoutes(
   );
   app.post<{
     Params: Params;
-    Body: { proposal_hash: string; files: Array<{ path: string; content: string }> };
+    Body: {
+      proposal_hash: string;
+      files: Array<{ path: string; content: string }>;
+      expected_review_hash?: string | null;
+    };
   }>(
     base + "/:id/review",
     {
       schema: {
         params,
-        body: Type.Object({ proposal_hash: hash, files }, { additionalProperties: false })
+        body: Type.Object(
+          {
+            proposal_hash: hash,
+            files,
+            expected_review_hash: Type.Optional(Type.Union([hash, Type.Null()]))
+          },
+          { additionalProperties: false }
+        )
       }
     },
     (request, reply) =>

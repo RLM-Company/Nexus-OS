@@ -369,7 +369,11 @@ async function fixture(
   };
   const review = async (id: string, files = changes) => {
     const run = get(id).status === "running" ? await wait(id, "proposed") : get(id);
-    return service.review(id, owner, { proposal_hash: run.proposal_hash!, files });
+    return service.review(id, owner, {
+      proposal_hash: run.proposal_hash!,
+      files,
+      expected_review_hash: service.view(run).draft?.plan.review_hash ?? null
+    });
   };
   const check = async (id: string, reviewHash: string) => {
     service.check(id, owner, { review_hash: reviewHash, check: "node-test", approve: true });
@@ -1095,6 +1099,64 @@ describe("Code agent real gateway/GitHub/policy vertical", () => {
     expect(f.get(id).repository_paths).toHaveLength(22002);
     expect(f.providerCalls).toHaveLength(1);
     expect(f.githubCalls.every((call) => call.method === "GET")).toBe(true);
+  });
+  it("conflicts stale editors before writes or proof invalidation, then restores a repaired checkpoint", async () => {
+    let calls = 0;
+    const f = await fixture({
+      runner: {
+        run: (input) =>
+          Promise.resolve({
+            status: ++calls === 1 ? "failed" : "passed",
+            snapshotDigest: input.expectedDigest!,
+            exitCode: calls === 1 ? 1 : 0,
+            cleanupVerified: true,
+            stdout: "fixture executor",
+            stderr: "",
+            truncated: false,
+            journal: []
+          })
+      }
+    });
+    const id = await f.start();
+    const first = await f.review(id);
+    const oldHash = first.draft!.plan.review_hash;
+    await f.check(id, oldHash);
+    expect(f.get(id).publication_token).toBeUndefined();
+    const edits = changes.map((file) => ({
+      ...file,
+      content: file.content + "// repaired checkpoint\n"
+    }));
+    const repaired = await f.review(id, edits);
+    const hash = repaired.draft!.plan.review_hash;
+    expect(hash).not.toBe(oldHash);
+    expect(repaired.check).toBeUndefined();
+    const checked = await f.check(id, hash);
+    expect(checked.publication_token).toBeTruthy();
+    const before = f.get(id),
+      reads = f.githubCalls.length;
+    for (const expected_review_hash of [null, oldHash]) {
+      await expect(
+        f.service.review(id, owner, {
+          proposal_hash: before.proposal_hash!,
+          files: changes,
+          expected_review_hash
+        })
+      ).rejects.toThrow("STALE_REVIEW");
+      expect(() =>
+        f.service.invalidateReview(id, owner, before.proposal_hash!, expected_review_hash)
+      ).toThrow("STALE_REVIEW");
+    }
+    await expect(
+      f.service.review(id, owner, { proposal_hash: before.proposal_hash!, files: changes })
+    ).rejects.toThrow("STALE_REVIEW");
+    expect(f.get(id)).toEqual(before);
+    expect(f.githubCalls).toHaveLength(reads);
+    const restored = f.service.view(f.store.get(id, owner)!);
+    expect(restored.draft?.plan.files.map(({ path, content }) => ({ path, content }))).toEqual(
+      edits
+    );
+    expect(restored.publication_token).toBe(checked.publication_token);
+    expect(f.providerCalls).toHaveLength(3);
   });
   it("negotiates bounded path search, reads the selected immutable hit and persists the resulting proposal", async () => {
     const f = await fixture({
@@ -2312,7 +2374,12 @@ describe("one text proposal → exact diff → optional approved automatic check
     await expect.poll(() => f.get(id).proposal_check?.status).toBe("passed");
     const reviewed = await f.review(id, [changes[0]!]);
     const oldToken = reviewed.publication_token!;
-    const invalidated = f.service.invalidateReview(id, owner, f.get(id).proposal_hash!);
+    const invalidated = f.service.invalidateReview(
+      id,
+      owner,
+      f.get(id).proposal_hash!,
+      f.service.view(f.get(id)).draft?.plan.review_hash ?? null
+    );
     expect(invalidated.check).toBeUndefined();
     expect(invalidated.proposal_check).toBeUndefined();
     expect(invalidated.publication_token).toBeUndefined();

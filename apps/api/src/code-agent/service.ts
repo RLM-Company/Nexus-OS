@@ -1118,7 +1118,11 @@ export class CodeAgentService {
   async review(
     id: string,
     owner: string,
-    input: { proposal_hash: string; files: GithubFileChange[] }
+    input: {
+      proposal_hash: string;
+      files: GithubFileChange[];
+      expected_review_hash?: string | null;
+    }
   ) {
     return this.externalOperation(this.current(id, owner), () =>
       this.reviewAccepted(id, owner, input)
@@ -1127,7 +1131,11 @@ export class CodeAgentService {
   private async reviewAccepted(
     id: string,
     owner: string,
-    input: { proposal_hash: string; files: GithubFileChange[] }
+    input: {
+      proposal_hash: string;
+      files: GithubFileChange[];
+      expected_review_hash?: string | null;
+    }
   ) {
     let run = this.current(id, owner);
     if (
@@ -1146,6 +1154,7 @@ export class CodeAgentService {
     if (run.proposal_hash !== hash({ base: run.base_sha, proposal: run.proposal }))
       throw new CodeAgentError("PATCH_BASE");
     this.assertSafeContext(run);
+    this.assertReviewParent(run, input.expected_review_hash);
     // A failed read-only preparation must not permanently replay a previous
     // policy recovery result. Each explicit attempt has a durable CAS/version.
     run = this.deps.store.save(run, "Принята новая попытка подготовки просмотра");
@@ -1229,7 +1238,12 @@ export class CodeAgentService {
       throw new CodeAgentError("PATCH_PATH");
     return result;
   }
-  invalidateReview(id: string, owner: string, proposalHash: string) {
+  invalidateReview(
+    id: string,
+    owner: string,
+    proposalHash: string,
+    expectedReviewHash?: string | null
+  ) {
     const run = this.current(id, owner);
     this.live(run);
     if (
@@ -1237,6 +1251,7 @@ export class CodeAgentService {
       !["proposed", "review", "checked", "failed"].includes(run.status)
     )
       throw new CodeAgentError("STALE_REVIEW");
+    this.assertReviewParent(run, expectedReviewHash);
     return this.view(
       this.deps.store.save(
         {
@@ -1331,6 +1346,18 @@ export class CodeAgentService {
       },
       "Проверка предложения завершена; GitHub review ожидает владельца"
     );
+  }
+  private assertReviewParent(run: CodeAgentRun, expected: string | null | undefined) {
+    const current = run.draft_id
+      ? this.deps.drafts.get(run.draft_id, run.owner_id)?.plan.review_hash
+      : null;
+    // Legacy clients may prepare the first review only. Replacing or invalidating
+    // a saved review must name its exact parent; never rebase an old editor silently.
+    if (
+      (expected === undefined && run.draft_id) ||
+      (expected !== undefined && current !== expected)
+    )
+      throw new CodeAgentError("STALE_REVIEW");
   }
   private assertSafeContext(run: CodeAgentRun) {
     if ([...run.snapshot, ...(run.proposal ?? [])].some((file) => !safeCodePath(file.path)))

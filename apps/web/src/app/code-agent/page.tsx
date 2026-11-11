@@ -200,6 +200,7 @@ export default function CodeAgentPage() {
   const confirmDiscard = useCodeEditorNavigationGuard(proofDirty || patchTextDirty);
   const invalidation = useRef<Promise<void> | null>(null);
   const editingInvalidated = useRef(false);
+  const editorReviewHash = useRef<string | null>(null);
   const linkedRun = useRef<string | null>(null);
   const [checkApproved, setCheckApproved] = useState(false);
   const [publishApproved, setPublishApproved] = useState(false);
@@ -225,6 +226,7 @@ export default function CodeAgentPage() {
     const identity = `${value.id}:${value.proposal_hash ?? ""}`;
     if (restore || proposalIdentity.current !== identity) {
       editingInvalidated.current = false;
+      editorReviewHash.current = value.draft?.plan.review_hash ?? null;
       invalidation.current = null;
       setProofDirty(false);
       setPatchTextDirty(false);
@@ -430,7 +432,8 @@ export default function CodeAgentPage() {
     const id = run.id,
       requestEpoch = epoch.current;
     const pending = api<Run>(`${root}/${encodeURIComponent(id)}/invalidate-review`, {
-      proposal_hash: run.proposal_hash
+      proposal_hash: run.proposal_hash,
+      expected_review_hash: editorReviewHash.current
     })
       .then((value) => {
         if (epoch.current === requestEpoch && activeRun.current === id) accept(value);
@@ -935,10 +938,12 @@ export default function CodeAgentPage() {
                       `${root}/${encodeURIComponent(run.id)}/review`,
                       {
                         proposal_hash: run.proposal_hash,
+                        expected_review_hash: editorReviewHash.current,
                         files: selected.map(({ path, content }) => ({ path, content }))
                       }
                     );
                     editingInvalidated.current = false;
+                    editorReviewHash.current = reviewed.draft?.plan.review_hash ?? null;
                     setProofDirty(false);
                     return reviewed;
                   })
