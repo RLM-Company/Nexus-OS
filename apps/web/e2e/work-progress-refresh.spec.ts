@@ -6,6 +6,140 @@ test.afterEach(async ({ page }) => {
   await page.unrouteAll({ behavior: "wait" });
 });
 
+test("recovers a committed result acceptance after a lost response without a second POST", async ({
+  page,
+  request
+}) => {
+  const work = await preparedWork(request);
+  const before = (await (await request.get(work.work)).json()) as { model_requests: number };
+  let posts = 0;
+  await page.route(`**${work.work}/result/accept`, async (route) => {
+    posts++;
+    const response = await route.fetch();
+    expect(response.status()).toBe(200);
+    await route.abort("failed");
+  });
+  await page.clock.install();
+  await page.goto(`/?project=${work.project}&view=plan`);
+  const manager = page.getByRole("region", { name: "Выполнение задачи Manager", exact: true });
+  await manager.getByRole("button", { name: "Принять результат", exact: true }).click();
+  await expect(
+    manager.getByRole("status").filter({ hasText: /Результат принят владельцем/ })
+  ).toBeVisible();
+  await expect(manager.getByRole("alert")).toHaveCount(0);
+  await page.clock.fastForward(3000);
+  expect(posts).toBe(1);
+  const after = (await (await request.get(work.work)).json()) as {
+    model_requests: number;
+    result_accepted_at: string;
+    events: { message: string }[];
+  };
+  expect(after.result_accepted_at).toBeTruthy();
+  expect(after.model_requests).toBe(before.model_requests);
+  expect(
+    after.events.filter((event) => event.message === "Результат принят владельцем")
+  ).toHaveLength(1);
+});
+
+test("a late result acceptance updates its task without replacing the later history selection", async ({
+  page,
+  request
+}) => {
+  const work = await preparedWork(request);
+  const goal = "Keep this task selected after another result is accepted";
+  const created = await request.post(`/api/v1/projects/${work.project}/work`, {
+    data: {
+      client_request_id: crypto.randomUUID(),
+      goal,
+      worker_role: "analyst",
+      max_model_requests: 3,
+      max_input_tokens: 32000,
+      max_output_tokens: 6000
+    }
+  });
+  expect(created.status()).toBe(201);
+  const second = (await created.json()) as { id: string };
+  await expect
+    .poll(
+      async () =>
+        (
+          (await (
+            await request.get(`/api/v1/projects/${work.project}/work/${second.id}`)
+          ).json()) as { status: string }
+        ).status,
+      { timeout: 15000 }
+    )
+    .toBe("completed");
+  let entered = false;
+  let release = () => {};
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await page.route(`**${work.work}/result/accept`, async (route) => {
+    const response = await route.fetch();
+    expect(response.status()).toBe(200);
+    entered = true;
+    await held;
+    await route.fulfill({ response });
+  });
+  try {
+    await page.goto(`/?project=${work.project}&view=plan`);
+    const manager = page.getByRole("region", { name: "Выполнение задачи Manager", exact: true });
+    const history = manager.getByRole("group", { name: "История задач Manager", exact: true });
+    const firstButton = history.getByRole("button", {
+      name: /Create result.md with a short complete report/
+    });
+    const secondButton = history.getByRole("button", { name: new RegExp(goal) });
+    await firstButton.click();
+    await manager.getByRole("button", { name: "Принять результат", exact: true }).click();
+    await expect.poll(() => entered).toBe(true);
+    await secondButton.click();
+    const response = page.waitForResponse(
+      (value) => new URL(value.url()).pathname === work.work + "/result/accept"
+    );
+    release();
+    await response;
+    await expect(secondButton).toHaveAttribute("aria-pressed", "true");
+    await expect(firstButton).toHaveAttribute("aria-pressed", "false");
+    await expect(
+      manager.getByRole("button", { name: "Принять результат", exact: true })
+    ).toBeEnabled();
+    await firstButton.click();
+    await expect(
+      manager.getByRole("status").filter({ hasText: /Результат принят владельцем/ })
+    ).toBeVisible();
+  } finally {
+    release();
+  }
+});
+
+test("an integrity conflict stays unaccepted and shows a specific error after readback", async ({
+  page,
+  request
+}) => {
+  const work = await preparedWork(request);
+  let posts = 0;
+  await page.route(`**${work.work}/result/accept`, (route) => {
+    posts++;
+    return route.fulfill({ status: 409, json: { error: "ARTIFACT_INTEGRITY_MISMATCH" } });
+  });
+  await page.clock.install();
+  await page.goto(`/?project=${work.project}&view=plan`);
+  const manager = page.getByRole("region", { name: "Выполнение задачи Manager", exact: true });
+  const accept = manager.getByRole("button", { name: "Принять результат", exact: true });
+  await accept.click();
+  await expect(manager.getByRole("alert")).toHaveText(
+    "Не удалось подтвердить целостность файлов. Результат не принят."
+  );
+  await expect(accept).toBeEnabled();
+  await page.clock.fastForward(3000);
+  expect(posts).toBe(1);
+  expect(
+    ((await (await request.get(work.work)).json()) as { result_accepted_at?: string })
+      .result_accepted_at
+  ).toBeFalsy();
+});
+
 async function preparedWork(request: APIRequestContext, autonomy: "A1" | "A2" = "A2") {
   const created = await request.post("/api/v1/projects", {
     data: {

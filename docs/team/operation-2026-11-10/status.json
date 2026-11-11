@@ -58,10 +58,13 @@
       "sphere": "Браузер и Deep Research",
       "file": "05_GEMINI.md",
       "branch_prefix": "ops/gemini-browser-research",
-      "status": "prepared",
-      "dispatch_confirmed": false,
+      "status": "rework_required",
+      "dispatch_confirmed": true,
       "head_sha": null,
-      "pr": null
+      "pr": null,
+      "delivery_kind": "google_doc_patch",
+      "reference_sha": "b992e6397da8a6acd446714e9ef3ff1b188e377d",
+      "rework_dispatched": false
     },
     {
       "id": "06_CLAUDE",

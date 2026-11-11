@@ -1,0 +1,31 @@
+{
+  "module": "desktop/windows/browser/evidence-verifier.cjs",
+  "source_reference": "b992e6397da8a6acd446714e9ef3ff1b188e377d",
+  "executed": "reviewed pure helper only, no browser or network",
+  "results": [
+    {
+      "case": "numeric_substring",
+      "source": "Цена Beta: 5000 рублей.",
+      "claim": "50",
+      "actual_verified": true,
+      "expected_verified": false
+    },
+    {
+      "case": "wrong_product",
+      "source": "Цена Beta: 5000 рублей.",
+      "optionName": "Alpha",
+      "claim": "5000",
+      "actual_verified": true,
+      "expected_verified": false
+    },
+    {
+      "case": "wrong_page_version",
+      "source": "Цена Alpha: 50 рублей.",
+      "claim": "50",
+      "snapshot_version": "v1",
+      "excerpt_version": "different-version",
+      "actual_verified": true,
+      "expected_verified": false
+    }
+  ]
+}

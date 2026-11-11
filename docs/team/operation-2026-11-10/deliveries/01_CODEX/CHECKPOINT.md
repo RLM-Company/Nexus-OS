@@ -1,13 +1,12 @@
-# Отчёт №1 завершён
+# Вторая волна + O-003
 
-main619efe6a53b959f70fce43f993b128c9c23677b3; runtime дерево совпадает с
-testedheadd20fb72e. PR505 и506 merged после5/5CI на каждом.
-O-001 целостность перед приёмкой иO-002 Drive fallback интегрированы.
-WAVE_1.json / O-002_ACCEPTANCE.json содержат точные источники и результаты.
+PR510 — WAVE_2, head338ee9a4, exact source heads в WAVE_2.json.
+Включены Coscode proofs/editor continuity, Sites/Games continuity, только
+Windows diagnostics (не весь #502), candidate0.27.0. Требуется общий CI.
 
-Очередь продолжения: новые коммиты #501/#502 сверх принятых SHA, #504Media
-и #507Coscode. Не объявлять целые ветки слитыми: агентские петли продолжают
-поставки. Проверить точный новый diff и CI; не редактировать чужие ветки.
-Собственная очередь: сохранить/восстановить проверенный Office результат,
-проверить восстановление ACK приёмки и актуализировать выпускной комплект.
-VPS, owner-PC и платные live-тесты в этом проходе не выполнялись.
+O-003 поверх PR510 в ops/codex-work-acceptance-recovery-20261110:
+late mutation ACK уважает новую selection, lost acceptance ACK восстанавливается
+одним GET без повторного POST, integrity conflict показан явно.3e2e добавлены.
+Следующее: проверки/PR, CI, интеграция после PR510; отчёт2 с точнымиSHA.
+Gemini rework_required; источник preserved, патч не активирован.
+VPS/owner-PC и платные вызовы не выполнялись.
