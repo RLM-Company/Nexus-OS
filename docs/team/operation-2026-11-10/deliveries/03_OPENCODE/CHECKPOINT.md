@@ -339,8 +339,44 @@ img-src 'none'`; весь динамический контент через tex
       механика аренды — `vault-workspace.test.cjs` (1238 строк). Отдельного
       `vault-console.test.cjs` нет — замечание зафиксировано, действий не
       требует.
-      Остальные модули без упоминания в аудите (карта): `draft-store`,
-      `preload.cjs`, `tool-result`, `checkpoint-text`, `computer-api-client`,
+29. **Аудит мостов и хелперов (`preload.cjs`, `draft-store.cjs`,
+    `tool-result.cjs`, `checkpoint-text.cjs` + draft-проводка main.cjs) —
+    нарушений нет, код не менялся**:
+    - `preload.cjs`: для file:-страницы только connection-мост; для
+      hosted-контента (http/https) четыре bounded-моста — vault
+      (open/read/ack/onContext), draft (load/save/clear/flush), computer
+      open, work open/onResult; никакого screen/keyboard/mouse/shell/
+      filesystem RPC; наблюдение (не нарушение): `Object.freeze` применён
+      только к `kosmoraDesktopVault`, остальные три моста без freeze
+      (defense-in-depth несимметрия; поверхность API при этом фиксирована
+      contextBridge);
+    - `draft-store.cjs`: DPAPI-codec обязателен (отказ без защищённого
+      хранилища — честный); имена файлов sha256(origin\0owner) — та же схема
+      изоляции scope, что у vault/downloads; validateDraft отклоняет
+      credentials-тексты (Bearer/пароли/api-key/токены/GitHub-PAT/sk-/PEM)
+      от локального сохранения; чтение перепроверяет binding ВНУТРИ
+      шифротекста (ownerId+origin+scope+savedAt) — скопированный шифротекст
+      другого пользователя/scope не восстанавливается; запись атомарная и
+      bounded (40 записей, 5.3 МБ, 30 дней, newest-first); clearAll удаляет
+      только файлы вида `[0-9a-f]{64}.json`;
+    - draft-проводка main.cjs (1519s): все четыре канала за
+      `isTrustedRemoteEvent`; save/clear — epoch/origin перепроверки внутри
+      очереди + `draftSessionGate.allowWrite` (documentVersion+origin+owner+
+      scope); `draft-flush` (pagehide, best-effort) намеренно без сетевого
+      roundtrip — переиспользует ТОЛЬКО ранее серверно-подтверждённого
+      неистёкшего владельца из gate + кросс-чек ownerCache (owner/origin/
+      expires), синхронная запись шифротекста, без plaintext-фоллбека и
+      скрытых ретраев; rationale задокументировано в коде;
+    - `tool-result.cjs`: полный receipt при ≤16000 байт; иначе честный
+      excerpt с `excerpt_only: true`, `original_characters` и инструкцией
+      «не проигрывать действие заново, не выдумывать значения» — контракт
+      нетронутых «квитанций» соблюдён; покрытие — computer-control.test;
+    - `checkpoint-text.cjs`: общий SENSITIVE-фильтр для целей/планов Work;
+      прямых тестов нет (наблюдение; семейство регулярок покрыто через
+      draft-store.test);
+    - покрытие: draft-store.test / draft-isolation.test /
+      draft-session-gate.test / gui-acceptance.test; computer-control.test.
+      Карта остатка после этого аудита: `computer-api-client`,
       `computer-preload`, `computer-workspace`, `computer-session` (Codex),
       work-кластер (`work-cycle-*`, `work-experience`, `work-result`,
       `work-retry-guard` — пересечение с Codex/desc).
