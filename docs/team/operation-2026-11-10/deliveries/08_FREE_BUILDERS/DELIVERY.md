@@ -1,6 +1,6 @@
 # DELIVERY — 08_FREE_BUILDERS / game-source-diff
 
-**Статус:** готово к интеграции (два scoped среза; **не** «интегрировано», не живая приёмка и не принято в выпуск).
+**Исторический статус PR #501:** интегрирован в main; живая приёмка и выпуск отдельно.
 
 - BASE_SHA: `9d972e8ba447f681fbfb49253b73d9f02dd1d325`.
 - CODE_HEAD_SHA (проверенный code/test commit): `606ed1eb876073745cad941d688bf067b3de7e9f`.
@@ -47,3 +47,50 @@
 Риски/ограничения: срез не добавляет AI-targeted patch API, standalone browser support по-прежнему требует OffscreenCanvas; baseline diff — визуальное сравнение, не автоматический merge. Сохранение в Canvas и ZIP в текущем коде существует, но фактический e2e нового среза требует CI.
 
 Следующее: Codex review отдельных Canvas integration commits; затем согласовать с Codex patch/version precondition contract для AI-итерации по файлу, не копируя code-agent.
+
+## DELIVERY 2026-11-11 — PR #518
+
+Статус: **в работе — code/browser подтверждены, core gate блокирован извне**.
+
+- BASE_SHA: `c47fed43a20e49a7ea27495f5551e7cfc082fcb5`.
+- CODE_HEAD_SHA: `af140067aaaff2ad6c0517d7e10e653400643a11`.
+- Branch: `ops/free-studio-builders`.
+- PR: https://github.com/RLM-Company/Nexus-OS/pull/518
+- Entrypoint: Games → редактор исходников → файл / ZIP → Canvas version save.
+- Сфера: существующий web Games и его e2e, один узкий Canvas integration adapter.
+
+### Пользовательский сценарий до и после
+
+До: откат внутри одного исходного файла был возможен лишь вручную;
+возврат экспортированного ZIP требовал распаковать его и открыть project.json.
+
+После: в редакторе есть независимые Undo/Redo выбранного файла.
+Версии Canvas остаются опорными точками, локальная история не пересекает v1/v2.
+Для ZIP есть локальный выбор файла, валидация без исполнения,
+подтверждение замены, сохранение следующей версии через Canvas.
+
+### Изменённые файлы
+
+- `apps/web/src/app/games/game-source-editor.tsx` — UI локальной истории и ZIP import.
+- `apps/web/src/app/games/game-project-archive.ts` — bounded inert ZIP validator.
+- `apps/web/src/app/games/game-project-archive.test.ts` — invalid/valid archive tests.
+- `apps/web/e2e/game-development.spec.ts` — Undo/Redo, ZIP, отказ, v2 и reload.
+- `apps/web/src/app/canvas-editor/canvas-editor.tsx` — версия как Undo boundary.
+
+### Проверки и ограничения
+
+- GitHub Actions run `42982669501`: browser **SUCCESS** 445 + 3 + 5 + 4.
+- В том же run: Code sandbox isolation **SUCCESS**.
+- Verify monorepo **FAILED** до lint/typecheck/unit из-за
+  `docs/research/experience-llm-distill-2026-11-10.json` в новом main.
+- Список Prettier warnings не содержит файлов из Builders.
+- Браузерный job собрал приложение и выполнил настоящий UI путь с fixtures.
+- Человеческая live-проверка и paid model не выполнялись.
+- Новых зависимостей/миграций нет; используется уже закреплённый fflate.
+- Пользовательские данные, ключи, .env, внешние сайты и VPS не открывались.
+- Imported ZIP ограничен исходной схемой трёх файлов; не импортирует ассеты.
+- При конфликтующих файлах source/project.json импорт отклоняется.
+- Только Codex решает общий quality blocker и будущий adapter контракт.
+
+Следующая поставка: после устранения чужого format gate подтвердить весь CI,
+передать Codex отдельный Canvas key commit и не выполнять merge самостоятельно.
