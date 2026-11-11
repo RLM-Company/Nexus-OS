@@ -67,8 +67,28 @@ export function fitContextMemory(
       bytes = candidateBytes;
     } else if (priority(item)) throw new MemoryContextIncompleteError();
   }
+  const selectedMatched = selected.reduce(
+    (n, item) => checkedSize(n + Number(Boolean(item.matched))),
+    0
+  );
+  // Preserve the exact wire shape of older fixtures: only emit the honesty
+  // fields when the caller supplied them, otherwise adding them would silently
+  // change the measured byte size of the bundle.
+  const honesty =
+    bundle.answer_evidence === undefined && bundle.matched_items === undefined
+      ? {}
+      : {
+          matched_items: selectedMatched,
+          answer_evidence: selectedMatched > 0 ? ("matched" as const) : ("absent" as const)
+        };
   return selected.length
-    ? { ...bundle, items: selected, omitted: totalOmitted - selected.length, bytes }
+    ? {
+        ...bundle,
+        items: selected,
+        omitted: totalOmitted - selected.length,
+        bytes,
+        ...honesty
+      }
     : undefined;
 }
 
@@ -83,6 +103,10 @@ export function mergeContextMemory(
       throw new Error("MEMORY_TARGET_MISMATCH");
   }
   const hybrid = present.find((b) => b.retrieval === "hybrid");
+  const honestyProvided = present.some(
+    (b) => b.answer_evidence !== undefined || b.matched_items !== undefined
+  );
+  const matched = present.reduce((n, b) => checkedSize(n + checkedSize(b.matched_items ?? 0)), 0);
   const result: ContextMemoryBundle = {
     ...first,
     ...(hybrid
@@ -95,7 +119,13 @@ export function mergeContextMemory(
     bytes: 0,
     budget_bytes: present.reduce((n, b) => checkedSize(n + checkedSize(b.budget_bytes)), 0),
     omitted: present.reduce((n, b) => checkedSize(n + checkedSize(b.omitted)), 0),
-    priority_omitted: present.reduce((n, b) => checkedSize(n + checkedSize(b.priority_omitted)), 0)
+    priority_omitted: present.reduce((n, b) => checkedSize(n + checkedSize(b.priority_omitted)), 0),
+    ...(honestyProvided
+      ? {
+          matched_items: matched,
+          answer_evidence: matched > 0 ? ("matched" as const) : ("absent" as const)
+        }
+      : {})
   };
   const arrayBytes = result.items.reduce(
     (size, item, index) =>
