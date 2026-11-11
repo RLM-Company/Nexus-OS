@@ -1,9 +1,11 @@
 # DELIVERY — 04_DEEPSEEK, срез D: честный expiry + restart-долговечность
 
 - **Статус:** готово к интеграции (дальнейшие статусы подтверждает Codex).
-- **BASE_SHA:** `d047ce125f623c64d2615a6235dfdcd1c8e70a55` (актуальный `main`).
+- **BASE_SHA:** `d047ce125f623c64d2615a6235dfdcd1c8e70a55` (база ветки); перед
+  открытием PR влит актуальный `main` `931cc0c` (+11 коммитов), конфликтов нет.
 - **Ветка:** `ops/deepseek-memory-restart` (новая, не продолжает `ops/deepseek-memory`).
 - **PR:** открывается в `main`, без merge/deploy.
+- **HEAD_SHA:** см. `git log -1` ветки (фиксируется в CHECKPOINT_RESTART.md).
 - **ID отчётов:** `04_DEEPSEEK` (файлы с суффиксом `_RESTART`, чтобы не затирать A/B/C).
 
 ## Сценарий до / после
@@ -37,14 +39,17 @@ POST /api/v1/chats/:id/messages → recallForRunAsync() → resolve() (expiry у
 
 ## Изменённые файлы
 
-| Файл                                                   | Изменение                                                                 |
-| ------------------------------------------------------ | ------------------------------------------------------------------------- |
-| `packages/contracts/src/context-memory.ts`             | `ContextMemoryEntry.expired?`                                             |
-| `packages/db/src/context-memory-store.ts`              | `decode()` вычисляет `expired`                                            |
-| `apps/web/src/app/context-memory-settings.tsx`         | честная пометка в существующем списке                                     |
-| `packages/db/test/memory-restart-expiry.test.ts`       | **новый** 3 сценария                                                      |
-| `docs/research/experience-llm-distill-2026-11-10.json` | только `prettier --write` (внесферный commit, см. INTEGRATION_RESTART.md) |
-| `docs/team/.../04_DEEPSEEK/*_RESTART.md`               | отчёты петли                                                              |
+| Файл                                             | Изменение                             |
+| ------------------------------------------------ | ------------------------------------- |
+| `packages/contracts/src/context-memory.ts`       | `ContextMemoryEntry.expired?`         |
+| `packages/db/src/context-memory-store.ts`        | `decode()` вычисляет `expired`        |
+| `apps/web/src/app/context-memory-settings.tsx`   | честная пометка в существующем списке |
+| `packages/db/test/memory-restart-expiry.test.ts` | **новый** 3 сценария                  |
+| `docs/team/.../04_DEEPSEEK/*_RESTART.md`         | отчёты петли                          |
+
+Примечание: `docs/research/experience-llm-distill-2026-11-10.json` форматировался
+отдельным коммитом, но после вливания `main` `931cc0c` стал идентичен `main` и не
+входит в итоговый diff; `INTEGRATION_RESTART.md` сохраняет запись о намерении.
 
 ## Команды и фактические результаты
 
