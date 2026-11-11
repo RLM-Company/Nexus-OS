@@ -15,16 +15,11 @@ const HISTORY_LIMIT = 40;
 
 /** Only the selected file changes; adjacent source files remain byte-identical. */
 function replaceSource(project: GameProject, selected: GameProjectFile, content: string): string {
-  return JSON.stringify(
-    {
-      ...project,
-      files: project.files.map((item) =>
-        item.name === selected ? { ...item, content } : item
-      )
-    },
-    null,
-    2
-  );
+  const files = project.files.map((item) => {
+    if (item.name !== selected) return item;
+    return { ...item, content };
+  });
+  return JSON.stringify({ ...project, files }, null, 2);
 }
 
 export function GameSourceEditor({
@@ -97,15 +92,12 @@ export function GameSourceEditor({
       now - previous.at < 700;
     setHistories((current) => {
       const state = current[selected] ?? { past: [], future: [] };
-      return {
-        ...current,
-        [selected]: {
-          past: grouped && state.past.length
-            ? state.past
-            : [...state.past.slice(-(HISTORY_LIMIT - 1)), file.content],
-          future: []
-        }
-      };
+      const past = [...state.past];
+      if (!grouped || past.length === 0) {
+        if (past.length >= HISTORY_LIMIT) past.shift();
+        past.push(file.content);
+      }
+      return { ...current, [selected]: { past, future: [] } };
     });
     lastInput.current = { file: selected, type, at: now };
     emit(replaceSource(project, selected, value));
