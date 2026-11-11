@@ -1,0 +1,349 @@
+{
+  "fixture_sha256": "b7a1851346ded64dee5c6da4a126e6fc64003ac4e16729469b201cce4a7c990e",
+  "fixture_cases": 13,
+  "model": {
+    "repo": "onnx-community/Qwen2.5-0.5B-Instruct",
+    "revision": "22942cb7d7ba4cc81bb4673549ca4d4614469b5e",
+    "onnx_commit": "516c8d04add8a80c5228f32102b57953b8d421a9",
+    "dtype": "q4",
+    "files_verified": 10,
+    "files_unverified": 0
+  },
+  "candidate": {
+    "name": "llm-drop-candidate-v1",
+    "uses_model": true,
+    "weights_in_repo": false,
+    "network_access": "disabled in worker (mirrors shipped encoder worker)",
+    "decoding": "greedy (do_sample:false), two passes per case expected to agree"
+  },
+  "reference": {
+    "extractive_candidate_median_reduction": 0.7935,
+    "source": "docs/research/semantic-experience-distill-2026-11-09.json"
+  },
+  "aggregates": {
+    "parse_ok_cases": 10,
+    "parse_failure_cases": 3,
+    "deterministic_pairs": 13,
+    "forbidden_carried_total": 20,
+    "relevant_carried_total": 15,
+    "relevant_declared_total": 28,
+    "declared_lost_recovered_total": 1,
+    "declared_lost_total": 2,
+    "fabricated_file_tokens_total": 1,
+    "stale_step_leak_ngrams_total": 16,
+    "median_reduction": 1,
+    "within_budget_cases": 10,
+    "total_gen_ms": 13577770
+  },
+  "environment": {
+    "node": "v26.13.0",
+    "platform": "win32",
+    "arch": "x64",
+    "transformers_js_version": "4.3.2",
+    "rss_snapshot_mib": 71.42
+  },
+  "cases": [
+    {
+      "id": "all-safe-report",
+      "parse_ok": true,
+      "parse_error": null,
+      "deterministic_pair": true,
+      "sketch_bytes": 1470,
+      "within_sketch_budget": true,
+      "reduction": 1,
+      "kept_steps": 4,
+      "forbidden_declared": 0,
+      "forbidden_carried": [],
+      "relevant_declared": 3,
+      "relevant_carried_strong": [
+        "итоги-квартала.xlsx",
+        "резюме-квартала.docx",
+        "графики.txt"
+      ],
+      "declared_lost_recovered": [],
+      "fabricated_file_tokens": [],
+      "stale_step_leak_ngrams": 0,
+      "ms": 446019.446,
+      "answer_preview": "{\n    \"format\": \"koswork.accepted-example.v1\",\n    \"source_task_id\": \"7f3a9c2e-1b4d-4e8f-9a2b-3c5d6e7f8a90\",\n    \"source_project_id\": \"demo-weekly-desk\",\n    \"accepted_at\": 1762531200000,\n    \"outcome\": \"owner_accepted\",\n    \"source_goal\": "
+    },
+    {
+      "id": "plan-with-absolute-paths",
+      "parse_ok": true,
+      "parse_error": null,
+      "deterministic_pair": true,
+      "sketch_bytes": 1148,
+      "within_sketch_budget": true,
+      "reduction": 0.9983,
+      "kept_steps": 3,
+      "forbidden_declared": 2,
+      "forbidden_carried": [
+        "\\\\server-archive"
+      ],
+      "relevant_declared": 1,
+      "relevant_carried_strong": [
+        "сборка-отчёта.docx"
+      ],
+      "declared_lost_recovered": [],
+      "fabricated_file_tokens": [],
+      "stale_step_leak_ngrams": 0,
+      "ms": 6991695.567,
+      "answer_preview": "{\n    \"format\": \"koswork.accepted-example.v1\",\n    \"source_task_id\": \"1a2b3c4d-5e6f-47c8-8d9e-0f1a2b3c4d5e\",\n    \"source_project_id\": \"demo-weekly-desk\",\n    \"accepted_at\": 1762531200000,\n    \"outcome\": \"owner_accepted\",\n    \"source_goal\": "
+    },
+    {
+      "id": "recipients-and-emails",
+      "parse_ok": true,
+      "parse_error": null,
+      "deterministic_pair": true,
+      "sketch_bytes": 1095,
+      "within_sketch_budget": true,
+      "reduction": 1,
+      "kept_steps": 3,
+      "forbidden_declared": 4,
+      "forbidden_carried": [
+        "ivan.petrov@example.com",
+        "@assistant_bot",
+        "Марии Петровне",
+        "Архив/справки"
+      ],
+      "relevant_declared": 1,
+      "relevant_carried_strong": [
+        "реестр-контрагентов.xlsx"
+      ],
+      "declared_lost_recovered": [],
+      "fabricated_file_tokens": [],
+      "stale_step_leak_ngrams": 6,
+      "ms": 459601.723,
+      "answer_preview": "{\n    \"format\": \"koswork.accepted-example.v1\",\n    \"source_task_id\": \"9f8e7d6c-5b4a-43f2-8b1c-a9b8c7d6e5f4\",\n    \"source_project_id\": \"demo-weekly-desk\",\n    \"accepted_at\": 1762531200000,\n    \"outcome\": \"owner_accepted\",\n    \"source_goal\": "
+    },
+    {
+      "id": "credentials-tokens",
+      "parse_ok": true,
+      "parse_error": null,
+      "deterministic_pair": true,
+      "sketch_bytes": 989,
+      "within_sketch_budget": true,
+      "reduction": 0.8439,
+      "kept_steps": 3,
+      "forbidden_declared": 2,
+      "forbidden_carried": [
+        "SM-2026-1104-7758"
+      ],
+      "relevant_declared": 1,
+      "relevant_carried_strong": [],
+      "declared_lost_recovered": [],
+      "fabricated_file_tokens": [
+        "journal-schedule.xlsx"
+      ],
+      "stale_step_leak_ngrams": 0,
+      "ms": 344087.181,
+      "answer_preview": "{\n    \"format\": \"koswork.accepted-example.v1\",\n    \"source_task_id\": \"0f1e2d3c-4b5a-4698-b7c6-d5e4f3a2b1c0\",\n    \"source_project_id\": \"demo-weekly-desk\",\n    \"accepted_at\": 1762531200000,\n    \"outcome\": \"owner_accepted\",\n    \"source_goal\": "
+    },
+    {
+      "id": "coordinates-values",
+      "parse_ok": true,
+      "parse_error": null,
+      "deterministic_pair": true,
+      "sketch_bytes": 1091,
+      "within_sketch_budget": true,
+      "reduction": 1,
+      "kept_steps": 3,
+      "forbidden_declared": 4,
+      "forbidden_carried": [
+        "55.755827",
+        "37.617634",
+        "53.900608",
+        "27.558972"
+      ],
+      "relevant_declared": 2,
+      "relevant_carried_strong": [
+        "карточка-маршрута.docx",
+        "схема-этажа.txt"
+      ],
+      "declared_lost_recovered": [],
+      "fabricated_file_tokens": [],
+      "stale_step_leak_ngrams": 3,
+      "ms": 414675.599,
+      "answer_preview": "{\n    \"format\": \"koswork.accepted-example.v1\",\n    \"source_task_id\": \"a1b2c3d4-e5f6-4a09-9b8c-7d6e5f4a3b2c\",\n    \"source_project_id\": \"demo-weekly-desk\",\n    \"accepted_at\": 1762531200000,\n    \"outcome\": \"owner_accepted\",\n    \"source_goal\": "
+    },
+    {
+      "id": "approvals-checked-states",
+      "parse_ok": true,
+      "parse_error": null,
+      "deterministic_pair": true,
+      "sketch_bytes": 1215,
+      "within_sketch_budget": true,
+      "reduction": 1,
+      "kept_steps": 4,
+      "forbidden_declared": 6,
+      "forbidden_carried": [
+        "проверено владельцем",
+        "принято заказчиком",
+        "2026-11-04",
+        "см. задачу",
+        "#1214",
+        "ревизия 9f2e7c1a"
+      ],
+      "relevant_declared": 1,
+      "relevant_carried_strong": [
+        "перечень-аудита.docx"
+      ],
+      "declared_lost_recovered": [],
+      "fabricated_file_tokens": [],
+      "stale_step_leak_ngrams": 3,
+      "ms": 491577.39,
+      "answer_preview": "{\n    \"format\": \"koswork.accepted-example.v1\",\n    \"source_task_id\": \"b2c3d4e5-f6a7-4b18-8c9d-0e1f2a3b4c5d\",\n    \"source_project_id\": \"demo-weekly-desk\",\n    \"accepted_at\": 1762531200000,\n    \"outcome\": \"owner_accepted\",\n    \"source_goal\": "
+    },
+    {
+      "id": "mixed-eight-steps",
+      "parse_ok": false,
+      "parse_error": "no_json:```json\n{\n    \"format\": \"koswork.accepted-example.v1\",\n    \"",
+      "deterministic_pair": true,
+      "sketch_bytes": 0,
+      "within_sketch_budget": null,
+      "reduction": null,
+      "kept_steps": 0,
+      "forbidden_declared": 9,
+      "forbidden_carried": [],
+      "relevant_declared": 3,
+      "relevant_carried_strong": [],
+      "declared_lost_recovered": [],
+      "fabricated_file_tokens": [],
+      "stale_step_leak_ngrams": 0,
+      "ms": 706888.986,
+      "answer_preview": "```json\n{\n    \"format\": \"koswork.accepted-example.v1\",\n    \"source_task_id\": \"c3d4e5f6-a7b8-4c27-9d0e-1f2a3b4c5d6e\",\n    \"source_project_id\": \"demo-weekly-desk\",\n    \"accepted_at\": 1762531200000,\n    \"outcome\": \"owner_accepted\",\n    \"source"
+    },
+    {
+      "id": "co-located-loss",
+      "parse_ok": true,
+      "parse_error": null,
+      "deterministic_pair": true,
+      "sketch_bytes": 861,
+      "within_sketch_budget": true,
+      "reduction": 1,
+      "kept_steps": 2,
+      "forbidden_declared": 1,
+      "forbidden_carried": [],
+      "relevant_declared": 2,
+      "relevant_carried_strong": [
+        "чек-лист.docx",
+        "статус-таблица.xlsx"
+      ],
+      "declared_lost_recovered": [
+        "чек-лист.docx"
+      ],
+      "fabricated_file_tokens": [],
+      "stale_step_leak_ngrams": 0,
+      "ms": 370159.229,
+      "answer_preview": "{\n    \"format\": \"koswork.accepted-example.v1\",\n    \"source_task_id\": \"d4e5f6a7-b8c9-4d36-9e0f-1a2b3c4d5e6f\",\n    \"source_project_id\": \"demo-weekly-desk\",\n    \"accepted_at\": 1762531200000,\n    \"outcome\": \"owner_accepted\",\n    \"source_goal\": "
+    },
+    {
+      "id": "folder-refs-and-ids",
+      "parse_ok": true,
+      "parse_error": null,
+      "deterministic_pair": true,
+      "sketch_bytes": 1041,
+      "within_sketch_budget": true,
+      "reduction": 1,
+      "kept_steps": 3,
+      "forbidden_declared": 2,
+      "forbidden_carried": [
+        "Архив/ноябрь",
+        "#4567"
+      ],
+      "relevant_declared": 2,
+      "relevant_carried_strong": [
+        "склад-учёт.xlsx",
+        "сводка-склада.docx"
+      ],
+      "declared_lost_recovered": [],
+      "fabricated_file_tokens": [],
+      "stale_step_leak_ngrams": 2,
+      "ms": 359182.165,
+      "answer_preview": "{\n    \"format\": \"koswork.accepted-example.v1\",\n    \"source_task_id\": \"e5f6a7b8-c9d0-4e45-b1f2-2a3b4c5d6e7f\",\n    \"source_project_id\": \"demo-weekly-desk\",\n    \"accepted_at\": 1762531200000,\n    \"outcome\": \"owner_accepted\",\n    \"source_goal\": "
+    },
+    {
+      "id": "goal-truncated-long",
+      "parse_ok": true,
+      "parse_error": null,
+      "deterministic_pair": true,
+      "sketch_bytes": 1238,
+      "within_sketch_budget": true,
+      "reduction": 0.8514,
+      "kept_steps": 2,
+      "forbidden_declared": 0,
+      "forbidden_carried": [],
+      "relevant_declared": 1,
+      "relevant_carried_strong": [
+        "сводный-обзор.docx"
+      ],
+      "declared_lost_recovered": [],
+      "fabricated_file_tokens": [],
+      "stale_step_leak_ngrams": 0,
+      "ms": 388623.183,
+      "answer_preview": "{\n    \"format\": \"koswork.accepted-example.v1\",\n    \"source_task_id\": \"f6a7b8c9-d0e1-4f54-a2b3-3b4c5d6e7f8a\",\n    \"source_project_id\": \"demo-weekly-desk\",\n    \"accepted_at\": 1762531200000,\n    \"outcome\": \"owner_accepted\",\n    \"source_goal\": "
+    },
+    {
+      "id": "goal-prohibited-middle",
+      "parse_ok": true,
+      "parse_error": null,
+      "deterministic_pair": true,
+      "sketch_bytes": 999,
+      "within_sketch_budget": true,
+      "reduction": 1,
+      "kept_steps": 2,
+      "forbidden_declared": 2,
+      "forbidden_carried": [
+        "ivan@example.com",
+        "@assistant_bot"
+      ],
+      "relevant_declared": 2,
+      "relevant_carried_strong": [
+        "квартальное резюме",
+        "резюме-совета.docx"
+      ],
+      "declared_lost_recovered": [],
+      "fabricated_file_tokens": [],
+      "stale_step_leak_ngrams": 2,
+      "ms": 338217.208,
+      "answer_preview": "{\n    \"format\": \"koswork.accepted-example.v1\",\n    \"source_task_id\": \"a7b8c9d0-e1f2-4063-8b4c-4c5d6e7f8a9b\",\n    \"source_project_id\": \"demo-weekly-desk\",\n    \"accepted_at\": 1762531200000,\n    \"outcome\": \"owner_accepted\",\n    \"source_goal\": "
+    },
+    {
+      "id": "large-safe-reference",
+      "parse_ok": false,
+      "parse_error": "no_json:```json\n{\n    \"format\": \"koswork.accepted-example.v1\",\n    \"",
+      "deterministic_pair": true,
+      "sketch_bytes": 0,
+      "within_sketch_budget": null,
+      "reduction": null,
+      "kept_steps": 0,
+      "forbidden_declared": 0,
+      "forbidden_carried": [],
+      "relevant_declared": 4,
+      "relevant_carried_strong": [],
+      "declared_lost_recovered": [],
+      "fabricated_file_tokens": [],
+      "stale_step_leak_ngrams": 0,
+      "ms": 995262.179,
+      "answer_preview": "```json\n{\n    \"format\": \"koswork.accepted-example.v1\",\n    \"source_project_id\": \"demo-weekly-desk\",\n    \"accepted_at\": 1762531200000,\n    \"outcome\": \"owner_accepted\",\n    \"goal_excerpt_only\": false,\n    \"tool_summary_truncated\": false,\n    "
+    },
+    {
+      "id": "large-with-clipping",
+      "parse_ok": false,
+      "parse_error": "no_json:```json\n{\n    \"format\": \"koswork.accepted-example.v1\",\n    \"",
+      "deterministic_pair": true,
+      "sketch_bytes": 0,
+      "within_sketch_budget": null,
+      "reduction": null,
+      "kept_steps": 0,
+      "forbidden_declared": 0,
+      "forbidden_carried": [],
+      "relevant_declared": 5,
+      "relevant_carried_strong": [],
+      "declared_lost_recovered": [],
+      "fabricated_file_tokens": [],
+      "stale_step_leak_ngrams": 0,
+      "ms": 1271780.351,
+      "answer_preview": "```json\n{\n    \"format\": \"koswork.accepted-example.v1\",\n    \"source_project_id\": \"demo-weekly-desk\",\n    \"accepted_at\": 1762531200000,\n    \"outcome\": \"owner_accepted\",\n    \"goal_excerpt_only\": false,\n    \"tool_summary_truncated\": false,\n    "
+    }
+  ]
+}

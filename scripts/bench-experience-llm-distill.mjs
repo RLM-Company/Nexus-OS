@@ -15,16 +15,28 @@
 // exits with MODEL_REQUIRED instead of reporting fabricated results.
 // Results are one-machine observations on synthetic data, not SLA or
 // intelligence claims.
-import { readFile, writeFile, stat, readdir } from "node:fs/promises";
+import { readFile, writeFile, stat, readdir, rm } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { Buffer } from "node:buffer";
 import { Worker } from "node:worker_threads";
 import { pathToFileURL, fileURLToPath } from "node:url";
-import { dirname, join, relative } from "node:path";
+import { createRequire } from "node:module";
+import { dirname, join, relative, resolve } from "node:path";
 import { performance } from "node:perf_hooks";
 
 const here = dirname(fileURLToPath(import.meta.url));
-const [mode, ...rest] = process.argv.slice(2);
+const rawArgv = process.argv.slice(2);
+const fixtureFlagIndex = rawArgv.indexOf("--fixture");
+const fixtureFlagPath = fixtureFlagIndex === -1 ? undefined : rawArgv[fixtureFlagIndex + 1];
+if (fixtureFlagIndex !== -1 && fixtureFlagPath === undefined)
+  throw new Error("--fixture requires a fixture file path");
+const argv =
+  fixtureFlagIndex === -1
+    ? rawArgv
+    : rawArgv.filter(
+        (value, index) => index !== fixtureFlagIndex && index !== fixtureFlagIndex + 1
+      );
+const [mode, ...rest] = argv;
 
 // The system rules paraphrase the stalled-evidence classes of
 // WORK_REFERENCE_RULES (apps/api/src/computer-control/service.ts): stale
@@ -64,7 +76,11 @@ const wordNgrams = (value, size) => {
 };
 
 const REPORT_HELPERS = {
-  fixturePath: "../packages/db/test/fixtures/semantic-experience-distill-evaluation.json",
+  // Overridable per the semantics protocol: --fixture selects another fixture
+  // (v2 semantics panel) without any metric changes; the default stays v1.
+  fixturePath: fixtureFlagPath
+    ? pathToFileURL(resolve(fixtureFlagPath)).href
+    : "../packages/db/test/fixtures/semantic-experience-distill-evaluation.json",
   sketchLimitBytes: 5000
 };
 
@@ -125,12 +141,12 @@ if (mode === "--digest") {
   process.exit(0);
 }
 
-const modelDir = mode;
-const manifestPath = rest[0];
-const [output, comparePath] = rest.slice(1);
+// Full-run arguments; --probe consumes the same <model-dir> <manifest> shape
+// but writes no report.
+const [modelDir, manifestPath, output, comparePath] = mode === "--probe" ? rest : [mode, ...rest];
 if (!modelDir || !manifestPath) {
   console.error(
-    "MODELS REQUIRED: usage: bench-experience-llm-distill.mjs <installed-model-dir> <manifest.json> <report.json> [previous.json]\n" +
+    "MODELS REQUIRED: usage: bench-experience-llm-distill.mjs <installed-model-dir> <manifest.json> <report.json> [previous.json] [--fixture <fixture.json>]\n" +
       "The model is installed by the operator per docs/research/experience-llm-distill-manifest-2026-11-10.json. No fake numbers are produced."
   );
   process.exit(2);
@@ -163,18 +179,25 @@ if (verifiedFiles === 0)
     "operator records digests after install: bench --digest <dir>"
   );
 
+// Runtime library resolution: the worker runs from scripts/ where workspace
+// packages are not resolvable by bare specifier, so the bench resolves the
+// exact node-ESM entry once (declared dependency of the workspace, installed
+// via apps/api) and passes the concrete file path into the worker.
+const transformersPackage = await resolveTransformersPackage();
+
 const worker = new Worker(new URL("./experience-llm-worker.mjs", import.meta.url), {
   workerData: {
     modelDir: modelDir,
     dtype: manifest.dtype ?? "q4",
-    intraThreads: manifest.intra_threads ?? 2
+    intraThreads: manifest.intra_threads ?? 2,
+    transformersEntry: transformersPackage.entry
   }
 });
 worker.on("error", (error) => {
   console.error("WORKER_ERROR", String(error?.message ?? error));
   process.exit(3);
 });
-const askOnce = (promptList) =>
+const askOnce = (promptList, maxNewTokens = 700) =>
   new Promise((resolve, reject) => {
     const id = Math.random().toString(36).slice(2);
     const onMessage = (message) => {
@@ -184,8 +207,97 @@ const askOnce = (promptList) =>
       else resolve(message.answers[0]);
     };
     worker.on("message", onMessage);
-    worker.postMessage({ id: id, op: "generate", conversations: [promptList], maxNewTokens: 700 });
+    worker.postMessage({
+      id: id,
+      op: "generate",
+      conversations: [promptList],
+      maxNewTokens: maxNewTokens
+    });
   });
+
+async function resolveTransformersPackage() {
+  const anchors = [
+    join(here, "..", "apps", "api", "package.json"),
+    join(here, "..", "package.json")
+  ];
+  let entryFile = null;
+  for (const base of anchors) {
+    try {
+      entryFile = createRequire(base).resolve("@huggingface/transformers");
+      break;
+    } catch {
+      // Try the next anchor; the last one failing resolves to the friendly error.
+    }
+  }
+  if (!entryFile)
+    fail(
+      "LLM_TRANSFORMERS_MISSING",
+      "pnpm install first: the declared offline runtime library @huggingface/transformers is required; numbers are never produced without the real runtime"
+    );
+  // Walk up from the resolved entry file to the package directory (the
+  // package.json subpath is often not exported, so direct resolution fails).
+  let dir = dirname(entryFile);
+  let pkg = null;
+  let pkgJsonPath = null;
+  for (;;) {
+    try {
+      const parsed = JSON.parse(await readFile(join(dir, "package.json"), "utf8"));
+      if (parsed.name === "@huggingface/transformers") {
+        pkg = parsed;
+        pkgJsonPath = join(dir, "package.json");
+        break;
+      }
+    } catch {
+      // Not the package directory yet.
+    }
+    const parent = dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  if (!pkg)
+    fail(
+      "LLM_TRANSFORMERS_MISSING",
+      "package.json of @huggingface/transformers not found above " + entryFile
+    );
+  const dot = pkg.exports?.["."];
+  const entryRel =
+    dot?.node?.import?.default ??
+    (typeof dot?.import === "string" ? dot.import : (dot?.import?.default ?? null)) ??
+    (typeof dot === "string" ? dot : null) ??
+    pkg.main ??
+    null;
+  if (!entryRel) fail("LLM_TRANSFORMERS_MISSING", "no node import entry in " + pkgJsonPath);
+  return { entry: join(dir, entryRel), version: pkg.version };
+}
+
+if (mode === "--probe") {
+  // Cheap end-to-end smoke test: manifest verifies, the ONNX session loads,
+  // one tiny greedy generation answers. Not a measurement; nothing is
+  // committed, so the frozen full-run protocol stays untouched.
+  const started = performance.now();
+  const answer = await askOnce(
+    [
+      { role: "system", content: "Return the JSON object only." },
+      { role: "user", content: 'Return exactly: {"format":"probe.v1","ok":true}' }
+    ],
+    24
+  );
+  console.log(
+    JSON.stringify(
+      {
+        mode: "probe",
+        transformers_js_version: transformersPackage.version,
+        answer_bytes: byteLen(answer),
+        answer_preview: answer.slice(0, 120),
+        ms: Math.round((performance.now() - started) * 1000) / 1000
+      },
+      null,
+      2
+    )
+  );
+  await worker.terminate();
+  process.exit(0);
+}
 
 const evaluateCase = async (c) => {
   const messages = [
@@ -275,9 +387,59 @@ function answerShape(answer) {
   return "no_json:" + answer.slice(0, 60);
 }
 
+// Long real-model runs must survive process restarts: after every completed
+// case the partial checkpoint next to the output records the cases finished so
+// far and is removed once the final report is written. Each run keeps its own
+// partial (the double-run comparison reads the finished report of the other
+// run), and a reused partial must match the same fixture and installed model
+// directory, otherwise it is ignored and the run starts from scratch.
+const partialPath = output ? output + ".partial.json" : null;
 const cases = [];
-for (const c of fixture.cases) cases.push(await evaluateCase(c));
+if (partialPath) {
+  const partial = await readFile(partialPath, "utf8")
+    .then((raw) => JSON.parse(raw))
+    .catch(() => null);
+  if (
+    partial &&
+    partial.bench === "experience-llm-distill" &&
+    partial.fixture_sha256 === fixtureSha &&
+    partial.model_dir === modelDir &&
+    Array.isArray(partial.cases) &&
+    partial.cases.every((entry) => typeof entry?.id === "string")
+  ) {
+    const resumed = new Map(partial.cases.map((entry) => [entry.id, entry]));
+    for (const c of fixture.cases) if (resumed.has(c.id)) cases.push(resumed.get(c.id));
+    console.log(`RESUME ${cases.length}/${fixture.cases.length} cases from ${partialPath}`);
+  }
+}
+const completedIds = new Set(cases.map((entry) => entry.id));
+for (const c of fixture.cases) {
+  if (completedIds.has(c.id)) continue;
+  cases.push(await evaluateCase(c));
+  if (partialPath)
+    await writeFile(
+      partialPath,
+      JSON.stringify(
+        {
+          bench: "experience-llm-distill",
+          fixture_sha256: fixtureSha,
+          model_dir: modelDir,
+          cases
+        },
+        null,
+        2
+      ) + "\n"
+    );
+}
+// Restore fixture-case order after resuming so the final report (and the
+// double-run comparison) does not depend on where a restart happened.
+const entryById = new Map(cases.map((entry) => [entry.id, entry]));
+if (entryById.size === cases.length) {
+  cases.length = 0;
+  for (const c of fixture.cases) if (entryById.has(c.id)) cases.push(entryById.get(c.id));
+}
 await worker.terminate();
+if (partialPath) await rm(partialPath, { force: true });
 
 const parseOkCases = cases.filter((c) => c.parse_ok);
 const report = {
@@ -344,6 +506,7 @@ const report = {
     node: process.version,
     platform: process.platform,
     arch: process.arch,
+    transformers_js_version: transformersPackage.version,
     rss_snapshot_mib: Math.round((process.memoryUsage().rss / 1048576) * 100) / 100
   },
   cases: cases
