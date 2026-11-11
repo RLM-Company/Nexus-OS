@@ -857,9 +857,10 @@ export class CodeAgentService {
       "read-base",
       ["context.project.read", "integration.private.use"],
       async () => {
-        const status = await this.deps.github.status();
+        const scope = this.readScope(run);
+        const status = await this.deps.github.status(scope);
         if (!status.workspace_scope) throw new CodeAgentError("GITHUB_NOT_CONFIGURED");
-        const tree = await this.deps.github.tree(run.base_branch);
+        const tree = await this.deps.github.tree(run.base_branch, scope);
         // The existing GitHub adapter caps response bytes at 8 MB. Keep the complete
         // existence index (including unread files), while selecting only bounded file contents.
         if (tree.truncated || tree.items.length > 100_000) throw new CodeAgentError("TREE_LIMIT");
@@ -873,7 +874,7 @@ export class CodeAgentService {
         ...this.current(id, owner),
         base_sha: initial.tree.sha,
         workspace_scope: initial.status.workspace_scope,
-        repository_paths: initial.tree.items.filter((e) => e.type !== "tree").map((e) => e.path)
+        repository_paths: initial.tree.items.map((e) => e.path)
       },
       "Прочитано дерево репозитория на фиксированном коммите"
     );
@@ -892,7 +893,7 @@ export class CodeAgentService {
         latest,
         "read-" + hash(path),
         ["context.project.read", "integration.private.use"],
-        async () => (await this.deps.github.file(entry.sha)).content
+        async () => (await this.deps.github.file(entry.sha, this.readScope(latest))).content
       );
       const fresh = this.current(id, owner);
       this.live(fresh, signal);
@@ -919,7 +920,7 @@ export class CodeAgentService {
       this.setProposal(
         this.current(id, owner),
         { summary: run.task, diff: imported.diff },
-        initial.tree.items.filter((e) => e.type !== "tree").map((e) => e.path)
+        initial.tree.items.map((e) => e.path)
       );
       await this.autoCheckProposal(id, owner, signal);
       return;
@@ -963,7 +964,7 @@ export class CodeAgentService {
           this.setProposal(
             run,
             decodeCodeProposal(result.content),
-            initial.tree.items.filter((e) => e.type !== "tree").map((e) => e.path)
+            initial.tree.items.map((e) => e.path)
           );
         } catch (error) {
           // Preserve the already-paid draft for explicit repair, never a second generation.
@@ -1017,7 +1018,7 @@ export class CodeAgentService {
           this.setProposal(
             this.current(id, owner),
             args,
-            initial.tree.items.filter((e) => e.type !== "tree").map((e) => e.path)
+            initial.tree.items.map((e) => e.path)
           );
           await this.autoCheckProposal(id, owner, signal);
           return;
@@ -1169,7 +1170,8 @@ export class CodeAgentService {
           base_sha: run.base_sha,
           workspace_scope: run.workspace_scope,
           title: run.task.slice(0, 160),
-          files: input.files
+          files: input.files,
+          read_scope: this.readScope(run)
         })
     );
     const latest = this.current(id, owner);
@@ -1346,6 +1348,20 @@ export class CodeAgentService {
       },
       "Проверка предложения завершена; GitHub review ожидает владельца"
     );
+  }
+  private readScope(run: CodeAgentRun) {
+    const signal = (this.active.get(run.id) ?? this.external.get(run.id))?.controller.signal;
+    return {
+      ...(signal ? { signal } : {}),
+      allowed: () => {
+        try {
+          this.live(this.current(run.id, run.owner_id));
+          return [...(this.authorityChecks.get(run.id) ?? [])].every((check) => check());
+        } catch {
+          return false;
+        }
+      }
+    };
   }
   private assertReviewParent(run: CodeAgentRun, expected: string | null | undefined) {
     const current = run.draft_id

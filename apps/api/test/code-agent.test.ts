@@ -132,6 +132,7 @@ async function fixture(
     extraTreePaths?: number;
     additionalTreePaths?: string[];
     truncatedTree?: boolean;
+    recoverTree?: boolean;
     ownerBudget?: CodeOwnerBudget;
     level?: AutonomyLevel;
     toolCalling?: boolean;
@@ -185,24 +186,49 @@ async function fixture(
           object: { type: "commit", sha: head }
         };
       else if (path.startsWith("/commits/")) value = { sha: head, commit: { tree: { sha: tree } } };
-      else if (path.startsWith("/git/trees/"))
-        value = {
-          truncated: options.truncatedTree ?? false,
-          tree: [
-            ...Object.keys(originals),
-            ...(options.additionalTreePaths ?? []),
-            ...Array.from(
-              { length: options.extraTreePaths ?? 0 },
-              (_, i) => `unrelated/large-project/module-${i}/source-file-with-long-name.js`
-            )
-          ].map((path, i) => ({
-            path,
-            type: "blob",
-            mode: "100644",
-            sha: i < 2 ? String(i + 1).repeat(40) : "9".repeat(40)
-          }))
-        };
-      else if (path.startsWith("/git/blobs/")) {
+      else if (path.startsWith("/git/trees/")) {
+        if (options.recoverTree) {
+          value = url.searchParams.has("recursive")
+            ? { sha: tree, truncated: true, tree: [] }
+            : path.endsWith(tree)
+              ? {
+                  sha: tree,
+                  truncated: false,
+                  tree: [
+                    { path: "src", type: "tree", mode: "040000", sha: "8".repeat(40) },
+                    { path: ".npmrc", type: "blob", mode: "100644", sha: "7".repeat(40) },
+                    { path: "link", type: "blob", mode: "120000", sha: "9".repeat(40) }
+                  ]
+                }
+              : {
+                  sha: "8".repeat(40),
+                  truncated: false,
+                  tree: Object.keys(originals).map((path, i) => ({
+                    path: path.split("/").at(-1)!,
+                    type: "blob",
+                    mode: "100644",
+                    sha: String(i + 1).repeat(40)
+                  }))
+                };
+        } else {
+          value = {
+            truncated: options.truncatedTree ?? false,
+            tree: [
+              ...Object.keys(originals),
+              ...(options.additionalTreePaths ?? []),
+              ...Array.from(
+                { length: options.extraTreePaths ?? 0 },
+                (_, i) => `unrelated/large-project/module-${i}/source-file-with-long-name.js`
+              )
+            ].map((path, i) => ({
+              path,
+              type: "blob",
+              mode: "100644",
+              sha: i < 2 ? String(i + 1).repeat(40) : "9".repeat(40)
+            }))
+          };
+        }
+      } else if (path.startsWith("/git/blobs/")) {
         const content = Object.values(originals)[Number(path.at(-1)) - 1]!;
         value = {
           encoding: "base64",
@@ -1210,6 +1236,76 @@ describe("Code agent real gateway/GitHub/policy vertical", () => {
     expect(f.githubCalls.filter((call) => call.path.startsWith("/git/blobs/"))).toHaveLength(2);
     expect(f.githubCalls.every((call) => call.method === "GET")).toBe(true);
   });
+  it("recovers complete immutable coverage before read/proposal/review/check, without reading credential or symlink blobs", async () => {
+    const f = await fixture({ recoverTree: true });
+    const id = await f.start();
+    await f.wait(id, "proposed");
+    expect(f.get(id).base_sha).toBe(head);
+    expect(f.get(id).repository_paths).toEqual([
+      "src",
+      ".npmrc",
+      "link",
+      "src/add.js",
+      "src/add.test.js"
+    ]);
+    const review = await f.review(id);
+    expect((await f.check(id, review.draft!.plan.review_hash)).check?.status).toBe("passed");
+    expect(
+      f.githubCalls
+        .filter((call) => call.path.startsWith("/git/blobs/"))
+        .every((call) => ["1".repeat(40), "2".repeat(40)].some((sha) => call.path.endsWith(sha)))
+    ).toBe(true);
+    expect(JSON.stringify(f.providerCalls.map((call) => call.messages))).not.toContain(".npmrc");
+    expect(f.providerCalls).toHaveLength(3);
+    expect(f.githubCalls.every((call) => call.method === "GET")).toBe(true);
+  });
+  it("does not treat a recovered directory as an absent new file", async () => {
+    const f = await fixture({
+      recoverTree: true,
+      responses: [
+        toolResponse(
+          "propose_patch",
+          {
+            summary: "unsupported directory overwrite",
+            files: [{ path: "src", content: "not a directory" }]
+          },
+          "patch"
+        )
+      ]
+    });
+    expect((await f.wait(await f.start(), "failed")).error).toBe("FILE_NOT_READ");
+    expect(f.githubCalls.every((call) => call.method === "GET")).toBe(true);
+  });
+  it.each(["cancel", "revoke"] as const)(
+    "stops recovered-tree traversal before blob reads after %s",
+    async (action) => {
+      let stop = () => {};
+      const f = await fixture({
+        recoverTree: true,
+        onGithub: (path) => {
+          if (path.endsWith("8".repeat(40))) stop();
+        }
+      });
+      let id = "";
+      stop = () => {
+        if (action === "cancel") f.service.cancel(id, owner);
+        else
+          f.policy.updateProfile({
+            projectId: f.project,
+            baseLevel: "A0",
+            overrides: [],
+            expectedVersion: f.policy.getProfile(f.project)!.version
+          });
+      };
+      id = await f.start();
+      await f.wait(id, action === "cancel" ? "cancelled" : "failed");
+      await f.service.stop();
+      expect(f.get(id).snapshot).toEqual([]);
+      expect(f.providerCalls).toHaveLength(0);
+      expect(f.githubCalls.some((call) => call.path.startsWith("/git/blobs/"))).toBe(false);
+      expect(f.githubCalls.every((call) => call.method === "GET")).toBe(true);
+    }
+  );
   it("refuses a truncated existence index before file reads or model dispatch", async () => {
     const f = await fixture({ truncatedTree: true });
     const id = await f.start();
