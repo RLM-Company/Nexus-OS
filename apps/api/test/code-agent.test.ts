@@ -24,6 +24,7 @@ import {
   createCodeAgentExecutorServer,
   createCodeAgentHttpExecutor,
   computeCodeAgentSnapshotDigest,
+  renderCodeAgentUnifiedDiff,
   type CodeAgentWorkspaceRunner,
   type CodeAgentWorkspaceRunInput
 } from "@cosmora/tool-runtime";
@@ -125,6 +126,8 @@ async function fixture(
     providerStatus?: number;
     providerResponse?: (signal: AbortSignal | null | undefined) => Response;
     extraTreePaths?: number;
+    additionalTreePaths?: string[];
+    truncatedTree?: boolean;
     ownerBudget?: CodeOwnerBudget;
     level?: AutonomyLevel;
     toolCalling?: boolean;
@@ -180,9 +183,10 @@ async function fixture(
       else if (path.startsWith("/commits/")) value = { sha: head, commit: { tree: { sha: tree } } };
       else if (path.startsWith("/git/trees/"))
         value = {
-          truncated: false,
+          truncated: options.truncatedTree ?? false,
           tree: [
             ...Object.keys(originals),
+            ...(options.additionalTreePaths ?? []),
             ...Array.from(
               { length: options.extraTreePaths ?? 0 },
               (_, i) => `unrelated/large-project/module-${i}/source-file-with-long-name.js`
@@ -1053,14 +1057,14 @@ describe("Code agent real gateway/GitHub/policy vertical", () => {
       { choices: [{ delta: {}, finish_reason: "stop" }] },
       "[DONE]"
     );
-    const f = await fixture({ toolCalling: false, extraTreePaths: 3000, responses: [response] });
+    const f = await fixture({ toolCalling: false, extraTreePaths: 22000, responses: [response] });
     const id = f.service.create(f.project, LOCAL_DEVELOPMENT_IDENTITY, {
       task: "Fix sum",
       base_branch: "main",
       files: ["src/add.js"]
     }).id;
     const run = await f.wait(id, "proposed");
-    expect(run.repository_paths).toHaveLength(3002);
+    expect(run.repository_paths).toHaveLength(22002);
     expect(f.providerCalls).toHaveLength(1);
     const messages = f.providerCalls[0]!.messages as Array<{ role: string; content: string }>;
     const input = JSON.parse(messages.find((m) => m.role === "user")!.content) as {
@@ -1069,10 +1073,163 @@ describe("Code agent real gateway/GitHub/policy vertical", () => {
       tree_total_count: number;
     };
     expect(input.tree_partial).toBe(true);
-    expect(input.tree_total_count).toBe(3002);
+    expect(input.tree_total_count).toBe(22002);
     expect(input.tree).toContain("src/add.js");
     expect(input.tree.length).toBeLessThanOrEqual(128);
     expect(Buffer.byteLength(JSON.stringify(input.tree))).toBeLessThanOrEqual(12000);
+    expect(run.base_sha).toBe(head);
+    expect(run.snapshot.map((file) => file.path)).toEqual(["src/add.js"]);
+    expect(f.githubCalls.filter((call) => call.path.startsWith("/git/blobs/"))).toHaveLength(1);
+    const unread = "unrelated/large-project/module-21999/source-file-with-long-name.js";
+    const previewInput = {
+      proposal_hash: run.proposal_hash!,
+      base_sha: head,
+      snapshot_digest: run.proposal_snapshot_digest!,
+      diff: renderCodeAgentUnifiedDiff([{ path: unread, before: null, content: "new file\n" }])
+    };
+    expect(() => f.service.previewDiff(id, owner, previewInput)).toThrow("PATCH_FILE_NOT_READ");
+    const preview = f.service.previewDiff(id, owner, { ...previewInput, diff: run.proposal_diff! });
+    expect(preview.files[0]!.content).toBe(changes[0]!.content);
+    const review = await f.review(id, [changes[0]!]);
+    expect((await f.check(id, review.draft!.plan.review_hash)).check?.status).toBe("passed");
+    expect(f.get(id).repository_paths).toHaveLength(22002);
+    expect(f.providerCalls).toHaveLength(1);
+    expect(f.githubCalls.every((call) => call.method === "GET")).toBe(true);
+  });
+  it("refuses a truncated existence index before file reads or model dispatch", async () => {
+    const f = await fixture({ truncatedTree: true });
+    const id = await f.start();
+    expect((await f.wait(id, "failed")).error).toBe("TREE_LIMIT");
+    expect(f.get(id).snapshot).toEqual([]);
+    expect(f.get(id).repository_paths).toBeUndefined();
+    expect(f.providerCalls).toHaveLength(0);
+    expect(f.githubCalls.filter((call) => call.path.startsWith("/git/blobs/"))).toHaveLength(0);
+  });
+  it.each(["cancel", "revoke"] as const)(
+    "stops large-context reads after %s during tree retrieval",
+    async (action) => {
+      let entered = () => {};
+      let release = () => {};
+      const pending = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const started = new Promise<void>((resolve) => {
+        entered = resolve;
+      });
+      const f = await fixture({
+        extraTreePaths: 22000,
+        githubBarrier: async (path) => {
+          if (path.startsWith("/git/trees/")) {
+            entered();
+            await pending;
+          }
+        }
+      });
+      const id = await f.start();
+      await started;
+      try {
+        if (action === "cancel") f.service.cancel(id, owner);
+        else
+          f.policy.updateProfile({
+            projectId: f.project,
+            baseLevel: "A0",
+            overrides: [],
+            expectedVersion: f.policy.getProfile(f.project)!.version
+          });
+      } finally {
+        release();
+      }
+      await f.wait(id, action === "cancel" ? "cancelled" : "failed");
+      await f.service.stop();
+      expect(f.get(id).status).toBe(action === "cancel" ? "cancelled" : "failed");
+      expect(f.get(id).snapshot).toEqual([]);
+      expect(f.providerCalls).toHaveLength(0);
+      expect(f.githubCalls.filter((call) => call.path.startsWith("/git/blobs/"))).toHaveLength(0);
+      expect(f.githubCalls.every((call) => call.method === "GET")).toBe(true);
+    }
+  );
+  it("refuses legacy forbidden context before review, execution and publication without deleting the checkpoint", async () => {
+    const f = await fixture();
+    const id = await f.start();
+    const proposed = await f.wait(id, "proposed");
+    const legacySnapshot = [
+      ...proposed.snapshot,
+      { path: ".npmrc", content: "synthetic fixture only\n" }
+    ];
+    // Emulate a historical row, preserving digest consistency; no real credential is used.
+    f.store.save(
+      {
+        ...proposed,
+        snapshot: legacySnapshot,
+        proposal_snapshot_digest: computeCodeAgentSnapshotDigest(legacySnapshot)
+      },
+      "fixture legacy snapshot"
+    );
+    const before = f.githubCalls.length;
+    await expect(
+      f.service.review(id, owner, { proposal_hash: proposed.proposal_hash!, files: changes })
+    ).rejects.toThrow("CONTEXT_PATH_FORBIDDEN");
+    expect(f.githubCalls).toHaveLength(before);
+    f.store.save(
+      {
+        ...f.get(id),
+        snapshot: proposed.snapshot,
+        proposal_snapshot_digest: proposed.proposal_snapshot_digest
+      },
+      "fixture restores authorized source"
+    );
+    const review = await f.review(id);
+    f.store.save({ ...f.get(id), snapshot: legacySnapshot }, "fixture legacy review snapshot");
+    expect(() =>
+      f.service.check(id, owner, {
+        review_hash: review.draft!.plan.review_hash,
+        check: "syntax",
+        approve: true
+      })
+    ).toThrow("CONTEXT_PATH_FORBIDDEN");
+    await expect(
+      f.service.publish(id, owner, {
+        review_hash: review.draft!.plan.review_hash,
+        publication_token: "unused",
+        approve: true
+      })
+    ).rejects.toThrow("CONTEXT_PATH_FORBIDDEN");
+    expect(f.checked).toHaveLength(0);
+    expect(f.get(id).snapshot).toEqual(legacySnapshot);
+    expect(f.githubCalls.every((call) => call.method === "GET")).toBe(true);
+    expect(f.providerCalls).toHaveLength(3);
+  });
+  it("excludes credential configuration paths from model context and denies tool reads before fetching blobs", async () => {
+    const sensitive = [
+      ".npmrc",
+      ".netrc",
+      ".pypirc",
+      ".envrc",
+      ".ssh/config",
+      ".aws/config",
+      ".docker/config.json",
+      "keys/id_rsa",
+      "keys/client.pfx"
+    ];
+    const f = await fixture({
+      additionalTreePaths: sensitive,
+      responses: [
+        toolResponse("list_files", {}, "list"),
+        toolResponse("read_file", { path: ".npmrc" }, "forbidden")
+      ]
+    });
+    const id = await f.start();
+    expect((await f.wait(id, "failed")).error).toBe("INVALID_FILE");
+    expect(f.providerCalls).toHaveLength(2);
+    for (const request of f.providerCalls) {
+      const messages = JSON.stringify(request.messages);
+      for (const path of sensitive) expect(messages).not.toContain(path);
+    }
+    expect(
+      f.githubCalls.filter((call) => call.path.startsWith("/git/blobs/")).map((call) => call.path)
+    ).toEqual(["/git/blobs/" + "1".repeat(40)]);
+    expect(f.githubCalls.every((call) => call.method === "GET")).toBe(true);
+    expect(f.get(id).snapshot.map((file) => file.path)).toEqual(["src/add.js"]);
   });
   it("creates an active isolated Code project with explicit A2 approval, no initial model run, and idempotent replay", async () => {
     const f = await fixture(),
@@ -1300,7 +1457,16 @@ describe("Code agent real gateway/GitHub/policy vertical", () => {
       "src\\bad.js",
       ".env",
       ".github/workflows/pwn.yml",
-      "credentials.json"
+      "credentials.json",
+      ".npmrc",
+      ".netrc",
+      ".pypirc",
+      ".envrc",
+      "nested/.ssh/config",
+      ".aws/config",
+      ".docker/config.json",
+      "keys/id_ed25519",
+      "keys/client.pfx"
     ])
       expect(() =>
         f.service.create(f.project, LOCAL_DEVELOPMENT_IDENTITY, {

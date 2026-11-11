@@ -836,6 +836,7 @@ export class CodeAgentService {
     imported?: { diff: string; baseSha: string }
   ) {
     let run = this.current(id, owner);
+    this.assertSafeContext(run);
     const initial = await this.guarded(
       run,
       "read-base",
@@ -844,7 +845,9 @@ export class CodeAgentService {
         const status = await this.deps.github.status();
         if (!status.workspace_scope) throw new CodeAgentError("GITHUB_NOT_CONFIGURED");
         const tree = await this.deps.github.tree(run.base_branch);
-        if (tree.truncated || tree.items.length > 20000) throw new CodeAgentError("TREE_LIMIT");
+        // The existing GitHub adapter caps response bytes at 8 MB. Keep the complete
+        // existence index (including unread files), while selecting only bounded file contents.
+        if (tree.truncated || tree.items.length > 100_000) throw new CodeAgentError("TREE_LIMIT");
         return { status, tree };
       }
     );
@@ -1125,6 +1128,7 @@ export class CodeAgentService {
       throw new CodeAgentError("PATCH_SNAPSHOT");
     if (run.proposal_hash !== hash({ base: run.base_sha, proposal: run.proposal }))
       throw new CodeAgentError("PATCH_BASE");
+    this.assertSafeContext(run);
     // A failed read-only preparation must not permanently replay a previous
     // policy recovery result. Each explicit attempt has a durable CAS/version.
     run = this.deps.store.save(run, "Принята новая попытка подготовки просмотра");
@@ -1256,6 +1260,7 @@ export class CodeAgentService {
   private async autoCheckProposal(id: string, owner: string, signal: AbortSignal) {
     let run = this.current(id, owner);
     if (!run.auto_check_requested || !run.proposal || !run.proposal_hash) return;
+    this.assertSafeContext(run);
     this.live(run, signal);
     const files = new Map(run.snapshot.map((f) => [f.path, f]));
     for (const f of run.proposal) files.set(f.path, f);
@@ -1310,7 +1315,12 @@ export class CodeAgentService {
       "Проверка предложения завершена; GitHub review ожидает владельца"
     );
   }
+  private assertSafeContext(run: CodeAgentRun) {
+    if ([...run.snapshot, ...(run.proposal ?? [])].some((file) => !safeCodePath(file.path)))
+      throw new CodeAgentError("CONTEXT_PATH_FORBIDDEN");
+  }
   private reviewed(run: CodeAgentRun, reviewHash: string) {
+    this.assertSafeContext(run);
     const draft = run.draft_id ? this.deps.drafts.get(run.draft_id, run.owner_id) : null;
     if (!draft || draft.plan.review_hash !== reviewHash || draft.status !== "review")
       throw new CodeAgentError("STALE_REVIEW");
