@@ -131,3 +131,67 @@ test("an explicitly cancelled image is never silently restarted", async ({ page 
   expect(posts).toBe(1);
   expect(cancels).toBe(1);
 });
+
+test("recovery under a different owner shows no prior job or paid POST", async ({ page }) => {
+  const previousId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+  let posts = 0;
+  await page.addInitScript((id) => {
+    sessionStorage.setItem("kosmora:media:pending:image", id);
+  }, previousId);
+  await page.route("**/api/v1/media/capabilities", (route) =>
+    route.fulfill({ json: capabilityResponse })
+  );
+  // The owner-scoped API correctly returns no jobs for this owner.
+  await page.route("**/api/v1/media/jobs", (route) =>
+    route.fulfill({ json: { items: [] } })
+  );
+  await page.route("**/api/v1/media/images", (route) => {
+    posts++;
+    return route.fulfill({ status: 503 });
+  });
+  await page.goto("/?surface=images");
+  await expect(page.getByText(/Предыдущий запуск мог дойти до провайдера/)).toBeVisible();
+  await expect(page.getByRole("img", { name: "Сгенерированное изображение" })).toHaveCount(0);
+  await page.reload();
+  await expect(page.getByRole("button", { name: "Проверить историю без запуска" })).toBeVisible();
+  expect(posts).toBe(0);
+});
+
+test("a completed PNG remains downloadable but edit action requires a live editing capability", async ({
+  page
+}) => {
+  let posts = 0;
+  const done = {
+    id: jobId,
+    kind: "image",
+    status: "done",
+    error_code: null,
+    created_at: new Date().toISOString(),
+    asset: { mime: "image/png", extension: "png", bytes: 68 }
+  };
+  await page.route("**/api/v1/media/capabilities", (route) =>
+    route.fulfill({ json: capabilityResponse })
+  );
+  await page.route("**/api/v1/media/jobs", (route) =>
+    route.fulfill({ json: { items: [done] } })
+  );
+  await page.route("**/api/v1/media/images", (route) => {
+    posts++;
+    return route.fulfill({ status: 503 });
+  });
+  await page.route("**/api/v1/media/assets/**", (route) =>
+    route.fulfill({
+      contentType: "image/png",
+      body: Buffer.from(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/5d8AAAAASUVORK5CYII=",
+        "base64"
+      )
+    })
+  );
+  await page.goto("/?surface=images");
+  await expect(page.getByRole("img", { name: "Сгенерированное изображение" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Скачать PNG" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Продолжить редактирование" })).toHaveCount(0);
+  await expect(page.getByText("Редактирование результата пока не подключено.")).toBeVisible();
+  expect(posts).toBe(0);
+});

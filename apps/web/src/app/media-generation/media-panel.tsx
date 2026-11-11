@@ -383,6 +383,7 @@ export function MediaGenerationPanel({
     Boolean(constraints) &&
     Boolean(options);
   const canReuse = (item: MediaJob) =>
+    caps?.image_editing?.ready === true &&
     item.status === "done" &&
     (item.asset?.mime === "image/png" || item.asset?.mime === "image/jpeg");
   const showImage = (item: MediaJob) =>
@@ -398,7 +399,7 @@ export function MediaGenerationPanel({
     if (selected) onRestoreParameters(selected);
   };
   async function reuseResult(id: string) {
-    if (!onUseResult || referenceLoading) return;
+    if (!onUseResult || referenceLoading || caps?.image_editing?.ready !== true) return;
     const controller = new AbortController();
     referenceController.current = controller;
     setReferenceLoading(true);
@@ -542,7 +543,11 @@ export function MediaGenerationPanel({
                 </button>
               )}
               {onUseResult && !canReuse(job) && (
-                <p>Для редактирования результата выберите PNG или JPEG при генерации.</p>
+                <p>
+                  {caps?.image_editing?.ready === true
+                    ? "Для редактирования результата выберите PNG или JPEG при генерации."
+                    : "Редактирование результата пока не подключено."}
+                </p>
               )}
               <button type="button" onClick={() => void remove(job.id)}>
                 Удалить
