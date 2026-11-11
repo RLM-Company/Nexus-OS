@@ -3,7 +3,9 @@
 - **Обновлено:** срез D готов к интеграции; петля завершена.
 - **BASE_SHA:** `d047ce125f623c64d2615a6235dfdcd1c8e70a55`.
 - **Ветка:** `ops/deepseek-memory-restart` (новая, создана от `main`).
-- **PR / HEAD_SHA:** см. `git log -1` ветки и DELIVERY_RESTART.md после открытия PR.
+- **PR:** [#533](https://github.com/RLM-Company/Nexus-OS/pull/533) — `CLEAN / MERGEABLE / OPEN`, без merge/deploy. CI `43016647573`: `Verify monorepo` pass 6m39s, `Browser acceptance` pass 10m32s, sandbox, identity — 4/4.
+- **HEAD_SHA:** `61fcdf4a8a893255dbd9c885cc02b8387b8e51e8` (срез D + main sync + отчёты).
+- **main при завершении:** `931cc0c`; влит перед PR, конфликтов нет.
 - **Фонового процесса нет.**
 
 ## Выполнено (срез D)

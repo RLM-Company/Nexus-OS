@@ -4,8 +4,8 @@
 - **BASE_SHA:** `d047ce125f623c64d2615a6235dfdcd1c8e70a55` (база ветки); перед
   открытием PR влит актуальный `main` `931cc0c` (+11 коммитов), конфликтов нет.
 - **Ветка:** `ops/deepseek-memory-restart` (новая, не продолжает `ops/deepseek-memory`).
-- **PR:** открывается в `main`, без merge/deploy.
-- **HEAD_SHA:** см. `git log -1` ветки (фиксируется в CHECKPOINT_RESTART.md).
+- **PR:** [#533](https://github.com/RLM-Company/Nexus-OS/pull/533), `CLEAN / MERGEABLE / OPEN`, без merge/deploy. CI `43016647573` — 4/4 pass (`Verify monorepo` 6m39s, `Browser acceptance` 10m32s, sandbox, identity).
+- **HEAD_SHA:** `61fcdf4a8a893255dbd9c885cc02b8387b8e51e8`.
 - **ID отчётов:** `04_DEEPSEEK` (файлы с суффиксом `_RESTART`, чтобы не затирать A/B/C).
 
 ## Сценарий до / после
