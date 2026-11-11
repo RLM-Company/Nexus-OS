@@ -1887,6 +1887,21 @@ export default function Home() {
           ?.save(scope, latestDraftRef.current.text)
           .catch(() => undefined);
     };
+    const postChatMessage = async <T,>(path: string, body: object): Promise<T> => {
+      const payload = JSON.stringify(body);
+      const previous = pendingChatSendRef.current;
+      const id =
+        previous?.epoch === submittedEpoch && previous.path === path && previous.payload === payload
+          ? previous.id
+          : clientId();
+      pendingChatSendRef.current = { epoch: submittedEpoch, path, payload, id };
+      const accepted = await api<T>(path, {
+        method: "POST",
+        body: JSON.stringify({ ...body, client_message_id: id })
+      });
+      pendingChatSendRef.current = null;
+      return accepted;
+    };
     try {
       if (!activeProject) {
         const assessment = assessTaskComplexity(content);
@@ -1905,18 +1920,7 @@ export default function Home() {
             ...(composerActions.web_search ? { web_search: true } : {}),
             ...(composerActions.text_action ? { text_action: composerActions.text_action } : {})
           };
-          const payload = JSON.stringify(body);
-          const previous = pendingChatSendRef.current;
-          const id =
-            previous?.epoch === epoch && previous.path === path && previous.payload === payload
-              ? previous.id
-              : clientId();
-          pendingChatSendRef.current = { epoch, path, payload, id };
-          const accepted = await api<GeneralChatAcceptedResponse>(path, {
-            method: "POST",
-            body: JSON.stringify({ ...body, client_message_id: id })
-          });
-          pendingChatSendRef.current = null;
+          const accepted = await postChatMessage<GeneralChatAcceptedResponse>(path, body);
           const clearedDraft = acknowledgeDraft();
           if (epoch !== viewEpochRef.current) {
             void loadGeneralChats().catch(() => undefined);
@@ -1982,16 +1986,9 @@ export default function Home() {
       setError(null);
       setLastCompletedRoute(null);
       try {
-        const accepted = await api<AcceptedResponse>(
+        const accepted = await postChatMessage<AcceptedResponse>(
           `/api/v1/projects/${encodeURIComponent(activeProject.id)}/messages`,
-          {
-            method: "POST",
-            body: JSON.stringify({
-              content,
-              client_message_id: clientId(),
-              attachments: submitted.files
-            })
-          }
+          { content, attachments: submitted.files }
         );
 
         const clearedDraft = acknowledgeDraft();
@@ -2009,7 +2006,11 @@ export default function Home() {
         viewRequestRef.current += 1;
         setActiveProject(accepted.project);
         setChatId(accepted.chat_id);
-        setMessages((current) => [...current, accepted.user_message]);
+        setMessages((current) =>
+          current.some((message) => message.id === accepted.user_message.id)
+            ? current
+            : [...current, accepted.user_message]
+        );
         setPolicySignals(EMPTY_POLICY_SIGNALS);
         void api<{ profile: AutonomyProfile }>(
           `/api/v1/projects/${encodeURIComponent(accepted.project.id)}/autonomy-profile`
@@ -2032,7 +2033,7 @@ export default function Home() {
         setRunPhase("failed");
         setError(
           `${cause instanceof Error ? cause.message : "Не удалось подтвердить отправку"} ` +
-            "Если соединение прервалось, результат запроса неизвестен. Проверьте историю чата перед ручной повторной отправкой: она может списать токены повторно."
+            "Если соединение прервалось и результат запроса неизвестен, повторите отправку здесь с тем же текстом и вложениями."
         );
       }
     } finally {
