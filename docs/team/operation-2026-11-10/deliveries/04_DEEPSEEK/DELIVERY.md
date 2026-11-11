@@ -13,8 +13,8 @@
   `identity-tests` pass — все четыре проверки зелёные.
 - **Завершение:** срезы A, B и C выполнены; петля по памяти закрыта.
   `memory-panel.json` содержит фактические измерения с ограничениями.
-- **HEAD_SHA (код):** `e36e92c42fed968f1944f2f2bc925448a633e71f`.
-- **PR срезов B/C:** [#522](https://github.com/RLM-Company/Nexus-OS/pull/522) — `CLEAN / MERGEABLE / OPEN`, CI `42981626547` 4/4 pass.
+- **HEAD_SHA (код):** `7f5cd162ce6164128191705eec35171ea3e93ccc`.
+- **PR срезов B/C:** [#522](https://github.com/RLM-Company/Nexus-OS/pull/522) — `CLEAN / MERGEABLE / OPEN`, финальный CI `42983207713` 4/4 pass.
 
 ## Сценарий до / после
 
