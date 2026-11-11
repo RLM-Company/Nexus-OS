@@ -92,9 +92,12 @@ function isLoginOrLogout(raw, origin) {
 function isExplicitLogout(raw, origin) {
   try {
     const u = new URL(raw);
-    return (
-      u.origin === origin && !u.hash && !u.search && /^\/(?:logout|signout)\/?$/.test(u.pathname)
-    );
+    // The same-origin /logout or /signout route itself is the explicit-exit
+    // discriminator. A query (server-side reason, CSRF token) or a fragment
+    // does not change the intent, and the local residue cleanup this gate
+    // drives is fail-safe: broader matching clears more, never less. The
+    // route must stay exact; subpaths and other origins never qualify.
+    return u.origin === origin && /^\/(?:logout|signout)\/?$/.test(u.pathname);
   } catch {
     return false;
   }

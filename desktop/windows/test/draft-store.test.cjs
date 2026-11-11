@@ -141,10 +141,17 @@ test("safe workspace links preserve selected project/chat/Code but reject hostil
   assert.equal(isLoginOrLogout("https://other.example/login", ORIGIN), false);
   assert.equal(isExplicitLogout("https://kosmora.example/logout", ORIGIN), true);
   assert.equal(isExplicitLogout("https://kosmora.example/signout", ORIGIN), true);
+  assert.equal(isExplicitLogout("https://kosmora.example/logout?reason=session-end", ORIGIN), true);
+  assert.equal(isExplicitLogout("https://kosmora.example/logout#top", ORIGIN), true);
+  assert.equal(isExplicitLogout("https://kosmora.example/signout?step=2", ORIGIN), true);
   assert.equal(isExplicitLogout("https://kosmora.example/login", ORIGIN), false);
   assert.equal(isExplicitLogout("https://other.example/logout", ORIGIN), false);
+  assert.equal(isExplicitLogout("https://kosmora.example/logout/other", ORIGIN), false);
+  // A logout route carrying a cross-origin redirect parameter is still the
+  // app's own same-origin exit route; the local cleanup it triggers is
+  // fail-safe and never follows the redirect target.
   assert.equal(
     isExplicitLogout("https://kosmora.example/logout?next=https://other.example", ORIGIN),
-    false
+    true
   );
 });

@@ -237,3 +237,32 @@ prettier-only, контент deep-equal не менялся) — в PR #523, п
 ops-ветке файла нет и чинить на ops значило бы создать add/add-конфликт.
 Порядок интеграции: сначала #523 (main снова проходит format-gate), затем пуш
 доков в ops-ветку перезапускает CI этого PR.
+
+---
+
+## Срез 6 (добавление, 2026-11-11): паритет hosted-выхода для URL с query/hash
+
+**Одобрение**: владелец явно выбрал этот срез после закрытия волны #523/#525;
+закрывает единственную остававшуюся записанную функциональную недоделку
+(`/logout?query` не входил в `isExplicitLogout` — расширение было помечено как
+решение владельца).
+
+**Проблема**: `isExplicitLogout` требовал `!u.hash && !u.search`, поэтому
+`/logout?reason=…`, `/logout#…`, `/logout?next=…` не считались явным выходом.
+Частичный паритет уже покрывал их через `isLoginOrLogout` в did-navigate
+(epoch++, invalidate поверхностей, сброс draft-gate), но файлы черновиков и
+данные браузерного сеанса после такого выхода оставались — расход с честным
+паритетом меню-выхода (срез hosted-logout, `dea0fb14`).
+
+**Решение**: дискриминатор — тот же same-origin + точный путь
+`/logout`|`/signout`; query/hash больше не дисквалифицируют, subpath и чужой
+origin не проходят. Направление расширения fail-safe — все потребители
+очищают «больше, не меньше»: `clearDraftsForHostedLogout` (will-navigate и
+did-navigate-in-page) идемпотентен, двойное срабатывание безопасно; тайминг
+`alsoClearSession` сохранён (wipe не раньше коммита навигации).
+
+**Тесты**: кейс «logout?next=чужой-origin» перевёрнут в `true` с rationale
+(cleanup не следует за redirect-целью — маршрут same-origin /logout сам
+является намерением выхода); добавлены кейсы `?reason=session-end` → true,
+`#top` → true, `signout?step=2` → true, `/logout/other` → false.
+`npm run check` → **448 тестов / 0 fail**, prettier clean.

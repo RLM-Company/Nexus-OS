@@ -422,6 +422,24 @@ img-src 'none'`; весь динамический контент через tex
       при ошибке — invalidate.
       На этом map остатка (в-sphere): пусто; вне границы остались только
       `computer-session` и work-кластер (Codex/desc — их аудируют их пакеты).
+31. **Срез: паритет hosted-выхода для URL с query/hash — реализован (явное
+    одобрение владельца; закрывает единственную записанную функциональную
+    недоделку)**. `isExplicitLogout` (desktop-recovery.cjs) ранее требовал
+    `!u.hash && !u.search`, поэтому `/logout?reason=…`, `/logout#…`,
+    `/logout?next=…` не считались явным выходом. Частичный паритет уже
+    покрывал такие URL через `isLoginOrLogout` в did-navigate (epoch++,
+    invalidate поверхностей, сброс draft-gate), но файлы черновиков и данные
+    браузерного сеанса после такого выхода оставались. Теперь дискриминатор —
+    тот же same-origin + точный путь `/logout`|`/signout`; query/hash больше
+    не дисквалифицируют, subpath и чужой origin не проходят. Направление
+    fail-safe: потребители (clearDraftsForHostedLogout в will-navigate и
+    did-navigate-in-page, clearBrowserSessionData в did-navigate) — очистка
+    «больше, не меньше»; clearDraftsForHostedLogout идемпотентен (двойное
+    срабатывание безопасно), тайминг alsoClearSession сохранён (wipe не
+    раньше коммита навигации). Тестовый кейс «logout?next=чужой-origin»
+    перевёрнут в true с rationale (cleanup не следует за redirect-целью);
+    добавлены кейсы ?reason=, #top, ?step=, logout/other → false.
+    `npm run check` → **448 тестов / 0 fail**, prettier clean.
 
 ## Что делать следующему запуску (в порядке приоритета)
 
