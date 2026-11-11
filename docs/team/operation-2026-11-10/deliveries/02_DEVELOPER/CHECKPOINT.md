@@ -1,3 +1,43 @@
+# Текущее продолжение после history guard
+
+11ноября2026, PR519, branch ops/developer-coscode. Code HEADc6809537b9583404faf873a6e92a0fcdd73ea558,
+tree543bf1ebd24c12435d13b3e1d04a00549f6a62ea. Source uses NavigateEvent only for
+cancelable sameDocument traverse; Back/Forward accepted browser commands proven.
+Web lint/types/build0, production26PASS0. Fixtures/history-guard сохраняют selector
+setup failure, real baseline dialogs0, guard24/1 legacy script repeat issue, probes,
+Navigation.forward positive, browser goForward positive, final26. Не обещать работу
+старых browsers без API/uncancelable events. Shared router/sidebar не трогались.
+
+Теперь осталось explicit one-attempt model repair. Подробная рабочая архитектура:
+
+- В existing run JSON repair_request metadata: stable client UUID, source_review_hash,
+  source_snapshot_digest/source_draft_id, canonical source_check, state started/proposed/
+  failed/cancelled. Один reservation на task до dispatch; same id+source hash возвращает
+  текущее состояние без call; другой id после reservation REPAIR_LIMIT. Никакого нового
+  chat/store/runtime. old source draft/check provenance сохранять, privacy fences те же.
+- Check records получают optional check_type(syntax|node-test) server-side. Eligibility
+  checked + current review + strict failed exit>0/cleanupVerified/digest + known type.
+  Старый check без type потребует новой бесплатной проверки. Explicit approval даёт
+  одну модельную попытку и один повтор того же check через autoCheckProposal.
+- Working files = original snapshot + current reviewed changes. Только text JSON exact
+  edits against working bytes (applyCodeExactEdits), без tools/diff/full-file overwrite;
+  final files = все parent selected changes + exact updates (сохранять owner bytes),
+  убрать net-unchanged, setProposal относительно original snapshot/base/path index.
+- setProposal optional internal resetReview: atomic delete draft_id/draft/check/
+  proposal_check/publication_token, repair state proposed; old failed evidence в record.
+  .autoCheckProposal с тем же check_type, не создавать token до fresh review. Model reply
+  сам по себе не success. One model call through existing model()/ownerBudget/writer;
+  no live API tests. Duplicate/unknown/cancel не дают второй call. Unsupported/oversize
+  отказ без записи. Fixture tests success/fail/cancel/revoke/duplicate/restart, optin realOCI.
+- UI capability view {repair_once:1}, old server без capability не получает новый endpoint
+  вызов. Own component explicit checkbox дополнительного модельного расхода и recheck,
+  request UUID retained for lost response; source evidence/attempt state visible.
+- Проверить tool-only model response revoke race из checkpoint ниже. scopedModel wrapper
+  await model(); live(current,signal) ВНУТРИ guarded callback сохраняет completed usage
+  перед отказом принять revoked result, не менять postflight необратимого publish.
+
+Далее предыдущий checkpoint для источников/gate block:
+
 # CHECKPOINT 02_DEVELOPER
 
 11 ноября 2026, Москва. Branch ops/developer-coscode, PR519. PR507 merged.

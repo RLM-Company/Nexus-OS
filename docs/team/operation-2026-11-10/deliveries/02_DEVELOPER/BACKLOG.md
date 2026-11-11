@@ -66,6 +66,13 @@ BASE_SHA: f9eb45285f3473bfd3fe9a73939c1903dc696b3b.
 - Code68/GitHub23/tree9=100PASS. Все gates после format прошли; общий coreexit1
   на чужом main research JSON сохранён, не объявляется успехом.
 
+## Исправлено восьмым срезом (готово к интеграции)
+
+- Собственный navigation hook защищает cancelable sameDocument traverse в браузерах
+  с Navigation API. Настоящие Back/Forward, visible edits, explicit discard и no
+  workspace writes проверены production26PASS. Shell/history/router не переписаны.
+- Старые браузеры/uncancelable platform events — честная compatibility boundary.
+
 ## Не завершено / следующий приоритет
 
 - Следующий приоритет — приёмка failed-check → точная owner/model правка → новый
@@ -78,7 +85,8 @@ BASE_SHA: f9eb45285f3473bfd3fe9a73939c1903dc696b3b.
   сохранены в fixtures/check-evidence. Локально4/5 OCI (старый setup timeout),
   внешний CI на объединённом code head589eb31 —5/5 (job130077931797).
   Неполный локальный запуск остаётся4/5; его failure сохранён.
-- Общий sidebar/router/back-forward dirty guard — не интегрирован.
+- Modern browser Back/Forward guard подключён в собственном Code hook. Старые
+  браузеры без Navigation API и uncancelable events не покрываются им.
   Raw diff не сохраняется автоматически; применить или явно отменить.
 - После текущих secret-path guards остаётся содержательный аудит секретов внутри
   произвольного допустимого исходника; фильтр имени не гарантирует чистое содержимое.

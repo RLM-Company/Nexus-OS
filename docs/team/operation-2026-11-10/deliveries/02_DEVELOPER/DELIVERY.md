@@ -1,3 +1,55 @@
+# 02_DEVELOPER: сохранность правок при Back/Forward
+
+11 ноября 2026, Москва. **Готово к интеграции** в PR519, branch ops/developer-coscode.
+BASE ff70f7b073941a82e7abc145f92c93d4878baf76; source HEAD
+c6809537b9583404faf873a6e92a0fcdd73ea558, tree543bf1ebd24c12435d13b3e1d04a00549f6a62ea.
+Локальный index и GitHub tree совпали; финальный docs HEAD в PR.
+
+Раньше native beforeunload защищал reload/close, но настоящий SPA Forward мог
+потерять edits без предупреждения (исправленный baseline: dialogs0, sameDocument=true).
+Теперь существующий собственный editor-navigation hook также слушает Navigation API
+navigate(traverse). Только cancelable sameDocument переход на другой pathname/search
+требует прежнего confirmDiscard. Отказ preventDefault сохраняет URL и видимый текст;
+подтверждение позволяет переход. Hash-only переход не теряет editor и не блокируется.
+Native unload и собственный Link onNavigate сохранены, второй router/history patch
+не создан. Listener снимается после clean/unmount. Общие sidebar/layout/styles не менялись.
+
+Production Chromium26/26PASS, workers1/retries0, exit0. Web lint/typecheck/build
+прошли до browser, strict E2E types отдельно прошли после финальных сценариев.
+Back: реальный root Coscode Link→Code page→edit→cancel/accept browser goBack,
+visible bytes сохранены при отказе, workspace writes[]; Forward: реальная NextLink
+история, sameDocument=true, cancel сохраняет текст, browser goForward с явным
+confirm завершает переход. Настоящая модель/целевой GitHub не вызывались.
+
+История failures сохранена. Первый baseline не дошёл до navigation из-за selector
+getByLabel на wrapping select; исправлен на существующий role combobox. Второй
+baseline подтвердил настоящий пропуск guard. После guard первый25-case прогон24/1:
+проверка повторяла legacy history.forward() после отмены и не инициировала второй
+переход в Chromium156. Диагностика сохранила entries и transition=false. Доп. жест
+не помог. Navigation.forward().finished прошёл, затем реальная browser goForward
+тоже прошла. Финальные тесты используют browser commands, а не выдумывают success
+для повторного legacy-вызова. Это platform/testing distinction, source guard после
+первой реализации не ослаблялся. Временные console probes в тесте удалены.
+
+Проверено на Chromium156.0.8078.79. Старые браузеры без Navigation API сохраняют
+прежний native/own-Link guard; sameDocument traversal там не гарантирован.
+Нельзя блокировать event.cancelable=false против правил платформы. Источники:
+[MDN navigate_event](https://developer.mozilla.org/en-US/docs/Web/API/Navigation/navigate_event)
+(BaselineJan2026,lastmodifiedOct26) и [WHATWG history](https://html.spec.whatwg.org/multipage/nav-history-apis.html),
+прочитаны11ноября. Это использование browser API, сторонний код не переносился.
+
+Изменены только apps/web/src/app/code-agent/editor-navigation.ts и scoped
+apps/web/e2e/code-agent.spec.ts. Новых dependencies/contracts/DB/permission grants
+нет. Откат — revert c680953; checkpoints не удаляются. Команды — web lint/typecheck/
+build и strict E2E tsc, затем production playwright.acceptance.config.ts code-agent
+workers1/retries0 с Chromium=/usr/bin/chromium. Полные логи/хеши в fixtures/history-guard.
+Глобальный core НЕ объявляется новым PASS: upstream formatter blocker из tree-среза
+остаётся известным, остальные gates на39cad6b были успешны. Неизменённые API/runtime
+не перетестировались ради этого UI-only изменения. Diff/format/secrets проверяются
+перед docs commit. Осталось explicit bounded model repair; весь блок ещё не закрыт.
+
+---
+
 # 02_DEVELOPER: восстановление усечённого дерева GitHub
 
 11 ноября 2026, Москва. Branch ops/developer-coscode, [PR #519](https://github.com/RLM-Company/Nexus-OS/pull/519).

@@ -1,0 +1,79 @@
+[WebServer] (node:29970) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:29970) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:29995) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+
+Running 25 tests using 1 worker
+
+(node:30009) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓   1 [chromium] › e2e/code-agent.spec.ts:237:5 › creates a Code project directly without starting a model task (1.1s)
+  ✓   2 [chromium] › e2e/code-agent.spec.ts:265:5 › recovers a lost creation response using its request ID without a second generation POST (854ms)
+  ✓   3 [chromium] › e2e/code-agent.spec.ts:285:5 › selects and edits real server proposal, binds check to review and requires exact publication approval (2.4s)
+  ✓   4 [chromium] › e2e/code-agent.spec.ts:318:5 › an old editor cannot overwrite or invalidate a newer saved review (3.2s)
+  ✓   5 [chromium] › e2e/code-agent.spec.ts:355:5 › explicit checkpoint restoration also discards unapplied raw diff without restoring old proof (1.8s)
+  ✘   6 [chromium] › e2e/code-agent.spec.ts:378:5 › same-document Forward can be cancelled with exact edits retained, then explicitly confirmed (17.1s)
+(node:30408) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓   7 [chromium] › e2e/code-agent.spec.ts:427:5 › does not retry lost publication and reconciles it explicitly (3.3s)
+  ✓   8 [chromium] › e2e/code-agent.spec.ts:443:5 › reconciles a request lost before publication, then uses rotated token only after new approval (2.0s)
+  ✓   9 [chromium] › e2e/code-agent.spec.ts:465:5 › previews normalized editable diff on an exact snapshot before a fresh review (1.2s)
+  ✓  10 [chromium] › e2e/code-agent.spec.ts:497:7 › legacy contradictory proof never enables publication: {"exitCode":1} (1.8s)
+  ✓  11 [chromium] › e2e/code-agent.spec.ts:497:7 › legacy contradictory proof never enables publication: {"exitCode":null} (1.6s)
+  ✓  12 [chromium] › e2e/code-agent.spec.ts:497:7 › legacy contradictory proof never enables publication: {"cleanupVerified":false} (1.7s)
+  ✓  13 [chromium] › e2e/code-agent.spec.ts:513:5 › dirty project changes and new tasks require an explicit discard; cancelling retains exact edits (2.2s)
+  ✓  14 [chromium] › e2e/code-agent.spec.ts:553:5 › dirty history selection can be cancelled; confirmed discard opens only the selected saved task (2.1s)
+  ✓  15 [chromium] › e2e/code-agent.spec.ts:586:5 › declining native reload preserves the unsaved text without a new model or publish call (2.4s)
+  ✓  16 [chromium] › e2e/code-agent.spec.ts:614:5 › the Code page GitHub link respects a declined discard (2.1s)
+  ✓  17 [chromium] › e2e/code-agent.spec.ts:625:5 › explicit review checkpoint survives normal reload without another generation or publication (2.0s)
+  ✓  18 [chromium] › e2e/code-agent.spec.ts:646:5 › unapplied raw diff remains dirty after saving selected files and can be discarded explicitly (1.7s)
+  ✓  19 [chromium] › e2e/code-agent.spec.ts:669:5 › an explicit saved-run link outside the latest twenty is fetched exactly without starting work (753ms)
+  ✓  20 [chromium] › e2e/code-agent.spec.ts:707:7 › an unavailable or mismatched linked task cannot silently open the latest task: missing=true (819ms)
+  ✓  21 [chromium] › e2e/code-agent.spec.ts:707:7 › an unavailable or mismatched linked task cannot silently open the latest task: missing=false (891ms)
+  ✓  22 [chromium] › e2e/code-agent.spec.ts:738:5 › a late exact linked lookup cannot replace the selected project's task (740ms)
+  ✓  23 [chromium] › e2e/code-agent.spec.ts:797:7 › leaving a patch editor fences its late preview-diff without applying files to another task (908ms)
+  ✓  24 [chromium] › e2e/code-agent.spec.ts:797:7 › leaving a patch editor fences its late invalidate-review without applying files to another task (911ms)
+  ✓  25 [chromium] › e2e/code-agent.spec.ts:893:5 › an unavailable project from a link cannot fall back to another owned project's task (627ms)
+
+
+  1) [chromium] › e2e/code-agent.spec.ts:378:5 › same-document Forward can be cancelled with exact edits retained, then explicitly confirmed
+
+    Error: expect(page).toHaveURL(expected) failed
+
+    Expected pattern: /\/github$/
+    Received string:  "http://127.0.0.1:3000/code-agent"
+    Timeout: 15000ms
+
+    Call log:
+      - Expect "toHaveURL" with timeout 15000ms
+        33 × locator resolved to <html lang="ru" data-scroll-behavior="smooth">…</html>
+           - unexpected value "http://127.0.0.1:3000/code-agent"
+
+
+      421 |   page.once("dialog", (dialog) => void dialog.accept());
+      422 |   await page.evaluate(() => history.forward());
+    > 423 |   await expect(page).toHaveURL(/\/github$/);
+          |                      ^
+      424 |   expect(state.publications()).toBe(0);
+      425 | });
+      426 |
+        at /workspace/work/Nexus-OS-coscode/apps/web/e2e/code-agent.spec.ts:423:22
+
+    Error Context: test-results/code-agent-same-document-F-cb98f-d-then-explicitly-confirmed-chromium/error-context.md
+
+    attachment #2: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results/code-agent-same-document-F-cb98f-d-then-explicitly-confirmed-chromium/trace.zip
+    Usage:
+
+        pnpm exec playwright show-trace test-results/code-agent-same-document-F-cb98f-d-then-explicitly-confirmed-chromium/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  1 failed
+    [chromium] › e2e/code-agent.spec.ts:378:5 › same-document Forward can be cancelled with exact edits retained, then explicitly confirmed
+  24 passed (1.0m)
+undefined
+/workspace/work/Nexus-OS-coscode/apps/web:
+[ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL] Command failed with exit code 1: playwright test -c playwright.acceptance.config.ts e2e/code-agent.spec.ts '--workers=1' '--retries=0'
