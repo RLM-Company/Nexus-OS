@@ -2,7 +2,7 @@
 
 Status: **в работе** until CI verification; at most **готово к интеграции** after fixture checks.
 BASE_SHA: `9d972e8ba447f681fbfb49253b73d9f02dd1d325`
-HEAD_SHA: `4241f9c04a18ec1895d55826d50c4fa75f61b79e` (Speech recovery snapshot; consult latest PR head after next refinement commit).
+HEAD_SHA: last reviewed code snapshot `1a9e7c04fc65d50b61eeba54bd8a1e84b64614c1`; use PR #504 for final formatted-report commit SHA.
 Branch: `ops/free-studio-media`; draft PR: https://github.com/RLM-Company/Nexus-OS/pull/504.
 
 ## Scenario before
@@ -39,7 +39,7 @@ Existing Sound Studio could start a consented MP3 job, but the active job was lo
 - CI `42977512596`: scoped Prettier and `pnpm --filter @cosmora/web typecheck` **PASS** on 2026-11-11 (no provider calls).
 - Browser CI `42977940821`: **447/448 PASS**, one failing saved 3:2 preference, fixed in `d50fbb80...`; recheck pending.
 - CI `42981278012`: monorepo format gate **FAIL** on unrelated upstream file `docs/research/experience-llm-distill-2026-11-10.json` (not in PR diff); out of Media authority, Codex/main owner must repair it.
-- Targeted Sound and 3:2 browser suite `42981652229`: **pending**. No live provider use.
+- Targeted Sound and 3:2 browser suite `42982292178`: **5/5 PASS** in Chromium (34s); scoped Prettier and web typecheck **PASS**. No live provider use.
 - `pnpm check:core` on original first-slice snapshot passed; current full run pending.
 - API fixture tests are part of project test suite; no live API calls.
 - Live provider spending / VPS / owner device: **NOT RUN** (prohibited).

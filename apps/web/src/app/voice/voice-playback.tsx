@@ -152,8 +152,8 @@ function ExpandedPlayback({
       )}
       {recoverServerJob && unknown && (
         <small role="alert">
-          Предыдущая озвучка могла быть запущена. Новый платный запрос автоматически не отправляется:
-          проверьте историю.
+          Предыдущая озвучка могла быть запущена. Новый платный запрос автоматически не
+          отправляется: проверьте историю.
         </small>
       )}
       {recoverServerJob && historyUnverified && (
@@ -223,7 +223,8 @@ function SavedSpeech() {
           setHistoryError("");
         }
       } catch {
-        if (active) setHistoryError("Не удалось загрузить историю MP3. Это не значит, что записей нет.");
+        if (active)
+          setHistoryError("Не удалось загрузить историю MP3. Это не значит, что записей нет.");
       } finally {
         if (active) setLoading(false);
       }

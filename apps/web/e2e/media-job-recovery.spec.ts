@@ -340,7 +340,9 @@ test("Sound keeps its unsent text draft across Studio navigation and reload", as
   expect(paidPosts).toBe(0);
 });
 
-test("Sound distinguishes unavailable owned MP3 history from an empty history", async ({ page }) => {
+test("Sound distinguishes unavailable owned MP3 history from an empty history", async ({
+  page
+}) => {
   await page.route("**/api/v1/media/capabilities", (route) =>
     route.fulfill({
       json: {
