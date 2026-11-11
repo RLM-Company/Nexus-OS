@@ -11,6 +11,7 @@ import {
   type ImageRequestOptions
 } from "./media-image-options";
 import { mediaBudgetLabel, mediaBudgetNotice, type MediaBudgetState } from "./media-budget-status";
+import { parseMediaJobListResponse } from "./media-job-response";
 
 export type MediaJob = {
   id: string;
@@ -133,8 +134,7 @@ export function useMediaJob(recoveryKind?: "image" | "speech") {
     try {
       const response = await fetch("/api/v1/media/jobs", { cache: "no-store" });
       if (!response.ok) throw new Error("Не удалось получить историю задач.");
-      const data = (await response.json()) as { items?: MediaJob[] };
-      const items = Array.isArray(data.items) ? data.items : [];
+      const items = parseMediaJobListResponse(await response.json());
       const found = pendingId.current
         ? items.find(
             (item) => item.kind === recoveryKind && item.client_request_id === pendingId.current
@@ -457,11 +457,11 @@ export function MediaGenerationPanel({
     void fetch("/api/v1/media/jobs", { cache: "no-store" })
       .then(async (response) => {
         if (!response.ok) throw new Error("History unavailable");
-        return (await response.json()) as { items?: MediaJob[] };
+        return parseMediaJobListResponse(await response.json());
       })
-      .then(({ items }) => {
+      .then((items) => {
         if (!active) return;
-        setHistory((Array.isArray(items) ? items : []).filter((item) => item.kind === "image"));
+        setHistory(items.filter((item) => item.kind === "image"));
         setHistoryError("");
       })
       .catch(() => {

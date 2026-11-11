@@ -1,0 +1,42 @@
+name: Temporary Media history fail-closed validation
+on:
+  push:
+    branches: ["ops/free-studio-media"]
+permissions:
+  contents: read
+jobs:
+  history-guard:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.19.0
+          run_install: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Prettier exact sources, recover formatted content to delivery
+        shell: bash
+        run: |
+          pnpm exec prettier --write apps/web/src/app/media-generation/media-job-response.ts apps/web/src/app/media-generation/media-job-response.test.ts apps/web/src/app/media-generation/media-panel.tsx apps/web/src/app/voice/voice-playback.tsx apps/web/e2e/media-budget-history.spec.ts
+          for p in apps/web/src/app/media-generation/media-job-response.ts apps/web/src/app/media-generation/media-job-response.test.ts apps/web/src/app/media-generation/media-panel.tsx apps/web/src/app/voice/voice-playback.tsx apps/web/e2e/media-budget-history.spec.ts; do
+            printf '__MEDIA_FMT_BEGIN__%s__' "$p"
+            base64 -w0 "$p"
+            printf '__MEDIA_FMT_END__\\n'
+          done
+      - name: Media web types
+        run: pnpm --filter @cosmora/web typecheck
+      - name: Media history parser and budget unit coverage
+        run: pnpm --filter @cosmora/web exec vitest run src/app/media-generation/media-job-response.test.ts src/app/media-generation/media-budget-status.test.ts
+      - name: Browser installation
+        run: pnpm --filter @cosmora/web exec playwright install --with-deps chromium
+      - name: Media fail-closed fixture browser
+        env:
+          KOSMORA_E2E_PRODUCTION: "1"
+          NEXT_TELEMETRY_DISABLED: "1"
+          TURBO_TELEMETRY_DISABLED: "1"
+        run: pnpm --filter @cosmora/web exec playwright test e2e/media-budget-history.spec.ts --project chromium

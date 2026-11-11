@@ -10,6 +10,7 @@ import {
 import styles from "./voice.module.css";
 import { WorkspaceIcon } from "../workspace-icons";
 import { mediaBudgetLabel, mediaBudgetNotice } from "../media-generation/media-budget-status";
+import { parseMediaJobListResponse } from "../media-generation/media-job-response";
 
 export function CompactVoicePlayback({ text }: { text: string }) {
   const [available, setAvailable] = useState(false);
@@ -219,13 +220,9 @@ function SavedSpeech() {
       try {
         const response = await fetch("/api/v1/media/jobs", { cache: "no-store" });
         if (!response.ok) throw new Error("Failed to fetch owner's speech jobs");
-        const result = (await response.json()) as { items?: MediaJob[] };
+        const items = parseMediaJobListResponse(await response.json());
         if (active) {
-          setItems(
-            (Array.isArray(result.items) ? result.items : [])
-              .filter((item) => item.kind === "speech")
-              .slice(0, 20)
-          );
+          setItems(items.filter((item) => item.kind === "speech").slice(0, 20));
           setHistoryError("");
         }
       } catch {

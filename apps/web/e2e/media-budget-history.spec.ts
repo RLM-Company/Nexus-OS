@@ -157,3 +157,82 @@ test("WebP remains downloadable while unavailable as an editing reference", asyn
     page.getByText("Для редактирования результата выберите PNG или JPEG при генерации.")
   ).toBeVisible();
 });
+
+test("malformed HTTP 200 image history fails closed and is not interpreted as no paid jobs", async ({
+  page
+}) => {
+  let valid = false;
+  let paidPosts = 0;
+  await page.route("**/api/v1/media/capabilities", (route) =>
+    route.fulfill({
+      json: {
+        capabilities: {
+          image_generation: {
+            ready: true,
+            model: "fixture-image",
+            reason: null,
+            constraints: {
+              sizes: ["1024x1024", "1536x1024", "1024x1536"],
+              aspectRatios: ["1:1", "3:2", "2:3"],
+              qualities: ["low", "medium", "high", "auto"],
+              formats: ["png", "jpeg", "webp"],
+              maxCount: 1,
+              maxPromptLength: 2000,
+              supportsReferenceImage: false
+            }
+          }
+        }
+      }
+    })
+  );
+  await page.route("**/api/v1/media/jobs", (route) =>
+    route.fulfill({ json: valid ? { items: [] } : { items: "broken" } })
+  );
+  page.on("request", (request) => {
+    if (request.url().endsWith("/api/v1/media/images") && request.method() === "POST") paidPosts++;
+  });
+  await page.goto("/?surface=images");
+  await page.getByLabel("Описание изображения", { exact: true }).fill("Один безопасный запрос");
+  await expect(page.getByRole("button", { name: "Сгенерировать изображение" })).toBeDisabled();
+  await expect(page.getByText(/Историю заданий проверить не удалось/)).toBeVisible();
+  await expect(page.getByText(/Не удалось загрузить историю изображений/)).toBeVisible();
+  valid = true;
+  await page.getByRole("button", { name: "Проверить историю без запуска" }).click();
+  await expect(page.getByRole("button", { name: "Сгенерировать изображение" })).toBeEnabled();
+  expect(paidPosts).toBe(0);
+});
+
+test("malformed owned Sound history blocks MP3 dispatch with a paid consent checkbox checked", async ({
+  page
+}) => {
+  let paidPosts = 0;
+  await page.route("**/api/v1/media/capabilities", (route) =>
+    route.fulfill({
+      json: {
+        capabilities: {
+          image_generation: { ready: false, model: null, reason: "PAID_EXECUTION_DISABLED" },
+          speech: { ready: true, model: "tts-1", reason: null },
+          transcription: { ready: false, model: null, reason: "PAID_EXECUTION_DISABLED" }
+        }
+      }
+    })
+  );
+  await page.route("**/api/v1/media/jobs", (route) =>
+    route.fulfill({
+      json: {
+        items: [
+          { id: "not-a-uuid", kind: "speech", status: "running", error_code: null, asset: null }
+        ]
+      }
+    })
+  );
+  page.on("request", (request) => {
+    if (request.url().endsWith("/api/v1/media/speech") && request.method() === "POST") paidPosts++;
+  });
+  await page.goto("/?surface=sound");
+  await page.getByLabel("Текст для озвучивания").fill("Без повтора");
+  await page.getByRole("checkbox", { name: /Разрешаю этот платный вызов/ }).check();
+  await expect(page.getByRole("button", { name: "Создать MP3 на сервере" })).toBeDisabled();
+  await expect(page.getByText(/История MP3 пока недоступна/)).toBeVisible();
+  expect(paidPosts).toBe(0);
+});
