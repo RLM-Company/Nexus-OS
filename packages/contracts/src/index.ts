@@ -61,7 +61,7 @@ export type {
   GoogleDriveConnectStart,
   GoogleDriveSourceList
 } from "./google-drive.js";
-export { DRIVE_OFFICE_FILE_MAX_BYTES } from "./google-drive.js";
+export { DRIVE_OFFICE_FILE_MAX_BYTES, DRIVE_OFFICE_FILE_MAX_NAME } from "./google-drive.js";
 
 export {
   OfficeCursorSchema,

@@ -2,7 +2,7 @@ import type { FastifyInstance, FastifyRequest } from "fastify";
 import { Type } from "typebox";
 import { TypeBoxValidatorCompiler } from "@fastify/type-provider-typebox";
 import type { GoogleDriveConnectionView, IdentityContext } from "@cosmora/contracts";
-import { DRIVE_OFFICE_FILE_MAX_BYTES } from "@cosmora/contracts";
+import { DRIVE_OFFICE_FILE_MAX_BYTES, DRIVE_OFFICE_FILE_MAX_NAME } from "@cosmora/contracts";
 import { DriveStorageError } from "./google-drive.js";
 import type { GoogleDriveRuntime } from "./google-drive-runtime.js";
 import { selectedOfficeFile } from "./google-drive-snapshot.js";
@@ -235,7 +235,7 @@ export function registerGoogleDriveRoutes(
               office_file: Type.Optional(
                 Type.Object(
                   {
-                    name: Type.String({ minLength: 1, maxLength: 160 }),
+                    name: Type.String({ minLength: 1, maxLength: DRIVE_OFFICE_FILE_MAX_NAME }),
                     bytes: Type.String({
                       minLength: 4,
                       maxLength: Math.ceil(DRIVE_OFFICE_FILE_MAX_BYTES / 3) * 4

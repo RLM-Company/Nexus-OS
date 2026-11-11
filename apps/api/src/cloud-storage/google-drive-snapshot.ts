@@ -4,6 +4,7 @@ import { Type, type Static } from "typebox";
 import { Value } from "typebox/value";
 import {
   DRIVE_OFFICE_FILE_MAX_BYTES,
+  DRIVE_OFFICE_FILE_MAX_NAME,
   isValidChatAttachments,
   type ChatAttachment
 } from "@cosmora/contracts";
@@ -75,7 +76,7 @@ const schema = Type.Object(
     files: Type.Array(
       Type.Object(
         {
-          name: Type.String({ minLength: 1, maxLength: 160 }),
+          name: Type.String({ minLength: 1, maxLength: DRIVE_OFFICE_FILE_MAX_NAME }),
           content: Type.String({ maxLength: Math.ceil(DRIVE_OFFICE_FILE_MAX_BYTES / 3) * 4 }),
           encoding: Type.Optional(Type.Literal("base64")),
           sha256: Type.String({ pattern: "^[a-f0-9]{64}$" }),
@@ -98,9 +99,9 @@ export type SnapshotSelection = {
   office_file?: SnapshotFile;
 };
 
-const safeFileName = (name: string) =>
+const safeFileName = (name: string, maxLength = 160) =>
   name.length > 0 &&
-  name.length <= 160 &&
+  name.length <= maxLength &&
   !/[\\/]/.test(name) &&
   ![...name].some((c) => c.charCodeAt(0) < 32 || c.charCodeAt(0) === 127);
 
@@ -129,7 +130,8 @@ export function selectedOfficeFile(name: string, content: string): SnapshotFile 
     sha256: ""
   };
   try {
-    if (safeFileName(name)) return { ...file, sha256: snapshotHash(snapshotFileBytes(file)) };
+    if (safeFileName(name, DRIVE_OFFICE_FILE_MAX_NAME))
+      return { ...file, sha256: snapshotHash(snapshotFileBytes(file)) };
   } catch (error) {
     if (!(error instanceof DriveStorageError)) throw error;
   }
@@ -340,7 +342,10 @@ export function parseSnapshot(bytes: Uint8Array): DriveSnapshot {
   if ((value.version === 2) !== value.files.some((file) => file.encoding === "base64"))
     throw new DriveStorageError("BACKUP_INVALID");
   for (const file of value.files) {
-    if (!safeFileName(file.name) || snapshotHash(snapshotFileBytes(file)) !== file.sha256)
+    if (
+      !safeFileName(file.name, file.encoding ? DRIVE_OFFICE_FILE_MAX_NAME : 160) ||
+      snapshotHash(snapshotFileBytes(file)) !== file.sha256
+    )
       throw new DriveStorageError("BACKUP_INVALID");
   }
   return value;
