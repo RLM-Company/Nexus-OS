@@ -116,7 +116,7 @@ export function useMediaCapabilities() {
   return capabilities;
 }
 
-export function useMediaJob(recoveryKind?: "image") {
+export function useMediaJob(recoveryKind?: "image" | "speech") {
   const starting = useRef(false);
   const pendingId = useRef<string | null>(null);
   const storageKey = recoveryKind ? "kosmora:media:pending:" + recoveryKind : null;

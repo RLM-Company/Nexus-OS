@@ -58,9 +58,16 @@ export function CompactVoicePlayback({ text }: { text: string }) {
   );
 }
 
-function ExpandedPlayback({ text }: { text: string }) {
+function ExpandedPlayback({
+  text,
+  recoverServerJob = false
+}: {
+  text: string;
+  recoverServerJob?: boolean;
+}) {
   const caps = useMediaCapabilities();
-  const { job, start, cancel, error } = useMediaJob();
+  const { job, start, cancel, error, recovering, unknown, historyUnverified, checkUnknown } =
+    useMediaJob(recoverServerJob ? "speech" : undefined);
   const [consent, setConsent] = useState(false);
   const [speaking, setSpeaking] = useState(false);
   const [browserAvailable, setBrowserAvailable] = useState(false);
@@ -73,7 +80,7 @@ function ExpandedPlayback({ text }: { text: string }) {
     };
   }, []);
   const play = () => {
-    if (!browserAvailable) return;
+    if (!browserAvailable || !text.trim()) return;
     window.speechSynthesis.cancel();
     const utterance = new SpeechSynthesisUtterance(text);
     utterance.lang = "ru-RU";
@@ -91,7 +98,7 @@ function ExpandedPlayback({ text }: { text: string }) {
     <div className={styles.voice}>
       <div className={styles.row}>
         {browserAvailable && (
-          <button type="button" onClick={speaking ? stop : play}>
+          <button type="button" disabled={!text.trim()} onClick={speaking ? stop : play}>
             {speaking ? "Остановить" : "Озвучить в браузере"}
           </button>
         )}
@@ -100,7 +107,10 @@ function ExpandedPlayback({ text }: { text: string }) {
             type="button"
             disabled={
               !consent ||
+              !text.trim() ||
               text.length > 4096 ||
+              recovering ||
+              historyUnverified ||
               Boolean(job && ["queued", "running"].includes(job.status))
             }
             onClick={() => {
@@ -114,6 +124,11 @@ function ExpandedPlayback({ text }: { text: string }) {
         {job && ["queued", "running"].includes(job.status) && (
           <button type="button" onClick={() => void cancel()}>
             Отменить
+          </button>
+        )}
+        {recoverServerJob && (unknown || historyUnverified) && (
+          <button type="button" onClick={() => void checkUnknown()}>
+            Проверить историю MP3 без запуска
           </button>
         )}
       </div>
@@ -135,6 +150,18 @@ function ExpandedPlayback({ text }: { text: string }) {
           он не сохраняет MP3.
         </small>
       )}
+      {recoverServerJob && unknown && (
+        <small role="alert">
+          Предыдущая озвучка могла быть запущена. Новый платный запрос автоматически не отправляется:
+          проверьте историю.
+        </small>
+      )}
+      {recoverServerJob && historyUnverified && (
+        <small role="alert">
+          История MP3 пока недоступна. Платный запуск заблокирован до успешной проверки.
+        </small>
+      )}
+      {recoverServerJob && recovering && <small role="status">Проверяем историю MP3…</small>}
       {job && (
         <small role="status">
           Статус MP3: {job.status}
@@ -269,7 +296,7 @@ export function SpeechStudio() {
           onChange={(event) => setText(event.target.value)}
         />
       </label>
-      {text.trim() && <ExpandedPlayback text={text.trim()} />}
+      <ExpandedPlayback text={text.trim()} recoverServerJob />
       <SavedSpeech />
     </section>
   );

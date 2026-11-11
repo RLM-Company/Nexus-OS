@@ -217,3 +217,98 @@ test("an unreadable history blocks fresh paid images until owner history is veri
   await expect(generate).toBeEnabled();
   expect(posts).toBe(0);
 });
+
+test("lost speech acknowledgement restores the owner MP3 job after a reload without a paid replay", async ({
+  page
+}) => {
+  const speechId = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+  const speechCapability = {
+    capabilities: {
+      image_generation: { ready: false, model: null, reason: "PAID_EXECUTION_DISABLED" },
+      speech: { ready: true, model: "tts-1", reason: null },
+      transcription: { ready: false, model: null, reason: "PAID_EXECUTION_DISABLED" }
+    }
+  };
+  let accepted: Record<string, unknown> | null = null;
+  let posts = 0;
+  await page.route("**/api/v1/media/capabilities", (route) =>
+    route.fulfill({ json: speechCapability })
+  );
+  await page.route("**/api/v1/media/jobs", (route) =>
+    route.fulfill({ json: { items: accepted ? [accepted] : [] } })
+  );
+  await page.route(`**/api/v1/media/jobs/${speechId}`, (route) =>
+    route.fulfill({ json: accepted })
+  );
+  await page.route("**/api/v1/media/speech", async (route) => {
+    posts++;
+    const body = route.request().postDataJSON();
+    expect(body.text).toBe("Проверка озвучки");
+    expect(body.explicit_paid_consent).toBe(true);
+    expect(body.client_request_id).toMatch(/^[a-f0-9-]{36}$/);
+    expect(route.request().headers()["idempotency-key"]).toBe(body.client_request_id);
+    accepted = {
+      id: speechId,
+      kind: "speech",
+      status: "running",
+      created_at: new Date().toISOString(),
+      error_code: null,
+      client_request_id: body.client_request_id,
+      asset: null
+    };
+    await route.abort("failed");
+  });
+  await page.goto("/?surface=sound");
+  await page.getByLabel("Текст для озвучивания").fill("Проверка озвучки");
+  await page.getByRole("checkbox", { name: /Разрешаю этот платный вызов/ }).check();
+  await page.getByRole("button", { name: "Создать MP3 на сервере" }).click();
+  await expect(page.getByText("Статус MP3: running")).toBeVisible();
+  expect(posts).toBe(1);
+  await page.reload();
+  await expect(page.getByText("Статус MP3: running")).toBeVisible();
+  expect(posts).toBe(1);
+  accepted = {
+    ...accepted,
+    status: "done",
+    asset: { mime: "audio/mpeg", extension: "mp3", bytes: 3 }
+  };
+  await page.reload();
+  await expect(page.getByText("Статус MP3: done")).toBeVisible();
+  await expect(page.getByRole("link", { name: "Скачать MP3" }).first()).toBeVisible();
+  expect(posts).toBe(1);
+});
+
+test("Sound blocks paid speech on unreadable owner history until a read-only check succeeds", async ({
+  page
+}) => {
+  let historyAvailable = false;
+  let posts = 0;
+  await page.route("**/api/v1/media/capabilities", (route) =>
+    route.fulfill({
+      json: {
+        capabilities: {
+          image_generation: { ready: false, model: null, reason: "PAID_EXECUTION_DISABLED" },
+          speech: { ready: true, model: "tts-1", reason: null },
+          transcription: { ready: false, model: null, reason: "PAID_EXECUTION_DISABLED" }
+        }
+      }
+    })
+  );
+  await page.route("**/api/v1/media/jobs", (route) =>
+    route.fulfill(historyAvailable ? { json: { items: [] } } : { status: 503 })
+  );
+  await page.route("**/api/v1/media/speech", (route) => {
+    posts++;
+    return route.fulfill({ status: 503 });
+  });
+  await page.goto("/?surface=sound");
+  await page.getByLabel("Текст для озвучивания").fill("Не отправлять");
+  await page.getByRole("checkbox", { name: /Разрешаю этот платный вызов/ }).check();
+  const generate = page.getByRole("button", { name: "Создать MP3 на сервере" });
+  await expect(page.getByText(/История MP3 пока недоступна/)).toBeVisible();
+  await expect(generate).toBeDisabled();
+  historyAvailable = true;
+  await page.getByRole("button", { name: "Проверить историю MP3 без запуска" }).click();
+  await expect(generate).toBeEnabled();
+  expect(posts).toBe(0);
+});

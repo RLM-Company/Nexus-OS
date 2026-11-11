@@ -1,0 +1,39 @@
+name: Temporary Media Studio focused fixture verification
+on:
+  push:
+    branches: ["ops/free-studio-media"]
+permissions:
+  contents: read
+jobs:
+  media-fixtures:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.19.0
+          run_install: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Format exact media sources and export for PR commit
+        shell: bash
+        run: |
+          pnpm exec prettier --write apps/web/e2e/workspace-product-flows.spec.ts apps/web/e2e/media-job-recovery.spec.ts apps/web/src/app/media-generation/media-panel.tsx apps/web/src/app/voice/voice-playback.tsx apps/web/src/app/media-generation/media-workbench.tsx
+          for p in apps/web/e2e/workspace-product-flows.spec.ts apps/web/e2e/media-job-recovery.spec.ts apps/web/src/app/media-generation/media-panel.tsx apps/web/src/app/voice/voice-playback.tsx apps/web/src/app/media-generation/media-workbench.tsx; do
+            printf '__MEDIA_FMT_BEGIN__%s__' "$p"
+            base64 -w0 "$p"
+            printf '__MEDIA_FMT_END__\\n'
+          done
+      - name: Strict browser typings
+        run: pnpm --filter @cosmora/web typecheck
+      - name: Install fixture browser
+        run: pnpm --filter @cosmora/web exec playwright install --with-deps chromium
+      - name: Run targeted Media Studio fixtures only, no paid provider
+        env:
+          KOSMORA_E2E_PRODUCTION: "1"
+          NEXT_TELEMETRY_DISABLED: "1"
+        run: pnpm --filter @cosmora/web exec playwright test e2e/media-job-recovery.spec.ts e2e/workspace-product-flows.spec.ts --grep "lost speech|Sound blocks|restores separate media settings" --project chromium
