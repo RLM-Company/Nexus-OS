@@ -255,3 +255,47 @@ test("undo and redo affect only the selected game file; saving and reload keep b
   await canvas.getByRole("button", { name: "styles.css", exact: true }).click();
   await expect(styles).toHaveValue(changedStyles);
 });
+
+test("recovers source from exact ZIP without executing it and refuses invalid or unapproved replacements", async ({
+  page,
+  request
+}) => {
+  const { id, canvas, code } = await open(page, request);
+  await canvas.getByRole("button", { name: "Сохранить версию", exact: true }).click();
+  await expect(canvas.getByRole("status")).toContainText("Артефакт создан");
+  const original = await code.inputValue();
+  const edited = original.replace("let x=80", "let x=240");
+  expect(edited).not.toBe(original);
+
+  const downloaded = page.waitForEvent("download");
+  await canvas.getByRole("button", { name: "Скачать проект ZIP", exact: true }).click();
+  const zip = await readFile(await (await downloaded).path());
+  const input = canvas.getByLabel("Восстановить ZIP проекта", { exact: true });
+  await code.fill(edited);
+  await input.setInputFiles({
+    name: "corrupt.zip",
+    mimeType: "application/zip",
+    buffer: Buffer.from("not a ZIP archive")
+  });
+  await expect(canvas.getByRole("alert")).toContainText("Архив отклонён");
+  await expect(code).toHaveValue(edited);
+
+  page.once("dialog", (dialog) => void dialog.dismiss());
+  await input.setInputFiles({ name: "kosmora-game-source.zip", mimeType: "application/zip", buffer: zip });
+  await expect(code).toHaveValue(edited);
+
+  page.once("dialog", (dialog) => void dialog.accept());
+  await input.setInputFiles({ name: "kosmora-game-source.zip", mimeType: "application/zip", buffer: zip });
+  await expect(code).toHaveValue(original);
+  await expect(canvas.getByRole("button", { name: "Запустить игру", exact: true })).toBeEnabled();
+  await canvas.getByRole("button", { name: "Сохранить версию", exact: true }).click();
+  await expect(canvas.getByRole("status")).toContainText("Сохранена новая версия");
+
+  await page.reload();
+  await page.getByRole("combobox", { name: "Проект игры", exact: true }).selectOption(id);
+  await canvas
+    .getByRole("navigation", { name: "Артефакты проекта" })
+    .getByRole("button", { name: /Звёздный пилот.*v2/ })
+    .click();
+  await expect(code).toHaveValue(original);
+});
