@@ -285,13 +285,16 @@ test("recovers source from exact ZIP without executing it and refuses invalid or
     mimeType: "application/zip",
     buffer: zip
   };
-  page.once("dialog", (dialog) => void dialog.dismiss());
+  const denied = page.waitForEvent("dialog").then((dialog) => dialog.dismiss());
   await input.setInputFiles(restoreFile);
+  await denied;
   await expect(code).toHaveValue(edited);
 
-  page.once("dialog", (dialog) => void dialog.accept());
+  const accepted = page.waitForEvent("dialog").then((dialog) => dialog.accept());
   await input.setInputFiles(restoreFile);
+  await accepted;
   await expect(code).toHaveValue(original);
+  await expect(page.locator('iframe[title="Проект игры Kosmora"]')).toHaveCount(0);
   await expect(canvas.getByRole("button", { name: "Запустить игру", exact: true })).toBeEnabled();
   await canvas.getByRole("button", { name: "Сохранить версию", exact: true }).click();
   await expect(canvas.getByRole("status")).toContainText("Сохранена новая версия");
