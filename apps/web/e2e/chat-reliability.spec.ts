@@ -342,6 +342,13 @@ for (const kind of ["personal", "project"] as const)
     await expect(page.getByRole("list", { name: "Прикреплённые файлы" })).toContainText(
       "retry.txt"
     );
+    if (!projectId) {
+      await page.reload();
+      await expect(editor).toHaveValue(text);
+      await expect(page.getByRole("list", { name: "Прикреплённые файлы" })).toContainText(
+        "retry.txt"
+      );
+    }
     await send.click();
     await expect(page.getByRole("status")).toHaveText(/Ответ получен/);
     expect(statuses).toEqual([projectId ? 202 : 201, 200]);
@@ -351,6 +358,9 @@ for (const kind of ["personal", "project"] as const)
     });
     await expect(page.locator(".message.user")).toHaveCount(1);
     await expect(page.locator(".message.assistant")).toHaveCount(1);
+    expect(
+      await page.evaluate(() => sessionStorage.getItem("cosmora:pending-chat-send:v1"))
+    ).toBeNull();
   });
 
 test("reload and lost network recover the same run without duplicate POSTs or messages", async ({
