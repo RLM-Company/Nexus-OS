@@ -1,5 +1,12 @@
 # Coscode: проверенный backlog
 
+Дополнительное ревью: stale-check approval закрыт source40a3a9e/9877f5b.
+Same review hash больше не заменяет check version; repair-v2 + capability2, новый
+consent после reload, старые payloads fail closed. Root0/API117/realHTTP-OCI1/
+production30PASS; детали и baselineFAIL в актуальной DELIVERY.
+
+Предыдущий итог ниже — история на3936e5f.
+
 Итог 11 ноября: согласованный сценарий завершён до статуса «готово к интеграции».
 Source3936e5f, Draft PR519. Failed-check → одна явно разрешённая модельная попытка →
 новый diff → реальный повтор той же проверки → свежий review подключён к продукту.

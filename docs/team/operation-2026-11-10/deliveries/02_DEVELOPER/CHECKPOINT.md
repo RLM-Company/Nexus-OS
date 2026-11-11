@@ -1,53 +1,47 @@
-# Coscode: точная точка завершения
+# Coscode: проверено исправление stale-check approval
 
-11 ноября 2026, Москва. Максимальный статус исполнителя — **готово к интеграции**.
-Ветка `ops/developer-coscode`, Draft PR https://github.com/RLM-Company/Nexus-OS/pull/519.
-Code HEAD3936e5f7ebe7abe7780e82debaac71a15743710f,
-code tree9e4fd6b0382e12c789027b68862aeb42498c98f3 (local/GitHub equality).
-BASE текущего среза be85aef8b394a8a6489239def4399dfd59595a19 сохраняет main
-abbcee7eab47d7e8ded86a0cfb1567a133b3a76a. Финальный main026b0df сохранён merge7900ce6 (только Windows/download OpenCode,
-без изменений Coscode/API/contracts); итоговые format/secrets/diff проверены отдельно.
-Самоссылка docs SHA не создаётся;
-финальный docs HEAD доступен в истории ветки/PR и в сообщении сдачи.
+11 ноября 2026, Москва. Статус **готово к интеграции**, branch ops/developer-coscode,
+Draft PR https://github.com/RLM-Company/Nexus-OS/pull/519. Не merge/deploy/release.
+BASE c2e093ee0e79d99f8b4c64b1a646728654196de4 сохраняет main0ddb9d0;
+входили только6OpenCode preload/test/report paths, общие API/contracts не менялись.
+Source HEAD40a3a9ed5ceaec68c46a8e9e904cb7e08d2e5879,
+source treea35aa87ea182cd967e473345c22d3d508b7a51b3, guard9877f5b.
+GitHub/local source tree equality проверена. Финальный docs SHA — в PR/history.
 
-## Согласованный путь реализован
+## Изменение после дополнительного ревью
 
-Repo/task/issue → bounded context/search/read immutable SHA → exact proposal/diff →
-review CAS/checkpoint → текущий sandbox → строгий proof → owner-approved draft PR.
-Новое: failed check → отдельное разрешение одной модели → exact working-byte edits,
-сохраняющие owner changes → новый diff → та же настоящая проверка → новый review.
-Новый endpoint только после repair_once capability. Stable request UUID записан до
-модели, replay/второй UUID/restart/unknown не дают вторую генерацию. Старый draft
-остаётся при отказе; при принятии нового proposal старые proof/token отделены
-атомарно. Источник ошибки/review/digest сохранён. Tool-only revoke race закрыт внутри
-guarded callback с сохранением фактического usage. Нового runtime/хранилища нет.
+Другая вкладка могла обновить check, сохранив review hash. Старое согласие принималось
+для новой ошибки; baseline реально упал. Теперь repair-v2 требует expected_run_version,
+отказывает STALE_CHECK до записи/модели при mismatch. Source version сохраняется в
+прежнем run JSON. Точный повтор UUID+исходной версии идемпотентен, изменённый payload
+запрещён. UI repair_once:2, checkbox сбрасывается при новой версии, тип Node check
+показан. Существующий load checkpoint требует нового согласия на новую проверку.
+Отдельный v2 route не позволяет старому handler проигнорировать version field;
+legacy /repair404, missing/invalid version400. API+web поставлять вместе.
 
-## Проверено
+Прежние context/search/patch/CAS/checkpoint/tree recovery/navigation/publish сохраняются.
+Новых runtime/store/dependencies/migrations/provider/quota/permission changes нет.
 
-- Scoped API/GitHub/tree115PASS+1opt-inSKIP, exit0.
-- Настоящий OCI API/Git repair1PASS: failed1→passed0, cleanup true, exact patch2files,
-  owner00123/README сохранены, fresh review обязателен. Внешние model/GitHub fixtures.
-- Core exit0: API1029/web290 fresh; остальные неизменённые пакеты cache, см. DELIVERY.
-- Strict E2E types0; production Chromium15628PASS0, workers1/retries0.
-- Source3936e5f CI isolation job1305101976525PASS, identity success. Не предполагать
-  успех остальных jobs без свежего чтения. Исторический local4/5 не подменяется им.
-- В fixtures/bounded-repair входы, reviewed/output, patch, receipt, failure history,
-  core/browser logs и hashes. Live модель/target publication не выполнялись.
+## Проверки
 
-## Следующее действие интегратора
+- API/GitHub/tree117PASS+1opt-inSKIP, baselineFAIL сохранён.
+- Полный root check:core40a3a9e exit0: API1031/web290 fresh, остальные cache.
+- Real HTTP repair-v2 → OCI → Git1PASS (85filtered skips), failed1→passed0,
+  cleanup true,2files/00123/README сохранены. External model/GitHub fixtures.
+- Strict E2E types0, production Chromium15630PASS0, workers1/retries0.
+- Source40 весь CI43024980295 success: monorepo130537461796,
+  browser130537462097, isolation130537462197. Identity43024980309 success.
+  Квитанция ci-source.json относится к HEAD40a3a9e; новый docs HEAD проверяется
+  отдельно, его CI не выдаётся за завершённый. Предыдущий10f50a1 также был green.
+- Новые receipts/logs/patch/fixtures/hashes в fixtures/stale-check; подробности DELIVERY.
 
-Проверить Draft PR519 и актуальные общие контракты main; общий adapter b22b4f3
-выделен отдельно и описан в INTEGRATION.md. Source3936e5f остаётся scoped, миграций
-и новых dependencies нет. Принять API+web вместе. Merge/deploy/release подтверждает
-интегратор; исполнитель их не выполняет. Все оговорённые программные критерии этого
-блока покрыты; не создавать посторонние блоки ради продолжения.
+## Продолжение интегратора
 
-## Реальные ограничения
+Проверить актуальный PR519 и full CI на точном HEAD, затем канонические общие контракты
+перед объединением. Общий adapterb22b4f3 отдельно описан в INTEGRATION.md. Новых
+общих исходников этот fix не меняет. Все найденные в этом ревью программные пробелы
+закрыты. Не создавать новый продукт/блок ради продолжения.
 
-Без разрешения нет live платной модели/чужого GitHub publish/ПК владельца/VPS.
-Runner ограничен Node syntax/node-test и snapshot без сети/install/shell.
-Tree128nodes/100k entries/8MB/30s; сверх лимита честный отказ.
-Navigation API guard не гарантирован в старых browsers/uncancelable events.
-Filename guard не заменяет содержательный аудит секретов выбранного исходника.
-Неизвестный модельный исход не повторяется автоматически; ручное продолжение и
-бесплатная проверка сохранённого review доступны. Live acceptance не объявлена.
+Live модель/foreign publish/ownerPC/VPS/merge/deploy не разрешены и не выполнялись.
+Node checks по snapshot без сети/install/arbitrary shell; tree budgets и browser
+compatibility остаются прежними, см. DELIVERY. Максимальный статус — готово к интеграции.

@@ -1,3 +1,101 @@
+# 02_DEVELOPER: подтверждение исправления привязано к результату проверки
+
+11 ноября 2026, Москва. Статус: **готово к интеграции**, Draft PR519,
+branch `ops/developer-coscode`. BASE c2e093ee0e79d99f8b4c64b1a646728654196de4
+сохраняет main0ddb9d06812fcdd9d742fd5d40455bc0ec46b8ad. Входящий main менял
+только OpenCode preloads/test/report; Coscode/API/contracts сохранены без коллизий.
+Source SHA/tree: `40a3a9ed5ceaec68c46a8e9e904cb7e08d2e5879`, tree `a35aa87ea182cd967e473345c22d3d508b7a51b3`; version guard `9877f5b`. Финальный docs HEAD — в истории ветки и PR.
+Контрольная база9d972e8 и первоначальная фактическая mainf9eb452 — см. историю ниже.
+
+Ревью выявило гонку двух вкладок: review hash остаётся тем же, но другая вкладка
+может повторно выполнить другую проверку над теми же байтами. Старое согласие
+пользователя принималось для новой ошибки. Baseline на настоящем service/SQLite/
+policy/gateway с runner/model transport fixtures подтвердил FAIL: ожидался STALE_CHECK,
+а старая реализация приняла запрос. Это не live модельный вызов.
+
+Теперь POST `.../code-agent/:id/repair-v2` требует `expected_run_version` (positive
+safe integer). Сравнение с существующим optimistic run version выполняется до
+reservation, remote reads и модельного запроса. При устаревшем результате —409
+STALE_CHECK, состояние строки/число provider calls не меняются. Принятый запрос
+сохраняет `source_run_version`; replay того же UUID с исходной версией возвращает
+состояние без второго вызова, изменённый payload отклоняется. Модель/бюджет/runner/
+policy/privacy/publish остаются прежними, нового исполнителя нет.
+
+Web получает новую команду только при `repair_once:2` и валидном run.version.
+В компоненте показан повторяемый `node --check`/`node --test`; ключ включает версию,
+поэтому загрузка нового proof сбрасывает checkbox. После конфликта существующая
+кнопка «Загрузить сохранённые правки» получает свежий результат, нужен новый consent.
+Браузерный сценарий проверяет refusal → неизменный server state → reload proof →
+unchecked consent → явное подтверждение → новый diff, без публикации GitHub.
+
+Отдельный маршрут v2 обязателен для безопасной совместимости: прежний Fastify handler
+удалял неизвестные поля JSON. Только новое поле на старом /repair могло быть проигнорировано
+при смешанных версиях. Новый handler не регистрирует legacy /repair; несовместимый
+клиент получает404, новый клиент на старом server с capability1 не отправляет команду.
+Тесты проверяют legacy capability, отсутствие версии, invalid integer, stale check,
+повтор неизменённого и изменённого payload. Старые v1 attempts читаются и не replayed.
+
+Изменены только собственные API `{routes,service,store}.ts`, scoped API test,
+web `{page.tsx,repair-control.tsx,patch-client.ts}` и code-agent E2E. Optional поле
+в run JSON не требует DB migration. Общие registry/contracts/gateway/app.ts не менялись.
+Новых dependencies, provider/quota changes, grants и shell команд продукта нет.
+Интеграционная совместимость отражена в INTEGRATION.md; API+web поставлять вместе.
+
+## Проверки и результаты
+
+- Baseline stale-check **FAIL,exit1**: старая реализация не бросила STALE_CHECK.
+  После исправления scoped API/GitHub/tree **117PASS+1opt-inSKIP**, exit0.
+- Финальный source40a3a9e: `check:core` **exit0**, включая format/secrets/lint/types/
+  tests/build/deploy/connection/live-guards/vector/media/privacy/profile. API1031 и
+  web290 fresh; неизменённые config17/contracts206/policy43/core389/gateway151/
+  DB214/runtime86+5opt-inSKIP — Turbo cache. API1opt-inSKIP в root не объявляется PASS.
+- `repair-v2` HTTP → настоящий OCI Node → Git readback: **1PASS,exit0**;
+  остальные85 filtered skipped. Failed1→passed0, cleanup true; owner00123 и README
+  сохранены. Модель и GitHub transport — fixtures, реальный provider не вызывался.
+- Production Chromium156: **30/30PASS,exit0,1.0m**, workers1/retries0. Новый конфликт
+  → owner reload → unchecked consent → explicit consent → diff проверен в браузере.
+- Strict E2E types **exit0**; API/web types/lint прошли и в финальном root.
+- Предыдущий полный root на9877f5b тожеexit0, затем v2-route потребовал нового полного
+  прогона; итоговая версия40a3a9e проверена отдельно. Это не скрытый повтор failure.
+- Удалённый source40 [CI43024980295](https://github.com/RLM-Company/Nexus-OS/actions/runs/43024980295)
+  полностью **success**: monorepo130537461796, browser130537462097,
+  isolation130537462197. Identity43024980309 также **success**. Точная квитанция
+  ci-source.json связывает jobs с исходным HEAD40a3a9e, не с будущим docs commit.
+  Предыдущий HEAD10f50a1 тоже имел полный green CI43018692603.
+
+Исходники опубликованы в настоящую ветку GitHub через object API с expected-SHA lease;
+local Git tree равен remote tree. Рабочая копия после сдачи чистая. Входящие owner files
+не переформатированы. Сырые логовые diagnostics сохранены; normalization LF/trailing
+whitespace указана в provenance вместе с hashes, исходный FAIL не выдан за PASS.
+
+## Запуск и откат
+
+В `/code-agent` сохранить review, выполнить подтверждённую проверку. После failed
+proof разрешить одну модельную попытку. Если другая вкладка изменила результат,
+обновить сохранённое состояние и подтвердить заново. Новый diff по-прежнему требует
+свежего review, затем отдельного разрешения публикации. Полные commands/fixtures
+предыдущей вертикальной приёмки остаются ниже; новые логи и receipt находятся в
+`fixtures/stale-check/`. Команды используют `pnpm_config_verify_deps_before_run=''`:
+
+```sh
+pnpm --filter @cosmora/api exec vitest run test/code-agent.test.ts test/code-agent-github-tree.test.ts test/github-integration.test.ts
+pnpm check:core
+KOSMORA_E2E_PRODUCTION=1 KOSMORA_E2E_CHROMIUM_EXECUTABLE=/usr/bin/chromium pnpm --filter @cosmora/web exec playwright test -c playwright.acceptance.config.ts e2e/code-agent.spec.ts --workers=1 --retries=0
+```
+
+Revert данного scoped fix возвращает старый протокол и его известный stale-check
+риск, потому для безопасного отката отключить repair UI или вернуть API+web вместе;
+не использовать v1 платный repair на смешанных версиях. Run JSON/old checkpoints
+не удалять. Source version optional metadata безопасно остаётся в сохранённых строках.
+
+Ограничения прежние: live платная модель и foreign target publish не разрешены и не
+выполнялись; проверки Node по snapshot без сети/install/arbitrary shell; ограниченный
+GitHub tree и старые browsers без Navigation API. Это готовность к интеграции,
+не merge/deploy/live/release acceptance. Все старые результаты ниже исторические;
+верхний раздел фиксирует новый контракт v2 и точные новые проверки.
+
+---
+
 # 02_DEVELOPER: законченный путь исправления Coscode
 
 11 ноября 2026, Москва. Статус: **готово к интеграции**. Ветка

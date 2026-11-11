@@ -79,3 +79,15 @@ repair_request живут в прежнем run JSON; схема/миграци�
 Возврат proposal требует нового review; старый token отзывается атомарно. Не менять
 postflight необратимого GitHub publish на blanket отказ — его reconciliation сохранён.
 Общий adapter по-прежнему только отдельный b22b4f3. Новых интеграционных файлов нет.
+
+## Текущий repair protocol v2: source9877f5b +40a3a9e
+
+POST /code-agent/:id/repair-v2 требует positive safe integer expected_run_version.
+View capability repair_once теперь2 (0 без бюджета). New web требует2 и валидную
+version; cap1/нет capability — команды нет. Legacy /repair не зарегистрирован404,
+иначе Fastify старого API мог удалить неизвестное version field и выполнить v1.
+Old clients на новом API и new clients на старом API безопасно отказывают. Поставлять
+API+web вместе. Source_run_version optional в прежнем run JSON, DB migration нет;
+старые attempts не удаляются и не повторяются автоматически. UUID replay требует
+тот же source version. Новых common contracts/registration/runtime/gateway нет;
+все исходники scoped, общего integration commit сверх прежнего b22b4f3 не требуется.
