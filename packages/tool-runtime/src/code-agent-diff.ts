@@ -49,7 +49,9 @@ export const isSafeCodeAgentDiffPath = (path: string): boolean =>
         /^[\p{L}\p{N}._ -]+$/u.test(p) &&
         p !== "." &&
         p !== ".." &&
-        !/^\.git$|^\.env(?:\.|$)|secret|credential|\.pem$|\.key$/i.test(p)
+        !/^\.git$|^\.env(?:\.|$)|secret|credential|\.(?:pem|key|p12|pfx|jks|keystore)$/i.test(p) &&
+        !/^\.(?:npmrc|netrc|pypirc|envrc|yarnrc(?:\.yml)?|ssh|aws|azure|kube|docker)$/i.test(p) &&
+        !/^id_(?:rsa|dsa|ecdsa|ed25519)$/i.test(p)
     );
 type TextLine = { text: string; newline: boolean };
 type BodyLine = TextLine & { kind: " " | "-" | "+" };

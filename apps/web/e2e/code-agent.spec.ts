@@ -528,3 +528,247 @@ test("unapplied raw diff remains dirty after saving selected files and can be di
   expect(state.checks()).toBe(1);
   expect(state.publications()).toBe(0);
 });
+
+test("an explicit saved-run link outside the latest twenty is fetched exactly without starting work", async ({
+  page
+}) => {
+  const state = await scenario(page),
+    template = state.snapshot();
+  const id = "00000000-0000-4000-8000-000000000001";
+  const linked = { ...template, id, task: "Точная старая задача" };
+  let lookups = 0,
+    posts = 0;
+  page.on("request", (r) => {
+    if (r.method() === "POST") posts++;
+  });
+  await page.route("**/api/v1/projects/*/code-agent", (route) =>
+    route.fulfill({
+      json: {
+        items: Array.from({ length: 20 }, (_, i) => ({
+          ...template,
+          id: `recent-${i}`,
+          task: `Недавняя ${i}`
+        }))
+      }
+    })
+  );
+  await page.route(`**/api/v1/projects/project-1/code-agent/${id}`, (route) => {
+    lookups++;
+    return route.fulfill({ json: linked });
+  });
+  await page.goto(`/code-agent?project=project-1&run=${id}`);
+  await expect(
+    page.getByRole("heading", { name: "Точная старая задача", exact: true })
+  ).toBeVisible();
+  await expect(page.getByRole("combobox", { name: "Сохранённые задачи" })).toHaveValue(id);
+  expect(lookups).toBe(1);
+  expect(posts).toBe(0);
+  expect(state.publications()).toBe(0);
+});
+
+for (const missing of [true, false]) {
+  test(`an unavailable or mismatched linked task cannot silently open the latest task: missing=${missing}`, async ({
+    page
+  }) => {
+    const state = await scenario(page),
+      template = state.snapshot();
+    const id = "00000000-0000-4000-8000-000000000001";
+    await page.route("**/api/v1/projects/*/code-agent", (route) =>
+      route.fulfill({
+        json: { items: [{ ...template, id: "recent", task: "Явно выбранная недавняя" }] }
+      })
+    );
+    await page.route(`**/api/v1/projects/project-1/code-agent/${id}`, (route) =>
+      route.fulfill({
+        status: missing ? 404 : 200,
+        json: missing ? { error: { code: "RUN_NOT_FOUND" } } : template
+      })
+    );
+    await page.goto(`/code-agent?project=project-1&run=${id}`);
+    await expect(page.getByRole("alert").first()).toContainText(
+      missing ? "Запрошенная задача недоступна" : "Ответ не подтверждает запрошенную задачу"
+    );
+    await expect(page.getByRole("region", { name: "Состояние задачи" })).toHaveCount(0);
+    await expect(page.getByRole("combobox", { name: "Сохранённые задачи" })).toHaveValue("");
+    await page.getByRole("combobox", { name: "Сохранённые задачи" }).selectOption("recent");
+    await expect(
+      page.getByRole("heading", { name: "Явно выбранная недавняя", exact: true })
+    ).toBeVisible();
+    expect(state.publications()).toBe(0);
+  });
+}
+
+test("a late exact linked lookup cannot replace the selected project's task", async ({ page }) => {
+  const state = await scenario(page),
+    template = state.snapshot();
+  const id = "00000000-0000-4000-8000-000000000001";
+  let release!: () => void, arrived!: () => void, done!: () => void;
+  const gate = new Promise<void>((r) => {
+    release = r;
+  });
+  const received = new Promise<void>((r) => {
+    arrived = r;
+  });
+  const finished = new Promise<void>((r) => {
+    done = r;
+  });
+  await page.route("**/api/v1/projects", (route) =>
+    route.fulfill({
+      json: {
+        items: [
+          { id: "project-1", title: "Первый" },
+          { id: "project-2", title: "Второй" }
+        ]
+      }
+    })
+  );
+  await page.route("**/api/v1/projects/*/code-agent", (route) =>
+    route.fulfill({
+      json: { items: [{ ...template, id: "new-task", task: "Текущая задача второго проекта" }] }
+    })
+  );
+  await page.route(`**/api/v1/projects/project-1/code-agent/${id}`, async (route) => {
+    arrived();
+    try {
+      await gate;
+      await route.fulfill({ json: { ...template, id, task: "Старый поздний ответ" } });
+    } finally {
+      done();
+    }
+  });
+  try {
+    await page.goto(`/code-agent?project=project-1&run=${id}`);
+    await received;
+    await page.getByRole("combobox", { name: "Проект", exact: true }).selectOption("project-2");
+    await expect(
+      page.getByRole("heading", { name: "Текущая задача второго проекта", exact: true })
+    ).toBeVisible();
+  } finally {
+    release();
+  }
+  await finished;
+  await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
+  await expect(page.getByRole("combobox", { name: "Проект", exact: true })).toHaveValue(
+    "project-2"
+  );
+  await expect(
+    page.getByRole("heading", { name: "Старый поздний ответ", exact: true })
+  ).toHaveCount(0);
+});
+
+for (const delayedStage of ["preview-diff", "invalidate-review"]) {
+  test(`leaving a patch editor fences its late ${delayedStage} without applying files to another task`, async ({
+    page
+  }) => {
+    const state = await scenario(page),
+      template = state.snapshot();
+    const second = {
+      ...template,
+      id: "run-2",
+      task: "Вторая задача",
+      proposal: [
+        {
+          path: "src/value.js",
+          before: "export const value = 70;",
+          content: "export const value = 77;"
+        }
+      ]
+    };
+    let release!: () => void,
+      arrived!: () => void,
+      done!: () => void,
+      previews = 0;
+    const gate = new Promise<void>((r) => {
+      release = r;
+    });
+    const received = new Promise<void>((r) => {
+      arrived = r;
+    });
+    const finished = new Promise<void>((r) => {
+      done = r;
+    });
+    await page.route("**/api/v1/projects/*/code-agent", (route) =>
+      route.fulfill({ json: { items: [template, second] } })
+    );
+    await page.route(`**/code-agent/run-1/${delayedStage}`, async (route) => {
+      const body = route.request().postDataJSON() as { diff: string };
+      arrived();
+      try {
+        await gate;
+        await route.fulfill({
+          json:
+            delayedStage === "invalidate-review"
+              ? template
+              : {
+                  files: [
+                    {
+                      path: "src/value.js",
+                      before: "export const value = 1;",
+                      content: "export const value = 3;"
+                    }
+                  ],
+                  normalizedDiff: body.diff,
+                  normalizations: [],
+                  snapshotDigest: "s".repeat(64),
+                  resultDigest: "r".repeat(64),
+                  baseSha: "a".repeat(40)
+                }
+        });
+      } finally {
+        done();
+      }
+    });
+    page.on("request", (r) => {
+      if (r.url().endsWith("/preview-diff")) previews++;
+    });
+    try {
+      await page.goto("/code-agent");
+      await page.getByText("Редактировать минимальный diff", { exact: true }).click();
+      const raw = page.getByLabel("Редактируемый unified diff", { exact: true });
+      await raw.fill((await raw.inputValue()).replace("value = 2", "value = 3"));
+      await page
+        .getByRole("button", {
+          name: "Проверить diff и перенести в выбранные изменения",
+          exact: true
+        })
+        .click();
+      await received;
+      page.once("dialog", (d) => d.accept());
+      await page.getByRole("combobox", { name: "Сохранённые задачи" }).selectOption("run-2");
+      await expect(page.getByLabel("+ Итоговое содержимое: src/value.js")).toHaveValue(
+        "export const value = 77;"
+      );
+    } finally {
+      release();
+    }
+    await finished;
+    await page.evaluate(
+      () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
+    );
+    await expect(page.getByLabel("+ Итоговое содержимое: src/value.js")).toHaveValue(
+      "export const value = 77;"
+    );
+    expect(previews).toBe(delayedStage === "preview-diff" ? 1 : 0);
+    expect(state.publications()).toBe(0);
+  });
+}
+
+test("an unavailable project from a link cannot fall back to another owned project's task", async ({
+  page
+}) => {
+  const state = await scenario(page);
+  let runReads = 0;
+  page.on("request", (r) => {
+    if (new URL(r.url()).pathname.includes("/code-agent")) runReads++;
+  });
+  await page.goto(
+    "/code-agent?project=unavailable-project&run=00000000-0000-4000-8000-000000000001"
+  );
+  await expect(page.getByRole("alert").first()).toContainText(
+    "Запрошенный проект недоступен владельцу"
+  );
+  await expect(page.getByRole("combobox", { name: "Проект", exact: true })).toHaveValue("");
+  await expect(page.getByRole("region", { name: "Состояние задачи" })).toHaveCount(0);
+  expect(runReads).toBe(1); // The document itself; no scoped Code API request was made.
+  expect(state.publications()).toBe(0);
+});

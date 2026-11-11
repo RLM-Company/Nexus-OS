@@ -107,7 +107,22 @@ describe("bounded exact unified diff application", () => {
     "foo//bar",
     "a/./b",
     ".git/config",
-    "credentials.json"
+    "credentials.json",
+    ".npmrc",
+    "nested/.netrc",
+    ".pypirc",
+    ".envrc",
+    ".git-credentials",
+    ".yarnrc.yml",
+    ".aws/config",
+    "nested/.ssh/id_ed25519",
+    ".docker/config.json",
+    ".azure/msal_token_cache.json",
+    ".kube/config",
+    "keys/id_rsa",
+    "deploy/client.pfx",
+    "deploy/client.p12",
+    "keys/store.jks"
   ])("rejects unsafe path %s", (path) => {
     expect(() =>
       inspectCodeAgentUnifiedDiff(

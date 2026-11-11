@@ -92,6 +92,9 @@ const errors: Record<string, string> = {
   EXECUTION_CANCELLING: "Останавливаем проверку. Дождитесь подтверждения остановки контейнера.",
   POLICY_DENIED: "Политика проекта запрещает это действие на текущем уровне автономии.",
   UNAUTHORIZED: "Вход истёк. Войдите в Kosmora и обновите страницу.",
+  PROJECT_NOT_FOUND: "Запрошенный проект недоступен владельцу. Выберите доступный проект явно.",
+  RUN_NOT_FOUND:
+    "Запрошенная задача недоступна в этом проекте. Выберите другую сохранённую задачу явно.",
   GITHUB_NOT_CONFIGURED: "GitHub ещё не подключён на сервере.",
   GITHUB_BASE_CHANGED: "Базовая ветка изменилась. Создайте новую задачу на актуальной версии.",
   EMERGENCY_STOP_ACTIVE: "Действие остановлено аварийным выключателем.",
@@ -222,6 +225,7 @@ export default function CodeAgentPage() {
     const identity = `${value.id}:${value.proposal_hash ?? ""}`;
     if (restore || proposalIdentity.current !== identity) {
       editingInvalidated.current = false;
+      invalidation.current = null;
       setProofDirty(false);
       setPatchTextDirty(false);
       proposalIdentity.current = identity;
@@ -256,9 +260,17 @@ export default function CodeAgentPage() {
         setBranch(status.default_branch ?? "main");
         const query = new URLSearchParams(window.location.search);
         linkedRun.current = query.get("run");
-        setProject(
-          list.items.find((item) => item.id === query.get("project"))?.id ?? list.items[0]?.id ?? ""
-        );
+        const requestedProject = query.get("project");
+        const selectedProject = requestedProject
+          ? list.items.find((item) => item.id === requestedProject)?.id
+          : list.items[0]?.id;
+        if (requestedProject && !selectedProject) {
+          linkedRun.current = null;
+          setError(errors.PROJECT_NOT_FOUND!);
+          setProject("");
+          return;
+        }
+        setProject(selectedProject ?? "");
       })
       .catch((reason: unknown) => {
         if (alive) setError(failureMessage(reason));
@@ -282,11 +294,17 @@ export default function CodeAgentPage() {
     setPublishApproved(false);
     if (!project) return;
     void api<{ items: Run[] }>(root)
-      .then((list) => {
+      .then(async (list) => {
         if (epoch.current !== requestEpoch) return;
         setRuns(list.items);
-        const desired = list.items.find((item) => item.id === linkedRun.current) ?? list.items[0];
+        const wanted = linkedRun.current;
+        let desired = wanted ? list.items.find((item) => item.id === wanted) : list.items[0];
+        if (wanted && !desired) desired = await api<Run>(`${root}/${encodeURIComponent(wanted)}`);
+        if (epoch.current !== requestEpoch) return;
+        if (wanted && (!desired || desired.id !== wanted))
+          throw new Error("Ответ не подтверждает запрошенную задачу. Другая задача не открыта.");
         if (desired) accept(desired, true);
+        linkedRun.current = null;
       })
       .catch((reason: unknown) => {
         if (epoch.current === requestEpoch) setError(failureMessage(reason));
@@ -316,6 +334,8 @@ export default function CodeAgentPage() {
 
   async function createProject() {
     if (requestBusy.current || !confirmDiscard()) return;
+    epoch.current++;
+    linkedRun.current = null;
     requestBusy.current = true;
     setBusy(true);
     setError(null);
@@ -345,6 +365,10 @@ export default function CodeAgentPage() {
 
   async function action(operation: () => Promise<Run>, reconcile = false, replacesEditor = false) {
     if (requestBusy.current || (replacesEditor && !confirmDiscard())) return;
+    if (replacesEditor) {
+      epoch.current++;
+      linkedRun.current = null;
+    }
     requestBusy.current = true;
     const actionEpoch = epoch.current;
     setBusy(true);
@@ -412,8 +436,10 @@ export default function CodeAgentPage() {
         if (epoch.current === requestEpoch && activeRun.current === id) accept(value);
       })
       .catch((e: unknown) => {
-        editingInvalidated.current = false;
-        setError(e instanceof Error ? e.message : "Не удалось отменить старую проверку.");
+        if (epoch.current === requestEpoch && activeRun.current === id) {
+          editingInvalidated.current = false;
+          setError(e instanceof Error ? e.message : "Не удалось отменить старую проверку.");
+        }
         throw e;
       })
       .finally(() => {
@@ -474,6 +500,8 @@ export default function CodeAgentPage() {
               disabled={busy}
               onChange={(event) => {
                 if (!confirmDiscard()) return;
+                epoch.current++;
+                linkedRun.current = null;
                 setIssueDraft(null);
                 setProject(event.target.value);
               }}
@@ -649,9 +677,15 @@ export default function CodeAgentPage() {
             disabled={busy}
             onChange={(event) => {
               const value = runs.find((item) => item.id === event.target.value);
-              if (value && value.id !== run?.id && confirmDiscard()) accept(value, true);
+              if (value && value.id !== run?.id && confirmDiscard()) {
+                epoch.current++;
+                linkedRun.current = null;
+                setError(null);
+                accept(value, true);
+              }
             }}
           >
+            {!run && <option value="">Выберите сохранённую задачу</option>}
             {runs.map((item) => (
               <option key={item.id} value={item.id}>
                 {item.task.slice(0, 90)} — {labels[item.status] ?? item.status}
