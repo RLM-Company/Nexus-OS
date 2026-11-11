@@ -2,7 +2,142 @@ import { expect, test, type APIRequestContext } from "@playwright/test";
 
 test.afterEach(async ({ page }) => {
   // Drain read interceptors before closing the page and starting the next test.
+  // Keep handler errors visible; do not use ignoreErrors or retry requests.
   await page.unrouteAll({ behavior: "wait" });
+});
+
+test("recovers a committed result acceptance after a lost response without a second POST", async ({
+  page,
+  request
+}) => {
+  const work = await preparedWork(request);
+  const before = (await (await request.get(work.work)).json()) as { model_requests: number };
+  let posts = 0;
+  await page.route(`**${work.work}/result/accept`, async (route) => {
+    posts++;
+    const response = await route.fetch();
+    expect(response.status()).toBe(200);
+    await route.abort("failed");
+  });
+  await page.clock.install();
+  await page.goto(`/?project=${work.project}&view=plan`);
+  const manager = page.getByRole("region", { name: "Выполнение задачи Manager", exact: true });
+  await manager.getByRole("button", { name: "Принять результат", exact: true }).click();
+  await expect(
+    manager.getByRole("status").filter({ hasText: /Результат принят владельцем/ })
+  ).toBeVisible();
+  await expect(manager.getByRole("alert")).toHaveCount(0);
+  await page.clock.fastForward(3000);
+  expect(posts).toBe(1);
+  const after = (await (await request.get(work.work)).json()) as {
+    model_requests: number;
+    result_accepted_at: string;
+    events: { message: string }[];
+  };
+  expect(after.result_accepted_at).toBeTruthy();
+  expect(after.model_requests).toBe(before.model_requests);
+  expect(
+    after.events.filter((event) => event.message === "Результат принят владельцем")
+  ).toHaveLength(1);
+});
+
+test("a late result acceptance updates its task without replacing the later history selection", async ({
+  page,
+  request
+}) => {
+  const work = await preparedWork(request);
+  const goal = "Keep this task selected after another result is accepted";
+  const created = await request.post(`/api/v1/projects/${work.project}/work`, {
+    data: {
+      client_request_id: crypto.randomUUID(),
+      goal,
+      worker_role: "analyst",
+      max_model_requests: 3,
+      max_input_tokens: 32000,
+      max_output_tokens: 6000
+    }
+  });
+  expect(created.status()).toBe(201);
+  const second = (await created.json()) as { id: string };
+  await expect
+    .poll(
+      async () =>
+        (
+          (await (
+            await request.get(`/api/v1/projects/${work.project}/work/${second.id}`)
+          ).json()) as { status: string }
+        ).status,
+      { timeout: 15000 }
+    )
+    .toBe("completed");
+  let entered = false;
+  let release = () => {};
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await page.route(`**${work.work}/result/accept`, async (route) => {
+    const response = await route.fetch();
+    expect(response.status()).toBe(200);
+    entered = true;
+    await held;
+    await route.fulfill({ response });
+  });
+  try {
+    await page.goto(`/?project=${work.project}&view=plan`);
+    const manager = page.getByRole("region", { name: "Выполнение задачи Manager", exact: true });
+    const history = manager.getByRole("group", { name: "История задач Manager", exact: true });
+    const firstButton = history.getByRole("button", {
+      name: /Create result.md with a short complete report/
+    });
+    const secondButton = history.getByRole("button", { name: new RegExp(goal) });
+    await firstButton.click();
+    await manager.getByRole("button", { name: "Принять результат", exact: true }).click();
+    await expect.poll(() => entered).toBe(true);
+    await secondButton.click();
+    const response = page.waitForResponse(
+      (value) => new URL(value.url()).pathname === work.work + "/result/accept"
+    );
+    release();
+    await response;
+    await expect(secondButton).toHaveAttribute("aria-pressed", "true");
+    await expect(firstButton).toHaveAttribute("aria-pressed", "false");
+    await expect(
+      manager.getByRole("button", { name: "Принять результат", exact: true })
+    ).toBeEnabled();
+    await firstButton.click();
+    await expect(
+      manager.getByRole("status").filter({ hasText: /Результат принят владельцем/ })
+    ).toBeVisible();
+  } finally {
+    release();
+  }
+});
+
+test("an integrity conflict stays unaccepted and shows a specific error after readback", async ({
+  page,
+  request
+}) => {
+  const work = await preparedWork(request);
+  let posts = 0;
+  await page.route(`**${work.work}/result/accept`, (route) => {
+    posts++;
+    return route.fulfill({ status: 409, json: { error: "ARTIFACT_INTEGRITY_MISMATCH" } });
+  });
+  await page.clock.install();
+  await page.goto(`/?project=${work.project}&view=plan`);
+  const manager = page.getByRole("region", { name: "Выполнение задачи Manager", exact: true });
+  const accept = manager.getByRole("button", { name: "Принять результат", exact: true });
+  await accept.click();
+  await expect(manager.getByRole("alert")).toHaveText(
+    "Не удалось подтвердить целостность файлов. Результат не принят."
+  );
+  await expect(accept).toBeEnabled();
+  await page.clock.fastForward(3000);
+  expect(posts).toBe(1);
+  expect(
+    ((await (await request.get(work.work)).json()) as { result_accepted_at?: string })
+      .result_accepted_at
+  ).toBeFalsy();
 });
 
 async function preparedWork(request: APIRequestContext, autonomy: "A1" | "A2" = "A2") {
@@ -52,6 +187,127 @@ async function preparedWork(request: APIRequestContext, autonomy: "A1" | "A2" = 
     runtime: `${base}/work/${work.id}/runtime`
   };
 }
+
+test("manual memory creation retry recovers a lost acknowledgement without a duplicate", async ({
+  page,
+  request
+}) => {
+  const work = await preparedWork(request);
+  const path = `/api/v1/projects/${work.project}/memory`;
+  const payloads: { client_creation_id: string }[] = [];
+  let accepted = "";
+  await page.route(
+    (url) => url.pathname === path,
+    async (route) => {
+      if (route.request().method() !== "POST") return route.continue();
+      payloads.push(route.request().postDataJSON() as (typeof payloads)[number]);
+      if (payloads.length !== 1) return route.continue();
+      const response = await route.fetch();
+      expect(response.status()).toBe(201);
+      accepted = ((await response.json()) as { id: string }).id;
+      await route.fulfill({ status: 503, json: { error: "Lost acknowledgement" } });
+    }
+  );
+  await page.goto(`/?project=${work.project}&view=plan`);
+  const memory = page.getByRole("region", { name: "Память проекта", exact: true });
+  const fill = async () => {
+    await memory.getByLabel("Название записи", { exact: true }).fill("Keep the figures");
+    await memory
+      .getByLabel("Содержание записи", { exact: true })
+      .fill("19 700 ₽, кроме доставки; код 00123.");
+  };
+  await fill();
+  const add = memory.getByRole("button", { name: "Добавить в память", exact: true });
+  await add.click();
+  await expect(memory.getByText("Не удалось сохранить память", { exact: true })).toBeVisible();
+  await expect(
+    memory.locator("li").filter({ has: page.getByText("Keep the figures", { exact: true }) })
+  ).toHaveCount(1);
+  const retry = page.waitForResponse(
+    (response) =>
+      new URL(response.url()).pathname === path && response.request().method() === "POST"
+  );
+  await add.click();
+  const retried = await retry;
+  expect(retried.status()).toBe(201);
+  expect(((await retried.json()) as { id: string }).id).toBe(accepted);
+  expect(payloads[1]).toEqual(payloads[0]);
+  await expect(memory.getByLabel("Название записи", { exact: true })).toHaveValue("");
+  expect(
+    ((await (await request.get(path)).json()) as { items: { id: string }[] }).items.map(
+      (entry) => entry.id
+    )
+  ).toEqual([accepted]);
+  await fill();
+  const next = page.waitForResponse(
+    (response) =>
+      new URL(response.url()).pathname === path && response.request().method() === "POST"
+  );
+  await add.click();
+  expect((await next).status()).toBe(201);
+  expect(payloads[2]!.client_creation_id).not.toBe(payloads[0]!.client_creation_id);
+  expect(((await (await request.get(path)).json()) as { items: unknown[] }).items).toHaveLength(2);
+});
+
+test("project memory clears recovered read warnings without hiding rejected writes", async ({
+  page,
+  request
+}) => {
+  const work = await preparedWork(request);
+  const path = `/api/v1/projects/${work.project}/memory`;
+  let fail = false;
+  await page.route(
+    (url) => url.pathname === path,
+    async (route) => {
+      if (route.request().method() === "POST")
+        return route.fulfill({ status: 409, json: { error: "MEMORY_BUSY" } });
+      if (route.request().method() === "GET" && fail)
+        return route.fulfill({ status: 503, json: { error: "Temporarily unavailable" } });
+      return route.continue();
+    }
+  );
+  await page.goto(`/?project=${work.project}&view=plan`);
+  const memory = page.getByRole("region", { name: "Память проекта", exact: true });
+  await expect(memory.getByText("Записей по запросу нет.", { exact: true })).toBeVisible();
+  const refresh = memory.getByRole("button", { name: "Обновить память", exact: true });
+  const warning = memory.getByText("Не удалось загрузить память проекта", { exact: true });
+  fail = true;
+  await refresh.click();
+  await expect(warning).toBeVisible();
+  fail = false;
+  await refresh.click();
+  await expect(warning).toBeHidden();
+  await memory.getByLabel("Название записи", { exact: true }).fill("Owner requirement");
+  await memory
+    .getByLabel("Содержание записи", { exact: true })
+    .fill("Keep all stated constraints.");
+  await memory.getByRole("button", { name: "Добавить в память", exact: true }).click();
+  const rejected = memory.getByText(
+    "Запись изменилась или достигнут лимит. Обновите список и повторите действие.",
+    { exact: true }
+  );
+  await expect(rejected).toBeVisible();
+  const refreshed = page.waitForResponse(
+    (response) => new URL(response.url()).pathname === path && response.request().method() === "GET"
+  );
+  await refresh.click();
+  expect((await refreshed).status()).toBe(200);
+  await expect(rejected).toBeVisible();
+  fail = true;
+  const failed = page.waitForResponse(
+    (response) => new URL(response.url()).pathname === path && response.request().method() === "GET"
+  );
+  await refresh.click();
+  expect((await failed).status()).toBe(503);
+  await expect(rejected).toBeVisible();
+  fail = false;
+  const recovered = page.waitForResponse(
+    (response) => new URL(response.url()).pathname === path && response.request().method() === "GET"
+  );
+  await refresh.click();
+  expect((await recovered).status()).toBe(200);
+  await expect(rejected).toBeVisible();
+});
 
 test("unchanged completed progress does not refetch on a timer", async ({ page, request }) => {
   const work = await preparedWork(request);

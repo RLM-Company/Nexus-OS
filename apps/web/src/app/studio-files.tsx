@@ -23,6 +23,7 @@ import {
 } from "./studio-csv";
 import { WorkspaceIcon as Icon } from "./workspace-icons";
 import styles from "./studio-files.module.css";
+import { OfficeDocumentWorkspace } from "./office-document-workspace";
 import { StudioDocumentLibrary } from "./studio-files-library";
 
 type DocumentState = {
@@ -377,6 +378,7 @@ export function StudioFiles({
           <p>Документы, данные и код — локально в одном рабочем окне.</p>
         </div>
       </header>
+      <OfficeDocumentWorkspace />
       <StudioDocumentLibrary
         key={projectId ?? "no-project"}
         projectId={projectId}

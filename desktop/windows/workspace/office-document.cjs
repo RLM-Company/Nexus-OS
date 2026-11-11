@@ -141,12 +141,12 @@ function crc32(buffer) {
   }
   return (c ^ 0xffffffff) >>> 0;
 }
-function zip(entries) {
+function zip(entries, { maxEntries = 100, maxExpanded = 2 * 1024 * 1024 } = {}) {
   const local = [],
     central = [];
   let offset = 0,
     total = 0;
-  if (entries.length > 100) invalid();
+  if (entries.length > maxEntries) invalid();
   const names = new Set();
   for (const [name, xml] of entries) {
     if (
@@ -159,7 +159,7 @@ function zip(entries) {
       nameBytes = Buffer.from(name),
       packed = zlib.deflateRawSync(bytes);
     total += bytes.length;
-    if (total > 2 * 1024 * 1024) invalid();
+    if (total > maxExpanded) invalid();
     const h = Buffer.alloc(30 + nameBytes.length),
       c = Buffer.alloc(46 + nameBytes.length),
       crc = crc32(bytes);
@@ -438,4 +438,4 @@ function buildOfficeDocument(action) {
       format === "docx" ? word(action) : format === "xlsx" ? workbook(action) : presentation(action)
   };
 }
-module.exports = { validateDocumentAction, buildOfficeDocument };
+module.exports = { validateDocumentAction, buildOfficeDocument, zip, esc, formula };

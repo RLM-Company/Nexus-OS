@@ -1,0 +1,140 @@
+[WebServer] (node:9819) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:9833) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:9833) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:9847) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] $ tsc -p tsconfig.build.json
+[WebServer] (node:9874) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] $ node scripts/prepare-pdf-worker.mjs && next build
+[WebServer] (node:9900) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:9900) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:9937) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:9936) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:9963) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] $ next start -H 127.0.0.1
+[WebServer] (node:9978) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+
+Running 5 tests using 1 worker
+
+(node:9997) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✘  1 [chromium] › e2e/office-range.spec.ts:17:5 › typed range reaches real XLSX bytes through preview and a separate confirmation (16.6s)
+(node:10161) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  2 [chromium] › e2e/office-range.spec.ts:151:5 › range text stays literal and editing pasted data invalidates the parsed table (1.7s)
+  ✘  3 [chromium] › e2e/office-range.spec.ts:173:5 › range refuses ragged data, silent numeric rounding and address overflow before preview (30.1s)
+(node:10388) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✘  4 [chromium] › e2e/office-range.spec.ts:201:5 › an unsupported range formula is refused before a copy can be downloaded (30.2s)
+(node:10574) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  5 [chromium] › e2e/office-range.spec.ts:221:5 › cancelling a delayed range preview retains its plan and requires a fresh explicit preview (1.7s)
+
+
+  1) [chromium] › e2e/office-range.spec.ts:17:5 › typed range reaches real XLSX bytes through preview and a separate confirmation
+
+    Error: expect(locator).toHaveValue(expected) failed
+
+    Locator: getByRole('region', { name: 'Рабочие документы Koswork', exact: true }).getByRole('group', { name: 'Диапазон XLSX', exact: true }).getByLabel('Тип столбца 1', { exact: true })
+    Expected: "string"
+    Timeout: 15000ms
+    Error: element(s) not found
+
+    Call log:
+      - Expect "toHaveValue" with timeout 15000ms
+      - waiting for getByRole('region', { name: 'Рабочие документы Koswork', exact: true }).getByRole('group', { name: 'Диапазон XLSX', exact: true }).getByLabel('Тип столбца 1', { exact: true })
+
+
+      41 |   await range.getByRole("button", { name: "Разобрать таблицу" }).click();
+      42 |   for (let c = 0; c < input.column_types.length; c++) {
+    > 43 |     await expect(range.getByLabel(`Тип столбца ${c + 1}`, { exact: true })).toHaveValue("string");
+         |                                                                             ^
+      44 |     await range
+      45 |       .getByLabel(`Тип столбца ${c + 1}`, { exact: true })
+      46 |       .selectOption(input.column_types[c]!);
+        at /workspace/work/Nexus-OS-office-integration/apps/web/e2e/office-range.spec.ts:43:77
+
+    Error Context: test-results/office-range-typed-range-r-4180b-and-a-separate-confirmation-chromium/error-context.md
+
+    attachment #2: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results/office-range-typed-range-r-4180b-and-a-separate-confirmation-chromium/trace.zip
+    Usage:
+
+        pnpm exec playwright show-trace test-results/office-range-typed-range-r-4180b-and-a-separate-confirmation-chromium/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  2) [chromium] › e2e/office-range.spec.ts:173:5 › range refuses ragged data, silent numeric rounding and address overflow before preview
+
+    Test timeout of 30000ms exceeded.
+
+    Error: locator.selectOption: Test timeout of 30000ms exceeded.
+    Call log:
+      - waiting for getByRole('region', { name: 'Рабочие документы Koswork', exact: true }).getByRole('group', { name: 'Диапазон XLSX', exact: true }).getByLabel('Тип столбца 1', { exact: true })
+
+
+      184 |   await range.getByLabel("Таблица диапазона").fill("9007199254740993");
+      185 |   await range.getByRole("button", { name: "Разобрать таблицу" }).click();
+    > 186 |   await range.getByLabel("Тип столбца 1", { exact: true }).selectOption("number");
+          |                                                            ^
+      187 |   await range.getByRole("button", { name: "Добавить диапазон в план" }).click();
+      188 |   await expect(range.getByRole("alert")).toContainText("без округления");
+      189 |   await range.getByLabel("Таблица диапазона").fill("1\t2");
+        at /workspace/work/Nexus-OS-office-integration/apps/web/e2e/office-range.spec.ts:186:60
+
+    Error Context: test-results/office-range-range-refuses-f01df-ess-overflow-before-preview-chromium/error-context.md
+
+    attachment #2: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results/office-range-range-refuses-f01df-ess-overflow-before-preview-chromium/trace.zip
+    Usage:
+
+        pnpm exec playwright show-trace test-results/office-range-range-refuses-f01df-ess-overflow-before-preview-chromium/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  3) [chromium] › e2e/office-range.spec.ts:201:5 › an unsupported range formula is refused before a copy can be downloaded
+
+    Test timeout of 30000ms exceeded.
+
+    Error: locator.selectOption: Test timeout of 30000ms exceeded.
+    Call log:
+      - waiting for getByRole('region', { name: 'Рабочие документы Koswork', exact: true }).getByRole('group', { name: 'Диапазон XLSX', exact: true }).getByLabel('Тип столбца 1', { exact: true })
+
+
+      209 |   await range.getByLabel("Таблица диапазона").fill('"=HYPERLINK(""https://example.test"")"');
+      210 |   await range.getByRole("button", { name: "Разобрать таблицу" }).click();
+    > 211 |   await range.getByLabel("Тип столбца 1", { exact: true }).selectOption("formula");
+          |                                                            ^
+      212 |   await range.getByRole("button", { name: "Добавить диапазон в план" }).click();
+      213 |   const pending = page.waitForResponse((r) => r.url().endsWith("/document-workspace/preview"));
+      214 |   await editor.getByRole("button", { name: "Посмотреть изменения", exact: true }).click();
+        at /workspace/work/Nexus-OS-office-integration/apps/web/e2e/office-range.spec.ts:211:60
+
+    Error Context: test-results/office-range-an-unsupporte-fe225-re-a-copy-can-be-downloaded-chromium/error-context.md
+
+    attachment #2: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results/office-range-an-unsupporte-fe225-re-a-copy-can-be-downloaded-chromium/trace.zip
+    Usage:
+
+        pnpm exec playwright show-trace test-results/office-range-an-unsupporte-fe225-re-a-copy-can-be-downloaded-chromium/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  3 failed
+    [chromium] › e2e/office-range.spec.ts:17:5 › typed range reaches real XLSX bytes through preview and a separate confirmation
+    [chromium] › e2e/office-range.spec.ts:173:5 › range refuses ragged data, silent numeric rounding and address overflow before preview
+    [chromium] › e2e/office-range.spec.ts:201:5 › an unsupported range formula is refused before a copy can be downloaded
+  2 passed (1.7m)
+undefined
+/workspace/work/Nexus-OS-office-integration/apps/web:
+[ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL] Command failed with exit code 1: playwright test '--config=playwright.office-composer.config.ts' office-range.spec.ts

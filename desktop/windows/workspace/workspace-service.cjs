@@ -380,6 +380,7 @@ function createKosworkWorkspaceService({
   }
 
   function cancelAllOperations(reason = "cancelled_by_owner") {
+    officeWorkspace.clear();
     let cancelledCount = 0;
     for (const ctrl of activeOperationControllers) {
       if (!ctrl.signal.aborted) {
@@ -1383,6 +1384,7 @@ function createKosworkWorkspaceService({
 
   function verifyWritten(session, target, buffer, op) {
     try {
+      assertRootIdentity(session);
       const checked = resolveSafeWorkspaceTarget(session.canonicalRoot, target.relativePath, {
         mustExist: true,
         activeController: op.controller
@@ -1392,6 +1394,7 @@ function createKosworkWorkspaceService({
         activeController: op.controller
       });
       if (snapshot.sha256 !== computeBufferVersion(buffer).sha256) throw Error("changed");
+      assertRootIdentity(session);
       return snapshot;
     } catch {
       throw new KosworkWorkspaceError(
@@ -1419,6 +1422,32 @@ function createKosworkWorkspaceService({
     return createDataFile({ ...options, buffer });
   }
 
+  const officeWorkspace = require("./office-workspace.cjs").createOfficeWorkspace({
+    identity(options) {
+      return verifyCallerOwner(options);
+    },
+    read(options) {
+      const session = verifyCallerOwner(options),
+        op = beginOperation(options.signal);
+      try {
+        op.check();
+        const target = resolveSafeWorkspaceTarget(session.canonicalRoot, options.relativePath, {
+          mustExist: true,
+          signal: options.signal,
+          activeController: op.controller
+        });
+        return readBoundedFileSnapshot(target.absolutePath, {
+          maxBytes: limits.maxReadBytes,
+          signal: options.signal,
+          activeController: op.controller
+        });
+      } finally {
+        op.end();
+      }
+    },
+    create: (options) => createDataFile(options)
+  });
+
   async function createDocument(options = {}) {
     verifyCallerOwner(options);
     const { format, buffer } = buildOfficeDocument(options.document);
@@ -1437,7 +1466,8 @@ function createKosworkWorkspaceService({
     ownerId = null,
     origin = null,
     signal = null,
-    ipcEvent = null
+    ipcEvent = null,
+    _beforeWriteCheck = null
   } = {}) {
     const session = verifyCallerOwner({ ownerId, origin, ipcEvent });
     const op = beginOperation(signal);
@@ -1489,6 +1519,7 @@ function createKosworkWorkspaceService({
 
         let fd;
         try {
+          _beforeWriteCheck?.();
           fd = fs.openSync(target.absolutePath, "wx", 0o600);
           let offset = 0;
           while (offset < buffer.byteLength) {
@@ -1497,6 +1528,7 @@ function createKosworkWorkspaceService({
             const written = fs.writeSync(fd, chunk, 0, chunk.byteLength, offset);
             offset += written;
           }
+          op.check();
           fs.fsyncSync(fd);
         } catch (error) {
           if (error && error.code === "EEXIST") {
@@ -1505,15 +1537,36 @@ function createKosworkWorkspaceService({
               `Файл "${target.relativePath}" был создан конкурентным запросом.`
             );
           }
-          if (error instanceof KosworkWorkspaceError) {
+          if (fd !== undefined) {
             try {
-              if (fd !== undefined) {
-                fs.closeSync(fd);
-                fd = undefined;
-              }
-              fs.unlinkSync(target.absolutePath);
+              const writtenStat = fs.fstatSync(fd, { bigint: true });
+              fs.closeSync(fd);
+              fd = undefined;
+              assertRootIdentity(session);
+              const cleanup = resolveSafeWorkspaceTarget(
+                session.canonicalRoot,
+                target.relativePath,
+                { mustExist: true }
+              );
+              const currentStat = fs.lstatSync(cleanup.absolutePath, { bigint: true });
+              if (
+                !currentStat.isFile() ||
+                currentStat.isSymbolicLink() ||
+                writtenStat.ino === 0n ||
+                currentStat.ino !== writtenStat.ino ||
+                currentStat.dev !== writtenStat.dev
+              )
+                throw Error("cleanup_identity_changed");
+              fs.unlinkSync(cleanup.absolutePath);
             } catch {
-              /* ignore cleanup error */
+              throw new KosworkWorkspaceError(
+                ERROR_CODES.WORKSPACE_RESULT_UNCERTAIN,
+                "Копия могла быть частично записана. Безопасный откат не подтверждён; проверьте файл после повторного выбора папки.",
+                {
+                  path: target.relativePath,
+                  cause: typeof error?.code === "string" ? error.code : "IO"
+                }
+              );
             }
           }
           throw error;
@@ -1813,6 +1866,11 @@ function createKosworkWorkspaceService({
     createDirectory,
     createFile,
     createDocument,
+    describeOfficePlan: officeWorkspace.describe,
+    discardOfficePlans: officeWorkspace.clear,
+    inspectOfficeDocument: officeWorkspace.inspect,
+    previewOfficeDocument: officeWorkspace.preview,
+    commitOfficeDocument: officeWorkspace.commit,
     updateFile,
     listBackups,
     restoreBackup

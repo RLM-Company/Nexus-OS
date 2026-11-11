@@ -19,9 +19,11 @@ export function WorkManagerMemory({ projectId }: { projectId: string }) {
   const [editing, setEditing] = useState<ProjectMemoryEntry | null>(null);
   const [busy, setBusy] = useState(false),
     [error, setError] = useState("");
+  const [readError, setReadError] = useState("");
   const [revision, setRevision] = useState(0);
   const lock = useRef(false);
   const epoch = useRef(0);
+  const pendingCreation = useRef<{ signature: string; id: string } | null>(null);
   const base = "/api/v1/projects/" + encodeURIComponent(projectId) + "/memory";
   useEffect(() => {
     setDraft(empty);
@@ -29,6 +31,8 @@ export function WorkManagerMemory({ projectId }: { projectId: string }) {
     setItems([]);
     setQuery("");
     setError("");
+    setReadError("");
+    pendingCreation.current = null;
   }, [projectId]);
   useEffect(() => {
     const controller = new AbortController();
@@ -41,12 +45,14 @@ export function WorkManagerMemory({ projectId }: { projectId: string }) {
         .then(async (response) => {
           if (!response.ok) throw new Error("MEMORY_UNAVAILABLE");
           const result = (await response.json()) as { items: ProjectMemoryEntry[] };
-          if (!controller.signal.aborted && current === epoch.current) {
+          if (!controller.signal.aborted && current === epoch.current && !lock.current) {
             setItems(result.items);
+            setReadError("");
           }
         })
         .catch(() => {
-          if (!controller.signal.aborted) setError("Не удалось загрузить память проекта");
+          if (!controller.signal.aborted && current === epoch.current && !lock.current)
+            setReadError("Не удалось загрузить память проекта");
         });
     }, 250);
     return () => {
@@ -61,6 +67,19 @@ export function WorkManagerMemory({ projectId }: { projectId: string }) {
     setBusy(true);
     setError("");
     try {
+      let creationId: string | undefined;
+      if (!action && !editing) {
+        const signature = JSON.stringify([
+          draft.title,
+          draft.content,
+          draft.source.kind,
+          draft.source.reference,
+          draft.pinned
+        ]);
+        if (pendingCreation.current?.signature !== signature)
+          pendingCreation.current = { signature, id: crypto.randomUUID() };
+        creationId = pendingCreation.current.id;
+      }
       const url =
         action && entry
           ? base + "/" + encodeURIComponent(entry.id) + "/control"
@@ -76,7 +95,7 @@ export function WorkManagerMemory({ projectId }: { projectId: string }) {
             ? { version: entry.version, action }
             : editing
               ? { ...draft, version: editing.version }
-              : draft
+              : { ...draft, client_creation_id: creationId }
         )
       });
       if (!response.ok)
@@ -85,6 +104,7 @@ export function WorkManagerMemory({ projectId }: { projectId: string }) {
             ? "Запись изменилась или достигнут лимит. Обновите список и повторите действие."
             : "Не удалось сохранить память"
         );
+      if (!action && !editing) pendingCreation.current = null;
       if (!action || (entry?.id === editing?.id && action === "forget")) {
         setDraft(empty);
         setEditing(null);
@@ -122,9 +142,9 @@ export function WorkManagerMemory({ projectId }: { projectId: string }) {
       <button disabled={busy} onClick={() => setRevision((r) => r + 1)}>
         Обновить память
       </button>
-      {error && (
+      {(error || readError) && (
         <p role="alert" className={styles.error}>
-          {error}
+          {error || readError}
         </p>
       )}
       <ul className={styles.entries}>
@@ -142,6 +162,7 @@ export function WorkManagerMemory({ projectId }: { projectId: string }) {
               <button
                 disabled={busy}
                 onClick={() => {
+                  pendingCreation.current = null;
                   setEditing(entry);
                   setDraft({
                     title: entry.title,

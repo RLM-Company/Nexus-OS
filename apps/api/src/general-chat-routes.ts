@@ -43,6 +43,8 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { Type } from "typebox";
 import { EmergencyStopActivatedError, type RuntimeMetrics } from "./operations.js";
 import type { AccountStore } from "./account-settings/account-store.js";
+import type { WebSearch } from "./web-search.js";
+import { applyKosmoraActions, ChatActionError } from "./kosmora-actions.js";
 import {
   QuotaExceededError,
   RelayExecution,
@@ -68,6 +70,8 @@ export interface GeneralChatRouteOptions {
   runExecutionMode?: "stream" | "background";
   identityFor(request: FastifyRequest): IdentityContext;
   emergencyStopStore?: EmergencyStopStore;
+  /** Explicit web search action support for the stream execution path. */
+  search?: WebSearch;
 }
 
 const error = (
@@ -485,7 +489,11 @@ export const registerGeneralChatRoutes = (options: GeneralChatRouteOptions): voi
         request.body.client_message_id,
         options.identityFor(request).owner_id,
         request.body.attachments,
-        request.body.mode
+        request.body.mode,
+        {
+          web_search: Boolean(request.body.web_search),
+          text_action: request.body.text_action ?? null
+        }
       );
       return reply.status(accepted.duplicate ? 200 : 201).send(acceptedResponse(accepted));
     }
@@ -536,7 +544,11 @@ export const registerGeneralChatRoutes = (options: GeneralChatRouteOptions): voi
           request.body.content,
           request.body.client_message_id,
           options.identityFor(request).owner_id,
-          request.body.attachments
+          request.body.attachments,
+          {
+            web_search: Boolean(request.body.web_search),
+            text_action: request.body.text_action ?? null
+          }
         );
         if (!accepted) {
           return reply.status(404).send(error(request.id, "CHAT_NOT_FOUND", "Chat not found"));
@@ -687,7 +699,7 @@ export const registerGeneralChatRoutes = (options: GeneralChatRouteOptions): voi
         let modelRequest = options.chat.buildRequest({
           chatId: run.chat_id,
           runId: run.id,
-          messages: conversation,
+          messages: await applyKosmoraActions(conversation, options.search, controller.signal),
           historyCompaction: options.store.historyCompactionForRun(run.id, identity.owner_id),
           recalledMemory: await options.store.recallForRunAsync(
             run.id,
@@ -880,7 +892,14 @@ export const registerGeneralChatRoutes = (options: GeneralChatRouteOptions): voi
           }
         });
       } catch (cause) {
-        if (controller.signal.reason instanceof EmergencyStopActivatedError) {
+        if (cause instanceof ChatActionError) {
+          options.store.failRun(run.id, cause.code);
+          options.runtimeMetrics.runFailed("PROVIDER_ERROR");
+          sendEvent(reply, {
+            type: "run.failed",
+            data: { run_id: run.id, error_code: cause.code, retryable: false }
+          });
+        } else if (controller.signal.reason instanceof EmergencyStopActivatedError) {
           options.store.failRun(run.id, "EMERGENCY_STOP");
           options.runtimeMetrics.runFailed("EMERGENCY_STOP");
           sendEvent(reply, {

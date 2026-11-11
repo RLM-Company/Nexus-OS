@@ -132,3 +132,37 @@ test("latest connection attempt wins and stale completion cannot clear busy stat
   gate.finish(second);
   assert.equal(gate.isInFlight(), false);
 });
+
+test("cancelling the pending probe wins over late probe answers", () => {
+  const gate = createLatestAttemptGate();
+  const attempt = gate.begin();
+  assert.equal(gate.isInFlight(), true);
+  assert.equal(gate.cancelPending(), true);
+  assert.equal(gate.isInFlight(), false);
+  // The superseded attempt is no longer current: it cannot persist an origin,
+  // load a page or report its failure to the user.
+  assert.equal(gate.isCurrent(attempt), false);
+  // Its eventual finish must not resurrect the canceled state.
+  gate.finish(attempt);
+  assert.equal(gate.isInFlight(), false);
+  assert.equal(gate.begin(), attempt + 2);
+});
+
+test("cancel without an in-flight attempt is a no-op", () => {
+  const gate = createLatestAttemptGate();
+  assert.equal(gate.isInFlight(), false);
+  assert.equal(gate.cancelPending(), false);
+  const attempt = gate.begin();
+  gate.finish(attempt);
+  assert.equal(gate.cancelPending(), false);
+});
+
+test("a canceled generation is superseded by the next attempt", () => {
+  const gate = createLatestAttemptGate();
+  const canceled = gate.begin();
+  gate.cancelPending();
+  const next = gate.begin();
+  assert.equal(gate.isCurrent(canceled), false);
+  assert.equal(gate.isCurrent(next), true);
+  assert.equal(gate.isInFlight(), true);
+});

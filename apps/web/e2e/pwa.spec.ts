@@ -129,7 +129,10 @@ test("suggests a project for a complex task and creates it only after confirmati
 
   const proposal = page.getByRole("complementary", { name: "Предложение создать проект" });
   await expect(proposal).toBeVisible();
-  await expect(proposal).toContainText("мультиагентной команды");
+  // The panel states the transfer boundaries instead of promising a
+  // Multi-Agent team (Multi-Agent is deferred by AGENTS.md).
+  await expect(proposal).toContainText("Не переносятся");
+  await expect(proposal).toContainText("Перенести историю обсуждения");
   expect(projectPosts).toBe(0);
   await expect(page.getByRole("status")).toContainText("Ответ получен");
 

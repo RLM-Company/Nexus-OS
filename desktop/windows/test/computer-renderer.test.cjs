@@ -75,6 +75,18 @@ function fixture() {
     onPrefill() {},
     onStatus(fn) {
       status = fn;
+    },
+    availability: async () => {
+      calls.push({ kind: "availability" });
+      return {
+        idle: true,
+        gateBusy: false,
+        helperReady: true,
+        helperReason: null,
+        ownerVerified: true,
+        workspaceFolder: null,
+        reason: null
+      };
     }
   };
   const document = {
@@ -93,7 +105,8 @@ function fixture() {
 test("opening history cannot run desktop actions; recovery is explicit and task text is rendered as text", async () => {
   const f = fixture();
   await tick();
-  assert.deepEqual(f.calls, []);
+  // The passive availability snapshot is read once on load; no other actions.
+  assert.deepEqual(f.calls, [{ kind: "availability" }]);
   const row = f.nodes.get("history").children[0];
   assert.ok(row.children[0].textContent.startsWith("<img src=x"));
   assert.equal(
@@ -106,7 +119,10 @@ test("opening history cannot run desktop actions; recovery is explicit and task 
   const button = row.children.find((c) => c.tag === "button");
   button.handlers.click();
   await tick();
-  assert.deepEqual(f.calls, [{ kind: "recover", id: "old" }]);
+  assert.deepEqual(
+    f.calls.filter((entry) => entry.kind !== "availability"),
+    [{ kind: "recover", id: "old" }]
+  );
   assert.equal(f.nodes.get("stop").disabled, true);
   assert.equal(f.nodes.get("goal").disabled, false);
 });
@@ -118,7 +134,10 @@ test("model completion offers owner acceptance instead of replay; local clear re
   assert.equal(buttons.length, 1);
   assert.equal(buttons[0].textContent, "Результат проверен мной");
   await buttons[0].handlers.click();
-  assert.deepEqual(f.calls, [{ kind: "accept", id: "old" }]);
+  assert.deepEqual(
+    f.calls.filter((entry) => entry.kind !== "availability"),
+    [{ kind: "accept", id: "old" }]
+  );
   await f.nodes.get("clear-history").handlers.click();
   assert.equal(f.nodes.get("history").children.length, 0);
 });

@@ -92,6 +92,7 @@ function MemoryForm({ target, disabled }: { target: MemoryTarget; disabled: bool
     [quote, setQuote] = useState("");
   const [sourceKind, setSourceKind] = useState<"chat_message" | "project_message">("chat_message");
   const [versions, setVersions] = useState<ContextMemoryEntry[] | null>(null);
+  const [confirmForget, setConfirmForget] = useState(false);
   const [openedSource, setOpenedSource] = useState<{
     content: string;
     next_offset: number | null;
@@ -378,6 +379,47 @@ function MemoryForm({ target, disabled }: { target: MemoryTarget; disabled: bool
           Здесь ваши записи из разных пространств. В ответ попадут только разрешённые и подходящие к
           задаче. Удаление записи также удаляет её версии; исходная переписка сохраняется и остаётся
           доступной для поиска, пока этот чат выбран источником.
+        </p>
+        <p>
+          {confirmForget ? (
+            <>
+              <button
+                type="button"
+                disabled={disabled}
+                onClick={() =>
+                  void operation(async () => {
+                    const result = await json<{
+                      forgotten_entries: number;
+                      removed_versions: number;
+                      removed_memory_index_chunks: number;
+                    }>(base + "/entries", { method: "DELETE" });
+                    if (life.current?.signal.aborted) return;
+                    reset();
+                    await refreshEntries();
+                    setConfirmForget(false);
+                    setNotice(
+                      "Забыто записей: " +
+                        result.forgotten_entries +
+                        ", версий: " +
+                        result.removed_versions +
+                        ", векторов: " +
+                        result.removed_memory_index_chunks +
+                        ". Исходная переписка сохранена."
+                    );
+                  })
+                }
+              >
+                Подтвердить забывание
+              </button>
+              <button type="button" onClick={() => setConfirmForget(false)}>
+                Отмена
+              </button>
+            </>
+          ) : (
+            <button type="button" disabled={disabled} onClick={() => setConfirmForget(true)}>
+              Забыть всю память этого {target.kind === "chat" ? "чата" : "проекта"}
+            </button>
+          )}
         </p>
         <ul>
           {items.map((entry) => (

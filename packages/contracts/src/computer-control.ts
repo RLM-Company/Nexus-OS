@@ -1,3 +1,4 @@
+import { OfficeWorkspaceActions } from "./office-workspace.js";
 import { Type, type Static, type TSchema } from "typebox";
 
 const object = <T extends Record<string, TSchema>>(properties: T) =>
@@ -56,6 +57,13 @@ export const ComputerActionSchema = Type.Union([
     offset_utf16: Type.Integer({ minimum: 0, maximum: 256000 }),
     expected_version: Type.Union([Type.Null(), Type.String({ pattern: "^sha256:[a-f0-9]{64}$" })])
   }),
+  object({
+    kind: Type.Literal("browser_find_text"),
+    query: Type.String({ minLength: 1, maxLength: 160, pattern: "\\S" }),
+    case_sensitive: Type.Boolean(),
+    offset_utf16: Type.Integer({ minimum: 0, maximum: 256000 }),
+    expected_version: Type.Union([Type.Null(), Type.String({ pattern: "^sha256:[a-f0-9]{64}$" })])
+  }),
   object({ kind: Type.Literal("browser_screenshot") }),
   object({ kind: Type.Literal("browser_open"), url: text(4096) }),
   object({ kind: Type.Literal("browser_search"), query: text(240) }),
@@ -102,6 +110,7 @@ export const ComputerActionSchema = Type.Union([
     mode: Type.Union([Type.Literal("name"), Type.Literal("text")]),
     query: text(200)
   }),
+  ...OfficeWorkspaceActions,
   object({ kind: Type.Literal("workspace_read"), path: text(512) }),
   object({
     kind: Type.Literal("workspace_read_text"),
@@ -252,6 +261,8 @@ export type ComputerDecision = Static<typeof ComputerDecisionSchema>;
 export const ComputerSessionAcceptanceSchema = object({
   supports_workspace_read_lines: Type.Optional(Type.Literal(true)),
   supports_workspace_text_reads: Type.Optional(Type.Literal(true)),
+  supports_workspace_office_pages: Type.Optional(Type.Literal(true)),
+  supports_workspace_office_edits: Type.Optional(Type.Literal(true)),
   supports_workspace_documents: Type.Optional(Type.Literal(true)),
   supports_workspace_document_reads: Type.Optional(Type.Literal(true)),
   supports_workspace_pdf_reads: Type.Optional(Type.Literal(true)),
@@ -286,7 +297,8 @@ export const ComputerObservationSchema = object({
     object({
       tab_id: Type.String({ pattern: "^[a-f0-9]{12}$" }),
       generation: Type.Integer({ minimum: 0 }),
-      read_text: Type.Optional(Type.Literal(true))
+      read_text: Type.Optional(Type.Literal(true)),
+      find_text: Type.Optional(Type.Literal(true))
     })
   ),
   workspace: Type.Optional(
@@ -295,6 +307,8 @@ export const ComputerObservationSchema = object({
       name: text(180),
       read_lines: Type.Optional(Type.Literal(true)),
       read_text_pages: Type.Optional(Type.Literal(true)),
+      office_pages: Type.Optional(Type.Literal(true)),
+      edit_office: Type.Optional(Type.Literal(true)),
       create_documents: Type.Optional(Type.Literal(true)),
       read_documents: Type.Optional(Type.Literal(true)),
       read_pdf: Type.Optional(Type.Literal(true))

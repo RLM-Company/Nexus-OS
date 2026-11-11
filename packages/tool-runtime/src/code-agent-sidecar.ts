@@ -5,7 +5,7 @@ import {
   type CodeAgentWorkspaceRunner,
   type CodeAgentWorkspaceResult
 } from "./code-agent-workspace.js";
-import { redactCodeAgentOutput } from "./code-agent-snapshot.js";
+import { validateCodeAgentCheckResult } from "./code-agent-result.js";
 
 const MAX_BODY = 3_200_000;
 const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/u;
@@ -110,11 +110,7 @@ export function createCodeAgentExecutorServer(options: {
             })
           )
           .then((result) => {
-            job.result = {
-              ...result,
-              stdout: redactCodeAgentOutput(result.stdout),
-              stderr: redactCodeAgentOutput(result.stderr)
-            };
+            job.result = validateCodeAgentCheckResult(result, digest);
           })
           .catch(() => {
             job.result = {

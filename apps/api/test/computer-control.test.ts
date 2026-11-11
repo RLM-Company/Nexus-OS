@@ -716,6 +716,70 @@ describe("owner-bound computer proposals", () => {
     value.observation.workspace = { id: "a".repeat(24), name: "Folder", read_pdf: true };
     await expect(f.next(value)).rejects.toMatchObject({ code: "COMPUTER_OUTPUT_INVALID" });
   });
+  it("rejects a continuation cursor without its source version", async () => {
+    const f = await fixture({
+      output: {
+        ...action,
+        action: {
+          kind: "workspace_office_inspect_page",
+          path: "brief.docx",
+          target_offset: 0,
+          content_offset: 1,
+          expected_version: null
+        }
+      }
+    });
+    await f.create();
+    const value = structuredClone(step);
+    value.observation.workspace = {
+      id: "a".repeat(24),
+      name: "Folder",
+      edit_office: true,
+      office_pages: true
+    };
+    await expect(f.next(value)).rejects.toMatchObject({ code: "COMPUTER_OUTPUT_INVALID" });
+  });
+  it("only offers Office page tools to negotiated clients", async () => {
+    for (const capable of [false, true]) {
+      const a = {
+        kind: "workspace_office_inspect_page",
+        path: "brief.docx",
+        target_offset: 0,
+        content_offset: 0,
+        expected_version: null
+      };
+      const f = await fixture({ output: { ...action, action: a } });
+      await f.create();
+      const value = structuredClone(step);
+      value.observation.workspace = {
+        id: "a".repeat(24),
+        name: "Folder",
+        edit_office: true,
+        ...(capable ? { office_pages: true as const } : {})
+      };
+      if (capable) expect(await f.next(value)).toMatchObject({ action: a });
+      else await expect(f.next(value)).rejects.toMatchObject({ code: "COMPUTER_OUTPUT_INVALID" });
+      expect(f.calls[0]!.messages[0]!.content.includes("workspace_office_inspect_page")).toBe(
+        capable
+      );
+    }
+  });
+  it("only returns Office edit tools after capability negotiation", async () => {
+    for (const capable of [false, true]) {
+      const a = { kind: "workspace_office_inspect", path: "offer.docx" };
+      const f = await fixture({ output: { ...action, action: a } });
+      await f.create();
+      const value = structuredClone(step);
+      value.observation.workspace = {
+        id: "a".repeat(24),
+        name: "Folder",
+        ...(capable ? { edit_office: true as const } : {})
+      };
+      if (capable) expect(await f.next(value)).toMatchObject({ action: a });
+      else await expect(f.next(value)).rejects.toMatchObject({ code: "COMPUTER_OUTPUT_INVALID" });
+      expect(f.calls[0]!.messages[0]!.content.includes("workspace_office_inspect")).toBe(capable);
+    }
+  });
   it("only offers document readback to negotiated clients and never sends it to a legacy client", async () => {
     for (const capable of [false, true]) {
       const a = {
@@ -1347,6 +1411,39 @@ describe("bounded browser text capability", () => {
         expect(f.calls[0]!.messages[0]!.content).toContain("never mix versions");
       } else await expect(f.next(value)).rejects.toThrow("OUTPUT_INVALID");
       expect(f.calls).toHaveLength(1);
+    });
+});
+
+describe("browser literal find capability", () => {
+  for (const capable of [false, true])
+    it(`requires native find capability: ${capable}`, async () => {
+      const f = await fixture({
+        vision: false,
+        output: {
+          ...action,
+          action: {
+            kind: "browser_find_text",
+            query: "00123",
+            case_sensitive: false,
+            offset_utf16: 0,
+            expected_version: null
+          }
+        }
+      });
+      Object.assign(f.input, { execution_mode: "browser" });
+      expect(await f.create()).toMatchObject({ supports_browser_text_find: true });
+      const value = structuredClone(step);
+      delete value.observation.image_jpeg_base64;
+      value.observation.browser = {
+        tab_id: "a".repeat(12),
+        generation: 0,
+        read_text: true,
+        ...(capable ? { find_text: true as const } : {})
+      };
+      if (capable) {
+        expect(await f.next(value)).toMatchObject({ action: { kind: "browser_find_text" } });
+        expect(f.calls[0]!.messages[0]!.content).toContain("complete_scan_from_offset");
+      } else await expect(f.next(value)).rejects.toThrow("OUTPUT_INVALID");
     });
 });
 

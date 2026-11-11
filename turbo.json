@@ -5,6 +5,21 @@
       "dependsOn": ["^build"],
       "outputs": ["dist/**", ".next/**", "!.next/cache/**"]
     },
+    "@cosmora/api#build": {
+      "dependsOn": ["^build"],
+      "outputs": ["dist/**"],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/scripts/copy-office-engine.mjs",
+        "$TURBO_ROOT$/desktop/windows/workspace/office-edit.cjs",
+        "$TURBO_ROOT$/desktop/windows/workspace/office-view.cjs",
+        "$TURBO_ROOT$/desktop/windows/workspace/office-document.cjs",
+        "$TURBO_ROOT$/desktop/windows/workspace/office-text.cjs",
+        "$TURBO_ROOT$/desktop/windows/workspace/version-backup.cjs",
+        "$TURBO_ROOT$/desktop/windows/workspace/path-guard.cjs",
+        "$TURBO_ROOT$/desktop/windows/workspace/errors.cjs"
+      ]
+    },
     "demo": {
       "cache": false,
       "persistent": true

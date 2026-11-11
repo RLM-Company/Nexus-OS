@@ -1,0 +1,232 @@
+{
+  "source_version": "sha256:7018baf8963ea45fef2c021a1909e324dfd685737749d79e945856bcec0acb15",
+  "version": "sha256:a7fbfe7d861b3b80dcba880c8991e1e5dcff804bb5bb59d37e38f115ace89b00",
+  "sha256": "a7fbfe7d861b3b80dcba880c8991e1e5dcff804bb5bb59d37e38f115ace89b00",
+  "diff": [
+    {
+      "kind": "add_sheet",
+      "name": "Итог",
+      "before": null,
+      "after": "Итог"
+    },
+    {
+      "kind": "set_cell",
+      "target": "sheet:2",
+      "address": "A2",
+      "value": "00123",
+      "before": null,
+      "after": "00123"
+    },
+    {
+      "kind": "set_cell",
+      "target": "sheet:2",
+      "address": "B2",
+      "value": 19700,
+      "before": null,
+      "after": 19700
+    },
+    {
+      "kind": "set_cell",
+      "target": "sheet:2",
+      "address": "C2",
+      "value": true,
+      "before": null,
+      "after": true
+    },
+    {
+      "kind": "set_cell",
+      "target": "sheet:2",
+      "address": "D2",
+      "value": {
+        "formula": "SUM(B2:B2)"
+      },
+      "before": null,
+      "after": {
+        "formula": "SUM(B2:B2)"
+      }
+    },
+    {
+      "kind": "set_cell",
+      "target": "sheet:2",
+      "address": "A3",
+      "value": "00456",
+      "before": null,
+      "after": "00456"
+    },
+    {
+      "kind": "set_cell",
+      "target": "sheet:2",
+      "address": "B3",
+      "value": -12.5,
+      "before": null,
+      "after": -12.5
+    },
+    {
+      "kind": "set_cell",
+      "target": "sheet:2",
+      "address": "C3",
+      "value": false,
+      "before": null,
+      "after": false
+    },
+    {
+      "kind": "set_cell",
+      "target": "sheet:2",
+      "address": "D3",
+      "value": {
+        "formula": "MIN(B2:B3)"
+      },
+      "before": null,
+      "after": {
+        "formula": "MIN(B2:B3)"
+      }
+    }
+  ],
+  "rejected_changes": [],
+  "representation": {
+    "kind": "office_text",
+    "format": "xlsx",
+    "version": "openxml-text-v1",
+    "complete_document": false,
+    "sha256": "7066bdb1e5427bc6a9ace90e2279afed4d2f993cfab49531eace5b500aee4cb8",
+    "limitations": [
+      "Text extraction only; images, charts, formatting, notes and headers are not included. Formulas are not evaluated; numeric/date cells retain stored values."
+    ]
+  },
+  "bytes": "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",
+  "readback": {
+    "sha256": "a7fbfe7d861b3b80dcba880c8991e1e5dcff804bb5bb59d37e38f115ace89b00",
+    "version": "sha256:a7fbfe7d861b3b80dcba880c8991e1e5dcff804bb5bb59d37e38f115ace89b00",
+    "size": 2129,
+    "representation": {
+      "kind": "office_text",
+      "format": "xlsx",
+      "version": "openxml-text-v1",
+      "complete_document": false,
+      "sha256": "7066bdb1e5427bc6a9ace90e2279afed4d2f993cfab49531eace5b500aee4cb8",
+      "limitations": [
+        "Text extraction only; images, charts, formatting, notes and headers are not included. Formulas are not evaluated; numeric/date cells retain stored values."
+      ]
+    },
+    "cursor": {
+      "target_offset": 0,
+      "content_offset": 0
+    },
+    "total_targets": 2,
+    "targets": [
+      {
+        "id": "sheet:1",
+        "name": "Предложение",
+        "total_cells": 4,
+        "cells_excerpt_only": false,
+        "cells": [
+          {
+            "address": "A1",
+            "type": "inlineStr",
+            "text": "00123",
+            "cached_value": null,
+            "formula": null
+          },
+          {
+            "address": "B1",
+            "type": "n",
+            "text": "19700",
+            "cached_value": null,
+            "formula": null
+          },
+          {
+            "address": "C1",
+            "type": "inlineStr",
+            "text": "кроме доставки",
+            "cached_value": null,
+            "formula": null
+          },
+          {
+            "address": "D1",
+            "type": "inlineStr",
+            "text": "07.11.2026",
+            "cached_value": null,
+            "formula": null
+          }
+        ],
+        "cells_offset": 0
+      },
+      {
+        "id": "sheet:2",
+        "name": "Итог",
+        "total_cells": 8,
+        "cells_excerpt_only": false,
+        "cells": [
+          {
+            "address": "A2",
+            "type": "inlineStr",
+            "text": "00123",
+            "cached_value": null,
+            "formula": null
+          },
+          {
+            "address": "B2",
+            "type": "n",
+            "text": "19700",
+            "cached_value": null,
+            "formula": null
+          },
+          {
+            "address": "C2",
+            "type": "b",
+            "text": "1",
+            "cached_value": null,
+            "formula": null
+          },
+          {
+            "address": "D2",
+            "type": "n",
+            "text": "",
+            "cached_value": null,
+            "formula": "SUM(B2:B2)"
+          },
+          {
+            "address": "A3",
+            "type": "inlineStr",
+            "text": "00456",
+            "cached_value": null,
+            "formula": null
+          },
+          {
+            "address": "B3",
+            "type": "n",
+            "text": "-12.5",
+            "cached_value": null,
+            "formula": null
+          },
+          {
+            "address": "C3",
+            "type": "b",
+            "text": "0",
+            "cached_value": null,
+            "formula": null
+          },
+          {
+            "address": "D3",
+            "type": "n",
+            "text": "",
+            "cached_value": null,
+            "formula": "MIN(B2:B3)"
+          }
+        ],
+        "cells_offset": 0
+      }
+    ],
+    "next_cursor": null,
+    "targets_excerpt_only": false
+  },
+  "changed_parts": [
+    "[Content_Types].xml",
+    "xl/_rels/workbook.xml.rels",
+    "xl/workbook.xml",
+    "xl/worksheets/sheet2.xml"
+  ],
+  "original_preserved": true,
+  "real_model_called": false,
+  "rendered": false
+}

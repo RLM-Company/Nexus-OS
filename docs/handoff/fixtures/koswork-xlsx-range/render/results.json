@@ -1,0 +1,18 @@
+{
+  "renderer": "LibreOfficeDev 26.8.0.0.alpha0 2c87e51eeaa2b413ff4ae097b2705eea1995d8e5",
+  "command": "soffice -env:UserInstallation=file:///tmp/koswork-xlsx-range-render-profile --headless --convert-to pdf --outdir /tmp/koswork-xlsx-range-render /tmp/koswork-xlsx-range-fixed/range.koswork.xlsx",
+  "exit_code": 0,
+  "pages": 2,
+  "source_sha256": "e5adf0075ade775a7406ade4c5e0ad5456de28380d231de86967809b7c994fbb",
+  "source_unchanged_after_render": true,
+  "pdf_sha256": "e40899c0bf8bd558bcd8d1c7ef0cc71bbc53b4e938be76c00bc86ef6b3a8a528",
+  "new_sheet_page_2_literals_verified": true,
+  "pages_visually_inspected": [1, 2],
+  "source_page_1_print_limitation": "Original narrow source column C clips кроме доставки to кроме дос; untouched sheet XML remains byte-identical.",
+  "formula_values_in_pdf": "Calculated by external Calc renderer only; engine result has no calculated caches.",
+  "warnings": [
+    "Fontconfig error: No writable cache directories (three occurrences); export exit 0."
+  ],
+  "microsoft_office_verified": false,
+  "real_model_called": false
+}

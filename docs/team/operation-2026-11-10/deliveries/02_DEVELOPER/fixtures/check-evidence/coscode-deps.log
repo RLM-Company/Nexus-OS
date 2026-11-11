@@ -1,0 +1,12 @@
+Scope: all 10 workspace projects
+[ENOENT] ENOENT: no such file or directory, mkdir '/home/agent/.local/share/pnpm'
+
+pnpm: ENOENT: no such file or directory, mkdir '/home/agent/.local/share/pnpm'
+    at async Object.mkdir (node:internal/fs/promises:1571:10)
+    at async createNewStoreController (file:///opt/codex/runtimes/codex-primary-runtime/dependencies/node/node_modules/pnpm/dist/pnpm.mjs:185789:5)
+    at async installDeps (file:///opt/codex/runtimes/codex-primary-runtime/dependencies/node/node_modules/pnpm/dist/pnpm.mjs:224851:17)
+    at async Object.handler5 (file:///opt/codex/runtimes/codex-primary-runtime/dependencies/node/node_modules/pnpm/dist/pnpm.mjs:225946:3)
+    at async file:///opt/codex/runtimes/codex-primary-runtime/dependencies/node/node_modules/pnpm/dist/pnpm.mjs:328619:19
+    at async main4 (file:///opt/codex/runtimes/codex-primary-runtime/dependencies/node/node_modules/pnpm/dist/pnpm.mjs:328587:30)
+    at async runPnpm (file:///opt/codex/runtimes/codex-primary-runtime/dependencies/node/node_modules/pnpm/dist/pnpm.mjs:328883:5)
+    at async file:///opt/codex/runtimes/codex-primary-runtime/dependencies/node/node_modules/pnpm/dist/pnpm.mjs:328876:3

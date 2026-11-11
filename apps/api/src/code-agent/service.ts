@@ -24,6 +24,8 @@ import {
   CodeDiffError,
   isSafeCodeAgentDiffPath,
   computeCodeAgentSnapshotDigest,
+  validateCodeAgentCheckResult,
+  isVerifiedCodeAgentCheck,
   type CodeAgentWorkspaceRunner
 } from "@cosmora/tool-runtime";
 import {
@@ -1151,8 +1153,8 @@ export class CodeAgentService {
     for (const f of input.files) merged.set(f.path, f);
     const automatic = latest.proposal_check;
     const reuse =
-      automatic?.status === "passed" &&
-      automatic.cleanupVerified === true &&
+      automatic !== undefined &&
+      isVerifiedCodeAgentCheck(automatic, computeCodeAgentSnapshotDigest([...merged.values()])) &&
       automatic.proposal_hash === latest.proposal_hash &&
       automatic.snapshotDigest === computeCodeAgentSnapshotDigest([...merged.values()]);
     const { check, publication_token, ...rest } = latest;
@@ -1263,7 +1265,7 @@ export class CodeAgentService {
       { ...run, status: "checking", proposal_check: undefined },
       "Запущена заранее разрешённая проверка предложения"
     );
-    const result = await this.guarded(
+    let result = await this.guarded(
       run,
       "proposal-check-" + hash([run.proposal_hash, run.version, run.auto_check_requested]),
       ["sandbox.experiment"],
@@ -1284,6 +1286,11 @@ export class CodeAgentService {
       (result.status === "passed" && result.cleanupVerified !== true)
     )
       throw new CodeAgentError("CHECK_SNAPSHOT_MISMATCH");
+    try {
+      result = validateCodeAgentCheckResult(result, digest);
+    } catch {
+      throw new CodeAgentError("CHECK_RESULT_INVALID");
+    }
     this.deps.store.save(
       {
         ...latest,
@@ -1338,7 +1345,7 @@ export class CodeAgentService {
       for (const f of draft.plan.files) files.set(f.path, { path: f.path, content: f.content });
       const snapshot = [...files.values()];
       const digest = computeCodeAgentSnapshotDigest(snapshot);
-      const check = await this.guarded(
+      let check = await this.guarded(
         next,
         "check-" + hash([input.review_hash, input.check, next.version]),
         ["sandbox.experiment"],
@@ -1359,6 +1366,11 @@ export class CodeAgentService {
         (check.status === "passed" && check.cleanupVerified !== true)
       )
         throw new CodeAgentError("CHECK_SNAPSHOT_MISMATCH");
+      try {
+        check = validateCodeAgentCheckResult(check, digest);
+      } catch {
+        throw new CodeAgentError("CHECK_RESULT_INVALID");
+      }
       this.deps.store.save(
         {
           ...latest,
@@ -1411,7 +1423,7 @@ export class CodeAgentService {
     for (const f of draft.plan.files) snapshot.set(f.path, { path: f.path, content: f.content });
     if (
       run.check.snapshotDigest !== computeCodeAgentSnapshotDigest([...snapshot.values()]) ||
-      run.check.cleanupVerified !== true
+      !isVerifiedCodeAgentCheck(run.check, computeCodeAgentSnapshotDigest([...snapshot.values()]))
     )
       throw new CodeAgentError("CHECK_SNAPSHOT_MISMATCH");
     const action = "publish-" + input.publication_token;

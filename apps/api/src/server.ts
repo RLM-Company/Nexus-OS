@@ -427,6 +427,7 @@ try {
   generalChatBackgroundCoordinator = new GeneralChatBackgroundRunCoordinator({
     imageGeneration: (owner, prompt, signal, references) =>
       generateChatImage(mediaService, owner, prompt, signal, references),
+    search: new WebSearch(process.env.WEB_SEARCH_ORIGIN),
     store: generalChatStore,
     modelGateway: modelRuntime.gateway,
     chat: modelRuntime.chat,

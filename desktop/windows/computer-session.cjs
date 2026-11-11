@@ -243,6 +243,10 @@ class ComputerSession {
           observation = { ...observation, browser: { ...observation.browser } };
           delete observation.browser.read_text;
         }
+        if (observation.browser?.find_text && state.session.supports_browser_text_find !== true) {
+          observation = { ...observation, browser: { ...observation.browser } };
+          delete observation.browser.find_text;
+        }
         if (state.workspace)
           observation = {
             ...observation,
@@ -255,6 +259,14 @@ class ComputerSession {
               ...(state.session?.supports_workspace_read_lines === true &&
               this.workspace.supportsLineReads?.(state.grant) === true
                 ? { read_lines: true }
+                : {}),
+              ...(state.session?.supports_workspace_office_pages === true &&
+              this.workspace.supportsOfficePages?.(state.grant) === true
+                ? { office_pages: true }
+                : {}),
+              ...(state.session?.supports_workspace_office_edits === true &&
+              this.workspace.supportsOfficeEdits?.(state.grant) === true
+                ? { edit_office: true }
                 : {}),
               ...(state.session?.supports_workspace_documents === true &&
               this.workspace.supportsDocuments?.(state.grant) === true
@@ -315,9 +327,21 @@ class ComputerSession {
           throw Error("COMPUTER_ACTION_INVALID");
         if (action.kind === "browser_read_text" && observation.browser?.read_text !== true)
           throw Error("COMPUTER_ACTION_INVALID");
+        if (action.kind === "browser_find_text" && observation.browser?.find_text !== true)
+          throw Error("COMPUTER_ACTION_INVALID");
         if (
           action.kind === "workspace_read_text" &&
           observation.workspace?.read_text_pages !== true
+        )
+          throw Error("COMPUTER_ACTION_INVALID");
+        if (
+          action.kind.startsWith("workspace_office_") &&
+          observation.workspace?.edit_office !== true
+        )
+          throw Error("COMPUTER_ACTION_INVALID");
+        if (
+          action.kind === "workspace_office_inspect_page" &&
+          observation.workspace?.office_pages !== true
         )
           throw Error("COMPUTER_ACTION_INVALID");
         state.journal?.proposal(step + 1, action, proposal.decision_source);
@@ -450,7 +474,11 @@ class ComputerSession {
             !(await this.confirm({
               kind: "action",
               action,
-              message: proposal.message,
+              message:
+                action.kind === "workspace_office_commit"
+                  ? "Сохранить новую копию Office? Проверенные изменения:\n" +
+                    JSON.stringify(this.workspace.describeOfficePlan(action, state.grant))
+                  : proposal.message,
               recoveryReview: !!recoveryReview,
               evidence: this.driver.describe?.(action, observation),
               signal: state.controller.signal

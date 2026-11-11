@@ -1,11 +1,41 @@
-import { randomUUID } from "node:crypto";
-import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
-import { readFile } from "node:fs/promises";
+import { createHash, randomUUID } from "node:crypto";
+import {
+  expect,
+  test,
+  type APIRequestContext,
+  type APIResponse,
+  type Page,
+  type Route
+} from "@playwright/test";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { resolve } from "node:path";
 import { unzipSync, strFromU8 } from "fflate";
 
+const apiOrigin = "http://127.0.0.1:3100";
+const sha256 = (bytes: Buffer) => createHash("sha256").update(bytes).digest("hex");
+// Inject loss only after the real API has committed. A forwarding failure must
+// still release the browser route and fail the test; never retry the POST.
+async function loseCommittedResponse(
+  route: Route,
+  verify?: (response: APIResponse) => Promise<void>
+) {
+  try {
+    const source = new URL(route.request().url());
+    const response = await route.fetch({
+      url: apiOrigin + source.pathname + source.search,
+      maxRetries: 0,
+      maxRedirects: 0
+    });
+    expect(response.status()).toBe(201);
+    await verify?.(response);
+  } finally {
+    await route.abort("failed");
+  }
+}
+
 async function project(request: APIRequestContext, page: Page) {
-  const response = await request.post("http://127.0.0.1:3100/api/v1/projects", {
-    data: { initial_message: "Очередь документов", client_message_id: randomUUID() }
+  const response = await request.post(apiOrigin + "/api/v1/projects/empty", {
+    data: { title: "Очередь документов", client_project_id: randomUUID() }
   });
   expect(response.ok()).toBe(true);
   const id = ((await response.json()) as { project: { id: string } }).project.id;
@@ -37,8 +67,7 @@ test("Studio creates a library project without a message or model request and su
   });
   await page.route("**/api/v1/projects/empty", async (route) => {
     attempts++;
-    await route.fetch();
-    await route.abort("failed");
+    await loseCommittedResponse(route);
   });
   await page.goto("/?surface=files");
   const library = page.getByRole("region", { name: "Библиотека проекта", exact: true });
@@ -139,34 +168,122 @@ test("a lost POST response is reported and recovered from the real stored origin
   page,
   request
 }) => {
-  const { library, path } = await project(request, page);
+  const input = JSON.parse(
+    await readFile(
+      resolve(process.cwd(), "../../docs/handoff/fixtures/koswork-upload-recovery/input.json"),
+      "utf8"
+    )
+  ) as { files: Array<{ name: string; content: string }> };
+  const { library, path, id } = await project(request, page);
   let uploads = 0;
+  let storedId = "";
+  let committedDownloadHash = "";
+  const modelPosts: string[] = [];
+  page.on("request", (req) => {
+    if (
+      req.method() === "POST" &&
+      /\/api\/v1\/(?:chats(?:\/[^/]+\/messages)?|projects(?:\/[^/]+\/(?:messages|work))?)$/.test(
+        new URL(req.url()).pathname
+      )
+    )
+      modelPosts.push(new URL(req.url()).pathname);
+  });
   await page.route(`**${path}`, async (route) => {
     if (route.request().method() !== "POST") return route.continue();
     uploads++;
     if (uploads === 1) {
-      await route.fetch();
-      await route.abort("failed");
+      await loseCommittedResponse(route, async (response) => {
+        const saved = (await response.json()) as { id: string; name: string; bytes: number };
+        storedId = saved.id;
+        expect(saved.name).toBe(input.files[0]!.name);
+        const original = await request.get(apiOrigin + path + `/${storedId}/download`);
+        expect(original.status()).toBe(200);
+        const bytes = await original.body();
+        expect(bytes).toEqual(Buffer.from(input.files[0]!.content));
+        expect(saved.bytes).toBe(bytes.length);
+        committedDownloadHash = sha256(bytes);
+      });
     } else await route.continue();
   });
   await library
     .locator('input[type="file"]')
-    .setInputFiles([
-      file("ответ-потерялся.txt", "План проекта"),
-      file("следующий.txt", "Задачи проекта")
-    ]);
+    .setInputFiles(input.files.map((item) => file(item.name, item.content)));
   const queue = library.getByRole("region", { name: "Результаты загрузки" });
   await expect(queue.locator('li[data-upload-state="uncertain"]')).toHaveCount(1);
   await expect(queue.locator('li[data-upload-state="ready"]')).toHaveCount(1);
   await expect(queue).toContainText("Проверьте библиотеку перед повторной загрузкой");
   await expect(library.getByRole("button", { name: "Добавить файлы", exact: true })).toBeEnabled();
+  expect(uploads).toBe(2);
+  const before = (await (await request.get(apiOrigin + path)).json()) as {
+    files: Array<{ id: string; name: string; status: string }>;
+  };
+  expect(before.files).toHaveLength(2);
+  expect(before.files.find((item) => item.id === storedId)).toMatchObject({
+    name: input.files[0]!.name,
+    status: "processing"
+  });
   const documents = library.getByRole("group", { name: "Сохранённые документы" });
   await documents.getByRole("button", { name: "Повторить", exact: true }).click();
   await expect(queue.locator('li[data-upload-state="ready"]')).toHaveCount(1);
   expect(uploads).toBe(2);
-  const data = (await (await request.get("http://127.0.0.1:3100" + path)).json()) as {
-    files: { status: string }[];
+  const data = (await (await request.get(apiOrigin + path)).json()) as {
+    files: Array<{ id: string; name: string; status: string; characters: number; chunks: number }>;
   };
   expect(data.files).toHaveLength(2);
   expect(data.files.every((item) => item.status === "ready")).toBe(true);
+  expect(data.files.map((item) => item.id).sort()).toEqual(
+    before.files.map((item) => item.id).sort()
+  );
+  const outputs = [];
+  for (const item of data.files) {
+    expect(item.characters).toBeGreaterThan(0);
+    expect(item.chunks).toBeGreaterThan(0);
+    const original = await request.get(apiOrigin + path + `/${item.id}/download`);
+    expect(original.status()).toBe(200);
+    const bytes = await original.body();
+    expect(bytes).toEqual(
+      Buffer.from(input.files.find((source) => source.name === item.name)!.content)
+    );
+    const outputPath = test.info().outputPath(item.name);
+    await writeFile(outputPath, bytes);
+    await test.info().attach(item.name, { path: outputPath, contentType: "text/plain" });
+    outputs.push({
+      id: item.id,
+      name: item.name,
+      status: item.status,
+      characters: item.characters,
+      chunks: item.chunks,
+      bytes: bytes.length,
+      sha256: sha256(bytes)
+    });
+  }
+  const detail = (await (await request.get(apiOrigin + `/api/v1/projects/${id}`)).json()) as {
+    messages: unknown[];
+  };
+  expect(detail.messages).toEqual([]);
+  expect(modelPosts).toEqual([]);
+  const report = {
+    real_model_called: false,
+    fixture_injection: "verified backend commit followed by dropped browser response",
+    browser_upload_posts: uploads,
+    browser_model_posts: modelPosts,
+    project_messages: detail.messages.length,
+    stored_before_response_loss: { id: storedId, sha256: committedDownloadHash },
+    original_ids_reused: true,
+    files: outputs
+  };
+  const reportPath = test.info().outputPath("upload-recovery.json");
+  await writeFile(reportPath, JSON.stringify(report, null, 2) + "\n");
+  await test.info().attach("actual stored original recovery", {
+    path: reportPath,
+    contentType: "application/json"
+  });
+  if (process.env.KOSWORK_UPLOAD_REPORT_DIR) {
+    await mkdir(process.env.KOSWORK_UPLOAD_REPORT_DIR, { recursive: true });
+    await writeFile(
+      resolve(process.env.KOSWORK_UPLOAD_REPORT_DIR, "result.json"),
+      JSON.stringify(report, null, 2) + "\n",
+      { flag: "wx" }
+    );
+  }
 });

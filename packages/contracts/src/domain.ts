@@ -98,11 +98,24 @@ export const MessageSchema = Type.Object(
 );
 export type Message = Static<typeof MessageSchema>;
 
+/** Optional, explicitly selected Kosmora history carried into a new project.
+ * It is untrusted quoted data, never an instruction or a permission grant. */
+export const ProjectHistoryExcerptSchema = Type.Object(
+  {
+    role: Type.Union([Type.Literal("user"), Type.Literal("assistant")]),
+    content: Type.String({ minLength: 1, maxLength: 12_000 }),
+    created_at: Type.String({ minLength: 1, maxLength: 64 })
+  },
+  { additionalProperties: false }
+);
+export type ProjectHistoryExcerpt = Static<typeof ProjectHistoryExcerptSchema>;
+
 export const CreateProjectRequestSchema = Type.Object(
   {
     initial_message: Type.String({ minLength: 1, maxLength: 100_000, pattern: "\\S" }),
     client_message_id: EntityIdSchema,
-    attachments: Type.Optional(ChatAttachmentsSchema)
+    attachments: Type.Optional(ChatAttachmentsSchema),
+    history_excerpt: Type.Optional(Type.Array(ProjectHistoryExcerptSchema, { maxItems: 8 }))
   },
   { additionalProperties: false }
 );
@@ -217,12 +230,33 @@ export const GeneralChatMessageSchema = Type.Object(
 );
 export type GeneralChatMessage = Static<typeof GeneralChatMessageSchema>;
 
+export const ChatTextActionSchema = Type.Object(
+  {
+    kind: Type.Union([
+      Type.Literal("explain"),
+      Type.Literal("hint"),
+      Type.Literal("walkthrough"),
+      Type.Literal("check"),
+      Type.Literal("rewrite")
+    ]),
+    selection: Type.Optional(Type.String({ minLength: 1, maxLength: 50_000 })),
+    tone: Type.Optional(Type.String({ minLength: 1, maxLength: 60 })),
+    length: Type.Optional(
+      Type.Union([Type.Literal("shorter"), Type.Literal("same"), Type.Literal("longer")])
+    )
+  },
+  { additionalProperties: false }
+);
+export type ChatTextAction = Static<typeof ChatTextActionSchema>;
+
 export const CreateGeneralChatRequestSchema = Type.Object(
   {
     mode: Type.Optional(ChatModeSchema),
     initial_message: Type.String({ minLength: 1, maxLength: 100_000, pattern: "\\S" }),
     client_message_id: EntityIdSchema,
-    attachments: Type.Optional(ChatAttachmentsSchema)
+    attachments: Type.Optional(ChatAttachmentsSchema),
+    web_search: Type.Optional(Type.Boolean()),
+    text_action: Type.Optional(ChatTextActionSchema)
   },
   { additionalProperties: false }
 );
@@ -232,7 +266,9 @@ export const CreateGeneralChatMessageRequestSchema = Type.Object(
   {
     content: Type.String({ minLength: 1, maxLength: 100_000, pattern: "\\S" }),
     client_message_id: EntityIdSchema,
-    attachments: Type.Optional(ChatAttachmentsSchema)
+    attachments: Type.Optional(ChatAttachmentsSchema),
+    web_search: Type.Optional(Type.Boolean()),
+    text_action: Type.Optional(ChatTextActionSchema)
   },
   { additionalProperties: false }
 );

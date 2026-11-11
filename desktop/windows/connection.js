@@ -4,6 +4,7 @@ const form = document.querySelector("#connection-form");
 const origin = document.querySelector("#origin");
 const button = document.querySelector("#connect");
 const retry = document.querySelector("#retry");
+const cancel = document.querySelector("#cancel");
 const change = document.querySelector("#change");
 const error = document.querySelector("#error");
 const title = document.querySelector("#title");
@@ -16,6 +17,8 @@ let editingReplacementOrigin = false;
 function setBusy(value) {
   button.disabled = value;
   retry.disabled = value;
+  cancel.hidden = !value;
+  cancel.disabled = false;
   button.textContent = value ? "Подключение…" : "Открыть Kosmora";
   retry.textContent = value ? "Проверка…" : "Повторить";
 }
@@ -35,7 +38,7 @@ async function render() {
   change.hidden = !offline;
   title.textContent = offline ? "Kosmora сейчас недоступна" : "Подключение к Kosmora";
   lead.textContent = offline
-    ? "Сохранённый сервер не ответил. Можно повторить попытку или изменить адрес — текущий выбор останется сохранённым до успешного подключения к новому серверу."
+    ? "Сохранённый сервер не ответил. Можно повторить попытку или изменить адрес — текущий выбор останется сохранённым до успешного подключения к новому серверу. Пока проверка идёт, доступна отмена."
     : "Укажите HTTPS-сервер Kosmora. После проверки откроется обычная страница входа Kosmora — пароль в оболочку Windows вводить не нужно.";
 }
 
@@ -53,7 +56,13 @@ form.addEventListener("submit", async (event) => {
     if (requestId !== activeRequestId) return;
     error.textContent = "Не удалось открыть Kosmora. Проверьте соединение и повторите попытку.";
   } finally {
-    if (requestId === activeRequestId) setBusy(false);
+    if (requestId === activeRequestId) {
+      setBusy(false);
+      // The bus state is displayed synchronously from the completed request;
+      // a follow-up read reconciles it with the authoritative connection
+      // state, so a completed check can never leave «Подключение…» forever.
+      void render().catch(() => {});
+    }
   }
 });
 
@@ -70,7 +79,32 @@ retry.addEventListener("click", async () => {
     if (requestId !== activeRequestId) return;
     error.textContent = "Повторное подключение не удалось.";
   } finally {
-    if (requestId === activeRequestId) setBusy(false);
+    if (requestId === activeRequestId) {
+      setBusy(false);
+      void render().catch(() => {});
+    }
+  }
+});
+
+cancel.addEventListener("click", async () => {
+  const requestId = ++activeRequestId;
+  // Fence submit/retry completions: a later answer must not overwrite this
+  // decision or remove the busy state before the cancel itself is resolved.
+  cancel.disabled = true;
+  error.textContent = "";
+  try {
+    const result = await window.cosmoraDesktop.cancel();
+    if (requestId !== activeRequestId) return;
+    if (result?.ok) setBusy(false);
+    // A refused cancel is itself a decision the user sees: the current check
+    // or switch is still running, so the busy state stays until it ends.
+    error.textContent =
+      result?.message || "Проверка подключения отменена. Сохранённый адрес не изменён.";
+  } catch {
+    if (requestId !== activeRequestId) return;
+    error.textContent = "Не удалось отменить проверку. Дождитесь результата.";
+  } finally {
+    if (requestId === activeRequestId) void render().catch(() => {});
   }
 });
 

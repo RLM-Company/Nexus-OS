@@ -1,0 +1,112 @@
+✖ Office docx: receipt mutation cannot change an approved write or receipt (44.747818ms)
+✖ Office xlsx: receipt mutation cannot change an approved write or receipt (23.53792ms)
+✖ Office xlsx: input mutation cannot change an approved write or receipt (16.841265ms)
+✖ Office pptx: receipt mutation cannot change an approved write or receipt (24.280321ms)
+ℹ tests 4
+ℹ suites 0
+ℹ pass 0
+ℹ fail 4
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 222.608732
+
+✖ failing tests:
+
+test at desktop/windows/test/office-plan-isolation.test.cjs:8:3
+✖ Office docx: receipt mutation cannot change an approved write or receipt (44.747818ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  + actual - expected
+
+  + 'unexpected.docx'
+  - 'approved.docx'
+
+      at scenario (/workspace/work/Nexus-OS-office-integration/desktop/windows/test/fixtures/run-office-plan-isolation.cjs:50:12)
+      at async TestContext.<anonymous> (/workspace/work/Nexus-OS-office-integration/desktop/windows/test/office-plan-isolation.test.cjs:11:5)
+      at async Test.run (node:internal/test_runner/test:1409:7)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:387:3) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 'unexpected.docx',
+    expected: 'approved.docx',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at desktop/windows/test/office-plan-isolation.test.cjs:8:3
+✖ Office xlsx: receipt mutation cannot change an approved write or receipt (23.53792ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  + actual - expected
+
+  + 'unexpected.xlsx'
+  - 'approved.xlsx'
+
+      at scenario (/workspace/work/Nexus-OS-office-integration/desktop/windows/test/fixtures/run-office-plan-isolation.cjs:50:12)
+      at async TestContext.<anonymous> (/workspace/work/Nexus-OS-office-integration/desktop/windows/test/office-plan-isolation.test.cjs:11:5)
+      at async Test.run (node:internal/test_runner/test:1409:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:974:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 'unexpected.xlsx',
+    expected: 'approved.xlsx',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at desktop/windows/test/office-plan-isolation.test.cjs:8:3
+✖ Office xlsx: input mutation cannot change an approved write or receipt (16.841265ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal:
+  + actual - expected
+  ... Skipped lines
+
+    [
+      {
+        after: 'Итог',
+        before: null,
+        kind: 'add_sheet',
+  ...
+        after: {
+  +       formula: 'SUM(A1:A1)'
+  -       formula: 'SUM(B1:B1)'
+        },
+        before: null,
+        kind: 'set_cell',
+        target: 'sheet:2',
+        value: {
+  +       formula: 'SUM(A1:A1)'
+  -       formula: 'SUM(B1:B1)'
+        }
+      }
+    ]
+
+      at scenario (/workspace/work/Nexus-OS-office-integration/desktop/windows/test/fixtures/run-office-plan-isolation.cjs:52:12)
+      at async TestContext.<anonymous> (/workspace/work/Nexus-OS-office-integration/desktop/windows/test/office-plan-isolation.test.cjs:11:5)
+      at async Test.run (node:internal/test_runner/test:1409:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:974:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: [ { kind: 'add_sheet', name: 'Итог', before: null, after: 'Итог' }, { kind: 'set_cell', target: 'sheet:2', address: 'A1', value: '00123', before: null, after: '00123' }, { kind: 'set_cell', target: 'sheet:2', address: 'B1', value: 19700, before: null, after: 19700 }, { kind: 'set_cell', target: 'sheet:2', address: 'B2', value: [Object], before: null, after: [Object] } ],
+    expected: [ { kind: 'add_sheet', name: 'Итог', before: null, after: 'Итог' }, { kind: 'set_cell', target: 'sheet:2', address: 'A1', value: '00123', before: null, after: '00123' }, { kind: 'set_cell', target: 'sheet:2', address: 'B1', value: 19700, before: null, after: 19700 }, { kind: 'set_cell', target: 'sheet:2', address: 'B2', value: [Object], before: null, after: [Object] } ],
+    operator: 'deepStrictEqual',
+    diff: 'simple'
+  }
+
+test at desktop/windows/test/office-plan-isolation.test.cjs:8:3
+✖ Office pptx: receipt mutation cannot change an approved write or receipt (24.280321ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  + actual - expected
+
+  + 'unexpected.pptx'
+  - 'approved.pptx'
+
+      at scenario (/workspace/work/Nexus-OS-office-integration/desktop/windows/test/fixtures/run-office-plan-isolation.cjs:50:12)
+      at async TestContext.<anonymous> (/workspace/work/Nexus-OS-office-integration/desktop/windows/test/office-plan-isolation.test.cjs:11:5)
+      at async Test.run (node:internal/test_runner/test:1409:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:974:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 'unexpected.pptx',
+    expected: 'approved.pptx',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }

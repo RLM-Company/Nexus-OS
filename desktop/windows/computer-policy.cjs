@@ -37,6 +37,7 @@ const fields = {
   browser_reload: [],
   browser_read: [],
   browser_read_text: ["offset_utf16", "expected_version"],
+  browser_find_text: ["query", "case_sensitive", "offset_utf16", "expected_version"],
   browser_screenshot: [],
   browser_click: ["ref"],
   browser_fill: ["ref", "text"],
@@ -57,6 +58,10 @@ const fields = {
     "expected_text_sha256",
     "expected_version"
   ],
+  workspace_office_inspect_page: ["path", "target_offset", "content_offset", "expected_version"],
+  workspace_office_inspect: ["path"],
+  workspace_office_preview: ["path", "output_path", "expected_version", "operations"],
+  workspace_office_commit: ["path", "expected_version", "plan_id"],
   workspace_read_document: ["path", "offset_utf16", "expected_version"],
   workspace_read_lines: ["path", "start_line", "end_line", "expected_version"],
   workspace_mkdir: ["path"],
@@ -124,8 +129,13 @@ function validateComputerAction(action) {
       );
     if (action.kind.startsWith("browser_")) {
       try {
-        if (action.kind === "browser_read_text")
+        if (action.kind === "browser_read_text" || action.kind === "browser_find_text")
           return (
+            (action.kind !== "browser_find_text" ||
+              (string(action.query, 160) &&
+                action.query.trim().length > 0 &&
+                action.query.isWellFormed() &&
+                typeof action.case_sensitive === "boolean")) &&
             Number.isSafeInteger(action.offset_utf16) &&
             action.offset_utf16 >= 0 &&
             action.offset_utf16 <= 256000 &&
@@ -168,6 +178,34 @@ function validateComputerAction(action) {
     }
     if (action.kind.startsWith("workspace_")) {
       try {
+        if (action.kind.startsWith("workspace_office_")) {
+          if (!/\.(docx|xlsx|pptx)$/i.test(action.path)) return false;
+          if (
+            !["workspace_office_inspect", "workspace_office_inspect_page"].includes(action.kind) &&
+            !/^sha256:[a-f0-9]{64}$/.test(action.expected_version)
+          )
+            return false;
+          if (
+            action.kind === "workspace_office_inspect_page" &&
+            (!Number.isSafeInteger(action.target_offset) ||
+              action.target_offset < 0 ||
+              action.target_offset > 200000 ||
+              !Number.isSafeInteger(action.content_offset) ||
+              action.content_offset < 0 ||
+              action.content_offset > 256000 ||
+              (action.expected_version === null
+                ? action.target_offset > 0 || action.content_offset > 0
+                : !/^sha256:[a-f0-9]{64}$/.test(action.expected_version)))
+          )
+            return false;
+          if (action.kind === "workspace_office_preview") {
+            require("./workspace/path-guard.cjs").validateRelativePath(action.output_path);
+            require("./workspace/office-edit.cjs").validateEdits(action.operations);
+          }
+          if (action.kind === "workspace_office_commit" && !/^[a-f0-9]{32}$/.test(action.plan_id))
+            return false;
+        }
+
         if (
           action.kind === "workspace_read_text" &&
           (!Number.isSafeInteger(action.offset_utf16) ||
@@ -414,6 +452,7 @@ const recoveryWriteActions = new Set([
   "browser_forward",
   "browser_reload",
   "workspace_create",
+  "workspace_office_commit",
   "workspace_create_docx",
   "workspace_create_xlsx",
   "workspace_create_pptx",

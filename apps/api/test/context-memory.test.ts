@@ -136,6 +136,38 @@ describe("context memory API and model dispatch", () => {
     expect(store.listChats().map((c) => [c.id, c.updated_at])).toEqual(before);
     expect(requests).toHaveLength(0);
   });
+  it("forgets one chat's scope through the authenticated route and keeps other scopes", async () => {
+    const chatEntry = {
+      ...entry,
+      scope: "chat",
+      scope_id: targetChat,
+      source: null
+    };
+    expect(
+      (await app.inject({ method: "POST", url: "/api/v1/memory", payload: chatEntry })).statusCode
+    ).toBe(201);
+    expect(
+      (await app.inject({ method: "POST", url: "/api/v1/memory", payload: entry })).statusCode
+    ).toBe(201);
+    const path = "/api/v1/memory/targets/chat/" + targetChat + "/entries";
+    const forgotten = await app.inject({ method: "DELETE", url: path });
+    expect(forgotten.statusCode).toBe(200);
+    expect(forgotten.json()).toMatchObject({
+      forgotten_entries: 1,
+      original_messages_deleted: false,
+      settings_retained: true
+    });
+    expect(forgotten.headers["cache-control"]).toBe("private, no-store");
+    const left = (await app.inject({ method: "GET", url: "/api/v1/memory" })).json<{
+      items: ContextMemoryEntry[];
+    }>();
+    expect(left.items.map((e) => e.scope)).toEqual(["personal"]);
+    expect(
+      (await app.inject({ method: "DELETE", url: "/api/v1/memory/targets/chat/missing/entries" }))
+        .statusCode
+    ).toBe(404);
+    expect(requests).toHaveLength(0);
+  });
   it("adds only granted evidence as user data, accounts for context size, and does not rewrite the original user message", async () => {
     await app.inject({ method: "POST", url: "/api/v1/memory", payload: entry });
     await send();

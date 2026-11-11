@@ -18,6 +18,14 @@ export const ProjectMemoryInputSchema = Type.Object(
   { additionalProperties: false }
 );
 export type ProjectMemoryInput = Static<typeof ProjectMemoryInputSchema>;
+export const ProjectMemoryCreateSchema = Type.Object(
+  {
+    ...ProjectMemoryInputSchema.properties,
+    client_creation_id: Type.Optional(Type.String({ minLength: 1, maxLength: 128, pattern: "\\S" }))
+  },
+  { additionalProperties: false }
+);
+export type ProjectMemoryCreate = Static<typeof ProjectMemoryCreateSchema>;
 export const ProjectMemoryUpdateSchema = Type.Object(
   {
     ...ProjectMemoryInputSchema.properties,

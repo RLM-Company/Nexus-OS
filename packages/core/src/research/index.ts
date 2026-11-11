@@ -183,10 +183,10 @@ export function researchPassages(text: string, question: string): string[] {
     score: terms.reduce((sum, word) => sum + (paragraph.toLowerCase().includes(word) ? 1 : 0), 0)
   }));
   ranked.sort((a, b) => b.score - a.score || a.index - b.index);
-  return ranked
-    .slice(0, 3)
+  const excerpts = ranked
     .filter((item) => item.score > 0 || terms.length === 0)
     .map(({ paragraph }) => paragraph.slice(0, 460));
+  return [...new Set(excerpts)].slice(0, 3);
 }
 
 /** The only source IDs a model is allowed to cite are provided here, not URLs from its output. */

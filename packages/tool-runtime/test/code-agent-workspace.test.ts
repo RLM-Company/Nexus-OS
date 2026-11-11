@@ -47,6 +47,8 @@ async function fixture(
     | "cleanup-fail"
     | "load-fail"
     | "volume-cleanup-fail"
+    | "cleanup-late"
+    | "create-delay"
 ) {
   const directory = await mkdtemp(join(tmpdir(), "kosmora-oci-transport-test-"));
   directories.push(directory);
@@ -58,6 +60,7 @@ async function fixture(
 const args = process.argv.slice(2);
 fs.appendFileSync(${JSON.stringify(record)}, JSON.stringify({ args, env: process.env }) + '\\n');
 if (args[0] === 'rm') process.exit(${JSON.stringify(mode)} === 'cleanup-fail' ? 1 : 0);
+if (args[0] === 'ps' && ${JSON.stringify(mode)} === 'cleanup-late') { const probes = fs.readFileSync(${JSON.stringify(record)},'utf8').trim().split('\\n').map(JSON.parse).filter(c => c.args[0] === 'ps').length; if(probes === 1) process.stdout.write('late-create'); process.exit(0); }
 if (args[0] === 'ps') { if (${JSON.stringify(mode)} === 'cleanup-fail') process.stdout.write('orphan-container'); process.exit(0); }
 if (args[0] === 'volume') {
   if (args[1] === 'ls' && ${JSON.stringify(mode)} === 'volume-cleanup-fail') process.stdout.write('orphan-volume');
@@ -65,7 +68,7 @@ if (args[0] === 'volume') {
 }
 if (${JSON.stringify(mode)} === 'unavailable') process.exit(125);
 if (args[0] === 'start' && args.includes('--interactive')) { process.stdin.resume(); process.stdin.on('end', () => process.exit(${JSON.stringify(mode)} === 'load-fail' ? 1 : 0)); return; }
-if (args[0] === 'create') { process.stdout.write('fixture-container-id'); process.exit(0); }
+if (args[0] === 'create') { process.stdout.write('fixture-container-id'); if (${JSON.stringify(mode)} === 'create-delay') setTimeout(()=>process.exit(0),250); else process.exit(0); return; }
 if (${JSON.stringify(mode)} === 'wait' || ${JSON.stringify(mode)} === 'cleanup-fail') setInterval(() => {}, 1000);
 else if (${JSON.stringify(mode)} === 'flood') { setInterval(() => process.stdout.write('x'.repeat(8192)), 1); }
 else { process.stdout.write('transport fixture only'); process.exit(0); }
@@ -80,12 +83,13 @@ else { process.stdout.write('transport fixture only'); process.exit(0); }
       if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
       throw error;
     }
-    return data
-      .trim()
-      .split("\n")
-      .map((line) => JSON.parse(line) as { args: string[]; env: Record<string, string> });
+    // A concurrent read can observe the file after creation but before append completes.
+    // Only a newline commits a record; malformed complete records must still fail.
+    const lines = data.split("\n");
+    lines.pop();
+    return lines.map((line) => JSON.parse(line) as { args: string[]; env: Record<string, string> });
   };
-  return { executable, calls };
+  return { executable, record, calls };
 }
 
 async function waitForStart(transport: Awaited<ReturnType<typeof fixture>>): Promise<void> {
@@ -129,6 +133,22 @@ async function runWithStartedDeadline(
 }
 
 describe("CodeAgent workspace boundary", () => {
+  it("waits for complete transport journal records without hiding malformed records", async () => {
+    const transport = await fixture("success");
+    const first = { args: ["create"], env: { TEST: "fixture" } };
+    const second = { args: ["start"], env: { TEST: "fixture" } };
+    await writeFile(transport.record, "");
+    expect(await transport.calls()).toEqual([]);
+    await writeFile(transport.record, '{"args":');
+    expect(await transport.calls()).toEqual([]);
+    await writeFile(transport.record, JSON.stringify(first) + '\n{"args":');
+    expect(await transport.calls()).toEqual([first]);
+    await writeFile(transport.record, JSON.stringify(first) + "\n" + JSON.stringify(second) + "\n");
+    expect(await transport.calls()).toEqual([first, second]);
+    await writeFile(transport.record, "malformed\n");
+    await expect(transport.calls()).rejects.toBeInstanceOf(SyntaxError);
+  });
+
   it("binds content and paths in an order-independent digest", () => {
     const a = [
       { path: "a.js", content: "ab" },
@@ -387,4 +407,39 @@ describe("CodeAgent workspace boundary", () => {
     });
     expect((await transport.calls()).length).toBe(count);
   });
+});
+
+it("rechecks late daemon cleanup without ever resubmitting create/start", async () => {
+  const transport = await fixture("cleanup-late");
+  const runner = createCodeAgentWorkspaceRunner({
+    runtime: "docker",
+    image: "sha256:" + "a".repeat(64),
+    executable: transport.executable
+  });
+  expect(
+    await runner.run({ files: [{ path: "a.js", content: "1;" }], check: "syntax" })
+  ).toMatchObject({ status: "passed", cleanupVerified: true });
+  const calls = await transport.calls();
+  expect(calls.filter((c) => c.args[0] === "ps")).toHaveLength(2);
+  expect(calls.filter((c) => c.args[0] === "create")).toHaveLength(2);
+  expect(calls.filter((c) => c.args[0] === "start")).toHaveLength(2);
+});
+
+it("cancellation awaits an accepted daemon create and never advances to start", async () => {
+  const transport = await fixture("create-delay"),
+    controller = new AbortController();
+  const runner = createCodeAgentWorkspaceRunner({
+    runtime: "docker",
+    image: IMAGE,
+    executable: transport.executable
+  });
+  const pending = runner.run({ files, check: "syntax", signal: controller.signal });
+  await expect
+    .poll(async () => (await transport.calls()).some((c) => c.args[0] === "create"))
+    .toBe(true);
+  controller.abort();
+  expect(await pending).toMatchObject({ status: "cancelled", cleanupVerified: true });
+  const calls = await transport.calls();
+  expect(calls.filter((c) => c.args[0] === "create")).toHaveLength(1);
+  expect(calls.filter((c) => c.args[0] === "start")).toHaveLength(0);
 });
