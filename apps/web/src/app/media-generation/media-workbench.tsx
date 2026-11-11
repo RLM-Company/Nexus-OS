@@ -34,7 +34,7 @@ export function MediaWorkbench({ surface }: { surface: "images" | "video" | "sou
         const value = saved as Record<string, unknown>;
         if (typeof value.prompt === "string" && value.prompt.length <= 1800)
           setPrompt(value.prompt);
-        if (typeof value.ratio === "string" && ["1:1", "16:9", "9:16", "4:3"].includes(value.ratio))
+        if (typeof value.ratio === "string" && ["1:1", "3:2", "2:3"].includes(value.ratio))
           setRatio(value.ratio);
         if (
           typeof value.style === "string" &&

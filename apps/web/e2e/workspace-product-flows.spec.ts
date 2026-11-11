@@ -115,6 +115,8 @@ test("restores separate media settings without automatic generation", async ({ p
   await page.goto("/?surface=images");
   await page.getByLabel("Описание изображения", { exact: true }).fill("Станция у моря");
   await page.getByRole("button", { name: "3:2 · 1536 × 1024" }).click();
+  await page.getByLabel("Качество изображения").selectOption("high");
+  await page.getByLabel("Формат результата").selectOption("webp");
   await page.getByRole("combobox", { name: "Стиль", exact: true }).selectOption("Кино");
   await page.goto("/?surface=video");
   await page.getByLabel("Описание сцены", { exact: true }).fill("Волны и движение камеры");
@@ -127,6 +129,8 @@ test("restores separate media settings without automatic generation", async ({ p
     "aria-pressed",
     "true"
   );
+  await expect(page.getByLabel("Качество изображения")).toHaveValue("high");
+  await expect(page.getByLabel("Формат результата")).toHaveValue("webp");
   await expect(page.getByRole("combobox", { name: "Стиль", exact: true })).toHaveValue("Кино");
   await page.goto("/?surface=video");
   await expect(page.getByLabel("Описание сцены", { exact: true })).toHaveValue(
