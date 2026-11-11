@@ -1,0 +1,137 @@
+{
+  "fixture_sha256": "b03d429db2d1acb218ce1fbc4787cc638cfd2116a4acc176bf2b790cfd07eb1a",
+  "fixture_cases": 4,
+  "model": {
+    "repo": "onnx-community/Qwen2.5-0.5B-Instruct",
+    "revision": "22942cb7d7ba4cc81bb4673549ca4d4614469b5e",
+    "onnx_commit": "516c8d04add8a80c5228f32102b57953b8d421a9",
+    "dtype": "q4",
+    "files_verified": 10,
+    "files_unverified": 0
+  },
+  "candidate": {
+    "name": "llm-drop-candidate-v1",
+    "uses_model": true,
+    "weights_in_repo": false,
+    "network_access": "disabled in worker (mirrors shipped encoder worker)",
+    "decoding": "greedy (do_sample:false), two passes per case expected to agree"
+  },
+  "reference": {
+    "extractive_candidate_median_reduction": 0.7935,
+    "source": "docs/research/semantic-experience-distill-2026-11-09.json"
+  },
+  "aggregates": {
+    "parse_ok_cases": 3,
+    "parse_failure_cases": 1,
+    "deterministic_pairs": 4,
+    "forbidden_carried_total": 2,
+    "relevant_carried_total": 11,
+    "relevant_declared_total": 14,
+    "declared_lost_recovered_total": 2,
+    "declared_lost_total": 3,
+    "fabricated_file_tokens_total": 0,
+    "stale_step_leak_ngrams_total": 4,
+    "median_reduction": 1,
+    "within_budget_cases": 3,
+    "total_gen_ms": 2624217
+  },
+  "environment": {
+    "node": "v26.13.0",
+    "platform": "win32",
+    "arch": "x64",
+    "transformers_js_version": "4.3.2",
+    "rss_snapshot_mib": 70.76
+  },
+  "cases": [
+    {
+      "id": "conditional-anchors-all-safe",
+      "parse_ok": true,
+      "parse_error": null,
+      "deterministic_pair": true,
+      "sketch_bytes": 1130,
+      "within_sketch_budget": true,
+      "reduction": 1,
+      "kept_steps": 3,
+      "forbidden_declared": 0,
+      "forbidden_carried": [],
+      "relevant_declared": 5,
+      "relevant_carried_strong": [
+        "только по активным договорам",
+        "только после проверки фильтра",
+        "не раньше 09:00",
+        "ведомости.xlsx",
+        "отчёт-дня.json"
+      ],
+      "declared_lost_recovered": [],
+      "fabricated_file_tokens": [],
+      "stale_step_leak_ngrams": 0,
+      "ms": 529224.951,
+      "answer_preview": "{\n    \"format\": \"koswork.accepted-example.v1\",\n    \"source_task_id\": \"2c4e6a8b-0d1f-44a2-9c3d-5e6f7a8b9c0d\",\n    \"source_project_id\": \"demo-weekly-desk\",\n    \"accepted_at\": 1762531200000,\n    \"outcome\": \"owner_accepted\",\n    \"source_goal\": "
+    },
+    {
+      "id": "negation-must-not-flip",
+      "parse_ok": true,
+      "parse_error": null,
+      "deterministic_pair": true,
+      "sketch_bytes": 1141,
+      "within_sketch_budget": true,
+      "reduction": 1,
+      "kept_steps": 3,
+      "forbidden_declared": 1,
+      "forbidden_carried": [],
+      "relevant_declared": 3,
+      "relevant_carried_strong": [
+        "до проверки юристом",
+        "только после подписи куратора",
+        "реестр-писем.xlsx"
+      ],
+      "declared_lost_recovered": ["блокируются до проверки юристом"],
+      "fabricated_file_tokens": [],
+      "stale_step_leak_ngrams": 0,
+      "ms": 555350.456,
+      "answer_preview": "{\n    \"format\": \"koswork.accepted-example.v1\",\n    \"source_task_id\": \"3d5f7b9c-1e2a-44b3-8d4e-6f7a8b9c0d1e\",\n    \"source_project_id\": \"demo-weekly-desk\",\n    \"accepted_at\": 1762531200000,\n    \"outcome\": \"owner_accepted\",\n    \"source_goal\": "
+    },
+    {
+      "id": "stale-plus-causal-core",
+      "parse_ok": false,
+      "parse_error": "no_json:```json\n{\n    \"format\": \"koswork.accepted-example.v1\",\n    \"",
+      "deterministic_pair": true,
+      "sketch_bytes": 0,
+      "within_sketch_budget": null,
+      "reduction": null,
+      "kept_steps": 0,
+      "forbidden_declared": 4,
+      "forbidden_carried": [],
+      "relevant_declared": 3,
+      "relevant_carried_strong": [],
+      "declared_lost_recovered": [],
+      "fabricated_file_tokens": [],
+      "stale_step_leak_ngrams": 0,
+      "ms": 868724.003,
+      "answer_preview": "```json\n{\n    \"format\": \"koswork.accepted-example.v1\",\n    \"source_task_id\": \"4e6a8c0d-2f3b-44c4-9e5f-7a8b9c0d1e2f\",\n    \"source_project_id\": \"demo-weekly-desk\",\n    \"accepted_at\": 1762531200000,\n    \"outcome\": \"owner_accepted\",\n    \"source"
+    },
+    {
+      "id": "long-condition-declared-lost",
+      "parse_ok": true,
+      "parse_error": null,
+      "deterministic_pair": true,
+      "sketch_bytes": 1228,
+      "within_sketch_budget": true,
+      "reduction": 1,
+      "kept_steps": 4,
+      "forbidden_declared": 2,
+      "forbidden_carried": ["01.11", "08.11"],
+      "relevant_declared": 3,
+      "relevant_carried_strong": [
+        "только к договорам с двумя подписями",
+        "отклоняет контракт до пересчёта",
+        "сверка-договоров.csv"
+      ],
+      "declared_lost_recovered": ["Расхождение сумм больше 5%"],
+      "fabricated_file_tokens": [],
+      "stale_step_leak_ngrams": 4,
+      "ms": 670918.056,
+      "answer_preview": "{\n    \"format\": \"koswork.accepted-example.v1\",\n    \"source_task_id\": \"5f7b9d1e-3a4c-44d5-8f6a-8b9c0d1e2f3a\",\n    \"source_project_id\": \"demo-weekly-desk\",\n    \"accepted_at\": 1762531200000,\n    \"outcome\": \"owner_accepted\",\n    \"source_goal\": "
+    }
+  ]
+}
