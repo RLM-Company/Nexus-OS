@@ -15,8 +15,8 @@ Branch: `ops/free-studio-media`. Owner-approved scope: existing media API/workbe
 
 1. **P0 / data and cost safety (this slice):** image UI POST omitted client request ID, so a lost response could not be correlated or safely retried; reload did not recover pending dispatch. UI did not distinguish unknown outcome from certain rejection.
 2. **P1 / result blocker (this slice):** image UI hardcoded only 1:1 PNG though active provider registry advertises 1:1/3:2/2:3 and PNG/JPEG/WebP. It exposed fake 16:9 and 9:16 options; quality/output MIME options not sent. Preview/reuse only supported PNG.
-3. **P1 / editing honesty (this slice):** local reference picker appeared actionable even if editing capability was off; currently it must be gated by `image_editing.ready`.
-4. **P2 / recovery (partially delivered):** new Playwright fixtures cover lost POST response, reload, no duplicate POST, download, and explicit cancellation. Additional owner switch and error-path browser cases remain. Persisted job parameters omit prompt text deliberately; cross-device reproducibility needs a privacy decision.
+3. **P1 / editing honesty (delivered):** reference picker and 'continue editing' button now require `image_editing.ready`; PNG/JPEG only when edit adapter is live; non-editable assets retain download and history.
+4. **P2 / recovery (delivered; final browser CI pending):** Playwright fixtures cover lost POST response, reload, no duplicate POST, owner scope after switch, done-result preview/download, cancellation, and unavailable-history fail-closed launch. Persisted job parameters omit prompt text deliberately; cross-device reproducibility needs a privacy decision.
 5. **P2 / further work (remaining):** optional download/history pagination and richer UX for uncertain budget holds; ensure existing speech/transcription workbench uses idempotent recoverable request IDs. This is media scope only; do not change shared gateway/credits.
 6. **Unavailable by design:** video cannot be marked live without a declared real provider adapter. Existing video UI is an offline script draft only.
 
@@ -28,4 +28,6 @@ Whether full prompt/source references may be retained server-side for reproducib
 
 - Read root `AGENTS.md`, stage-two workflow, web `AGENTS.md`, `UI_RULES.md` and active media adapter/registry.
 - Bundled Next docs cannot be accessed through the GitHub connector because `node_modules` is not tracked; no Next runtime APIs were modified.
-- Diagnostic CI ran Prettier on scoped files and passed web typecheck on its synthetic checkout; final PR quality/browser checks remain pending. No paid network execution is authorized.
+- CI `42879591439`: complete monorepo quality gate PASS, browser FAIL on four old fixed-ratio expectations (subsequently updated).
+- Diagnostic CI `42977512596`: scoped Prettier + web typecheck PASS; final PR quality/browser check pending after formatted code checkpoint.
+- No paid provider calls; fixtures and browser mocks only.

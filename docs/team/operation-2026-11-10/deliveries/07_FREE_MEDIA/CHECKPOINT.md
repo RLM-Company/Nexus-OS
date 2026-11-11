@@ -4,19 +4,19 @@ Status: **в работе** (not integrated; integration/acceptance only by Code
 Base: `9d972e8ba447f681fbfb49253b73d9f02dd1d325`; main was identical to base at initial inspection.
 Branch: `ops/free-studio-media`.
 PR: https://github.com/RLM-Company/Nexus-OS/pull/504
-Last code SHA: `9aa140d1d48a59e614b4e26f32a43ece364dc4ea`.
+Last code SHA before this report: `52d1f0fa5c61737bcaae1455972eb7c4368cb261` (formatted source staged in next commit).
 
 ## Current slice
 
-Image workbench follows exact server-advertised image constraints. It sends aspect ratio, quality and output format to the existing POST route, supports non-PNG previews/download, and gates reference uploads by the edit capability. A client request ID is submitted in both request body and idempotency header, and a pending ID is stored without prompt/image payload in sessionStorage. Reload reads owner-scoped GET jobs. Lost response is shown as unknown; no automatic POST occurs. Another explicit click uses the same ID and is protected by the server fingerprint contract. Confirmation precedes any paid POST. Selecting a historical task restores supported parameters, not prompt bytes.
+Image workbench uses only server-advertised geometry/quality/format; it forwards supported options through existing image POST. Image edit picker and re-edit action require declared server edit readiness, and PNG/JPEG preparation only; WebP remains downloadable. Paid image submission requires explicit confirmation and a stable idempotency ID (body + header). Session storage keeps only the request ID; reload reads the owner-scoped jobs endpoint. Completed results reappear after reload. Ambiguous responses never trigger automatic POST. Failed owner-history verification blocks fresh paid image launches until an explicit GET succeeds. Selecting past jobs restores supported parameter values but not secret source bytes or prompt text.
 
 ## Remaining checks / next execution
 
-1. Inspect CI run `42878802008` and the next run for this report commit. Correct media-only failures.
-2. Browser fixtures now cover lost POST response, reload, no second POST, cancellation and download. Add owner-switch isolation and PNG/JPEG/WebP editing error cases after current checks.
-3. Continue independent media-only slices: speech job restoration, history ergonomics. Do not touch gateway, global navigation or billing.
-4. Hand draft PR #504 to Codex after verified checks; do not merge, deploy, spend provider funds or claim live media acceptance.
+1. Inspect latest CI for this commit: full monorepo quality, browser acceptance and code sandbox. Fix media-only errors without touching shared contracts.
+2. Browser fixtures now cover lost response, reload, done result, cancellation, change-of-owner no-leak, unavailable editing and history fail-closed. Remaining: explicit WebP re-edit unsupported case and independent speech recovery.
+3. Review current main before integrating (as of 2026-11-11, it advanced at least 60 commits beyond original base; no overlapping Media paths in comparison). Codex owns final integration and rebasing.
+4. Leave PR #504 draft until all checks pass. No merge, deploy, provider spend or live-acceptance claims.
 
 ## Environment constraints
 
-This chat can inspect and write GitHub through the connected GitHub API; container Git checkout cannot reach github.com (DNS/network unavailable). No local monorepo checkout or dependencies. Temporary runner `42878536101` passed Prettier + web typecheck; PR CI and browser acceptance are separate from live provider acceptance.
+This chat can inspect and write GitHub through the connected GitHub API; container Git checkout cannot reach github.com (DNS/network unavailable). No local monorepo checkout or dependencies. Temporary runners `42878536101` and `42977512596` passed scoped Prettier + web typecheck. CI quality at `42879591439` passed; browser at that SHA failed four obsolete ratios, now adjusted. PR CI and live provider acceptance remain distinct.

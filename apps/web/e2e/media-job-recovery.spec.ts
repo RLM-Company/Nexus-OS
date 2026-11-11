@@ -142,9 +142,7 @@ test("recovery under a different owner shows no prior job or paid POST", async (
     route.fulfill({ json: capabilityResponse })
   );
   // The owner-scoped API correctly returns no jobs for this owner.
-  await page.route("**/api/v1/media/jobs", (route) =>
-    route.fulfill({ json: { items: [] } })
-  );
+  await page.route("**/api/v1/media/jobs", (route) => route.fulfill({ json: { items: [] } }));
   await page.route("**/api/v1/media/images", (route) => {
     posts++;
     return route.fulfill({ status: 503 });
@@ -172,9 +170,7 @@ test("a completed PNG remains downloadable but edit action requires a live editi
   await page.route("**/api/v1/media/capabilities", (route) =>
     route.fulfill({ json: capabilityResponse })
   );
-  await page.route("**/api/v1/media/jobs", (route) =>
-    route.fulfill({ json: { items: [done] } })
-  );
+  await page.route("**/api/v1/media/jobs", (route) => route.fulfill({ json: { items: [done] } }));
   await page.route("**/api/v1/media/images", (route) => {
     posts++;
     return route.fulfill({ status: 503 });
