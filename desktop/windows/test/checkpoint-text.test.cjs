@@ -5,6 +5,10 @@ const assert = require("node:assert/strict");
 const { containsCredentialText } = require("../checkpoint-text.cjs");
 
 test("credential filter flags tokens, passwords, keys and PIN-style codes", () => {
+  // PEM headers are built at runtime: the root secret scanner treats the bare
+  // header line as a private-key literal, while the filter under test must
+  // still flag it. Header-only fixtures carry no key material.
+  const pemHeader = (alg) => `-----BEGIN ${alg}PRIVATE KEY-----`;
   const flagged = [
     "Bearer abc.def.ghi",
     "authorization: Bearer xyz",
@@ -26,8 +30,8 @@ test("credential filter flags tokens, passwords, keys and PIN-style codes", () =
     "gho_abcdefgh12345",
     "github_pat_11AAAA0123456789",
     "sk-proj-abcdef012345",
-    "-----BEGIN RSA PRIVATE KEY-----",
-    "-----BEGIN OPENSSH PRIVATE KEY-----"
+    pemHeader("RSA "),
+    pemHeader("OPENSSH ")
   ];
   for (const text of flagged) assert.equal(containsCredentialText(text), true, text);
 });
