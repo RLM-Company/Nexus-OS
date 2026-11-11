@@ -2,7 +2,7 @@
 
 Status: **в работе** until CI verification; at most **готово к интеграции** after fixture checks.
 BASE_SHA: `9d972e8ba447f681fbfb49253b73d9f02dd1d325`
-HEAD_SHA: latest code snapshot `ebacd5de9119e56911d2a010b7b574cf8c2a2685`; read PR #504 for final verified formatter/report commit SHA.
+HEAD_SHA: latest verified code snapshot `271d7fa4042a58bdac7bebfa731a93c6c9cf96f3`; read PR #504 for final report commit SHA.
 Branch: `ops/free-studio-media`; draft PR: https://github.com/RLM-Company/Nexus-OS/pull/504.
 
 ## Scenario before
@@ -60,3 +60,13 @@ Backend metadata keeps only prompt hash and lengths; it intentionally never stor
 **Changed scope:** new `apps/web/src/app/media-generation/media-budget-status.ts` and `.test.ts`; modified `media-panel.tsx`, `media-workbench.tsx`, `apps/web/src/app/voice/voice-playback.tsx`; new `apps/web/e2e/media-budget-history.spec.ts`.
 
 **Evidence:** GitHub Actions `43015849304`: `pnpm --filter @cosmora/web typecheck` **PASS**, selected Vitest **5/5 PASS**, Playwright six mock-only scenarios **6/6 PASS (43.2s)**, selected file Prettier **PASS**. No paid provider call. Last full browser suite `42982674639` **PASS**; sandbox **PASS**; monorepo Prettier fails on unrelated upstream research JSON, not in 07_FREE_MEDIA diff. Main advanced 111 commits since original base, no Media/Sound source overlaps at verification. Draft PR remains unmerged. No changes to migrations, schema, dependencies, credentials, budgets, shared gateway, deployment or other Studio modes.
+
+## Fourth vertical slice — corrupted owner job list cannot authorize paid retry
+
+**Before:** `GET /api/v1/media/jobs` returning 200 with missing/invalid `items` was cast to an empty list. Media/Sound could conclude no job existed and enable paid dispatch. Sound history could retain cached rows after later read failures.
+
+**After:** a strict display/client parser checks job-list shape and minimal job identity/status; malformed 200 responses cause the same fail-closed history uncertainty as an HTTP failure. No automatic second POST occurs. Sound clears stale saved rows if a later verified read fails, exposes a GET-only `Обновить историю MP3` control, and does not imply history is empty.
+
+**Entrypoints:** new `apps/web/src/app/media-generation/media-job-response.ts` and `.test.ts`; `media-panel.tsx`, `apps/web/src/app/voice/voice-playback.tsx`, `apps/web/e2e/media-budget-history.spec.ts`.
+
+**Checks:** mock-only GitHub Actions `43017569953`: `pnpm --filter @cosmora/web typecheck` PASS; selected Vitest **4/4 PASS**; selected Playwright **9/9 PASS**; scoped Prettier PASS. No live providers or data. Full PR quality is separately blocked on upstream `docs/research/experience-llm-distill-2026-11-10.json`, not changed in this branch. No dependency, schema, budget, auth, payment or shared-gateway edits. Codex owns integration/rebase.

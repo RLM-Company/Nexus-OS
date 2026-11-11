@@ -42,3 +42,10 @@ Whether full prompt/source references may be retained server-side for reproducib
 - Verified with fixture-only GitHub Actions `43015849304`: 6/6 browser scenarios, 5/5 selected unit cases, scoped Prettier and web typecheck all PASS.
 
 Remaining independent decisions: server-side cross-device prompt/source persistence requires privacy authorization; live media provider/video acceptance is not authorized, and merged `main` quality requires unrelated upstream formatting correction. No fake video or provider claims.
+
+## Continuation: 2026-11-11 — malformed history fail-closed and stale Sound rows
+
+- New `media-job-response.ts` parser validates GET history structure (array plus required job ID/kind/status) before interpreting it as owner-scoped history. HTTP 200 with malformed data is **not** an empty result: paid Image and Sound launches stay blocked until a successful read-only verification.
+- Image gallery and Sound history both distinguish invalid/failed history from a confirmed empty list. Sound clears previously cached history rows after a failed verification, with an explicit read-only refresh button; do not keep old rows visible under a changed owner context.
+- No shared API, auth, database, gateway, ledger or migration changes. Further browser session owner-draft namespacing requires authenticated owner-context coordination with Codex; do not guess owner IDs or silently migrate source prompts.
+- Focused CI `43017569953`: 9/9 Chromium fixtures PASS, 4/4 media history/budget unit tests PASS, web typecheck PASS, scoped Prettier PASS. No paid provider calls.

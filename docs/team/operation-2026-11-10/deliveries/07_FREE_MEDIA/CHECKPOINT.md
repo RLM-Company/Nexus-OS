@@ -4,7 +4,7 @@ Status: **в работе** (not integrated; integration/acceptance only by Code
 Base: `9d972e8ba447f681fbfb49253b73d9f02dd1d325`; main was identical to base at initial inspection.
 Branch: `ops/free-studio-media`.
 PR: https://github.com/RLM-Company/Nexus-OS/pull/504
-Latest media code snapshot before this report: `ebacd5de9119e56911d2a010b7b574cf8c2a2685`; formatted and fixture-verified code staged in final PR report commit. Query PR #504 for exact head.
+Latest media code snapshot before this report: `271d7fa4042a58bdac7bebfa731a93c6c9cf96f3`; formatter-verified in targeted CI. Read PR #504 for final report-commit HEAD.
 
 ## Current slice
 
@@ -31,3 +31,12 @@ This chat can inspect and write GitHub through the connected GitHub API; contain
 - New budget/history/reference slice: `apps/web/src/app/media-generation/media-budget-status{,.test}.ts`, `media-panel.tsx`, `media-workbench.tsx`, `apps/web/src/app/voice/voice-playback.tsx`, `apps/web/e2e/media-budget-history.spec.ts`. Verified with dedicated run `43015849304`: **6/6 Playwright PASS**, **5/5 scoped Vitest PASS**, **web typecheck PASS**, **Prettier PASS**. Temporary workflow to be removed in next integration-checkpoint commit.
 - Confirm after commit the draft PR remains open/unmerged, temporary workflow absent, and main diff still isolated. Do not spend on live providers or change credentials/billing/gateway.
 - Next independent media-only priority if further work requested: review owner-switch/recovery edge cases and deeper diagnostic status/history refresh without automatic paid dispatch. Stop at `готово к интеграции` only with proper review; Codex owns integration.
+
+## 2026-11-11 final safety increment
+
+- Implemented validated shape parsing for `GET /api/v1/media/jobs` in `media-job-response.ts`: malformed/missing `items` or malformed job summaries fail closed, rather than enabling a new paid POST on false-empty history. Image and Sound use the same parser.
+- Sound historical MP3 rows are cleared after an unverified refresh to avoid keeping stale owner-scoped cached content visible; manual `Обновить историю MP3` is GET-only.
+- Verification run `43017569953`: browser fixtures **9/9 PASS (43.6s)**, targeted Vitest **4/4 PASS**, web typecheck **PASS**, scoped formatting **PASS**. Earlier run `43017113805`: **8/8 browser PASS**, **4/4 unit PASS**, then one additional stale-row fixture added.
+- Remove `.github/workflows/07-media-history-validate-temp.yml` in final commit, then verify draft PR #504 has only Media/Sound/test/report changes. Do not merge or call a real provider. Full monorepo quality on PR merge checkout remains blocked by the unrelated upstream research JSON formatting issue; Codex must repair it in main.
+
+Next optional independent Media work: owner-scoped session draft isolation/recovery across account switching after Codex confirms the browser identity contract; no unapproved writes to global auth or local plaintext migration. Existing live video adapter remains unavailable.
