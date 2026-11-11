@@ -105,7 +105,7 @@ export function MediaWorkbench({ surface }: { surface: "images" | "video" | "sou
     }
   }, []);
   useEffect(() => {
-    if (surface !== "images") return;
+    if (surface !== "images" || capabilities?.image_editing?.ready !== true) return;
     const id = new URLSearchParams(window.location.search).get("reference");
     if (!id || !/^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/i.test(id)) return;
     const controller = new AbortController();
@@ -128,7 +128,7 @@ export function MediaWorkbench({ surface }: { surface: "images" | "video" | "sou
         if (!controller.signal.aborted) setError("Не удалось открыть исходное изображение.");
       });
     return () => controller.abort();
-  }, [surface, read]);
+  }, [surface, capabilities?.image_editing?.ready, read]);
   if (surface === "sound")
     return (
       <section className={styles.workbench}>

@@ -10,6 +10,7 @@ import {
   type ImageConstraints,
   type ImageRequestOptions
 } from "./media-image-options";
+import { mediaBudgetLabel, mediaBudgetNotice, type MediaBudgetState } from "./media-budget-status";
 
 export type MediaJob = {
   id: string;
@@ -19,7 +20,7 @@ export type MediaJob = {
   created_at: string;
   asset: { mime: string; extension: string; bytes: number; sha256?: string } | null;
   transcript?: string | null;
-  budget_state?: "none" | "reserved" | "reconciled" | "uncertain";
+  budget_state?: MediaBudgetState;
   client_request_id?: string | null;
   parameters?: Record<string, unknown> | null;
 };
@@ -399,6 +400,9 @@ export function MediaGenerationPanel({
     checkUnknown
   } = useMediaJob("image");
   const [history, setHistory] = useState<MediaJob[]>([]);
+  const [historyError, setHistoryError] = useState("");
+  const [historyLoading, setHistoryLoading] = useState(true);
+  const [historyLimit, setHistoryLimit] = useState(8);
   const [revision, setRevision] = useState(0);
   const [referenceLoading, setReferenceLoading] = useState(false);
   const [referenceError, setReferenceError] = useState("");
@@ -448,12 +452,30 @@ export function MediaGenerationPanel({
     }
   }
   useEffect(() => {
+    let active = true;
+    setHistoryLoading(true);
     void fetch("/api/v1/media/jobs", { cache: "no-store" })
-      .then(async (response) =>
-        response.ok ? ((await response.json()) as { items: MediaJob[] }) : { items: [] }
-      )
-      .then(({ items }) => setHistory(items.filter((item) => item.kind === "image").slice(0, 8)))
-      .catch(() => undefined);
+      .then(async (response) => {
+        if (!response.ok) throw new Error("History unavailable");
+        return (await response.json()) as { items?: MediaJob[] };
+      })
+      .then(({ items }) => {
+        if (!active) return;
+        setHistory((Array.isArray(items) ? items : []).filter((item) => item.kind === "image"));
+        setHistoryError("");
+      })
+      .catch(() => {
+        if (!active) return;
+        // Do not show stale history when the owner context or server history is unavailable.
+        setHistory([]);
+        setHistoryError("Не удалось загрузить историю изображений. Это не значит, что задач нет.");
+      })
+      .finally(() => {
+        if (active) setHistoryLoading(false);
+      });
+    return () => {
+      active = false;
+    };
   }, [job?.status, revision]);
   const remove = async (id: string) => {
     if (!window.confirm("Удалить этот результат и историю задания? Учёт расходов сохранится."))
@@ -559,6 +581,11 @@ export function MediaGenerationPanel({
             {statusName[job.status]}
             {job.error_code ? ` · ${mediaErrorName(job.error_code)}` : ""}
           </p>
+          {mediaBudgetNotice(job.budget_state) && (
+            <p role={job.budget_state === "uncertain" ? "alert" : "status"}>
+              {mediaBudgetNotice(job.budget_state)}
+            </p>
+          )}
           {showImage(job) && (
             <>
               {/* Authenticated same-origin asset; never use the prompt as an image source. */}
@@ -590,10 +617,21 @@ export function MediaGenerationPanel({
           )}
         </div>
       )}
-      {history.length > 0 && (
-        <div className={styles.history}>
-          <h4>История изображений</h4>
-          {history.map((item) => (
+      <div className={styles.history}>
+        <h4>История изображений</h4>
+        {historyLoading && <p role="status">Загружаем историю изображений…</p>}
+        {historyError && (
+          <>
+            <p role="alert">{historyError}</p>
+            <button type="button" onClick={() => setRevision((value) => value + 1)}>
+              Повторить загрузку истории
+            </button>
+          </>
+        )}
+        {!historyLoading && !historyError && history.length === 0 && (
+          <p>Сохранённых изображений пока нет.</p>
+        )}
+        {history.slice(0, historyLimit).map((item) => (
             <div key={item.id} className={styles.actions}>
               <button
                 type="button"
@@ -605,6 +643,9 @@ export function MediaGenerationPanel({
                 {showImage(item) && <img src={mediaAssetUrl(item.id)} alt="" loading="lazy" />}
                 {new Date(item.created_at).toLocaleString("ru")} · {statusName[item.status]}
                 {typeof item.parameters?.size === "string" ? ` · ${item.parameters.size}` : ""}
+                {mediaBudgetLabel(item.budget_state)
+                  ? ` · ${mediaBudgetLabel(item.budget_state)}`
+                  : ""}
               </button>
               {item.status === "done" && (
                 <a href={`${mediaAssetUrl(item.id)}?download=1`}>Скачать</a>
@@ -613,9 +654,13 @@ export function MediaGenerationPanel({
                 Удалить
               </button>
             </div>
-          ))}
-        </div>
-      )}
+        ))}
+        {history.length > historyLimit && (
+          <button type="button" onClick={() => setHistoryLimit((value) => value + 8)}>
+            Показать ещё изображения
+          </button>
+        )}
+      </div>
     </section>
   );
 }

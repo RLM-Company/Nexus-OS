@@ -9,6 +9,7 @@ import {
 } from "../media-generation/media-panel";
 import styles from "./voice.module.css";
 import { WorkspaceIcon } from "../workspace-icons";
+import { mediaBudgetLabel, mediaBudgetNotice } from "../media-generation/media-budget-status";
 
 export function CompactVoicePlayback({ text }: { text: string }) {
   const [available, setAvailable] = useState(false);
@@ -168,6 +169,11 @@ function ExpandedPlayback({
           {job.error_code ? ` · ${job.error_code}` : ""}
         </small>
       )}
+      {mediaBudgetNotice(job?.budget_state) && (
+        <small role={job?.budget_state === "uncertain" ? "alert" : "status"}>
+          {mediaBudgetNotice(job?.budget_state)}
+        </small>
+      )}
       {job?.status === "done" && job.asset?.mime === "audio/mpeg" && (
         <>
           <audio ref={audioRef} controls preload="none" src={mediaAssetUrl(job.id)}>
@@ -261,6 +267,9 @@ function SavedSpeech() {
         <div key={item.id} className={styles.voice}>
           <small>
             {new Date(item.created_at).toLocaleString("ru")} · {item.status}
+            {mediaBudgetLabel(item.budget_state)
+              ? ` · ${mediaBudgetLabel(item.budget_state)}`
+              : ""}
           </small>
           {item.status === "done" && item.asset?.mime === "audio/mpeg" && (
             <>

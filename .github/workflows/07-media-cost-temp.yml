@@ -1,0 +1,42 @@
+name: Temporary Media budget history fixture verification
+on:
+  push:
+    branches: ["ops/free-studio-media"]
+permissions:
+  contents: read
+jobs:
+  media-budget:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.19.0
+          run_install: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Format and emit exact scoped source versions
+        shell: bash
+        run: |
+          pnpm exec prettier --write apps/web/src/app/media-generation/media-budget-status.ts apps/web/src/app/media-generation/media-budget-status.test.ts apps/web/src/app/media-generation/media-panel.tsx apps/web/src/app/media-generation/media-workbench.tsx apps/web/src/app/voice/voice-playback.tsx apps/web/e2e/media-budget-history.spec.ts
+          for p in apps/web/src/app/media-generation/media-budget-status.ts apps/web/src/app/media-generation/media-budget-status.test.ts apps/web/src/app/media-generation/media-panel.tsx apps/web/src/app/media-generation/media-workbench.tsx apps/web/src/app/voice/voice-playback.tsx apps/web/e2e/media-budget-history.spec.ts; do
+            printf '__MEDIA_FMT_BEGIN__%s__' "$p"
+            base64 -w0 "$p"
+            printf '__MEDIA_FMT_END__\\n'
+          done
+      - name: Web types
+        run: pnpm --filter @cosmora/web typecheck
+      - name: Scoped unit tests
+        run: pnpm --filter @cosmora/web exec vitest run src/app/media-generation/media-budget-status.test.ts src/app/media-generation/media-image-options.test.ts
+      - name: Install Playwright Chromium
+        run: pnpm --filter @cosmora/web exec playwright install --with-deps chromium
+      - name: Scoped browser Media budget/history/reference fixtures only
+        env:
+          KOSMORA_E2E_PRODUCTION: "1"
+          NEXT_TELEMETRY_DISABLED: "1"
+          TURBO_TELEMETRY_DISABLED: "1"
+        run: pnpm --filter @cosmora/web exec playwright test e2e/media-budget-history.spec.ts --project chromium
