@@ -241,6 +241,8 @@ test("undo and redo affect only the selected game file; saving and reload keep b
   await expect(code).toHaveValue(changedCode);
   await canvas.getByRole("button", { name: "Сохранить версию", exact: true }).click();
   await expect(canvas.getByRole("status")).toContainText("Сохранена новая версия");
+  // The new persisted version is the next undo boundary, even if source bytes match.
+  await expect(undo).toBeDisabled();
   await page.reload();
   await page.getByRole("combobox", { name: "Проект игры", exact: true }).selectOption(id);
   await canvas
