@@ -24,7 +24,7 @@ describe("saved research report snapshots", () => {
           url: "https://example.org/archive",
           snippet: "Источник",
           status: "read",
-          passages: ["Точная цитата\nВторая строка"],
+          passages: ["Первая выдержка", "Точная цитата\nВторая строка"],
           checked_at: "2026-10-22T00:00:00.000Z"
         }
       ];
@@ -33,7 +33,7 @@ describe("saved research report snapshots", () => {
       ];
       value.next_index = 1;
       value.answer = {
-        summary: [{ text: "Вывод", citations: [{ source_id: "S1", excerpt_id: "E1" }] }],
+        summary: [{ text: "Вывод", citations: [{ source_id: "S1", excerpt_id: "E2" }] }],
         disagreements: [],
         gaps: ["Не хватает данных"]
       };
@@ -58,8 +58,13 @@ describe("saved research report snapshots", () => {
       expect(result.statusCode).toBe(200);
       expect(result.body).toBe(researchMarkdown(saved));
       expect(result.body).toContain(run.id);
-      expect(result.body).toContain("[S1:E1](https://example.org/archive)");
-      expect(result.body).toContain("Точная цитата");
+      expect(result.body).toContain("Вывод [S1:E2](https://example.org/archive)");
+      expect(result.body).toContain("**S1:E2**\n\n> Точная цитата\n> Вторая строка");
+      const html = await app.inject({ method: "GET", url: path.replace(/md$/, "html") });
+      expect(html.statusCode).toBe(200);
+      expect(html.body).toContain(
+        "<strong>S1:E2</strong></p><blockquote>Точная цитата\nВторая строка"
+      );
       const etag = `"${createHash("sha256").update(result.body).digest("hex")}"`;
       expect(result.headers.etag).toBe(etag);
       expect(result.headers["cache-control"]).toBe("private, no-store");
