@@ -1,3 +1,79 @@
+# 02_DEVELOPER: конфликт review и восстановление исправленного checkpoint
+
+11 ноября 2026, Москва. Статус этого среза: **готово к интеграции**.
+PR #507 уже merged интегратором в main576c9a6. Эта поставка — новый
+[PR #519](https://github.com/RLM-Company/Nexus-OS/pull/519), branch ops/developer-coscode.
+BASE_SHA `1b87dba9e85162fb49729038e0e072e2001609ce` сохранён без правок чужого кода.
+Source `7367678bf86968c1a7308d37397b4314bd32b920`, recovery source HEAD
+`d8290f689099ad86e9e4c1198a887dffc25d68ee`, code tree
+`36115719b38a02fcdc74c0fd80020bf77ea6652d` совпал локально и на GitHub.
+Финальный docs HEAD указывается в PR.
+
+## До / после и путь вызова
+
+Две вкладки одной задачи имеют одинаковый proposal_hash. Раньше старая вкладка
+могла заменить новый review или стереть proof/token через invalidate-review.
+Теперь существующие endpoints принимают expected_review_hash (null для первого
+review). Web pins родителя редактируемого состояния; фоновые ответы его не меняют.
+Сервер сверяет этот hash до изменения строки/remote reads. Stale review/invalidate
+получает409 STALE_REVIEW, чужие свежие bytes и proof/token сохраняются.
+Текущий внутренний CAS версии по-прежнему защищает от одновременных handler-ов.
+
+Путь: `/code-agent` → selected edits/raw diff → invalidate-review(expected parent) →
+review(expected parent) → существующий check/runner → proof → task checkpoint.
+При конфликте local edits остаются в textarea. «Обновить состояние» не переигрывает
+генерацию и не перебазирует их. Новый функциональный control «Загрузить сохранённые
+правки» требует подтверждённого discard, затем GET и явное восстановление editor.
+Отказ сохраняет local text. Подтверждение загружает актуальный review, также
+перемонтирует raw-diff editor: старый неприменённый текст и preview не остаются
+под сброшенным dirty-флагом. Старый proof не восстанавливается.
+
+Legacy client без expected_review_hash может создать только первый review.
+Замена/инвалидация сохранённого review без parent отклоняется; молчаливой совместимости
+с потерей данных нет. API и web выкатывать согласованно (API поддерживает optional
+поле; старый API отвергнет новый payload). Дизайн/sidebar/global CSS не менялись.
+
+## Проверки
+
+- Scoped API64PASS. Сценарий: failed fixture check(exit1) → точные repaired bytes →
+  новый hash/proof(exit0) → stale write/invalidate отказ без mutation/remote reads →
+  stop service → независимое подключение к реальной временной файловой SQLite →
+  recover/read: exact edits, check, token сохранены; другой owner не видит run.
+  Это persistence test через отдельное соединение, не выдаётся за перезапуск ОС.
+- Полный `pnpm check:core` exit0: freshAPI1001/web290; неизменённые runtime86/DB205/
+  config17/contracts206/policy43/gateway151/core387 — cache replay (см. полный лог).
+  Lint/types/build/format/secrets и остальные core gates прошли.
+- Production Chromium24/24 PASS, workers1/retries0, exit0: stale editor не стирает
+  новый checkpoint; отмена/подтверждение загрузки; следующая правка нового review;
+  raw diff очищается только после discard, proof не возвращается. Strict E2E types
+  прошли отдельно. Код UI реально исполнялся, API/GitHub — явные route fixtures.
+- Первый coreexit1: lint новой fixture (лишний async, matcher any), исправлено без
+  отключения правил. Первый browser22/1: глобальный alert locator захватил служебный
+  Next announcer; selector ограничен main. Failures сохранены рядом с итоговыми логами.
+- Настоящая модель и live target publish не вызывались. Runner в API-сценарии —
+  synthetic fixture с явными exit/cleanup/digest; старые Git/OCI результаты отдельно
+  привязаны к SHA и не выдаются за этот API-прогон.
+
+Изменены apps/api/src/code-agent/{service,routes}.ts, scoped code-agent.test.ts,
+apps/web/src/app/code-agent/page.tsx и scoped E2E. Общих contracts/DB/migrations/
+registration/dependencies нет. Откат — revert двух source commits; checkpoints не
+удалять. Команды: pnpm --filter @cosmora/api exec vitest run test/code-agent.test.ts;
+pnpm check:core; production playwright.acceptance.config.ts e2e/code-agent.spec.ts
+с KOSMORA_E2E_PRODUCTION=1 и KOSMORA_E2E_CHROMIUM_EXECUTABLE=/usr/bin/chromium.
+В этой среде использовался pnpm_config_verify_deps_before_run='' при готовых deps.
+Diff/format/secret scan и дополнительный scan .log проверяются перед docs commit.
+
+## Следующий срез
+
+Подготовлен bounded nonrecursive traversal для truncated tree текущего GitHub
+adapter: pinned SHA,128поддеревьев/100kзаписей/8MB/30s, scopes перед каждым чтением.
+Пока этот adapter patch не применён и не протестирован. Применить отдельным
+integration commit + scoped service binding; не выдавать partial index за complete.
+Затем modern-browser history guard и ограниченный repair feedback. Вся сфера ещё
+не завершена. Merge/deploy/owner PC/live API и чужой target publish не выполнялись.
+
+---
+
 # 02_DEVELOPER: поиск в безопасном immutable индексе
 
 11 ноября 2026, Москва. Исполнитель: Разработчик + GPT Plus.

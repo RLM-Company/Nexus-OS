@@ -1,46 +1,33 @@
 # CHECKPOINT 02_DEVELOPER
 
-11 ноября 2026, Москва. Branch ops/developer-coscode, PR #507.
-BASE последнего среза b457cf9655d2c8001249c9c34e0180dcc58d97de.
-Main4b74f2694d6281887cecdccddaeff994549ec8f0 сохранён этим merge (последнее
-продвижение — только канонические отчёты). Контрольный9d972e8 остаётся предком.
-Code HEAD4eb1b83ccd3f16aa79a4de6cfd8fa063b053fb81,
-treef99c5cd4c85c3546cc21c1c6d4dfd6d1ba995b3e. Финальный docs HEAD — в PR.
+11 ноября 2026, Москва. Branch ops/developer-coscode. PR507 merged интегратором;
+дальнейшая работа PR519. BASE1b87dba9e85162fb49729038e0e072e2001609ce.
+Code HEADd8290f689099ad86e9e4c1198a887dffc25d68ee,
+tree36115719b38a02fcdc74c0fd80020bf77ea6652d, совпадают с GitHub.
+Срез review parent CAS + explicit checkpoint load готов к интеграции:
+API64PASS, coreexit0(freshAPI1001/web290), production24PASS/exit0.
+Временная файловая SQLite: stop service, independent connection/recover/read,
+exact edits/proof/token сохранены; API runner synthetic, реальная модель не вызывалась.
+Первые lint/coreexit1 и browser22/1 сохранены, причины исправлены, не скрыты.
+Пять прежних срезов уже в main через PR507; live-приёмкой это не считается.
 
-Поставки (не присваивать статус выше готово к интеграции):
+Немедленно следующий срез: truncated GitHub tree. Подготовлены (не применены)
+/tmp/coscode-tree-adapter.patch и /tmp/coscode-tree-tests-next.ts. Если /tmp потерян:
+реализовать optional GithubReadScope(signal/allowed) в существующем adapter,
+nonrecursive SHA traversal только после truncated recursive response;128tree nodes,
+100k expanded entries,8MB expanded index,30swhole deadline; invalid SHA/name/duplicate/
+ancestor-cycle reject; shared subtree под разными prefixes разрешён. При budget или
+truncated child вернуть исходный truncated=true result, не partial-as-complete.
+Scope проверить до/после request и при чтении body; prepare/file/status/branchTree
+принимают scope; Code service использует existing authorityChecks/current active
+controller (не второй permissions runtime). Common file отдельным integration commit.
+Проверить service create→read→proposal→review/check на recovered tree, secret paths,
+отмену/отзыв, limits. Пока это план/patch, не completed функция.
 
-1. Source89ec737/integrationfcc183d: executor proof и OCI cancel/setup,
-   настоящий tmp Git2файла, failure/success/stale/cancel, точный diff/receipt.
-2. Source5a5e2e4: unsaved/raw-diff guards и review checkpoint restoration.
-3. Source30e1944: exact linked run/project и late callback isolation.
-4. Sourced467fdb + fixture0591ed1: полный tree22 002, selective1blob, safe paths,
-   legacy-context fence; rootcore exit0 (freshAPI997/web290/runtime86), UI22PASS,
-   externalOCI5/5. Первый TS2379 gateexit2 сохранён. Остальное — в DELIVERY.
-5. Source4eb1b83: negotiated search_files по immutable безопасному индексу,
-   query1–160/result32/partial/count; без нового IO/прав. Scoped71PASS,
-   rootcore exit0 (freshAPI999, остальные пакеты cache); externalOCI5/5 на4eb1b83.
-   Первый scoped70/1 (не учтён before) и первый gateexit1 no-control-regex
-   сохранены и исправлены без отключения проверок. Web этим срезом не менялся;
-   предыдущие UI22 не выдаются за повторную browser-приёмку search tool.
-   Общие CI Verify/Browser при последнем чтении ещё выполнялись.
-
-Точная следующая приёмка — bounded repair / checkpoint:
-
-- Прочесть текущие CodeAgentService.reviewAccepted/invalidateReview/
-  retryProposalCheck/autoCheckProposal/check и соответствующие scoped tests.
-- Воспроизвести failure→owner точная правка→новый review/hash→успешный check→
-  восстановление той же задачи; проверить, что старый proof/token не вернулся,
-  snapshot/base и чужие файлы целы. Существующий retry check бесплатный и не
-  запускает модель; это сильное поведение сохранить, второй runtime не создавать.
-- Затем выбрать конкретный незавершённый пробел ограниченного ремонта. Не добавлять
-  скрытый paid retry, не перезаписывать пользовательские edits. Не заявлять automatic
-  repair уже готовым: этот срез дал поиск путей, а не новую repair loop.
-
-Truncated tree по-прежнему отказ: безопасная subtree strategy требует отдельного
-GitHub adapter integration с полным existence coverage. Общий SPA sidebar/back-forward
-нуждается в каноническом guard Codex. Фильтр путей не доказывает отсутствие секретов
-в любом исходнике. Полная сфера не закончена; further status подтверждает Codex.
-Live модель/foreign target publish/owner PC/VPS/merge/deploy не выполнялись.
-Перед продолжением проверить main/contracts и не сбрасывать чужие изменения.
-Office/browser/CDP/work runtime/Games/Sites/chat/sidebar не присваивать; отчёты
-писать только в deliveries/02_DEVELOPER, общую доску не редактировать.
+После этого history navigation guard в собственном hook: Navigation API traverse
+можно отменить только при event.cancelable и sameDocument; не monkeypatch history.
+MDN navigate_event и WHATWG nav-history-apis прочитаны (11 ноября). Общая shell
+навигация/стили не принадлежат нам; не переписывать. Bounded model repair ещё не
+реализован: существующие manual edits/retry checks сохранить, без hidden paid retry.
+Live target publish требует отдельного разрешения; модель/API fixtures только.
+Merge/deploy/ПК владельца/VPS не выполнять. Отчёты только02_DEVELOPER.

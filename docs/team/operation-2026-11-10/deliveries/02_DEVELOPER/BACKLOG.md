@@ -52,6 +52,13 @@ BASE_SHA: f9eb45285f3473bfd3fe9a73939c1903dc696b3b.
   total_count/partial; безопасный immutable index без дополнительных remote reads.
 - Поиск → exact read → durable patch доказан scoped API, tools-free fallback сохранён.
 
+## Исправлено шестым срезом (готово к интеграции, PR519)
+
+- Review/invalidation привязаны к parent review hash: старая вкладка не стирает
+  новые edits/proof. Explicit checkpoint load с discard, включая raw editor.
+- Failure→repair→new proof→stop/recover через отдельный file SQLite connection
+  проверен; API64, coreexit0, Chromium24PASS. Это ещё не automatic model repair.
+
 ## Не завершено / следующий приоритет
 
 - Следующий приоритет — приёмка failed-check → точная owner/model правка → новый

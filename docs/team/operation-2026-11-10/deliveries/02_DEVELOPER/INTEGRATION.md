@@ -44,3 +44,11 @@ Source4eb1b83: только Code service/helper/scoped tests. search_files — d
 Metadata read использует уже разрешённый immutable index; policy/owner/project
 fences, лимиты и budget не расширены. Общие файлы не менялись. Main4b74f26
 (канонические отчёты) сохранён mergeb457cf9 без авторских правок.
+
+## Review parent CAS и checkpoint recovery (PR519)
+
+Scoped routes добавляют optional expected_review_hash (hash|null) к review и
+invalidate-review. New web pins parent hash; legacy replacement без него denied.
+Первый legacy review совместим. API+web поставлять вместе; старый API не принимает
+новое поле. Общие contracts/DB/registration не менялись. В source d8290f6 добавлен
+явный checkpoint load и file SQLite persistence test. Нового store нет.
