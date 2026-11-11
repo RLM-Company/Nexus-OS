@@ -17,6 +17,7 @@ import { issueInputSize, type IssueContext } from "./github-issues-client";
 type FileChange = { path: string; before: string | null; content: string };
 type Run = {
   id: string;
+  version?: number;
   status: string;
   capabilities?: { repair_once?: number };
   repair_request?: {
@@ -1092,7 +1093,10 @@ export default function CodeAgentPage() {
                   )}
                 </div>
               )}
-              {run.capabilities?.repair_once === 1 &&
+              {run.capabilities?.repair_once === 2 &&
+                typeof run.version === "number" &&
+                Number.isSafeInteger(run.version) &&
+                run.version > 0 &&
                 !run.repair_request &&
                 run.status === "checked" &&
                 run.check?.status === "failed" &&
@@ -1101,7 +1105,9 @@ export default function CodeAgentPage() {
                 run.check.check_type &&
                 run.check.review_hash === review.review_hash && (
                   <CodeRepairControl
-                    key={`${run.id}:${review.review_hash}`}
+                    key={`${run.id}:${review.review_hash}:${run.version}`}
+                    expectedVersion={run.version}
+                    checkType={run.check.check_type}
                     disabled={!editable || !matchesReview || proofDirty || patchTextDirty}
                     reviewHash={review.review_hash}
                     repair={(request) =>

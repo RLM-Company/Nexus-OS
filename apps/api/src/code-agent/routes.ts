@@ -390,7 +390,12 @@ export function registerCodeAgentRoutes(
   );
   app.post<{
     Params: Params;
-    Body: { review_hash: string; client_request_id: string; approve: true };
+    Body: {
+      review_hash: string;
+      expected_run_version: number;
+      client_request_id: string;
+      approve: true;
+    };
   }>(
     base + "/:id/repair",
     {
@@ -400,6 +405,7 @@ export function registerCodeAgentRoutes(
           {
             review_hash: hash,
             client_request_id: Type.String({ format: "uuid" }),
+            expected_run_version: Type.Integer({ minimum: 1, maximum: Number.MAX_SAFE_INTEGER }),
             approve: Type.Literal(true)
           },
           { additionalProperties: false }

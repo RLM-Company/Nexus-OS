@@ -11,7 +11,7 @@ async function scenario(
     check_type?: "syntax" | "node-test";
   } = {},
   expectedReview: (review: number) => string = () => "export const value = 3;",
-  repairCapability = false
+  repairCapability: boolean | number = false
 ) {
   let publications = 0;
   let checks = 0;
@@ -20,8 +20,13 @@ async function scenario(
   let created = false;
   let run: Record<string, unknown> = {
     id: "run-1",
+    version: 1,
     status: "proposed",
-    ...(repairCapability ? { capabilities: { repair_once: 1 } } : {}),
+    ...(repairCapability
+      ? {
+          capabilities: { repair_once: typeof repairCapability === "number" ? repairCapability : 2 }
+        }
+      : {}),
     task: "Исправь неверный результат",
     base_branch: "main",
     base_sha: "a".repeat(40),
@@ -108,6 +113,7 @@ async function scenario(
       expect(input.files).toEqual([{ path: "src/value.js", content: expectedReview(reviews) }]);
       run = {
         ...run,
+        version: Number(run.version) + 1,
         status: "review",
         check: undefined,
         draft: {
@@ -132,6 +138,7 @@ async function scenario(
       });
       run = {
         ...run,
+        version: Number(run.version) + 1,
         status: "checked",
         publication_token: "publication-token-1",
         check: {
@@ -146,12 +153,18 @@ async function scenario(
       };
       data = run;
     } else if (url.pathname.endsWith("/repair")) {
+      const input = route.request().postDataJSON();
+      if (input.expected_run_version !== run.version) {
+        await route.fulfill({ status: 409, json: { error: { code: "STALE_CHECK" } } });
+        return;
+      }
       repairs++;
-      expect(repairCapability).toBe(true);
+      expect(run.capabilities).toEqual({ repair_once: 2 });
       expect(repairs).toBe(1);
       const source = run.draft as { plan: { review_hash: string } };
       expect(route.request().postDataJSON()).toEqual({
         review_hash: source.plan.review_hash,
+        expected_run_version: run.version,
         client_request_id: expect.stringMatching(/^[a-f0-9-]{36}$/u),
         approve: true
       });
@@ -234,6 +247,18 @@ async function scenario(
     checks: () => checks,
     repairs: () => repairs,
     snapshot: () => structuredClone(run),
+    concurrentFailedCheck: () => {
+      run = {
+        ...run,
+        version: Number(run.version) + 1,
+        publication_token: undefined,
+        check: {
+          ...(run.check as object),
+          check_type: "node-test",
+          stderr: "another tab failed a different check"
+        }
+      };
+    },
     concurrentReview: () => {
       const draft = run.draft as { plan: { review_hash: string; files: unknown[] } };
       run = {
@@ -1068,4 +1093,63 @@ test("a server without repair capability never receives the new command", async 
   ).toHaveCount(0);
   expect(state.repairs()).toBe(0);
   expect(state.publications()).toBe(0);
+});
+
+test("an old failed-check approval conflicts until the owner reloads and approves the new result", async ({
+  page
+}) => {
+  const state = await scenario(
+    page,
+    false,
+    { status: "failed", exitCode: 1, check_type: "syntax" },
+    () => "export const value = 3;",
+    true
+  );
+  await prepare(page);
+  const approve = page.getByRole("checkbox", {
+    name: "Разрешаю одну дополнительную модельную попытку",
+    exact: false
+  });
+  const repair = page.getByRole("button", {
+    name: "Исправить по результату проверки",
+    exact: true
+  });
+  await approve.check();
+  state.concurrentFailedCheck();
+  const before = state.snapshot();
+  await repair.click();
+  await expect(page.getByRole("main").getByRole("alert")).toContainText(
+    "Результат проверки изменился"
+  );
+  expect(state.snapshot()).toEqual(before);
+  expect(state.repairs()).toBe(0);
+  expect(state.publications()).toBe(0);
+  await page.getByRole("button", { name: "Загрузить сохранённые правки", exact: true }).click();
+  await expect(
+    page.getByLabel("Исправление по результату проверки", { exact: true })
+  ).toContainText("node --test");
+  await expect(approve).not.toBeChecked();
+  await expect(repair).toBeDisabled();
+  await approve.check();
+  await repair.click();
+  await expect(page.getByLabel("+ Итоговое содержимое: src/value.js")).toHaveValue(
+    "export const value = 4;"
+  );
+  expect(state.repairs()).toBe(1);
+  expect(state.publications()).toBe(0);
+});
+
+test("legacy repair v1 capability never sends a versioned v2 command", async ({ page }) => {
+  const state = await scenario(
+    page,
+    false,
+    { status: "failed", exitCode: 1, check_type: "syntax" },
+    () => "export const value = 3;",
+    1
+  );
+  await prepare(page);
+  await expect(
+    page.getByRole("button", { name: "Исправить по результату проверки", exact: true })
+  ).toHaveCount(0);
+  expect(state.repairs()).toBe(0);
 });

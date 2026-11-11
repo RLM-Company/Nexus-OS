@@ -3,15 +3,24 @@
 import { useRef, useState } from "react";
 import styles from "./code-agent.module.css";
 
-/** This command is rendered only after the server advertises repair_once v1. */
+/** This command is rendered only after the server advertises repair_once v2. */
 export function CodeRepairControl({
   disabled,
   reviewHash,
+  expectedVersion,
+  checkType,
   repair
 }: {
   disabled: boolean;
   reviewHash: string;
-  repair: (request: { review_hash: string; client_request_id: string; approve: true }) => void;
+  expectedVersion: number;
+  checkType: "syntax" | "node-test";
+  repair: (request: {
+    review_hash: string;
+    expected_run_version: number;
+    client_request_id: string;
+    approve: true;
+  }) => void;
 }) {
   const [approved, setApproved] = useState(false);
   const requestId = useRef<string | null>(null);
@@ -19,7 +28,8 @@ export function CodeRepairControl({
     <div aria-label="Исправление по результату проверки">
       <p>
         Одна модельная попытка исправления с повтором той же проверки. Затем требуется новый
-        просмотр diff.
+        просмотр diff. Проверка:{" "}
+        <code>{checkType === "syntax" ? "node --check" : "node --test"}</code>.
       </p>
       <label className={styles.checkbox}>
         <input
@@ -35,7 +45,12 @@ export function CodeRepairControl({
         disabled={disabled || !approved}
         onClick={() => {
           requestId.current ??= crypto.randomUUID();
-          repair({ review_hash: reviewHash, client_request_id: requestId.current, approve: true });
+          repair({
+            review_hash: reviewHash,
+            expected_run_version: expectedVersion,
+            client_request_id: requestId.current,
+            approve: true
+          });
           setApproved(false);
         }}
       >

@@ -186,7 +186,7 @@ export class CodeAgentService {
         );
     return {
       ...visible,
-      capabilities: { repair_once: this.deps.ownerBudget ? 1 : 0 },
+      capabilities: { repair_once: this.deps.ownerBudget ? 2 : 0 },
       context_files: run.snapshot.map((f) => ({
         path: f.path,
         size_bytes: Buffer.byteLength(f.content)
@@ -1500,12 +1500,19 @@ export class CodeAgentService {
   repair(
     id: string,
     owner: string,
-    input: { review_hash: string; client_request_id: string; approve: true }
+    input: {
+      review_hash: string;
+      expected_run_version: number;
+      client_request_id: string;
+      approve: true;
+    }
   ) {
     const run = this.current(id, owner);
     this.live(run);
     if (
       input.approve !== true ||
+      !Number.isSafeInteger(input.expected_run_version) ||
+      input.expected_run_version < 1 ||
       !/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/iu.test(
         input.client_request_id
       )
@@ -1514,11 +1521,15 @@ export class CodeAgentService {
     if (run.repair_request) {
       if (
         run.repair_request.client_request_id === input.client_request_id &&
-        run.repair_request.review_hash === input.review_hash
+        run.repair_request.review_hash === input.review_hash &&
+        run.repair_request.source_run_version === input.expected_run_version
       )
         return this.view(run);
       throw new CodeAgentError("REPAIR_LIMIT");
     }
+    // The same review can have multiple check results/types. Bind the paid
+    // approval to the exact failed result the owner saw, before reserving it.
+    if (input.expected_run_version !== run.version) throw new CodeAgentError("STALE_CHECK");
     const draft = this.reviewed(run, input.review_hash);
     if (!this.deps.ownerBudget) throw new CodeAgentError("OWNER_BUDGET_UNAVAILABLE");
     const proof = run.check;
@@ -1586,6 +1597,7 @@ export class CodeAgentService {
         repair_request: {
           client_request_id: input.client_request_id,
           review_hash: input.review_hash,
+          source_run_version: run.version,
           source_snapshot_digest: digest,
           source_draft_id: draft.id,
           check_type: proof.check_type,

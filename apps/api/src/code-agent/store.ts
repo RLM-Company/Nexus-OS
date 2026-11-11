@@ -61,6 +61,7 @@ export interface CodeAgentRun {
     review_hash: string;
     source_snapshot_digest: string;
     source_draft_id: string;
+    source_run_version?: number;
     check_type: "syntax" | "node-test";
     source_check: CodeAgentCheckResult;
     state: "started" | "proposed";

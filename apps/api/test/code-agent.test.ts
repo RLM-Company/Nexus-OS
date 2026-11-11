@@ -2883,6 +2883,7 @@ async function failedRepair(f: Awaited<ReturnType<typeof fixture>>) {
   return {
     id,
     review_hash: review.draft!.plan.review_hash,
+    expected_run_version: f.get(id).version,
     client_request_id: randomUUID(),
     approve: true as const
   };
@@ -2922,6 +2923,7 @@ describe("bounded explicit check-feedback repair", () => {
     expect(result.repair_request).toMatchObject({
       state: "proposed",
       source_draft_id: before.draft_id,
+      source_run_version: payload.expected_run_version,
       source_check: { status: "failed", exitCode: 1 }
     });
     expect(f.service.repair(id, owner, payload).status).toBe("proposed");
@@ -2959,6 +2961,7 @@ describe("bounded explicit check-feedback repair", () => {
         run.check!.exitCode = 0;
       }
       f.store.save(run);
+      payload.expected_run_version = f.get(id).version;
       if (kind === "stale") payload.review_hash = "f".repeat(64);
       expect(() =>
         f.service.repair(id, owner, {
@@ -3038,6 +3041,7 @@ describe("repair recovery fences", () => {
         source_check: before.check!,
         source_snapshot_digest: before.check!.snapshotDigest,
         source_draft_id: before.draft_id!,
+        source_run_version: payload.expected_run_version,
         check_type: "node-test"
       }
     });
@@ -3206,3 +3210,66 @@ it.skipIf(!process.env.CODE_AGENT_TEST_IMAGE)(
   },
   120000
 );
+
+it("rejects repair approved for an older failed check even when the review bytes are unchanged", async () => {
+  const f = await fixture({
+    responses: repairResponses(),
+    runner: {
+      run(input) {
+        return Promise.resolve({
+          status: "failed",
+          exitCode: 1,
+          cleanupVerified: true,
+          snapshotDigest: input.expectedDigest!,
+          stdout: "",
+          stderr: "fixture failure: " + input.check,
+          truncated: false,
+          journal: []
+        });
+      }
+    }
+  });
+  const { id, ...payload } = await failedRepair(f);
+  const original = f.get(id);
+  f.service.check(id, owner, { review_hash: payload.review_hash, check: "syntax", approve: true });
+  const newer = await f.wait(id, "checked");
+  expect(newer.check!.review_hash).toBe(original.check!.review_hash);
+  expect(newer.check!.check_type).toBe("syntax");
+  const approved = { ...payload, expected_run_version: original.version };
+  expect(() => f.service.repair(id, owner, approved)).toThrow("STALE_CHECK");
+  expect(f.providerCalls).toHaveLength(3);
+  expect(f.get(id)).toEqual(newer);
+});
+
+it("requires a valid source version before reserving a repair and rejects a changed replay payload", async () => {
+  const f = await fixture({ responses: repairResponses(), runner: repairRunner() });
+  const { id, ...payload } = await failedRepair(f);
+  const { expected_run_version, ...oldClient } = payload;
+  const before = f.get(id);
+  expect(f.service.view(before).capabilities.repair_once).toBe(2);
+  const missing = await f.app.inject({
+    method: "POST",
+    url: `${f.base}/${id}/repair`,
+    payload: oldClient
+  });
+  expect(missing.statusCode).toBe(400);
+  for (const version of [0, -1, 1.5, Number.MAX_SAFE_INTEGER + 1]) {
+    const invalid = await f.app.inject({
+      method: "POST",
+      url: `${f.base}/${id}/repair`,
+      payload: { ...payload, expected_run_version: version }
+    });
+    expect(invalid.statusCode).toBe(400);
+  }
+  expect(f.get(id)).toEqual(before);
+  expect(f.providerCalls).toHaveLength(3);
+  const accepted = f.service.repair(id, owner, payload);
+  expect(accepted.repair_request?.source_run_version).toBe(expected_run_version);
+  expect(() =>
+    f.service.repair(id, owner, { ...payload, expected_run_version: expected_run_version + 1 })
+  ).toThrow("REPAIR_LIMIT");
+  const complete = await f.wait(id, "proposed");
+  const replay = f.service.repair(id, owner, payload);
+  expect(replay.version).toBe(complete.version);
+  expect(f.providerCalls).toHaveLength(4);
+});
