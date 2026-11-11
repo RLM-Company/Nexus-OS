@@ -21,11 +21,22 @@ import { Buffer } from "node:buffer";
 import { Worker } from "node:worker_threads";
 import { pathToFileURL, fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
-import { dirname, join, relative } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
 import { performance } from "node:perf_hooks";
 
 const here = dirname(fileURLToPath(import.meta.url));
-const [mode, ...rest] = process.argv.slice(2);
+const rawArgv = process.argv.slice(2);
+const fixtureFlagIndex = rawArgv.indexOf("--fixture");
+const fixtureFlagPath = fixtureFlagIndex === -1 ? undefined : rawArgv[fixtureFlagIndex + 1];
+if (fixtureFlagIndex !== -1 && fixtureFlagPath === undefined)
+  throw new Error("--fixture requires a fixture file path");
+const argv =
+  fixtureFlagIndex === -1
+    ? rawArgv
+    : rawArgv.filter(
+        (value, index) => index !== fixtureFlagIndex && index !== fixtureFlagIndex + 1
+      );
+const [mode, ...rest] = argv;
 
 // The system rules paraphrase the stalled-evidence classes of
 // WORK_REFERENCE_RULES (apps/api/src/computer-control/service.ts): stale
@@ -65,7 +76,11 @@ const wordNgrams = (value, size) => {
 };
 
 const REPORT_HELPERS = {
-  fixturePath: "../packages/db/test/fixtures/semantic-experience-distill-evaluation.json",
+  // Overridable per the semantics protocol: --fixture selects another fixture
+  // (v2 semantics panel) without any metric changes; the default stays v1.
+  fixturePath: fixtureFlagPath
+    ? pathToFileURL(resolve(fixtureFlagPath)).href
+    : "../packages/db/test/fixtures/semantic-experience-distill-evaluation.json",
   sketchLimitBytes: 5000
 };
 
@@ -131,7 +146,7 @@ if (mode === "--digest") {
 const [modelDir, manifestPath, output, comparePath] = mode === "--probe" ? rest : [mode, ...rest];
 if (!modelDir || !manifestPath) {
   console.error(
-    "MODELS REQUIRED: usage: bench-experience-llm-distill.mjs <installed-model-dir> <manifest.json> <report.json> [previous.json]\n" +
+    "MODELS REQUIRED: usage: bench-experience-llm-distill.mjs <installed-model-dir> <manifest.json> <report.json> [previous.json] [--fixture <fixture.json>]\n" +
       "The model is installed by the operator per docs/research/experience-llm-distill-manifest-2026-11-10.json. No fake numbers are produced."
   );
   process.exit(2);
