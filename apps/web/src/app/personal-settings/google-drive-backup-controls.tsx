@@ -28,6 +28,13 @@ type Restored = {
   chats: { id: string; title: string }[];
   files: { id: string; name: string }[];
 };
+type BackupRequest = {
+  operation_id: string;
+  include_results: boolean;
+  chat_ids?: string[];
+  file_ids?: string[];
+  office_file?: { name: string; bytes: string };
+};
 const root = "/api/v1/storage/drive";
 async function api<T>(path: string, body?: object): Promise<T> {
   const r = await fetch(root + path, {
@@ -98,7 +105,7 @@ export function GoogleDriveBackupControls({
   const [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
     [notice, setNotice] = useState("");
-  const operation = useRef<string | null>(null);
+  const operation = useRef<BackupRequest | null>(null);
   const [moreBackups, setMoreBackups] = useState(false),
     [moreFiles, setMoreFiles] = useState(false);
   const reload = useCallback(async () => {
@@ -251,32 +258,43 @@ export function GoogleDriveBackupControls({
         disabled={busy || !connected}
         onClick={() =>
           void run(async () => {
-            if (
-              customFiles &&
-              (!fileSelection ||
-                selectedFiles.some((id) => !fileSources.some((file) => file.id === id)))
-            )
-              throw Error("DRIVE_OPERATION_CONFLICT");
-            let office_file: { name: string; bytes: string } | undefined;
-            if (officeFile) {
-              if (!officeSelection) throw Error("DRIVE_OPERATION_CONFLICT");
-              if (officeFile.size > DRIVE_OFFICE_FILE_MAX_BYTES)
-                throw Error("OFFICE_FILE_TOO_LARGE");
-              const bytes = new Uint8Array(await officeFile.arrayBuffer());
-              let binary = "";
-              for (let offset = 0; offset < bytes.length; offset += 8192)
-                binary += String.fromCharCode(...bytes.subarray(offset, offset + 8192));
-              office_file = { name: officeFile.name, bytes: btoa(binary) };
+            const retry = operation.current !== null;
+            if (!operation.current) {
+              if (
+                customFiles &&
+                (!fileSelection ||
+                  selectedFiles.some((id) => !fileSources.some((file) => file.id === id)))
+              )
+                throw Error("DRIVE_OPERATION_CONFLICT");
+              let office_file: BackupRequest["office_file"];
+              if (officeFile) {
+                if (!officeSelection) throw Error("DRIVE_OPERATION_CONFLICT");
+                if (officeFile.size > DRIVE_OFFICE_FILE_MAX_BYTES)
+                  throw Error("OFFICE_FILE_TOO_LARGE");
+                const bytes = new Uint8Array(await officeFile.arrayBuffer());
+                let binary = "";
+                for (let offset = 0; offset < bytes.length; offset += 8192)
+                  binary += String.fromCharCode(...bytes.subarray(offset, offset + 8192));
+                office_file = { name: officeFile.name, bytes: btoa(binary) };
+              }
+              operation.current = {
+                operation_id: crypto.randomUUID(),
+                include_results: customFiles ? false : results,
+                ...(customFiles ? { file_ids: selectedFiles } : {}),
+                ...(!all ? { chat_ids: selected } : {}),
+                ...(office_file ? { office_file } : {})
+              };
             }
-            operation.current ??= crypto.randomUUID();
-            await api("/backups", {
-              operation_id: operation.current,
-              include_results: customFiles ? false : results,
-              ...(customFiles ? { file_ids: selectedFiles } : {}),
-              ...(!all ? { chat_ids: selected } : {}),
-              ...(office_file ? { office_file } : {})
+            const saved = await api<Backup>("/backups", {
+              ...operation.current,
+              ...(retry ? { retry_upload: true } : {})
             });
+            if (saved.state !== "verified") throw Error("BACKUP_UNAVAILABLE");
             operation.current = null;
+            if (customFiles && fileSelection)
+              setSelectedFiles((ids) =>
+                ids.filter((id) => fileSources.some((file) => file.id === id))
+              );
             if (officeFile) {
               setOfficeFile(null);
               if (officeInput.current) officeInput.current.value = "";
