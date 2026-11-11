@@ -611,6 +611,12 @@ export default function Home() {
   const previousGreetingRef = useRef<string | null>(null);
   const greetingInitializedRef = useRef(false);
   const submitPendingRef = useRef(false);
+  const pendingChatSendRef = useRef<{
+    epoch: number;
+    path: string;
+    payload: string;
+    id: string;
+  } | null>(null);
   const projectPromotionPendingRef = useRef(false);
   const activeLocalChat = localChats.find((chat) => chat.id === activeLocalChatId) ?? null;
   const navigationSearch = navigationQuery.trim().toLocaleLowerCase("ru");
@@ -1890,35 +1896,27 @@ export default function Home() {
         setError(null);
         setLastCompletedRoute(null);
         try {
-          const accepted = activeLocalChatId
-            ? await api<GeneralChatAcceptedResponse>(
-                `/api/v1/chats/${encodeURIComponent(activeLocalChatId)}/messages`,
-                {
-                  method: "POST",
-                  body: JSON.stringify({
-                    content,
-                    client_message_id: clientId(),
-                    attachments: submitted.files,
-                    ...(composerActions.web_search ? { web_search: true } : {}),
-                    ...(composerActions.text_action
-                      ? { text_action: composerActions.text_action }
-                      : {})
-                  })
-                }
-              )
-            : await api<GeneralChatAcceptedResponse>("/api/v1/chats", {
-                method: "POST",
-                body: JSON.stringify({
-                  initial_message: content,
-                  mode: chatMode,
-                  client_message_id: clientId(),
-                  attachments: submitted.files,
-                  ...(composerActions.web_search ? { web_search: true } : {}),
-                  ...(composerActions.text_action
-                    ? { text_action: composerActions.text_action }
-                    : {})
-                })
-              });
+          const path = activeLocalChatId
+            ? `/api/v1/chats/${encodeURIComponent(activeLocalChatId)}/messages`
+            : "/api/v1/chats";
+          const body = {
+            ...(activeLocalChatId ? { content } : { initial_message: content, mode: chatMode }),
+            attachments: submitted.files,
+            ...(composerActions.web_search ? { web_search: true } : {}),
+            ...(composerActions.text_action ? { text_action: composerActions.text_action } : {})
+          };
+          const payload = JSON.stringify(body);
+          const previous = pendingChatSendRef.current;
+          const id =
+            previous?.epoch === epoch && previous.path === path && previous.payload === payload
+              ? previous.id
+              : clientId();
+          pendingChatSendRef.current = { epoch, path, payload, id };
+          const accepted = await api<GeneralChatAcceptedResponse>(path, {
+            method: "POST",
+            body: JSON.stringify({ ...body, client_message_id: id })
+          });
+          pendingChatSendRef.current = null;
           const clearedDraft = acknowledgeDraft();
           if (epoch !== viewEpochRef.current) {
             void loadGeneralChats().catch(() => undefined);
@@ -1970,7 +1968,7 @@ export default function Home() {
           setRunPhase("failed");
           setError(
             `${cause instanceof Error ? cause.message : "Не удалось подтвердить отправку"} ` +
-              "Если соединение прервалось, результат запроса неизвестен. Проверьте историю чата перед ручной повторной отправкой: она может списать токены повторно."
+              "Если соединение прервалось и результат запроса неизвестен, повторите отправку здесь с тем же текстом и вложениями."
           );
         }
         return;
