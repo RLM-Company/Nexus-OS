@@ -232,23 +232,32 @@ main.cjs`, package.json parse, prettier clean (оба файла), `npm run chec
     в tempdir с regex-allowlist `cosmora-smoke-…json` и 0o600 (46–64) — на
     машине владельца приёмочный режим не открывается ни под каким видом.
 
-## Что делать следующему запуску (в порядке приоритета)1. **Если фоновый прогон №2 завершится** (see shell-нотификация): проверь
+## Что делать следующему запуску (в порядке приоритета)
 
-`REPRODUCED true/false`. При true: коммит отчёта `-repeat.json` в
-desc-ветку, обнови строки очередей «Опыт выполнения» в
-`docs/product/RUFLO_ADOPTION_SCOPE_RU.md` и
-`docs/product/GEMINI_NOVEMBER_ADOPTION_RU.md`, открой PR desc-ветки
-(ТОЛЬКО с отчётом, merge не делать). При false: разбери расхождение
-(какие поля), не выдавай выборку за дубль. 2. **Если прогон ещё идёт/потерян**: рестарт только по RESUME-механике
-(partial-файл `<output>.partial.json` продолжит кейсы; общий прогон ~3.5-4 ч,
-по кейсу ~17 мин). Запуск из Nexus-OS-чекута:
-`node scripts/bench-experience-llm-distill.mjs "%TEMP%\opencode\models\qwen25-05b-q4" docs/research/experience-llm-distill-manifest-2026-11-10.json docs/research/experience-llm-distill-2026-11-10-repeat.json docs/research/experience-llm-distill-2026-11-10.json`
-(output ≠ предыдущий путь — compare читает предыдущий отчёт ДО записи). 3. **Следующий вертикальный срез ops-сферы**: очереди 1–4 аудит-завершены без
-нарушений (см. пункт 10), срез 6 реализован (п. 11), logout-паритет (п. 13) и
-guard графа упаковки (п. 14) — реализованы. Дальше по очереди владельца:
-оставшиеся installer-этапы (upgrade/uninstall) — только VM/CI; любые новые
-видимые функции — через VISUAL_WAITLIST и решение владельца. 4. Периодически recheck mergeable у PR №489/№491 (desc, старый протокол). 5. После любого нового main: проверить новые общие контракты ПРЕЖДЕ чем
-разрешать конфликты (не автопик своей версии).
+1. **Если фоновый прогон №2 завершится** (see shell-нотификация): проверь
+   `REPRODUCED true/false`. При true: коммит отчёта `-repeat.json` в
+   desc-ветку, обнови строки очередей «Опыт выполнения» в
+   `docs/product/RUFLO_ADOPTION_SCOPE_RU.md` и
+   `docs/product/GEMINI_NOVEMBER_ADOPTION_RU.md`, открой PR desc-ветки
+   (ТОЛЬКО с отчётом, merge не делать). При false: разбери расхождение
+   (какие поля), не выдавай выборку за дубль.
+
+2. **Если прогон ещё идёт/потерян**: рестарт только по RESUME-механике
+   (partial-файл `<output>.partial.json` продолжит кейсы; общий прогон
+   ~3.5–4 ч, по кейсу ~17 мин). Запуск из Nexus-OS-чекута:
+   `node scripts/bench-experience-llm-distill.mjs "%TEMP%\opencode\models\qwen25-05b-q4" docs/research/experience-llm-distill-manifest-2026-11-10.json docs/research/experience-llm-distill-2026-11-10-repeat.json docs/research/experience-llm-distill-2026-11-10.json`
+   (output ≠ предыдущий путь — compare читает предыдущий отчёт ДО записи).
+
+3. **Следующий вертикальный срез ops-сферы**: очереди 1–4 аудит-завершены
+   без нарушений (см. пункт 10), срез 6 реализован (п. 11), logout-паритет
+   (п. 13) и guard графа упаковки (п. 14) — реализованы. Дальше по очереди
+   владельца: оставшиеся installer-этапы (upgrade/uninstall) — только VM/CI;
+   любые новые видимые функции — через VISUAL_WAITLIST и решение владельца.
+
+4. Периодически recheck mergeable у PR №489/№491 (desc, старый протокол).
+
+5. После любого нового main: проверить новые общие контракты ПРЕЖДЕ чем
+   разрешать конфликты (не автопик своей версии).
 
 ## Границы (не нарушать)
 
