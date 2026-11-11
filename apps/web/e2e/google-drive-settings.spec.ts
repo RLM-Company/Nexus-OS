@@ -204,6 +204,7 @@ test("selects exact result versions, reports conflicts and exposes only the mana
         items: [],
         chats: [],
         file_selection: true,
+        office_file_selection: true,
         files: [
           {
             id: first,
@@ -253,10 +254,21 @@ test("selects exact result versions, reports conflicts and exposes only the mana
   await panel.getByRole("checkbox", { name: "Выбрать файлы по отдельности" }).check();
   await panel.getByRole("checkbox", { name: /proposal.md/ }).check();
   await expect(panel.getByRole("checkbox", { name: /notes.txt/ })).not.toBeChecked();
+  const office = Buffer.from([80, 75, 3, 4, 0, 128, 255]);
+  await panel.getByLabel(/Файл Office с устройства/).setInputFiles({
+    name: "report.docx",
+    mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    buffer: office
+  });
+  expect(saved).toHaveLength(0);
   await panel.getByRole("button", { name: "Сохранить копию на Drive" }).click();
   await expect(panel.getByRole("alert")).toContainText("Выбранный файл изменился");
   expect(saved).toHaveLength(1);
-  expect(saved[0]).toMatchObject({ include_results: false, file_ids: [first] });
+  expect(saved[0]).toMatchObject({
+    include_results: false,
+    file_ids: [first],
+    office_file: { name: "report.docx", bytes: office.toString("base64") }
+  });
   await expect(panel.getByText("Все части копии сохранены и проверены.")).toHaveCount(0);
   await panel.screenshot({ path: testInfo.outputPath("drive-file-selection.png") });
   await panel.getByRole("button", { name: "Отключить Google Drive", exact: true }).click();

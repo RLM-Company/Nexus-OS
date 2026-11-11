@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { randomUUID } from "node:crypto";
+import { createRequire } from "node:module";
 import { GeneralChatStore, openDatabase, runMigrations } from "@cosmora/db";
 import { loadServerConfig } from "@cosmora/config";
 import { buildApp } from "../src/app.js";
@@ -18,6 +19,10 @@ import { DrivePayloadCipher } from "../src/cloud-storage/google-drive-payload-ci
 import { googleDrivePrivacyAdapter } from "../src/cloud-storage/google-drive-privacy.js";
 import { OwnerPrivacyCoordinator } from "../src/account-settings/privacy/coordinator.js";
 import { createArchive } from "../src/account-settings/privacy/archive.js";
+
+const { buildOfficeDocument } = createRequire(import.meta.url)(
+  "../../../desktop/windows/workspace/office-document.cjs"
+) as { buildOfficeDocument: (action: unknown) => { buffer: Buffer } };
 
 const owner = "local-owner",
   origin = "https://kosmora.example",
@@ -199,6 +204,59 @@ describe("complete Drive snapshots and restore", () => {
       )
       .run();
   };
+
+  it("backs up Office bytes exactly, replays a save and keeps two revisions independently restorable", async () => {
+    const name = "Отчёт.docx";
+    const document = (revision: number) =>
+      buildOfficeDocument({
+        kind: "workspace_create_docx",
+        path: name,
+        title: "Отчёт",
+        sections: [{ heading: "Источник", text: `v${revision} https://example.org/source` }]
+      }).buffer;
+    const first = document(1),
+      second = document(2);
+    const selection = (bytes: Buffer) => ({
+      chat_ids: [],
+      include_results: false,
+      office_file: { name, bytes: bytes.toString("base64") }
+    });
+    const operation = randomUUID();
+    const initial = await save(selection(first), operation);
+    expect((await save(selection(first), operation)).id).toBe(initial.id);
+    const conflict = await post("/backups", { ...selection(second), operation_id: operation });
+    expect(conflict.statusCode).toBe(409);
+    expect(conflict.json()).toMatchObject({ error: { code: "DRIVE_OPERATION_CONFLICT" } });
+    expect(google.uploads).toBe(1);
+    const malformed = await post("/backups", {
+      ...selection(Buffer.from("not an office package")),
+      operation_id: randomUUID()
+    });
+    expect(malformed.statusCode).toBe(400);
+    expect(google.uploads).toBe(1);
+    const newer = await save(selection(second));
+    expect(newer.id).not.toBe(initial.id);
+
+    await app.close();
+    app = build();
+    for (const [backup, original] of [
+      [newer, second],
+      [initial, first]
+    ] as const) {
+      const p = await preview(backup.id);
+      expect(p).toMatchObject({ chats: 0, files: 1 });
+      const restore = { token: p.token, operation_id: randomUUID() };
+      const result = await post(`/backups/${backup.id}/restore`, restore);
+      expect(result.statusCode, result.body).toBe(200);
+      const saved = result.json<{ files: { id: string; name: string }[] }>();
+      expect(saved.files[0]?.name).toBe(name);
+      const downloaded = await get(`/restored-files/${saved.files[0]!.id}`);
+      expect(downloaded.statusCode).toBe(200);
+      expect(downloaded.rawPayload).toEqual(original);
+      expect((await post(`/backups/${backup.id}/restore`, restore)).json()).toEqual(saved);
+    }
+    expect(google.uploads).toBe(2);
+  });
 
   it("saves chat text/attachments/results and restores new objects atomically without recreating jobs", async () => {
     const operation = randomUUID(),

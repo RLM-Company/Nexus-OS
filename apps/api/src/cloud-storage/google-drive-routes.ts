@@ -2,8 +2,10 @@ import type { FastifyInstance, FastifyRequest } from "fastify";
 import { Type } from "typebox";
 import { TypeBoxValidatorCompiler } from "@fastify/type-provider-typebox";
 import type { GoogleDriveConnectionView, IdentityContext } from "@cosmora/contracts";
+import { DRIVE_OFFICE_FILE_MAX_BYTES } from "@cosmora/contracts";
 import { DriveStorageError } from "./google-drive.js";
 import type { GoogleDriveRuntime } from "./google-drive-runtime.js";
+import { selectedOfficeFile } from "./google-drive-snapshot.js";
 
 export const DRIVE_ROUTE = "/api/v1/storage/drive";
 export const safeDriveLogUrl = (url: string) =>
@@ -73,7 +75,12 @@ export function registerGoogleDriveRoutes(
             ? 413
             : code === "BACKUP_BUSY"
               ? 429
-              : ["BACKUP_INVALID", "BACKUP_INVALID_SELECTION", "BACKUP_EMPTY"].includes(code)
+              : [
+                    "BACKUP_INVALID",
+                    "BACKUP_INVALID_SELECTION",
+                    "BACKUP_INVALID_OFFICE_FILE",
+                    "BACKUP_EMPTY"
+                  ].includes(code)
                 ? 400
                 : conflict
                   ? 409
@@ -206,10 +213,12 @@ export function registerGoogleDriveRoutes(
         chat_ids?: string[];
         file_ids?: string[];
         include_results: boolean;
+        office_file?: { name: string; bytes: string };
       };
     }>(
       DRIVE_ROUTE + "/backups",
       {
+        bodyLimit: 3_250_000,
         schema: {
           body: Type.Object(
             {
@@ -222,7 +231,19 @@ export function registerGoogleDriveRoutes(
                   maxItems: 2000
                 })
               ),
-              include_results: Type.Boolean()
+              include_results: Type.Boolean(),
+              office_file: Type.Optional(
+                Type.Object(
+                  {
+                    name: Type.String({ minLength: 1, maxLength: 160 }),
+                    bytes: Type.String({
+                      minLength: 4,
+                      maxLength: Math.ceil(DRIVE_OFFICE_FILE_MAX_BYTES / 3) * 4
+                    })
+                  },
+                  { additionalProperties: false }
+                )
+              )
             },
             { additionalProperties: false }
           )
@@ -232,7 +253,10 @@ export function registerGoogleDriveRoutes(
         bundles().save(identityFor(r).owner_id, r.body.operation_id, {
           include_results: r.body.include_results,
           ...(r.body.chat_ids ? { chat_ids: r.body.chat_ids } : {}),
-          ...(r.body.file_ids ? { file_ids: r.body.file_ids } : {})
+          ...(r.body.file_ids ? { file_ids: r.body.file_ids } : {}),
+          ...(r.body.office_file
+            ? { office_file: selectedOfficeFile(r.body.office_file.name, r.body.office_file.bytes) }
+            : {})
         })
     );
     for (const action of ["retry", "preview", "discard", "cancel-preview"] as const)
@@ -301,7 +325,11 @@ export function registerGoogleDriveRoutes(
             "Content-Disposition",
             `attachment; filename="kosmora-result.txt"; filename*=UTF-8''${encodeURIComponent(file.name).replace(/[!'()*]/g, (c) => "%" + c.charCodeAt(0).toString(16))}`
           )
-          .send(Buffer.from(file.content));
+          .send(
+            typeof file.content === "string"
+              ? Buffer.from(file.content, "utf8")
+              : Buffer.from(file.content)
+          );
       }
     );
     routes.post(DRIVE_ROUTE + "/retry-folder", empty, async (r) => {
