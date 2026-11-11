@@ -19,7 +19,9 @@ const archive = (replace: Record<string, string> = {}) => {
     "project.json": source,
     ...replace
   };
-  return zipSync(Object.fromEntries(Object.entries(files).map(([name, value]) => [name, strToU8(value)])));
+  const entries: Record<string, Uint8Array> = {};
+  for (const [name, value] of Object.entries(files)) entries[name] = strToU8(value);
+  return zipSync(entries);
 };
 
 it("restores the exact source package from a matching exported archive", () => {
@@ -27,18 +29,18 @@ it("restores the exact source package from a matching exported archive", () => {
 });
 
 it("rejects mismatch between project.json and individual source files", () => {
-  expect(() => readGameProjectArchive(archive({ "game.js": "game.onUpdate = () => { alert(1); }" })))
-    .toThrow("INVALID_GAME_ARCHIVE");
+  const mismatch = archive({ "game.js": "game.onUpdate = () => { alert(1); }" });
+  expect(() => readGameProjectArchive(mismatch)).toThrow("INVALID_GAME_ARCHIVE");
 });
 
 it("rejects extra paths, missing files, non-zip input, and inflated oversized entries", () => {
-  expect(() => readGameProjectArchive(archive({ "../unsafe.js": "data" })))
-    .toThrow("INVALID_GAME_ARCHIVE");
+  const unexpected = archive({ "../unsafe.js": "data" });
+  expect(() => readGameProjectArchive(unexpected)).toThrow("INVALID_GAME_ARCHIVE");
   const incomplete = zipSync({ "project.json": strToU8(source) });
   expect(() => readGameProjectArchive(incomplete)).toThrow("INVALID_GAME_ARCHIVE");
   expect(() => readGameProjectArchive(strToU8("not a zip"))).toThrow("INVALID_GAME_ARCHIVE");
-  expect(() => readGameProjectArchive(archive({ "scene.html": "X".repeat(65000) })))
-    .toThrow("INVALID_GAME_ARCHIVE");
-  expect(() => readGameProjectArchive(new Uint8Array(GAME_ARCHIVE_MAX_BYTES + 1)))
-    .toThrow("INVALID_GAME_ARCHIVE");
+  const oversized = archive({ "scene.html": "X".repeat(65000) });
+  expect(() => readGameProjectArchive(oversized)).toThrow("INVALID_GAME_ARCHIVE");
+  const oversizedArchive = new Uint8Array(GAME_ARCHIVE_MAX_BYTES + 1);
+  expect(() => readGameProjectArchive(oversizedArchive)).toThrow("INVALID_GAME_ARCHIVE");
 });

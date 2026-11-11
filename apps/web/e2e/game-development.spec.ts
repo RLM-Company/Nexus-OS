@@ -280,12 +280,17 @@ test("recovers source from exact ZIP without executing it and refuses invalid or
   await expect(canvas.getByRole("alert")).toContainText("Архив отклонён");
   await expect(code).toHaveValue(edited);
 
+  const restoreFile = {
+    name: "kosmora-game-source.zip",
+    mimeType: "application/zip",
+    buffer: zip
+  };
   page.once("dialog", (dialog) => void dialog.dismiss());
-  await input.setInputFiles({ name: "kosmora-game-source.zip", mimeType: "application/zip", buffer: zip });
+  await input.setInputFiles(restoreFile);
   await expect(code).toHaveValue(edited);
 
   page.once("dialog", (dialog) => void dialog.accept());
-  await input.setInputFiles({ name: "kosmora-game-source.zip", mimeType: "application/zip", buffer: zip });
+  await input.setInputFiles(restoreFile);
   await expect(code).toHaveValue(original);
   await expect(canvas.getByRole("button", { name: "Запустить игру", exact: true })).toBeEnabled();
   await canvas.getByRole("button", { name: "Сохранить версию", exact: true }).click();
