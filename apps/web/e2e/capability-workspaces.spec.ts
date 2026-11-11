@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { installOfflineImageCapabilities } from "./fixtures/media-capabilities";
 
 test("keeps media configuration local until explicit generation is available", async ({ page }) => {
   const writes: string[] = [];
@@ -6,9 +7,11 @@ test("keeps media configuration local until explicit generation is available", a
     if (["POST", "PUT", "PATCH", "DELETE"].includes(request.method()))
       if (!request.url().endsWith("/chat-navigation/import-pins")) writes.push(request.url());
   });
+  await installOfflineImageCapabilities(page);
   await page.goto("/?surface=images");
   await page.getByLabel("Описание изображения", { exact: true }).fill("Лунная станция");
-  await page.getByRole("button", { name: "16:9", exact: true }).click();
+  await expect(page.getByRole("button", { name: "16:9", exact: true })).toHaveCount(0);
+  await page.getByRole("button", { name: "3:2 · 1536 × 1024" }).click();
   await expect(
     page.getByRole("button", { name: "Сгенерировать изображение", exact: true })
   ).toBeDisabled();

@@ -136,9 +136,7 @@ export function useMediaJob(recoveryKind?: "image") {
       ? items.find(
           (item) => item.kind === recoveryKind && item.client_request_id === pendingId.current
         )
-      : items.find(
-          (item) => item.kind === recoveryKind && ["queued", "running"].includes(item.status)
-        );
+      : items.find((item) => item.kind === recoveryKind);
     if (found) {
       setJob(found);
       setUnknown(false);
