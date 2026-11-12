@@ -1,0 +1,48 @@
+[WebServer] (node:12185) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:12199) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:12199) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:12213) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] $ tsc -p tsconfig.build.json
+[WebServer] (node:12240) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] $ node scripts/prepare-pdf-worker.mjs && next build
+[WebServer] (node:12266) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:12266) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:12302) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:12303) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:12350) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] $ next start -H 127.0.0.1
+[WebServer] (node:12365) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+
+Running 16 tests using 1 worker
+
+(node:12384) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓   1 [chromium] › e2e/chat-reliability.spec.ts:47:5 › new chat during a delayed initial read stays usable and ignores the late response (1.8s)
+  ✓   2 [chromium] › e2e/chat-reliability.spec.ts:87:5 › restores text and files after closing the tab, isolates chats, removes and clears accepted drafts (5.5s)
+  ✓   3 [chromium] › e2e/chat-reliability.spec.ts:170:5 › retains project materials across reload without leaking into the new-chat draft (2.7s)
+  ✓   4 [chromium] › e2e/chat-reliability.spec.ts:191:5 › recovers text with invalid saved materials and retains a draft on rejected submission (2.1s)
+  ✓   5 [chromium] › e2e/chat-reliability.spec.ts:223:5 › prepares a phone-sized JPEG, restores thumbnail and rejects unsafe dimensions (5.9s)
+  ✓   6 [chromium] › e2e/chat-reliability.spec.ts:277:5 › keeps attachment controls keyboard reachable with clear names and thumbnail text (1.3s)
+  ✓   7 [chromium] › e2e/chat-reliability.spec.ts:299:5 › announces rejected attachment type and keeps the draft editor usable (1.2s)
+  ✓   8 [chromium] › e2e/chat-reliability.spec.ts:312:5 › restored attachment drafts expose the image name to assistive technology (1.4s)
+  ✓   9 [chromium] › e2e/chat-reliability.spec.ts:344:7 › retries an accepted personal chat message with its original attachment after a lost response (2.8s)
+  ✓  10 [chromium] › e2e/chat-reliability.spec.ts:344:7 › retries an accepted project chat message with its original attachment after a lost response (2.8s)
+  ✓  11 [chromium] › e2e/chat-reliability.spec.ts:405:5 › two uncertain sends remain independently retryable after navigation and reload (4.0s)
+  ✓  12 [chromium] › e2e/chat-reliability.spec.ts:474:5 › reload and lost network recover the same run without duplicate POSTs or messages (11.2s)
+  ✓  13 [chromium] › e2e/chat-reliability.spec.ts:507:5 › late history and stream cannot affect the newly selected chat (5.2s)
+  ✓  14 [chromium] › e2e/chat-reliability.spec.ts:540:5 › long Markdown retains the complete answer in copy and chat export (4.9s)
+  ✓  15 [chromium] › e2e/chat-reliability.spec.ts:572:5 › ordinary-chat cancellation after reload restores a request without sending it (3.3s)
+  ✓  16 [chromium] › e2e/chat-reliability.spec.ts:597:5 › a pre-completion history snapshot cannot reopen a completed run (12.7s)
+
+  16 passed (1.5m)

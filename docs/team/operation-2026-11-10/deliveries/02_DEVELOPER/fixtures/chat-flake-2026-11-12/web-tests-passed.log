@@ -1,0 +1,21 @@
+$ vitest run && node scripts/studio-data-regression.cjs
+
+ RUN  v4.1.11 /workspace/work/Nexus-OS-chat-flake-2026-11-12/apps/web
+
+
+ Test Files  66 passed (66)
+      Tests  363 passed (363)
+   Start at  17:37:38
+   Duration  16.54s (transform 1.21s, setup 0ms, import 3.07s, tests 4.66s, environment 6ms)
+
+PASS 1: strict Russian decimals, ID preserve, duplicates and quoted CRLF
+PASS 2: large 80,000x10 CSV (800K cells), cross-quoted fields, no silent row trim
+PASS 3: hard UTF-8 byte/rows/columns/cells, malformed quotes
+PASS 4: workspace rejects invalid schema/types/columns/row shape, exact dup headers
+PASS 5: scatter numeric axes, missing/invalid counts, stable X sort and SVG extreme finite
+PASS 6: CSV spreadsheet injection including invisible prefixes; JSON duplicate headers
+PASS 7: large JSON export overflow aborts explicitly, CSV full export and bounded attachment rows
+PASS 8: export/workspace cancellation mid-batch
+PASS 9: REAL worker parse, filter, numeric scatter response
+PASS 10: REAL worker termination during 80k-row parse (no late loaded message)
+TOTAL 10/10 PASS

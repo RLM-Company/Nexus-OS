@@ -1,3 +1,25 @@
+# Анализ flaky chat и исправление контроля CI, 12 ноября 2026
+
+Ветка `fix/chat-draft-e2e-diagnosis-2026-11-12`, база main33f43b8.
+Source33f6014, отдельный CI integration49876e6. Подробности:
+[CHAT_FLAKE_DIAGNOSIS_RU.md](CHAT_FLAKE_DIAGNOSIS_RU.md).
+
+Подтверждено и исправлено: flaky после retry больше не даёт зелёный CI;
+trace/diagnostics сохраняются и при recovered outcome; тест отправки пишет
+HTTP/error_code и безопасные terminal metadata. Таймауты и assertions не ослаблены.
+
+Первопричина исторического «Ошибка запуска» пока не подтверждена: отдельно10/10,
+в mixed run целевой тест тоже прошёл. Mixed run остановлен на Games file:// policy:
+160PASS,1FAIL,1interrupted,328not run; полный успех не заявляется.
+После fix chat16/16 без retry, web363 +10 studio checks, types/lint passed.
+Дальше: проверить exact final HEAD CI; при повторе читать сохранённый trace/error_code.
+Даже при полном PASS не объявлять первопричину исторического chat сбоя исправленной.
+Без merge/deploy, живой модели, изменения тарифов/квот/прав/браузерной политики.
+
+Предыдущая история ниже.
+
+---
+
 # Интеграция Coscode: доказательства проверок
 
 Статус первого среза: готово к интеграции. Integration commit

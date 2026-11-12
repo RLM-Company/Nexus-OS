@@ -1,0 +1,234 @@
+[WebServer] (node:4304) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:4318) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:4318) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:4332) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] $ tsc -p tsconfig.build.json
+[WebServer] (node:4359) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] $ node scripts/prepare-pdf-worker.mjs && next build
+[WebServer] (node:4385) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:4385) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:4421) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:4422) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:4459) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] $ next start -H 127.0.0.1
+[WebServer] (node:4474) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+
+Running 490 tests using 2 workers
+
+(node:4493) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:4494) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓    1 [chromium] › e2e/agent-studio-feedback-accessibility.spec.ts:3:5 › Agent Studio load errors are announced as alerts (2.0s)
+  ✓    2 [chromium] › e2e/agent-studio-submit-locks.spec.ts:3:5 › deduplicates rapid Agent Studio catalog submits (3.3s)
+  ✓    4 [chromium] › e2e/artifact-context.spec.ts:13:5 › stages reviewed Canvas evidence separately from saved project materials and recovers a lost save response (3.8s)
+  ✓    3 [chromium] › e2e/agent-studio.spec.ts:10:5 › edits the immutable Agent Studio catalog and blueprint registry through new versions (7.9s)
+  ✓    5 [chromium] › e2e/artifact-context.spec.ts:67:5 › requires explicit text excerpts and table row/column projection without saving automatically (3.4s)
+  ✓    6 [chromium] › e2e/agent-studio.spec.ts:104:5 › saves proposal-only Agent Studio team changes without activation (4.7s)
+  ✓    8 [chromium] › e2e/brand-mode-dismissal.spec.ts:4:7 › mode menu does not mark Chat as active on studio and keeps mode selection focused (2.7s)
+  ✓    9 [chromium] › e2e/brand-mode-dismissal.spec.ts:4:7 › mode menu does not mark Chat as active on skills and keeps mode selection focused (3.0s)
+  ✓    7 [chromium] › e2e/b0.1.spec.ts:3:5 › creates a project, streams, restores history and cancels a run (10.0s)
+  ✓   10 [chromium] › e2e/brand-mode-dismissal.spec.ts:26:5 › clicking outside the mode menu keeps the target focus and unsent message (2.7s)
+  ✓   12 [chromium] › e2e/brand-mode-dismissal.spec.ts:44:5 › Escape closes the mode menu from its buttons and after tabbing outside (2.6s)
+  ✓   11 [chromium] › e2e/b0.1.spec.ts:143:5 › surfaces server-confirmed owner decisions and recovery in the Manager Console (5.3s)
+  ✓   14 [chromium] › e2e/capability-workspaces.spec.ts:4:5 › keeps media configuration local until explicit generation is available (4.2s)
+  ✓   13 [chromium] › e2e/canvas-editor.spec.ts:24:5 › Canvas opens local documents as drafts and round-trips edited DOCX (6.5s)
+  ✓   16 [chromium] › e2e/canvas-editor.spec.ts:83:5 › Canvas persists real versions, preserves a stale draft, restores a new revision and exports/deletes (4.6s)
+  ✓   15 [chromium] › e2e/chat-branches.spec.ts:49:5 › edit preserves the original and composer draft; variants switch and survive reload (8.4s)
+  ✓   17 [chromium] › e2e/canvas-editor.spec.ts:145:5 › Canvas compares saved versions and protects reviewed conflict resolution from a newer writer (4.0s)
+  ✓   19 [chromium] › e2e/canvas-editor.spec.ts:204:5 › Canvas rejects a stale reviewed restore and preserves new server history (2.7s)
+  ✓   18 [chromium] › e2e/chat-branches.spec.ts:89:5 › regenerates an answer with its preceding context and replays the saved result after reload (6.8s)
+  ✓   20 [chromium] › e2e/canvas-editor.spec.ts:238:5 › Canvas HTML/Markdown resources stay inert and owner/project drafts survive reload in their scope (5.7s)
+  ✓   21 [chromium] › e2e/chat-branches.spec.ts:121:5 › recovers a lost creation response by known branch ID and never posts a second generation (5.2s)
+  ✓   22 [chromium] › e2e/canvas-editor.spec.ts:279:5 › Canvas import copies a completed source while retaining an unsaved new draft (5.2s)
+  ✓   23 [chromium] › e2e/chat-document-attachments.spec.ts:27:5 › extracts real PDF and DOCX locally, sends their text and restores it from history (5.9s)
+  ✓   24 [chromium] › e2e/canvas-editor.spec.ts:314:5 › Canvas opens a local UTF-8 file without saving and protects an unsaved draft (3.4s)
+  ✓   25 [chromium] › e2e/chat-document-attachments.spec.ts:78:5 › bounds DOCX decompression and rejects corrupt images before sending (2.5s)
+  ✓   26 [chromium] › e2e/canvas-editor.spec.ts:359:5 › Canvas confirms lost create/update responses by reading without extra mutations (4.2s)
+  ✓   27 [chromium] › e2e/chat-document-attachments.spec.ts:98:5 › stores a real PNG with a multimodal payload, preserving the image when the route lacks vision (3.1s)
+  ✓   28 [chromium] › e2e/canvas-editor.spec.ts:398:5 › Canvas retains an unresolved creation ID over reload and a user retry creates no duplicate (4.3s)
+  ✓   29 [chromium] › e2e/chat-execution-gate.spec.ts:3:5 › retains the draft and sends no chat request by button or Enter during a global stop (4.9s)
+  ✓   31 [chromium] › e2e/chat-execution-gate.spec.ts:34:5 › checks the selected project stop and keeps an ordinary chat independent (2.9s)
+  ✓   30 [chromium] › e2e/canvas-editor.spec.ts:442:5 › Canvas retries a lost copy using the same ID and never overwrites the original (5.3s)
+  ✓   33 [chromium] › e2e/chat-export.spec.ts:122:5 › downloads both formats locally with code, dates, metadata and no drafts or writes (2.2s)
+  ✓   34 [chromium] › e2e/chat-export.spec.ts:155:5 › exports a project chat on mobile without exposing system events (1.5s)
+  ✓   35 [chromium] › e2e/chat-export.spec.ts:171:5 › an empty chat cannot download a fabricated transcript (1.2s)
+  ✓   36 [chromium] › e2e/chat-export.spec.ts:177:5 › downloads a usable ZIP with actual attachments locally and keeps the composer intact (1.6s)
+  ✓   37 [chromium] › e2e/chat-export.spec.ts:206:5 › a corrupt saved attachment reports an error and leaves plain export available (2.4s)
+  ✓   32 [chromium] › e2e/chat-execution-gate.spec.ts:64:5 › bounds unavailable evidence without consuming the draft or showing private details (11.3s)
+  ✓   38 [chromium] › e2e/chat-export.spec.ts:241:5 › cancelling archive preparation suppresses a late download and permits another format (3.9s)
+  ✓   39 [chromium] › e2e/chat-execution-gate.spec.ts:80:5 › does not promote a saved proposal to a model-starting project while stopped (4.7s)
+  ✓   41 [chromium] › e2e/chat-history-search-navigation.spec.ts:26:5 › search result opens and focuses the exact project message (2.5s)
+  ✓   40 [chromium] › e2e/chat-history-markdown.spec.ts:3:5 › renders safe Markdown, downloads code, renames and restores an archived chat (6.1s)
+  ✓   42 [chromium] › e2e/chat-memory.spec.ts:21:5 › saves and clears notes through the real API and persists them after reload (6.1s)
+  ✓   43 [chromium] › e2e/chat-navigation-tools.spec.ts:57:5 › opening older chats and reloading never changes their activity order (5.4s)
+  ✓   45 [chromium] › e2e/chat-navigation-tools.spec.ts:77:5 › search finds saved requests and replies and jumps without altering a draft or sending (3.5s)
+  ✓   44 [chromium] › e2e/chat-memory.spec.ts:49:5 › keeps an unsaved draft after a concurrent edit and lets the user load the current version (5.1s)
+  ✓   46 [chromium] › e2e/chat-navigation-tools.spec.ts:105:5 › search closes with Escape, fits mobile, and resets when another chat opens (4.5s)
+  ✓   47 [chromium] › e2e/chat-memory.spec.ts:69:5 › reconciles a lost PUT response without sending a second write (4.2s)
+  ✓   49 [chromium] › e2e/chat-polish-20261025.spec.ts:2:5 › branded profiles, autonomy and Turbo are persisted without starting a model (4.2s)
+  ✓   48 [chromium] › e2e/chat-navigation-tools.spec.ts:133:5 › search paginates long histories, treats query as literal text and wraps navigation (5.4s)
+  ✓   51 [chromium] › e2e/chat-navigation-tools.spec.ts:165:5 › request copy preserves the full text and leaves the existing composer draft intact (3.0s)
+  ✓   50 [chromium] › e2e/chat-polish-20261025.spec.ts:33:5 › sidebar fully collapses, survives reload and restores its layout (3.8s)
+  ✓   52 [chromium] › e2e/chat-reliability.spec.ts:47:5 › new chat during a delayed initial read stays usable and ignores the late response (2.5s)
+  ✓   53 [chromium] › e2e/chat-polish-20261025.spec.ts:45:5 › answer actions are icons in one row and quick table prepares an editable request (5.2s)
+  ✓   55 [chromium] › e2e/chat-polish-20261025.spec.ts:79:5 › settings can disable the token quota and persist actual interface preferences (4.9s)
+  ✓   54 [chromium] › e2e/chat-reliability.spec.ts:87:5 › restores text and files after closing the tab, isolates chats, removes and clears accepted drafts (10.2s)
+  ✓   56 [chromium] › e2e/chat-polish-20261025.spec.ts:109:5 › Studio submits one explicit image request and displays its PNG without an extra consent checkbox (3.4s)
+  ✓   57 [chromium] › e2e/chat-reliability.spec.ts:146:5 › retains project materials across reload without leaking into the new-chat draft (4.3s)
+  ✓   59 [chromium] › e2e/chat-reliability.spec.ts:167:5 › recovers text with invalid saved materials and retains a draft on rejected submission (3.6s)
+  ✓   58 [chromium] › e2e/chat-skills.spec.ts:27:5 › selects, persists, explicitly upgrades and disables Skills; renders instructions literally (7.5s)
+  ✓   61 [chromium] › e2e/chat-skills.spec.ts:62:5 › preserves a local selection on conflict and reloads current state (3.7s)
+  ✓   62 [chromium] › e2e/chat-skills.spec.ts:77:5 › recovers a lost save response with one PUT (3.2s)
+  ✓   60 [chromium] › e2e/chat-reliability.spec.ts:199:5 › prepares a phone-sized JPEG, restores thumbnail and rejects unsafe dimensions (9.3s)
+  ✓   64 [chromium] › e2e/chat-reliability.spec.ts:253:5 › keeps attachment controls keyboard reachable with clear names and thumbnail text (2.5s)
+  ✓   63 [chromium] › e2e/chat-skills.spec.ts:91:5 › keeps the Skills controls within a narrow screen (4.8s)
+  ✓   65 [chromium] › e2e/chat-reliability.spec.ts:275:5 › announces rejected attachment type and keeps the draft editor usable (2.2s)
+  ✓   67 [chromium] › e2e/chat-reliability.spec.ts:288:5 › restored attachment drafts expose the image name to assistive technology (3.0s)
+  ✓   66 [chromium] › e2e/chat-skills.spec.ts:104:5 › retains the accepted Skill snapshot through the API without adding answer controls or generating (6.6s)
+  ✓   68 [chromium] › e2e/chat-reliability.spec.ts:320:7 › retries an accepted personal chat message with its original attachment after a lost response (4.7s)
+  ✓   70 [chromium] › e2e/chat-reliability.spec.ts:320:7 › retries an accepted project chat message with its original attachment after a lost response (4.4s)
+  ✓   69 [chromium] › e2e/chat-text-attachments.spec.ts:3:5 › attaches code, removes a file, persists history and downloads the source (9.2s)
+  ✓   72 [chromium] › e2e/chat-text-attachments.spec.ts:63:5 › rejects unsupported/binary files and drops attachments when opening a new chat (3.5s)
+  ✓   71 [chromium] › e2e/chat-reliability.spec.ts:381:5 › two uncertain sends remain independently retryable after navigation and reload (8.1s)
+  ✓   73 [chromium] › e2e/chat-text-attachments.spec.ts:95:5 › keeps files in the draft after a rejected send and fits a mobile screen (3.2s)
+  ✓   75 [chromium] › e2e/chat-text-attachments.spec.ts:125:5 › does not attach a file to another chat when decoding finishes after navigation (3.3s)
+  ✓   76 [chromium] › e2e/chat-workspace.spec.ts:12:5 › legacy folders stay hidden while server pins persist and folder removal keeps chats (6.2s)
+  ✓   74 [chromium] › e2e/chat-reliability.spec.ts:450:5 › reload and lost network recover the same run without duplicate POSTs or messages (12.1s)
+  ✓   77 [chromium] › e2e/chat-workspace.spec.ts:69:5 › context exclusions persist by API without restoring the removed chat control or deleting history (4.8s)
+  ✓   78 [chromium] › e2e/chat-reliability.spec.ts:483:5 › late history and stream cannot affect the newly selected chat (6.8s)
+  ✓   79 [chromium] › e2e/chat-workspace.spec.ts:102:5 › ordinary chat answer transfers into project Canvas once and survives reload (5.2s)
+  ✓   80 [chromium] › e2e/chat-reliability.spec.ts:516:5 › long Markdown retains the complete answer in copy and chat export (5.0s)
+  ✓   82 [chromium] › e2e/chat-reliability.spec.ts:548:5 › ordinary-chat cancellation after reload restores a request without sending it (2.6s)
+  ✓   81 [chromium] › e2e/chat-workspace.spec.ts:128:5 › extractive summary API requires explicit save and survives browser reload without altering history (8.5s)
+  ✓   84 [chromium] › e2e/code-agent.spec.ts:312:5 › creates a Code project directly without starting a model task (1.5s)
+  ✓   85 [chromium] › e2e/code-agent.spec.ts:340:5 › recovers a lost creation response using its request ID without a second generation POST (1.6s)
+  ✓   86 [chromium] › e2e/code-agent.spec.ts:360:5 › selects and edits real server proposal, binds check to review and requires exact publication approval (3.9s)
+  ✓   83 [chromium] › e2e/chat-reliability.spec.ts:573:5 › a pre-completion history snapshot cannot reopen a completed run (12.7s)
+  ✓   87 [chromium] › e2e/code-agent.spec.ts:393:5 › an old editor cannot overwrite or invalidate a newer saved review (4.1s)
+  ✓   88 [chromium] › e2e/composer-controls.spec.ts:54:5 › composer order, hidden Relay/search, top-right settings and mobile fit (4.3s)
+  ✓   89 [chromium] › e2e/code-agent.spec.ts:430:5 › explicit checkpoint restoration also discards unapplied raw diff without restoring old proof (4.9s)
+  ✓   90 [chromium] › e2e/composer-controls.spec.ts:87:5 › empty composer opens assistant without recording or submitting (3.4s)
+  ✓   91 [chromium] › e2e/code-agent.spec.ts:453:5 › same-document Forward can be cancelled with exact edits retained, then explicitly confirmed (4.9s)
+  ✓   92 [chromium] › e2e/composer-controls.spec.ts:109:5 › speech turn sends once, names the real chat and speaks only its new answer (6.1s)
+  ✓   94 [chromium] › e2e/composer-controls.spec.ts:136:5 › closing a recording suppresses late recognition and keeps an existing draft (3.3s)
+  ✓   93 [chromium] › e2e/code-agent.spec.ts:508:5 › browser Back can be cancelled with edits visible, then explicitly confirmed without workspace writes (7.5s)
+  ✓   95 [chromium] › e2e/composer-draft-races.spec.ts:21:5 › pagehide persists the last input before React commits its passive effects (2.8s)
+  ✓   97 [chromium] › e2e/composer-draft-races.spec.ts:46:5 › pagehide persists removal of a file without resurrecting the old attachment (3.0s)
+  ✓   96 [chromium] › e2e/code-agent.spec.ts:559:5 › does not retry lost publication and reconciles it explicitly (5.1s)
+  ✓   98 [chromium] › e2e/composer-draft-races.spec.ts:69:5 › native text-only pagehide flush uses the latest input rather than an older render (2.6s)
+  ✓   99 [chromium] › e2e/code-agent.spec.ts:575:5 › reconciles a request lost before publication, then uses rotated token only after new approval (4.4s)
+  ✓  100 [chromium] › e2e/composer-draft-races.spec.ts:107:7 › chat rejection preserves exact whitespace and file bytes across reload (3.4s)
+  ✓  101 [chromium] › e2e/code-agent.spec.ts:597:5 › previews normalized editable diff on an exact snapshot before a fresh review (3.0s)
+  ✓  102 [chromium] › e2e/composer-draft-races.spec.ts:107:7 › project rejection preserves exact whitespace and file bytes across reload (4.6s)
+  ✓  103 [chromium] › e2e/code-agent.spec.ts:629:7 › legacy contradictory proof never enables publication: {"exitCode":1} (4.1s)
+  ✓  104 [chromium] › e2e/composer-draft-races.spec.ts:182:5 › closing an unchanged tab does not overwrite another tab's newer draft (3.6s)
+  ✓  105 [chromium] › e2e/code-agent.spec.ts:629:7 › legacy contradictory proof never enables publication: {"exitCode":null} (4.2s)
+  ✓  106 [chromium] › e2e/composer-draft-races.spec.ts:198:5 › a file finishing after chat navigation cannot leak or replace the next chat's draft (5.1s)
+  ✓  107 [chromium] › e2e/code-agent.spec.ts:629:7 › legacy contradictory proof never enables publication: {"cleanupVerified":false} (4.1s)
+  ✓  108 [chromium] › e2e/composer-draft-races.spec.ts:246:5 › a follow-up inserted just before pagehide survives without an automatic send (3.6s)
+  ✓  110 [chromium] › e2e/composer-draft-races.spec.ts:280:5 › an input notification already tracked before React change survives attaching a file (1.9s)
+  ✓  109 [chromium] › e2e/code-agent.spec.ts:645:5 › dirty project changes and new tasks require an explicit discard; cancelling retains exact edits (5.5s)
+  ✓  111 [chromium] › e2e/composer-draft-races.spec.ts:332:7 › a late acceptance cannot erase a newer prepared follow-up (4.9s)
+  ✓  112 [chromium] › e2e/code-agent.spec.ts:685:5 › dirty history selection can be cancelled; confirmed discard opens only the selected saved task (5.5s)
+  ✓  113 [chromium] › e2e/composer-draft-races.spec.ts:332:7 › a late rejection cannot erase a newer prepared follow-up (4.5s)
+  ✓  114 [chromium] › e2e/code-agent.spec.ts:718:5 › declining native reload preserves the unsaved text without a new model or publish call (5.0s)
+  ✓  115 [chromium] › e2e/composer-draft-races.spec.ts:384:5 › an acceptance cannot clear another tab's newer stored draft (6.0s)
+  ✓  116 [chromium] › e2e/code-agent.spec.ts:746:5 › the Code page GitHub link respects a declined discard (5.7s)
+  ✓  117 [chromium] › e2e/composer-draft-restart.spec.ts:3:5 › restores an unsent ordinary-chat draft after reload (2.7s)
+  ✓  119 [chromium] › e2e/composer-draft-restart.spec.ts:13:5 › restores an unsent project draft after reload (3.3s)
+  ✓  118 [chromium] › e2e/code-agent.spec.ts:757:5 › explicit review checkpoint survives normal reload without another generation or publication (5.7s)
+  ✓  120 [chromium] › e2e/console-persistence.spec.ts:3:5 › persists a selected workspace across reload without creating a project (3.4s)
+  ✓  122 [chromium] › e2e/console-persistence.spec.ts:30:5 › keeps the persisted workspace usable at 390x844 (2.5s)
+  ✓  121 [chromium] › e2e/code-agent.spec.ts:778:5 › unapplied raw diff remains dirty after saving selected files and can be discarded explicitly (4.5s)
+  ✓  123 [chromium] › e2e/control-center-overview.spec.ts:12:5 › shows the global stop and metrics without requiring a project or starting work (1.8s)
+  ✓  124 [chromium] › e2e/code-agent.spec.ts:801:5 › an explicit saved-run link outside the latest twenty is fetched exactly without starting work (1.9s)
+  ✓  126 [chromium] › e2e/code-agent.spec.ts:839:7 › an unavailable or mismatched linked task cannot silently open the latest task: missing=true (1.8s)
+  ✓  125 [chromium] › e2e/control-center-overview.spec.ts:40:5 › refreshes stop clearance without claiming live model readiness (2.2s)
+  ✓  127 [chromium] › e2e/code-agent.spec.ts:839:7 › an unavailable or mismatched linked task cannot silently open the latest task: missing=false (1.7s)
+  ✓  128 [chromium] › e2e/control-center-overview.spec.ts:58:5 › fails closed on unavailable status and retries without revealing server details (2.2s)
+  ✓  129 [chromium] › e2e/code-agent.spec.ts:870:5 › a late exact linked lookup cannot replace the selected project's task (2.1s)
+  ✓  130 [chromium] › e2e/control-center-overview.spec.ts:78:5 › rejects missing stop state or invalid counters instead of displaying a clear state (2.1s)
+  ✓  131 [chromium] › e2e/code-agent.spec.ts:929:7 › leaving a patch editor fences its late preview-diff without applying files to another task (2.3s)
+  ✓  132 [chromium] › e2e/control-center-overview.spec.ts:95:5 › keeps the overview within mobile and desktop viewports (2.2s)
+  ✓  133 [chromium] › e2e/code-agent.spec.ts:929:7 › leaving a patch editor fences its late invalidate-review without applying files to another task (2.4s)
+  ✓  135 [chromium] › e2e/code-agent.spec.ts:1025:5 › an unavailable project from a link cannot fall back to another owned project's task (721ms)
+  ✓  136 [chromium] › e2e/code-agent.spec.ts:1045:5 › explicit bounded repair requires approval, shows a new diff and requires a fresh review (2.2s)
+  ✓  137 [chromium] › e2e/code-agent.spec.ts:1086:5 › a server without repair capability never receives the new command (1.6s)
+  ✓  134 [chromium] › e2e/control-center-overview.spec.ts:107:5 › bounds a stalled status request and permits manual refresh (7.7s)
+  ✓  138 [chromium] › e2e/code-agent.spec.ts:1100:5 › an old failed-check approval conflicts until the owner reloads and approves the new result (3.6s)
+  ✓  139 [chromium] › e2e/control-center.spec.ts:3:5 › previews an authority diff before applying an autonomy profile change (3.0s)
+  ✓  140 [chromium] › e2e/code-agent.spec.ts:1144:5 › legacy repair v1 capability never sends a versioned v2 command (3.5s)
+  ✓  142 [chromium] › e2e/csv-composer-transfer.spec.ts:71:5 › web CSV transfer preserves exact selected bytes and text through reload without dispatch (3.2s)
+  ✓  141 [chromium] › e2e/control-center.spec.ts:87:5 › previews, edits, applies, and removes a finite point override (6.8s)
+  ✓  144 [chromium] › e2e/control-center.spec.ts:203:5 › explains policy verdicts without rendering hidden operation content (1.9s)
+  ✓  143 [chromium] › e2e/csv-composer-transfer.spec.ts:131:5 › CSV transfer waits for delayed native draft hydration in its target scope (3.1s)
+  ✓  145 [chromium] › e2e/control-center.spec.ts:273:5 › shows recovery-required operations without offering a blind replay (2.6s)
+  ✓  146 [chromium] › e2e/csv-composer-transfer.spec.ts:149:5 › a second new chat cancels a pending CSV transfer before native hydration settles (3.5s)
+  ✓  147 [chromium] › e2e/control-center.spec.ts:346:5 › shows exact project usage without exposing provider routes or invented prices (2.2s)
+  ✓  148 [chromium] › e2e/document-library.spec.ts:6:5 › persists original documents, searches cited evidence and exports an editable report (5.6s)
+  ✓  149 [chromium] › e2e/control-center.spec.ts:402:5 › previews and applies a versioned project hard limit before requiring step-up to expand it (4.8s)
+  ✓  150 [chromium] › e2e/document-upload-queue.spec.ts:55:5 › Studio creates a library project without a message or model request and survives a lost response (3.8s)
+[WebServer] {"level":50,"time":1794504782749,"pid":4318,"hostname":"55468427152a","scope":"project","projectId":"840a86a3-df35-49d5-b265-94be4a078af0","interruptedRuns":0,"activatedBy":"local-owner","msg":"Emergency stop activated"}
+  ✓  152 [chromium] › e2e/document-upload-queue.spec.ts:90:5 › one broken PDF doesn't stop the rest of a real indexed batch (3.2s)
+  ✓  151 [chromium] › e2e/control-center.spec.ts:459:5 › activates, reloads, and clears a durable project emergency stop through guarded recovery (8.3s)
+  ✓  154 [chromium] › e2e/control-center.spec.ts:627:5 › requires explicit process-stop intent and omits a project id (2.1s)
+  ✓  153 [chromium] › e2e/document-upload-queue.spec.ts:131:5 › cancel stops queued files and a saved original retries without another upload (4.3s)
+  ✓  155 [chromium] › e2e/control-center.spec.ts:727:5 › keeps an environment-triggered process stop locked to offline recovery (1.6s)
+  ✓  156 [chromium] › e2e/document-upload-queue.spec.ts:167:5 › a lost POST response is reported and recovered from the real stored original (3.2s)
+  ✓  157 [chromium] › e2e/control-center.spec.ts:795:5 › requires explicit review before approving or rejecting confirmation cards (3.5s)
+  ✓  158 [chromium] › e2e/files-canvas-workflow.spec.ts:6:5 › two documents become an editable cited Canvas report without overwriting the project draft (8.0s)
+  ✓  160 [chromium] › e2e/files-canvas-workflow.spec.ts:127:5 › saved model answer opens with its evidence snapshot; no model call on editing (2.6s)
+  ✓  161 [chromium] › e2e/files-canvas-workflow.spec.ts:175:5 › photo preview prepares an image attachment without sending a message (1.6s)
+  ✘  162 [chromium] › e2e/games-workbench.spec.ts:39:5 › generates a quiz, saves versions and exports a playable offline HTML file (6.5s)
+Testing stopped early after 1 maximum allowed failures.
+  ✘  159 [chromium] › e2e/game-development.spec.ts:35:5 › develops a custom game, versions source files and exports an offline source project (18.0s)
+
+
+  1) [chromium] › e2e/games-workbench.spec.ts:39:5 › generates a quiz, saves versions and exports a playable offline HTML file
+
+    Error: page.goto: net::ERR_BLOCKED_BY_ADMINISTRATOR at file:///tmp/nexus-chat-baseline-results/games-workbench-generates--7d5d9--playable-offline-HTML-file-chromium/game.html
+    Call log:
+      - navigating to "file:///tmp/nexus-chat-baseline-results/games-workbench-generates--7d5d9--playable-offline-HTML-file-chromium/game.html", waiting until "load"
+
+
+      74 |     const htmlPath = testInfo.outputPath("game.html");
+      75 |     await file.saveAs(htmlPath);
+    > 76 |     await local.goto(pathToFileURL(htmlPath).href);
+         |                 ^
+      77 |     await local.getByRole("button", { name: "Начать", exact: true }).click();
+      78 |     await local.getByRole("button", { name: "4", exact: true }).click();
+      79 |     await expect(local.locator("#score")).toHaveText("Верных ответов: 1 / 3");
+        at /workspace/work/Nexus-OS-chat-flake-2026-11-12/apps/web/e2e/games-workbench.spec.ts:76:17
+
+    Error Context: ../../../../../tmp/nexus-chat-baseline-results/games-workbench-generates--7d5d9--playable-offline-HTML-file-chromium/error-context.md
+
+    attachment #2: trace (application/zip) ─────────────────────────────────────────────────────────
+    ../../../../../tmp/nexus-chat-baseline-results/games-workbench-generates--7d5d9--playable-offline-HTML-file-chromium/trace.zip
+    Usage:
+
+        pnpm exec playwright show-trace ../../../../../tmp/nexus-chat-baseline-results/games-workbench-generates--7d5d9--playable-offline-HTML-file-chromium/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  1 failed
+    [chromium] › e2e/games-workbench.spec.ts:39:5 › generates a quiz, saves versions and exports a playable offline HTML file
+  1 interrupted
+    [chromium] › e2e/game-development.spec.ts:35:5 › develops a custom game, versions source files and exports an offline source project
+  328 did not run
+  160 passed (6.3m)
+  1 error was not a part of any test, see above for details
+undefined
+/workspace/work/Nexus-OS-chat-flake-2026-11-12/apps/web:
+[ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL] Command failed with exit code 1: playwright test '--config=/tmp/nexus-chat-diagnosis.config.ts' '--workers=2' '--retries=0' '--max-failures=1'
