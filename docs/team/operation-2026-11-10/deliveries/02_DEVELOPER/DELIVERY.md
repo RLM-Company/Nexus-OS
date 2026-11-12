@@ -1,3 +1,26 @@
+# Интеграционная приёмка с новым main, 12 ноября 2026
+
+PR [#551](https://github.com/RLM-Company/Nexus-OS/pull/551), ветка
+`ops/developer-coscode-context-secrets-2026-11-12`.
+Предыдущий HEAD `30ff9d1d69703d13f07afc5ec889f6d19eab991d` имеет зелёные
+CI43255526930 и identity43255527039; это не CI нового объединённого дерева.
+
+Main `33f43b8825756d60c67db306783fed9e3de717ee` сохранён merge-коммитом
+`958c8a2e79c71f62a15050ea9b51a446b5dfc1da`, source tree
+`57f5c6de8c05908b96a8ab547284bd77ea8f316e`. Изменения research изучены:
+аддитивные типы/функция и текст отчёта, без изменений CodeAgent/Manager/executor.
+Конфликтов и ручных правок общих файлов нет. Продуктовый код Coscode не менялся.
+
+Подробности: [INTEGRATION_REVIEW_2026_11_12_RU.md](INTEGRATION_REVIEW_2026_11_12_RU.md).
+Дальше — CI точного финального docs HEAD, затем независимое ревью и решение
+об интеграции. Не сбрасывать длинный browser job попутным push. Самостоятельные
+merge в main/deploy, live модель и foreign publish не выполняются.
+Максимальный статус — **готово к интеграции**, не интегрировано и не принято в выпуск.
+
+Предыдущая история ниже.
+
+---
+
 # Последний срез: context envelope, 12 ноября
 
 См. CONTEXT_ENVELOPE_DELIVERY_RU.md, тот же Draft PR551.
