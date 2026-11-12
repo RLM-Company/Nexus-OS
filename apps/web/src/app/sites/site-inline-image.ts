@@ -14,29 +14,25 @@ export function embedSiteImage(html: string, bytes: Uint8Array, alt: string): st
   if (!bytes.byteLength || bytes.byteLength > SITE_IMAGE_MAX_BYTES) {
     throw new Error("Файл изображения должен быть от 1 байта до 64 КиБ.");
   }
-  if (alt.length > 200 || /[\u0000-\u001f\u007f]/.test(alt)) {
+  if (alt.length > 200 || [...alt].some((char) => char.charCodeAt(0) < 32 || char.charCodeAt(0) === 127)) {
     throw new Error("Описание изображения должно быть до 200 символов без управляющих знаков.");
   }
-  let mime = "";
-  if (PNG_HEADER.every((value, index) => bytes[index] === value)) {
-    mime = "image/png";
-  } else if (bytes[0] === 255 && bytes[1] === 216 && bytes[2] === 255) {
-    mime = "image/jpeg";
-  } else if (
-    bytes.length >= 12 &&
-    bytes[0] === 82 &&
-    bytes[1] === 73 &&
-    bytes[2] === 70 &&
-    bytes[3] === 70 &&
-    bytes[8] === 87 &&
-    bytes[9] === 69 &&
-    bytes[10] === 66 &&
-    bytes[11] === 80
-  ) {
-    mime = "image/webp";
-  } else {
+  const mime = (() => {
+    if (PNG_HEADER.every((value, index) => bytes[index] === value)) return "image/png";
+    if (bytes[0] === 255 && bytes[1] === 216 && bytes[2] === 255) return "image/jpeg";
+    if (
+      bytes.length >= 12 &&
+      bytes[0] === 82 &&
+      bytes[1] === 73 &&
+      bytes[2] === 70 &&
+      bytes[3] === 70 &&
+      bytes[8] === 87 &&
+      bytes[9] === 69 &&
+      bytes[10] === 66 &&
+      bytes[11] === 80
+    ) return "image/webp";
     throw new Error("Поддерживаются только PNG, JPEG и WebP. SVG не принимается.");
-  }
+  })();
 
   let binary = "";
   for (let index = 0; index < bytes.length; index += 8192) {
