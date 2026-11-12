@@ -1,0 +1,149 @@
+{
+  "source_head": "3936e5f7ebe7abe7780e82debaac71a15743710f",
+  "source_tree": "9e4fd6b0382e12c789027b68862aeb42498c98f3",
+  "base_sha": "be85aef8b394a8a6489239def4399dfd59595a19",
+  "main_sha": "abbcee7eab47d7e8ded86a0cfb1567a133b3a76a",
+  "branch": "ops/developer-coscode",
+  "pr": "https://github.com/RLM-Company/Nexus-OS/pull/519",
+  "status": "ready_for_integration",
+  "real_model_called": false,
+  "foreign_github_publication": false,
+  "source_checks": {
+    "api_github_tree": {
+      "passed": 115,
+      "skipped": 1,
+      "exit_code": 0
+    },
+    "oci_api_repair": {
+      "passed": 1,
+      "filtered_skipped": 83,
+      "exit_code": 0
+    },
+    "root_check_core": {
+      "exit_code": 0,
+      "fresh_api_passed": 1029,
+      "api_opt_in_skipped": 1,
+      "fresh_web_passed": 290,
+      "other_unchanged_packages": "Turbo cache hits, counts in core.log"
+    },
+    "production_browser": {
+      "passed": 28,
+      "retries": 0,
+      "workers": 1,
+      "exit_code": 0,
+      "chromium": "156.0.8078.79"
+    },
+    "strict_e2e_types_exit_code": 0,
+    "ci_source_isolation": {
+      "run_id": 43016923558,
+      "job_id": 130510197652,
+      "passed": 5,
+      "conclusion": "success"
+    },
+    "other_source_ci_jobs": "not claimed as completed here"
+  },
+  "historical_failures": {
+    "authority_baseline_exit": 1,
+    "authority_first_fix_wrong_ledger_expectation_exit": 1,
+    "first_api_passed": 76,
+    "first_api_failed": 4,
+    "first_scoped_lint_exit": 1,
+    "first_types_error": "TS2379; parent draft_id must be deleted rather than assigned undefined"
+  },
+  "files": {
+    "api-final.log": {
+      "sha256": "c30e1aad1d841da08ba1f85b6ddc0fc6975f2e12550d611e29d3b706770e6579",
+      "bytes": 243
+    },
+    "api-first-failure.log": {
+      "sha256": "9eeb3c939591e29621e82372fd5a89b254df45ebfdbb7532cfc31fb8928e0a27",
+      "bytes": 4090
+    },
+    "api-first-lint-failure.log": {
+      "sha256": "a396ba3220cf98e00d838b35f36f69c43ad7b091c3515bd98acde1fc8a63cc9d",
+      "bytes": 854
+    },
+    "api-first-type-failure.log": {
+      "sha256": "9d095430d2db4ae09f53ebb13cfcc412f1d9bc789a83eedd70afcbc324aa93de",
+      "bytes": 822
+    },
+    "api-second.log": {
+      "sha256": "c07f593e9636b801c7c1b99b7efb5f849f6be6a942d179c1ea12bac04da2f516",
+      "bytes": 229
+    },
+    "authority-baseline.log": {
+      "sha256": "394e1e75b75643a32a4436d14bfc2df125b10989b41824852b02a85fe6bfdabf",
+      "bytes": 1588
+    },
+    "authority-final.log": {
+      "sha256": "d01ac297d6e23e053078ae7dec374345dd110ee1a608a8807ebdc5af3f7d7233",
+      "bytes": 229
+    },
+    "authority-first-fix.log": {
+      "sha256": "21d75cf13ef6e5fa528bede8b8deaf379d71f161984a525f3e6d4eebd86df468",
+      "bytes": 1381
+    },
+    "browser.log": {
+      "sha256": "8900da2d7ccdcc032b2b5b04afa665b3f69d76a047c9d10368bee981d6c47e73",
+      "bytes": 4961
+    },
+    "changes.patch": {
+      "sha256": "59258aa6f2821deac6549b1cc96294f444fbd5349ee2359deb1a321686e18086",
+      "bytes": 442
+    },
+    "ci-isolation.log": {
+      "sha256": "5b1cc903f9034cda39a065ed8ae1347f6ef752edc07f3e7a09aad3876b2c2584",
+      "bytes": 399
+    },
+    "core.log": {
+      "sha256": "60bfd71b96efd3eb17639fe7fa25926d4ce058c78b61b7763f051f7db0f879f4",
+      "bytes": 58577
+    },
+    "input.json": {
+      "sha256": "f911cd0767a7d8d752d879ed256e0f78a58c50d454c778efb59335782b5e6a6e",
+      "bytes": 113
+    },
+    "oci-api.log": {
+      "sha256": "15e6a8a9da5bfbc9ab1299e93a3a1c6ef76d512525a669743505ebea55885c96",
+      "bytes": 241
+    },
+    "output.json": {
+      "sha256": "ac92e5995272797982348f49c8db443af3f3ce093bea96154402aeb3cafcdd63",
+      "bytes": 373
+    },
+    "receipt.json": {
+      "sha256": "1ad1492f2bb029ea8d80db4de52f5df6b18ea3097aa9297e1c266ab7a07e1a88",
+      "bytes": 3123
+    },
+    "reviewed.json": {
+      "sha256": "96fede89323f6770641fac945ae5b3cdab8e2fbaa9830792877d2734363883ba",
+      "bytes": 272
+    }
+  },
+  "log_normalization": {
+    "rule": "LF, trailing whitespace and blank EOF lines removed only; diagnostics and outcomes retained",
+    "raw_sha256": {
+      "authority-final.log": "0b1302e455960606131486652d059d3a2d2240ddd9f065db9774f170c8b89d3b",
+      "api-final.log": "bba429db0ec5067aa27b8da3f2038427561277cde84a13fa504abfdb4105c040",
+      "api-second.log": "5b5a60effab95b740e673886c1eb762da8e66bdc17618a5f274c02fa48f517a0",
+      "oci-api.log": "e6cf9e50aea46ce41bc5275dd9406d5c735a157f69a3025d2b756bdbdd67ed9f",
+      "authority-baseline.log": "394e1e75b75643a32a4436d14bfc2df125b10989b41824852b02a85fe6bfdabf",
+      "browser.log": "8900da2d7ccdcc032b2b5b04afa665b3f69d76a047c9d10368bee981d6c47e73",
+      "api-first-type-failure.log": "9d095430d2db4ae09f53ebb13cfcc412f1d9bc789a83eedd70afcbc324aa93de",
+      "api-first-lint-failure.log": "a396ba3220cf98e00d838b35f36f69c43ad7b091c3515bd98acde1fc8a63cc9d",
+      "ci-isolation.log": "5b1cc903f9034cda39a065ed8ae1347f6ef752edc07f3e7a09aad3876b2c2584",
+      "authority-first-fix.log": "21d75cf13ef6e5fa528bede8b8deaf379d71f161984a525f3e6d4eebd86df468",
+      "core.log": "c94d85307c584733a2080460bb1f49d09eb41d2f87c33c1d282b199b7b0aa55b",
+      "api-first-failure.log": "9eeb3c939591e29621e82372fd5a89b254df45ebfdbb7532cfc31fb8928e0a27"
+    },
+    "initial_docs_diff_check": "failed on raw logger trailing whitespace; fixed without changing test outcomes"
+  },
+  "docs_checks": {
+    "format_exit_code": 0,
+    "secrets_exit_code": 0,
+    "final_diff_check_exit_code": 0
+  },
+  "final_main_sha": "026b0dfbf42823c2aeef5da41801378ffc8d6c7a",
+  "final_merge_sha": "7900ce6f95abbeb789e3b2a74194a5bd2ed32492",
+  "final_main_changes": "11 OpenCode Windows/download/report paths; Coscode and common API/contracts unchanged. Source tests/build/browser precede this merge; final format/secrets/diff repeated."
+}

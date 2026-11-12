@@ -1,0 +1,87 @@
+
+ RUN  v4.1.11 /workspace/work/Nexus-OS-coscode/apps/api
+
+ ❯ test/code-agent.test.ts (80 tests | 4 failed) 16731ms
+     × uses the owner's working bytes, preserves two files, reruns the same check and requires fresh review; duplicate dispatch is inert 248ms
+     × keeps the original review after rejected repair PATCH_CONTEXT and never repeats a paid request 267ms
+     × keeps the original review after rejected repair FILE_NOT_READ and never repeats a paid request 260ms
+     × keeps the original review after rejected repair INVALID_PATCH and never repeats a paid request 278ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 4 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  test/code-agent.test.ts > bounded explicit check-feedback repair > uses the owner's working bytes, preserves two files, reruns the same check and requires fresh review; duplicate dispatch is inert
+AssertionError: expected 200 to be 400 // Object.is equality
+
+- Expected
++ Received
+
+- 400
++ 200
+
+ ❯ test/code-agent.test.ts:2886:33
+    2884|     });
+    2885|     // id belongs to params, never accepted in JSON.
+    2886|     expect(accepted.statusCode).toBe(400);
+       |                                 ^
+    2887|     const { id, ...payload } = request;
+    2888|     const response = await f.app.inject({ method: "POST", url: `${f.ba…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/4]⎯
+
+ FAIL  test/code-agent.test.ts > bounded explicit check-feedback repair > keeps the original review after rejected repair PATCH_CONTEXT and never repeats a paid request
+AssertionError: expected 'RECONCILIATION_REQUIRED' to be 'PATCH_CONTEXT' // Object.is equality
+
+Expected: "PATCH_CONTEXT"
+Received: "RECONCILIATION_REQUIRED"
+
+ ❯ test/code-agent.test.ts:2982:28
+    2980|       f.service.repair(id, owner, payload);
+    2981|       const result = await f.wait(id, "failed");
+    2982|       expect(result.error).toBe(error);
+       |                            ^
+    2983|       expect(result.draft_id).toBe(original.draft_id);
+    2984|       expect(result.proposal_hash).toBe(original.proposal_hash);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/4]⎯
+
+ FAIL  test/code-agent.test.ts > bounded explicit check-feedback repair > keeps the original review after rejected repair FILE_NOT_READ and never repeats a paid request
+AssertionError: expected 'RECONCILIATION_REQUIRED' to be 'FILE_NOT_READ' // Object.is equality
+
+Expected: "FILE_NOT_READ"
+Received: "RECONCILIATION_REQUIRED"
+
+ ❯ test/code-agent.test.ts:2982:28
+    2980|       f.service.repair(id, owner, payload);
+    2981|       const result = await f.wait(id, "failed");
+    2982|       expect(result.error).toBe(error);
+       |                            ^
+    2983|       expect(result.draft_id).toBe(original.draft_id);
+    2984|       expect(result.proposal_hash).toBe(original.proposal_hash);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/4]⎯
+
+ FAIL  test/code-agent.test.ts > bounded explicit check-feedback repair > keeps the original review after rejected repair INVALID_PATCH and never repeats a paid request
+AssertionError: expected 'RECONCILIATION_REQUIRED' to be 'INVALID_PATCH' // Object.is equality
+
+Expected: "INVALID_PATCH"
+Received: "RECONCILIATION_REQUIRED"
+
+ ❯ test/code-agent.test.ts:2982:28
+    2980|       f.service.repair(id, owner, payload);
+    2981|       const result = await f.wait(id, "failed");
+    2982|       expect(result.error).toBe(error);
+       |                            ^
+    2983|       expect(result.draft_id).toBe(original.draft_id);
+    2984|       expect(result.proposal_hash).toBe(original.proposal_hash);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/4]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  4 failed | 76 passed (80)
+   Start at  08:49:05
+   Duration  19.99s (transform 1.66s, setup 0ms, import 3.11s, tests 16.73s, environment 0ms)
+
+undefined
+/workspace/work/Nexus-OS-coscode/apps/api:
+[ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL] Command failed with exit code 1: vitest run test/code-agent.test.ts

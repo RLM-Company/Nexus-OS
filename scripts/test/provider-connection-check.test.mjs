@@ -52,6 +52,19 @@ test("discovery works while stopped and balance is zero without generation", asy
   assert.ok(!JSON.stringify(result).includes(env.MODEL_API_KEY));
 });
 
+test("discovery strips all trailing slashes from the base URL", async () => {
+  const api = fixture();
+  const result = await checkProviderConnection(
+    { ...env, MODEL_BASE_URL: "https://provider.example/v1///" },
+    api.fetch
+  );
+  assert.deepEqual(
+    api.calls.map((call) => call.url),
+    ["https://provider.example/v1/models", "https://provider.example/v1/balance"]
+  );
+  assert.equal(result.generation_requests, 0);
+});
+
 for (const [name, overrides, message] of [
   ["global stop", { RUNTIME_EMERGENCY_STOP: "true" }, /EMERGENCY_STOP/],
   ["missing stop", { RUNTIME_EMERGENCY_STOP: undefined }, /EMERGENCY_STOP/],

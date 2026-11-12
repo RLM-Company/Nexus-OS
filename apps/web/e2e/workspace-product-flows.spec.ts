@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { installOfflineImageCapabilities } from "./fixtures/media-capabilities";
 
 const installNavigationFixture = async (page: import("@playwright/test").Page) => {
   const items = Array.from({ length: 9 }, (_, index) => ({
@@ -105,6 +106,7 @@ test("opens Studio from its sidebar folder and keeps a shareable surface URL", a
 });
 
 test("restores separate media settings without automatic generation", async ({ page }) => {
+  await installOfflineImageCapabilities(page);
   const writes: string[] = [];
   page.on("request", (request) => {
     if (request.method() === "POST" && !request.url().endsWith("/chat-navigation/import-pins"))
@@ -112,7 +114,9 @@ test("restores separate media settings without automatic generation", async ({ p
   });
   await page.goto("/?surface=images");
   await page.getByLabel("Описание изображения", { exact: true }).fill("Станция у моря");
-  await page.getByRole("button", { name: "16:9", exact: true }).click();
+  await page.getByRole("button", { name: "3:2 · 1536 × 1024" }).click();
+  await page.getByLabel("Качество изображения").selectOption("high");
+  await page.getByLabel("Формат результата").selectOption("webp");
   await page.getByRole("combobox", { name: "Стиль", exact: true }).selectOption("Кино");
   await page.goto("/?surface=video");
   await page.getByLabel("Описание сцены", { exact: true }).fill("Волны и движение камеры");
@@ -121,10 +125,12 @@ test("restores separate media settings without automatic generation", async ({ p
   await expect(page.getByLabel("Описание изображения", { exact: true })).toHaveValue(
     "Станция у моря"
   );
-  await expect(page.getByRole("button", { name: "16:9", exact: true })).toHaveAttribute(
+  await expect(page.getByRole("button", { name: "3:2 · 1536 × 1024" })).toHaveAttribute(
     "aria-pressed",
     "true"
   );
+  await expect(page.getByLabel("Качество изображения")).toHaveValue("high");
+  await expect(page.getByLabel("Формат результата")).toHaveValue("webp");
   await expect(page.getByRole("combobox", { name: "Стиль", exact: true })).toHaveValue("Кино");
   await page.goto("/?surface=video");
   await expect(page.getByLabel("Описание сцены", { exact: true })).toHaveValue(
@@ -186,6 +192,7 @@ test("opens and dismisses the owner menu and persists UI preferences", async ({ 
 });
 
 test("recovers from invalid Studio drafts and UI preferences", async ({ page }) => {
+  await installOfflineImageCapabilities(page);
   await page.addInitScript(() => {
     sessionStorage.setItem(
       "kosmora:studio-settings:images",
@@ -199,7 +206,7 @@ test("recovers from invalid Studio drafts and UI preferences", async ({ page }) 
   });
   await page.goto("/");
   await expect(page.getByLabel("Описание изображения", { exact: true })).toHaveValue("");
-  await expect(page.getByRole("button", { name: "1:1", exact: true })).toHaveAttribute(
+  await expect(page.getByRole("button", { name: "1:1 · 1024 × 1024" })).toHaveAttribute(
     "aria-pressed",
     "true"
   );

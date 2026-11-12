@@ -301,6 +301,68 @@ test("restored attachment drafts expose the image name to assistive technology",
   await expect(page.getByRole("button", { name: "Удалить accessible.png" })).toBeEnabled();
 });
 
+for (const kind of ["personal", "project"] as const)
+  test(`retries an accepted ${kind} chat message with its original attachment after a lost response`, async ({
+    page,
+    request
+  }) => {
+    const projectId = kind === "project" ? crypto.randomUUID() : null;
+    if (projectId) {
+      const response = await request.post("/api/v1/projects/empty", {
+        data: { title: "Проверка повтора", client_project_id: projectId }
+      });
+      expect(response.status()).toBe(201);
+    }
+    const posts: unknown[] = [];
+    const statuses: number[] = [];
+    await page.route(
+      projectId ? `**/api/v1/projects/${projectId}/messages` : "**/api/v1/chats",
+      async (route) => {
+        if (route.request().method() !== "POST") return route.continue();
+        posts.push(route.request().postDataJSON());
+        const response = await route.fetch();
+        statuses.push(response.status());
+        if (posts.length === 1) await route.abort("connectionreset");
+        else await route.fulfill({ response });
+      }
+    );
+    await page.goto(projectId ? `/?project=${projectId}` : "/");
+    const text = "Надёжность: восстановление потока";
+    const editor = page.getByLabel(projectId ? "Сообщение менеджеру" : "Сообщение Kosmora");
+    const send = page.getByRole("button", { name: "Отправить", exact: true });
+    await editor.fill(text);
+    await page.getByLabel("Текстовые файлы и код").setInputFiles({
+      name: "retry.txt",
+      mimeType: "text/plain",
+      buffer: Buffer.from("Сохранённое вложение")
+    });
+    await send.click();
+    await expect(page.locator(".composer").getByText(/результат запроса неизвестен/)).toBeVisible();
+    await expect(editor).toHaveValue(text);
+    await expect(page.getByRole("list", { name: "Прикреплённые файлы" })).toContainText(
+      "retry.txt"
+    );
+    if (!projectId) {
+      await page.reload();
+      await expect(editor).toHaveValue(text);
+      await expect(page.getByRole("list", { name: "Прикреплённые файлы" })).toContainText(
+        "retry.txt"
+      );
+    }
+    await send.click();
+    await expect(page.getByRole("status")).toHaveText(/Ответ получен/);
+    expect(statuses).toEqual([projectId ? 202 : 201, 200]);
+    expect(posts[1]).toEqual(posts[0]);
+    expect(posts[0]).toMatchObject({
+      attachments: [{ name: "retry.txt", content: "Сохранённое вложение" }]
+    });
+    await expect(page.locator(".message.user")).toHaveCount(1);
+    await expect(page.locator(".message.assistant")).toHaveCount(1);
+    expect(
+      await page.evaluate(() => sessionStorage.getItem("cosmora:pending-chat-send:v1"))
+    ).toBeNull();
+  });
+
 test("reload and lost network recover the same run without duplicate POSTs or messages", async ({
   page,
   context

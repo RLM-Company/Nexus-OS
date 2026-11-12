@@ -3,6 +3,8 @@ import { useEffect, useRef, useState } from "react";
 import type { IntelligenceGraphEvidenceAudit } from "@cosmora/contracts";
 import { readEvidenceAudit, type EvidenceAuditResult } from "./read-evidence-audit";
 import { evidenceAuditCsv } from "./evidence-audit-csv";
+import { SourceUsagePanel } from "./source-usage-panel";
+import { EvidenceComparisonPanel } from "./evidence-comparison-panel";
 
 const control = {
   border: "1px solid #aaa",
@@ -26,13 +28,18 @@ const statuses: Record<string, string> = {
   superseded: "Прежняя версия",
   deleted: "Удалено"
 };
+type Ref = { id: string; version: number };
 
 export function GraphEvidenceAuditReading({
   report,
-  gapsOnly
+  gapsOnly,
+  onReviewCitation,
+  reviewDisabled = false
 }: {
   report: IntelligenceGraphEvidenceAudit;
   gapsOnly: boolean;
+  onReviewCitation?: ((ref: Ref) => void) | undefined;
+  reviewDisabled?: boolean;
 }) {
   const claims = report.claims.filter((c) => !gapsOnly || c.coverage !== "current_citation");
   return (
@@ -95,6 +102,16 @@ export function GraphEvidenceAuditReading({
                     </small>
                   </blockquote>
                 )}
+                {support.citation?.historical && onReviewCitation && (
+                  <button
+                    type="button"
+                    style={control}
+                    disabled={reviewDisabled}
+                    onClick={() => onReviewCitation(support.ref)}
+                  >
+                    Сверить с новой версией источника
+                  </button>
+                )}
               </details>
             ))}
           </article>
@@ -107,11 +124,15 @@ export function GraphEvidenceAuditReading({
 export function GraphEvidenceAuditPanel({
   projectId,
   graphId,
-  revision
+  revision,
+  disabled = false,
+  onReviewCitation
 }: {
   projectId: string;
   graphId: string;
   revision: number;
+  disabled?: boolean;
+  onReviewCitation?: ((ref: Ref) => void) | undefined;
 }) {
   const [result, setResult] = useState<EvidenceAuditResult | null>(null);
   const [gapsOnly, setGapsOnly] = useState(true);
@@ -138,7 +159,7 @@ export function GraphEvidenceAuditPanel({
       <button
         type="button"
         style={control}
-        disabled={busy}
+        disabled={busy || disabled}
         onClick={() => {
           const controller = new AbortController();
           request.current?.abort();
@@ -224,7 +245,25 @@ export function GraphEvidenceAuditPanel({
               выполнения формул; точный исходный текст остаётся в JSON.
             </small>
           </p>
-          <GraphEvidenceAuditReading report={result.report} gapsOnly={gapsOnly} />
+          <GraphEvidenceAuditReading
+            report={result.report}
+            gapsOnly={gapsOnly}
+            onReviewCitation={onReviewCitation}
+            reviewDisabled={busy || disabled}
+          />
+          <SourceUsagePanel
+            key={result.sha256}
+            report={result.report}
+            auditSha256={result.sha256}
+            onReviewCitation={onReviewCitation}
+            disabled={busy || disabled}
+          />
+          <EvidenceComparisonPanel
+            key={`comparison:${result.sha256}`}
+            projectId={projectId}
+            current={result}
+            disabled={busy || disabled}
+          />
           <p style={{ overflowWrap: "anywhere" }}>
             <small>SHA-256 скачиваемого JSON: {result.sha256}</small>
           </p>

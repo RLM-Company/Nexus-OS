@@ -1,15 +1,16 @@
 # CHECKPOINT — 04_DEEPSEEK
 
-- **Обновлено:** цель завершена по указанию владельца после среза A.
+- **Обновлено:** срезы A, B, C выполнены; петля по памяти завершена.
 - **Статус:** готово к интеграции; **петля остановлена**, фонового процесса нет.
 - **BASE_SHA:** `9d972e8ba447f681fbfb49253b73d9f02dd1d325`
-- **Ветка:** `ops/deepseek-memory` (создана от BASE_SHA, `main` на начало работ совпадал с базой).
-- **HEAD_SHA:** `6c44cb4405dc43725d54b9def39e780d0dd92b00` — код среза A;
-  финальный doc-коммит с этой записью указан в `git log -1` ветки.
-- **Точка продолжения при следующем запуске:** прочитать этот файл, затем
-  `git fetch origin main`, проверить новые общие контракты и при необходимости
-  влить `main` (не выбирая автоматически «свою версию»). Начать со среза B.
-- **PR:** [#513](https://github.com/RLM-Company/Nexus-OS/pull/513), `CLEAN / MERGEABLE / OPEN`, без merge/deploy.
+- **Ветка:** `ops/deepseek-memory` (создана от BASE_SHA; перед срезами B/C влит
+  `main` `d423d64`, 46 коммитов, конфликтов нет).
+- **PR (срез A):** [#513](https://github.com/RLM-Company/Nexus-OS/pull/513) — **MERGED** Codex 11 ноября (`ec24ce4`).
+- **PR (срезы B/C):** [#522](https://github.com/RLM-Company/Nexus-OS/pull/522) — `CLEAN / MERGEABLE / OPEN`, без merge/deploy. Финальный CI run `42983207713`: `Verify monorepo` pass 4m30s, `Browser acceptance` pass 11m1s, sandbox, identity — 4/4.
+- **HEAD_SHA:** `7f5cd162ce6164128191705eec35171ea3e93ccc` (финальный doc-коммит; код B/C — `de5e243`, format-commit — `e36e92c`).
+- **main при завершении:** `d047ce1`; ветка синхронизирована дважды, diff
+  против `main` содержит только B/C (+ один внесферный format-commit,
+  перечисленный в INTEGRATION.md).
 - **Финальный CI:** `42892932896` — все четыре проверки pass (Verify monorepo 5m5s,
   Browser acceptance 9m13s, Code sandbox isolation, identity-tests).
 - **main при завершении:** `5e01c4f` (ушёл вперёд на 10+ коммитов; мои файлы
@@ -29,26 +30,24 @@
 5. Полные прогоны: db 203/203, api 985/985, core 50/50, typecheck/lint/prettier/
    secrets/build зелёные.
 
-## Точная точка продолжения
+## Выполнено (срезы B и C)
 
-**Срез B — диагностика причин выбора источника.**
+6. **Срез B:** `memory-selection-reason.ts` + строка «Почему в контексте» и
+   статус `answer_evidence` в существующем предпросмотре настроек; 4 web-теста
+   и +2 сценария в db-панели (дочитывание оригинала, отзыв grant). Без новой
+   панели и без CSS.
+7. **Срез C:** `scripts/measure-memory-panel.mjs` + `memory-panel.json` —
+   фиксированная панель 5 кейсов, сравнение baseline/после, байты и задержка,
+   forget/revoke, честные ограничения. Результат:
+   `baseline_correct 4/5 → current 5/5`, ложные ответы на absent `1 → 0`.
 
-- Где: `apps/web/src/app/context-memory-settings.tsx` (существующий раздел),
-  серверный `sourceFor()` уже есть в `ContextMemoryStore`; маршрут
-  `/api/v1/memory/targets/:kind/:targetId/source` уже зарегистрирован.
-- Что сделать: в предпросмотре/usage показать, почему запись попала в контекст —
-  grant (scope), `matched`/overlap, `retrieval_rank`, `source_status`,
-  `answer_evidence`; связать `reference` с дочитыванием оригинала по запросу.
-  Без новой панели, без изменения компоновки/дизайна (иначе VISUAL_WAITLIST.md).
-- Обязательно: не включать memory OFF, не поднимать тарифы/права, не трогать
-  chat/sidebar/logo/global CSS.
-- Тесты: причина выбора для matched/absent, отзыв grant убирает причину,
-  дочитывание оригинала по `reference` после сжатия.
+## Финальная точка
 
-**Срез C — единая панель измерений baseline/после**: recall/precision,
-неподтверждённые ответы, размер контекста (байты), задержка, forget/revoke/
-restart, cross-owner; сравнение с текущим baseline на одном корпусе, с явными
-ограничениями (без выдуманных процентов экономии).
+Все критерии сферы, доступные без живой модели и VPS, выполнены.
+**Продолжения в этой петле нет**: дальнейшее (живая приёмка E5, восстановление
+VPS, выпуск) подтверждает Codex. При новом запуске читать этот файл, делать
+`git fetch origin main` и проверять новые общие контракты перед любыми
+правками; не изобретать новый продукт ради продолжения.
 
 ## Известные состояния, требующие внимания при следующем запуске
 

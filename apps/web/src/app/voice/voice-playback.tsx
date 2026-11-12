@@ -9,6 +9,8 @@ import {
 } from "../media-generation/media-panel";
 import styles from "./voice.module.css";
 import { WorkspaceIcon } from "../workspace-icons";
+import { mediaBudgetLabel, mediaBudgetNotice } from "../media-generation/media-budget-status";
+import { parseMediaJobListResponse } from "../media-generation/media-job-response";
 
 export function CompactVoicePlayback({ text }: { text: string }) {
   const [available, setAvailable] = useState(false);
@@ -58,9 +60,16 @@ export function CompactVoicePlayback({ text }: { text: string }) {
   );
 }
 
-function ExpandedPlayback({ text }: { text: string }) {
+function ExpandedPlayback({
+  text,
+  recoverServerJob = false
+}: {
+  text: string;
+  recoverServerJob?: boolean;
+}) {
   const caps = useMediaCapabilities();
-  const { job, start, cancel, error } = useMediaJob();
+  const { job, start, cancel, error, recovering, unknown, historyUnverified, checkUnknown } =
+    useMediaJob(recoverServerJob ? "speech" : undefined);
   const [consent, setConsent] = useState(false);
   const [speaking, setSpeaking] = useState(false);
   const [browserAvailable, setBrowserAvailable] = useState(false);
@@ -73,7 +82,7 @@ function ExpandedPlayback({ text }: { text: string }) {
     };
   }, []);
   const play = () => {
-    if (!browserAvailable) return;
+    if (!browserAvailable || !text.trim()) return;
     window.speechSynthesis.cancel();
     const utterance = new SpeechSynthesisUtterance(text);
     utterance.lang = "ru-RU";
@@ -91,7 +100,7 @@ function ExpandedPlayback({ text }: { text: string }) {
     <div className={styles.voice}>
       <div className={styles.row}>
         {browserAvailable && (
-          <button type="button" onClick={speaking ? stop : play}>
+          <button type="button" disabled={!text.trim()} onClick={speaking ? stop : play}>
             {speaking ? "Остановить" : "Озвучить в браузере"}
           </button>
         )}
@@ -100,7 +109,10 @@ function ExpandedPlayback({ text }: { text: string }) {
             type="button"
             disabled={
               !consent ||
+              !text.trim() ||
               text.length > 4096 ||
+              recovering ||
+              historyUnverified ||
               Boolean(job && ["queued", "running"].includes(job.status))
             }
             onClick={() => {
@@ -114,6 +126,11 @@ function ExpandedPlayback({ text }: { text: string }) {
         {job && ["queued", "running"].includes(job.status) && (
           <button type="button" onClick={() => void cancel()}>
             Отменить
+          </button>
+        )}
+        {recoverServerJob && (unknown || historyUnverified) && (
+          <button type="button" onClick={() => void checkUnknown()}>
+            Проверить историю MP3 без запуска
           </button>
         )}
       </div>
@@ -135,10 +152,27 @@ function ExpandedPlayback({ text }: { text: string }) {
           он не сохраняет MP3.
         </small>
       )}
+      {recoverServerJob && unknown && (
+        <small role="alert">
+          Предыдущая озвучка могла быть запущена. Новый платный запрос автоматически не
+          отправляется: проверьте историю.
+        </small>
+      )}
+      {recoverServerJob && historyUnverified && (
+        <small role="alert">
+          История MP3 пока недоступна. Платный запуск заблокирован до успешной проверки.
+        </small>
+      )}
+      {recoverServerJob && recovering && <small role="status">Проверяем историю MP3…</small>}
       {job && (
         <small role="status">
           Статус MP3: {job.status}
           {job.error_code ? ` · ${job.error_code}` : ""}
+        </small>
+      )}
+      {mediaBudgetNotice(job?.budget_state) && (
+        <small role={job?.budget_state === "uncertain" ? "alert" : "status"}>
+          {mediaBudgetNotice(job?.budget_state)}
         </small>
       )}
       {job?.status === "done" && job.asset?.mime === "audio/mpeg" && (
@@ -177,16 +211,29 @@ export function VoicePlayback({ text }: { text: string }) {
 
 function SavedSpeech() {
   const [items, setItems] = useState<MediaJob[]>([]);
+  const [historyError, setHistoryError] = useState("");
+  const [actionError, setActionError] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [historyRevision, setHistoryRevision] = useState(0);
   useEffect(() => {
     let active = true;
     const load = async () => {
       try {
         const response = await fetch("/api/v1/media/jobs", { cache: "no-store" });
-        if (!response.ok) return;
-        const result = (await response.json()) as { items: MediaJob[] };
-        if (active) setItems(result.items.filter((item) => item.kind === "speech").slice(0, 20));
+        if (!response.ok) throw new Error("Failed to fetch owner's speech jobs");
+        const items = parseMediaJobListResponse(await response.json());
+        if (active) {
+          setItems(items.filter((item) => item.kind === "speech").slice(0, 20));
+          setHistoryError("");
+        }
       } catch {
-        /* History remains empty while unavailable. */
+        if (active) {
+          // Do not keep another owner's cached rows visible after an unverified refresh.
+          setItems([]);
+          setHistoryError("Не удалось загрузить историю MP3. Это не значит, что записей нет.");
+        }
+      } finally {
+        if (active) setLoading(false);
       }
     };
     void load();
@@ -195,7 +242,7 @@ function SavedSpeech() {
       active = false;
       window.clearInterval(interval);
     };
-  }, []);
+  }, [historyRevision]);
   const remove = async (id: string) => {
     if (!window.confirm("Удалить MP3 и запись истории? Учёт расходов не удаляется.")) return;
     try {
@@ -208,14 +255,23 @@ function SavedSpeech() {
       window.alert("Не удалось удалить запись.");
     }
   };
-  if (items.length === 0) return <small>Сохранённых записей пока нет.</small>;
   return (
     <div className={styles.saved}>
       <h4>Сохранённые озвучивания</h4>
+      {loading && <small role="status">Загружаем историю MP3…</small>}
+      {historyError && <small role="alert">{historyError}</small>}
+      {actionError && <small role="alert">{actionError}</small>}
+      <button type="button" onClick={() => setHistoryRevision((value) => value + 1)}>
+        Обновить историю MP3
+      </button>
+      {!loading && !historyError && items.length === 0 && (
+        <small>Сохранённых записей пока нет.</small>
+      )}
       {items.map((item) => (
         <div key={item.id} className={styles.voice}>
           <small>
             {new Date(item.created_at).toLocaleString("ru")} · {item.status}
+            {mediaBudgetLabel(item.budget_state) ? ` · ${mediaBudgetLabel(item.budget_state)}` : ""}
           </small>
           {item.status === "done" && item.asset?.mime === "audio/mpeg" && (
             <>
@@ -229,14 +285,19 @@ function SavedSpeech() {
               onClick={() => {
                 void fetch(`/api/v1/media/jobs/${encodeURIComponent(item.id)}`, {
                   method: "DELETE"
-                }).then((response) => {
-                  if (response.ok)
+                })
+                  .then((response) => {
+                    if (!response.ok) throw new Error("Cancellation failed");
+                    setActionError("");
                     setItems((list) =>
                       list.map((entry) =>
                         entry.id === item.id ? { ...entry, status: "cancelled" } : entry
                       )
                     );
-                });
+                  })
+                  .catch(() => {
+                    setActionError("Не удалось подтвердить отмену MP3. Проверьте статус задачи.");
+                  });
               }}
             >
               Отменить
@@ -253,6 +314,24 @@ function SavedSpeech() {
 
 export function SpeechStudio() {
   const [text, setText] = useState("");
+  const [hydrated, setHydrated] = useState(false);
+  useEffect(() => {
+    try {
+      const saved = sessionStorage.getItem("kosmora:media:speech-draft.v1");
+      if (saved && saved.length <= 4096) setText(saved);
+    } catch {
+      /* Local text remains editable when session storage is disabled. */
+    }
+    setHydrated(true);
+  }, []);
+  useEffect(() => {
+    if (!hydrated) return;
+    try {
+      sessionStorage.setItem("kosmora:media:speech-draft.v1", text);
+    } catch {
+      /* No paid request is issued by saving a local draft. */
+    }
+  }, [hydrated, text]);
   return (
     <section className={styles.studio}>
       <h3>Озвучивание текста</h3>
@@ -264,12 +343,13 @@ export function SpeechStudio() {
         Текст для озвучивания
         <textarea
           value={text}
+          disabled={!hydrated}
           maxLength={4096}
           rows={5}
           onChange={(event) => setText(event.target.value)}
         />
       </label>
-      {text.trim() && <ExpandedPlayback text={text.trim()} />}
+      <ExpandedPlayback text={text.trim()} recoverServerJob />
       <SavedSpeech />
     </section>
   );

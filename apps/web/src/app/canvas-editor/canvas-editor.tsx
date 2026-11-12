@@ -942,6 +942,7 @@ function ScopedCanvasEditor({
           </div>
           {gameSource && draft.format === "code" ? (
             <GameSourceEditor
+              key={`${selected || initialDraft?.storageId || "new"}:${loaded?.artifact.version ?? 0}`}
               content={draft.content}
               baselineContent={loaded?.revision.content ?? initialDraft?.content ?? ""}
               disabled={working || loading}

@@ -82,6 +82,9 @@ export interface ContextMemoryEntry extends Omit<ContextMemoryInput, "source"> {
   version: number;
   source: ContextMemorySource | null;
   source_status: "current" | "changed" | "unavailable" | "manual";
+  /** True when expires_at is in the past: the entry is retained for history but
+   * is never recalled. Optional for older snapshots. */
+  expired?: boolean;
   created_at: string;
   updated_at: string;
 }

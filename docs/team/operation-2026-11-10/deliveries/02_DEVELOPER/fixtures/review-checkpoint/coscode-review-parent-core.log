@@ -1,0 +1,49 @@
+$ pnpm format:check && pnpm check:secrets && pnpm lint && pnpm typecheck && pnpm test && pnpm test:deploy && pnpm test:connection && pnpm test:live-acceptance-guards && pnpm test:secrets && pnpm test:vector-scale && pnpm test:media-acceptance && pnpm build && pnpm test:privacy && pnpm test:profile
+$ prettier --check .
+Checking formatting...
+All matched files use Prettier code style!
+$ node scripts/check-secrets.mjs
+Secret scan passed.
+$ turbo run lint
+• turbo 2.10.11
+
+   • Packages in scope: @cosmora/api, @cosmora/config, @cosmora/contracts, @cosmora/core, @cosmora/db, @cosmora/model-gateway, @cosmora/policy-engine, @cosmora/tool-runtime, @cosmora/web
+   • Running lint in 9 packages
+   • Remote caching disabled, using shared worktree cache
+
+@cosmora/contracts:lint: cache hit, replaying logs 3347be73b1847890
+@cosmora/config:lint: cache hit, replaying logs 333363d9765f3394
+@cosmora/contracts:lint: $ eslint src test
+@cosmora/config:lint: $ eslint src test
+@cosmora/model-gateway:lint: cache hit, replaying logs 467413fe36e67a8b
+@cosmora/core:lint: cache miss, executing 09d4477273989a76
+@cosmora/model-gateway:lint: $ eslint src test
+@cosmora/web:lint: cache miss, executing e44a2e2989ac88f3
+@cosmora/policy-engine:lint: cache hit, replaying logs 9bf185e169c556c9
+@cosmora/policy-engine:lint: $ eslint src test
+@cosmora/db:lint: cache hit, replaying logs dc3654ea2622a2a3
+@cosmora/db:lint: $ eslint src test drizzle.config.ts
+@cosmora/tool-runtime:lint: cache hit, replaying logs c504655456722b00
+@cosmora/tool-runtime:lint: $ eslint src test
+@cosmora/web:lint: $ eslint src
+@cosmora/core:lint: $ eslint src test
+@cosmora/api:lint: cache miss, executing 69748d385a11daac
+@cosmora/api:lint: $ eslint src test
+@cosmora/api:lint:
+@cosmora/api:lint: /workspace/work/Nexus-OS-coscode/apps/api/test/code-agent.test.ts
+@cosmora/api:lint:   1107:9   error  Async method 'run' has no 'await' expression  @typescript-eslint/require-await
+@cosmora/api:lint:   1154:51  error  Unsafe return of a value of type `any`        @typescript-eslint/no-unsafe-return
+@cosmora/api:lint:
+@cosmora/api:lint: ✖ 2 problems (2 errors, 0 warnings)
+@cosmora/api:lint:
+@cosmora/api:lint: [ELIFECYCLE] Command failed with exit code 1.
+@cosmora/api#lint:  ERROR  command (/workspace/work/Nexus-OS-coscode/apps/api) /opt/codex/runtimes/codex-primary-runtime/dependencies/bin/fallback/pnpm run lint exited (1)
+
+ Tasks:    8 successful, 9 total
+Cached:    6 cached, 9 total
+  Time:    56.096s
+Failed:    @cosmora/api#lint
+
+ ERROR  run failed: command  exited (1)
+[ELIFECYCLE] Command failed with exit code 1.
+[ELIFECYCLE] Command failed with exit code 1.

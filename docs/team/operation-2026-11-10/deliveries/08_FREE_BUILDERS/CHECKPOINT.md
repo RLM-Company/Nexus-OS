@@ -1,5 +1,36 @@
 # 08_FREE_BUILDERS — точка продолжения
 
+## Актуальная точка — 2026-11-11
+
+Статус: **в работе, код и браузер проверены; внешний core gate заблокирован**.
+PR #501 уже в main. Новый PR: https://github.com/RLM-Company/Nexus-OS/pull/518
+Branch: `ops/free-studio-builders`.
+BASE_SHA: `c47fed43a20e49a7ea27495f5551e7cfc082fcb5`.
+CODE_HEAD_SHA: `af140067aaaff2ad6c0517d7e10e653400643a11`.
+После этого CODE_HEAD следует только отчётный коммит.
+
+Новое: per-file Undo/Redo; импорт валидированного ZIP напрямую в редактор.
+Canvas integration: один key из selected artifact ID и server version.
+Backend, DB, contracts, sandbox и общий executor не менялись.
+
+CI #42982669501 на CODE_HEAD:
+
+- Browser acceptance: SUCCESS, Chromium 445/445 и дополнительные 3/3, 5/5, 4/4.
+- Code sandbox isolation: SUCCESS.
+- Verify monorepo: FAILED на Prettier чужого
+  `docs/research/experience-llm-distill-2026-11-10.json` из main.
+- Ни один файл Builders не указан в списке ошибок форматирования.
+- Полные unit/lint/typecheck gates не дошли до исполнения в этом job.
+- Browser job отдельно собрал web и успешно выполнил реальные UI fixtures.
+
+Продолжение: сверить свежий main, PR #518 и CI, дождаться устранения
+внешнего форматирования Codex и повторить полный quality gate.
+Не править чужой research JSON ради зелёного CI.
+Далее согласовать typed patch/version adapter с Codex.
+Никакого merge, деплоя, платного API или публикации не выполнять.
+
+## Исторический checkpoint 2026-11-10
+
 Дата: 2026-11-10. Статус: **готово к интеграции** (два ограниченных среза, не вся сфера), PR #501; не merge, не live, не production.
 Репозиторий: `RLM-Company/Nexus-OS`.
 BASE_SHA: `9d972e8ba447f681fbfb49253b73d9f02dd1d325`.

@@ -166,6 +166,45 @@ describe("research v1, source-grounded workflow", () => {
     expect(repository.delete(run.id, owner)).toBe(true);
     await coordinator.stop();
   });
+  it("keeps the other sources when a temporary failure exhausts the retry budget", async () => {
+    const repository = store();
+    const reader = new ResearchPageReader({
+      resolver,
+      transport: async (url) => {
+        if (url.pathname === "/robots.txt") return { status: 404, contentType: "", body: "" };
+        if (url.pathname === "/first") return { status: 429, contentType: "", body: "" };
+        return {
+          status: 200,
+          contentType: "text/plain",
+          body: "История промышленности описана в доступных архивных материалах."
+        };
+      }
+    });
+    const coordinator = new ResearchCoordinator(
+      repository,
+      { configured: false, search: searchAdapter.search },
+      reader,
+      undefined,
+      Date.now,
+      () => true
+    );
+    const run = repository.create(owner, actor, project, "История промышленности");
+    const checkpoint = repository.update(run.id, owner, ["queued"], (state) => {
+      state.status = "paused";
+      state.attempts = 2;
+      state.candidates = ["first", "second"].map((name) => ({
+        title: name,
+        url: `https://example.org/${name}`,
+        snippet: ""
+      }));
+    })!;
+    expect(coordinator.launch(checkpoint)).toBe(true);
+    await waitUntil(() => repository.get(run.id, owner)?.status === "completed");
+    const completed = repository.get(run.id, owner)!;
+    expect(completed.attempts).toBe(3);
+    expect(completed.sources.map((source) => source.status)).toEqual(["unavailable", "read"]);
+    await coordinator.stop();
+  });
   it("pauses and safely resumes without duplicate source checkpoints", async () => {
     const repository = store();
     const deferred: { resolve?: () => void } = {};

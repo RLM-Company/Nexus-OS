@@ -1,46 +1,47 @@
-# CHECKPOINT 02_DEVELOPER
+# Coscode: проверено исправление stale-check approval
 
-11 ноября 2026, Москва. Branch ops/developer-coscode, PR #507.
-BASE последнего среза b457cf9655d2c8001249c9c34e0180dcc58d97de.
-Main4b74f2694d6281887cecdccddaeff994549ec8f0 сохранён этим merge (последнее
-продвижение — только канонические отчёты). Контрольный9d972e8 остаётся предком.
-Code HEAD4eb1b83ccd3f16aa79a4de6cfd8fa063b053fb81,
-treef99c5cd4c85c3546cc21c1c6d4dfd6d1ba995b3e. Финальный docs HEAD — в PR.
+11 ноября 2026, Москва. Статус **готово к интеграции**, branch ops/developer-coscode,
+Draft PR https://github.com/RLM-Company/Nexus-OS/pull/519. Не merge/deploy/release.
+BASE c2e093ee0e79d99f8b4c64b1a646728654196de4 сохраняет main0ddb9d0;
+входили только6OpenCode preload/test/report paths, общие API/contracts не менялись.
+Source HEAD40a3a9ed5ceaec68c46a8e9e904cb7e08d2e5879,
+source treea35aa87ea182cd967e473345c22d3d508b7a51b3, guard9877f5b.
+GitHub/local source tree equality проверена. Финальный docs SHA — в PR/history.
 
-Поставки (не присваивать статус выше готово к интеграции):
+## Изменение после дополнительного ревью
 
-1. Source89ec737/integrationfcc183d: executor proof и OCI cancel/setup,
-   настоящий tmp Git2файла, failure/success/stale/cancel, точный diff/receipt.
-2. Source5a5e2e4: unsaved/raw-diff guards и review checkpoint restoration.
-3. Source30e1944: exact linked run/project и late callback isolation.
-4. Sourced467fdb + fixture0591ed1: полный tree22 002, selective1blob, safe paths,
-   legacy-context fence; rootcore exit0 (freshAPI997/web290/runtime86), UI22PASS,
-   externalOCI5/5. Первый TS2379 gateexit2 сохранён. Остальное — в DELIVERY.
-5. Source4eb1b83: negotiated search_files по immutable безопасному индексу,
-   query1–160/result32/partial/count; без нового IO/прав. Scoped71PASS,
-   rootcore exit0 (freshAPI999, остальные пакеты cache); externalOCI5/5 на4eb1b83.
-   Первый scoped70/1 (не учтён before) и первый gateexit1 no-control-regex
-   сохранены и исправлены без отключения проверок. Web этим срезом не менялся;
-   предыдущие UI22 не выдаются за повторную browser-приёмку search tool.
-   Общие CI Verify/Browser при последнем чтении ещё выполнялись.
+Другая вкладка могла обновить check, сохранив review hash. Старое согласие принималось
+для новой ошибки; baseline реально упал. Теперь repair-v2 требует expected_run_version,
+отказывает STALE_CHECK до записи/модели при mismatch. Source version сохраняется в
+прежнем run JSON. Точный повтор UUID+исходной версии идемпотентен, изменённый payload
+запрещён. UI repair_once:2, checkbox сбрасывается при новой версии, тип Node check
+показан. Существующий load checkpoint требует нового согласия на новую проверку.
+Отдельный v2 route не позволяет старому handler проигнорировать version field;
+legacy /repair404, missing/invalid version400. API+web поставлять вместе.
 
-Точная следующая приёмка — bounded repair / checkpoint:
+Прежние context/search/patch/CAS/checkpoint/tree recovery/navigation/publish сохраняются.
+Новых runtime/store/dependencies/migrations/provider/quota/permission changes нет.
 
-- Прочесть текущие CodeAgentService.reviewAccepted/invalidateReview/
-  retryProposalCheck/autoCheckProposal/check и соответствующие scoped tests.
-- Воспроизвести failure→owner точная правка→новый review/hash→успешный check→
-  восстановление той же задачи; проверить, что старый proof/token не вернулся,
-  snapshot/base и чужие файлы целы. Существующий retry check бесплатный и не
-  запускает модель; это сильное поведение сохранить, второй runtime не создавать.
-- Затем выбрать конкретный незавершённый пробел ограниченного ремонта. Не добавлять
-  скрытый paid retry, не перезаписывать пользовательские edits. Не заявлять automatic
-  repair уже готовым: этот срез дал поиск путей, а не новую repair loop.
+## Проверки
 
-Truncated tree по-прежнему отказ: безопасная subtree strategy требует отдельного
-GitHub adapter integration с полным existence coverage. Общий SPA sidebar/back-forward
-нуждается в каноническом guard Codex. Фильтр путей не доказывает отсутствие секретов
-в любом исходнике. Полная сфера не закончена; further status подтверждает Codex.
-Live модель/foreign target publish/owner PC/VPS/merge/deploy не выполнялись.
-Перед продолжением проверить main/contracts и не сбрасывать чужие изменения.
-Office/browser/CDP/work runtime/Games/Sites/chat/sidebar не присваивать; отчёты
-писать только в deliveries/02_DEVELOPER, общую доску не редактировать.
+- API/GitHub/tree117PASS+1opt-inSKIP, baselineFAIL сохранён.
+- Полный root check:core40a3a9e exit0: API1031/web290 fresh, остальные cache.
+- Real HTTP repair-v2 → OCI → Git1PASS (85filtered skips), failed1→passed0,
+  cleanup true,2files/00123/README сохранены. External model/GitHub fixtures.
+- Strict E2E types0, production Chromium15630PASS0, workers1/retries0.
+- Source40 весь CI43024980295 success: monorepo130537461796,
+  browser130537462097, isolation130537462197. Identity43024980309 success.
+  Квитанция ci-source.json относится к HEAD40a3a9e; новый docs HEAD проверяется
+  отдельно, его CI не выдаётся за завершённый. Предыдущий10f50a1 также был green.
+- Новые receipts/logs/patch/fixtures/hashes в fixtures/stale-check; подробности DELIVERY.
+
+## Продолжение интегратора
+
+Проверить актуальный PR519 и full CI на точном HEAD, затем канонические общие контракты
+перед объединением. Общий adapterb22b4f3 отдельно описан в INTEGRATION.md. Новых
+общих исходников этот fix не меняет. Все найденные в этом ревью программные пробелы
+закрыты. Не создавать новый продукт/блок ради продолжения.
+
+Live модель/foreign publish/ownerPC/VPS/merge/deploy не разрешены и не выполнялись.
+Node checks по snapshot без сети/install/arbitrary shell; tree budgets и browser
+compatibility остаются прежними, см. DELIVERY. Максимальный статус — готово к интеграции.

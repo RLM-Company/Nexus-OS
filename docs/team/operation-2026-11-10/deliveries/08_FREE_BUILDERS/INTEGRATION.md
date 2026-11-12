@@ -22,3 +22,20 @@ Codex: проверь, что источник `loaded.revision.content` соо�
 - Commit `bc6e1b47bbea9895fb1632d5888d47a56d1b0e36` передаёт `onDirtyChange` только если callback существует: `{...(onDirtyChange ? { onDirtyChange } : {})}`; это требуется при `exactOptionalPropertyTypes: true` и не меняет поведение других Canvas callers.
 - Код и регрессионные тесты на `606ed1eb876073745cad941d688bf067b3de7e9f` прошли GitHub Actions `42879624872` полностью: quality/build, sandbox isolation и Playwright Chromium (424 + 3 + 5 + 4 pass). Отчётный коммит, если новый, не изменяет приложение.
 - Ревью Codex обязательно до merge. Исходники/ассеты/zip версионируются текущим Canvas, тесты используют fixtures; live paid model и публикация не запускались.
+
+## Интеграция PR #518 (2026-11-11)
+
+Из общих файлов затронут только `apps/web/src/app/canvas-editor/canvas-editor.tsx`,
+отдельный commit `10bdf2442bef25d973447678921a0e328ca61b2c`.
+Изменение: GameSourceEditor получает React key по выбранному artifact и
+`loaded?.artifact.version`. Переключение версии размонтирует локальную
+Undo-историю и исключает откат в другой artifact/version.
+
+Ни Work, ни Coscode executor, ни DB/API/Canvas save contract не менялись.
+Применять адаптер вместе с Games source editor, не отдельно.
+
+CI: Browser acceptance и sandbox PASS на `af140067`.
+Полный core gate заблокирован файлом `docs/research/experience-llm-distill-2026-11-10.json`
+из нового main, отсутствующим в ветке Builders. Не забирать этот файл
+в Builders PR и не маскировать проверку; Codex должен исправить его отдельно.
+PR #518 оставить без merge и production.
