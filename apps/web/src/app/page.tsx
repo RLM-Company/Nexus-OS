@@ -213,6 +213,14 @@ const replaceConsoleRoute = (
       ? `/?chat=${encodeURIComponent(generalChatId)}`
       : "/";
   const currentParams = new URLSearchParams(window.location.search);
+  const messageId = currentParams.get("message");
+  if (
+    messageId &&
+    (projectId
+      ? view === "chat" && currentParams.get("project") === projectId
+      : generalChatId && currentParams.get("chat") === generalChatId)
+  )
+    route += "&message=" + encodeURIComponent(messageId);
   const mode = currentParams.get("mode");
   if (mode && ["kosmora", "work", "coscode"].includes(mode))
     route += `${route.includes("?") ? "&" : "?"}mode=${encodeURIComponent(mode)}`;
@@ -608,6 +616,7 @@ export default function Home() {
   const streamRef = useRef<EventSource | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const followMessagesRef = useRef(true);
+  const focusedHistoryTarget = useRef<string | null>(null);
   const [fileDragActive, setFileDragActive] = useState(false);
 
   const [voiceAssistantOpen, setVoiceAssistantOpen] = useState(false);
@@ -1077,6 +1086,37 @@ export default function Home() {
     );
     return () => cancelAnimationFrame(frame);
   }, [localChatMessages, messages]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const messageId = params.get("message");
+    if (!messageId || surface !== "manager") {
+      focusedHistoryTarget.current = null;
+      return;
+    }
+    const inProject =
+      activeProject &&
+      projectView === "chat" &&
+      params.get("project") === activeProject.id &&
+      messages.some((message) => message.id === messageId);
+    const inChat =
+      !activeProject &&
+      activeLocalChatId &&
+      params.get("chat") === activeLocalChatId &&
+      localChatMessages.some((message) => message.id === messageId);
+    if (!inProject && !inChat) return;
+    const targetKey = params.toString();
+    if (focusedHistoryTarget.current === targetKey) return;
+    const frame = requestAnimationFrame(() => {
+      const target = document.getElementById("chat-message-" + messageId);
+      if (!target) return;
+      followMessagesRef.current = false;
+      target.scrollIntoView({ block: "center" });
+      target.focus({ preventScroll: true });
+      focusedHistoryTarget.current = targetKey;
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [activeProject, activeLocalChatId, localChatMessages, messages, projectView, surface]);
 
   const loadProjectView = useCallback(async (projectId: string) => {
     const epoch = viewEpochRef.current;

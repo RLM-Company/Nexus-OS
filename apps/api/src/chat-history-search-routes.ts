@@ -4,7 +4,7 @@ import type { ChatHistorySearchStore } from "@cosmora/db";
 import type { IdentityContext } from "@cosmora/contracts";
 
 const Query = Type.Object({
-  q: Type.String({ minLength: 1, maxLength: 160 }),
+  q: Type.String({ minLength: 1, maxLength: 160, pattern: "\\S" }),
   scope: Type.Optional(
     Type.Union([Type.Literal("all"), Type.Literal("general"), Type.Literal("project")])
   ),
