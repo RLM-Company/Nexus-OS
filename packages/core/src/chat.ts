@@ -132,7 +132,7 @@ export class ChatService {
         );
         const lines = ordered.map(
           (skill) =>
-            `- [${skill.scope ?? "owner"}] ${skill.name} v${skill.version}: ${skill.instructions}`
+            `- [${skill.scope ?? "owner"}] ${skill.name} v${skill.version}: ${JSON.stringify(skill.instructions)}`
         );
         conversation[lastUser] = {
           ...original,

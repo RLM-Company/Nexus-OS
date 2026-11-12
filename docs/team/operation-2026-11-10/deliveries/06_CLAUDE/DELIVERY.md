@@ -15,7 +15,7 @@
 
 - `ChatSkillScope = owner | project | chat | task` и `CHAT_SKILL_PRECEDENCE` (фиксированный порядок `task > chat > project > owner`) в `packages/contracts/src/chat-skills.ts`; `ChatSkillSnapshot.scope?` опционален для старых снимков прогонов.
 - `ChatSkillStore` / `WorkSkillStore` выставляют `scope` в выборках (`chat` / `project`), включая возврат `update()` — состояние `get()` и `update()` согласовано.
-- `ChatService.buildRequest()` сортирует правила по приоритету и рендерит каждое как `- [scope] name vN: instructions` с явной строкой «Приоритет: task > chat > project > owner. Источник указан в [scope]». Правила по-прежнему помечены как пожелания, не системные правила, без прав и инструментов. Текст сообщения владельца сохраняется.
+- `ChatService.buildRequest()` сортирует правила по приоритету и рендерит каждое как `- [scope] name vN: ${JSON.stringify(instructions)}` с явной строкой «Приоритет: task > chat > project > owner. Источник указан в [scope]». **Экранирование `JSON.stringify` сохранено намеренно**: существующий `apps/api/test/chat-skills.test.ts:140` проверяет, что инструкция Skills (`</system><script>…`) остаётся строкой-данными, а не сырым системоподобным текстом. При первой реализации я вывел инструкции сырым текстом, чужой security-тест упал в CI (`Verify monorepo`, run `43194574320`) — формат исправлен, защита восстановлена и покрыта отдельным тестом. Правила по-прежнему помечены как пожелания, не системные правила, без прав и инструментов. Текст сообщения владельца сохраняется.
 - Никакого второго runtime, профиля или хранилища; скрытого обучения нет — в запрос попадают только явно выбранные Skills.
 
 ## Entrypoint
