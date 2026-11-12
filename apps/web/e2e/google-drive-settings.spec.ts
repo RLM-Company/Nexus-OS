@@ -188,7 +188,7 @@ test("saves a complete copy, previews and restores into new chat/file links", as
   });
 });
 
-test("selects exact result versions, reports conflicts and exposes only the managed Drive folder", async ({
+test("retries an exact Drive selection after the source list changes", async ({
   page
 }, testInfo) => {
   const first = "kosmora_" + "a".repeat(32),
@@ -224,7 +224,7 @@ test("selects exact result versions, reports conflicts and exposes only the mana
             sha256: null,
             kind: "user"
           }
-        ]
+        ].filter((file) => saved.length === 0 || file.id !== first)
       };
     if (path.endsWith("/link"))
       result = { url: "https://drive.google.com/drive/folders/managed_folder" };
@@ -235,7 +235,11 @@ test("selects exact result versions, reports conflicts and exposes only the mana
       result = { items: [] };
     if (path.endsWith("/backups") && request.method() === "POST") {
       saved.push(request.postDataJSON() as Record<string, unknown>);
-      await route.fulfill({ status: 409, json: { error: { code: "DRIVE_OPERATION_CONFLICT" } } });
+      await route.fulfill(
+        saved.length === 1
+          ? { status: 502, json: { error: { code: "DRIVE_REQUEST_FAILED" } } }
+          : { json: { state: "verified" } }
+      );
       return;
     }
     if (path.endsWith("/disconnect")) {
@@ -261,16 +265,31 @@ test("selects exact result versions, reports conflicts and exposes only the mana
     buffer: office
   });
   expect(saved).toHaveLength(0);
-  await panel.getByRole("button", { name: "Сохранить копию на Drive" }).click();
-  await expect(panel.getByRole("alert")).toContainText("Выбранный файл изменился");
+  const save = panel.getByRole("button", { name: "Сохранить копию на Drive" });
+  await save.click();
+  await expect(panel.getByRole("alert")).toContainText("Операция не завершена");
   expect(saved).toHaveLength(1);
   expect(saved[0]).toMatchObject({
     include_results: false,
     file_ids: [first],
     office_file: { name: "report.docx", bytes: office.toString("base64") }
   });
+  expect(saved[0]).not.toHaveProperty("retry_upload");
   await expect(panel.getByText("Все части копии сохранены и проверены.")).toHaveCount(0);
+  await expect(panel.getByRole("checkbox", { name: /proposal.md/ })).toHaveCount(0);
+  await save.click();
+  await expect(panel.getByText("Все части копии сохранены и проверены.")).toBeVisible();
+  expect(saved).toHaveLength(2);
+  expect(saved[1]).toEqual({ ...saved[0], retry_upload: true });
   await panel.screenshot({ path: testInfo.outputPath("drive-file-selection.png") });
+  await panel.getByRole("checkbox", { name: /notes.txt/ }).check();
+  await save.click();
+  await expect(panel.getByText("Все части копии сохранены и проверены.")).toBeVisible();
+  expect(saved).toHaveLength(3);
+  expect(saved[2]).toMatchObject({ file_ids: [second] });
+  expect(saved[2]?.operation_id).not.toBe(saved[0]?.operation_id);
+  expect(saved[2]).not.toHaveProperty("retry_upload");
+  expect(saved[2]).not.toHaveProperty("office_file");
   await panel.getByRole("button", { name: "Отключить Google Drive", exact: true }).click();
   await expect(panel.getByRole("link", { name: "Открыть папку Kosmora" })).toHaveCount(0);
 });
