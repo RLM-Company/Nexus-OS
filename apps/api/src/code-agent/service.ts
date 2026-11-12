@@ -22,7 +22,6 @@ import {
   inspectCodeAgentUnifiedDiff,
   renderCodeAgentUnifiedDiff,
   CodeDiffError,
-  isSafeCodeAgentDiffPath,
   computeCodeAgentSnapshotDigest,
   validateCodeAgentCheckResult,
   isVerifiedCodeAgentCheck,
@@ -37,6 +36,7 @@ import {
 import {
   applyCodeExactEdits,
   assertCodeContextContentSafe,
+  isSafeCodeContextPath,
   codePromptFiles,
   decodeCodeProposal,
   selectCodeContextPaths,
@@ -47,7 +47,7 @@ import type { CodeOwnerBudget, CodeOwnerBudgetKey } from "./owner-budget.js";
 import { CodeAgentError, type CodeAgentStore, type CodeAgentRun } from "./store.js";
 
 const hash = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
-export const safeCodePath = isSafeCodeAgentDiffPath;
+export const safeCodePath = isSafeCodeContextPath;
 const validFiles = (files: GithubFileChange[]) =>
   files.length > 0 &&
   files.length <= 8 &&
@@ -725,6 +725,9 @@ export class CodeAgentService {
     messages: ModelMessage[],
     toolMode: boolean
   ): ModelRequest {
+    // Cover task/issue/repository and tool metadata too, not just file contents.
+    // Refuse before route reservation or provider dispatch; never rewrite input bytes.
+    assertCodeContextContentSafe(JSON.stringify(messages));
     const req = this.deps.manager.buildRequest({
       projectId: run.project_id,
       runId: id,

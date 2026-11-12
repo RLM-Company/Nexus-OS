@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   applyCodeExactEdits,
   assertCodeContextContentSafe,
+  isSafeCodeContextPath,
   codePromptFiles,
   decodeCodeProposal,
   searchCodeContextPaths,
@@ -175,5 +176,30 @@ describe("embedded credential context admission", () => {
         .join("\n")
     );
     expect(file.content).toBe(content);
+  });
+});
+
+describe("credential-shaped path metadata", () => {
+  it.each(["ghp_", "sk-proj-"])(
+    "excludes %s names consistently from search and prompt files",
+    (prefix) => {
+      const token = prefix + "P".repeat(36);
+      const path = `src/${token}.js`;
+      expect(isSafeCodeContextPath(path)).toBe(false);
+      expect(() => codePromptFiles([{ path, content: "ordinary file" }])).toThrow(
+        "CONTEXT_PATH_FORBIDDEN"
+      );
+      const result = searchCodeContextPaths({ query: "src" }, [{ path }, { path: "src/add.js" }]);
+      expect(JSON.stringify(result).includes(token)).toBe(false);
+      expect(result).toEqual({ files: ["src/add.js"], total_count: 1, partial: false });
+    }
+  );
+  it("retains normal code names and preserves ordinary credential variable text", () => {
+    const path = "src/api-key-validator.js";
+    const content = "const apiKey = config.apiKey; // 19 700; 00123; кроме доставки";
+    expect(isSafeCodeContextPath(path)).toBe(true);
+    expect(codePromptFiles([{ path, content }])).toEqual([
+      { path, numbered_lines: `1: ${content}` }
+    ]);
   });
 });

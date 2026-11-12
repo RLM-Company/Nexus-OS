@@ -456,6 +456,55 @@ async function fixture(
 }
 
 describe("Code agent real gateway/GitHub/policy vertical", () => {
+  it("excludes credential-shaped path metadata from an otherwise safe proposal", async () => {
+    const token = "ghp_" + "M".repeat(36);
+    const f = await fixture({ additionalTreePaths: [`src/${token}.js`] });
+    const id = await f.start();
+    await f.service.whenIdle();
+    expect(JSON.stringify(f.providerCalls).includes(token)).toBe(false);
+    expect(f.get(id).status).toBe("proposed");
+    expect(f.providerCalls).toHaveLength(3);
+    expect(f.get(id).snapshot.map((file) => file.path)).toEqual(["src/add.js", "src/add.test.js"]);
+    expect(f.githubCalls.filter((call) => call.path.startsWith("/git/blobs/"))).toHaveLength(2);
+  });
+  it.each(["task", "issue"] as const)(
+    "blocks credential-bearing %s before the first model request",
+    async (field) => {
+      const token = "github_pat_" + "I".repeat(40);
+      const body = `Synthetic issue context ${token}`;
+      const f = await fixture();
+      const created = f.service.create(f.project, LOCAL_DEVELOPMENT_IDENTITY, {
+        task: field === "task" ? `Fix src/add.js ${token}` : "Fix src/add.js",
+        base_branch: "main",
+        files: ["src/add.js"],
+        ...(field === "issue"
+          ? {
+              issue_context: {
+                repository: "RLM-Company/Nexus-OS",
+                number: 17,
+                title: "Fixture issue",
+                body,
+                source_body_chars: body.length,
+                source_updated_at: "2026-11-12T00:00:00Z",
+                truncated: false,
+                truncation_approved: false
+              }
+            }
+          : {})
+      });
+      await f.service.whenIdle();
+      expect(JSON.stringify(f.providerCalls).includes(token)).toBe(false);
+      expect(f.providerCalls).toHaveLength(0);
+      expect(f.get(created.id)).toMatchObject({
+        status: "failed",
+        error: "CONTEXT_CONTENT_FORBIDDEN"
+      });
+      expect(f.get(created.id).model_run_ids ?? []).toHaveLength(0);
+      expect(f.checked).toHaveLength(0);
+      expect(f.githubCalls.every((call) => call.method === "GET")).toBe(true);
+    }
+  );
+
   it.each([true, false])(
     "refuses embedded credential source before durable context and model dispatch (tools=%s)",
     async (toolCalling) => {
@@ -3152,6 +3201,29 @@ async function failedRepair(f: Awaited<ReturnType<typeof fixture>>) {
 }
 
 describe("bounded explicit check-feedback repair", () => {
+  it("blocks legacy task metadata before reserving a repair or sending another model request", async () => {
+    const f = await fixture({ responses: repairResponses(), runner: repairRunner() });
+    const request = await failedRepair(f);
+    const token = "sk-proj-" + "L".repeat(36);
+    const legacy = f.store.save(
+      { ...f.get(request.id), task: `Legacy task ${token}` },
+      "fixture legacy metadata"
+    );
+    const { id, ...payload } = { ...request, expected_run_version: legacy.version };
+    const response = await f.app.inject({
+      method: "POST",
+      url: `${f.base}/${id}/repair-v2`,
+      payload
+    });
+    await f.service.whenIdle();
+    expect(JSON.stringify(f.providerCalls).includes(token)).toBe(false);
+    expect(response.statusCode).toBe(409);
+    expect(response.json()).toEqual({ error: { code: "CONTEXT_CONTENT_FORBIDDEN" } });
+    expect(f.providerCalls).toHaveLength(3);
+    expect(f.get(id)).toEqual(legacy);
+    expect(f.get(id).repair_request).toBeUndefined();
+  });
+
   it("redacts legacy check feedback before repair dispatch and preserves factual evidence", async () => {
     const f = await fixture({ responses: repairResponses(), runner: repairRunner() });
     const request = await failedRepair(f);

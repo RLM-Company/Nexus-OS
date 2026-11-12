@@ -10,17 +10,26 @@ const embeddedCredentialFormats = [
   /\bsk-(?:proj-)?[A-Za-z0-9_-]{24,}\b/u,
   /\b(?:AKIA|ASIA)[A-Z0-9]{16}\b/u
 ];
+const hasEmbeddedCredential = (value: string) =>
+  embeddedCredentialFormats.some((pattern) => pattern.test(value));
+
+/** A safe filesystem path can still contain a credential-shaped value in its name. */
+export function isSafeCodeContextPath(path: string): boolean {
+  return isSafeCodeAgentDiffPath(path) && !hasEmbeddedCredential(path);
+}
 
 /** Refuse the entire source before it becomes a durable read result or model input. */
 export function assertCodeContextContentSafe(content: string): void {
-  if (embeddedCredentialFormats.some((pattern) => pattern.test(content)))
-    throw new CodeAgentError("CONTEXT_CONTENT_FORBIDDEN");
+  if (hasEmbeddedCredential(content)) throw new CodeAgentError("CONTEXT_CONTENT_FORBIDDEN");
 }
 
 /** Line labels belong to the prompt, never to the canonical snapshot or patch. */
 export function codePromptFiles(files: Array<{ path: string; content: string }>) {
   // Also covers legacy snapshots and the explicitly approved repair prompt.
-  for (const file of files) assertCodeContextContentSafe(file.content);
+  for (const file of files) {
+    if (!isSafeCodeContextPath(file.path)) throw new CodeAgentError("CONTEXT_PATH_FORBIDDEN");
+    assertCodeContextContentSafe(file.content);
+  }
   return files.map(({ path, content }) => ({
     path,
     numbered_lines: content
@@ -171,7 +180,7 @@ export function searchCodeContextPaths(input: unknown, entries: Array<{ path: st
   const query = args.query.trim().toLowerCase();
   const matches = entries
     .filter(
-      (entry) => isSafeCodeAgentDiffPath(entry.path) && entry.path.toLowerCase().includes(query)
+      (entry) => isSafeCodeContextPath(entry.path) && entry.path.toLowerCase().includes(query)
     )
     .map((entry) => entry.path)
     .sort();
