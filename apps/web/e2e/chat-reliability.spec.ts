@@ -88,7 +88,7 @@ test("restores text and files after closing the tab, isolates chats, removes and
   page,
   context,
   request
-}) => {
+}, testInfo) => {
   const response = await request.post("/api/v1/chats", {
     data: { initial_message: "Чат для черновика", client_message_id: crypto.randomUUID() }
   });
@@ -120,8 +120,47 @@ test("restores text and files after closing the tab, isolates chats, removes and
   await reopened.reload();
   await expect(reopened.getByRole("list", { name: "Прикреплённые файлы" })).toHaveCount(0);
   await reopened.getByLabel("Текстовые файлы и код").setInputFiles(draftFiles);
+  const acknowledgement = reopened.waitForResponse(
+    (reply) =>
+      reply.request().method() === "POST" &&
+      new URL(reply.url()).pathname === `/api/v1/chats/${chat.id}/messages`
+  );
   await reopened.getByRole("button", { name: "Отправить", exact: true }).click();
-  await expect(reopened.getByRole("status")).toHaveText(/Ответ получен/);
+  const accepted = await acknowledgement;
+  const acceptedBody = (await accepted.json()) as { error?: { code?: string } };
+  expect(
+    accepted.ok(),
+    `HTTP ${accepted.status()}: ${acceptedBody.error?.code ?? "accepted"}`
+  ).toBe(true);
+  try {
+    await expect(reopened.getByRole("status")).toHaveText(/Ответ получен/);
+  } catch (error) {
+    // Preserve the original assertion even if diagnostic retrieval itself fails.
+    await request
+      .get(`/api/v1/chats/${chat.id}`, { timeout: 3000 })
+      .then(async (detail) => {
+        const body = await detail.json();
+        await testInfo.attach("draft-chat-terminal-state", {
+          body: JSON.stringify(
+            {
+              status: detail.status(),
+              messages: body.messages?.map(
+                (message: { role: string; status: string; error_code: string | null }) => ({
+                  role: message.role,
+                  status: message.status,
+                  error_code: message.error_code
+                })
+              )
+            },
+            null,
+            2
+          ),
+          contentType: "application/json"
+        });
+      })
+      .catch(() => undefined);
+    throw error;
+  }
   await reopened.reload();
   await expect(reopened.getByLabel("Сообщение Kosmora")).toHaveValue("");
   await expect(reopened.getByRole("list", { name: "Прикреплённые файлы" })).toHaveCount(0);
