@@ -2,6 +2,7 @@ import { readFile } from "node:fs/promises";
 import { format } from "prettier";
 import { expect, it } from "vitest";
 
+// prettier-ignore
 it("reports canonical Studio formatter output for an integration fix", async () => {
   for (const name of ["site-source-diagnostics.ts", "site-image-import.tsx"]) {
     const raw = await readFile(new URL(name, import.meta.url), "utf8");
