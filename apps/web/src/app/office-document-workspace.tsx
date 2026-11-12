@@ -1,7 +1,7 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { OfficeOperation, OfficeCursor } from "@cosmora/contracts";
-import { DRIVE_OFFICE_FILE_MAX_BYTES } from "@cosmora/contracts";
+import { DRIVE_OFFICE_FILE_MAX_BYTES, DRIVE_OFFICE_FILE_MAX_NAME } from "@cosmora/contracts";
 import { OfficeRangeEditor } from "./office-range-editor";
 import { officeCellValue, type RangeType } from "./office-range";
 import { OfficePlanEditor } from "./office-plan-editor";
@@ -53,6 +53,20 @@ type Preview = {
   expires: number;
   preview_token: string;
 };
+type OfficeSource = { name: string; bytes: string };
+
+function officeCopyName(name: string) {
+  return name.replace(
+    /^(.*?)(?:\.koswork)?(\.(?:docx|xlsx|pptx))$/i,
+    (_match, stem: string, extension: string) => {
+      const suffix = ".koswork" + extension;
+      return (
+        stem.slice(0, DRIVE_OFFICE_FILE_MAX_NAME - suffix.length).replace(/[\uD800-\uDBFF]$/u, "") +
+        suffix
+      );
+    }
+  );
+}
 async function request<T>(mode: string, body: unknown, signal: AbortSignal): Promise<T> {
   const response = await fetch(`/api/v1/document-workspace/${mode}`, {
     method: "POST",
@@ -81,7 +95,7 @@ function displayValue(value: unknown): string {
     : "(неподдерживаемое значение)";
 }
 export function OfficeDocumentWorkspace() {
-  const [source, setSource] = useState<{ name: string; bytes: string } | null>(null);
+  const [source, setSource] = useState<OfficeSource | null>(null);
   const [view, setView] = useState<View | null>(null);
   const [pageHistory, setPageHistory] = useState<OfficeCursor[]>([]);
   const [operations, setOperations] = useState<OfficeOperation[]>([]);
@@ -127,22 +141,67 @@ export function OfficeDocumentWorkspace() {
     },
     [resultUrl]
   );
-  const run = async (fn: (signal: AbortSignal, current: () => boolean) => Promise<void>) => {
-    abort.current?.abort();
-    const controller = new AbortController();
-    abort.current = controller;
-    const n = ++generation.current;
-    const current = () => !controller.signal.aborted && generation.current === n;
-    setBusy(true);
-    setError("");
-    try {
-      await fn(controller.signal, current);
-    } catch (e) {
-      if (current()) setError(e instanceof Error ? e.message : "Ошибка документа");
-    } finally {
-      if (current()) setBusy(false);
-    }
-  };
+  const run = useCallback(
+    async (fn: (signal: AbortSignal, current: () => boolean) => Promise<void>) => {
+      abort.current?.abort();
+      const controller = new AbortController();
+      abort.current = controller;
+      const n = ++generation.current;
+      const current = () => !controller.signal.aborted && generation.current === n;
+      setBusy(true);
+      setError("");
+      try {
+        await fn(controller.signal, current);
+      } catch (e) {
+        if (current()) setError(e instanceof Error ? e.message : "Ошибка документа");
+      } finally {
+        if (current()) setBusy(false);
+      }
+    },
+    []
+  );
+  const inspectSource = useCallback(
+    async (
+      selected: OfficeSource,
+      signal: AbortSignal,
+      current: () => boolean,
+      expectedVersion?: string
+    ) => {
+      const opened = await request<View>(
+        "inspect",
+        { ...selected, expected_version: expectedVersion },
+        signal
+      );
+      if (current()) {
+        setSource(selected);
+        setView(opened);
+        setTarget(opened.targets[0]?.id ?? "");
+      }
+    },
+    []
+  );
+  useEffect(() => {
+    const id = new URLSearchParams(window.location.search).get("officeRestore");
+    if (!id || !/^[a-f0-9-]{36}$/.test(id)) return;
+    let active = true;
+    queueMicrotask(() => {
+      if (!active) return;
+      void run(async (signal, current) => {
+        const response = await fetch(`/api/v1/storage/drive/restored-files/${id}/office`, {
+          signal,
+          cache: "no-store"
+        });
+        if (!response.ok) throw Error("Восстановленная копия Office недоступна.");
+        const { name, bytes, version } = (await response.json()) as OfficeSource & {
+          version: string;
+        };
+        if (current()) await inspectSource({ name, bytes }, signal, current, version);
+      });
+    });
+    return () => {
+      active = false;
+    };
+  }, [inspectSource, run]);
   const existingSheets = source?.name.toLowerCase().endsWith(".xlsx")
     ? (view?.total_targets ?? view?.targets.length ?? 0)
     : 0;
@@ -260,12 +319,7 @@ export function OfficeDocumentWorkspace() {
               for (let i = 0; i < bytes.length; i += 8192)
                 binary += String.fromCharCode(...bytes.subarray(i, i + 8192));
               const selected = { name: file.name, bytes: btoa(binary) };
-              const opened = await request<View>("inspect", selected, signal);
-              if (current()) {
-                setSource(selected);
-                setView(opened);
-                setTarget(opened.targets[0]?.id ?? "");
-              }
+              await inspectSource(selected, signal, current);
             });
           }}
         />
@@ -499,8 +553,7 @@ export function OfficeDocumentWorkspace() {
               onRestore={applyPlan}
             />
             <p>
-              Файл новой копии: {source.name.replace(/\.(docx|xlsx|pptx)$/i, ".koswork.$1")}. Папку
-              сохранения определяет браузер.
+              Файл новой копии: {officeCopyName(source.name)}. Папку сохранения определяет браузер.
             </p>
             <button type="button" onClick={reset}>
               Очистить план
@@ -528,10 +581,7 @@ export function OfficeDocumentWorkspace() {
           {preview && (
             <div>
               <h4>Предлагаемые изменения</h4>
-              <p>
-                Файл новой копии: {source.name.replace(/\.(docx|xlsx|pptx)$/i, ".koswork.$1")}.
-                Исходник сохраняется.
-              </p>
+              <p>Файл новой копии: {officeCopyName(source.name)}. Исходник сохраняется.</p>
               <ul>
                 {preview.diff.map((change, i) => (
                   <li key={i}>
@@ -600,7 +650,7 @@ export function OfficeDocumentWorkspace() {
                       url: URL.createObjectURL(
                         new Blob([bytes], { type: "application/octet-stream" })
                       ),
-                      name: source.name.replace(/\.(docx|xlsx|pptx)$/i, ".koswork.$1"),
+                      name: officeCopyName(source.name),
                       version: saved.version,
                       source_version: saved.source_version,
                       sha256: saved.sha256,
