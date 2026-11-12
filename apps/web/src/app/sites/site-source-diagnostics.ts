@@ -35,9 +35,8 @@ export function inspectSiteSource(content: string): SiteSourceFinding[] {
     const tag = element.localName;
     if (tag === "script") scripts++;
     if (["form", "button", "input", "select", "textarea"].includes(tag)) formControls++;
-    if (["iframe", "object", "embed", "video", "audio", "canvas", "svg", "math"].includes(tag)) {
-      unsupported++;
-    }
+    const unsupportedTags = ["iframe", "object", "embed", "video", "audio", "canvas", "svg", "math"];
+    if (unsupportedTags.includes(tag)) unsupported++;
     const id = element.getAttribute("id");
     if (id) {
       if (seenIds.has(id)) repeatedIds.add(id);
@@ -74,14 +73,17 @@ export function inspectSiteSource(content: string): SiteSourceFinding[] {
     record("scripts", "Скрипты (" + scripts + ") не исполняются в статическом предпросмотре.");
   }
   if (formControls > 0) {
-    record("forms", "Формы и элементы ввода (" + formControls + ") не работают в предпросмотре.");
+    const message = "Формы и элементы ввода (" + formControls + ") не работают в предпросмотре.";
+    record("forms", message);
   }
   if (unsupported > 0) {
-    record("elements", "Неподдерживаемых элементов: " + unsupported + ". В preview они удаляются.");
+    const message = "Неподдерживаемых элементов: " + unsupported + ". В preview они удаляются.";
+    record("elements", message);
   }
   if (externalReferences + externalStyles > 0) {
     const count = externalReferences + externalStyles;
-    record("external", "Внешние ссылки на ресурсы: " + count + ". Preview блокирует загрузку.");
+    const message = "Внешние ссылки на ресурсы: " + count + ". Preview блокирует загрузку.";
+    record("external", message);
   }
   if (unavailableImages > 0) {
     record("images", "Изображения без встроенного PNG/JPEG/WebP: " + unavailableImages + ".");

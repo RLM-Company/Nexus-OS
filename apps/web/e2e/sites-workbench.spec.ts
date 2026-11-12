@@ -156,21 +156,19 @@ test("warns before switching projects with an unsaved site draft and restores it
   await expect(source).toHaveValue(unsaved);
 });
 
-test("inspects static site source without network, mutation or provider requests", async ({
-  page,
-  request
-}) => {
+test("audits inert HTML source and invalidates stale findings", async ({ page, request }) => {
   const id = await project(request);
   await page.goto("/?surface=sites&project=" + id);
   await page.getByRole("combobox", { name: "Проект сайта", exact: true }).selectOption(id);
   const editor = page.getByRole("region", { name: "Редактор Canvas", exact: true });
   await editor.getByRole("combobox", { name: "Формат", exact: true }).selectOption("html");
   const source = editor.getByRole("textbox", { name: "Содержимое", exact: true });
-  const html =
-    '<h1 id="same">Страница</h1><div id="same">Повтор</div>' +
-    '<a href="#missing">Переход</a><img src="photo.jpg">' +
-    '<script>window.evil = true</script><form><input></form>' +
-    '<iframe src="https://blocked-site-preview.invalid/frame"></iframe>';
+  const html = [
+    "<h1 id='same'>Страница</h1><div id='same'>Повтор</div>",
+    "<a href='#missing'>Переход</a><img src='photo.jpg'>",
+    "<script>window.evil = true</script><form><input></form>",
+    "<iframe src='https://blocked-site-preview.invalid/frame'></iframe>"
+  ].join("");
   await source.fill(html);
   const audit = page.getByRole("region", { name: "Диагностика сайта", exact: true });
   await audit.getByRole("button", { name: "Проверить HTML", exact: true }).click();
