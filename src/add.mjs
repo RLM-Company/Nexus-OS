@@ -1,2 +1,3 @@
 // article 00123
-export const add = (a, b) => a - b;
+export const add = (a, b) => a + b;
+// accepted synthetic edit
