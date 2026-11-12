@@ -53,7 +53,7 @@ export function SiteImageImport({
   };
   return (
     <section className={styles.assetPanel} aria-label="Изображения сайта">
-      <p>Встроить PNG, JPEG или WebP до 64 КиБ прямо в HTML. Без загрузки во внешнюю сеть.</p>
+      <p>PNG, JPEG или WebP до 64 КиБ будут встроены в HTML без внешней загрузки.</p>
       <label>
         Файл изображения
         <input
@@ -78,11 +78,7 @@ export function SiteImageImport({
           onChange={(event) => setAlt(event.target.value)}
         />
       </label>
-      <button
-        type="button"
-        disabled={disabled || working || !file}
-        onClick={() => void insert()}
-      >
+      <button type="button" disabled={disabled || working || !file} onClick={() => void insert()}>
         Встроить изображение
       </button>
       {working && <p role="status">Проверяю изображение…</p>}
