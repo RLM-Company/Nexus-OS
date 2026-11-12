@@ -14,6 +14,7 @@ const unsupportedTags = new Set("iframe object embed video audio canvas svg math
  * Report observable limitations of STATIC preview, never execute source.
  * Parsing happens in an inert template. This is not a publication security audit.
  */
+// prettier-ignore -- temporary isolation while verifying the parser in the full CI gate.
 export function inspectSiteSource(content: string): SiteSourceFinding[] {
   if (new TextEncoder().encode(content).byteLength > MAX_SOURCE_BYTES) {
     throw new Error("Размер диагностики превышает 512 КиБ.");
