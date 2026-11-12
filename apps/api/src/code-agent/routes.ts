@@ -304,12 +304,21 @@ export function registerCodeAgentRoutes(
         reply
       )
   );
-  app.post<{ Params: Params; Body: { proposal_hash: string } }>(
+  app.post<{
+    Params: Params;
+    Body: { proposal_hash: string; expected_review_hash?: string | null };
+  }>(
     base + "/:id/invalidate-review",
     {
       schema: {
         params,
-        body: Type.Object({ proposal_hash: hash }, { additionalProperties: false })
+        body: Type.Object(
+          {
+            proposal_hash: hash,
+            expected_review_hash: Type.Optional(Type.Union([hash, Type.Null()]))
+          },
+          { additionalProperties: false }
+        )
       }
     },
     (request, reply) =>
@@ -318,7 +327,8 @@ export function registerCodeAgentRoutes(
           service.invalidateReview(
             request.params.id,
             owned(request).owner_id,
-            request.body.proposal_hash
+            request.body.proposal_hash,
+            request.body.expected_review_hash
           ),
         reply
       )
@@ -334,13 +344,24 @@ export function registerCodeAgentRoutes(
   );
   app.post<{
     Params: Params;
-    Body: { proposal_hash: string; files: Array<{ path: string; content: string }> };
+    Body: {
+      proposal_hash: string;
+      files: Array<{ path: string; content: string }>;
+      expected_review_hash?: string | null;
+    };
   }>(
     base + "/:id/review",
     {
       schema: {
         params,
-        body: Type.Object({ proposal_hash: hash, files }, { additionalProperties: false })
+        body: Type.Object(
+          {
+            proposal_hash: hash,
+            files,
+            expected_review_hash: Type.Optional(Type.Union([hash, Type.Null()]))
+          },
+          { additionalProperties: false }
+        )
       }
     },
     (request, reply) =>
@@ -366,6 +387,33 @@ export function registerCodeAgentRoutes(
     },
     (request, reply) =>
       handle(() => service.check(request.params.id, owned(request).owner_id, request.body), reply)
+  );
+  app.post<{
+    Params: Params;
+    Body: {
+      review_hash: string;
+      expected_run_version: number;
+      client_request_id: string;
+      approve: true;
+    };
+  }>(
+    base + "/:id/repair-v2",
+    {
+      schema: {
+        params,
+        body: Type.Object(
+          {
+            review_hash: hash,
+            client_request_id: Type.String({ format: "uuid" }),
+            expected_run_version: Type.Integer({ minimum: 1, maximum: Number.MAX_SAFE_INTEGER }),
+            approve: Type.Literal(true)
+          },
+          { additionalProperties: false }
+        )
+      }
+    },
+    (request, reply) =>
+      handle(() => service.repair(request.params.id, owned(request).owner_id, request.body), reply)
   );
   app.post<{
     Params: Params;

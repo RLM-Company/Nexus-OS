@@ -1,5 +1,19 @@
 # Coscode: проверенный backlog
 
+Дополнительное ревью: stale-check approval закрыт source40a3a9e/9877f5b.
+Same review hash больше не заменяет check version; repair-v2 + capability2, новый
+consent после reload, старые payloads fail closed. Root0/API117/realHTTP-OCI1/
+production30PASS; детали и baselineFAIL в актуальной DELIVERY.
+
+Предыдущий итог ниже — история на3936e5f.
+
+Итог 11 ноября: согласованный сценарий завершён до статуса «готово к интеграции».
+Source3936e5f, Draft PR519. Failed-check → одна явно разрешённая модельная попытка →
+новый diff → реальный повтор той же проверки → свежий review подключён к продукту.
+Реальный OCI API/Git сценарий PASS; root check:core exit0. Браузерный результат
+и точные commands/receipts — в актуальной верхней части DELIVERY.md.
+Список ниже сохраняет историю срезов, а не утверждает завершение release/live.
+
 Исполнитель: Разработчик + GPT Plus. Branch: ops/developer-coscode.
 BASE_SHA: f9eb45285f3473bfd3fe9a73939c1903dc696b3b.
 База 9d972e8ba447f681fbfb49253b73d9f02dd1d325 — предок фактического main.
@@ -52,19 +66,47 @@ BASE_SHA: f9eb45285f3473bfd3fe9a73939c1903dc696b3b.
   total_count/partial; безопасный immutable index без дополнительных remote reads.
 - Поиск → exact read → durable patch доказан scoped API, tools-free fallback сохранён.
 
-## Не завершено / следующий приоритет
+## Исправлено шестым срезом (готово к интеграции, PR519)
 
-- Следующий приоритет — приёмка failed-check → точная owner/model правка → новый
-  review/check → checkpoint recovery. Сначала повторить существующее сильное поведение
-  retryProposalCheck/check и не добавлять скрытую платную перегенерацию.
-- Truncated tree остаётся отказом; безопасный subtree traversal требует отдельного
-  общего GitHub adapter integration и полного existence coverage.
+- Review/invalidation привязаны к parent review hash: старая вкладка не стирает
+  новые edits/proof. Explicit checkpoint load с discard, включая raw editor.
+- Failure→repair→new proof→stop/recover через отдельный file SQLite connection
+  проверен; API64, coreexit0, Chromium24PASS. Это ещё не automatic model repair.
+
+## Исправлено седьмым срезом (готово к интеграции; upstream format blocker)
+
+- Bounded immutable nonrecursive recovery при truncated tree, полный индекс без
+  выдуманной полноты; callback scope в текущем adapter и service authority gates.
+- Code68/GitHub23/tree9=100PASS. Все gates после format прошли; общий coreexit1
+  на чужом main research JSON сохранён, не объявляется успехом.
+
+## Исправлено восьмым срезом (готово к интеграции)
+
+- Собственный navigation hook защищает cancelable sameDocument traverse в браузерах
+  с Navigation API. Настоящие Back/Forward, visible edits, explicit discard и no
+  workspace writes проверены production26PASS. Shell/history/router не переписаны.
+- Старые браузеры/uncancelable platform events — честная compatibility boundary.
+
+## Девятый срез: исправление после проверки (готово к интеграции)
+
+- Existing gateway/ownerBudget/executor, exact working bytes владельца и одна попытка.
+- Server capability, отдельное подтверждение, idempotency UUID, запрет replay после
+  restart/unknown, сохранённая ошибка и новый review перед token/publication.
+- Fast tool-only authority revoke исправлен внутри действующего guarded model scope.
+- Старый upstream formatter blocker исправлен владельцем файла в main и принят merge;
+  новый root coreexit0. Новых продуктовых блоков вне поручения не создаём.
+
+## Оставшиеся подтверждённые границы
+
+- Tree recovery за128nodes/100k/8MB/30s заканчивается честным отказом.
+- Node syntax/node-test ограничены выбранным snapshot; не произвольный build стека.
 
 - Сквозная приёмка tmp Git выполнена первым срезом: input/output/patch/receipt
   сохранены в fixtures/check-evidence. Локально4/5 OCI (старый setup timeout),
   внешний CI на объединённом code head589eb31 —5/5 (job130077931797).
   Неполный локальный запуск остаётся4/5; его failure сохранён.
-- Общий sidebar/router/back-forward dirty guard — не интегрирован.
+- Modern browser Back/Forward guard подключён в собственном Code hook. Старые
+  браузеры без Navigation API и uncancelable events не покрываются им.
   Raw diff не сохраняется автоматически; применить или явно отменить.
 - После текущих secret-path guards остаётся содержательный аудит секретов внутри
   произвольного допустимого исходника; фильтр имени не гарантирует чистое содержимое.

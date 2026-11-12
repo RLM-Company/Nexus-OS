@@ -1,0 +1,31 @@
+{
+  "code_head": "d8290f689099ad86e9e4c1198a887dffc25d68ee",
+  "tree": "36115719b38a02fcdc74c0fd80020bf77ea6652d",
+  "base": "1b87dba9e85162fb49729038e0e072e2001609ce",
+  "core_exit": 0,
+  "api_scoped_pass": 64,
+  "api_root_pass": 1001,
+  "production_browser_pass": 24,
+  "production_browser_exit": 0,
+  "first_core_exit": 1,
+  "first_browser_pass": 22,
+  "first_browser_fail": 1,
+  "model_live": false,
+  "executor_in_api_test": "synthetic fixture",
+  "checkpoint": "temporary file SQLite, stopped service + independent connection/store recovery",
+  "logs": {
+    "coscode-review-parent-api-exit.txt": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+    "coscode-review-parent-api.log": "e8fb38cb094dbd384d000a434472eaf451e7e2b3ae3da87fcf325950d7ce52ae",
+    "coscode-review-parent-browser-exit.txt": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865",
+    "coscode-review-parent-browser.log": "326cd2d951cdd8f0bddb672b9c7911211bf5b91f885732fbb9c33f1e26780984",
+    "coscode-review-parent-core-exit.txt": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865",
+    "coscode-review-parent-core.log": "513143594811c981255f912a170f5cb61b36d9d8c959701ba258ab25d5ebe5d2",
+    "coscode-review-recovery-api-exit.txt": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+    "coscode-review-recovery-api.log": "e2b4788d6e028003c9cc9d9dcca7e06f180c453eaf3eb765a87a0ea9c63173dc",
+    "coscode-review-recovery-core-exit.txt": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+    "coscode-review-recovery-core.log": "360616a8aaa9ca182c247838379b08f348fef7d95682439cd83553053dd40647",
+    "coscode-review-recovery-final-browser-exit.txt": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+    "coscode-review-recovery-final-browser.log": "c60199aa1b620b4fc411eb5b098211bc70ffabc81f3c79e394f9cb6976c3ec39",
+    "coscode-review-recovery-preflight-exit.txt": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+  }
+}

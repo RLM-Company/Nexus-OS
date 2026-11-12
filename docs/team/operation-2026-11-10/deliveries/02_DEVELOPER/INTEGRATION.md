@@ -44,3 +44,50 @@ Source4eb1b83: только Code service/helper/scoped tests. search_files — d
 Metadata read использует уже разрешённый immutable index; policy/owner/project
 fences, лимиты и budget не расширены. Общие файлы не менялись. Main4b74f26
 (канонические отчёты) сохранён mergeb457cf9 без авторских правок.
+
+## Review parent CAS и checkpoint recovery (PR519)
+
+Scoped routes добавляют optional expected_review_hash (hash|null) к review и
+invalidate-review. New web pins parent hash; legacy replacement без него denied.
+Первый legacy review совместим. API+web поставлять вместе; старый API не принимает
+новое поле. Общие contracts/DB/registration не менялись. В source d8290f6 добавлен
+явный checkpoint load и file SQLite persistence test. Нового store нет.
+
+## Полное покрытие усечённого tree: отдельный integration commit
+
+Изменён общий `apps/api/src/github-integration.ts`, добавлен scoped
+`apps/api/test/code-agent-github-tree.test.ts`. Optional GithubReadScope(signal,
+allowed) только сужает существующее чтение. Scope проверяется до/после запроса и
+при чтении body; status/file/prepare/branchTree его передают, publish использует
+прежний allowed predicate и для metadata reads. Write retry не добавлен.
+При truncated recursive response текущий client обходит immutable tree SHA:
+<=128 nodes,100k entries,8MB expanded metadata,30s whole deadline; каждый response
+по-прежнему <=8MB/15s. Несовпавший SHA, duplicate/path-slip/ancestor-cycle refused;
+shared subtrees с разными prefixes допустимы. При неполном child/исчерпании бюджета
+возвращается original truncated=true result, не фиктивная полнота.
+Общий JSON contract tree остаётся прежним; callbacks не сериализуются в ChangePlan.
+Scoped adapter+GitHub+Code96PASS, lint/types exit0. Service binding к существующим
+authorityChecks/controller поставляется отдельным scoped commit; без второго runtime.
+
+## One-attempt repair, source3936e5f
+
+Только scoped API/web. `repair_once:1` в GET view разрешает web показать новую
+команду; old API без capability не получает POST repair. Optional check_type и
+repair_request живут в прежнем run JSON; схема/миграции/DB registration не меняются.
+Поставлять API+web вместе. Новых tools registry/общих contracts/gateway permissions
+нет; модельная попытка идёт без tools через текущий маршрут и общий ownerBudget.
+Возврат proposal требует нового review; старый token отзывается атомарно. Не менять
+postflight необратимого GitHub publish на blanket отказ — его reconciliation сохранён.
+Общий adapter по-прежнему только отдельный b22b4f3. Новых интеграционных файлов нет.
+
+## Текущий repair protocol v2: source9877f5b +40a3a9e
+
+POST /code-agent/:id/repair-v2 требует positive safe integer expected_run_version.
+View capability repair_once теперь2 (0 без бюджета). New web требует2 и валидную
+version; cap1/нет capability — команды нет. Legacy /repair не зарегистрирован404,
+иначе Fastify старого API мог удалить неизвестное version field и выполнить v1.
+Old clients на новом API и new clients на старом API безопасно отказывают. Поставлять
+API+web вместе. Source_run_version optional в прежнем run JSON, DB migration нет;
+старые attempts не удаляются и не повторяются автоматически. UUID replay требует
+тот же source version. Новых common contracts/registration/runtime/gateway нет;
+все исходники scoped, общего integration commit сверх прежнего b22b4f3 не требуется.

@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useCodeEditorNavigationGuard } from "./editor-navigation";
+import { CodeRepairControl } from "./repair-control";
 import { CodeCheckEvidence, hasVerifiedCodeCheck } from "./check-evidence";
 import { TerminalOutput } from "../ui/terminal-output";
 import { CodePatchEditor } from "./patch-editor";
@@ -16,7 +17,21 @@ import { issueInputSize, type IssueContext } from "./github-issues-client";
 type FileChange = { path: string; before: string | null; content: string };
 type Run = {
   id: string;
+  version?: number;
   status: string;
+  capabilities?: { repair_once?: number };
+  repair_request?: {
+    review_hash: string;
+    state: string;
+    source_snapshot_digest: string;
+    source_check: {
+      status: string;
+      stdout: string;
+      stderr: string;
+      truncated: boolean;
+      exitCode?: number | null;
+    };
+  };
   task: string;
   base_branch: string;
   base_sha: string;
@@ -53,6 +68,7 @@ type Run = {
   check?: {
     status: string;
     review_hash: string;
+    check_type?: "syntax" | "node-test";
     exitCode?: number | null;
     cleanupVerified?: boolean;
     stdout?: string;
@@ -197,9 +213,11 @@ export default function CodeAgentPage() {
   const [autoCheck, setAutoCheck] = useState(false);
   const [proofDirty, setProofDirty] = useState(false);
   const [patchTextDirty, setPatchTextDirty] = useState(false);
+  const [editorRevision, setEditorRevision] = useState(0);
   const confirmDiscard = useCodeEditorNavigationGuard(proofDirty || patchTextDirty);
   const invalidation = useRef<Promise<void> | null>(null);
   const editingInvalidated = useRef(false);
+  const editorReviewHash = useRef<string | null>(null);
   const linkedRun = useRef<string | null>(null);
   const [checkApproved, setCheckApproved] = useState(false);
   const [publishApproved, setPublishApproved] = useState(false);
@@ -224,7 +242,9 @@ export default function CodeAgentPage() {
     }
     const identity = `${value.id}:${value.proposal_hash ?? ""}`;
     if (restore || proposalIdentity.current !== identity) {
+      if (restore) setEditorRevision((version) => version + 1);
       editingInvalidated.current = false;
+      editorReviewHash.current = value.draft?.plan.review_hash ?? null;
       invalidation.current = null;
       setProofDirty(false);
       setPatchTextDirty(false);
@@ -376,7 +396,7 @@ export default function CodeAgentPage() {
     try {
       const value = await operation();
       if (epoch.current !== actionEpoch) return;
-      accept(value);
+      accept(value, replacesEditor);
       if (reconcile && !["uncertain", "publishing"].includes(value.status)) {
         markPublication(project, value.id, false);
         setUnknownPublish(false);
@@ -430,7 +450,8 @@ export default function CodeAgentPage() {
     const id = run.id,
       requestEpoch = epoch.current;
     const pending = api<Run>(`${root}/${encodeURIComponent(id)}/invalidate-review`, {
-      proposal_hash: run.proposal_hash
+      proposal_hash: run.proposal_hash,
+      expected_review_hash: editorReviewHash.current
     })
       .then((value) => {
         if (epoch.current === requestEpoch && activeRun.current === id) accept(value);
@@ -708,6 +729,14 @@ export default function CodeAgentPage() {
               >
                 Обновить состояние
               </button>
+              <button
+                disabled={!editable || !run.proposal}
+                onClick={() =>
+                  void action(() => api<Run>(`${root}/${encodeURIComponent(run.id)}`), false, true)
+                }
+              >
+                Загрузить сохранённые правки
+              </button>
               {["running", "checking"].includes(run.status) && (
                 <button
                   disabled={busy}
@@ -870,7 +899,7 @@ export default function CodeAgentPage() {
               </p>
               {run.proposal_diff && run.proposal_snapshot_digest && run.proposal_hash && (
                 <CodePatchEditor
-                  key={`${run.id}:${run.proposal_hash}`}
+                  key={`${run.id}:${run.proposal_hash}:${editorRevision}`}
                   project={project}
                   id={run.id}
                   baseSha={run.base_sha}
@@ -935,10 +964,12 @@ export default function CodeAgentPage() {
                       `${root}/${encodeURIComponent(run.id)}/review`,
                       {
                         proposal_hash: run.proposal_hash,
+                        expected_review_hash: editorReviewHash.current,
                         files: selected.map(({ path, content }) => ({ path, content }))
                       }
                     );
                     editingInvalidated.current = false;
+                    editorReviewHash.current = reviewed.draft?.plan.review_hash ?? null;
                     setProofDirty(false);
                     return reviewed;
                   })
@@ -956,6 +987,26 @@ export default function CodeAgentPage() {
             </section>
           )}
 
+          {run.repair_request && (
+            <section className={styles.panel} aria-label="Попытка исправления">
+              <h2>Попытка исправления использована</h2>
+              <p>
+                {run.repair_request.state === "proposed"
+                  ? "Новый diff подготовлен. Просмотрите его и сохраните новый просмотр."
+                  : "Автоматический повтор модели отключён. Проверьте статус задачи; сохранённые правки доступны для ручного продолжения."}
+              </p>
+              <details>
+                <summary>Исходная ошибка и версия</summary>
+                <p>
+                  Просмотр: <code>{run.repair_request.review_hash}</code>
+                </p>
+                <p>
+                  Снимок: <code>{run.repair_request.source_snapshot_digest}</code>
+                </p>
+                <TerminalOutput {...run.repair_request.source_check} />
+              </details>
+            </section>
+          )}
           {review && (
             <section className={styles.panel} aria-label="Проверка и публикация">
               <h2>2. Запустите разрешённую проверку</h2>
@@ -1042,6 +1093,30 @@ export default function CodeAgentPage() {
                   )}
                 </div>
               )}
+              {run.capabilities?.repair_once === 2 &&
+                typeof run.version === "number" &&
+                Number.isSafeInteger(run.version) &&
+                run.version > 0 &&
+                !run.repair_request &&
+                run.status === "checked" &&
+                run.check?.status === "failed" &&
+                run.check.cleanupVerified === true &&
+                (run.check.exitCode ?? 0) > 0 &&
+                run.check.check_type &&
+                run.check.review_hash === review.review_hash && (
+                  <CodeRepairControl
+                    key={`${run.id}:${review.review_hash}:${run.version}`}
+                    expectedVersion={run.version}
+                    checkType={run.check.check_type}
+                    disabled={!editable || !matchesReview || proofDirty || patchTextDirty}
+                    reviewHash={review.review_hash}
+                    repair={(request) =>
+                      void action(() =>
+                        api<Run>(`${root}/${encodeURIComponent(run.id)}/repair-v2`, request)
+                      )
+                    }
+                  />
+                )}
               <hr />
               <h2>3. Создайте черновик PR</h2>
               <p>

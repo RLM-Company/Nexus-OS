@@ -1,0 +1,138 @@
+{
+  "source_head": "40a3a9ed5ceaec68c46a8e9e904cb7e08d2e5879",
+  "source_tree": "a35aa87ea182cd967e473345c22d3d508b7a51b3",
+  "guard_commit": "9877f5b2e3bae448e2d32e71fbacb2b97f1b6b6b",
+  "base_sha": "c2e093ee0e79d99f8b4c64b1a646728654196de4",
+  "main_sha": "0ddb9d06812fcdd9d742fd5d40455bc0ec46b8ad",
+  "branch": "ops/developer-coscode",
+  "pr": "https://github.com/RLM-Company/Nexus-OS/pull/519",
+  "status": "ready_for_integration",
+  "real_model_called": false,
+  "foreign_github_publication": false,
+  "source_checks": {
+    "baseline": {
+      "exit_code": 1,
+      "failure": "expected repair to throw STALE_CHECK; old implementation accepted it"
+    },
+    "api_github_tree": {
+      "passed": 117,
+      "opt_in_skipped": 1,
+      "exit_code": 0
+    },
+    "real_http_v2_oci_git": {
+      "passed": 1,
+      "filtered_skipped": 85,
+      "exit_code": 0
+    },
+    "core": {
+      "exit_code": 0,
+      "fresh_api_passed": 1031,
+      "api_opt_in_skipped": 1,
+      "fresh_web_passed": 290,
+      "unchanged_packages": "Turbo cache, see core-v2.log"
+    },
+    "production_browser": {
+      "passed": 30,
+      "exit_code": 0,
+      "workers": 1,
+      "retries": 0
+    },
+    "strict_e2e_types_exit_code": 0
+  },
+  "log_normalization": {
+    "rule": "LF, trailing whitespace and blank EOF lines removed only. Earlier successful guard core stored as command/count summary; full original hash retained. Failures not removed.",
+    "raw_sha256": {
+      "core-version-guard-full.log": "8435c0b88dba49d6240a783bbbac46b564c3263eff391462574c46071051a3ee",
+      "browser.log": "20ae8a450df4cdad1025895d2946675c522c91e6829c767ea817a0fcc36142a0",
+      "core-version-guard-summary.log": "cb97f997a9d44dc4b2e511cc7f35d1120dc2e4a147aaed86e1f1b90292ee57b1",
+      "api-v2.log": "13760d6787fc62155b4d22dfa20f96aebb2e85a2ba7d3a5b822040f2a020480f",
+      "baseline.log": "3284afeb7afed43a6ee352af84a2c1797adf1e2c39d713ccadf04e2521b1275e",
+      "core-v2.log": "4a80ff438453c2367bc4a9b72ff38f55e854c4275016f592d9d615217ee8f645",
+      "oci-v2.log": "85a5f470c16a511e4f3f078b8a44842eca50f832bd3eefe62392674f359ac28b",
+      "api-version-guard.log": "02dddcc5c53a753b8c82da408b2ca2e67e8cf3510cdfc82323922a32b6ce71c0"
+    }
+  },
+  "files": {
+    "api-v2.log": {
+      "sha256": "ad713f8acc5af98e14ee0367ab0c0cc19ac57306ba9e6048f0ffedf5b7869971",
+      "bytes": 243
+    },
+    "api-version-guard.log": {
+      "sha256": "750e66f66ce34c3a9de67eaa4f302130f4662cc0b6c541c7483740999ed39cf6",
+      "bytes": 243
+    },
+    "baseline.log": {
+      "sha256": "3284afeb7afed43a6ee352af84a2c1797adf1e2c39d713ccadf04e2521b1275e",
+      "bytes": 1419
+    },
+    "browser.log": {
+      "sha256": "20ae8a450df4cdad1025895d2946675c522c91e6829c767ea817a0fcc36142a0",
+      "bytes": 5247
+    },
+    "changes.patch": {
+      "sha256": "59258aa6f2821deac6549b1cc96294f444fbd5349ee2359deb1a321686e18086",
+      "bytes": 442
+    },
+    "ci-source.json": {
+      "sha256": "f0fb851ad7536a624d0677c630e038c91052f98f35db41a57f43f28aec459e6e",
+      "bytes": 666
+    },
+    "core-v2.log": {
+      "sha256": "ee9233d3fbcedfb14f35c6f232f7c788c82081c4e418c0fcfc2f6e1f9db5dce7",
+      "bytes": 60334
+    },
+    "core-version-guard-summary.log": {
+      "sha256": "cb97f997a9d44dc4b2e511cc7f35d1120dc2e4a147aaed86e1f1b90292ee57b1",
+      "bytes": 1847
+    },
+    "input.json": {
+      "sha256": "f911cd0767a7d8d752d879ed256e0f78a58c50d454c778efb59335782b5e6a6e",
+      "bytes": 113
+    },
+    "oci-v2.log": {
+      "sha256": "06d00756aee0ed797508e266c10a99c3c0889afd376d172ac7ba1c8f7200c63b",
+      "bytes": 241
+    },
+    "output.json": {
+      "sha256": "ac92e5995272797982348f49c8db443af3f3ce093bea96154402aeb3cafcdd63",
+      "bytes": 373
+    },
+    "receipt.json": {
+      "sha256": "e593595e347d5ce309f0216802cb7105529c899620cbef1e9b1ae51a64a48499",
+      "bytes": 3123
+    },
+    "reviewed.json": {
+      "sha256": "96fede89323f6770641fac945ae5b3cdab8e2fbaa9830792877d2734363883ba",
+      "bytes": 272
+    }
+  },
+  "ci_source": {
+    "commit": "40a3a9ed5ceaec68c46a8e9e904cb7e08d2e5879",
+    "run_id": 43024980295,
+    "jobs": [
+      {
+        "id": 130537461796,
+        "name": "Verify monorepo",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 130537462097,
+        "name": "Browser acceptance",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 130537462197,
+        "name": "Code sandbox isolation",
+        "status": "completed",
+        "conclusion": "success"
+      }
+    ],
+    "identity_run": {
+      "id": 43024980309,
+      "conclusion": "success"
+    },
+    "note": "Exact source receipt; does not imply a result for a later docs-only HEAD."
+  }
+}
