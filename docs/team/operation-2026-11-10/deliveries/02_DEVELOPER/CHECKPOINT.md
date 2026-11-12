@@ -1,3 +1,15 @@
+# Исправление форматирования receipt
+
+CI43261518098 на HEAD404beeb остановил monorepo gate до тестов: форматирование
+нового receipt.json, job131333779147. Исходный failure сохранён в
+fixtures/integration-review-2026-11-12/ci-first-format-failure.log.
+Исправлено только представление JSON, значения не менялись. Применён закреплённый
+в lockfile Prettier3.9.6, пакет с совпадающей SHA512 integrity распакован в /tmp
+без lifecycle scripts и без изменения зависимостей проекта. Локальная проверка
+формата пройдена; финальный CI нового HEAD проверяется отдельно.
+
+---
+
 # Интеграционная приёмка с новым main, 12 ноября 2026
 
 PR [#551](https://github.com/RLM-Company/Nexus-OS/pull/551), ветка
