@@ -1,1 +1,0 @@
-{"schema":1,"revision":"96a79db2-11f3-4a2c-a9ad-93e624800f33","savedAt":1794310476689,"name":"offer.pptx","source_version":"sha256:1b865441bf0e31bc3a66ea613a3e5a7e81ec0befc98ada2e5e92a4b4038ac012","existingSheets":0,"operations":[{"kind":"replace_text","target":"slide:1/shape:2","find":"Компания А","replace":"Компания В"}]}

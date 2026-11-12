@@ -1,3 +1,0 @@
-{
-  "text": "[Sheet Предложение]\nA1\t{\"type\":\"inlineStr\",\"value\":\"00123\"}\nB1\t{\"type\":\"n\",\"value\":\"19700\"}\nC1\t{\"type\":\"inlineStr\",\"value\":\"кроме доставки\"}\nD1\t{\"type\":\"inlineStr\",\"value\":\"07.11.2026\"}\n[Sheet Итог]\nA1\t{\"type\":\"inlineStr\",\"value\":\"00123\"}\nB1\t{\"type\":\"n\",\"value\":\"19700\"}\nB2\t{\"formula\":\"SUM(B1:B1)\",\"cached_value\":null}\n"
-}

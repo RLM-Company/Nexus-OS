@@ -1,1 +1,0 @@
-ALTER TABLE general_chats ADD COLUMN archived INTEGER NOT NULL DEFAULT 0;

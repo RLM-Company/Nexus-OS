@@ -1,1 +1,0 @@
-$ tsc --noEmit && tsc -p tsconfig.office-e2e.json && tsc -p tsconfig.composer-e2e.json

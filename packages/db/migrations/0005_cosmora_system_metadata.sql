@@ -1,1 +1,0 @@
-ALTER TABLE `nexus_system_metadata` RENAME TO `cosmora_system_metadata`;

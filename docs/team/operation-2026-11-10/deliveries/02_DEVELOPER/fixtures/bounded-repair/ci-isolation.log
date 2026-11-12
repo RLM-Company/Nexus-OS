@@ -1,6 +1,0 @@
-2026-11-11T12:03:11.4124289Z    ✓ real temporary Git repository: exact multi-file patch, real failure/success/cancel and preserved source  2429ms
-2026-11-11T12:03:19.1885910Z  Test Files  2 passed (2)
-2026-11-11T12:03:19.1887331Z       Tests  5 passed (5)
-2026-11-11T12:03:19.2345868Z Post job cleanup.
-2026-11-11T12:03:19.3753013Z Post job cleanup.
-2026-11-11T12:03:19.5454497Z Post job cleanup.

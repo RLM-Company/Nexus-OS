@@ -1,3 +1,0 @@
-{
-  "text": "[Sheet Предложение]\nA1\t{\"type\":\"inlineStr\",\"value\":\"Артикул\"}\nB1\t{\"type\":\"inlineStr\",\"value\":\"Цена\"}\nC1\t{\"type\":\"inlineStr\",\"value\":\"Дата\"}\nD1\t{\"type\":\"inlineStr\",\"value\":\"Условие\"}\nA2\t{\"type\":\"inlineStr\",\"value\":\"00123\"}\nB2\t{\"type\":\"n\",\"value\":\"19700\"}\nC2\t{\"type\":\"inlineStr\",\"value\":\"07.11.2026\"}\nD2\t{\"type\":\"inlineStr\",\"value\":\"кроме доставки\"}\nA3\t{\"type\":\"inlineStr\",\"value\":\"Итого\"}\nB3\t{\"formula\":\"SUM(B2:B2)\",\"cached_value\":null}\nC3\t{\"type\":\"n\",\"value\":\"\"}\nD3\t{\"type\":\"n\",\"value\":\"\"}\n"
-}

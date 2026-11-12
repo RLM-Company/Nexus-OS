@@ -1,8 +1,0 @@
-
- RUN  v4.1.11 /workspace/work/Nexus-OS-coscode/apps/api
-
-
- Test Files  2 passed (2)
-      Tests  71 passed (71)
-   Start at  06:15:47
-   Duration  15.10s (transform 1.38s, setup 0ms, import 3.21s, tests 11.65s, environment 0ms)

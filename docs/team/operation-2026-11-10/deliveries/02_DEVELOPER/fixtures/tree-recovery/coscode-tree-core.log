@@ -1,7 +1,0 @@
-$ pnpm format:check && pnpm check:secrets && pnpm lint && pnpm typecheck && pnpm test && pnpm test:deploy && pnpm test:connection && pnpm test:live-acceptance-guards && pnpm test:secrets && pnpm test:vector-scale && pnpm test:media-acceptance && pnpm build && pnpm test:privacy && pnpm test:profile
-$ prettier --check .
-Checking formatting...
-[warn] docs/research/experience-llm-distill-2026-11-10.json
-[warn] Code style issues found in the above file. Run Prettier with --write to fix.
-[ELIFECYCLE] Command failed with exit code 1.
-[ELIFECYCLE] Command failed with exit code 1.

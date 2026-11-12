@@ -1,3 +1,0 @@
-{$COSMORA_DEMO_DOMAIN} {
-	import {$COSMORA_AUTH_ROUTE_FILE:owner-routes.caddy}
-}
