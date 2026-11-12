@@ -16,6 +16,14 @@
   `<details>`. Компоновка, CSS, сайдбар, чат не менялись; `VISUAL_WAITLIST.md` не
   требуется. Новая зависимость web от `@cosmora/core` **не** добавлена.
 
+- `packages/core/src/skill-correction-proposal.ts` — новый чистый модуль,
+  экспортируется из `packages/core/src/index.ts`.
+- `packages/contracts/src/chat-skills.ts` — аддитивные схемы
+  `SkillCorrectionProposalSchema` / `AcceptSkillCorrectionSchema` и типы.
+- `apps/api/src/owner-skill-routes.ts` — два новых маршрута на существующем
+  `OwnerSkillStore`, без изменений `app.ts`/`server.ts` (регистрация уже была).
+- `apps/web` в срезе C **не менялся**; UI-форма записана в `VISUAL_WAITLIST.md`.
+
 ## Чего НЕ трогали
 
 `app.ts`, `server.ts`, gateway, auth, DB migrations/registration, work-cycle, computer-session, общая навигация, чужие memory tables, Drive importer, runtime задач. Новых зависимостей нет.

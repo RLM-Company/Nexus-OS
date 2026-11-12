@@ -81,13 +81,41 @@ prettier --check . / check:secrets       passed
 - Тесты: +3 (победа по scope, отсутствие склейки разных правил с одинаковым
   текстом, рендер только победителя с пометкой). Итого 8/8 в файле.
 
-## Проверки срезов A+B (фактические)
+## Срез C — цикл подтверждения исправления
+
+**Пользовательский путь:** владелец пишет исправление → `propose` возвращает
+инертный черновик (ничего не сохраняет) → владелец явно подтверждает →
+`accept` создаёт обычный Skill через существующий `OwnerSkillStore.create()` →
+правило видно в списке, экспортируется и удаляется уже имеющимися путями.
+
+- `packages/contracts/src/chat-skills.ts` — `SkillCorrectionProposalSchema`,
+  `SkillCorrectionDraft` (`accepted: false`, `source: "owner_correction"`),
+  `AcceptSkillCorrectionSchema` с UUID `client_request_id`.
+- `packages/core/src/skill-correction-proposal.ts` — **новый** чистый
+  `proposeSkillCorrection()`: оборачивает **собственный текст владельца** без
+  вывода о чертах человека, без чтения других переписок, без автосохранения.
+  Черновик помечен как пожелание, не системное правило.
+- `apps/api/src/owner-skill-routes.ts` — `POST /owner-skills/corrections/propose`
+  (stateless, `Cache-Control: private, no-store`) и
+  `POST /owner-skills/corrections/accept` (единственный путь сохранения,
+  переиспользует идемпотентный receipt `OwnerSkillStore.create`). Второго
+  хранилища, фонового обучения и скрытого сбора нет.
+
+**UI намеренно не менялся**: `skills/page.tsx` — большой существующий редактор
+со своим потоком создания; форма предложения записана в `VISUAL_WAITLIST.md`
+согласно протоколу и не реализована попутно.
+
+Тесты: 3 core (инертность, отсутствие вывода о личности, валидация) + 3 HTTP
+(propose ничего не создаёт, только явный accept сохраняет и идемпотентен,
+подмена draft/conflict отклоняется).
+
+## Проверки срезов A+B+C (фактические)
 
 ```
-packages/core полный vitest              397 passed (35 файлов), новый файл 8/8
+packages/core полный vitest              400 passed (36 файлов), новый файл 3/3
 packages/db  полный, --maxWorkers=2     218 passed (38 файлов), новый файл 4/4
-apps/api     chat-skills.test.ts        11 passed (security-тест экранирования)
-apps/api     целевые 4 файла            51 passed
+apps/api     correction-loop            3 passed
+apps/api     owner-skill-creations + chat-skills + correction-loop  16 passed
 typecheck/lint contracts/core/db/api/web · prettier --check . · check:secrets · web build — green
 ```
 
@@ -113,4 +141,7 @@ merge `main`. После `pnpm --filter @cosmora/contracts build` сборка =
 
 ## Следующий шаг
 
-Срез B: разрешение конфликтующих правил по приоритету (высший scope подавляет низший при прямом противоречии), preview итоговых правил в существующем разделе Skills, цикл подтверждения исправления. Без новой панели и без изменения компоновки.
+Срез D (п.6 `06_CLAUDE.md`): оценка результата по критериям специализации —
+формат, сохранность фактов исходника, следование явным ограничениям; style
+fidelity ≠ истинность. Плюс UI-форма подтверждения из `VISUAL_WAITLIST.md`,
+если владелец согласует её размещение. Живая приёмка и выпуск — за Codex.

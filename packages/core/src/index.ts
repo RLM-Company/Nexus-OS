@@ -10,6 +10,7 @@ export * from "./intelligence-graph-context.js";
 export * from "./manager.js";
 export * from "./chat.js";
 export * from "./skill-conflict-resolution.js";
+export * from "./skill-correction-proposal.js";
 export * from "./context-memory.js";
 export * from "./context-messages.js";
 export * from "./memory-usage.js";

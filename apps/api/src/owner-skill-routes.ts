@@ -3,6 +3,8 @@ import type { FastifyInstance, FastifyRequest } from "fastify";
 import { Type } from "typebox";
 import type { IdentityContext } from "@cosmora/contracts";
 import { OwnerSkillError, type OwnerSkillStore } from "@cosmora/db";
+import { AcceptSkillCorrectionSchema, SkillCorrectionProposalSchema } from "@cosmora/contracts";
+import { proposeSkillCorrection } from "@cosmora/core";
 import {
   exportOwnerSkillPackage,
   verifyOwnerSkillPackage,
@@ -58,6 +60,46 @@ export function registerOwnerSkillRoutes(
       .update(`kosmora:skills:${identityFor(request).owner_id}`)
       .digest("hex")
   }));
+  // Inert: builds a draft from the owner's own correction text and stores NOTHING.
+  // No other chats are read and no personality inference is made.
+  app.post<{ Body: { correction: string } }>(
+    `${base}/corrections/propose`,
+    { schema: { body: SkillCorrectionProposalSchema } },
+    (request, reply) => {
+      reply.header("Cache-Control", "private, no-store");
+      try {
+        return { draft: proposeSkillCorrection(request.body.correction) };
+      } catch {
+        return reply.code(400).send({ error: { code: "INVALID_CORRECTION" } });
+      }
+    }
+  );
+  // The ONLY path that persists a correction: explicit owner accept with the
+  // exact draft shown before. Reuses OwnerSkillStore.create() and its
+  // idempotent creation receipt; no second store or hidden learning.
+  app.post<{
+    Body: {
+      client_request_id: string;
+      draft: { format: string; name: string; summary: string; instructions: string };
+    };
+  }>(
+    `${base}/corrections/accept`,
+    { schema: { body: AcceptSkillCorrectionSchema } },
+    (request, reply) => {
+      reply.header("Cache-Control", "private, no-store");
+      try {
+        const { client_request_id, draft: value } = request.body;
+        const skill = store.create(
+          identityFor(request).owner_id,
+          { name: value.name, summary: value.summary, instructions: value.instructions },
+          client_request_id
+        );
+        return reply.code(201).send({ skill });
+      } catch (cause) {
+        return handle(reply, cause);
+      }
+    }
+  );
   app.get<{ Params: { requestId: string } }>(
     `${base}/creations/:requestId`,
     {
