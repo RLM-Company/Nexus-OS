@@ -66,8 +66,25 @@ function readGuiAcceptanceConfig({
   if (resolvedConfig === resolvedOutput || fs.statSync(resolvedConfig).size > 64000)
     throw new Error("Invalid GUI acceptance config/output files.");
   const raw = JSON.parse(fs.readFileSync(resolvedConfig, "utf8"));
-  if (!raw || typeof raw !== "object" || !LOOPBACK_ORIGIN.test(String(raw.origin || ""))) {
-    throw new Error("GUI acceptance requires a loopback http://127.0.0.1:<port> fixture origin.");
+  if (!raw || typeof raw !== "object") {
+    throw new Error("Invalid GUI acceptance config object.");
+  }
+  // A non-loopback origin is accepted only with both explicit opt-ins: the
+  // config flag and the environment gate. This keeps fixture runs (and CI)
+  // on the loopback by default while allowing an owner-directed live-server
+  // acceptance run on a disposable runner (LIVE_ACCEPTANCE_PLAN_RU.md).
+  const rawOrigin = String(raw.origin || "");
+  const remoteOrigin =
+    raw.remoteOrigin === true && environment.KOSMORA_GUI_ACCEPTANCE_ALLOW_REMOTE_ORIGIN === "1";
+  if (remoteOrigin && !/^https:\/\//i.test(rawOrigin)) {
+    throw new Error("GUI acceptance remote origin requires an https URL.");
+  }
+  if (!remoteOrigin && !LOOPBACK_ORIGIN.test(rawOrigin)) {
+    throw new Error(
+      "GUI acceptance requires a loopback http://127.0.0.1:<port> fixture origin " +
+        "(a live-server origin additionally needs remoteOrigin: true and " +
+        "KOSMORA_GUI_ACCEPTANCE_ALLOW_REMOTE_ORIGIN=1)."
+    );
   }
   if (raw.phase !== "first-launch" && raw.phase !== "relaunch-and-recovery") {
     throw new Error("Invalid GUI acceptance phase.");
@@ -98,6 +115,7 @@ function readGuiAcceptanceConfig({
   return {
     phase: raw.phase,
     origin: raw.origin,
+    remoteOrigin,
     workspaceRoute: raw.workspaceRoute,
     draftScope: raw.draftScope,
     draftText: raw.draftText,

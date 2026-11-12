@@ -518,3 +518,33 @@ VM/CI ↔ владелец.
 по явному решению, Jarvis/облачный ПК/веса не запускаются).
 
 **Проверки**: docs-only; prettier clean; `check:secrets` пройден до пуша.
+
+---
+
+## Срез 14 (2026-11-12): live-харнесс — параметризация origin в gui-acceptance
+
+**Одобрение**: план приёмки merge (#550); первый кодовый шаг его раздела 5
+(параметризация origin).
+
+**Реализация** (`gui-acceptance.cjs`): не-loopback origin принимается только
+при двойном явном opt-in — `remoteOrigin: true` в конфиге И env-гейт
+`KOSMORA_GUI_ACCEPTANCE_ALLOW_REMOTE_ORIGIN=1`; удалённый origin строго
+`https://` (http-удалённый отклоняется — паритет с `connection-policy`); не-boolean
+флаг трактуется как отсутствие opt-in; `remoteOrigin` возвращается в
+разобранной конфигурации. Fail-closed: fixture-прогоны и текущий CI не
+меняются (loopback-фикстура остаётся обязательной по умолчанию) —
+live-сервер возможен только явно, на disposable runner (existing
+`assertGuiAcceptanceEnvironment` сохранён: packaged + GitHub-hosted
+Windows).
+
+**Тест**: gate-кейсы в `test/gui-acceptance.test.cjs` — без env-гейта /
+с env-гейтом (принято, remoteOrigin:true) / не-boolean флаг / удалённый
+http (отклонён /https/).
+
+**Следующий шаг по плану приёмки**: open-вопросы владельца (origin
+живого сервера, GitHub-секреты, учётная запись, время участия) →
+подключение live-сценариев в windows-desktop workflow (env-гейт + секреты)
+→ VM-прогоны → участие владельца → финальный цикл.
+
+**Проверки**: `npm run check` → **459 / 0 fail**, prettier clean,
+`check:secrets` пройден до пуша.
