@@ -198,6 +198,69 @@ test("GUI acceptance mode is explicit, packaged-only, temp-constrained, and loop
   }
 });
 
+test("live-smoke phase requires the remote-origin opt-in, a non-loopback https origin, and ignores fixture-only fields", () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "kosmora-gui-live-unit-"));
+  const cfgPath = path.join(tempDir, "cosmora-gui-acceptance-cfg.json");
+  const outPath = path.join(tempDir, "cosmora-gui-acceptance-out.json");
+  const options = {
+    isPackaged: true,
+    configPath: cfgPath,
+    outputPath: outPath,
+    tempDir,
+    platform: "win32",
+    environment: {
+      GITHUB_ACTIONS: "true",
+      RUNNER_ENVIRONMENT: "github-hosted",
+      RUNNER_TEMP: tempDir,
+      KOSMORA_GUI_ACCEPTANCE_ALLOW_REMOTE_ORIGIN: "1"
+    }
+  };
+  const liveConfig = { phase: "live-smoke", origin: "https://kosmora.example", remoteOrigin: true };
+  try {
+    fs.writeFileSync(cfgPath, JSON.stringify(liveConfig));
+    const parsed = readGuiAcceptanceConfig(options);
+    assert.equal(parsed.phase, "live-smoke");
+    assert.equal(parsed.origin, "https://kosmora.example");
+    assert.equal(parsed.remoteOrigin, true);
+    assert.equal(parsed.downloadDirectory, "");
+
+    // Fail-closed: a missing env gate, a missing or non-boolean config flag
+    // and loopback live origins are all rejected.
+    const fixtureGateOnly = {
+      GITHUB_ACTIONS: "true",
+      RUNNER_ENVIRONMENT: "github-hosted",
+      RUNNER_TEMP: tempDir
+    };
+    assert.throws(
+      () => readGuiAcceptanceConfig({ ...options, environment: fixtureGateOnly }),
+      /remoteOrigin: true/
+    );
+    fs.writeFileSync(
+      cfgPath,
+      JSON.stringify({ phase: "live-smoke", origin: "https://kosmora.example" })
+    );
+    assert.throws(() => readGuiAcceptanceConfig(options), /remoteOrigin: true/);
+    fs.writeFileSync(cfgPath, JSON.stringify({ ...liveConfig, remoteOrigin: "true" }));
+    assert.throws(() => readGuiAcceptanceConfig(options), /remoteOrigin: true/);
+    fs.writeFileSync(cfgPath, JSON.stringify({ ...liveConfig, origin: "https://127.0.0.1:8443" }));
+    assert.throws(() => readGuiAcceptanceConfig(options), /non-loopback/);
+    fs.writeFileSync(cfgPath, JSON.stringify({ ...liveConfig, origin: "https://[::1]:8443" }));
+    assert.throws(() => readGuiAcceptanceConfig(options), /non-loopback/);
+
+    // Unknown fixture-only fields never reach the live phase and downloads
+    // stay disabled for it.
+    fs.writeFileSync(
+      cfgPath,
+      JSON.stringify({ ...liveConfig, workspaceRoute: "/github", draftScope: "s", draftText: "t" })
+    );
+    const withExtras = readGuiAcceptanceConfig(options);
+    assert.equal(withExtras.phase, "live-smoke");
+    assert.equal(withExtras.downloadDirectory, "");
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
 test("GUI acceptance refuses an owner's machine before any file access or launch", async () => {
   assert.throws(
     () =>
