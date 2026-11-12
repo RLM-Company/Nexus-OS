@@ -42,13 +42,22 @@ for (const [network, prefix] of [
   blockedV6.addSubnet(network, prefix, "ipv6");
 
 export class ResearchNetworkError extends Error {
-  constructor(readonly code: "NETWORK_DENIED" | "ROBOTS_DENIED" | "UNAVAILABLE") {
+  constructor(
+    readonly code: "NETWORK_DENIED" | "ROBOTS_DENIED" | "UNAVAILABLE" | "SOURCE_TEMPORARY"
+  ) {
     super(code);
   }
 }
 const deny = (code: ResearchNetworkError["code"]): never => {
   throw new ResearchNetworkError(code);
 };
+const temporaryStatus = (status: number) => [408, 429, 500, 502, 503, 504].includes(status);
+
+function classifyNetworkError(error: NodeJS.ErrnoException): Error {
+  return ["EAI_AGAIN", "ECONNRESET", "ECONNREFUSED", "ETIMEDOUT"].includes(error.code ?? "")
+    ? new ResearchNetworkError("SOURCE_TEMPORARY")
+    : error;
+}
 
 export function validatePublicHost(hostname: string): void {
   const name = hostname.toLowerCase().replace(/\.$/, "");
@@ -217,7 +226,7 @@ export const pinnedTransport: Transport = (url, address, limit, signal) =>
             reject(new ResearchNetworkError("UNAVAILABLE"));
           } else chunks.push(chunk);
         });
-        response.once("error", reject);
+        response.once("error", (error) => reject(classifyNetworkError(error)));
         response.once("end", () =>
           resolve({
             status: response.statusCode ?? 0,
@@ -227,8 +236,8 @@ export const pinnedTransport: Transport = (url, address, limit, signal) =>
         );
       }
     );
-    request.once("timeout", () => request.destroy(new ResearchNetworkError("UNAVAILABLE")));
-    request.once("error", reject);
+    request.once("timeout", () => request.destroy(new ResearchNetworkError("SOURCE_TEMPORARY")));
+    request.once("error", (error) => reject(classifyNetworkError(error)));
     request.end();
   });
 
@@ -254,10 +263,16 @@ export class ResearchPageReader {
         reject(new ResearchNetworkError("UNAVAILABLE"));
         return;
       }
-      const abort = () => reject(new ResearchNetworkError("UNAVAILABLE"));
+      const abort = () => reject(new ResearchNetworkError("SOURCE_TEMPORARY"));
       deadline.addEventListener("abort", abort, { once: true });
       void resolvePublicAddress(url.hostname, this.#resolver)
-        .then(resolve, reject)
+        .then(resolve, (error: unknown) =>
+          reject(
+            error instanceof Error
+              ? classifyNetworkError(error)
+              : new Error("Research DNS lookup failed", { cause: error })
+          )
+        )
         .finally(() => deadline.removeEventListener("abort", abort));
     });
     const robotsUrl = new URL("/robots.txt", url);
@@ -268,11 +283,13 @@ export class ResearchPageReader {
       RESEARCH_LIMITS.maxRobotsBytes,
       signal
     );
+    if (temporaryStatus(robots.status)) deny("SOURCE_TEMPORARY");
     if (robots.status !== 404) {
       if (robots.status !== 200 || !robotsPermits(robots.body, url.pathname + url.search))
         deny("ROBOTS_DENIED");
     }
     const response = await this.#transport(url, address, RESEARCH_LIMITS.maxPageBytes, signal);
+    if (temporaryStatus(response.status)) deny("SOURCE_TEMPORARY");
     if (
       response.status !== 200 ||
       !/^(text\/html|text\/plain|application\/xhtml\+xml)(?:;|$)/.test(response.contentType)

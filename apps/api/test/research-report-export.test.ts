@@ -1,12 +1,127 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
+import { rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import Fastify from "fastify";
 import { describe, expect, it } from "vitest";
 import { openDatabase, runMigrations, ProjectStore, PolicyStore } from "@cosmora/db";
-import { researchMarkdown } from "@cosmora/core";
+import { researchMarkdown, type ResearchRun } from "@cosmora/core";
 import { ResearchStore } from "../src/research/research-store.js";
 import { registerResearchRoutes } from "../src/research/research-routes.js";
 import { LOCAL_DEVELOPMENT_IDENTITY } from "../src/identity.js";
 import { WebSearch } from "../src/web-search.js";
+import { ResearchPageReader } from "../src/research/page-reader.js";
+
+it("resumes a temporarily unavailable source after restart without repeating earlier reads", async () => {
+  const path = join(tmpdir(), `kosmora-research-${randomUUID()}.sqlite`);
+  let db = openDatabase(path);
+  let owner = "owner-a";
+  const projectId = "research-project";
+  const reads: string[] = [];
+  let searches = 0;
+  const urls = ["one", "two", "three"];
+  const search = new WebSearch("http://search:8080", () => {
+    searches++;
+    return Promise.resolve(
+      Response.json({
+        results: urls.map((name) => ({
+          title: name,
+          url: `https://example.org/${name}`,
+          content: ""
+        }))
+      })
+    );
+  });
+  let release: () => void = () => {};
+  const resumed = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const reader = new ResearchPageReader({
+    resolver: () => Promise.resolve([{ address: "93.184.216.34", family: 4 }]),
+    transport: async (url) => {
+      if (url.pathname === "/robots.txt") return { status: 404, contentType: "", body: "" };
+      reads.push(url.pathname);
+      if (url.pathname === "/three") {
+        if (reads.filter((value) => value === "/three").length === 1)
+          return { status: 503, contentType: "", body: "" };
+        await resumed;
+      }
+      return {
+        status: 200,
+        contentType: "text/plain",
+        body: `История промышленности описана в архивных источниках ${url.pathname}.`
+      };
+    }
+  });
+  let app = Fastify();
+  let coordinator: ReturnType<typeof registerResearchRoutes> | undefined;
+  const register = (adapter: WebSearch) => {
+    coordinator = registerResearchRoutes({
+      app,
+      store: new ResearchStore(db.sqlite),
+      projects: new ProjectStore(db.sqlite),
+      policy: new PolicyStore(db.sqlite),
+      search: adapter,
+      reader,
+      identityFor: () => ({ ...LOCAL_DEVELOPMENT_IDENTITY, owner_id: owner, actor_id: owner })
+    });
+  };
+  try {
+    await runMigrations(db);
+    new ProjectStore(db.sqlite).createEmptyProject(projectId, "Research", owner, "ACTIVE");
+    const policy = new PolicyStore(db.sqlite);
+    const profile = policy.ensureProfile(projectId)!;
+    policy.updateProfile({
+      projectId,
+      baseLevel: "A1",
+      expectedVersion: profile.version,
+      overrides: []
+    });
+    register(search);
+    const initial = await app.inject({
+      method: "POST",
+      url: "/api/v1/research",
+      payload: { project_id: projectId, question: "История промышленности", synthesize: false }
+    });
+    expect(initial.statusCode, initial.body).toBe(201);
+    const runUrl = `/api/v1/research/${initial.json<ResearchRun>().id}`;
+    const getRun = async () => (await app.inject({ url: runUrl })).json<ResearchRun>();
+    await expect.poll(async () => (await getRun()).status).toBe("paused");
+    expect(await getRun()).toMatchObject({ next_index: 2, error_code: "SOURCE_TEMPORARY" });
+    const checkpoint = (await getRun()).sources;
+    expect(checkpoint).toHaveLength(2);
+
+    await coordinator?.stop();
+    await app.close();
+    db.close();
+    db = openDatabase(path);
+    app = Fastify();
+    register(new WebSearch());
+    owner = "another-owner";
+    expect((await app.inject({ method: "POST", url: runUrl + "/resume" })).statusCode).toBe(404);
+    owner = "owner-a";
+    expect((await app.inject({ method: "POST", url: runUrl + "/resume" })).statusCode).toBe(200);
+    expect((await app.inject({ method: "POST", url: runUrl + "/resume" })).statusCode).toBe(409);
+    release();
+    await expect.poll(async () => (await getRun()).status).toBe("completed");
+    const complete = await getRun();
+    expect(complete.sources.slice(0, 2)).toEqual(checkpoint);
+    expect(complete.sources.map((source) => source.status)).toEqual(["read", "read", "read"]);
+    expect(complete.error_code).toBeNull();
+    expect(reads).toEqual(["/one", "/two", "/three", "/three"]);
+    expect(searches).toBe(1);
+    const report = await app.inject({ url: runUrl + "/export/md" });
+    expect(report.statusCode).toBe(200);
+    expect(report.body).toContain("https://example.org/three");
+    expect(db.sqlite.prepare("SELECT count(*) AS n FROM runs").get()).toEqual({ n: 0 });
+  } finally {
+    release();
+    await coordinator?.stop();
+    await app.close();
+    db.close();
+    rmSync(path, { force: true });
+  }
+}, 20000);
 
 describe("saved research report snapshots", () => {
   it("exports exact owner content with a strong format-specific hash, stale protection and no model runs", async () => {
