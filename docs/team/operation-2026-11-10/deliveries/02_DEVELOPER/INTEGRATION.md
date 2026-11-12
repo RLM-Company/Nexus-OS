@@ -1,3 +1,20 @@
+# Context credentials: интеграция, 12 ноября 2026
+
+Draft PR551; source ab53ef4832d3fe79c7441c015fde100edb93a63d.
+Только scoped code-agent API, tests и web patch-client message.
+Общих contracts/gateway/DB/registration/app/navigation изменений нет; новый
+integration commit/миграция не нужны. Ошибка CodeAgentError проходит действующий
+error envelope как HTTP409; новых negotiated tools и команд не добавляли.
+
+Поставлять API guard вместе с web объяснением. Проверить CI точного HEAD и актуальный
+main перед объединением. Форматы credentials консервативные; пример с похожим ключом
+также может быть отклонён. Новый guard не переписывает snapshots и не чистит legacy.
+Откат отдельным revert исходного commit, без reset/удаления данных или автоповтора runs.
+
+Исторические integration notes ниже.
+
+---
+
 # Интеграция Coscode: доказательства проверок
 
 Статус первого среза: готово к интеграции. Integration commit

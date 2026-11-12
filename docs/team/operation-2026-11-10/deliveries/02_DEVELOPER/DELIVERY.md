@@ -1,3 +1,20 @@
+# Последняя поставка: Code context credentials, 12 ноября 2026
+
+[Отчёт текущего среза](CONTEXT_CREDENTIALS_DELIVERY_RU.md), Draft PR551,
+ветка `ops/developer-coscode-context-secrets-2026-11-12`, source
+ab53ef4832d3fe79c7441c015fde100edb93a63d. BASE maina5f6511.
+Initial/negotiated read → credential refusal до durable context и model dispatch;
+legacy snapshot/draft/edited review gates; безопасный исходник сохраняет байты.
+Полный повтор check:core exit0; API1059PASS+1SKIP, web361PASS, все локальные
+core gates прошли. Ранние failures сохранены в отчёте, не объявлены успехом.
+Искусственные credentials/provider/GitHub/runner явно отмечены как fixtures.
+Живой ИИ API отложен владельцем.
+
+Предыдущий #549 final0d36f8c имеет полный зелёный CI; это отдельный Draft-кандидат.
+Исторические результаты ниже.
+
+---
+
 # 02_DEVELOPER: подтверждение исправления привязано к результату проверки
 
 11 ноября 2026, Москва. Статус: **готово к интеграции**, Draft PR519,

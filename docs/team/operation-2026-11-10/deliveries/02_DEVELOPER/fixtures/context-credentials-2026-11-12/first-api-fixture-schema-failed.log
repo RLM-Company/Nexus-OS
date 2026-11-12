@@ -1,0 +1,36 @@
+
+ RUN  v4.1.11 /workspace/work/Nexus-OS-chief-2026-11-12/apps/api
+
+ ❯ test/code-agent.test.ts (91 tests | 1 failed | 1 skipped) 18154ms
+     × blocks a legacy embedded credential checkpoint before review, check, repair and publication without deleting it 217ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  test/code-agent.test.ts > Code agent real gateway/GitHub/policy vertical > blocks a legacy embedded credential checkpoint before review, check, repair and publication without deleting it
+AssertionError: expected 400 to be 409 // Object.is equality
+
+- Expected
++ Received
+
+- 409
++ 400
+
+ ❯ test/code-agent.test.ts:545:33
+    543|       payload: { review_hash: hash, publication_token: "unused", appro…
+    544|     });
+    545|     expect(response.statusCode).toBe(409);
+       |                                 ^
+    546|     expect(response.json()).toEqual({ error: { code: "CONTEXT_CONTENT_…
+    547|     expect(f.checked).toHaveLength(0);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed | 3 passed (4)
+      Tests  1 failed | 138 passed | 1 skipped (140)
+   Start at  11:30:09
+   Duration  21.23s (transform 2.62s, setup 0ms, import 7.00s, tests 19.34s, environment 0ms)
+
+undefined
+/workspace/work/Nexus-OS-chief-2026-11-12/apps/api:
+[ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL] Command failed with exit code 1: vitest run test/code-agent.test.ts test/code-proposal-input.test.ts test/code-agent-github-tree.test.ts test/github-integration.test.ts '--maxWorkers=2'

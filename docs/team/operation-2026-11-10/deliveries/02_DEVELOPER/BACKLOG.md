@@ -1,3 +1,27 @@
+# Следующий срез: проверка содержимого Code context, 12 ноября
+
+BASE_SHA a5f6511875ef7ec116e34dd6c35ff445bdea4313; ветка
+ops/developer-coscode-context-secrets-2026-11-12. Независима от Draft PR549.
+
+- Работает: immutable tree/blob, исключение secret paths, точные snapshots/diff,
+  negotiated read_file, подтверждённый check/publication и redaction stdout.
+- Найден пробел: обычный source path может содержать встроенный token/private key;
+  read callback возвращает его в policy result, snapshot и затем model context.
+- Реализовано: отказ по распознаваемым credential formats до durable read result и
+  context dispatch; сохранение обычного исходника без маскирования байтов;
+  legacy checkpoint gates и понятное сообщение через существующий UI.
+- Проверено: первоначальный и negotiated read, legacy repair/review/check/publish,
+  обычные значения/числа/отрицания, cancel/revoke/retry; fixtures без реальных секретов.
+- Локальные gates: scoped API144PASS+1SKIP, web adapter4PASS, полный core exit0
+  (API1059PASS+1SKIP/web361PASS). До интеграции нужен CI точного финального HEAD и новый main.
+- Live ИИ API отложен владельцем; не блокирует этот программный срез.
+- Граница: перечисленные credential formats; неизвестные/encoded/частичные строки,
+  task/issue/model output и metadata не получают общей DLP-сертификации.
+
+Историческая очередь далее.
+
+---
+
 # Coscode: проверенный backlog
 
 Дополнительное ревью: stale-check approval закрыт source40a3a9e/9877f5b.

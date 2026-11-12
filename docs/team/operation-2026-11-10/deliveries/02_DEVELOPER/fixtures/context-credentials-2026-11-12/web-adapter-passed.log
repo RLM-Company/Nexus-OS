@@ -1,0 +1,8 @@
+
+ RUN  v4.1.11 /workspace/work/Nexus-OS-chief-2026-11-12/apps/web
+
+
+ Test Files  1 passed (1)
+      Tests  4 passed (4)
+   Start at  11:32:20
+   Duration  292ms (transform 54ms, setup 0ms, import 69ms, tests 44ms, environment 0ms)
