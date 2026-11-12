@@ -160,6 +160,39 @@ test("GUI acceptance mode is explicit, packaged-only, temp-constrained, and loop
       "utf8"
     );
     assert.throws(() => readGuiAcceptanceConfig(options), /loopback/);
+
+    // The remote-origin gate is fail-closed: the config flag alone, the
+    // environment gate alone, a non-boolean flag or a remote http origin are
+    // all rejected; both opt-ins with an https origin are accepted.
+    const remoteConfig = {
+      phase: "first-launch",
+      origin: "https://kosmora.example",
+      remoteOrigin: true,
+      workspaceRoute: WORKSPACE_ROUTE,
+      draftScope: DRAFT_SCOPE,
+      draftText: DRAFT_TEXT,
+      downloadDirectory: path.join(tempDir, "downloads")
+    };
+    fs.writeFileSync(cfgPath, JSON.stringify(remoteConfig));
+    assert.throws(() => readGuiAcceptanceConfig(options), /loopback/);
+    const remoteOptions = {
+      ...options,
+      environment: {
+        ...options.environment,
+        KOSMORA_GUI_ACCEPTANCE_ALLOW_REMOTE_ORIGIN: "1"
+      }
+    };
+    const parsedRemote = readGuiAcceptanceConfig(remoteOptions);
+    assert.equal(parsedRemote.origin, "https://kosmora.example");
+    assert.equal(parsedRemote.remoteOrigin, true);
+    fs.writeFileSync(cfgPath, JSON.stringify({ ...remoteConfig, remoteOrigin: "yes" }));
+    assert.throws(() => readGuiAcceptanceConfig(remoteOptions), /loopback/);
+    fs.writeFileSync(
+      cfgPath,
+      JSON.stringify({ ...remoteConfig, origin: "http://kosmora.example" })
+    );
+    assert.throws(() => readGuiAcceptanceConfig(remoteOptions), /https/);
+    fs.writeFileSync(cfgPath, JSON.stringify(validConfig));
   } finally {
     fs.rmSync(tempDir, { recursive: true, force: true });
   }
