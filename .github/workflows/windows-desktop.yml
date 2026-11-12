@@ -134,3 +134,83 @@ jobs:
           path: ${{ runner.temp }}/cosmora-gui-acceptance-report.json
           if-no-files-found: ignore
           retention-days: 14
+
+  live-smoke:
+    name: Live server acceptance smoke
+    needs: build
+    runs-on: windows-latest
+    timeout-minutes: 15
+    # Opt-in only (LIVE_ACCEPTANCE_PLAN_RU.md): until the owner creates the
+    # KOSMORA_LIVE_ORIGIN secret the job stays a visible no-op. The origin is
+    # used in-memory only; the packaged app re-validates the double opt-in
+    # (remoteOrigin config flag + env gate) and refuses loopback origins.
+    env:
+      KOSMORA_LIVE_ORIGIN: ${{ secrets.KOSMORA_LIVE_ORIGIN }}
+    steps:
+      - name: Report live origin gate
+        if: env.KOSMORA_LIVE_ORIGIN == ''
+        run: >-
+          Write-Host
+          "KOSMORA_LIVE_ORIGIN secret is not set; live server acceptance smoke is skipped."
+
+      - name: Check out repository
+        if: env.KOSMORA_LIVE_ORIGIN != ''
+        uses: actions/checkout@v5
+
+      - name: Set up Node.js
+        if: env.KOSMORA_LIVE_ORIGIN != ''
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24
+
+      - name: Download installer artifact
+        if: env.KOSMORA_LIVE_ORIGIN != ''
+        uses: actions/download-artifact@v4
+        with:
+          name: kosmora-windows-x64
+          path: desktop/windows/dist
+
+      - name: Install unsigned installer
+        if: env.KOSMORA_LIVE_ORIGIN != ''
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem -LiteralPath "desktop/windows/dist" -Filter "Kosmora-Setup-*.exe" -File | Select-Object -First 1
+          if (-not $installer) { throw "Installer artifact was not found." }
+          $installDir = Join-Path $env:RUNNER_TEMP "cosmora-live-smoke\install"
+          if (Test-Path -LiteralPath $installDir) { throw "Live smoke install directory must be new." }
+          $process = Start-Process -FilePath $installer.FullName -ArgumentList @("/S", "/D=$installDir") -WindowStyle Hidden -Wait -PassThru
+          if ($process.ExitCode -ne 0) { throw "NSIS install failed with exit code $($process.ExitCode)." }
+          if (-not (Test-Path -LiteralPath (Join-Path $installDir "Kosmora.exe") -PathType Leaf)) {
+            throw "Installed Kosmora.exe was not found."
+          }
+
+      - name: Run live acceptance smoke
+        if: env.KOSMORA_LIVE_ORIGIN != ''
+        working-directory: desktop/windows
+        shell: pwsh
+        env:
+          KOSMORA_GUI_ACCEPTANCE_ALLOW_REMOTE_ORIGIN: "1"
+        run: |
+          $app = Join-Path $env:RUNNER_TEMP "cosmora-live-smoke\install\Kosmora.exe"
+          $workRoot = Join-Path $env:RUNNER_TEMP "cosmora-live-smoke"
+          node ci/gui-acceptance-live.cjs --app $app --work-root $workRoot
+          if ($LASTEXITCODE -ne 0) { throw "Live acceptance smoke failed." }
+
+      - name: Uninstall live smoke install
+        if: always() && env.KOSMORA_LIVE_ORIGIN != ''
+        shell: pwsh
+        run: |
+          $installDir = Join-Path $env:RUNNER_TEMP "cosmora-live-smoke\install"
+          $uninstaller = Get-ChildItem -LiteralPath $installDir -Filter "Uninstall*.exe" -File | Select-Object -First 1
+          if (-not $uninstaller) { throw "NSIS uninstaller was not found." }
+          $process = Start-Process -FilePath $uninstaller.FullName -ArgumentList "/S" -WindowStyle Hidden -Wait -PassThru
+          if ($process.ExitCode -ne 0) { throw "NSIS uninstall failed with exit code $($process.ExitCode)." }
+
+      - name: Upload live acceptance report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kosmora-windows-gui-acceptance-live
+          path: ${{ runner.temp }}/cosmora-gui-acceptance-live-report.json
+          if-no-files-found: ignore
+          retention-days: 14
