@@ -209,6 +209,48 @@ test("variant A scrubs stale plan steps and refuses exhausted goals at reference
   assert.throws(() => f.history.reference(context, project, stale.id), /UNAVAILABLE/);
 });
 
+test("Cyrillic keyword alternatives scrub steps and goals after the 2026-11-12 fix", (t) => {
+  const f = fixture(t);
+  const complete = (journal, steps) => {
+    journal.plan(steps);
+    journal.proposal(
+      1,
+      { kind: "type_text", text: "raw typed private value not retained" },
+      { run_id: crypto.randomUUID(), mode: "provider" }
+    );
+    for (const phase of ["dispatching", "requested", "observed"]) journal.mark(1, phase);
+    journal.state("completed");
+    f.history.accept(context, journal.id);
+  };
+  // The "ключ:" step passes the upstream start/checkpoint gates (not on their
+  // lists) and is dropped only by the reference scrub's Cyrillic alternative.
+  const journal = f.history.start(context, {
+    project,
+    goal: "Собери сводку. Смотри задачу #123.",
+    executionMode: "work"
+  });
+  complete(journal, [
+    { title: "Собрать данные", criteria: "Таблица заполнена", state: "checked" },
+    { title: "Внести ключ: 1234-ABCD в журнал", criteria: "Запись сделана", state: "checked" },
+    { title: "Сверить итоги", criteria: "Расхождений нет", state: "checked" }
+  ]);
+  const r = f.history.reference(context, project, journal.id);
+  assert.equal(r.source_goal, "Собери сводку.");
+  assert.deepEqual(r.plan, [
+    { title: "Собрать данные", criteria: "Таблица заполнена" },
+    { title: "Сверить итоги", criteria: "Расхождений нет" }
+  ]);
+  // A goal whose first sentence is Cyrillic-stale is refused end to end.
+  const refuse = f.history.start(context, {
+    project,
+    goal: "Третья ревизия. Продолжи сбор.",
+    executionMode: "work"
+  });
+  complete(refuse, [{ title: "Собрать данные", criteria: "Таблица заполнена", state: "checked" }]);
+  assert.equal(f.history.list(context).find((x) => x.id === refuse.id).reusable, false);
+  assert.throws(() => f.history.reference(context, project, refuse.id), /UNAVAILABLE/);
+});
+
 const correction = {
   issue: "CSV потерял ведущие нули",
   guidance: "Сохраняй идентификатор 00123 как текст, цену и исключения переноси дословно.",
