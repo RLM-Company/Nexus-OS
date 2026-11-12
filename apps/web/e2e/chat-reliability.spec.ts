@@ -432,6 +432,63 @@ test("two uncertain sends remain independently retryable after navigation and re
   expect(await markers()).toBeNull();
 });
 
+test("composer actions belong to their own chat and stay out of another chat request", async ({
+  page,
+  request
+}) => {
+  const createChat = async (initialMessage: string) => {
+    const response = await request.post("/api/v1/chats", {
+      data: { initial_message: initialMessage, client_message_id: crypto.randomUUID() }
+    });
+    expect(response.status()).toBe(201);
+    return ((await response.json()) as { chat: { id: string } }).chat.id;
+  };
+  const first = await createChat("Черновик с поиском");
+  const second = await createChat("Обычный черновик");
+  const selectChat = async (id: string) => {
+    await page
+      .locator(".sidebar button.chat-item")
+      .filter({ has: page.locator("#pin-chat-" + id) })
+      .click();
+    await expect(page).toHaveURL(new RegExp("[?&]chat=" + id));
+  };
+
+  await page.goto("/?chat=" + first);
+  const editor = page.getByLabel("Сообщение Kosmora");
+  const webSearch = page.getByRole("checkbox", { name: "Искать в интернете" });
+  const defaultAction = page.getByRole("button", { name: "Действие с текстом", exact: true });
+  const explain = page.getByRole("button", { name: "Объяснить тему", exact: true });
+  await editor.fill("Первый черновик");
+  await webSearch.check();
+  await defaultAction.click();
+  await page.getByRole("menuitem", { name: "Объяснить тему", exact: true }).click();
+  await expect(explain).toBeVisible();
+
+  await selectChat(second);
+  await expect(webSearch).not.toBeChecked();
+  await expect(defaultAction).toBeVisible();
+  await editor.fill("Обычное сообщение");
+  const sent = page.waitForRequest(
+    (request) =>
+      request.method() === "POST" &&
+      new URL(request.url()).pathname === "/api/v1/chats/" + second + "/messages"
+  );
+  await page.getByRole("button", { name: "Отправить", exact: true }).click();
+  const payload = (await sent).postDataJSON() as Record<string, unknown>;
+  expect(payload).toHaveProperty("content", "Обычное сообщение");
+  expect(payload).not.toHaveProperty("web_search");
+  expect(payload).not.toHaveProperty("text_action");
+  await expect(editor).toHaveValue("");
+
+  await selectChat(first);
+  await expect(editor).toHaveValue("Первый черновик");
+  await expect(webSearch).toBeChecked();
+  await expect(explain).toBeVisible();
+  await page.locator(".sidebar").getByRole("button", { name: "Новый чат", exact: true }).click();
+  await expect(webSearch).not.toBeChecked();
+  await expect(defaultAction).toBeVisible();
+});
+
 test("reload and lost network recover the same run without duplicate POSTs or messages", async ({
   page,
   context
