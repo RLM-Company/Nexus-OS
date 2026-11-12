@@ -1,4 +1,5 @@
 export const DRIVE_OFFICE_FILE_MAX_BYTES = 2 * 1024 * 1024;
+export const DRIVE_OFFICE_FILE_MAX_NAME = 188;
 
 export interface GoogleDriveConnectionView {
   configured: boolean;

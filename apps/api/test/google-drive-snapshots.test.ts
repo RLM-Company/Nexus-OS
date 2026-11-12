@@ -206,11 +206,11 @@ describe("complete Drive snapshots and restore", () => {
   };
 
   it("backs up Office bytes exactly, replays a save and keeps two revisions independently restorable", async () => {
-    const name = "Отчёт.docx";
+    const name = "О".repeat(175) + ".koswork.docx";
     const document = (revision: number) =>
       buildOfficeDocument({
         kind: "workspace_create_docx",
-        path: name,
+        path: "Отчёт.docx",
         title: "Отчёт",
         sections: [{ heading: "Источник", text: `v${revision} https://example.org/source` }]
       }).buffer;

@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import type { OfficeOperation, OfficeCursor } from "@cosmora/contracts";
+import { DRIVE_OFFICE_FILE_MAX_BYTES } from "@cosmora/contracts";
 import { OfficeRangeEditor } from "./office-range-editor";
 import { officeCellValue, type RangeType } from "./office-range";
 import { OfficePlanEditor } from "./office-plan-editor";
@@ -98,6 +99,7 @@ export function OfficeDocumentWorkspace() {
     version: string;
     source_version: string;
     sha256: string;
+    drive: { bytes: string; operationId: string; verified: boolean } | null;
   } | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -118,11 +120,12 @@ export function OfficeDocumentWorkspace() {
     setError("");
   };
   useEffect(() => () => abort.current?.abort(), []);
+  const resultUrl = result?.url;
   useEffect(
     () => () => {
-      if (result) URL.revokeObjectURL(result.url);
+      if (resultUrl) URL.revokeObjectURL(resultUrl);
     },
-    [result]
+    [resultUrl]
   );
   const run = async (fn: (signal: AbortSignal, current: () => boolean) => Promise<void>) => {
     abort.current?.abort();
@@ -194,6 +197,41 @@ export function OfficeDocumentWorkspace() {
     });
   };
   const xlsx = source?.name.toLowerCase().endsWith(".xlsx");
+  const saveToDrive = () => {
+    if (!result?.drive || result.drive.verified || busy) return;
+    const { name, drive } = result;
+    void run(async (signal, current) => {
+      const response = await fetch("/api/v1/storage/drive/backups", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          operation_id: drive.operationId,
+          chat_ids: [],
+          include_results: false,
+          office_file: { name, bytes: drive.bytes }
+        }),
+        signal,
+        cache: "no-store"
+      }).catch(() => null);
+      const receipt = (await response?.json().catch(() => null)) as {
+        state?: string;
+        error?: { code?: string };
+      } | null;
+      if (!response?.ok || receipt?.state !== "verified") {
+        const code = receipt?.error?.code;
+        if (
+          code === "DRIVE_NOT_CONFIGURED" ||
+          code === "DRIVE_AUTH_REQUIRED" ||
+          code === "DRIVE_FOLDER_NOT_READY"
+        )
+          throw Error("Подключите Google Drive в личных настройках и повторите сохранение.");
+        throw Error(
+          "Сохранение на Drive пока не подтверждено. Повторите его или проверьте список копий в настройках Drive."
+        );
+      }
+      if (current()) setResult({ ...result, drive: { ...drive, verified: true } });
+    });
+  };
   return (
     <section aria-label="Рабочие документы Koswork">
       <h3>Рабочие документы Koswork</h3>
@@ -565,7 +603,15 @@ export function OfficeDocumentWorkspace() {
                       name: source.name.replace(/\.(docx|xlsx|pptx)$/i, ".koswork.$1"),
                       version: saved.version,
                       source_version: saved.source_version,
-                      sha256: saved.sha256
+                      sha256: saved.sha256,
+                      drive:
+                        bytes.length <= DRIVE_OFFICE_FILE_MAX_BYTES
+                          ? {
+                              bytes: saved.bytes,
+                              operationId: crypto.randomUUID(),
+                              verified: false
+                            }
+                          : null
                     });
                     setPreview(null);
                   });
@@ -585,7 +631,7 @@ export function OfficeDocumentWorkspace() {
       {error && <p role="alert">{error}</p>}
       {result && (
         <div>
-          <p>Копия подготовлена и повторно прочитана. Для сохранения скачайте файл.</p>
+          <p>Копия подготовлена и повторно прочитана.</p>
           <pre>
             {JSON.stringify(
               {
@@ -600,6 +646,18 @@ export function OfficeDocumentWorkspace() {
           <a href={result.url} download={result.name}>
             Скачать новую копию
           </a>
+          {result.drive?.verified ? (
+            <p role="status">
+              Копия сохранена на Drive.{" "}
+              <a href="/personal-settings#drive-storage">Открыть список копий</a>
+            </p>
+          ) : result.drive ? (
+            <button type="button" disabled={busy} onClick={saveToDrive}>
+              Сохранить новую копию на Drive
+            </button>
+          ) : (
+            <p>Для копии на Drive действует лимит 2 МиБ.</p>
+          )}
         </div>
       )}
     </section>
