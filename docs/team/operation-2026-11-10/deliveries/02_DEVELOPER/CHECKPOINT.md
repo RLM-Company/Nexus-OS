@@ -1,3 +1,31 @@
+# Программная приёмка на актуальном main, 12 ноября 2026
+
+Ветка ops/developer-coscode-context-secrets-2026-11-12, Draft PR551.
+Прежнийc9625d6: CI43215271862 attempt2 SUCCESS, identity43215271857 SUCCESS;
+первый OCI warm-up timeout124 сохранён, один targeted retry прошёл5/5.
+Это проверка прежнего head, не нового combined tree.
+
+Current main1c07f8dc291b38d0faf92088c53e704e348d0256 сохранён без conflicts.
+Candidate mergec3cef4bb79d1e14b4d61979a7010dcc830e94353,
+treeb455ff73906f2b0a6bc3183deef546ae38a78459 (равен local0e259e3).
+Новые общие контракты Skills просмотрены; CodeAgent/Manager/executor не менялись.
+На combined tree scoped150PASS+1SKIP, full coreexit0 (API1070/web363/core406/DB223),
+и свежий реальный tmpGit→API→OCI→repair→readback1PASS. Первое локальное OCI unavailable
+было из-за отсутствия /usr/bin/docker; исправлена только конфигурация existing flag
+на /usr/local/bin/docker. Оба результата сохранены, model/GitHub fixtures явные.
+
+Итог: **готово к интеграции**. Отчёт SOFTWARE_ACCEPTANCE_RU.md и fixtures/main-1c07-acceptance-2026-11-12/.
+Финальный docs SHA — в PR history. Следующее действие: CI точного финального HEAD,
+затем интеграционное review. До этого не сбрасывать длинный browser job новым push.
+Новый runtime/продукт ради продолжения не создавать. Live ИИ API отложен владельцем;
+foreign publish/ownerPC/VPS/deploy не выполнять без отдельного поручения.
+PR542 synthetic base никогда не merge. Ранее рабочие Office/Drive527 и Coscode519
+уже в main; не реализовывать их повторно. PR549 — самостоятельный chat candidate.
+
+Предыдущие checkpoints ниже — история срезов, не текущая очередь.
+
+---
+
 # Продолжение PR551: legacy check feedback, 12 ноября
 
 Ветка ops/developer-coscode-context-secrets-2026-11-12; source HEAD

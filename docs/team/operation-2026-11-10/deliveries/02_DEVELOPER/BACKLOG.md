@@ -1,3 +1,18 @@
+# Программная приёмка Coscode, 12 ноября 2026
+
+- Проверено объединение main1c07f8d: общие Skills contracts просмотрены, scoped
+  source не изменился, main сохранён без conflicts/ours override.
+- Combined coreexit0/API1070/web363; scoped150PASS+1SKIP; actual tmpGit/API/OCI1PASS.
+- Кандидат mergec3cef4b/treeb455ff73, PR551. Новая реализация не нужна:
+  существующие сильные реализации сохранены и прошли текущую приёмку.
+- Дальше: финальный HEAD CI и review. Не добавлять новый продукт ради продолжения.
+- Отложено владельцем: live model API и модельная приёмка. Остальные реальные
+  границы перечислены в SOFTWARE_ACCEPTANCE_RU.md, не прячутся под статусом completed.
+
+Исторический backlog далее.
+
+---
+
 # Продолжение PR551: legacy repair feedback, 12 ноября
 
 - Найдено: repair валидирует старый check, но отбрасывает очищенный результат;

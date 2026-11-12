@@ -1,3 +1,18 @@
+# Итоговая программная приёмка, 12 ноября 2026
+
+[SOFTWARE_ACCEPTANCE_RU.md](SOFTWARE_ACCEPTANCE_RU.md), Draft PR551,
+ветка ops/developer-coscode-context-secrets-2026-11-12.
+Main1c07f8d сохранён mergec3cef4b (treeb455ff73).
+Combined coreexit0/API1070/web363/core406/DB223, scoped150+1SKIP;
+реальный temporary Git/OCI failed1→passed0/cleanuptrue/readback1PASS.
+Модель/GitHub fixtures, не live HY4. Первый local OCI default-executable failure
+и прежний CI warm-up failure сохранены; не объявлены PASS.
+Финальный HEAD CI проверяется отдельно; максимум готово к интеграции.
+
+Исторические поставки далее.
+
+---
+
 # Последнее продолжение: legacy repair feedback, 12 ноября
 
 См. [REPAIR_FEEDBACK_DELIVERY_RU.md](REPAIR_FEEDBACK_DELIVERY_RU.md), тот же Draft PR551.

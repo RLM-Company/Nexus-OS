@@ -1,3 +1,21 @@
+# Интеграция с main1c07, 12 ноября 2026
+
+PR551, mergec3cef4bb79d1e14b4d61979a7010dcc830e94353 сохраняет main1c07f8d.
+Это отдельный integration merge, без ручных изменений общих файлов и форматирования.
+Просмотрены optional ChatSkillSnapshot.scope и новые Skills types/core exports/ChatService;
+CodeAgent/Manager/executor request contracts не менялись. Main Skills/Windows/chat retry
+source и чужие delivery files перенесены точными canonical blob bytes.
+
+Scoped production source равенc9625d6. Совместимость проверена на combined treeb455ff73:
+coreexit0 и real tmpGit/OCI1PASS; финальный HEAD CI отдельно. Список main-only paths:
+см. git diff c9625d6..c3cef4b. Это inherited source других владельцев, не новая сфера работ.
+Общих собственных adapter/schema/route/DB migrations нет. Не выбирать ours при будущем
+conflict; снова читать canonical contracts. Merge в main/deploy не выполняются автоматически.
+
+Исторические integration notes далее.
+
+---
+
 # Repair feedback follow-up, 12 ноября
 
 PR551/source78e516ca4d7a45bf6e7356624b3673649580d2fd; только scoped service/test.
