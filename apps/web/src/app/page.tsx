@@ -388,6 +388,15 @@ const clientId = (): string =>
     ? crypto.randomUUID()
     : `client-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
+const PENDING_CHAT_SEND_KEY = "cosmora:pending-chat-send:v1";
+const forgetPendingChatSend = () => {
+  try {
+    window.sessionStorage.removeItem(PENDING_CHAT_SEND_KEY);
+  } catch {
+    // The in-memory retry remains available when browser storage is disabled.
+  }
+};
+
 const SIDEBAR_SECTIONS_STORAGE_KEY = "cosmora:sidebar-sections";
 const WORKSPACE_SURFACE_STORAGE_KEY = "cosmora:workspace-surface";
 const COMPOSER_DRAFT_STORAGE_PREFIX = "cosmora:composer-draft:";
@@ -611,6 +620,12 @@ export default function Home() {
   const previousGreetingRef = useRef<string | null>(null);
   const greetingInitializedRef = useRef(false);
   const submitPendingRef = useRef(false);
+  const pendingChatSendRef = useRef<{
+    epoch: number;
+    path: string;
+    payload: string;
+    id: string;
+  } | null>(null);
   const projectPromotionPendingRef = useRef(false);
   const activeLocalChat = localChats.find((chat) => chat.id === activeLocalChatId) ?? null;
   const navigationSearch = navigationQuery.trim().toLocaleLowerCase("ru");
@@ -1881,6 +1896,55 @@ export default function Home() {
           ?.save(scope, latestDraftRef.current.text)
           .catch(() => undefined);
     };
+    const postChatMessage = async <T,>(path: string, body: object): Promise<T> => {
+      const payload = JSON.stringify(body);
+      const previous = pendingChatSendRef.current;
+      let id =
+        previous?.epoch === submittedEpoch && previous.path === path && previous.payload === payload
+          ? previous.id
+          : undefined;
+      let fingerprint: string | undefined;
+      try {
+        if (crypto.subtle) {
+          const digest = await crypto.subtle.digest(
+            "SHA-256",
+            new TextEncoder().encode(path + "\n" + payload)
+          );
+          fingerprint = Array.from(new Uint8Array(digest), (byte) =>
+            byte.toString(16).padStart(2, "0")
+          ).join("");
+          if (!previous && !id) {
+            const raw = window.sessionStorage.getItem(PENDING_CHAT_SEND_KEY);
+            const saved = raw ? (JSON.parse(raw) as { fingerprint?: unknown; id?: unknown }) : null;
+            if (
+              saved?.fingerprint === fingerprint &&
+              typeof saved.id === "string" &&
+              /^[a-z0-9-]{1,128}$/.test(saved.id)
+            )
+              id = saved.id;
+          }
+        }
+      } catch {
+        // The retry still works in the open view if hashing or tab storage is unavailable.
+      }
+      if (submittedEpoch !== viewEpochRef.current) throw Error("Чат изменился");
+      id ??= clientId();
+      pendingChatSendRef.current = { epoch: submittedEpoch, path, payload, id };
+      if (fingerprint) {
+        try {
+          window.sessionStorage.setItem(PENDING_CHAT_SEND_KEY, JSON.stringify({ fingerprint, id }));
+        } catch {
+          // Saving a retry marker must not block the message.
+        }
+      }
+      const accepted = await api<T>(path, {
+        method: "POST",
+        body: JSON.stringify({ ...body, client_message_id: id })
+      });
+      pendingChatSendRef.current = null;
+      forgetPendingChatSend();
+      return accepted;
+    };
     try {
       if (!activeProject) {
         const assessment = assessTaskComplexity(content);
@@ -1890,35 +1954,16 @@ export default function Home() {
         setError(null);
         setLastCompletedRoute(null);
         try {
-          const accepted = activeLocalChatId
-            ? await api<GeneralChatAcceptedResponse>(
-                `/api/v1/chats/${encodeURIComponent(activeLocalChatId)}/messages`,
-                {
-                  method: "POST",
-                  body: JSON.stringify({
-                    content,
-                    client_message_id: clientId(),
-                    attachments: submitted.files,
-                    ...(composerActions.web_search ? { web_search: true } : {}),
-                    ...(composerActions.text_action
-                      ? { text_action: composerActions.text_action }
-                      : {})
-                  })
-                }
-              )
-            : await api<GeneralChatAcceptedResponse>("/api/v1/chats", {
-                method: "POST",
-                body: JSON.stringify({
-                  initial_message: content,
-                  mode: chatMode,
-                  client_message_id: clientId(),
-                  attachments: submitted.files,
-                  ...(composerActions.web_search ? { web_search: true } : {}),
-                  ...(composerActions.text_action
-                    ? { text_action: composerActions.text_action }
-                    : {})
-                })
-              });
+          const path = activeLocalChatId
+            ? `/api/v1/chats/${encodeURIComponent(activeLocalChatId)}/messages`
+            : "/api/v1/chats";
+          const body = {
+            ...(activeLocalChatId ? { content } : { initial_message: content, mode: chatMode }),
+            attachments: submitted.files,
+            ...(composerActions.web_search ? { web_search: true } : {}),
+            ...(composerActions.text_action ? { text_action: composerActions.text_action } : {})
+          };
+          const accepted = await postChatMessage<GeneralChatAcceptedResponse>(path, body);
           const clearedDraft = acknowledgeDraft();
           if (epoch !== viewEpochRef.current) {
             void loadGeneralChats().catch(() => undefined);
@@ -1970,7 +2015,7 @@ export default function Home() {
           setRunPhase("failed");
           setError(
             `${cause instanceof Error ? cause.message : "Не удалось подтвердить отправку"} ` +
-              "Если соединение прервалось, результат запроса неизвестен. Проверьте историю чата перед ручной повторной отправкой: она может списать токены повторно."
+              "Если соединение прервалось и результат запроса неизвестен, повторите отправку здесь с тем же текстом и вложениями."
           );
         }
         return;
@@ -1984,16 +2029,9 @@ export default function Home() {
       setError(null);
       setLastCompletedRoute(null);
       try {
-        const accepted = await api<AcceptedResponse>(
+        const accepted = await postChatMessage<AcceptedResponse>(
           `/api/v1/projects/${encodeURIComponent(activeProject.id)}/messages`,
-          {
-            method: "POST",
-            body: JSON.stringify({
-              content,
-              client_message_id: clientId(),
-              attachments: submitted.files
-            })
-          }
+          { content, attachments: submitted.files }
         );
 
         const clearedDraft = acknowledgeDraft();
@@ -2011,7 +2049,11 @@ export default function Home() {
         viewRequestRef.current += 1;
         setActiveProject(accepted.project);
         setChatId(accepted.chat_id);
-        setMessages((current) => [...current, accepted.user_message]);
+        setMessages((current) =>
+          current.some((message) => message.id === accepted.user_message.id)
+            ? current
+            : [...current, accepted.user_message]
+        );
         setPolicySignals(EMPTY_POLICY_SIGNALS);
         void api<{ profile: AutonomyProfile }>(
           `/api/v1/projects/${encodeURIComponent(accepted.project.id)}/autonomy-profile`
@@ -2034,7 +2076,7 @@ export default function Home() {
         setRunPhase("failed");
         setError(
           `${cause instanceof Error ? cause.message : "Не удалось подтвердить отправку"} ` +
-            "Если соединение прервалось, результат запроса неизвестен. Проверьте историю чата перед ручной повторной отправкой: она может списать токены повторно."
+            "Если соединение прервалось и результат запроса неизвестен, повторите отправку здесь с тем же текстом и вложениями."
         );
       }
     } finally {
@@ -2128,6 +2170,8 @@ export default function Home() {
 
   const resetToLocalChat = (chatId: string | null, rotate = false): void => {
     pendingComposeRef.current = null;
+    pendingChatSendRef.current = null;
+    forgetPendingChatSend();
     viewEpochRef.current += 1;
     // An explicit navigation replaces a still-pending initial route selection.
     setInitialRouteReady(true);
