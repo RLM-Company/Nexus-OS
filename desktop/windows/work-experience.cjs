@@ -4,6 +4,7 @@
 const { createHash } = require("node:crypto");
 const { checkpoint } = require("./work-cycle-policy.cjs");
 const { containsCredentialText } = require("./checkpoint-text.cjs");
+const { goalExcerpt, scrubPlan } = require("./work-reference-scrub.cjs");
 const { recoveryWriteActions } = require("./computer-policy.cjs");
 const unavailable = () => {
   throw Error("COMPUTER_REFERENCE_UNAVAILABLE");
@@ -36,17 +37,17 @@ function buildWorkReference(record) {
     )
       counts.set(s.kind, (counts.get(s.kind) || 0) + 1);
   const tools = [...counts].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
-  let goal = record.goal.slice(0, 500);
-  if (!goal.isWellFormed()) goal = goal.slice(0, -1);
+  const { excerpt, truncated } = goalExcerpt(record.goal);
+  const steps = scrubPlan(plan);
   const value = {
     format: "koswork.accepted-example.v1",
     source_task_id: record.id,
     source_project_id: record.project,
     accepted_at: record.acceptedAt,
     outcome: "owner_accepted",
-    source_goal: goal,
-    goal_excerpt_only: goal.length < record.goal.length,
-    plan: plan.map(({ title, criteria }) => ({ title, criteria })),
+    source_goal: excerpt,
+    goal_excerpt_only: truncated,
+    plan: steps,
     tool_observations: tools.slice(0, 16).map(([kind, count]) => ({ kind, count })),
     tool_summary_truncated: tools.length > 16
   };
