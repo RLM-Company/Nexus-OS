@@ -39,3 +39,18 @@ CI: Browser acceptance и sandbox PASS на `af140067`.
 из нового main, отсутствующим в ветке Builders. Не забирать этот файл
 в Builders PR и не маскировать проверку; Codex должен исправить его отдельно.
 PR #518 оставить без merge и production.
+
+## Узкий общий adapter — PR #556
+
+Единственная общая кодовая область:
+`apps/web/src/app/canvas-editor/canvas-editor.tsx`.
+Компонент `SiteImageImport` отображается только при
+`sitePreview && draft.format === "html"`, получает текущий текст,
+проверенный по Canvas 512-КиБ limit, и использует штатное `setDraft`.
+
+Не изменены Canvas save/version/conflict алгоритмы, DB, API, auth, Work,
+Coscode и глобальный UI. Этот integration adapter не следует переносить
+без сайтового компонента и валидатора PNG/JPEG/WebP.
+
+Требуется ревью Codex на сохранение owner/project isolation и отсутствие
+несогласованного поведения при смене редактора. Публикация запрещена.
