@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { embedSiteImage, SITE_IMAGE_MAX_BYTES } from "./site-inline-image";
 import styles from "./sites.module.css";
 
+// prettier-ignore
 export function SiteImageImport({
   content,
   disabled,
