@@ -1,0 +1,48 @@
+[WebServer] (node:29484) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:29484) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:29509) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+
+Running 1 test using 1 worker
+
+(node:29523) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✘  1 [chromium] › e2e/code-agent.spec.ts:378:5 › same-document Forward can be cancelled with exact edits retained, then explicitly confirmed (7.5s)
+
+
+  1) [chromium] › e2e/code-agent.spec.ts:378:5 › same-document Forward can be cancelled with exact edits retained, then explicitly confirmed
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: 1
+    Received: 0
+
+    Call Log:
+    - Timeout 5000ms exceeded while waiting on the predicate
+
+      414 |   });
+      415 |   await page.evaluate(() => history.forward());
+    > 416 |   await expect.poll(() => dialogs, { timeout: 5000 }).toBe(1);
+          |                                                       ^
+      417 |   await expect(page).toHaveURL(/\/code-agent$/);
+      418 |   await expect(page.getByLabel("+ Итоговое содержимое: src/value.js")).toHaveValue(
+      419 |     "export const value = 4;"
+        at /workspace/work/Nexus-OS-coscode/apps/web/e2e/code-agent.spec.ts:416:55
+
+    Error Context: test-results/code-agent-same-document-F-cb98f-d-then-explicitly-confirmed-chromium/error-context.md
+
+    attachment #2: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results/code-agent-same-document-F-cb98f-d-then-explicitly-confirmed-chromium/trace.zip
+    Usage:
+
+        pnpm exec playwright show-trace test-results/code-agent-same-document-F-cb98f-d-then-explicitly-confirmed-chromium/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  1 failed
+    [chromium] › e2e/code-agent.spec.ts:378:5 › same-document Forward can be cancelled with exact edits retained, then explicitly confirmed
+undefined
+/workspace/work/Nexus-OS-coscode/apps/web:
+[ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL] Command failed with exit code 1: playwright test -c playwright.acceptance.config.ts e2e/code-agent.spec.ts -g 'same-document Forward' '--workers=1' '--retries=0'

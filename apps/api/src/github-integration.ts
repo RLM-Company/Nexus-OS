@@ -20,6 +20,14 @@ export interface GithubFileChange {
   path: string;
   content: string;
 }
+export interface GithubReadScope {
+  signal?: AbortSignal;
+  allowed?: () => boolean;
+}
+const assertReadScope = (scope?: GithubReadScope) => {
+  if (scope?.signal?.aborted || scope?.allowed?.() === false)
+    throw new GithubIntegrationError("GITHUB_CONFLICT");
+};
 interface TreeEntry {
   path: string;
   type: string;
@@ -194,9 +202,10 @@ export class GithubIntegration {
   get configured(): boolean {
     return this.#token.length > 0 && this.ownerId.length > 0;
   }
-  async #request<T>(path: string, body?: unknown): Promise<T> {
+  async #request<T>(path: string, body?: unknown, scope?: GithubReadScope): Promise<T> {
     if (!this.configured) throw new GithubIntegrationError("GITHUB_NOT_CONFIGURED");
     try {
+      assertReadScope(scope);
       const response = await this.#fetch(`https://api.github.com/repos/${this.repository}${path}`, {
         method: body === undefined ? "GET" : "POST",
         redirect: "error",
@@ -207,7 +216,10 @@ export class GithubIntegration {
           "content-type": "application/json"
         },
         ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-        signal: AbortSignal.timeout(15_000)
+        signal: AbortSignal.any([
+          AbortSignal.timeout(15_000),
+          ...(scope?.signal ? [scope.signal] : [])
+        ])
       });
       if (response.status === 401 || response.status === 403) {
         throw new GithubIntegrationError(
@@ -224,6 +236,10 @@ export class GithubIntegration {
       let length = 0;
       try {
         while (true) {
+          if (scope?.signal?.aborted || scope?.allowed?.() === false) {
+            await reader.cancel();
+            throw new GithubIntegrationError("GITHUB_CONFLICT");
+          }
           const { done, value } = await reader.read();
           if (done) break;
           length += value.length;
@@ -238,13 +254,14 @@ export class GithubIntegration {
       }
       const result: unknown = JSON.parse(Buffer.concat(chunks).toString("utf8"));
       if (!validResponse(path, body, result)) throw new Error("Invalid GitHub response");
+      assertReadScope(scope);
       return result as T;
     } catch (error) {
       if (error instanceof GithubIntegrationError) throw error;
       throw new GithubIntegrationError("GITHUB_UNAVAILABLE");
     }
   }
-  async status() {
+  async status(scope?: GithubReadScope) {
     if (!this.configured)
       return {
         configured: false,
@@ -256,7 +273,7 @@ export class GithubIntegration {
       default_branch: string;
       private: boolean;
       permissions?: Record<string, boolean>;
-    }>("");
+    }>("", undefined, scope);
     return {
       configured: true,
       repository: this.repository,
@@ -290,24 +307,82 @@ export class GithubIntegration {
       limited: result.length === 100 && page === 1000
     };
   }
-  async tree(ref: string) {
+  async tree(ref: string, scope?: GithubReadScope) {
     if (!ref || ref.length > 240) throw new GithubIntegrationError("GITHUB_INVALID_FILE");
+    const readScope = {
+      ...scope,
+      signal: AbortSignal.any([
+        AbortSignal.timeout(30_000),
+        ...(scope?.signal ? [scope.signal] : [])
+      ])
+    };
     const commit = await this.#request<{ sha: string; commit: { tree: { sha: string } } }>(
-      `/commits/${encodeURIComponent(ref)}`
+      `/commits/${encodeURIComponent(ref)}`,
+      undefined,
+      readScope
     );
+    const root = sha(commit.commit.tree.sha);
     const result = await this.#request<{ tree: TreeEntry[]; truncated: boolean }>(
-      `/git/trees/${sha(commit.commit.tree.sha)}?recursive=1`
+      `/git/trees/${root}?recursive=1`,
+      undefined,
+      readScope
     );
-    return {
+    const original = {
       sha: sha(commit.sha),
-      tree_sha: sha(commit.commit.tree.sha),
+      tree_sha: root,
       items: result.tree,
       truncated: result.truncated
     };
+    if (!result.truncated) return original;
+    // Reconstruct complete coverage from immutable tree objects, never from a partial
+    // recursive result. Limits include expanded prefixes and repeated shared subtrees.
+    const pending = [{ sha: root, prefix: "", ancestors: [root] }];
+    const items: TreeEntry[] = [];
+    const paths = new Set<string>();
+    let bytes = 2;
+    for (let index = 0; index < pending.length; index++) {
+      if (index >= 128) return original;
+      const node = pending[index]!;
+      const part = await this.#request<{ sha?: string; tree: TreeEntry[]; truncated: boolean }>(
+        `/git/trees/${node.sha}`,
+        undefined,
+        readScope
+      );
+      if (part.truncated) return original;
+      if (part.sha !== node.sha) throw new GithubIntegrationError("GITHUB_INVALID_FILE");
+      for (const entry of part.tree) {
+        if (
+          !entry.path ||
+          entry.path === "." ||
+          entry.path === ".." ||
+          entry.path.includes("/") ||
+          entry.path.includes("\0")
+        )
+          throw new GithubIntegrationError("GITHUB_INVALID_FILE");
+        const item = { ...entry, path: node.prefix + entry.path };
+        if (paths.has(item.path)) throw new GithubIntegrationError("GITHUB_INVALID_FILE");
+        paths.add(item.path);
+        bytes += Buffer.byteLength(JSON.stringify(item)) + 1;
+        if (items.length >= 100_000 || bytes > 8_000_000) return original;
+        items.push(item);
+        if (entry.type === "tree") {
+          if (entry.mode !== "040000" || node.ancestors.includes(entry.sha))
+            throw new GithubIntegrationError("GITHUB_INVALID_FILE");
+          pending.push({
+            sha: entry.sha,
+            prefix: item.path + "/",
+            ancestors: [...node.ancestors, entry.sha]
+          });
+        }
+      }
+    }
+    return { ...original, items, truncated: false };
   }
-  async file(blobSha: string) {
+  async file(blobSha: string, scope?: GithubReadScope) {
     const blob = await this.#request<{ content: string; encoding: string; size: number }>(
-      `/git/blobs/${sha(blobSha)}`
+      `/git/blobs/${sha(blobSha)}`,
+      undefined,
+      scope
     );
     if (blob.encoding !== "base64" || blob.size > 50_000 || blob.content.length > 70_000)
       throw new GithubIntegrationError("GITHUB_INVALID_FILE");
@@ -328,6 +403,7 @@ export class GithubIntegration {
       title: string;
       files: GithubFileChange[];
       workspace_scope?: string;
+      read_scope?: GithubReadScope;
     }
   ): Promise<ChangePlan> {
     if (!this.configured) throw new GithubIntegrationError("GITHUB_NOT_CONFIGURED");
@@ -350,10 +426,10 @@ export class GithubIntegration {
       )
         throw new GithubIntegrationError("GITHUB_INVALID_FILE");
     }
-    const context = await this.status();
+    const context = await this.status(input.read_scope);
     if (input.workspace_scope && input.workspace_scope !== context.workspace_scope)
       throw new GithubIntegrationError("GITHUB_CONFLICT");
-    const tree = await this.#branchTree(input.base_branch);
+    const tree = await this.#branchTree(input.base_branch, input.read_scope);
     if (tree.sha !== input.base_sha) throw new GithubIntegrationError("GITHUB_BASE_CHANGED");
     if (tree.truncated) throw new GithubIntegrationError("GITHUB_INVALID_FILE");
     const files: ChangePlan["files"] = [];
@@ -367,7 +443,7 @@ export class GithubIntegration {
       }
       if (entry && (entry.type !== "blob" || !["100644", "100755"].includes(entry.mode)))
         throw new GithubIntegrationError("GITHUB_INVALID_FILE");
-      const before = entry ? (await this.file(entry.sha)).content : null;
+      const before = entry ? (await this.file(entry.sha, input.read_scope)).content : null;
       if (before === file.content) throw new GithubIntegrationError("GITHUB_INVALID_FILE");
       files.push({ ...file, before, mode: entry?.mode ?? "100644" });
     }
@@ -393,9 +469,12 @@ export class GithubIntegration {
     onWrite: () => void = () => {}
   ): Promise<string> {
     if (plan.repository !== this.repository) throw new GithubIntegrationError("GITHUB_CONFLICT");
-    if (plan.workspace_scope && plan.workspace_scope !== (await this.status()).workspace_scope)
+    if (
+      plan.workspace_scope &&
+      plan.workspace_scope !== (await this.status({ allowed })).workspace_scope
+    )
       throw new GithubIntegrationError("GITHUB_CONFLICT");
-    const head = await this.#branchTree(plan.base_branch);
+    const head = await this.#branchTree(plan.base_branch, { allowed });
     if (head.sha !== plan.base_sha) throw new GithubIntegrationError("GITHUB_BASE_CHANGED");
     const write = async <T>(path: string, body: unknown): Promise<T> => {
       if (!allowed()) throw new GithubIntegrationError("GITHUB_CONFLICT");
@@ -472,14 +551,16 @@ export class GithubIntegration {
       throw new GithubIntegrationError("GITHUB_UNAVAILABLE");
     }
   }
-  async #branchTree(branch: string) {
+  async #branchTree(branch: string, scope?: GithubReadScope) {
     if (!branch || branch.length > 240) throw new GithubIntegrationError("GITHUB_INVALID_FILE");
     const ref = await this.#request<{ ref: string; object: { type: string; sha: string } }>(
-      `/git/ref/heads/${encodeURIComponent(branch)}`
+      `/git/ref/heads/${encodeURIComponent(branch)}`,
+      undefined,
+      scope
     );
     if (ref.ref !== `refs/heads/${branch}` || ref.object?.type !== "commit")
       throw new GithubIntegrationError("GITHUB_UNAVAILABLE");
-    const tree = await this.tree(sha(ref.object.sha));
+    const tree = await this.tree(sha(ref.object.sha), scope);
     if (tree.sha !== ref.object.sha) throw new GithubIntegrationError("GITHUB_UNAVAILABLE");
     return tree;
   }

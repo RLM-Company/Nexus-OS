@@ -6,7 +6,23 @@ test("Studio sends uploaded reference bytes once and can prepare the result for 
 }) => {
   await page.route("**/api/v1/media/capabilities", (route) =>
     route.fulfill({
-      json: { capabilities: { image_generation: { ready: true }, image_editing: { ready: true } } }
+      json: {
+        capabilities: {
+          image_generation: {
+            ready: true,
+            constraints: {
+              sizes: ["1024x1024", "1536x1024", "1024x1536"],
+              aspectRatios: ["1:1", "3:2", "2:3"],
+              qualities: ["low", "medium", "high", "auto"],
+              formats: ["png", "jpeg", "webp"],
+              maxCount: 1,
+              maxPromptLength: 2000,
+              supportsReferenceImage: false
+            }
+          },
+          image_editing: { ready: true }
+        }
+      }
     })
   );
   await page.route("**/api/v1/media/jobs", (route) => route.fulfill({ json: { items: [] } }));
@@ -34,6 +50,8 @@ test("Studio sends uploaded reference bytes once and can prepare the result for 
     expect(route.request().headers()["x-kosmora-media-consent"]).toBe("explicit");
     const body = route.request().postDataJSON();
     expect(body.explicit_paid_consent).toBe(true);
+    expect(body.client_request_id).toMatch(/^[a-f0-9-]{36}$/);
+    expect(route.request().headers()["idempotency-key"]).toBe(body.client_request_id);
     expect(body.references).toHaveLength(1);
     expect(body.references[0]).toEqual({
       kind: "image",
@@ -63,6 +81,7 @@ test("Studio sends uploaded reference bytes once and can prepare the result for 
   await page
     .getByRole("textbox", { name: "Описание изображения", exact: true })
     .fill("Измени изображение: фон серый");
+  page.on("dialog", (dialog) => void dialog.accept());
   await page.getByRole("button", { name: "Изменить изображение", exact: true }).click();
   await expect(
     page.getByRole("img", { name: "Сгенерированное изображение", exact: true })
@@ -84,7 +103,23 @@ test("editing a chat image opens Studio with an owned source without generating 
 }) => {
   await page.route("**/api/v1/media/capabilities", (route) =>
     route.fulfill({
-      json: { capabilities: { image_generation: { ready: true }, image_editing: { ready: true } } }
+      json: {
+        capabilities: {
+          image_generation: {
+            ready: true,
+            constraints: {
+              sizes: ["1024x1024", "1536x1024", "1024x1536"],
+              aspectRatios: ["1:1", "3:2", "2:3"],
+              qualities: ["low", "medium", "high", "auto"],
+              formats: ["png", "jpeg", "webp"],
+              maxCount: 1,
+              maxPromptLength: 2000,
+              supportsReferenceImage: false
+            }
+          },
+          image_editing: { ready: true }
+        }
+      }
     })
   );
   await page.route("**/api/v1/media/jobs", (route) => route.fulfill({ json: { items: [] } }));

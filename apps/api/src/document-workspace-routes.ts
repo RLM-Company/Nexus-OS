@@ -7,6 +7,7 @@ import type { IdentityContext } from "@cosmora/contracts";
 import { Type } from "typebox";
 import {
   OfficeCursorSchema,
+  DRIVE_OFFICE_FILE_MAX_NAME,
   type OfficeCursor,
   OfficeOperationsSchema,
   OfficeVersionSchema,
@@ -43,7 +44,7 @@ export function registerDocumentWorkspaceRoutes(
   const common = {
     name: Type.String({
       minLength: 1,
-      maxLength: 180,
+      maxLength: DRIVE_OFFICE_FILE_MAX_NAME,
       pattern: "^[^/\\\\]+\\.([dD][oO][cC][xX]|[xX][lL][sS][xX]|[pP][pP][tT][xX])$"
     }),
     bytes: Type.String({ minLength: 4, maxLength: 2796204, pattern: "^[A-Za-z0-9+/]+={0,2}$" })

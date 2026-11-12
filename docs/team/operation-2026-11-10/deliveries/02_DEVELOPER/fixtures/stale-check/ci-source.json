@@ -1,0 +1,29 @@
+{
+  "commit": "40a3a9ed5ceaec68c46a8e9e904cb7e08d2e5879",
+  "run_id": 43024980295,
+  "jobs": [
+    {
+      "id": 130537461796,
+      "name": "Verify monorepo",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "id": 130537462097,
+      "name": "Browser acceptance",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "id": 130537462197,
+      "name": "Code sandbox isolation",
+      "status": "completed",
+      "conclusion": "success"
+    }
+  ],
+  "identity_run": {
+    "id": 43024980309,
+    "conclusion": "success"
+  },
+  "note": "Exact source receipt; does not imply a result for a later docs-only HEAD."
+}

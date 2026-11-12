@@ -148,6 +148,28 @@ describe("memory answer_evidence fixed panel", () => {
     expect(() => memory.resolve(target, "b", "77 777")).toThrow();
   });
 
+  it("read-back: the original message is reachable by reference after recall", () => {
+    message("m-src", "Бюджет 19 700 ₽, кроме доставки. Код 00123.");
+    enable();
+    const bundle = memory.resolve(target, "a", "бюджет 19 700");
+    const hit = bundle.items.find((e) => e.kind === "history" && e.source);
+    expect(hit).toBeDefined();
+    const original = memory.sourceFor(target, "a", hit!.reference);
+    expect(original.content).toContain("19 700 ₽");
+    expect(original.content).toContain("00123");
+    expect(original.source.message_id).toBe("m-src");
+  });
+
+  it("revoke removes the source reason: read-back is refused after grant loss", () => {
+    message("m-src", "Бюджет 19 700 ₽, кроме доставки.");
+    enable();
+    const bundle = memory.resolve(target, "a", "бюджет 19 700");
+    const reference = bundle.items.find((e) => e.source)!.reference;
+    expect(() => memory.sourceFor(target, "a", reference)).not.toThrow();
+    enable({ source_chat_ids: [] });
+    expect(() => memory.sourceFor(target, "a", reference)).toThrow("MEMORY_SOURCE_NOT_FOUND");
+  });
+
   it("async owner fence: fuseSemantic fails closed after an owner is fenced", () => {
     memory.create(input(), "a");
     enable();

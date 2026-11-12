@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { ProfileCandidates } from "./profile-candidates";
 import { MemoryUsageHistory } from "./memory-usage-history";
+import { selectionReason } from "./memory-selection-reason";
 import type { HistoryCompactionPreview } from "@cosmora/contracts";
 import type {
   ContextMemoryBundle,
@@ -436,7 +437,15 @@ function MemoryForm({ target, disabled }: { target: MemoryTarget; disabled: bool
                 · v{entry.version} · {labels[entry.source_status]}
               </small>
               {entry.expires_at && (
-                <p>Актуально до {new Date(entry.expires_at).toLocaleString("ru-RU")}</p>
+                <p>
+                  Актуально до {new Date(entry.expires_at).toLocaleString("ru-RU")}
+                  {entry.expired && (
+                    <>
+                      {" "}
+                      · <strong>Срок истёк, запись не попадает в ответы</strong>
+                    </>
+                  )}
+                </p>
               )}
               {entry.source && (
                 <p>
@@ -754,6 +763,18 @@ function MemoryForm({ target, disabled }: { target: MemoryTarget; disabled: bool
                 Запуск ответа будет остановлен до сокращения этих записей или изменения доступа.
               </p>
             )}
+            {preview.answer_evidence === "absent" && (
+              <p role="status">
+                Подтверждённых данных по запросу нет: {preview.matched_items ?? 0} совпадений.
+                Показанные записи — обязательные ограничения или тематический контекст, не ответ.
+              </p>
+            )}
+            {preview.answer_evidence === "matched" && (
+              <p role="status">
+                Есть совпавшие источники: {preview.matched_items ?? "не указано"}. Проверяйте версию
+                и источник по ссылке ниже.
+              </p>
+            )}
             {!preview.items.length && <p>Подходящих разрешённых сведений не найдено.</p>}
             {preview.items.map((item) => (
               <article key={item.reference}>
@@ -765,6 +786,9 @@ function MemoryForm({ target, disabled }: { target: MemoryTarget; disabled: bool
                   </p>
                 )}
                 <p>{item.text}</p>
+                <p>
+                  <small>Почему в контексте: {selectionReason(item)}</small>
+                </p>
                 {item.excerpt_only && <p>Выдержка из сообщения.</p>}
                 {item.source && (
                   <button

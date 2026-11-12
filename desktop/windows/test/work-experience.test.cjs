@@ -138,12 +138,117 @@ test("starting a referenced task retains source lineage and cannot evict its cho
   assert.deepEqual(f.history.recovery(context, next.id).reference, saved.referenceSource);
 });
 test("a shortened source goal remains well-formed and is explicitly labelled", (t) => {
+  // Variant A note: a 24+ ASCII token run in the goal now classifies as a
+  // credential_token prohibition and refuses the reference; this case keeps
+  // exercising the well-formed cap cut with a plain-word filler instead.
   const f = fixture(t),
-    id = f.source({ goal: "a".repeat(499) + "🌙" + "z".repeat(900) }),
+    id = f.source({
+      goal: "слово-слово ".repeat(41) + "слово-с" + "🌙" + "хвост".repeat(150)
+    }),
     r = f.history.reference(context, project, id);
   assert.equal(r.source_goal.length, 499);
   assert.equal(r.source_goal.isWellFormed(), true);
   assert.equal(r.goal_excerpt_only, true);
+});
+
+test("variant A scrubs stale plan steps and refuses exhausted goals at reference time", (t) => {
+  const f = fixture(t);
+  const complete = (journal, steps) => {
+    journal.plan(steps);
+    journal.proposal(
+      1,
+      { kind: "type_text", text: "raw typed private value not retained" },
+      { run_id: crypto.randomUUID(), mode: "provider" }
+    );
+    for (const phase of ["dispatching", "requested", "observed"]) journal.mark(1, phase);
+    journal.state("completed");
+    f.history.accept(context, journal.id);
+  };
+  const mixed = f.history.start(context, {
+    project,
+    goal: "Собери сводку. Отправь её.",
+    executionMode: "work"
+  });
+  complete(mixed, [
+    { title: "Собрать данные", criteria: "Таблица заполнена", state: "checked" },
+    { title: "Открыть файл C:\\Reports\\file.xlsx", criteria: "Файл открыт", state: "checked" },
+    { title: "Сверить итоги", criteria: "Расхождений нет", state: "checked" }
+  ]);
+  const r = f.history.reference(context, project, mixed.id);
+  assert.deepEqual(r.plan, [
+    { title: "Собрать данные", criteria: "Таблица заполнена" },
+    { title: "Сверить итоги", criteria: "Расхождений нет" }
+  ]);
+  const stop = f.history.start(context, {
+    project,
+    goal: "Собери сводку. Отправь на ivanov@example.com.",
+    executionMode: "work"
+  });
+  complete(stop, [{ title: "Собрать данные", criteria: "Таблица заполнена", state: "checked" }]);
+  const rs = f.history.reference(context, project, stop.id);
+  assert.equal(rs.source_goal, "Собери сводку.");
+  assert.equal(rs.goal_excerpt_only, true);
+  const dirty = f.history.start(context, {
+    project,
+    goal: "Собери сводку",
+    executionMode: "work"
+  });
+  complete(dirty, [
+    { title: "Открыть C:\\данные", criteria: "Готово", state: "checked" },
+    { title: "Написать", criteria: "адрес: ivanov@example.com", state: "checked" }
+  ]);
+  assert.equal(f.history.list(context).find((x) => x.id === dirty.id).reusable, false);
+  assert.throws(() => f.history.reference(context, project, dirty.id), /UNAVAILABLE/);
+  const stale = f.history.start(context, {
+    project,
+    goal: "Отчёт за 2026-11-01 приложить",
+    executionMode: "work"
+  });
+  complete(stale, [{ title: "Собрать данные", criteria: "Таблица заполнена", state: "checked" }]);
+  assert.equal(f.history.list(context).find((x) => x.id === stale.id).reusable, false);
+  assert.throws(() => f.history.reference(context, project, stale.id), /UNAVAILABLE/);
+});
+
+test("Cyrillic keyword alternatives scrub steps and goals after the 2026-11-12 fix", (t) => {
+  const f = fixture(t);
+  const complete = (journal, steps) => {
+    journal.plan(steps);
+    journal.proposal(
+      1,
+      { kind: "type_text", text: "raw typed private value not retained" },
+      { run_id: crypto.randomUUID(), mode: "provider" }
+    );
+    for (const phase of ["dispatching", "requested", "observed"]) journal.mark(1, phase);
+    journal.state("completed");
+    f.history.accept(context, journal.id);
+  };
+  // The "ключ:" step passes the upstream start/checkpoint gates (not on their
+  // lists) and is dropped only by the reference scrub's Cyrillic alternative.
+  const journal = f.history.start(context, {
+    project,
+    goal: "Собери сводку. Смотри задачу #123.",
+    executionMode: "work"
+  });
+  complete(journal, [
+    { title: "Собрать данные", criteria: "Таблица заполнена", state: "checked" },
+    { title: "Внести ключ: 1234-ABCD в журнал", criteria: "Запись сделана", state: "checked" },
+    { title: "Сверить итоги", criteria: "Расхождений нет", state: "checked" }
+  ]);
+  const r = f.history.reference(context, project, journal.id);
+  assert.equal(r.source_goal, "Собери сводку.");
+  assert.deepEqual(r.plan, [
+    { title: "Собрать данные", criteria: "Таблица заполнена" },
+    { title: "Сверить итоги", criteria: "Расхождений нет" }
+  ]);
+  // A goal whose first sentence is Cyrillic-stale is refused end to end.
+  const refuse = f.history.start(context, {
+    project,
+    goal: "Третья ревизия. Продолжи сбор.",
+    executionMode: "work"
+  });
+  complete(refuse, [{ title: "Собрать данные", criteria: "Таблица заполнена", state: "checked" }]);
+  assert.equal(f.history.list(context).find((x) => x.id === refuse.id).reusable, false);
+  assert.throws(() => f.history.reference(context, project, refuse.id), /UNAVAILABLE/);
 });
 
 const correction = {

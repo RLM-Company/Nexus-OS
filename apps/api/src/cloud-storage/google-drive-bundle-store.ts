@@ -8,6 +8,7 @@ import {
   parseSnapshot,
   SNAPSHOT_CHUNK_BYTES,
   snapshotHash,
+  snapshotFileBytes,
   snapshotPreview,
   type SnapshotSelection
 } from "./google-drive-snapshot.js";
@@ -46,15 +47,12 @@ const columns =
  */
 export const selectionHash = (s: SnapshotSelection) =>
   hash(
-    JSON.stringify(
-      s.file_ids === undefined
-        ? { ids: s.chat_ids ? [...s.chat_ids].sort() : null, results: s.include_results }
-        : {
-            ids: s.chat_ids ? [...s.chat_ids].sort() : null,
-            files: [...s.file_ids].sort(),
-            results: s.include_results
-          }
-    )
+    JSON.stringify({
+      ids: s.chat_ids ? [...s.chat_ids].sort() : null,
+      ...(s.file_ids === undefined ? {} : { files: [...s.file_ids].sort() }),
+      results: s.include_results,
+      ...(s.office_file ? { office: [s.office_file.name, s.office_file.sha256] } : {})
+    })
   );
 export const bundleView = (r: BundleRow) => ({
   id: r.id,
@@ -143,7 +141,7 @@ export class GoogleDriveBundleStore {
       kind: s.kind
     }));
     // Keep the legacy chat list for clients already loaded before this update.
-    return { items: chats, chats, files, file_selection: true };
+    return { items: chats, chats, files, file_selection: true, office_file_selection: true };
   }
   counts(owner: string): { total: number; pending: number } {
     return this.db
@@ -356,7 +354,7 @@ export class GoogleDriveBundleStore {
           file.name,
           file.project,
           file.version,
-          file.content,
+          file.encoding ? snapshotFileBytes(file) : file.content,
           file.sha256,
           at
         )
@@ -388,14 +386,14 @@ export class GoogleDriveBundleStore {
       throw new DriveStorageError("BACKUP_INVALID");
     return this.db
       .prepare(
-        "SELECT id,name,source_project,source_version,restore_id,created_at,length(CAST(content AS BLOB)) AS bytes FROM drive_restored_files WHERE owner_id=? ORDER BY created_at DESC,id LIMIT 200 OFFSET ?"
+        "SELECT id,name,source_project,source_version,restore_id,created_at,length(CAST(content AS BLOB)) AS bytes,typeof(content)='blob' AS is_office FROM drive_restored_files WHERE owner_id=? ORDER BY created_at DESC,id LIMIT 200 OFFSET ?"
       )
       .all(owner, offset);
   }
   file(owner: string, id: string) {
     return this.db
       .prepare("SELECT name,content,sha256 FROM drive_restored_files WHERE owner_id=? AND id=?")
-      .get(owner, id) as { name: string; content: string; sha256: string } | undefined;
+      .get(owner, id) as { name: string; content: string | Uint8Array; sha256: string } | undefined;
   }
   privacySection(owner: string): PrivacySection {
     const snapshots = this.db
@@ -439,6 +437,11 @@ export class GoogleDriveBundleStore {
             "SELECT id,restore_id,name,source_project,source_version,content,sha256,created_at FROM drive_restored_files WHERE owner_id=?"
           )
           .all(owner)
+          .map((row) =>
+            row.content instanceof Uint8Array
+              ? { ...row, content: Buffer.from(row.content).toString("base64"), encoding: "base64" }
+              : row
+          )
       }
     };
   }

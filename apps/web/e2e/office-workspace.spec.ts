@@ -1,11 +1,19 @@
 import { createRequire } from "node:module";
+import { createHash, randomUUID } from "node:crypto";
 import { resolve } from "node:path";
 import { readFile } from "node:fs/promises";
 import { expect, test } from "@playwright/test";
 import { unzipSync, strFromU8 } from "fflate";
-test("file panel opens DOCX, previews an edit and downloads the verified copy after confirmation", async ({
-  page
-}, info) => {
+test("file panel saves and reopens a verified DOCX from Drive", async ({ page }, info) => {
+  const backups: unknown[] = [];
+  await page.route("**/api/v1/storage/drive/backups", async (route) => {
+    backups.push(route.request().postDataJSON());
+    await route.fulfill(
+      backups.length === 1
+        ? { status: 502, json: { error: { code: "DRIVE_REQUEST_FAILED" } } }
+        : { json: { state: "verified" } }
+    );
+  });
   await page.goto("/?surface=files");
   const editor = page.getByRole("region", { name: "Рабочие документы Koswork", exact: true });
   await editor
@@ -19,13 +27,31 @@ test("file panel opens DOCX, previews an edit and downloads the verified copy af
   await editor.getByRole("button", { name: "Посмотреть изменения" }).click();
   await expect(editor.getByRole("heading", { name: "Предлагаемые изменения" })).toBeVisible();
   await expect(editor.getByRole("link", { name: "Скачать новую копию" })).toHaveCount(0);
+  const saveToDrive = editor.getByRole("button", { name: "Сохранить новую копию на Drive" });
+  await expect(saveToDrive).toHaveCount(0);
   await page.screenshot({ path: info.outputPath("office-preview.png"), fullPage: true });
   await editor.getByRole("button", { name: "Подтвердить подготовку новой копии" }).click();
+  await expect(saveToDrive).toBeVisible();
+  expect(backups).toHaveLength(0);
+  await saveToDrive.click();
+  await expect(editor.getByRole("alert")).toContainText("Сохранение на Drive пока не подтверждено");
+  await saveToDrive.click();
+  await expect(
+    editor.getByRole("status").filter({ hasText: "Копия сохранена на Drive" })
+  ).toBeVisible();
+  await expect(saveToDrive).toHaveCount(0);
   await expect(editor.getByRole("link", { name: "Скачать новую копию" })).toBeVisible();
   const pending = page.waitForEvent("download");
   await editor.getByRole("link", { name: "Скачать новую копию" }).click();
   const download = await pending;
   const bytes = await readFile((await download.path())!);
+  expect(backups).toHaveLength(2);
+  expect(backups[1]).toEqual({ ...(backups[0] as object), retry_upload: true });
+  expect(backups[0]).toMatchObject({
+    chat_ids: [],
+    include_results: false,
+    office_file: { name: "offer.koswork.docx", bytes: bytes.toString("base64") }
+  });
   const xml = strFromU8(unzipSync(bytes)["word/document.xml"]!);
   for (const value of ["19 700", "00123", "07.11.2026", "кроме доставки"])
     expect(xml).toContain(value);
@@ -33,6 +59,18 @@ test("file panel opens DOCX, previews an edit and downloads the verified copy af
   expect(xml.replace(/<[^>]+>/g, "")).toContain("Компания Б");
   expect(download.suggestedFilename()).toBe("offer.koswork.docx");
   await page.screenshot({ path: info.outputPath("office-copy.png"), fullPage: true });
+  const restoredId = randomUUID();
+  const version = "sha256:" + createHash("sha256").update(bytes).digest("hex");
+  await page.route(`**/api/v1/storage/drive/restored-files/${restoredId}/office`, (route) =>
+    route.fulfill({
+      json: { name: download.suggestedFilename(), bytes: bytes.toString("base64"), version }
+    })
+  );
+  await page.goto(`/?surface=files&officeRestore=${restoredId}`);
+  await expect(editor.getByText(`offer.koswork.docx · ${version}`, { exact: true })).toBeVisible();
+  await expect(editor.getByLabel("Адрес", { exact: true })).toBeEnabled();
+  await expect(editor.getByText(/Файл новой копии: offer\.koswork\.docx/)).toBeVisible();
+  expect(backups).toHaveLength(2);
 });
 for (const format of ["xlsx", "pptx"] as const)
   test(`file panel edits and exports ${format} bytes`, async ({ page }) => {

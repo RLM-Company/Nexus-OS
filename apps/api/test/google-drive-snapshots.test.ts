@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { randomUUID } from "node:crypto";
+import { createRequire } from "node:module";
 import { GeneralChatStore, openDatabase, runMigrations } from "@cosmora/db";
 import { loadServerConfig } from "@cosmora/config";
 import { buildApp } from "../src/app.js";
@@ -18,6 +19,10 @@ import { DrivePayloadCipher } from "../src/cloud-storage/google-drive-payload-ci
 import { googleDrivePrivacyAdapter } from "../src/cloud-storage/google-drive-privacy.js";
 import { OwnerPrivacyCoordinator } from "../src/account-settings/privacy/coordinator.js";
 import { createArchive } from "../src/account-settings/privacy/archive.js";
+
+const { buildOfficeDocument } = createRequire(import.meta.url)(
+  "../../../desktop/windows/workspace/office-document.cjs"
+) as { buildOfficeDocument: (action: unknown) => { buffer: Buffer } };
 
 const owner = "local-owner",
   origin = "https://kosmora.example",
@@ -53,6 +58,7 @@ class GoogleFixture {
   uploads = 0;
   ids = 0;
   failUpload = 0;
+  failBeforeUpload = 0;
   methods: string[] = [];
   urls: string[] = [];
   request = vi.fn<typeof fetch>((input, init) => {
@@ -71,6 +77,8 @@ class GoogleFixture {
     }
     if (init?.method === "POST") {
       this.uploads++;
+      if (this.uploads === this.failBeforeUpload)
+        return Promise.reject(Error("upload interrupted"));
       const b = Buffer.from(init.body as Uint8Array),
         doubleCrlf = Buffer.from([13, 10, 13, 10]),
         boundaryMark = Buffer.from([13, 10, 45, 45]),
@@ -200,6 +208,115 @@ describe("complete Drive snapshots and restore", () => {
       .run();
   };
 
+  it.each(["before upload", "after upload"] as const)(
+    "retries the same Office backup after a connection failure %s",
+    async (failure) => {
+      if (failure === "before upload") google.failBeforeUpload = 1;
+      else google.failUpload = 1;
+      const original = buildOfficeDocument({
+        kind: "workspace_create_docx",
+        path: "Отчёт.docx",
+        title: "Отчёт",
+        sections: [{ heading: "Вывод", text: "Проверенная копия" }]
+      }).buffer;
+      const request = {
+        operation_id: randomUUID(),
+        chat_ids: [],
+        include_results: false,
+        office_file: { name: "Отчёт.docx", bytes: original.toString("base64") }
+      };
+      const interrupted = await post("/backups", request);
+      expect(interrupted.statusCode).toBe(502);
+      const before = await get("/backups");
+      const [existing] = before.json<{ items: View[] }>().items;
+      expect(existing?.state).toBe("uncertain");
+      expect(google.files.size).toBe(failure === "before upload" ? 0 : 1);
+      const reservedIds = google.ids;
+
+      await app.close();
+      app = build();
+      if (failure === "before upload") {
+        const replay = await post("/backups", request);
+        expect(replay.statusCode).toBe(502);
+        expect(google.uploads).toBe(1);
+      }
+      const retried = await post("/backups", { ...request, retry_upload: true });
+      expect(retried.statusCode, retried.body).toBe(200);
+      expect(retried.json()).toMatchObject({ id: existing!.id, state: "verified" });
+      expect(google.ids).toBe(reservedIds);
+      expect(google.files.size).toBe(1);
+      const p = await preview(existing!.id);
+      const restored = await post(`/backups/${existing!.id}/restore`, {
+        token: p.token,
+        operation_id: randomUUID()
+      });
+      expect(restored.statusCode, restored.body).toBe(200);
+      const [file] = restored.json<{ files: { id: string }[] }>().files;
+      expect((await get(`/restored-files/${file!.id}`)).rawPayload).toEqual(original);
+    }
+  );
+
+  it("backs up Office bytes exactly, replays a save and keeps two revisions independently restorable", async () => {
+    const name = "О".repeat(175) + ".koswork.docx";
+    const document = (revision: number) =>
+      buildOfficeDocument({
+        kind: "workspace_create_docx",
+        path: "Отчёт.docx",
+        title: "Отчёт",
+        sections: [{ heading: "Источник", text: `v${revision} https://example.org/source` }]
+      }).buffer;
+    const first = document(1),
+      second = document(2);
+    const selection = (bytes: Buffer) => ({
+      chat_ids: [],
+      include_results: false,
+      office_file: { name, bytes: bytes.toString("base64") }
+    });
+    const operation = randomUUID();
+    const initial = await save(selection(first), operation);
+    expect((await save(selection(first), operation)).id).toBe(initial.id);
+    const conflict = await post("/backups", { ...selection(second), operation_id: operation });
+    expect(conflict.statusCode).toBe(409);
+    expect(conflict.json()).toMatchObject({ error: { code: "DRIVE_OPERATION_CONFLICT" } });
+    expect(google.uploads).toBe(1);
+    const malformed = await post("/backups", {
+      ...selection(Buffer.from("not an office package")),
+      operation_id: randomUUID()
+    });
+    expect(malformed.statusCode).toBe(400);
+    expect(google.uploads).toBe(1);
+    const newer = await save(selection(second));
+    expect(newer.id).not.toBe(initial.id);
+
+    await app.close();
+    app = build();
+    for (const [backup, original] of [
+      [newer, second],
+      [initial, first]
+    ] as const) {
+      const p = await preview(backup.id);
+      expect(p).toMatchObject({ chats: 0, files: 1 });
+      const restore = { token: p.token, operation_id: randomUUID() };
+      const result = await post(`/backups/${backup.id}/restore`, restore);
+      expect(result.statusCode, result.body).toBe(200);
+      const saved = result.json<{ files: { id: string; name: string }[] }>();
+      expect(saved.files[0]?.name).toBe(name);
+      const downloaded = await get(`/restored-files/${saved.files[0]!.id}`);
+      expect(downloaded.statusCode).toBe(200);
+      expect(downloaded.rawPayload).toEqual(original);
+      const office = await get(`/restored-files/${saved.files[0]!.id}/office`);
+      expect(office.statusCode, office.body).toBe(200);
+      expect(office.json()).toEqual({
+        name,
+        bytes: original.toString("base64"),
+        version: "sha256:" + snapshotHash(original)
+      });
+      expect(runtime.bundleStore.file("other-owner", saved.files[0]!.id)).toBeUndefined();
+      expect((await post(`/backups/${backup.id}/restore`, restore)).json()).toEqual(saved);
+    }
+    expect(google.uploads).toBe(2);
+  });
+
   it("saves chat text/attachments/results and restores new objects atomically without recreating jobs", async () => {
     const operation = randomUUID(),
       item = await save({}, operation);
@@ -234,6 +351,7 @@ describe("complete Drive snapshots and restore", () => {
     expect(download.body).toBe("<script>not executed</script>");
     expect(download.headers["content-type"]).toContain("application/octet-stream");
     expect(download.headers["content-disposition"]).toContain("attachment;");
+    expect((await get(`/restored-files/${result.files[0]!.id}/office`)).statusCode).toBe(404);
     expect(
       (await post(`/backups/${item.id}/restore`, { token: p.token, operation_id: op })).json()
     ).toEqual(result);

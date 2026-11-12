@@ -1,6 +1,6 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { GoogleDriveSourceList } from "@cosmora/contracts";
+import { DRIVE_OFFICE_FILE_MAX_BYTES, type GoogleDriveSourceList } from "@cosmora/contracts";
 type Summary = {
   chats: number;
   messages: number;
@@ -27,6 +27,13 @@ type Restored = {
   id: string;
   chats: { id: string; title: string }[];
   files: { id: string; name: string }[];
+};
+type BackupRequest = {
+  operation_id: string;
+  include_results: boolean;
+  chat_ids?: string[];
+  file_ids?: string[];
+  office_file?: { name: string; bytes: string };
 };
 const root = "/api/v1/storage/drive";
 async function api<T>(path: string, body?: object): Promise<T> {
@@ -56,6 +63,9 @@ const failure = (e: unknown) => {
     return "Выбранный файл изменился или больше недоступен. Обновите список и выберите его заново.";
   if (code === "BACKUP_INVALID_SELECTION")
     return "Проверьте выбранные чаты и файлы: часть источников больше недоступна.";
+  if (code === "OFFICE_FILE_TOO_LARGE") return "Максимальный размер файла Office — 2 МиБ.";
+  if (code === "BACKUP_INVALID_OFFICE_FILE")
+    return "Выберите файл DOCX, XLSX или PPTX размером до 2 МиБ.";
   if (["BACKUP_BUSY", "DRIVE_OWNER_BUSY", "DRIVE_BUSY"].includes(code))
     return "Другая операция ещё выполняется. Повторите чуть позже.";
   if (["DRIVE_CONNECTION_CHANGED", "OWNER_DATA_FENCED"].includes(code))
@@ -72,7 +82,13 @@ export function GoogleDriveBackupControls({
   const [items, setItems] = useState<Backup[]>([]),
     [sources, setSources] = useState<{ id: string; title: string; mode: string }[]>([]);
   const [files, setFiles] = useState<
-      { id: string; name: string; source_project?: string; source_version?: number }[]
+      {
+        id: string;
+        name: string;
+        source_project?: string;
+        source_version?: number;
+        is_office?: number;
+      }[]
     >([]),
     [all, setAll] = useState(true),
     [results, setResults] = useState(true);
@@ -83,10 +99,13 @@ export function GoogleDriveBackupControls({
     [fileSelection, setFileSelection] = useState(false),
     [customFiles, setCustomFiles] = useState(false),
     [selectedFiles, setSelectedFiles] = useState<string[]>([]);
+  const [officeSelection, setOfficeSelection] = useState(false);
+  const [officeFile, setOfficeFile] = useState<File | null>(null);
+  const officeInput = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
     [notice, setNotice] = useState("");
-  const operation = useRef<string | null>(null);
+  const operation = useRef<BackupRequest | null>(null);
   const [moreBackups, setMoreBackups] = useState(false),
     [moreFiles, setMoreFiles] = useState(false);
   const reload = useCallback(async () => {
@@ -98,6 +117,7 @@ export function GoogleDriveBackupControls({
     setItems(a.items ?? []);
     setSources(b.items ?? []);
     setFileSelection(b.file_selection === true);
+    setOfficeSelection(b.office_file_selection === true);
     setFileSources(b.file_selection === true ? (b.files ?? []) : []);
     setFiles(c.items ?? []);
     setMoreBackups(Boolean(a.has_more));
@@ -217,26 +237,68 @@ export function GoogleDriveBackupControls({
             )}
           </>
         )}
+        {officeSelection && (
+          <label>
+            Файл Office с устройства (DOCX, XLSX или PPTX, до 2 МиБ)
+            <input
+              ref={officeInput}
+              type="file"
+              accept=".docx,.xlsx,.pptx"
+              disabled={busy}
+              onChange={(event) => {
+                setOfficeFile(event.currentTarget.files?.[0] ?? null);
+                operation.current = null;
+              }}
+            />
+          </label>
+        )}
       </details>
       <button
         type="button"
         disabled={busy || !connected}
         onClick={() =>
           void run(async () => {
-            if (
-              customFiles &&
-              (!fileSelection ||
-                selectedFiles.some((id) => !fileSources.some((file) => file.id === id)))
-            )
-              throw Error("DRIVE_OPERATION_CONFLICT");
-            operation.current ??= crypto.randomUUID();
-            await api("/backups", {
-              operation_id: operation.current,
-              include_results: customFiles ? false : results,
-              ...(customFiles ? { file_ids: selectedFiles } : {}),
-              ...(!all ? { chat_ids: selected } : {})
+            const retry = operation.current !== null;
+            if (!operation.current) {
+              if (
+                customFiles &&
+                (!fileSelection ||
+                  selectedFiles.some((id) => !fileSources.some((file) => file.id === id)))
+              )
+                throw Error("DRIVE_OPERATION_CONFLICT");
+              let office_file: BackupRequest["office_file"];
+              if (officeFile) {
+                if (!officeSelection) throw Error("DRIVE_OPERATION_CONFLICT");
+                if (officeFile.size > DRIVE_OFFICE_FILE_MAX_BYTES)
+                  throw Error("OFFICE_FILE_TOO_LARGE");
+                const bytes = new Uint8Array(await officeFile.arrayBuffer());
+                let binary = "";
+                for (let offset = 0; offset < bytes.length; offset += 8192)
+                  binary += String.fromCharCode(...bytes.subarray(offset, offset + 8192));
+                office_file = { name: officeFile.name, bytes: btoa(binary) };
+              }
+              operation.current = {
+                operation_id: crypto.randomUUID(),
+                include_results: customFiles ? false : results,
+                ...(customFiles ? { file_ids: selectedFiles } : {}),
+                ...(!all ? { chat_ids: selected } : {}),
+                ...(office_file ? { office_file } : {})
+              };
+            }
+            const saved = await api<Backup>("/backups", {
+              ...operation.current,
+              ...(retry ? { retry_upload: true } : {})
             });
+            if (saved.state !== "verified") throw Error("BACKUP_UNAVAILABLE");
             operation.current = null;
+            if (customFiles && fileSelection)
+              setSelectedFiles((ids) =>
+                ids.filter((id) => fileSources.some((file) => file.id === id))
+              );
+            if (officeFile) {
+              setOfficeFile(null);
+              if (officeInput.current) officeInput.current.value = "";
+            }
             setNotice("Все части копии сохранены и проверены.");
           })
         }
@@ -426,6 +488,14 @@ export function GoogleDriveBackupControls({
                   {f.name}
                   {f.source_project ? ` · ${f.source_project} · v${f.source_version ?? 1}` : ""}
                 </a>
+                {f.is_office === 1 && (
+                  <>
+                    {" "}
+                    <a href={`/?surface=files&officeRestore=${encodeURIComponent(f.id)}`}>
+                      Открыть в Koswork
+                    </a>
+                  </>
+                )}
               </li>
             ))}
           </ul>

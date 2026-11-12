@@ -1,0 +1,8 @@
+$ tsc -p tsconfig.json --noEmit
+src/code-agent/service.ts(1124,7): error TS2379: Argument of type '{ status: "proposed"; proposal: { before: string | null; path: string; content: string; }[]; proposal_hash: string; summary: string; proposal_diff: string; proposal_snapshot_digest: string; ... 31 more ...; created_at: string; }' is not assignable to parameter of type 'CodeAgentRun' with 'exactOptionalPropertyTypes: true'. Consider adding 'undefined' to the types of the target's properties.
+  Types of property 'draft_id' are incompatible.
+    Type 'string | undefined' is not assignable to type 'string'.
+      Type 'undefined' is not assignable to type 'string'.
+/workspace/work/Nexus-OS-coscode/apps/api:
+[ERR_PNPM_RECURSIVE_RUN_FIRST_FAIL] @cosmora/api@0.1.0 typecheck: `tsc -p tsconfig.json --noEmit`
+Exit status 2
