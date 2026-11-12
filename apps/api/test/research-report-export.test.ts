@@ -19,6 +19,7 @@ it("resumes a temporarily unavailable source after restart without repeating ear
   const projectId = "research-project";
   const reads: string[] = [];
   let searches = 0;
+  let sourceChanged = false;
   const urls = ["one", "two", "three"];
   const search = new WebSearch("http://search:8080", () => {
     searches++;
@@ -49,7 +50,9 @@ it("resumes a temporarily unavailable source after restart without repeating ear
       return {
         status: 200,
         contentType: "text/plain",
-        body: `История промышленности описана в архивных источниках ${url.pathname}.`
+        body:
+          `История промышленности описана в архивных источниках ${url.pathname}.` +
+          (sourceChanged ? " Добавлены новые сведения." : "")
       };
     }
   });
@@ -131,6 +134,19 @@ it("resumes a temporarily unavailable source after restart without repeating ear
     const report = await app.inject({ url: runUrl + "/export/md" });
     expect(report.statusCode).toBe(200);
     expect(report.body).toContain("https://example.org/three");
+    const recheck = (source_index: number) =>
+      app.inject({ method: "POST", url: runUrl + "/recheck-source", payload: { source_index } });
+    owner = "another-owner";
+    expect((await recheck(0)).statusCode).toBe(404);
+    owner = "owner-a";
+    expect((await recheck(4)).statusCode).toBe(404);
+    expect(reads).toEqual(["/one", "/two", "/three", "/three"]);
+    expect((await recheck(0)).json()).toMatchObject({ status: "unchanged" });
+    sourceChanged = true;
+    expect((await recheck(0)).json()).toMatchObject({ status: "changed" });
+    expect(reads).toEqual(["/one", "/two", "/three", "/three", "/one", "/one"]);
+    expect(await getRun()).toEqual(complete);
+    expect((await app.inject({ url: runUrl + "/export/md" })).body).toBe(report.body);
     expect(db.sqlite.prepare("SELECT count(*) AS n FROM runs").get()).toEqual({ n: 0 });
   } finally {
     release();

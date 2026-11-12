@@ -255,6 +255,41 @@ export function registerResearchRoutes(options: {
       return store.get(run.id, run.owner_id);
     }
   );
+  app.post<{ Params: Params; Body: { source_index: number } }>(
+    "/api/v1/research/:id/recheck-source",
+    {
+      schema: {
+        params: idParams,
+        body: Type.Object(
+          {
+            source_index: Type.Integer({ minimum: 0, maximum: RESEARCH_LIMITS.maxCandidates - 1 })
+          },
+          { additionalProperties: false }
+        )
+      }
+    },
+    async (request, reply) => {
+      reply.header("cache-control", "no-store");
+      const run = owned(request);
+      const source = run?.sources[request.body.source_index];
+      if (!run || !source) return reply.code(404).send(notFound);
+      if (run.status !== "completed")
+        return reply.code(409).send({ error: { code: "INVALID_STATE" } });
+      const result = await coordinator.recheckSource(
+        { ...run, actor_id: identityFor(request).actor_id },
+        source
+      );
+      if (result.status === "blocked")
+        return reply
+          .code(403)
+          .send({
+            error: { code: "WEB_READ_DENIED", message: "Веб-доступ к источнику недоступен." }
+          });
+      if (result.status === "busy")
+        return reply.code(429).send({ error: { code: "RESEARCH_BUSY_OR_STOPPED" } });
+      return result;
+    }
+  );
   // Separate explicit paid action: no synthesis without owner interaction and shared budget.
   app.post<{ Params: Params }>(
     "/api/v1/research/:id/synthesize",

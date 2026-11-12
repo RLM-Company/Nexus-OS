@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState, type FormEvent } from "react"
 import styles from "./research-workspace.module.css";
 import { ReportCanvas } from "../canvas-editor/report-canvas";
 import { ResearchComparison, type ResearchSourceSnapshot } from "./research-comparison";
+import { ResearchSourceRecheck, type SourceRecheckResult } from "./research-source-recheck";
 
 type Project = { id: string; title: string };
 type Source = ResearchSourceSnapshot & { snippet: string; checked_at: string };
@@ -535,6 +536,23 @@ export default function ResearchWorkspace() {
                       run.status === "completed"
                   )}
                   statusLabels={sourceStatuses}
+                />
+              )}
+              {current.status === "completed" && current.sources.length > 0 && (
+                <ResearchSourceRecheck
+                  key={current.id}
+                  sources={current.sources}
+                  check={(index, signal) =>
+                    api<SourceRecheckResult>(
+                      "/api/v1/research/" + encodeURIComponent(current.id) + "/recheck-source",
+                      {
+                        method: "POST",
+                        headers: { "content-type": "application/json" },
+                        body: JSON.stringify({ source_index: index }),
+                        signal
+                      }
+                    )
+                  }
                 />
               )}
               <h3>Реестр источников</h3>

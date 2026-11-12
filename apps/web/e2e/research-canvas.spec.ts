@@ -58,6 +58,32 @@ async function routes(
   ).toBeVisible();
 }
 
+test("rechecks a selected research source without replacing saved excerpts", async ({
+  page,
+  request
+}) => {
+  const projectId = await project(request);
+  const saved = run(projectId);
+  saved.sources.push({
+    ...saved.sources[0]!,
+    url: "https://example.org/second",
+    title: "Второй источник"
+  });
+  await routes(page, [saved], (route) => route.fulfill({ body: report }));
+  await page.route("**/api/v1/research/" + saved.id + "/recheck-source", async (route) => {
+    expect(route.request().method()).toBe("POST");
+    expect(route.request().postDataJSON()).toEqual({ source_index: 1 });
+    await route.fulfill({ json: { status: "changed", checked_at: timestamp } });
+  });
+  await page.getByText("Перепроверить источник", { exact: true }).click();
+  await page.getByRole("combobox", { name: "Источник для перепроверки" }).selectOption("1");
+  await page.getByRole("button", { name: "Проверить сейчас" }).click();
+  await expect(
+    page.getByRole("status").filter({ hasText: "Прочитанный текст изменился" })
+  ).toBeVisible();
+  await expect(page.getByText("Исходная цитата", { exact: false }).first()).toBeVisible();
+});
+
 test("compares stored evidence within a project and clears the comparison on navigation", async ({
   page,
   request
