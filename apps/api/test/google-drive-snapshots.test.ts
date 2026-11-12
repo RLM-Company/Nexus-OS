@@ -58,6 +58,7 @@ class GoogleFixture {
   uploads = 0;
   ids = 0;
   failUpload = 0;
+  failBeforeUpload = 0;
   methods: string[] = [];
   urls: string[] = [];
   request = vi.fn<typeof fetch>((input, init) => {
@@ -76,6 +77,8 @@ class GoogleFixture {
     }
     if (init?.method === "POST") {
       this.uploads++;
+      if (this.uploads === this.failBeforeUpload)
+        return Promise.reject(Error("upload interrupted"));
       const b = Buffer.from(init.body as Uint8Array),
         doubleCrlf = Buffer.from([13, 10, 13, 10]),
         boundaryMark = Buffer.from([13, 10, 45, 45]),
@@ -204,6 +207,54 @@ describe("complete Drive snapshots and restore", () => {
       )
       .run();
   };
+
+  it.each(["before upload", "after upload"] as const)(
+    "retries the same Office backup after a connection failure %s",
+    async (failure) => {
+      if (failure === "before upload") google.failBeforeUpload = 1;
+      else google.failUpload = 1;
+      const original = buildOfficeDocument({
+        kind: "workspace_create_docx",
+        path: "Отчёт.docx",
+        title: "Отчёт",
+        sections: [{ heading: "Вывод", text: "Проверенная копия" }]
+      }).buffer;
+      const request = {
+        operation_id: randomUUID(),
+        chat_ids: [],
+        include_results: false,
+        office_file: { name: "Отчёт.docx", bytes: original.toString("base64") }
+      };
+      const interrupted = await post("/backups", request);
+      expect(interrupted.statusCode).toBe(502);
+      const before = await get("/backups");
+      const [existing] = before.json<{ items: View[] }>().items;
+      expect(existing?.state).toBe("uncertain");
+      expect(google.files.size).toBe(failure === "before upload" ? 0 : 1);
+      const reservedIds = google.ids;
+
+      await app.close();
+      app = build();
+      if (failure === "before upload") {
+        const replay = await post("/backups", request);
+        expect(replay.statusCode).toBe(502);
+        expect(google.uploads).toBe(1);
+      }
+      const retried = await post("/backups", { ...request, retry_upload: true });
+      expect(retried.statusCode, retried.body).toBe(200);
+      expect(retried.json()).toMatchObject({ id: existing!.id, state: "verified" });
+      expect(google.ids).toBe(reservedIds);
+      expect(google.files.size).toBe(1);
+      const p = await preview(existing!.id);
+      const restored = await post(`/backups/${existing!.id}/restore`, {
+        token: p.token,
+        operation_id: randomUUID()
+      });
+      expect(restored.statusCode, restored.body).toBe(200);
+      const [file] = restored.json<{ files: { id: string }[] }>().files;
+      expect((await get(`/restored-files/${file!.id}`)).rawPayload).toEqual(original);
+    }
+  );
 
   it("backs up Office bytes exactly, replays a save and keeps two revisions independently restorable", async () => {
     const name = "О".repeat(175) + ".koswork.docx";

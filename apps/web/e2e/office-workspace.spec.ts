@@ -46,7 +46,7 @@ test("file panel saves and reopens a verified DOCX from Drive", async ({ page },
   const download = await pending;
   const bytes = await readFile((await download.path())!);
   expect(backups).toHaveLength(2);
-  expect(backups[0]).toEqual(backups[1]);
+  expect(backups[1]).toEqual({ ...(backups[0] as object), retry_upload: true });
   expect(backups[0]).toMatchObject({
     chat_ids: [],
     include_results: false,
