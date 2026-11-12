@@ -714,7 +714,8 @@ export default function Home() {
       key: composerDraftKey,
       text: latest.text,
       revision: latest.revision,
-      files: chatAttachments.snapshotFiles()
+      files: chatAttachments.snapshotFiles(),
+      actions: composerActions
     };
   }, setDraftNotice);
   const updateDraftFromInput = (event: FormEvent<HTMLTextAreaElement>) => {
@@ -787,6 +788,7 @@ export default function Home() {
       const saved = readComposerDraft(window.localStorage, composerDraftKey);
       setDraft(saved.text);
       chatAttachments.replace(saved.files);
+      if ("actions" in saved && saved.actions) updateDraftActions(composerDraftKey, saved.actions);
       const sameScope = draftRecoveryKeyRef.current === composerDraftKey;
       draftRecoveryKeyRef.current = composerDraftKey;
       // Strict-mode remount/reconciliation must not erase a recovery warning after
@@ -899,6 +901,7 @@ export default function Home() {
     draft,
     draftStorageReadyKey,
     chatAttachments.files,
+    composerActions,
     saveBrowserDraft,
     draftEpoch,
     latestDraftRef

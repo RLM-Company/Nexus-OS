@@ -646,3 +646,47 @@ test("a pre-completion history snapshot cannot reopen a completed run", async ({
   await expect(page.getByLabel("Сообщение Kosmora")).toBeEnabled();
   await expect(page.locator(".message.assistant")).toHaveCount(1);
 });
+
+test("a lost acknowledgement reload restores the exact text action before retrying one request", async ({
+  page,
+  request
+}) => {
+  const created = await request.post("/api/v1/chats", {
+    data: {
+      initial_message: "История для восстановления действия",
+      client_message_id: crypto.randomUUID()
+    }
+  });
+  expect(created.status()).toBe(201);
+  const { chat } = (await created.json()) as { chat: { id: string } };
+  const posts: Array<Record<string, unknown>> = [];
+  const statuses: number[] = [];
+  await page.route(`**/api/v1/chats/${chat.id}/messages`, async (route) => {
+    if (route.request().method() !== "POST") return route.continue();
+    posts.push(route.request().postDataJSON() as Record<string, unknown>);
+    const response = await route.fetch();
+    statuses.push(response.status());
+    if (posts.length === 1) await route.abort("connectionreset");
+    else await route.fulfill({ response });
+  });
+  await page.goto(`/?chat=${chat.id}`);
+  const editor = page.getByLabel("Сообщение Kosmora");
+  const send = page.getByRole("button", { name: "Отправить", exact: true });
+  await editor.fill("Объясни тестовый пример 00123");
+  await page.getByRole("button", { name: "Действие с текстом", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Объяснить тему", exact: true }).click();
+  await send.click();
+  await expect(page.locator(".composer").getByText(/результат запроса неизвестен/)).toBeVisible();
+  expect(posts[0]).toMatchObject({ text_action: { kind: "explain" } });
+  await page.reload();
+  await expect(editor).toHaveValue("Объясни тестовый пример 00123");
+  await expect(page.getByRole("button", { name: "Объяснить тему", exact: true })).toBeVisible();
+  expect(posts).toHaveLength(1);
+  await send.click();
+  await expect.poll(() => statuses).toEqual([202, 200]);
+  expect(posts[1]).toEqual(posts[0]);
+  await expect(editor).toHaveValue("");
+  await expect(
+    page.locator(".message.user").filter({ hasText: "Объясни тестовый пример 00123" })
+  ).toHaveCount(1);
+});
