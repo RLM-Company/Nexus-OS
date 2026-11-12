@@ -31,9 +31,9 @@ function readMarkers(storage: Storage): RetryMarker[] {
   try {
     const markers: unknown = JSON.parse(raw);
     if (!Array.isArray(markers) || markers.length > MAX_PENDING) return [];
-    return markers.filter((marker): marker is RetryMarker => {
+    return markers.filter((marker: unknown): marker is RetryMarker => {
       if (!marker || typeof marker !== "object") return false;
-      const { scope, fingerprint, id } = marker;
+      const { scope, fingerprint, id } = marker as Partial<Record<keyof RetryMarker, unknown>>;
       return (
         typeof scope === "string" &&
         (scope === NEW_CHAT_SCOPE || SHA256.test(scope)) &&
@@ -54,9 +54,13 @@ export function readChatSendRetry(key: RetryKey): string | undefined {
     const existing = readMarkers(storage).find((entry) => entry.scope === key.scope);
     if (existing) return existing.fingerprint === key.fingerprint ? existing.id : undefined;
     const raw = storage.getItem(LEGACY_KEY);
-    const legacy = raw && raw.length <= 512 ? JSON.parse(raw) : null;
+    const legacy: unknown = raw && raw.length <= 512 ? JSON.parse(raw) : null;
     if (
-      legacy?.fingerprint === key.fingerprint &&
+      legacy &&
+      typeof legacy === "object" &&
+      "fingerprint" in legacy &&
+      legacy.fingerprint === key.fingerprint &&
+      "id" in legacy &&
       typeof legacy.id === "string" &&
       CLIENT_ID.test(legacy.id)
     )
