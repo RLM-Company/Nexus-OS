@@ -189,10 +189,15 @@ export function PersonalSkillSettings({
       {!!stored?.items.length && (
         <details>
           <summary>Подключённые инструкции</summary>
+          <small>
+            Источник правила указан в [scope], приоритет: task &gt; chat &gt; project &gt; owner.
+            При выборе одной специализации на нескольких уровнях действует правило с высшим
+            приоритетом; оно же показывается модели.
+          </small>
           {stored.items.map((item) => (
             <div key={item.skill_id}>
               <strong>
-                {item.name} · v{item.version}
+                {item.name} · v{item.version} · [{item.scope ?? "owner"}]
               </strong>
               <pre className={styles.preview}>{item.instructions}</pre>
             </div>

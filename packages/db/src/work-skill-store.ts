@@ -40,7 +40,7 @@ export class WorkSkillStore {
       .get(project) as { version: number; updated_at: string } | undefined;
     const items = this.sql
       .prepare(
-        `SELECT s.skill_id,s.version,v.name,v.summary,v.instructions
+        `SELECT s.skill_id,s.version,v.name,v.summary,v.instructions,'project' AS scope
       FROM work_skill_selections s JOIN owner_skill_versions v ON v.skill_id=s.skill_id AND v.version=s.version
       WHERE s.project_id=? AND v.owner_id=? ORDER BY s.position`
       )
@@ -85,7 +85,7 @@ export class WorkSkillStore {
       const items = refs.map((ref) => {
         const row = this.sql
           .prepare(
-            "SELECT skill_id,version,name,summary,instructions FROM owner_skill_versions WHERE skill_id=? AND version=? AND owner_id=?"
+            "SELECT skill_id,version,name,summary,instructions,'project' AS scope FROM owner_skill_versions WHERE skill_id=? AND version=? AND owner_id=?"
           )
           .get(ref.skill_id, ref.version, owner) as ChatSkillSnapshot | undefined;
         if (!row) throw new WorkSkillError(404, "Выбранный Skill или его версия недоступны.");
