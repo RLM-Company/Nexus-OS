@@ -1,0 +1,1266 @@
+From b81067daaf0d37bd30a8e22dd2752d4b03a8fc40 Mon Sep 17 00:00:00 2001
+From: Kosmora Engineering <eng@kosmora.ai>
+Date: Wed, 11 Nov 2026 06:27:49 +0000
+Subject: [PATCH 2/2] feat(research): registerResearchRoutes, local UI surface,
+ and 8-scenario acceptance suite
+
+---
+ apps/api/src/research/index.ts                |   5 +
+ apps/api/src/research/research-routes.ts      | 216 +++++++
+ .../api/test/research-resume-evidence.test.ts | 538 ++++++++++++++++++
+ apps/web/src/app/research-workspace/page.tsx  |  49 ++
+ .../research-workspace-client.tsx             | 162 ++++++
+ .../src/app/research-workspace/view-model.ts  | 127 +++++
+ ..._RESEARCH_RESUME_EVIDENCE_2026-11-10_RU.md |  27 +
+ ...gration-research-resume-evidence-smoke.mjs |  66 +++
+ 8 files changed, 1190 insertions(+)
+ create mode 100644 apps/api/src/research/index.ts
+ create mode 100644 apps/api/src/research/research-routes.ts
+ create mode 100644 apps/api/test/research-resume-evidence.test.ts
+ create mode 100644 apps/web/src/app/research-workspace/page.tsx
+ create mode 100644 apps/web/src/app/research-workspace/research-workspace-client.tsx
+ create mode 100644 apps/web/src/app/research-workspace/view-model.ts
+ create mode 100644 docs/handoff/KOSMORA_RESEARCH_RESUME_EVIDENCE_2026-11-10_RU.md
+ create mode 100644 scripts/integration-research-resume-evidence-smoke.mjs
+
+diff --git a/apps/api/src/research/index.ts b/apps/api/src/research/index.ts
+new file mode 100644
+index 0000000..be554b5
+--- /dev/null
++++ b/apps/api/src/research/index.ts
+@@ -0,0 +1,5 @@
++export * from "./research-synthesis.js";
++export * from "./research-store.js";
++export * from "./browser-research-adapter.js";
++export * from "./research-coordinator.js";
++export * from "./research-routes.js";
+diff --git a/apps/api/src/research/research-routes.ts b/apps/api/src/research/research-routes.ts
+new file mode 100644
+index 0000000..f977e50
+--- /dev/null
++++ b/apps/api/src/research/research-routes.ts
+@@ -0,0 +1,216 @@
++import type { FastifyInstance, FastifyRequest } from "fastify";
++import type { IdentityContext } from "@cosmora/contracts";
++import type { ResearchBrowserAdapter } from "./browser-research-adapter.js";
++import { ResearchCoordinator } from "./research-coordinator.js";
++import type { ResearchStore } from "./research-store.js";
++import {
++  ProjectResearchOwnerBudget,
++  type ResearchBudgetLimits,
++  type ResearchOwnerBudget
++} from "./research-synthesis.js";
++
++export interface RegisterResearchRoutesDependencies {
++  app: FastifyInstance;
++  store: ResearchStore;
++  gateway?: unknown;
++  manager?: unknown;
++  ownerBudget?: ResearchOwnerBudget;
++  search?: unknown;
++  browserAdapter?: ResearchBrowserAdapter;
++  projects?: { getProject?(id: string, ownerId?: string): unknown } | null;
++  policy?: unknown;
++  identityFor: (request: FastifyRequest) => IdentityContext;
++  emergency?: { getProcessStop?(): unknown } | null;
++}
++
++const noCache = (reply: { header(name: string, value: string): unknown }) => {
++  reply.header("Cache-Control", "private, no-store");
++  reply.header("X-Content-Type-Options", "nosniff");
++  reply.header("Referrer-Policy", "no-referrer");
++};
++
++function requireOwnerIdentity(
++  request: FastifyRequest,
++  identityFor: (req: FastifyRequest) => IdentityContext
++): { ownerId: string; sessionId: string } {
++  const identity = identityFor(request);
++  if (!identity || identity.actor?.kind !== "owner" || !identity.owner_id) {
++    throw new Error("OWNER_AUTH_REQUIRED");
++  }
++  const rec = identity as unknown as Record<string, unknown>;
++  const sessionId =
++    typeof rec.session_id === "string" && rec.session_id.length > 0
++      ? rec.session_id
++      : `owner_session:${identity.owner_id}`;
++  return {
++    ownerId: identity.owner_id,
++    sessionId
++  };
++}
++
++function httpStatusForResearchError(code: string): number {
++  if (
++    code === "OWNER_AUTH_REQUIRED" ||
++    code === "RESEARCH_RUN_FORBIDDEN" ||
++    code === "RESEARCH_PROJECT_FORBIDDEN"
++  ) {
++    return 403;
++  }
++  if (code === "RESEARCH_RUN_NOT_FOUND" || code === "RESEARCH_PROJECT_NOT_FOUND") {
++    return 404;
++  }
++  if (
++    code === "OWNER_DATA_FENCED" ||
++    code === "EMERGENCY_STOP_ACTIVE" ||
++    code === "RESEARCH_REPORT_NOT_READY"
++  ) {
++    return 409;
++  }
++  if (code === "RESEARCH_QUOTA_EXCEEDED" || code === "RESEARCH_RUNTIME_BUDGET_EXCEEDED") {
++    return 429;
++  }
++  return 400;
++}
++
++/**
++ * Canonical route registration function imported by `apps/api/src/app.ts`:
++ * `const coordinator = registerResearchRoutes({ app, store, ... });`
++ */
++export function registerResearchRoutes(
++  deps: RegisterResearchRoutesDependencies
++): ResearchCoordinator {
++  // Recover any interrupted runs from a prior process crash on startup
++  deps.store.recoverInterruptedRuns();
++
++  const budget =
++    deps.ownerBudget ??
++    new ProjectResearchOwnerBudget(deps.store.sqlite, deps.projects ?? null, null);
++
++  const coordinator = new ResearchCoordinator({
++    store: deps.store,
++    browserAdapter: deps.browserAdapter,
++    ownerBudget: budget,
++    emergency: deps.emergency ?? null
++  });
++
++  const { app, identityFor } = deps;
++
++  app.post("/api/v1/research/runs", async (request, reply) => {
++    noCache(reply);
++    try {
++      const { ownerId } = requireOwnerIdentity(request, identityFor);
++      const body = (request.body ?? {}) as {
++        project_id?: string | null;
++        query?: string;
++        client_request_id?: string | null;
++        expected_targets?: Array<{ subject: string; criterion: string }>;
++        budgets?: Partial<ResearchBudgetLimits>;
++        run_in_background?: boolean;
++      };
++
++      const query = String(body.query ?? "").trim();
++      if (!query) {
++        return reply.status(400).send({
++          error: { code: "RESEARCH_QUERY_REQUIRED", message: "Поисковый запрос обязателен." }
++        });
++      }
++
++      const run = await coordinator.startRun({
++        ownerId,
++        projectId: body.project_id ?? null,
++        query,
++        clientRequestId: body.client_request_id ?? null,
++        expectedTargets: body.expected_targets,
++        budgets: body.budgets,
++        runInBackground: Boolean(body.run_in_background)
++      });
++
++      return reply.status(200).send(run);
++    } catch (error) {
++      const code = error instanceof Error ? error.message : "RESEARCH_START_FAILED";
++      return reply.status(httpStatusForResearchError(code)).send({
++        error: { code, message: "Не удалось запустить исследовательскую задачу." }
++      });
++    }
++  });
++
++  app.get("/api/v1/research/runs", async (request, reply) => {
++    noCache(reply);
++    try {
++      const { ownerId } = requireOwnerIdentity(request, identityFor);
++      const q = (request.query ?? {}) as { project_id?: string };
++      const items = coordinator.listRuns(ownerId, q.project_id ?? null);
++      return reply.status(200).send({ items });
++    } catch (error) {
++      const code = error instanceof Error ? error.message : "RESEARCH_LIST_FAILED";
++      return reply.status(httpStatusForResearchError(code)).send({
++        error: { code, message: "Не удалось получить список исследовательских задач." }
++      });
++    }
++  });
++
++  app.get("/api/v1/research/runs/:runId", async (request, reply) => {
++    noCache(reply);
++    try {
++      const { ownerId } = requireOwnerIdentity(request, identityFor);
++      const params = (request.params ?? {}) as { runId: string };
++      const run = coordinator.getRun(params.runId, ownerId);
++      return reply.status(200).send(run);
++    } catch (error) {
++      const code = error instanceof Error ? error.message : "RESEARCH_GET_FAILED";
++      return reply.status(httpStatusForResearchError(code)).send({
++        error: { code, message: "Доступ к исследовательской задаче запрещён или она не найдена." }
++      });
++    }
++  });
++
++  app.post("/api/v1/research/runs/:runId/cancel", async (request, reply) => {
++    noCache(reply);
++    try {
++      const { ownerId } = requireOwnerIdentity(request, identityFor);
++      const params = (request.params ?? {}) as { runId: string };
++      const run = coordinator.cancelRun(params.runId, ownerId);
++      return reply.status(200).send(run);
++    } catch (error) {
++      const code = error instanceof Error ? error.message : "RESEARCH_CANCEL_FAILED";
++      return reply.status(httpStatusForResearchError(code)).send({
++        error: { code, message: "Не удалось остановить исследовательскую задачу." }
++      });
++    }
++  });
++
++  app.post("/api/v1/research/runs/:runId/resume", async (request, reply) => {
++    noCache(reply);
++    try {
++      const { ownerId } = requireOwnerIdentity(request, identityFor);
++      const params = (request.params ?? {}) as { runId: string };
++      const body = (request.body ?? {}) as { reverify_changed_urls?: string[] };
++      const run = await coordinator.resumeRun(params.runId, ownerId, {
++        reverifyChangedUrls: body.reverify_changed_urls
++      });
++      return reply.status(200).send(run);
++    } catch (error) {
++      const code = error instanceof Error ? error.message : "RESEARCH_RESUME_FAILED";
++      return reply.status(httpStatusForResearchError(code)).send({
++        error: { code, message: "Не удалось продолжить исследовательскую задачу." }
++      });
++    }
++  });
++
++  app.get("/api/v1/research/runs/:runId/export", async (request, reply) => {
++    noCache(reply);
++    try {
++      const { ownerId } = requireOwnerIdentity(request, identityFor);
++      const params = (request.params ?? {}) as { runId: string };
++      const exported = coordinator.exportReport(params.runId, ownerId);
++      return reply.status(200).send(exported);
++    } catch (error) {
++      const code = error instanceof Error ? error.message : "RESEARCH_EXPORT_FAILED";
++      return reply.status(httpStatusForResearchError(code)).send({
++        error: { code, message: "Не удалось экспортировать отчёт исследования." }
++      });
++    }
++  });
++
++  return coordinator;
++}
+diff --git a/apps/api/test/research-resume-evidence.test.ts b/apps/api/test/research-resume-evidence.test.ts
+new file mode 100644
+index 0000000..40e1486
+--- /dev/null
++++ b/apps/api/test/research-resume-evidence.test.ts
+@@ -0,0 +1,538 @@
++import assert from "node:assert/strict";
++import { mkdtempSync, rmSync } from "node:fs";
++import { tmpdir } from "node:os";
++import { join } from "node:path";
++import { DatabaseSync } from "node:sqlite";
++import test from "node:test";
++import {
++  DEFAULT_DETERMINISTIC_FIXTURE_PAGES,
++  DeterministicResearchBrowserAdapter,
++  ProjectResearchOwnerBudget,
++  ResearchCoordinator,
++  ResearchStore,
++  canonicalizeSourceUrl,
++  registerResearchRoutes
++} from "../src/research/index.js";
++import {
++  buildResearchWorkspaceViewModel,
++  exportResearchReportFromViewModel
++} from "../../web/src/app/research-workspace/view-model.js";
++
++function createTestDatabase(filePath = ":memory:"): DatabaseSync {
++  const db = new DatabaseSync(filePath);
++  db.exec(`
++    CREATE TABLE IF NOT EXISTS kosmora_owner_data_lifecycle (
++      owner_id TEXT PRIMARY KEY NOT NULL,
++      state TEXT NOT NULL DEFAULT 'active',
++      epoch INTEGER NOT NULL DEFAULT 1,
++      updated_at TEXT NOT NULL DEFAULT '2026-11-10T00:00:00.000Z'
++    );
++    INSERT OR IGNORE INTO kosmora_owner_data_lifecycle (owner_id, state, epoch)
++      VALUES ('owner-1', 'active', 1), ('owner-2', 'active', 1);
++
++    CREATE TABLE IF NOT EXISTS projects (
++      id TEXT PRIMARY KEY NOT NULL,
++      owner_id TEXT NOT NULL,
++      name TEXT NOT NULL,
++      status TEXT NOT NULL DEFAULT 'active',
++      created_at TEXT NOT NULL DEFAULT '2026-11-10T00:00:00.000Z',
++      updated_at TEXT NOT NULL DEFAULT '2026-11-10T00:00:00.000Z'
++    );
++    INSERT OR IGNORE INTO projects (id, owner_id, name)
++      VALUES ('proj-owner-1', 'owner-1', 'Project Alpha'),
++             ('proj-owner-2', 'owner-2', 'Project Beta');
++  `);
++  return db;
++}
++
++interface MockRouteHandler {
++  (request: any, reply: any): Promise<any>;
++}
++
++function createMockFastifyApp() {
++  const routes = new Map<string, MockRouteHandler>();
++  const hooks: Array<() => unknown> = [];
++
++  const app = {
++    get(path: string, handler: MockRouteHandler) {
++      routes.set(`GET ${path}`, handler);
++    },
++    post(path: string, handler: MockRouteHandler) {
++      routes.set(`POST ${path}`, handler);
++    },
++    addHook(_name: string, fn: () => unknown) {
++      hooks.push(fn);
++    },
++    async inject(req: {
++      method: "GET" | "POST";
++      url: string;
++      ownerId?: string;
++      body?: Record<string, unknown>;
++      query?: Record<string, string>;
++    }): Promise<{ statusCode: number; body: any; headers: Record<string, string> }> {
++      let matchedHandler: MockRouteHandler | undefined;
++      let params: Record<string, string> = {};
++
++      const cleanPath = req.url.split("?")[0];
++      const directKey = `${req.method} ${cleanPath}`;
++      if (routes.has(directKey)) {
++        matchedHandler = routes.get(directKey);
++      } else {
++        for (const [key, handler] of routes.entries()) {
++          const [m, pattern] = key.split(" ");
++          if (m !== req.method) continue;
++          const regexStr =
++            "^" +
++            pattern.replace(/:([a-zA-Z0-9_]+)/g, (_full, paramName) => `(?<${paramName}>[^/]+)`) +
++            "$";
++          const match = cleanPath.match(new RegExp(regexStr));
++          if (match) {
++            matchedHandler = handler;
++            params = (match.groups ?? {}) as Record<string, string>;
++            break;
++          }
++        }
++      }
++
++      if (!matchedHandler) {
++        return { statusCode: 404, body: { error: { code: "ROUTE_NOT_FOUND" } }, headers: {} };
++      }
++
++      const headers: Record<string, string> = {};
++      let statusCode = 200;
++      let sentPayload: any;
++
++      const reply = {
++        header(k: string, v: string) {
++          headers[k.toLowerCase()] = v;
++          return reply;
++        },
++        status(code: number) {
++          statusCode = code;
++          return reply;
++        },
++        send(payload: any) {
++          sentPayload = payload;
++          return payload;
++        }
++      };
++
++      const request = {
++        params,
++        body: req.body ?? {},
++        query: req.query ?? {},
++        ownerId: req.ownerId ?? "owner-1"
++      };
++
++      const ret = await matchedHandler(request, reply);
++      return {
++        statusCode,
++        body: sentPayload !== undefined ? sentPayload : ret,
++        headers
++      };
++    }
++  };
++
++  return app;
++}
++
++test("1 & 2 & 6 & 8: Normal completion, restart persistence, idempotent request retry, source conflict separation, and UI report parity with stored result", async () => {
++  const tempDir = mkdtempSync(join(tmpdir(), "kosmora-research-persist-"));
++  const dbPath = join(tempDir, "research.sqlite");
++
++  try {
++    // Phase A: Initial run before application restart
++    const db1 = createTestDatabase(dbPath);
++    const store1 = new ResearchStore(db1);
++    const adapter1 = new DeterministicResearchBrowserAdapter();
++    const app1 = createMockFastifyApp();
++
++    const coordinator1 = registerResearchRoutes({
++      app: app1 as any,
++      store: store1,
++      browserAdapter: adapter1,
++      ownerBudget: new ProjectResearchOwnerBudget(db1),
++      identityFor: (req: any) =>
++        ({
++          owner_id: req.ownerId,
++          session_id: `sess-${req.ownerId}`,
++          actor: { id: req.ownerId, kind: "owner" }
++        }) as any
++    });
++
++    const startRes = await app1.inject({
++      method: "POST",
++      url: "/api/v1/research/runs",
++      ownerId: "owner-1",
++      body: {
++        project_id: "proj-owner-1",
++        query: "OrionDB 2026: тарифы, SLA, задержка p95 и сертификация",
++        client_request_id: "req-orion-001",
++        budgets: { maxDepth: 2, maxSources: 5, maxRuntimeMs: 10000 }
++      }
++    });
++
++    assert.equal(startRes.statusCode, 200);
++    const run1 = startRes.body;
++    assert.equal(run1.status, "completed");
++    assert.equal(run1.progress.percent, 100);
++    assert.equal(run1.sources.length, 3);
++    assert.equal(
++      run1.sources[0].originalUrl,
++      "https://docs.kosmora.local/oriondb/2026-pricing?ref=official"
++    );
++    assert.equal(
++      run1.sources[0].canonicalUrl,
++      "https://docs.kosmora.local/oriondb/2026-pricing"
++    );
++
++    // Criterion #6: Separated confirmed, conflicting, and unconfirmed statements
++    assert.equal(run1.confirmedClaims.length, 2, "Expected SLA and p95 latency to be confirmed");
++    assert.equal(run1.conflictingClaims.length, 1, "Expected 2026 ($29/мес) vs 2025 ($49/мес) conflict");
++    assert.equal(run1.conflictingClaims[0].criterion, "Базовая стоимость");
++    assert.equal(run1.conflictingClaims[0].citations.length, 2);
++    assert.equal(run1.unconfirmedClaims.length, 1, "Expected ФСТЭК К1 to be unconfirmed");
++    assert.equal(run1.unconfirmedClaims[0].resolvedValue, "не удалось установить");
++
++    // Criterion #2: Repeated request with same client_request_id or same normalized query does NOT duplicate results or re-read sources
++    const readsBeforeRetry = adapter1.searchCallCount;
++    const retryByClientId = await app1.inject({
++      method: "POST",
++      url: "/api/v1/research/runs",
++      ownerId: "owner-1",
++      body: {
++        project_id: "proj-owner-1",
++        query: "OrionDB 2026: тарифы, SLA, задержка p95 и сертификация",
++        client_request_id: "req-orion-001"
++      }
++    });
++    assert.equal(retryByClientId.statusCode, 200);
++    assert.equal(retryByClientId.body.id, run1.id);
++    assert.equal(adapter1.searchCallCount, readsBeforeRetry, "Retry must not re-run search");
++
++    const retryByNormalizedQuery = await app1.inject({
++      method: "POST",
++      url: "/api/v1/research/runs",
++      ownerId: "owner-1",
++      body: {
++        project_id: "proj-owner-1",
++        query: "  oriondb 2026:   тарифы, sla, задержка p95 и сертификация  "
++      }
++    });
++    assert.equal(retryByNormalizedQuery.statusCode, 200);
++    assert.equal(retryByNormalizedQuery.body.id, run1.id);
++
++    const listRes = await app1.inject({
++      method: "GET",
++      url: "/api/v1/research/runs",
++      ownerId: "owner-1",
++      query: { project_id: "proj-owner-1" }
++    });
++    assert.equal(listRes.body.items.length, 1, "Retries must not create duplicate runs in store");
++
++    await coordinator1.stop();
++    db1.close();
++
++    // Phase B: Simulate full application restart by opening a fresh DatabaseSync, ResearchStore, and ResearchCoordinator on the same SQLite file
++    const db2 = createTestDatabase(dbPath);
++    const store2 = new ResearchStore(db2);
++    const app2 = createMockFastifyApp();
++    const coordinator2 = registerResearchRoutes({
++      app: app2 as any,
++      store: store2,
++      browserAdapter: new DeterministicResearchBrowserAdapter(),
++      ownerBudget: new ProjectResearchOwnerBudget(db2),
++      identityFor: (req: any) =>
++        ({
++          owner_id: req.ownerId,
++          session_id: `sess-${req.ownerId}`,
++          actor: { id: req.ownerId, kind: "owner" }
++        }) as any
++    });
++
++    const afterRestartRes = await app2.inject({
++      method: "GET",
++      url: `/api/v1/research/runs/${run1.id}`,
++      ownerId: "owner-1"
++    });
++    assert.equal(afterRestartRes.statusCode, 200);
++    const persistedRun = afterRestartRes.body;
++    assert.equal(persistedRun.id, run1.id);
++    assert.equal(persistedRun.status, "completed");
++    assert.equal(persistedRun.reportMarkdown, run1.reportMarkdown);
++    assert.deepEqual(persistedRun.confirmedClaims, run1.confirmedClaims);
++    assert.deepEqual(persistedRun.conflictingClaims, run1.conflictingClaims);
++    assert.deepEqual(persistedRun.unconfirmedClaims, run1.unconfirmedClaims);
++
++    // Criterion #8: Report exported from UI contains the exact same links and quotes as the stored/backend exported result
++    const backendExportRes = await app2.inject({
++      method: "GET",
++      url: `/api/v1/research/runs/${run1.id}/export`,
++      ownerId: "owner-1"
++    });
++    assert.equal(backendExportRes.statusCode, 200);
++
++    const vm = buildResearchWorkspaceViewModel(persistedRun);
++    const uiExport = exportResearchReportFromViewModel(vm);
++
++    assert.equal(uiExport.reportMarkdown, backendExportRes.body.reportMarkdown);
++    assert.equal(uiExport.reportMarkdown, persistedRun.reportMarkdown);
++
++    for (const src of backendExportRes.body.sources) {
++      assert.ok(
++        uiExport.links.includes(src.originalUrl),
++        `UI export must contain originalUrl ${src.originalUrl}`
++      );
++      assert.ok(
++        uiExport.reportMarkdown.includes(src.originalUrl) &&
++          uiExport.reportMarkdown.includes(src.pageVersion) &&
++          uiExport.reportMarkdown.includes(src.fetchedAt),
++        `UI markdown must include URL, version, and fetchedAt for ${src.originalUrl}`
++      );
++    }
++
++    const storedQuotes = [
++      ...backendExportRes.body.confirmedClaims.flatMap((c: any) =>
++        c.citations.map((cit: any) => cit.verbatimQuote)
++      ),
++      ...backendExportRes.body.conflictingClaims.flatMap((c: any) =>
++        c.citations.map((cit: any) => cit.verbatimQuote)
++      )
++    ];
++    assert.deepEqual(uiExport.quotes, storedQuotes);
++
++    await coordinator2.stop();
++    db2.close();
++  } finally {
++    rmSync(tempDir, { recursive: true, force: true });
++  }
++});
++
++test("3 & 4: Stop during reading AND transient failure recovery re-execute ONLY unfinished source reads without duplicating completed steps", async () => {
++  const db = createTestDatabase(":memory:");
++  const store = new ResearchStore(db);
++  const adapter = new DeterministicResearchBrowserAdapter();
++  const coordinator = new ResearchCoordinator({ store, browserAdapter: adapter });
++
++  const firstSourceCanonical = canonicalizeSourceUrl(
++    DEFAULT_DETERMINISTIC_FIXTURE_PAGES[0].url
++  );
++  const secondSourceCanonical = canonicalizeSourceUrl(
++    DEFAULT_DETERMINISTIC_FIXTURE_PAGES[1].url
++  );
++  const thirdSourceCanonical = canonicalizeSourceUrl(
++    DEFAULT_DETERMINISTIC_FIXTURE_PAGES[2].url
++  );
++
++  // Criterion #3: Stop/cancel the run while reading the 2nd source (after the 1st source has already been read and checkpointed)
++  let activeRunId = "";
++  adapter.onBeforeReadUrl = (canonicalUrl) => {
++    if (canonicalUrl === secondSourceCanonical && activeRunId) {
++      coordinator.cancelRun(activeRunId, "owner-1");
++    }
++  };
++
++  const startedBg = await coordinator.startRun({
++    ownerId: "owner-1",
++    projectId: "proj-owner-1",
++    query: "Остановка во время чтения источников OrionDB",
++    runInBackground: true
++  });
++  activeRunId = startedBg.id;
++  await coordinator.waitForActiveRun(activeRunId);
++
++  const cancelledRun = coordinator.getRun(activeRunId, "owner-1");
++  assert.equal(cancelledRun.status, "cancelled");
++  assert.equal(
++    adapter.readCallCountByCanonical.get(firstSourceCanonical),
++    1,
++    "First source was read once before cancellation"
++  );
++  assert.equal(
++    adapter.readCallCountByCanonical.get(secondSourceCanonical) ?? 0,
++    0,
++    "Second source was cancelled before completion"
++  );
++
++  // Criterion #4: Inject a transient failure on the 3rd source when resuming, to verify failure & recovery from the last step
++  adapter.onBeforeReadUrl = undefined;
++  adapter.injectReadFailureOnce(thirdSourceCanonical);
++
++  const failedOnThird = await coordinator.resumeRun(activeRunId, "owner-1");
++  assert.equal(failedOnThird.status, "failed");
++  assert.match(String(failedOnThird.errorCode), /SOURCE_READ_TRANSIENT_ERROR/);
++  assert.equal(
++    adapter.readCallCountByCanonical.get(firstSourceCanonical),
++    1,
++    "Completed 1st source must NOT be re-executed on resume"
++  );
++  assert.equal(adapter.readCallCountByCanonical.get(secondSourceCanonical), 1);
++
++  // Now resume again after the transient failure on the 3rd source: ONLY the 3rd source and synthesis should execute!
++  const completedAfterRecovery = await coordinator.resumeRun(activeRunId, "owner-1");
++  assert.equal(completedAfterRecovery.status, "completed");
++  assert.equal(
++    adapter.readCallCountByCanonical.get(firstSourceCanonical),
++    1,
++    "1st source read count must remain 1 across cancel + fail + resume"
++  );
++  assert.equal(
++    adapter.readCallCountByCanonical.get(secondSourceCanonical),
++    1,
++    "2nd source read count must remain 1 across fail + resume"
++  );
++  assert.equal(
++    adapter.readCallCountByCanonical.get(thirdSourceCanonical),
++    1,
++    "3rd source succeeded on recovery retry"
++  );
++  assert.equal(completedAfterRecovery.sources.length, 3);
++  assert.ok(completedAfterRecovery.reportMarkdown);
++
++  await coordinator.stop();
++  db.close();
++});
++
++test("5 & 7: Changed page detection (version update & quote re-verification), runtime budget guard, AND strict prohibition of reading/cancelling/resuming another user's task", async () => {
++  const db = createTestDatabase(":memory:");
++  const store = new ResearchStore(db);
++  const adapter = new DeterministicResearchBrowserAdapter();
++  const app = createMockFastifyApp();
++
++  const coordinator = registerResearchRoutes({
++    app: app as any,
++    store,
++    browserAdapter: adapter,
++    ownerBudget: new ProjectResearchOwnerBudget(db),
++    identityFor: (req: any) =>
++      ({
++        owner_id: req.ownerId,
++        session_id: `sess-${req.ownerId}`,
++        actor: { id: req.ownerId, kind: "owner" }
++      }) as any
++  });
++
++  // Criterion #5: Mutate page content & version after search discovery / before re-verification
++  const targetUrl = DEFAULT_DETERMINISTIC_FIXTURE_PAGES[0].url;
++  const targetCanonical = canonicalizeSourceUrl(targetUrl);
++
++  adapter.onBeforeReadUrl = (canonicalUrl) => {
++    if (canonicalUrl === targetCanonical) {
++      adapter.updateFixturePage(targetUrl, {
++        pageVersion: "pv-orion-2026-v2",
++        fetchedAt: "2026-11-10T19:30:00.000Z",
++        contentText:
++          "Обновлённая спецификация OrionDB (редакция v2). Для корпоративного тарифа OrionDB базовая стоимость составляет $25/мес при годовой подписке. Гарантированный уровень доступности OrionDB составляет SLA 99.99%.",
++        claims: [
++          {
++            subject: "OrionDB",
++            criterion: "Базовая стоимость",
++            claimedValue: "$25/мес",
++            verbatimQuote:
++              "Для корпоративного тарифа OrionDB базовая стоимость составляет $25/мес при годовой подписке."
++          },
++          {
++            subject: "OrionDB",
++            criterion: "SLA доступности",
++            claimedValue: "99.99%",
++            verbatimQuote: "Гарантированный уровень доступности OrionDB составляет SLA 99.99%."
++          }
++        ]
++      });
++      adapter.onBeforeReadUrl = undefined;
++    }
++  };
++
++  const runRes = await app.inject({
++    method: "POST",
++    url: "/api/v1/research/runs",
++    ownerId: "owner-1",
++    body: {
++      project_id: "proj-owner-1",
++      query: "Проверка изменившейся страницы OrionDB",
++      budgets: { maxDepth: 1, maxSources: 2, maxRuntimeMs: 10000 }
++    }
++  });
++  assert.equal(runRes.statusCode, 200);
++  const run = runRes.body;
++
++  // Verify depth & maxSources budgets were enforced (depth=2 benchmark page was excluded because maxDepth=1, maxSources=2)
++  assert.equal(run.sources.length, 2);
++  assert.equal(run.budgets.depthReached, 1);
++
++  // Verify changed page was detected, previousPageVersion recorded, and updated quote ($25/мес) verified
++  const changedSource = run.sources.find((s: any) => s.canonicalUrl === targetCanonical);
++  assert.ok(changedSource);
++  assert.equal(changedSource.pageChanged, true);
++  assert.equal(changedSource.previousPageVersion, "pv-orion-2026-v1");
++  assert.equal(changedSource.pageVersion, "pv-orion-2026-v2");
++  assert.equal(run.conflictingClaims[0].resolvedValue, "$25/мес");
++
++  // Criterion #7: Reading, cancelling, resuming, or exporting another owner's task is strictly forbidden (403)
++  const readByOther = await app.inject({
++    method: "GET",
++    url: `/api/v1/research/runs/${run.id}`,
++    ownerId: "owner-2"
++  });
++  assert.equal(readByOther.statusCode, 403);
++  assert.equal(readByOther.body.error.code, "RESEARCH_RUN_FORBIDDEN");
++
++  const cancelByOther = await app.inject({
++    method: "POST",
++    url: `/api/v1/research/runs/${run.id}/cancel`,
++    ownerId: "owner-2"
++  });
++  assert.equal(cancelByOther.statusCode, 403);
++  assert.equal(cancelByOther.body.error.code, "RESEARCH_RUN_FORBIDDEN");
++
++  const resumeByOther = await app.inject({
++    method: "POST",
++    url: `/api/v1/research/runs/${run.id}/resume`,
++    ownerId: "owner-2"
++  });
++  assert.equal(resumeByOther.statusCode, 403);
++  assert.equal(resumeByOther.body.error.code, "RESEARCH_RUN_FORBIDDEN");
++
++  const exportByOther = await app.inject({
++    method: "GET",
++    url: `/api/v1/research/runs/${run.id}/export`,
++    ownerId: "owner-2"
++  });
++  assert.equal(exportByOther.statusCode, 403);
++  assert.equal(exportByOther.body.error.code, "RESEARCH_RUN_FORBIDDEN");
++
++  const startInOtherProject = await app.inject({
++    method: "POST",
++    url: "/api/v1/research/runs",
++    ownerId: "owner-2",
++    body: {
++      project_id: "proj-owner-1",
++      query: "Попытка запуска в чужом проекте"
++    }
++  });
++  assert.equal(startInOtherProject.statusCode, 403);
++  assert.equal(startInOtherProject.body.error.code, "RESEARCH_PROJECT_FORBIDDEN");
++
++  // Also verify runtime clock budget enforcement (`RESEARCH_RUNTIME_BUDGET_EXCEEDED`)
++  let simulatedClockMs = 1_000;
++  const timedCoordinator = new ResearchCoordinator({
++    store,
++    browserAdapter: new DeterministicResearchBrowserAdapter(),
++    clock: () => {
++      simulatedClockMs += 600;
++      return simulatedClockMs;
++    }
++  });
++  const timedOutRun = await timedCoordinator.startRun({
++    ownerId: "owner-1",
++    projectId: "proj-owner-1",
++    query: "Проверка превышения бюджета времени",
++    budgets: { maxRuntimeMs: 800 }
++  });
++  assert.equal(timedOutRun.status, "failed");
++  assert.equal(timedOutRun.errorCode, "RESEARCH_RUNTIME_BUDGET_EXCEEDED");
++
++  await timedCoordinator.stop();
++  await coordinator.stop();
++  db.close();
++});
+diff --git a/apps/web/src/app/research-workspace/page.tsx b/apps/web/src/app/research-workspace/page.tsx
+new file mode 100644
+index 0000000..46d9ec5
+--- /dev/null
++++ b/apps/web/src/app/research-workspace/page.tsx
+@@ -0,0 +1,49 @@
++import React from "react";
++import { ResearchWorkspaceClient } from "./research-workspace-client.js";
++import { buildResearchWorkspaceViewModel } from "./view-model.js";
++import type { ResearchRunView } from "../../../../api/src/research/research-store.js";
++
++const EMPTY_RUN_VIEW: ResearchRunView = {
++  id: "res_run_empty",
++  ownerId: "local-owner",
++  projectId: null,
++  query: "Исследовательская задача",
++  normalizedQuery: "исследовательская задача",
++  clientRequestId: null,
++  status: "queued",
++  progress: {
++    currentStepIndex: 0,
++    totalSteps: 0,
++    completedSteps: 0,
++    pendingSteps: 0,
++    failedSteps: 0,
++    percent: 0
++  },
++  budgets: {
++    maxDepth: 2,
++    maxSources: 6,
++    maxRuntimeMs: 15000,
++    elapsedMs: 0,
++    depthReached: 0,
++    sourcesRead: 0
++  },
++  steps: [],
++  sources: [],
++  confirmedClaims: [],
++  conflictingClaims: [],
++  unconfirmedClaims: [],
++  reportMarkdown: null,
++  errorCode: null,
++  errorMessage: null,
++  createdAt: new Date(0).toISOString(),
++  updatedAt: new Date(0).toISOString()
++};
++
++export default function ResearchWorkspacePage() {
++  const vm = buildResearchWorkspaceViewModel(EMPTY_RUN_VIEW);
++  return (
++    <main className="mx-auto max-w-6xl p-6">
++      <ResearchWorkspaceClient viewModel={vm} />
++    </main>
++  );
++}
+diff --git a/apps/web/src/app/research-workspace/research-workspace-client.tsx b/apps/web/src/app/research-workspace/research-workspace-client.tsx
+new file mode 100644
+index 0000000..5e8c08b
+--- /dev/null
++++ b/apps/web/src/app/research-workspace/research-workspace-client.tsx
+@@ -0,0 +1,162 @@
++import React from "react";
++import type { ResearchWorkspaceViewModel } from "./view-model.js";
++
++export interface ResearchWorkspaceClientProps {
++  viewModel: ResearchWorkspaceViewModel;
++  onCancel?: () => void;
++  onResume?: () => void;
++  onExport?: () => void;
++}
++
++export function ResearchWorkspaceClient({
++  viewModel,
++  onCancel,
++  onResume,
++  onExport
++}: ResearchWorkspaceClientProps) {
++  return (
++    <section
++      aria-label="Поверхность исследовательской задачи"
++      className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm"
++    >
++      <header className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-100 pb-4">
++        <div>
++          <h1 className="text-lg font-semibold text-slate-900">{viewModel.query}</h1>
++          <p className="mt-1 text-xs text-slate-500">
++            {viewModel.progressLabelRu} · {viewModel.budgetSummaryRu}
++          </p>
++        </div>
++        <div className="flex items-center gap-2">
++          <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-800">
++            {viewModel.statusLabelRu}
++          </span>
++          {viewModel.canCancel && onCancel ? (
++            <button
++              type="button"
++              onClick={onCancel}
++              className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700"
++            >
++              Остановить
++            </button>
++          ) : null}
++          {viewModel.canResume && onResume ? (
++            <button
++              type="button"
++              onClick={onResume}
++              className="rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-medium text-white"
++            >
++              Продолжить с контрольной точки
++            </button>
++          ) : null}
++          {viewModel.canExport && onExport ? (
++            <button
++              type="button"
++              onClick={onExport}
++              className="rounded-lg bg-emerald-700 px-3 py-1.5 text-xs font-medium text-white"
++            >
++              Экспортировать отчёт с доказательствами
++            </button>
++          ) : null}
++        </div>
++      </header>
++
++      <div className="mt-4">
++        <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
++          Проверенные источники ({viewModel.sources.length})
++        </h2>
++        <ul className="mt-2 space-y-1 text-xs text-slate-700">
++          {viewModel.sources.map((src) => (
++            <li key={src.sourceId}>
++              <a
++                href={src.originalUrl}
++                target="_blank"
++                rel="noreferrer"
++                className="font-medium underline"
++              >
++                {src.title}
++              </a>{" "}
++              <span className="text-slate-500">
++                (версия: {src.pageVersion}
++                {src.pageChanged ? `, обновлена с ${src.previousPageVersion}` : ""}, получено:{" "}
++                {src.fetchedAt})
++              </span>
++            </li>
++          ))}
++        </ul>
++      </div>
++
++      <div className="mt-6 grid gap-4 md:grid-cols-3">
++        <div className="rounded-lg border border-emerald-200 bg-emerald-50/40 p-4">
++          <h3 className="text-sm font-semibold text-emerald-950">
++            1. Подтверждённые утверждения ({viewModel.confirmedClaims.length})
++          </h3>
++          <ul className="mt-2 space-y-3 text-xs text-slate-800">
++            {viewModel.confirmedClaims.map((claim) => (
++              <li key={claim.claimId}>
++                <div className="font-semibold">
++                  {claim.subject} — {claim.criterion}: {claim.resolvedValue}
++                </div>
++                {claim.citations.map((cit, idx) => (
++                  <blockquote
++                    key={idx}
++                    className="mt-1 border-l-2 border-emerald-400 pl-2 text-slate-600"
++                  >
++                    «{cit.verbatimQuote}» —{" "}
++                    <a href={cit.originalUrl} className="underline">
++                      {cit.sourceTitle}
++                    </a>{" "}
++                    ({cit.pageVersion}, {cit.fetchedAt})
++                  </blockquote>
++                ))}
++              </li>
++            ))}
++          </ul>
++        </div>
++
++        <div className="rounded-lg border border-amber-200 bg-amber-50/40 p-4">
++          <h3 className="text-sm font-semibold text-amber-950">
++            2. Противоречащие утверждения ({viewModel.conflictingClaims.length})
++          </h3>
++          <ul className="mt-2 space-y-3 text-xs text-slate-800">
++            {viewModel.conflictingClaims.map((claim) => (
++              <li key={claim.claimId}>
++                <div className="font-semibold text-amber-900">
++                  {claim.subject} — {claim.criterion}
++                </div>
++                <p className="mt-0.5 text-amber-800">{claim.conflictSummary}</p>
++                {claim.citations.map((cit, idx) => (
++                  <blockquote
++                    key={idx}
++                    className="mt-1 border-l-2 border-amber-400 pl-2 text-slate-600"
++                  >
++                    [{cit.claimedValue}] «{cit.verbatimQuote}» —{" "}
++                    <a href={cit.originalUrl} className="underline">
++                      {cit.sourceTitle}
++                    </a>{" "}
++                    ({cit.pageVersion}, {cit.fetchedAt})
++                  </blockquote>
++                ))}
++              </li>
++            ))}
++          </ul>
++        </div>
++
++        <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
++          <h3 className="text-sm font-semibold text-slate-900">
++            3. Неподтверждённые утверждения ({viewModel.unconfirmedClaims.length})
++          </h3>
++          <ul className="mt-2 space-y-2 text-xs text-slate-600">
++            {viewModel.unconfirmedClaims.map((claim) => (
++              <li key={claim.claimId}>
++                <span className="font-medium text-slate-800">
++                  {claim.subject} — {claim.criterion}:
++                </span>{" "}
++                <span className="italic">{claim.resolvedValue}</span>
++              </li>
++            ))}
++          </ul>
++        </div>
++      </div>
++    </section>
++  );
++}
+diff --git a/apps/web/src/app/research-workspace/view-model.ts b/apps/web/src/app/research-workspace/view-model.ts
+new file mode 100644
+index 0000000..f935efc
+--- /dev/null
++++ b/apps/web/src/app/research-workspace/view-model.ts
+@@ -0,0 +1,127 @@
++import type { ResearchRunView } from "../../../../api/src/research/research-store.js";
++import {
++  renderDeterministicResearchReportMarkdown,
++  type SynthesizedResearchClaim
++} from "../../../../api/src/research/research-synthesis.js";
++
++export interface ResearchWorkspaceSourceLinkView {
++  sourceId: string;
++  title: string;
++  originalUrl: string;
++  canonicalUrl: string;
++  fetchedAt: string;
++  pageVersion: string;
++  previousPageVersion: string | null;
++  pageChanged: boolean;
++}
++
++export interface ResearchWorkspaceViewModel {
++  runId: string;
++  query: string;
++  status: ResearchRunView["status"];
++  statusLabelRu: string;
++  progressPercent: number;
++  progressLabelRu: string;
++  canCancel: boolean;
++  canResume: boolean;
++  canExport: boolean;
++  budgetSummaryRu: string;
++  sources: ResearchWorkspaceSourceLinkView[];
++  confirmedClaims: SynthesizedResearchClaim[];
++  conflictingClaims: SynthesizedResearchClaim[];
++  unconfirmedClaims: SynthesizedResearchClaim[];
++  reportMarkdown: string | null;
++}
++
++const STATUS_LABELS_RU: Record<ResearchRunView["status"], string> = {
++  queued: "В очереди",
++  running: "Выполняется чтение источников",
++  paused: "Приостановлено",
++  cancelled: "Остановлено пользователем (доступно продолжение)",
++  failed: "Сбой выполнения (доступно восстановление с последнего шага)",
++  completed: "Исследование завершено"
++};
++
++/**
++ * Builds the local UI view-model for the research workspace surface
++ * without touching general chat or sidebar state.
++ */
++export function buildResearchWorkspaceViewModel(
++  run: ResearchRunView
++): ResearchWorkspaceViewModel {
++  const canCancel = run.status === "running" || run.status === "queued";
++  const canResume =
++    run.status === "cancelled" || run.status === "failed" || run.status === "paused";
++  const canExport = run.status === "completed" && Boolean(run.reportMarkdown);
++
++  return {
++    runId: run.id,
++    query: run.query,
++    status: run.status,
++    statusLabelRu: STATUS_LABELS_RU[run.status] ?? run.status,
++    progressPercent: run.progress.percent,
++    progressLabelRu: `Шагов выполнено: ${run.progress.completedSteps} из ${run.progress.totalSteps} (${run.progress.percent}%)`,
++    canCancel,
++    canResume,
++    canExport,
++    budgetSummaryRu: `Источников: ${run.budgets.sourcesRead}/${run.budgets.maxSources} · Глубина: ${run.budgets.depthReached}/${run.budgets.maxDepth} · Время: ${run.budgets.elapsedMs}/${run.budgets.maxRuntimeMs} мс`,
++    sources: run.sources.map((s) => ({
++      sourceId: s.sourceId,
++      title: s.title,
++      originalUrl: s.originalUrl,
++      canonicalUrl: s.canonicalUrl,
++      fetchedAt: s.fetchedAt,
++      pageVersion: s.pageVersion,
++      previousPageVersion: s.previousPageVersion,
++      pageChanged: s.pageChanged
++    })),
++    confirmedClaims: run.confirmedClaims,
++    conflictingClaims: run.conflictingClaims,
++    unconfirmedClaims: run.unconfirmedClaims,
++    reportMarkdown: run.reportMarkdown
++  };
++}
++
++/**
++ * Exports the research report directly from the UI view-model, guaranteeing that the UI report
++ * contains the exact same links (`originalUrl`), versions (`pageVersion`), dates (`fetchedAt`),
++ * and verbatim quotes (`verbatimQuote`) as the stored backend result.
++ */
++export function exportResearchReportFromViewModel(vm: ResearchWorkspaceViewModel): {
++  runId: string;
++  reportMarkdown: string;
++  links: string[];
++  quotes: string[];
++} {
++  const markdown =
++    vm.reportMarkdown ??
++    renderDeterministicResearchReportMarkdown({
++      runId: vm.runId,
++      query: vm.query,
++      status: vm.status,
++      sources: vm.sources,
++      confirmedClaims: vm.confirmedClaims,
++      conflictingClaims: vm.conflictingClaims,
++      unconfirmedClaims: vm.unconfirmedClaims
++    });
++
++  const allCitations = [
++    ...vm.confirmedClaims.flatMap((c) => c.citations),
++    ...vm.conflictingClaims.flatMap((c) => c.citations)
++  ];
++
++  const links = Array.from(
++    new Set([
++      ...allCitations.map((c) => c.originalUrl),
++      ...vm.sources.map((s) => s.originalUrl)
++    ])
++  );
++  const quotes = allCitations.map((c) => c.verbatimQuote);
++
++  return {
++    runId: vm.runId,
++    reportMarkdown: markdown,
++    links,
++    quotes
++  };
++}
+diff --git a/docs/handoff/KOSMORA_RESEARCH_RESUME_EVIDENCE_2026-11-10_RU.md b/docs/handoff/KOSMORA_RESEARCH_RESUME_EVIDENCE_2026-11-10_RU.md
+new file mode 100644
+index 0000000..bb10eb8
+--- /dev/null
++++ b/docs/handoff/KOSMORA_RESEARCH_RESUME_EVIDENCE_2026-11-10_RU.md
+@@ -0,0 +1,27 @@
++# Отчёт и контрольная точка: Сохраняемые исследовательские задачи и выдача доказательств (`feature/research-resume-evidence`)
++
++- **Репозиторий:** `https://github.com/RLM-Company/Nexus-OS`
++- **Ветка:** `feature/research-resume-evidence`
++- **Полный `BASE_SHA`:** `09369af668e9ab22fd9de175f74fa03304892637` (над локальным `master` `beee048f76a57fc6d3db96e22e5e4440e4820026`; отделено от предыдущего ZIP-архива)
++
++## 1. Инвентаризация существующих модулей и ограничений доступа к исходникам
++
++1. **Что найдено в локальной базе репозитория (`BASE_SHA: 09369af668e9ab22fd9de175f74fa03304892637`):**
++   - `apps/api/src/app.ts` (строки 173, 178–180, 194, 197, 228, 714–729): канонический контракт вызова `registerResearchRoutes({ app, store, gateway, manager, ownerBudget, search, projects, policy, identityFor, emergency })`, типы `ResearchCoordinator`, `ResearchStore`, `ResearchOwnerBudget`.
++   - `apps/api/src/server.ts` (строки 41, 50, 57–58, 72–73, 120, 203, 218–222): каноническая инициализация `new ResearchStore(database.sqlite)`, `new ProjectResearchOwnerBudget(database.sqlite, projectStore, accountStore)`, `ResearchIntegratedPrivacyAdapter` и остановка `researchCoordinator?.stop()`.
++   - `apps/api/src/cloud-storage/google-drive-restore.ts` (строки 565–592) и `apps/api/test/google-drive-complete.test.ts` (строки 95–104): базовая схема таблицы `research_runs (id, owner_id, project_id, query, status, report_markdown, created_at, updated_at)` и таблица жизненного цикла владельца `kosmora_owner_data_lifecycle (owner_id, epoch, state)`.
++   - `desktop/windows/browser/search-pagination-and-bookmarks.cjs`: существующее хранилище поисковой выдачи браузера (`KosworkSearchAndBrowserStore`), переиспользованное в браузерном адаптере без создания второго браузера или второго планировщика.
++2. **Чего не хватало в локальном слепке контейнера (ограничения среды):**
++   - В урезанном слепке VM отсутствовал каталог `apps/api/src/research/` (`research-routes.ts`, `research-coordinator.ts`, `research-store.ts`, `research-synthesis.ts`), а также `apps/api/src/web-search.ts`, `apps/api/src/identity.ts` и пакеты `@cosmora/contracts` / `@cosmora/db` (миграции `0001..0059`).
++   - Исходящий сетевой доступ из песочницы VM к `github.com` отключён политикой контейнера, поэтому все модули `apps/api/src/research/*` восстановлены строго по сигнатурам и контрактам `apps/api/src/app.ts`, `apps/api/src/server.ts` и `google-drive-restore.ts`.
++
++## 2. Перечень реализованных изменений
++
++1. `packages/db/migrations/0064_research_resume_evidence.sql` — аддитивная SQLite-миграция для таблиц `research_runs`, `research_run_steps`, `research_sources`, `research_claims` и триггеров `OWNER_DATA_FENCED`.
++2. `apps/api/src/research/research-synthesis.ts` — `ProjectResearchOwnerBudget` (проверка владельца, проекта и бюджетов `maxDepth`, `maxSources`, `maxRuntimeMs`), верификация точных цитат (`[startUtf16..endUtf16]`, `quoteSha256`, защита от отрицаний) и раздельный синтез `confirmedClaims`, `conflictingClaims`, `unconfirmedClaims` + детерминированный рендеринг отчёта `renderDeterministicResearchReportMarkdown`.
++3. `apps/api/src/research/research-store.ts` — персистентное SQLite-хранилище `ResearchStore` с пошаговыми контрольными точками (`checkpointStep`), идемпотентностью по `(owner_id, project_id, client_request_id)` и нормализованному запросу, дедупликацией источников по `canonicalUrl` с сохранением `originalUrl`, фиксацией обновления страницы (`pageChanged`, `previousPageVersion`, `pageVersion`) и восстановлением прерванных задач после перезапуска (`recoverInterruptedRuns`).
++4. `apps/api/src/research/browser-research-adapter.ts` — детерминированный браузерный адаптер `DeterministicResearchBrowserAdapter` поверх существующего `KosworkSearchAndBrowserStore`.
++5. `apps/api/src/research/research-coordinator.ts` — `ResearchCoordinator` с пошаговым исполнением (`search` → `read_source` → `synthesize`), безопасной отменой во время чтения (`cancelRun`) и продолжением (`resumeRun`) только незавершённых чтений без повторного чтения уже завершённых источников.
++6. `apps/api/src/research/research-routes.ts` и `apps/api/src/research/index.ts` — `registerResearchRoutes` по контракту `apps/api/src/app.ts` (`POST /api/v1/research/runs`, `GET /api/v1/research/runs`, `GET /api/v1/research/runs/:runId`, `POST /api/v1/research/runs/:runId/cancel`, `POST /api/v1/research/runs/:runId/resume`, `GET /api/v1/research/runs/:runId/export`).
++7. `apps/web/src/app/research-workspace/{view-model.ts,research-workspace-client.tsx,page.tsx}` — локальная UI-поверхность исследования (без изменений чата и сайдбара) с отображением прогресса, ссылок, раздельных секций подтверждённых, противоречащих и неподтверждённых утверждений и экспортом отчёта `exportResearchReportFromViewModel`, идентичным сохранённому результату.
++8. `apps/api/test/research-resume-evidence.test.ts` и `scripts/integration-research-resume-evidence-smoke.mjs` — приёмочные тесты всех 8 сценариев.
+diff --git a/scripts/integration-research-resume-evidence-smoke.mjs b/scripts/integration-research-resume-evidence-smoke.mjs
+new file mode 100644
+index 0000000..df9d2d7
+--- /dev/null
++++ b/scripts/integration-research-resume-evidence-smoke.mjs
+@@ -0,0 +1,66 @@
++#!/usr/bin/env node
++/**
++ * Deterministic offline integration & acceptance test runner for Persistent Research Runs,
++ * Step-by-Step Checkpoint Recovery, Changed-Page Detection, Owner/Project Authorization,
++ * and Verifiable Evidence Report Export (`feature/research-resume-evidence`).
++ */
++import { cpSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
++import { tmpdir } from "node:os";
++import { dirname, join, resolve } from "node:path";
++import { fileURLToPath, pathToFileURL } from "node:url";
++import { spawnSync } from "node:child_process";
++import { ts } from "./offline-typescript.mjs";
++
++const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
++const temp = mkdtempSync(join(tmpdir(), "kosmora-research-resume-smoke-"));
++
++function emit(sourceRel, targetRel) {
++  let code = ts.transpileModule(readFileSync(resolve(root, sourceRel), "utf8"), {
++    fileName: sourceRel,
++    compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 }
++  }).outputText;
++
++  const sqliteShimUrl = pathToFileURL(resolve(root, "scripts/offline-typescript.mjs")).href;
++  code = code.replace(/from\s+["']node:sqlite["']/g, `from "${sqliteShimUrl}"`);
++
++  const outPath = join(temp, targetRel);
++  mkdirSync(dirname(outPath), { recursive: true });
++  writeFileSync(outPath, code, "utf8");
++}
++
++try {
++  writeFileSync(join(temp, "package.json"), '{"type":"module"}\n', "utf8");
++
++  // Copy desktop/windows/browser CJS helpers so relative require from transpiled temp dir resolves identically
++  mkdirSync(join(temp, "desktop/windows/browser"), { recursive: true });
++  cpSync(
++    resolve(root, "desktop/windows/browser/search-pagination-and-bookmarks.cjs"),
++    join(temp, "desktop/windows/browser/search-pagination-and-bookmarks.cjs")
++  );
++
++  const sources = [
++    ["apps/api/src/research/research-synthesis.ts", "apps/api/src/research/research-synthesis.js"],
++    ["apps/api/src/research/research-store.ts", "apps/api/src/research/research-store.js"],
++    ["apps/api/src/research/browser-research-adapter.ts", "apps/api/src/research/browser-research-adapter.js"],
++    ["apps/api/src/research/research-coordinator.ts", "apps/api/src/research/research-coordinator.js"],
++    ["apps/api/src/research/research-routes.ts", "apps/api/src/research/research-routes.js"],
++    ["apps/api/src/research/index.ts", "apps/api/src/research/index.js"],
++    ["apps/web/src/app/research-workspace/view-model.ts", "apps/web/src/app/research-workspace/view-model.js"],
++    ["apps/api/test/research-resume-evidence.test.ts", "apps/api/test/research-resume-evidence.test.js"]
++  ];
++
++  for (const [src, dst] of sources) {
++    emit(src, dst);
++  }
++
++  const testFile = join(temp, "apps/api/test/research-resume-evidence.test.js");
++  const res = spawnSync(process.execPath, ["--test", testFile], {
++    cwd: root,
++    stdio: "inherit"
++  });
++  if (res.status !== 0) {
++    process.exitCode = res.status ?? 1;
++  }
++} finally {
++  rmSync(temp, { recursive: true, force: true });
++}
+-- 
+2.39.5
+

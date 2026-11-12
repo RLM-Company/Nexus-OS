@@ -1,0 +1,2458 @@
+From 5ac82d23b5adb9d619efc176ed481e59042ba5ed Mon Sep 17 00:00:00 2001
+From: Kosmora Engineering <eng@kosmora.ai>
+Date: Wed, 11 Nov 2026 06:22:36 +0000
+Subject: [PATCH 1/2] feat(research): persistent SQLite ResearchStore,
+ step-checkpoint ResearchCoordinator, and browser adapter
+
+---
+ .../src/research/browser-research-adapter.ts  |  304 +++++
+ apps/api/src/research/research-coordinator.ts |  499 ++++++++
+ apps/api/src/research/research-store.ts       | 1050 +++++++++++++++++
+ apps/api/src/research/research-synthesis.ts   |  458 +++++++
+ .../0064_research_resume_evidence.sql         |   95 ++
+ 5 files changed, 2406 insertions(+)
+ create mode 100644 apps/api/src/research/browser-research-adapter.ts
+ create mode 100644 apps/api/src/research/research-coordinator.ts
+ create mode 100644 apps/api/src/research/research-store.ts
+ create mode 100644 apps/api/src/research/research-synthesis.ts
+ create mode 100644 packages/db/migrations/0064_research_resume_evidence.sql
+
+diff --git a/apps/api/src/research/browser-research-adapter.ts b/apps/api/src/research/browser-research-adapter.ts
+new file mode 100644
+index 0000000..78ece2d
+--- /dev/null
++++ b/apps/api/src/research/browser-research-adapter.ts
+@@ -0,0 +1,304 @@
++import { createRequire } from "node:module";
++import { type CandidateClaimExtraction, sha256Hex } from "./research-synthesis.js";
++import { canonicalizeSourceUrl } from "./research-store.js";
++
++const require = createRequire(import.meta.url);
++// Reuse the existing desktop browser search & bookmark store (`desktop/windows/browser/search-pagination-and-bookmarks.cjs`)
++// without creating a second browser store
++const { KosworkSearchAndBrowserStore } = require("../../../../desktop/windows/browser/search-pagination-and-bookmarks.cjs");
++
++export interface DeterministicFixturePage {
++  url: string;
++  title: string;
++  publishedAt?: string | null;
++  fetchedAt?: string;
++  pageVersion?: string;
++  contentText: string;
++  depth?: number;
++  outlinks?: Array<{ url: string; depth?: number }>;
++  claims: CandidateClaimExtraction[];
++}
++
++export interface BrowserSearchCandidate {
++  originalUrl: string;
++  canonicalUrl: string;
++  title: string;
++  snippet: string;
++  depth: number;
++  initialExpectedVersion: string | null;
++}
++
++export interface BrowserReadSnapshot {
++  originalUrl: string;
++  canonicalUrl: string;
++  title: string;
++  fetchedAt: string;
++  publishedAt: string | null;
++  pageVersion: string;
++  contentSha256: string;
++  contentText: string;
++  depth: number;
++  httpStatus: number;
++  outlinks: Array<{ url: string; depth: number }>;
++  extractedClaims: CandidateClaimExtraction[];
++}
++
++export interface ResearchBrowserAdapter {
++  searchSources(
++    query: string,
++    options?: { maxResults?: number; signal?: AbortSignal }
++  ): Promise<BrowserSearchCandidate[]>;
++  readSourcePage(
++    url: string,
++    options?: { depth?: number; signal?: AbortSignal }
++  ): Promise<BrowserReadSnapshot>;
++}
++
++/**
++ * Deterministic Fixture & Browser Adapter that reuses `KosworkSearchAndBrowserStore`
++ * and supports:
++ * - Stable canonical URL deduplication while preserving `originalUrl`
++ * - Mutable page versions (`updateFixturePage`) to test page-change detection between search and read / across retries
++ * - Programmable transient read failures (`injectReadFailureOnce`) and step hooks (`onBeforeReadUrl`)
++ *   to test mid-read cancellation and step-checkpoint crash recovery without paid network calls.
++ */
++export class DeterministicResearchBrowserAdapter implements ResearchBrowserAdapter {
++  private readonly pagesByCanonical = new Map<string, DeterministicFixturePage>();
++  private readonly failOnceUrls = new Set<string>();
++  private readonly browserStore = new KosworkSearchAndBrowserStore();
++  public readCallCountByCanonical = new Map<string, number>();
++  public searchCallCount = 0;
++  public onBeforeReadUrl?: (canonicalUrl: string, originalUrl: string) => Promise<void> | void;
++
++  constructor(initialPages: DeterministicFixturePage[] = DEFAULT_DETERMINISTIC_FIXTURE_PAGES) {
++    for (const page of initialPages) {
++      this.registerFixturePage(page);
++    }
++  }
++
++  public registerFixturePage(page: DeterministicFixturePage): void {
++    const canonical = canonicalizeSourceUrl(page.url);
++    const computedVersion =
++      page.pageVersion ?? `pv-${sha256Hex(page.contentText).slice(0, 12)}`;
++    this.pagesByCanonical.set(canonical, {
++      ...page,
++      pageVersion: computedVersion
++    });
++  }
++
++  public updateFixturePage(
++    url: string,
++    patch: {
++      contentText: string;
++      pageVersion?: string;
++      fetchedAt?: string;
++      claims?: CandidateClaimExtraction[];
++    }
++  ): void {
++    const canonical = canonicalizeSourceUrl(url);
++    const existing = this.pagesByCanonical.get(canonical);
++    if (!existing) {
++      throw new Error(`FIXTURE_PAGE_NOT_FOUND:${canonical}`);
++    }
++    const nextVersion =
++      patch.pageVersion ?? `pv-${sha256Hex(patch.contentText).slice(0, 12)}`;
++    this.pagesByCanonical.set(canonical, {
++      ...existing,
++      contentText: patch.contentText,
++      pageVersion: nextVersion,
++      fetchedAt: patch.fetchedAt ?? new Date().toISOString(),
++      claims: patch.claims ?? existing.claims
++    });
++  }
++
++  public injectReadFailureOnce(url: string): void {
++    this.failOnceUrls.add(canonicalizeSourceUrl(url));
++  }
++
++  public async searchSources(
++    query: string,
++    options?: { maxResults?: number; signal?: AbortSignal }
++  ): Promise<BrowserSearchCandidate[]> {
++    if (options?.signal?.aborted) {
++      throw new Error("RESEARCH_CANCELLED");
++    }
++    this.searchCallCount += 1;
++
++    const allEntries = Array.from(this.pagesByCanonical.values());
++    // Include an intentional tracking-param duplicate URL in raw search output to verify stable deduplication
++    const rawSearchItems = [
++      ...allEntries.map((p) => ({
++        title: p.title,
++        url: p.url,
++        snippet: p.contentText.slice(0, 160),
++        depth: p.depth ?? 1,
++        pageVersion: p.pageVersion ?? null
++      })),
++      ...(allEntries.length > 0
++        ? [
++            {
++              title: `${allEntries[0].title} (UTM duplicate)`,
++              url: `${allEntries[0].url}${allEntries[0].url.includes("?") ? "&" : "?"}utm_source=serp_dup&fbclid=123`,
++              snippet: allEntries[0].contentText.slice(0, 160),
++              depth: allEntries[0].depth ?? 1,
++              pageVersion: allEntries[0].pageVersion ?? null
++            }
++          ]
++        : [])
++    ];
++
++    // Record in the shared desktop browser store
++    this.browserStore.recordAndPaginateSearch({
++      query,
++      results: rawSearchItems.map((item) => ({
++        title: item.title,
++        url: item.url,
++        snippet: item.snippet
++      })),
++      page: 1,
++      pageSize: Math.max(10, rawSearchItems.length)
++    });
++
++    const seenCanonical = new Set<string>();
++    const deduplicated: BrowserSearchCandidate[] = [];
++    const maxResults = options?.maxResults ?? 10;
++
++    for (const item of rawSearchItems) {
++      const canonicalUrl = canonicalizeSourceUrl(item.url);
++      if (seenCanonical.has(canonicalUrl)) {
++        continue;
++      }
++      seenCanonical.add(canonicalUrl);
++      deduplicated.push({
++        originalUrl: item.url,
++        canonicalUrl,
++        title: item.title,
++        snippet: item.snippet,
++        depth: item.depth,
++        initialExpectedVersion: item.pageVersion
++      });
++      if (deduplicated.length >= maxResults) break;
++    }
++
++    return deduplicated;
++  }
++
++  public async readSourcePage(
++    url: string,
++    options?: { depth?: number; signal?: AbortSignal }
++  ): Promise<BrowserReadSnapshot> {
++    const canonicalUrl = canonicalizeSourceUrl(url);
++    if (this.onBeforeReadUrl) {
++      await this.onBeforeReadUrl(canonicalUrl, url);
++    }
++    if (options?.signal?.aborted) {
++      throw new Error("RESEARCH_CANCELLED");
++    }
++
++    if (this.failOnceUrls.has(canonicalUrl)) {
++      this.failOnceUrls.delete(canonicalUrl);
++      throw new Error(`SOURCE_READ_TRANSIENT_ERROR:${canonicalUrl}`);
++    }
++
++    const page = this.pagesByCanonical.get(canonicalUrl);
++    if (!page) {
++      throw new Error(`SOURCE_NOT_FOUND:${canonicalUrl}`);
++    }
++
++    const prevCount = this.readCallCountByCanonical.get(canonicalUrl) ?? 0;
++    this.readCallCountByCanonical.set(canonicalUrl, prevCount + 1);
++
++    const contentSha256 = sha256Hex(page.contentText);
++    const pageVersion = page.pageVersion ?? `pv-${contentSha256.slice(0, 12)}`;
++
++    return {
++      originalUrl: url,
++      canonicalUrl,
++      title: page.title,
++      fetchedAt: page.fetchedAt ?? "2026-11-10T18:00:00.000Z",
++      publishedAt: page.publishedAt ?? null,
++      pageVersion,
++      contentSha256,
++      contentText: page.contentText,
++      depth: options?.depth ?? page.depth ?? 1,
++      httpStatus: 200,
++      outlinks: (page.outlinks ?? []).map((o) => ({
++        url: o.url,
++        depth: o.depth ?? (options?.depth ?? 1) + 1
++      })),
++      extractedClaims: page.claims
++    };
++  }
++}
++
++export const DEFAULT_DETERMINISTIC_FIXTURE_PAGES: DeterministicFixturePage[] = [
++  {
++    url: "https://docs.kosmora.local/oriondb/2026-pricing?ref=official",
++    title: "OrionDB 2026 — Официальная спецификация и тарифы",
++    publishedAt: "2026-10-20T00:00:00.000Z",
++    fetchedAt: "2026-11-10T18:00:01.000Z",
++    pageVersion: "pv-orion-2026-v1",
++    depth: 1,
++    contentText:
++      "Официальная документация OrionDB (редакция 2026). Для корпоративного тарифа OrionDB базовая стоимость составляет $29/мес при годовой подписке. Гарантированный уровень доступности OrionDB составляет SLA 99.99%.",
++    outlinks: [
++      {
++        url: "https://benchmarks.kosmora.local/oriondb/deep-latency-2026",
++        depth: 2
++      }
++    ],
++    claims: [
++      {
++        subject: "OrionDB",
++        criterion: "Базовая стоимость",
++        claimedValue: "$29/мес",
++        verbatimQuote:
++          "Для корпоративного тарифа OrionDB базовая стоимость составляет $29/мес при годовой подписке."
++      },
++      {
++        subject: "OrionDB",
++        criterion: "SLA доступности",
++        claimedValue: "99.99%",
++        verbatimQuote: "Гарантированный уровень доступности OrionDB составляет SLA 99.99%."
++      }
++    ]
++  },
++  {
++    url: "https://archive.kosmora.local/oriondb/2025-pricing",
++    title: "Архивный прайс-лист OrionDB (2025)",
++    publishedAt: "2025-05-15T00:00:00.000Z",
++    fetchedAt: "2026-11-10T18:00:02.000Z",
++    pageVersion: "pv-orion-2025-v1",
++    depth: 1,
++    contentText:
++      "Архивный обзор OrionDB за 2025 год. Для корпоративного тарифа OrionDB базовая стоимость составляет $49/мес.",
++    claims: [
++      {
++        subject: "OrionDB",
++        criterion: "Базовая стоимость",
++        claimedValue: "$49/мес",
++        verbatimQuote:
++          "Для корпоративного тарифа OrionDB базовая стоимость составляет $49/мес."
++      }
++    ]
++  },
++  {
++    url: "https://benchmarks.kosmora.local/oriondb/deep-latency-2026",
++    title: "Независимый бенчмарк задержек OrionDB (глубина 2)",
++    publishedAt: "2026-10-25T00:00:00.000Z",
++    fetchedAt: "2026-11-10T18:00:03.000Z",
++    pageVersion: "pv-orion-bench-v1",
++    depth: 2,
++    contentText:
++      "Результаты нагрузочного тестирования OrionDB: задержка чтения p95 удерживается на уровне 8 мс.",
++    claims: [
++      {
++        subject: "OrionDB",
++        criterion: "Задержка p95",
++        claimedValue: "8 мс",
++        verbatimQuote:
++          "Результаты нагрузочного тестирования OrionDB: задержка чтения p95 удерживается на уровне 8 мс."
++      }
++    ]
++  }
++];
+diff --git a/apps/api/src/research/research-coordinator.ts b/apps/api/src/research/research-coordinator.ts
+new file mode 100644
+index 0000000..a099e15
+--- /dev/null
++++ b/apps/api/src/research/research-coordinator.ts
+@@ -0,0 +1,499 @@
++import {
++  DeterministicResearchBrowserAdapter,
++  type ResearchBrowserAdapter
++} from "./browser-research-adapter.js";
++import {
++  ResearchStore,
++  type ResearchRunView,
++  canonicalizeSourceUrl
++} from "./research-store.js";
++import {
++  DEFAULT_RESEARCH_BUDGET,
++  ProjectResearchOwnerBudget,
++  type ResearchBudgetLimits,
++  type ResearchOwnerBudget,
++  synthesizeResearchClaims
++} from "./research-synthesis.js";
++
++export interface StartResearchRunInput {
++  ownerId: string;
++  projectId?: string | null;
++  query: string;
++  clientRequestId?: string | null;
++  expectedTargets?: Array<{ subject: string; criterion: string }>;
++  budgets?: Partial<ResearchBudgetLimits>;
++  runInBackground?: boolean;
++}
++
++export interface ResearchCoordinatorOptions {
++  store: ResearchStore;
++  browserAdapter?: ResearchBrowserAdapter;
++  ownerBudget?: ResearchOwnerBudget;
++  emergency?: { getProcessStop?(): unknown } | null;
++  clock?: () => number;
++}
++
++const DEFAULT_EXPECTED_TARGETS: Array<{ subject: string; criterion: string }> = [
++  { subject: "OrionDB", criterion: "Базовая стоимость" },
++  { subject: "OrionDB", criterion: "SLA доступности" },
++  { subject: "OrionDB", criterion: "Задержка p95" },
++  { subject: "OrionDB", criterion: "Закрытый сертификат ФСТЭК К1" }
++];
++
++/**
++ * Canonical ResearchCoordinator imported by `apps/api/src/app.ts` and `apps/api/src/server.ts`.
++ *
++ * Implements:
++ * - Step-by-step persistent checkpoints (`search` -> `read_source:<url>` -> `synthesize`).
++ * - Safe cancellation (`cancelRun`) during reading and safe continuation (`resumeRun`):
++ *   only unfinished (`pending`/`failed`/`cancelled`) source reads are executed on resume;
++ *   already-completed source reads are never re-executed or duplicated.
++ * - Page-change detection (`pageChanged`, `previousPageVersion`) when a page mutates across reads/resumes.
++ * - Strict owner and project access checks (`RESEARCH_RUN_FORBIDDEN`, `RESEARCH_PROJECT_FORBIDDEN`).
++ * - Depth (`maxDepth`), source count (`maxSources`), and wall-clock runtime (`maxRuntimeMs`) budgets.
++ */
++export class ResearchCoordinator {
++  private readonly store: ResearchStore;
++  public readonly browserAdapter: ResearchBrowserAdapter;
++  private readonly ownerBudget: ResearchOwnerBudget;
++  private readonly emergency: { getProcessStop?(): unknown } | null;
++  private readonly clock: () => number;
++  private readonly activeControllers = new Map<string, AbortController>();
++  private readonly activePromises = new Map<string, Promise<ResearchRunView>>();
++
++  constructor(options: ResearchCoordinatorOptions) {
++    this.store = options.store;
++    this.browserAdapter =
++      options.browserAdapter ?? new DeterministicResearchBrowserAdapter();
++    this.ownerBudget =
++      options.ownerBudget ?? new ProjectResearchOwnerBudget(this.store.sqlite);
++    this.emergency = options.emergency ?? null;
++    this.clock = options.clock ?? (() => Date.now());
++  }
++
++  public async startRun(input: StartResearchRunInput): Promise<ResearchRunView> {
++    this.assertNotEmergencyStopped();
++    const projectId = input.projectId ?? null;
++    this.ownerBudget.checkCanStartRun(input.ownerId, projectId);
++
++    // 1. Check idempotent retry first (never duplicate results on repeated request)
++    const existing = this.store.findIdempotentRun({
++      ownerId: input.ownerId,
++      projectId,
++      query: input.query,
++      clientRequestId: input.clientRequestId,
++      deduplicateQuery: true
++    });
++    if (existing) {
++      return existing;
++    }
++
++    const limits = this.ownerBudget.resolveLimits(
++      input.ownerId,
++      projectId,
++      input.budgets ?? DEFAULT_RESEARCH_BUDGET
++    );
++
++    const expectedTargets =
++      input.expectedTargets && input.expectedTargets.length > 0
++        ? input.expectedTargets
++        : DEFAULT_EXPECTED_TARGETS;
++
++    const created = this.store.createRunWithSteps({
++      ownerId: input.ownerId,
++      projectId,
++      query: input.query,
++      clientRequestId: input.clientRequestId ?? null,
++      maxDepth: limits.maxDepth,
++      maxSources: limits.maxSources,
++      maxRuntimeMs: limits.maxRuntimeMs,
++      expectedTargets,
++      steps: [
++        { stepKey: "search:initial", stepKind: "search", depth: 1 },
++        { stepKey: "synthesize:final", stepKind: "synthesize", depth: 1 }
++      ]
++    });
++
++    if (input.runInBackground) {
++      const promise = this.executeFromLastCheckpoint(created.id, input.ownerId).catch(
++        () => this.store.getRunForOwner(created.id, input.ownerId)
++      );
++      this.activePromises.set(created.id, promise);
++      return this.store.getRunForOwner(created.id, input.ownerId);
++    }
++
++    return await this.executeFromLastCheckpoint(created.id, input.ownerId);
++  }
++
++  public getRun(runId: string, ownerId: string): ResearchRunView {
++    return this.store.getRunForOwner(runId, ownerId);
++  }
++
++  public listRuns(ownerId: string, projectId?: string | null): ResearchRunView[] {
++    return this.store.listRunsForOwner(ownerId, projectId);
++  }
++
++  public cancelRun(runId: string, ownerId: string): ResearchRunView {
++    const run = this.store.getRunForOwner(runId, ownerId);
++    const controller = this.activeControllers.get(runId);
++    if (controller) {
++      controller.abort();
++    }
++
++    if (run.status === "completed") {
++      return run;
++    }
++
++    // Mark any currently-running step as cancelled so resumeRun will pick it up cleanly
++    for (const step of run.steps) {
++      if (step.status === "running") {
++        this.store.checkpointStep(runId, ownerId, step.stepKey, {
++          status: "cancelled",
++          errorCode: "RESEARCH_CANCELLED_BY_OWNER"
++        });
++      }
++    }
++
++    this.store.updateRunStatus(runId, ownerId, {
++      status: "cancelled",
++      errorCode: "RESEARCH_CANCELLED_BY_OWNER",
++      errorMessage: "Исследование остановлено пользователем; контрольная точка сохранена."
++    });
++
++    return this.store.getRunForOwner(runId, ownerId);
++  }
++
++  public async resumeRun(
++    runId: string,
++    ownerId: string,
++    options?: { reverifyChangedUrls?: string[] }
++  ): Promise<ResearchRunView> {
++    this.assertNotEmergencyStopped();
++    const run = this.store.getRunForOwner(runId, ownerId);
++    this.ownerBudget.checkCanStartRun(ownerId, run.projectId);
++
++    // If caller requests re-verification of specific URLs whose content changed, mark only those steps pending
++    if (options?.reverifyChangedUrls && options.reverifyChangedUrls.length > 0) {
++      for (const rawUrl of options.reverifyChangedUrls) {
++        const canonical = canonicalizeSourceUrl(rawUrl);
++        const stepKey = `read_source:${canonical}`;
++        const existingStep = run.steps.find((s) => s.stepKey === stepKey);
++        if (existingStep) {
++          this.store.checkpointStep(runId, ownerId, stepKey, {
++            status: "pending",
++            checkpoint: {
++              ...existingStep.checkpoint,
++              reverifyRequestedAt: new Date().toISOString()
++            }
++          });
++        }
++      }
++      const synthStep = run.steps.find((s) => s.stepKind === "synthesize");
++      if (synthStep) {
++        this.store.checkpointStep(runId, ownerId, synthStep.stepKey, {
++          status: "pending"
++        });
++      }
++    } else if (run.status === "completed") {
++      return run;
++    }
++
++    return await this.executeFromLastCheckpoint(runId, ownerId);
++  }
++
++  public exportReport(
++    runId: string,
++    ownerId: string
++  ): {
++    runId: string;
++    query: string;
++    status: string;
++    reportMarkdown: string;
++    confirmedClaims: ResearchRunView["confirmedClaims"];
++    conflictingClaims: ResearchRunView["conflictingClaims"];
++    unconfirmedClaims: ResearchRunView["unconfirmedClaims"];
++    sources: Array<{
++      sourceId: string;
++      title: string;
++      originalUrl: string;
++      canonicalUrl: string;
++      fetchedAt: string;
++      pageVersion: string;
++      previousPageVersion: string | null;
++      pageChanged: boolean;
++    }>;
++  } {
++    const run = this.store.getRunForOwner(runId, ownerId);
++    if (!run.reportMarkdown) {
++      throw new Error("RESEARCH_REPORT_NOT_READY");
++    }
++    return {
++      runId: run.id,
++      query: run.query,
++      status: run.status,
++      reportMarkdown: run.reportMarkdown,
++      confirmedClaims: run.confirmedClaims,
++      conflictingClaims: run.conflictingClaims,
++      unconfirmedClaims: run.unconfirmedClaims,
++      sources: run.sources.map((s) => ({
++        sourceId: s.sourceId,
++        title: s.title,
++        originalUrl: s.originalUrl,
++        canonicalUrl: s.canonicalUrl,
++        fetchedAt: s.fetchedAt,
++        pageVersion: s.pageVersion,
++        previousPageVersion: s.previousPageVersion,
++        pageChanged: s.pageChanged
++      }))
++    };
++  }
++
++  public async waitForActiveRun(runId: string): Promise<void> {
++    const p = this.activePromises.get(runId);
++    if (p) {
++      await p;
++    }
++  }
++
++  public async stop(): Promise<void> {
++    for (const controller of this.activeControllers.values()) {
++      controller.abort();
++    }
++    await Promise.allSettled(Array.from(this.activePromises.values()));
++    this.activeControllers.clear();
++    this.activePromises.clear();
++  }
++
++  private assertNotEmergencyStopped(): void {
++    if (this.emergency?.getProcessStop?.()) {
++      throw new Error("EMERGENCY_STOP_ACTIVE");
++    }
++  }
++
++  private async executeFromLastCheckpoint(
++    runId: string,
++    ownerId: string
++  ): Promise<ResearchRunView> {
++    const controller = new AbortController();
++    this.activeControllers.set(runId, controller);
++    const startWallMs = this.clock();
++
++    const initialRun = this.store.getRunForOwner(runId, ownerId);
++    const priorElapsedMs = initialRun.budgets.elapsedMs;
++    const maxRuntimeMs = initialRun.budgets.maxRuntimeMs;
++
++    this.store.updateRunStatus(runId, ownerId, {
++      status: "running",
++      errorCode: null,
++      errorMessage: null
++    });
++
++    try {
++      while (true) {
++        if (controller.signal.aborted) {
++          this.store.updateRunStatus(runId, ownerId, {
++            status: "cancelled",
++            elapsedMs: priorElapsedMs + Math.max(0, this.clock() - startWallMs),
++            errorCode: "RESEARCH_CANCELLED_BY_OWNER",
++            errorMessage: "Исследование остановлено пользователем; контрольная точка сохранена."
++          });
++          return this.store.getRunForOwner(runId, ownerId);
++        }
++
++        const currentElapsed = priorElapsedMs + Math.max(0, this.clock() - startWallMs);
++        if (currentElapsed > maxRuntimeMs) {
++          this.store.updateRunStatus(runId, ownerId, {
++            status: "failed",
++            elapsedMs: currentElapsed,
++            errorCode: "RESEARCH_RUNTIME_BUDGET_EXCEEDED",
++            errorMessage: `Превышен лимит времени исследования (${maxRuntimeMs} мс).`
++          });
++          return this.store.getRunForOwner(runId, ownerId);
++        }
++
++        const steps = this.store.listSteps(runId);
++        // Find the next unfinished step (`pending`, `failed`, or `cancelled`)
++        const nextStep = steps.find(
++          (s) =>
++            s.status === "pending" ||
++            s.status === "failed" ||
++            s.status === "cancelled"
++        );
++
++        if (!nextStep) {
++          break;
++        }
++
++        this.store.checkpointStep(runId, ownerId, nextStep.stepKey, {
++          status: "running",
++          incrementAttempts: true
++        });
++
++        try {
++          if (nextStep.stepKind === "search") {
++            const currentRun = this.store.getRunForOwner(runId, ownerId);
++            const candidates = await this.browserAdapter.searchSources(
++              currentRun.query,
++              {
++                maxResults: currentRun.budgets.maxSources,
++                signal: controller.signal
++              }
++            );
++
++            this.store.registerDiscoveredSourceSteps(
++              runId,
++              ownerId,
++              candidates.map((c) => ({ url: c.originalUrl, depth: c.depth }))
++            );
++
++            // Store initialExpectedVersion on each discovered read_source step
++            for (const c of candidates) {
++              const stepKey = `read_source:${c.canonicalUrl}`;
++              const hasStep = this.store
++                .listSteps(runId)
++                .find((s) => s.stepKey === stepKey);
++              if (hasStep && c.initialExpectedVersion) {
++                this.store.checkpointStep(runId, ownerId, stepKey, {
++                  status: hasStep.status,
++                  checkpoint: {
++                    initialExpectedVersion: c.initialExpectedVersion,
++                    discoveredAt: new Date().toISOString()
++                  }
++                });
++              }
++            }
++
++            this.store.checkpointStep(runId, ownerId, nextStep.stepKey, {
++              status: "completed",
++              checkpoint: {
++                discoveredCount: candidates.length,
++                completedAt: new Date().toISOString()
++              }
++            });
++          } else if (nextStep.stepKind === "read_source") {
++            const targetUrl = nextStep.targetUrl!;
++            const initialExpectedVersion =
++              typeof nextStep.checkpoint.initialExpectedVersion === "string"
++                ? nextStep.checkpoint.initialExpectedVersion
++                : null;
++
++            const snap = await this.browserAdapter.readSourcePage(targetUrl, {
++              depth: nextStep.depth,
++              signal: controller.signal
++            });
++
++            if (controller.signal.aborted) {
++              this.store.checkpointStep(runId, ownerId, nextStep.stepKey, {
++                status: "cancelled",
++                errorCode: "RESEARCH_CANCELLED_BY_OWNER"
++              });
++              this.store.updateRunStatus(runId, ownerId, {
++                status: "cancelled",
++                elapsedMs: priorElapsedMs + Math.max(0, this.clock() - startWallMs),
++                errorCode: "RESEARCH_CANCELLED_BY_OWNER",
++                errorMessage: "Исследование остановлено во время чтения источника."
++              });
++              return this.store.getRunForOwner(runId, ownerId);
++            }
++
++            const savedSource = this.store.upsertSourceSnapshot(runId, ownerId, {
++              originalUrl: snap.originalUrl,
++              title: snap.title,
++              fetchedAt: snap.fetchedAt,
++              publishedAt: snap.publishedAt,
++              pageVersion: snap.pageVersion,
++              initialExpectedVersion,
++              contentText: snap.contentText,
++              depth: snap.depth,
++              httpStatus: snap.httpStatus,
++              extractedClaims: snap.extractedClaims
++            });
++
++            this.store.updateRunStatus(runId, ownerId, {
++              depthReached: snap.depth,
++              elapsedMs: priorElapsedMs + Math.max(0, this.clock() - startWallMs)
++            });
++
++            // Discover outlinks within depth & source budgets
++            if (snap.outlinks && snap.outlinks.length > 0) {
++              this.store.registerDiscoveredSourceSteps(runId, ownerId, snap.outlinks);
++            }
++
++            this.store.checkpointStep(runId, ownerId, nextStep.stepKey, {
++              status: "completed",
++              checkpoint: {
++                sourceId: savedSource.sourceId,
++                canonicalUrl: savedSource.canonicalUrl,
++                pageVersion: savedSource.pageVersion,
++                previousPageVersion: savedSource.previousPageVersion,
++                pageChanged: savedSource.pageChanged,
++                fetchedAt: savedSource.fetchedAt
++              }
++            });
++          } else if (nextStep.stepKind === "synthesize") {
++            const sources = this.store.listSources(runId);
++            const expectedTargets = this.store.getExpectedTargets(runId, ownerId);
++            const synthesized = synthesizeResearchClaims({
++              runId,
++              expectedTargets,
++              sources
++            });
++
++            this.store.checkpointStep(runId, ownerId, nextStep.stepKey, {
++              status: "completed",
++              checkpoint: {
++                confirmedCount: synthesized.confirmedClaims.length,
++                conflictingCount: synthesized.conflictingClaims.length,
++                unconfirmedCount: synthesized.unconfirmedClaims.length,
++                synthesizedAt: new Date().toISOString()
++              }
++            });
++
++            this.store.updateRunStatus(runId, ownerId, {
++              elapsedMs: priorElapsedMs + Math.max(0, this.clock() - startWallMs)
++            });
++
++            this.store.saveSynthesizedClaimsAndReport(
++              runId,
++              ownerId,
++              synthesized.allClaims,
++              "completed"
++            );
++          }
++        } catch (stepErr) {
++          const message = stepErr instanceof Error ? stepErr.message : String(stepErr);
++          if (controller.signal.aborted || message === "RESEARCH_CANCELLED") {
++            this.store.checkpointStep(runId, ownerId, nextStep.stepKey, {
++              status: "cancelled",
++              errorCode: "RESEARCH_CANCELLED_BY_OWNER"
++            });
++            this.store.updateRunStatus(runId, ownerId, {
++              status: "cancelled",
++              elapsedMs: priorElapsedMs + Math.max(0, this.clock() - startWallMs),
++              errorCode: "RESEARCH_CANCELLED_BY_OWNER",
++              errorMessage: "Исследование остановлено пользователем во время выполнения шага."
++            });
++            return this.store.getRunForOwner(runId, ownerId);
++          }
++
++          this.store.checkpointStep(runId, ownerId, nextStep.stepKey, {
++            status: "failed",
++            errorCode: message
++          });
++          this.store.updateRunStatus(runId, ownerId, {
++            status: "failed",
++            elapsedMs: priorElapsedMs + Math.max(0, this.clock() - startWallMs),
++            errorCode: message,
++            errorMessage: `Сбой на шаге ${nextStep.stepKey}: ${message}`
++          });
++          return this.store.getRunForOwner(runId, ownerId);
++        }
++      }
++
++      return this.store.getRunForOwner(runId, ownerId);
++    } finally {
++      this.activeControllers.delete(runId);
++      this.activePromises.delete(runId);
++    }
++  }
++}
+diff --git a/apps/api/src/research/research-store.ts b/apps/api/src/research/research-store.ts
+new file mode 100644
+index 0000000..bcc4082
+--- /dev/null
++++ b/apps/api/src/research/research-store.ts
+@@ -0,0 +1,1050 @@
++import { randomUUID } from "node:crypto";
++import type { DatabaseSync } from "node:sqlite";
++import {
++  type CandidateClaimExtraction,
++  type SynthesizedResearchClaim,
++  renderDeterministicResearchReportMarkdown,
++  sha256Hex
++} from "./research-synthesis.js";
++
++export type ResearchRunStatus =
++  | "queued"
++  | "running"
++  | "paused"
++  | "cancelled"
++  | "failed"
++  | "completed";
++
++export type ResearchStepKind = "search" | "read_source" | "synthesize";
++export type ResearchStepStatus =
++  | "pending"
++  | "running"
++  | "completed"
++  | "failed"
++  | "skipped"
++  | "cancelled";
++
++export interface ResearchStepRecord {
++  runId: string;
++  stepIndex: number;
++  stepKey: string;
++  stepKind: ResearchStepKind;
++  targetUrl: string | null;
++  depth: number;
++  status: ResearchStepStatus;
++  attempts: number;
++  checkpoint: Record<string, unknown>;
++  errorCode: string | null;
++  updatedAt: string;
++}
++
++export interface StoredResearchSource {
++  sourceId: string;
++  runId: string;
++  ownerId: string;
++  originalUrl: string;
++  canonicalUrl: string;
++  title: string;
++  domain: string;
++  fetchedAt: string;
++  publishedAt: string | null;
++  pageVersion: string;
++  previousPageVersion: string | null;
++  pageChanged: boolean;
++  contentSha256: string;
++  contentText: string;
++  depth: number;
++  httpStatus: number;
++  extractedClaims: CandidateClaimExtraction[];
++}
++
++export interface ResearchRunView {
++  id: string;
++  ownerId: string;
++  projectId: string | null;
++  query: string;
++  normalizedQuery: string;
++  clientRequestId: string | null;
++  status: ResearchRunStatus;
++  progress: {
++    currentStepIndex: number;
++    totalSteps: number;
++    completedSteps: number;
++    pendingSteps: number;
++    failedSteps: number;
++    percent: number;
++  };
++  budgets: {
++    maxDepth: number;
++    maxSources: number;
++    maxRuntimeMs: number;
++    elapsedMs: number;
++    depthReached: number;
++    sourcesRead: number;
++  };
++  steps: ResearchStepRecord[];
++  sources: StoredResearchSource[];
++  confirmedClaims: SynthesizedResearchClaim[];
++  conflictingClaims: SynthesizedResearchClaim[];
++  unconfirmedClaims: SynthesizedResearchClaim[];
++  reportMarkdown: string | null;
++  errorCode: string | null;
++  errorMessage: string | null;
++  createdAt: string;
++  updatedAt: string;
++}
++
++export function canonicalizeSourceUrl(rawUrl: string): string {
++  try {
++    const parsed = new URL(rawUrl);
++    const trackingParams = [
++      "utm_source",
++      "utm_medium",
++      "utm_campaign",
++      "utm_term",
++      "utm_content",
++      "fbclid",
++      "gclid",
++      "ref",
++      "_hsenc"
++    ];
++    for (const p of trackingParams) {
++      parsed.searchParams.delete(p);
++    }
++    parsed.hash = "";
++    const sortedParams = Array.from(parsed.searchParams.entries()).sort(([a], [b]) =>
++      a.localeCompare(b)
++    );
++    parsed.search = "";
++    for (const [k, v] of sortedParams) {
++      parsed.searchParams.append(k, v);
++    }
++    const cleanPath = parsed.pathname.replace(/\/+$/, "") || "/";
++    return `${parsed.protocol.toLowerCase()}//${parsed.host.toLowerCase()}${cleanPath}${parsed.search}`;
++  } catch {
++    return String(rawUrl ?? "").trim();
++  }
++}
++
++export function normalizeResearchQuery(query: string): string {
++  return String(query ?? "")
++    .trim()
++    .toLowerCase()
++    .replace(/\s+/g, " ");
++}
++
++/**
++ * Canonical persistent SQLite store imported by `apps/api/src/server.ts` and `apps/api/src/app.ts`:
++ * `const researchStore = new ResearchStore(database.sqlite);`
++ *
++ * Compatible with existing `research_runs` table (`google-drive-restore.ts`) and automatically
++ * provisions additive columns and checkpoint tables (`research_run_steps`, `research_sources`, `research_claims`).
++ */
++export class ResearchStore {
++  constructor(
++    public readonly sqlite: DatabaseSync,
++    private readonly now: () => string = () => new Date().toISOString()
++  ) {
++    this.ensureSchema();
++  }
++
++  private ensureSchema(): void {
++    this.sqlite.exec(`
++      CREATE TABLE IF NOT EXISTS kosmora_owner_data_lifecycle (
++        owner_id TEXT PRIMARY KEY NOT NULL,
++        state TEXT NOT NULL DEFAULT 'active',
++        epoch INTEGER NOT NULL DEFAULT 1,
++        updated_at TEXT NOT NULL DEFAULT ''
++      );
++
++      CREATE TABLE IF NOT EXISTS research_runs (
++        id TEXT PRIMARY KEY NOT NULL,
++        owner_id TEXT NOT NULL,
++        project_id TEXT,
++        query TEXT NOT NULL,
++        status TEXT NOT NULL,
++        report_markdown TEXT,
++        created_at TEXT NOT NULL,
++        updated_at TEXT NOT NULL
++      );
++
++      CREATE TABLE IF NOT EXISTS research_run_steps (
++        run_id TEXT NOT NULL,
++        step_index INTEGER NOT NULL,
++        step_key TEXT NOT NULL,
++        step_kind TEXT NOT NULL,
++        target_url TEXT,
++        depth INTEGER NOT NULL DEFAULT 1,
++        status TEXT NOT NULL,
++        attempts INTEGER NOT NULL DEFAULT 0,
++        checkpoint_json TEXT NOT NULL DEFAULT '{}',
++        error_code TEXT,
++        updated_at TEXT NOT NULL,
++        PRIMARY KEY (run_id, step_index),
++        UNIQUE (run_id, step_key)
++      );
++
++      CREATE TABLE IF NOT EXISTS research_sources (
++        source_id TEXT PRIMARY KEY NOT NULL,
++        run_id TEXT NOT NULL,
++        owner_id TEXT NOT NULL,
++        original_url TEXT NOT NULL,
++        canonical_url TEXT NOT NULL,
++        title TEXT NOT NULL,
++        domain TEXT NOT NULL,
++        fetched_at TEXT NOT NULL,
++        published_at TEXT,
++        page_version TEXT NOT NULL,
++        previous_page_version TEXT,
++        page_changed INTEGER NOT NULL DEFAULT 0,
++        content_sha256 TEXT NOT NULL,
++        content_text TEXT NOT NULL,
++        extracted_claims_json TEXT NOT NULL DEFAULT '[]',
++        depth INTEGER NOT NULL DEFAULT 1,
++        http_status INTEGER NOT NULL DEFAULT 200,
++        UNIQUE (run_id, canonical_url)
++      );
++
++      CREATE TABLE IF NOT EXISTS research_claims (
++        claim_id TEXT PRIMARY KEY NOT NULL,
++        run_id TEXT NOT NULL,
++        owner_id TEXT NOT NULL,
++        subject TEXT NOT NULL,
++        criterion TEXT NOT NULL,
++        category TEXT NOT NULL,
++        resolved_value TEXT NOT NULL,
++        conflict_summary TEXT,
++        unconfirmed_reason TEXT,
++        citations_json TEXT NOT NULL DEFAULT '[]',
++        created_at TEXT NOT NULL,
++        UNIQUE (run_id, subject, criterion)
++      );
++    `);
++
++    const existingCols = new Set(
++      (
++        this.sqlite.prepare("PRAGMA table_info(research_runs)").all() as Array<{ name: string }>
++      ).map((c) => c.name)
++    );
++
++    const additiveCols: Array<[string, string]> = [
++      ["normalized_query", "TEXT NOT NULL DEFAULT ''"],
++      ["client_request_id", "TEXT"],
++      ["current_step_index", "INTEGER NOT NULL DEFAULT 0"],
++      ["total_steps", "INTEGER NOT NULL DEFAULT 0"],
++      ["max_depth", "INTEGER NOT NULL DEFAULT 2"],
++      ["max_sources", "INTEGER NOT NULL DEFAULT 6"],
++      ["max_runtime_ms", "INTEGER NOT NULL DEFAULT 15000"],
++      ["elapsed_ms", "INTEGER NOT NULL DEFAULT 0"],
++      ["depth_reached", "INTEGER NOT NULL DEFAULT 0"],
++      ["expected_targets_json", "TEXT NOT NULL DEFAULT '[]'"],
++      ["error_code", "TEXT"],
++      ["error_message", "TEXT"],
++      ["report_json", "TEXT"]
++    ];
++
++    for (const [colName, colDef] of additiveCols) {
++      if (!existingCols.has(colName)) {
++        this.sqlite.exec(`ALTER TABLE research_runs ADD COLUMN ${colName} ${colDef}`);
++      }
++    }
++  }
++
++  public assertOwnerActive(ownerId: string): void {
++    if (!ownerId || typeof ownerId !== "string") {
++      throw new Error("OWNER_AUTH_REQUIRED");
++    }
++    const row = this.sqlite
++      .prepare("SELECT state FROM kosmora_owner_data_lifecycle WHERE owner_id = ?")
++      .get(ownerId) as { state: string } | undefined;
++    if (row && row.state !== "active") {
++      throw new Error("OWNER_DATA_FENCED");
++    }
++  }
++
++  public assertProjectAccess(ownerId: string, projectId: string | null): void {
++    if (!projectId) return;
++    const tableRow = this.sqlite
++      .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'projects'")
++      .get() as { name: string } | undefined;
++    if (!tableRow) return;
++
++    const projRow = this.sqlite
++      .prepare("SELECT owner_id FROM projects WHERE id = ?")
++      .get(projectId) as { owner_id: string } | undefined;
++    if (!projRow) {
++      throw new Error("RESEARCH_PROJECT_NOT_FOUND");
++    }
++    if (projRow.owner_id !== ownerId) {
++      throw new Error("RESEARCH_PROJECT_FORBIDDEN");
++    }
++  }
++
++  /**
++   * Finds an existing run for idempotent retries:
++   * 1. Exact `(ownerId, projectId, clientRequestId)` match
++   * 2. Or an already-active/completed run with the same `(ownerId, projectId, normalizedQuery)` when `deduplicateQuery !== false`.
++   */
++  public findIdempotentRun(params: {
++    ownerId: string;
++    projectId: string | null;
++    query: string;
++    clientRequestId?: string | null;
++    deduplicateQuery?: boolean;
++  }): ResearchRunView | null {
++    const { ownerId, projectId } = params;
++    this.assertOwnerActive(ownerId);
++
++    if (params.clientRequestId) {
++      const byReq = this.sqlite
++        .prepare(
++          `SELECT id FROM research_runs
++           WHERE owner_id = ? AND IFNULL(project_id, '') = IFNULL(?, '') AND client_request_id = ?
++           LIMIT 1`
++        )
++        .get(ownerId, projectId, params.clientRequestId) as { id: string } | undefined;
++      if (byReq) {
++        return this.getRunForOwner(byReq.id, ownerId);
++      }
++    }
++
++    if (params.deduplicateQuery !== false) {
++      const norm = normalizeResearchQuery(params.query);
++      const byQuery = this.sqlite
++        .prepare(
++          `SELECT id FROM research_runs
++           WHERE owner_id = ? AND IFNULL(project_id, '') = IFNULL(?, '')
++             AND normalized_query = ?
++             AND status IN ('running', 'completed')
++           ORDER BY created_at DESC LIMIT 1`
++        )
++        .get(ownerId, projectId, norm) as { id: string } | undefined;
++      if (byQuery) {
++        return this.getRunForOwner(byQuery.id, ownerId);
++      }
++    }
++
++    return null;
++  }
++
++  public createRunWithSteps(input: {
++    ownerId: string;
++    projectId: string | null;
++    query: string;
++    clientRequestId?: string | null;
++    maxDepth: number;
++    maxSources: number;
++    maxRuntimeMs: number;
++    expectedTargets: Array<{ subject: string; criterion: string }>;
++    steps: Array<{
++      stepKey: string;
++      stepKind: ResearchStepKind;
++      targetUrl?: string | null;
++      depth?: number;
++    }>;
++  }): ResearchRunView {
++    this.assertOwnerActive(input.ownerId);
++    this.assertProjectAccess(input.ownerId, input.projectId);
++
++    const existing = this.findIdempotentRun({
++      ownerId: input.ownerId,
++      projectId: input.projectId,
++      query: input.query,
++      clientRequestId: input.clientRequestId,
++      deduplicateQuery: true
++    });
++    if (existing) {
++      return existing;
++    }
++
++    const runId = `res_run_${randomUUID()}`;
++    const ts = this.now();
++    const normQuery = normalizeResearchQuery(input.query);
++
++    this.sqlite.exec("BEGIN IMMEDIATE");
++    try {
++      this.sqlite
++        .prepare(
++          `INSERT INTO research_runs (
++            id, owner_id, project_id, query, normalized_query, client_request_id,
++            status, current_step_index, total_steps, max_depth, max_sources, max_runtime_ms,
++            elapsed_ms, depth_reached, expected_targets_json, created_at, updated_at
++          ) VALUES (?, ?, ?, ?, ?, ?, 'queued', 0, ?, ?, ?, ?, 0, 0, ?, ?, ?)`
++        )
++        .run(
++          runId,
++          input.ownerId,
++          input.projectId,
++          input.query,
++          normQuery,
++          input.clientRequestId ?? null,
++          input.steps.length,
++          input.maxDepth,
++          input.maxSources,
++          input.maxRuntimeMs,
++          JSON.stringify(input.expectedTargets ?? []),
++          ts,
++          ts
++        );
++
++      const insertStep = this.sqlite.prepare(
++        `INSERT INTO research_run_steps (
++          run_id, step_index, step_key, step_kind, target_url, depth, status, attempts, checkpoint_json, error_code, updated_at
++        ) VALUES (?, ?, ?, ?, ?, ?, 'pending', 0, '{}', NULL, ?)`
++      );
++
++      input.steps.forEach((step, idx) => {
++        insertStep.run(
++          runId,
++          idx,
++          step.stepKey,
++          step.stepKind,
++          step.targetUrl ?? null,
++          step.depth ?? 1,
++          ts
++        );
++      });
++
++      this.sqlite.exec("COMMIT");
++    } catch (err) {
++      try {
++        this.sqlite.exec("ROLLBACK");
++      } catch {
++        /* ignore */
++      }
++      throw err;
++    }
++
++    return this.getRunForOwner(runId, input.ownerId);
++  }
++
++  /**
++   * Appends discovered source-read steps dynamically after search step completes,
++   * deduplicating by canonical URL and respecting `maxSources` and `maxDepth`.
++   */
++  public registerDiscoveredSourceSteps(
++    runId: string,
++    ownerId: string,
++    candidates: Array<{ url: string; depth: number }>
++  ): ResearchStepRecord[] {
++    const run = this.requireRunRow(runId, ownerId);
++    const existingSteps = this.listSteps(runId);
++    const seenCanonicalUrls = new Set<string>();
++
++    for (const s of existingSteps) {
++      if (s.targetUrl) {
++        seenCanonicalUrls.add(canonicalizeSourceUrl(s.targetUrl));
++      }
++    }
++
++    const currentReadSteps = existingSteps.filter((s) => s.stepKind === "read_source").length;
++    let remainingBudget = Math.max(0, Number(run.max_sources) - currentReadSteps);
++    const maxDepth = Number(run.max_depth);
++
++    // Shift synthesize step to the end if it exists and is still pending
++    const synthStep = existingSteps.find((s) => s.stepKind === "synthesize");
++    const nonSynthSteps = existingSteps.filter((s) => s.stepKind !== "synthesize");
++    const toInsert: Array<{ stepKey: string; targetUrl: string; depth: number }> = [];
++
++    for (const cand of candidates) {
++      if (remainingBudget <= 0) break;
++      if (cand.depth > maxDepth) continue;
++      const canonical = canonicalizeSourceUrl(cand.url);
++      if (!canonical || seenCanonicalUrls.has(canonical)) continue;
++      seenCanonicalUrls.add(canonical);
++      remainingBudget -= 1;
++      toInsert.push({
++        stepKey: `read_source:${canonical}`,
++        targetUrl: cand.url,
++        depth: cand.depth
++      });
++    }
++
++    if (toInsert.length === 0) {
++      return this.listSteps(runId);
++    }
++
++    const ts = this.now();
++    this.sqlite.exec("BEGIN IMMEDIATE");
++    try {
++      if (synthStep) {
++        this.sqlite
++          .prepare("DELETE FROM research_run_steps WHERE run_id = ? AND step_key = ?")
++          .run(runId, synthStep.stepKey);
++      }
++
++      let nextIndex = nonSynthSteps.length;
++      const insertStmt = this.sqlite.prepare(
++        `INSERT INTO research_run_steps (
++          run_id, step_index, step_key, step_kind, target_url, depth, status, attempts, checkpoint_json, error_code, updated_at
++        ) VALUES (?, ?, ?, ?, ?, ?, 'pending', 0, '{}', NULL, ?)`
++      );
++
++      for (const item of toInsert) {
++        insertStmt.run(
++          runId,
++          nextIndex++,
++          item.stepKey,
++          "read_source",
++          item.targetUrl,
++          item.depth,
++          ts
++        );
++      }
++
++      if (synthStep) {
++        insertStmt.run(
++          runId,
++          nextIndex++,
++          synthStep.stepKey,
++          "synthesize",
++          null,
++          1,
++          ts
++        );
++      }
++
++      this.sqlite
++        .prepare("UPDATE research_runs SET total_steps = ?, updated_at = ? WHERE id = ?")
++        .run(nextIndex, ts, runId);
++
++      this.sqlite.exec("COMMIT");
++    } catch (err) {
++      try {
++        this.sqlite.exec("ROLLBACK");
++      } catch {
++        /* ignore */
++      }
++      throw err;
++    }
++
++    return this.listSteps(runId);
++  }
++
++  public updateRunStatus(
++    runId: string,
++    ownerId: string,
++    patch: {
++      status?: ResearchRunStatus;
++      currentStepIndex?: number;
++      elapsedMs?: number;
++      depthReached?: number;
++      errorCode?: string | null;
++      errorMessage?: string | null;
++    }
++  ): void {
++    const run = this.requireRunRow(runId, ownerId);
++    const ts = this.now();
++    this.sqlite
++      .prepare(
++        `UPDATE research_runs
++         SET status = ?,
++             current_step_index = ?,
++             elapsed_ms = ?,
++             depth_reached = ?,
++             error_code = ?,
++             error_message = ?,
++             updated_at = ?
++         WHERE id = ? AND owner_id = ?`
++      )
++      .run(
++        patch.status ?? run.status,
++        patch.currentStepIndex ?? run.current_step_index,
++        patch.elapsedMs ?? run.elapsed_ms,
++        Math.max(Number(run.depth_reached || 0), Number(patch.depthReached || 0)),
++        patch.errorCode !== undefined ? patch.errorCode : run.error_code,
++        patch.errorMessage !== undefined ? patch.errorMessage : run.error_message,
++        ts,
++        runId,
++        ownerId
++      );
++  }
++
++  public checkpointStep(
++    runId: string,
++    ownerId: string,
++    stepKey: string,
++    patch: {
++      status: ResearchStepStatus;
++      incrementAttempts?: boolean;
++      checkpoint?: Record<string, unknown>;
++      errorCode?: string | null;
++    }
++  ): ResearchStepRecord {
++    this.requireRunRow(runId, ownerId);
++    const existing = this.sqlite
++      .prepare("SELECT * FROM research_run_steps WHERE run_id = ? AND step_key = ?")
++      .get(runId, stepKey) as Record<string, unknown> | undefined;
++    if (!existing) {
++      throw new Error(`RESEARCH_STEP_NOT_FOUND:${stepKey}`);
++    }
++
++    const attempts = Number(existing.attempts || 0) + (patch.incrementAttempts ? 1 : 0);
++    const prevCheckpoint = (() => {
++      try {
++        return JSON.parse(String(existing.checkpoint_json || "{}")) as Record<string, unknown>;
++      } catch {
++        return {};
++      }
++    })();
++    const mergedCheckpoint = patch.checkpoint
++      ? { ...prevCheckpoint, ...patch.checkpoint }
++      : prevCheckpoint;
++    const ts = this.now();
++
++    this.sqlite
++      .prepare(
++        `UPDATE research_run_steps
++         SET status = ?, attempts = ?, checkpoint_json = ?, error_code = ?, updated_at = ?
++         WHERE run_id = ? AND step_key = ?`
++      )
++      .run(
++        patch.status,
++        attempts,
++        JSON.stringify(mergedCheckpoint),
++        patch.errorCode ?? null,
++        ts,
++        runId,
++        stepKey
++      );
++
++    this.sqlite
++      .prepare(
++        `UPDATE research_runs
++         SET current_step_index = ?, updated_at = ?
++         WHERE id = ?`
++      )
++      .run(Number(existing.step_index), ts, runId);
++
++    return this.listSteps(runId).find((s) => s.stepKey === stepKey)!;
++  }
++
++  /**
++   * Upserts a source snapshot deduplicated by `(runId, canonicalUrl)`.
++   * If the page already existed with a different `pageVersion` or `contentSha256`,
++   * records `previousPageVersion` and sets `pageChanged = true`.
++   */
++  public upsertSourceSnapshot(
++    runId: string,
++    ownerId: string,
++    input: {
++      originalUrl: string;
++      title: string;
++      fetchedAt?: string;
++      publishedAt?: string | null;
++      pageVersion?: string;
++      initialExpectedVersion?: string | null;
++      contentText: string;
++      depth?: number;
++      httpStatus?: number;
++      extractedClaims?: CandidateClaimExtraction[];
++    }
++  ): StoredResearchSource {
++    this.requireRunRow(runId, ownerId);
++    const canonicalUrl = canonicalizeSourceUrl(input.originalUrl);
++    const contentSha256 = sha256Hex(input.contentText);
++    const computedVersion = input.pageVersion || `pv-${contentSha256.slice(0, 12)}`;
++    const fetchedAt = input.fetchedAt || this.now();
++    const domain = (() => {
++      try {
++        return new URL(canonicalUrl).hostname.toLowerCase();
++      } catch {
++        return "local.fixture";
++      }
++    })();
++
++    const existing = this.sqlite
++      .prepare(
++        "SELECT * FROM research_sources WHERE run_id = ? AND canonical_url = ? LIMIT 1"
++      )
++      .get(runId, canonicalUrl) as Record<string, unknown> | undefined;
++
++    if (!existing) {
++      const sourceId = `src_${randomUUID().slice(0, 12)}`;
++      const changedFromInitial =
++        Boolean(input.initialExpectedVersion) &&
++        input.initialExpectedVersion !== computedVersion;
++      const previousPageVersion = changedFromInitial
++        ? String(input.initialExpectedVersion)
++        : null;
++
++      this.sqlite
++        .prepare(
++          `INSERT INTO research_sources (
++            source_id, run_id, owner_id, original_url, canonical_url, title, domain,
++            fetched_at, published_at, page_version, previous_page_version, page_changed,
++            content_sha256, content_text, extracted_claims_json, depth, http_status
++          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
++        )
++        .run(
++          sourceId,
++          runId,
++          ownerId,
++          input.originalUrl,
++          canonicalUrl,
++          input.title,
++          domain,
++          fetchedAt,
++          input.publishedAt ?? null,
++          computedVersion,
++          previousPageVersion,
++          changedFromInitial ? 1 : 0,
++          contentSha256,
++          input.contentText,
++          JSON.stringify(input.extractedClaims ?? []),
++          input.depth ?? 1,
++          input.httpStatus ?? 200
++        );
++    } else {
++      const oldVersion = String(existing.page_version);
++      const oldSha = String(existing.content_sha256);
++      const versionChanged = oldVersion !== computedVersion || oldSha !== contentSha256;
++      const prevVersion = versionChanged
++        ? oldVersion
++        : existing.previous_page_version
++          ? String(existing.previous_page_version)
++          : input.initialExpectedVersion && input.initialExpectedVersion !== computedVersion
++            ? String(input.initialExpectedVersion)
++            : null;
++      const pageChanged =
++        versionChanged || Boolean(existing.page_changed) || Boolean(prevVersion);
++
++      this.sqlite
++        .prepare(
++          `UPDATE research_sources
++           SET title = ?,
++               fetched_at = ?,
++               published_at = ?,
++               page_version = ?,
++               previous_page_version = ?,
++               page_changed = ?,
++               content_sha256 = ?,
++               content_text = ?,
++               extracted_claims_json = ?,
++               http_status = ?
++           WHERE run_id = ? AND canonical_url = ?`
++        )
++        .run(
++          input.title,
++          fetchedAt,
++          input.publishedAt ?? (existing.published_at ? String(existing.published_at) : null),
++          computedVersion,
++          prevVersion,
++          pageChanged ? 1 : 0,
++          contentSha256,
++          input.contentText,
++          JSON.stringify(input.extractedClaims ?? []),
++          input.httpStatus ?? 200,
++          runId,
++          canonicalUrl
++        );
++    }
++
++    return this.listSources(runId).find((s) => s.canonicalUrl === canonicalUrl)!;
++  }
++
++  public saveSynthesizedClaimsAndReport(
++    runId: string,
++    ownerId: string,
++    claims: SynthesizedResearchClaim[],
++    status: ResearchRunStatus = "completed"
++  ): ResearchRunView {
++    const runRow = this.requireRunRow(runId, ownerId);
++    const sources = this.listSources(runId);
++    const ts = this.now();
++
++    const confirmedClaims = claims.filter((c) => c.category === "confirmed");
++    const conflictingClaims = claims.filter((c) => c.category === "conflicting");
++    const unconfirmedClaims = claims.filter((c) => c.category === "unconfirmed");
++
++    const reportMarkdown = renderDeterministicResearchReportMarkdown({
++      runId,
++      query: String(runRow.query),
++      status,
++      sources,
++      confirmedClaims,
++      conflictingClaims,
++      unconfirmedClaims
++    });
++
++    const reportJson = JSON.stringify({
++      runId,
++      query: String(runRow.query),
++      status,
++      sources: sources.map((s) => ({
++        sourceId: s.sourceId,
++        title: s.title,
++        originalUrl: s.originalUrl,
++        canonicalUrl: s.canonicalUrl,
++        fetchedAt: s.fetchedAt,
++        pageVersion: s.pageVersion,
++        previousPageVersion: s.previousPageVersion,
++        pageChanged: s.pageChanged
++      })),
++      confirmedClaims,
++      conflictingClaims,
++      unconfirmedClaims,
++      reportMarkdown
++    });
++
++    this.sqlite.exec("BEGIN IMMEDIATE");
++    try {
++      this.sqlite.prepare("DELETE FROM research_claims WHERE run_id = ?").run(runId);
++      const insertClaim = this.sqlite.prepare(
++        `INSERT INTO research_claims (
++          claim_id, run_id, owner_id, subject, criterion, category,
++          resolved_value, conflict_summary, unconfirmed_reason, citations_json, created_at
++        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
++      );
++
++      for (const c of claims) {
++        insertClaim.run(
++          c.claimId,
++          runId,
++          ownerId,
++          c.subject,
++          c.criterion,
++          c.category,
++          c.resolvedValue,
++          c.conflictSummary,
++          c.unconfirmedReason,
++          JSON.stringify(c.citations),
++          ts
++        );
++      }
++
++      this.sqlite
++        .prepare(
++          `UPDATE research_runs
++           SET status = ?, report_markdown = ?, report_json = ?, error_code = NULL, error_message = NULL, updated_at = ?
++           WHERE id = ? AND owner_id = ?`
++        )
++        .run(status, reportMarkdown, reportJson, ts, runId, ownerId);
++
++      this.sqlite.exec("COMMIT");
++    } catch (err) {
++      try {
++        this.sqlite.exec("ROLLBACK");
++      } catch {
++        /* ignore */
++      }
++      throw err;
++    }
++
++    return this.getRunForOwner(runId, ownerId);
++  }
++
++  public getExpectedTargets(runId: string, ownerId: string): Array<{ subject: string; criterion: string }> {
++    const row = this.requireRunRow(runId, ownerId);
++    try {
++      return JSON.parse(String(row.expected_targets_json || "[]")) as Array<{
++        subject: string;
++        criterion: string;
++      }>;
++    } catch {
++      return [];
++    }
++  }
++
++  public getRunForOwner(runId: string, ownerId: string): ResearchRunView {
++    this.assertOwnerActive(ownerId);
++    const row = this.requireRunRow(runId, ownerId);
++    if (row.project_id) {
++      this.assertProjectAccess(ownerId, String(row.project_id));
++    }
++    return this.hydrateRunView(row);
++  }
++
++  public listRunsForOwner(ownerId: string, projectId?: string | null): ResearchRunView[] {
++    this.assertOwnerActive(ownerId);
++    if (projectId) {
++      this.assertProjectAccess(ownerId, projectId);
++    }
++
++    const rows = projectId
++      ? (this.sqlite
++          .prepare(
++            "SELECT * FROM research_runs WHERE owner_id = ? AND project_id = ? ORDER BY created_at DESC"
++          )
++          .all(ownerId, projectId) as Array<Record<string, unknown>>)
++      : (this.sqlite
++          .prepare("SELECT * FROM research_runs WHERE owner_id = ? ORDER BY created_at DESC")
++          .all(ownerId) as Array<Record<string, unknown>>);
++
++    return rows.map((r) => this.hydrateRunView(r));
++  }
++
++  /**
++   * Marks any runs left in `'running'` state after a sudden process crash as `'failed'`
++   * with `INTERRUPTED_BY_RESTART`, preserving all completed step checkpoints so `resumeRun`
++   * only executes the remaining unfinished steps.
++   */
++  public recoverInterruptedRuns(): number {
++    const ts = this.now();
++    const res = this.sqlite
++      .prepare(
++        `UPDATE research_runs
++         SET status = 'failed',
++             error_code = 'INTERRUPTED_BY_RESTART',
++             error_message = 'Запуск был прерван перезапуском приложения; доступно продолжение с последнего завершённого шага.',
++             updated_at = ?
++         WHERE status = 'running'`
++      )
++      .run(ts);
++
++    this.sqlite
++      .prepare(
++        `UPDATE research_run_steps
++         SET status = 'pending', updated_at = ?
++         WHERE status = 'running'`
++      )
++      .run(ts);
++
++    return Number(res.changes || 0);
++  }
++
++  public listSteps(runId: string): ResearchStepRecord[] {
++    const rows = this.sqlite
++      .prepare("SELECT * FROM research_run_steps WHERE run_id = ? ORDER BY step_index ASC")
++      .all(runId) as Array<Record<string, unknown>>;
++
++    return rows.map((r) => ({
++      runId: String(r.run_id),
++      stepIndex: Number(r.step_index),
++      stepKey: String(r.step_key),
++      stepKind: String(r.step_kind) as ResearchStepKind,
++      targetUrl: r.target_url ? String(r.target_url) : null,
++      depth: Number(r.depth ?? 1),
++      status: String(r.status) as ResearchStepStatus,
++      attempts: Number(r.attempts ?? 0),
++      checkpoint: (() => {
++        try {
++          return JSON.parse(String(r.checkpoint_json || "{}")) as Record<string, unknown>;
++        } catch {
++          return {};
++        }
++      })(),
++      errorCode: r.error_code ? String(r.error_code) : null,
++      updatedAt: String(r.updated_at)
++    }));
++  }
++
++  public listSources(runId: string): StoredResearchSource[] {
++    const rows = this.sqlite
++      .prepare("SELECT * FROM research_sources WHERE run_id = ? ORDER BY fetched_at ASC, source_id ASC")
++      .all(runId) as Array<Record<string, unknown>>;
++
++    return rows.map((r) => ({
++      sourceId: String(r.source_id),
++      runId: String(r.run_id),
++      ownerId: String(r.owner_id),
++      originalUrl: String(r.original_url),
++      canonicalUrl: String(r.canonical_url),
++      title: String(r.title),
++      domain: String(r.domain),
++      fetchedAt: String(r.fetched_at),
++      publishedAt: r.published_at ? String(r.published_at) : null,
++      pageVersion: String(r.page_version),
++      previousPageVersion: r.previous_page_version ? String(r.previous_page_version) : null,
++      pageChanged: Boolean(r.page_changed),
++      contentSha256: String(r.content_sha256),
++      contentText: String(r.content_text),
++      depth: Number(r.depth ?? 1),
++      httpStatus: Number(r.http_status ?? 200),
++      extractedClaims: (() => {
++        try {
++          return JSON.parse(String(r.extracted_claims_json || "[]")) as CandidateClaimExtraction[];
++        } catch {
++          return [];
++        }
++      })()
++    }));
++  }
++
++  public listClaims(runId: string): SynthesizedResearchClaim[] {
++    const rows = this.sqlite
++      .prepare("SELECT * FROM research_claims WHERE run_id = ? ORDER BY claim_id ASC")
++      .all(runId) as Array<Record<string, unknown>>;
++
++    return rows.map((r) => ({
++      claimId: String(r.claim_id),
++      subject: String(r.subject),
++      criterion: String(r.criterion),
++      category: String(r.category) as SynthesizedResearchClaim["category"],
++      resolvedValue: String(r.resolved_value),
++      conflictSummary: r.conflict_summary ? String(r.conflict_summary) : null,
++      unconfirmedReason: r.unconfirmed_reason ? String(r.unconfirmed_reason) : null,
++      citations: (() => {
++        try {
++          return JSON.parse(String(r.citations_json || "[]"));
++        } catch {
++          return [];
++        }
++      })()
++    }));
++  }
++
++  private requireRunRow(runId: string, ownerId: string): Record<string, unknown> {
++    const row = this.sqlite
++      .prepare("SELECT * FROM research_runs WHERE id = ?")
++      .get(runId) as Record<string, unknown> | undefined;
++    if (!row) {
++      throw new Error("RESEARCH_RUN_NOT_FOUND");
++    }
++    if (String(row.owner_id) !== ownerId) {
++      throw new Error("RESEARCH_RUN_FORBIDDEN");
++    }
++    return row;
++  }
++
++  private hydrateRunView(row: Record<string, unknown>): ResearchRunView {
++    const runId = String(row.id);
++    const steps = this.listSteps(runId);
++    const sources = this.listSources(runId);
++    const claims = this.listClaims(runId);
++
++    const completedSteps = steps.filter((s) => s.status === "completed").length;
++    const pendingSteps = steps.filter(
++      (s) => s.status === "pending" || s.status === "running" || s.status === "cancelled"
++    ).length;
++    const failedSteps = steps.filter((s) => s.status === "failed").length;
++    const totalSteps = Math.max(steps.length, Number(row.total_steps || 0));
++    const percent = totalSteps > 0 ? Math.round((completedSteps / totalSteps) * 100) : 0;
++
++    return {
++      id: runId,
++      ownerId: String(row.owner_id),
++      projectId: row.project_id ? String(row.project_id) : null,
++      query: String(row.query),
++      normalizedQuery: String(row.normalized_query || normalizeResearchQuery(String(row.query))),
++      clientRequestId: row.client_request_id ? String(row.client_request_id) : null,
++      status: String(row.status) as ResearchRunStatus,
++      progress: {
++        currentStepIndex: Number(row.current_step_index || 0),
++        totalSteps,
++        completedSteps,
++        pendingSteps,
++        failedSteps,
++        percent
++      },
++      budgets: {
++        maxDepth: Number(row.max_depth ?? 2),
++        maxSources: Number(row.max_sources ?? 6),
++        maxRuntimeMs: Number(row.max_runtime_ms ?? 15000),
++        elapsedMs: Number(row.elapsed_ms ?? 0),
++        depthReached: Number(row.depth_reached ?? 0),
++        sourcesRead: sources.length
++      },
++      steps,
++      sources,
++      confirmedClaims: claims.filter((c) => c.category === "confirmed"),
++      conflictingClaims: claims.filter((c) => c.category === "conflicting"),
++      unconfirmedClaims: claims.filter((c) => c.category === "unconfirmed"),
++      reportMarkdown: row.report_markdown ? String(row.report_markdown) : null,
++      errorCode: row.error_code ? String(row.error_code) : null,
++      errorMessage: row.error_message ? String(row.error_message) : null,
++      createdAt: String(row.created_at),
++      updatedAt: String(row.updated_at)
++    };
++  }
++}
+diff --git a/apps/api/src/research/research-synthesis.ts b/apps/api/src/research/research-synthesis.ts
+new file mode 100644
+index 0000000..ef79a2a
+--- /dev/null
++++ b/apps/api/src/research/research-synthesis.ts
+@@ -0,0 +1,458 @@
++import { createHash } from "node:crypto";
++import type { DatabaseSync } from "node:sqlite";
++
++export interface ResearchBudgetLimits {
++  maxDepth: number;
++  maxSources: number;
++  maxRuntimeMs: number;
++}
++
++export interface ResearchOwnerBudget {
++  resolveLimits(
++    ownerId: string,
++    projectId: string | null,
++    requested?: Partial<ResearchBudgetLimits>
++  ): ResearchBudgetLimits;
++  checkCanStartRun(ownerId: string, projectId: string | null): void;
++}
++
++export const DEFAULT_RESEARCH_BUDGET: ResearchBudgetLimits = {
++  maxDepth: 2,
++  maxSources: 6,
++  maxRuntimeMs: 15_000
++};
++
++export const HARD_MAX_RESEARCH_BUDGET: ResearchBudgetLimits = {
++  maxDepth: 4,
++  maxSources: 12,
++  maxRuntimeMs: 60_000
++};
++
++/**
++ * Canonical owner & project budget enforcer imported by `apps/api/src/server.ts`:
++ * `new ProjectResearchOwnerBudget(database.sqlite, projectStore, accountStore)`
++ */
++export class ProjectResearchOwnerBudget implements ResearchOwnerBudget {
++  constructor(
++    private readonly sqlite: DatabaseSync,
++    private readonly projectStore?: { getProject?(id: string, ownerId?: string): unknown } | null,
++    private readonly accountStore?: { checkQuota?(ownerId: string): boolean } | null,
++    private readonly defaults: ResearchBudgetLimits = DEFAULT_RESEARCH_BUDGET
++  ) {}
++
++  resolveLimits(
++    _ownerId: string,
++    _projectId: string | null,
++    requested?: Partial<ResearchBudgetLimits>
++  ): ResearchBudgetLimits {
++    const rawDepth = requested?.maxDepth ?? this.defaults.maxDepth;
++    const rawSources = requested?.maxSources ?? this.defaults.maxSources;
++    const rawRuntime = requested?.maxRuntimeMs ?? this.defaults.maxRuntimeMs;
++
++    return {
++      maxDepth: Math.max(1, Math.min(Number(rawDepth) || 1, HARD_MAX_RESEARCH_BUDGET.maxDepth)),
++      maxSources: Math.max(1, Math.min(Number(rawSources) || 1, HARD_MAX_RESEARCH_BUDGET.maxSources)),
++      maxRuntimeMs: Math.max(
++        500,
++        Math.min(Number(rawRuntime) || this.defaults.maxRuntimeMs, HARD_MAX_RESEARCH_BUDGET.maxRuntimeMs)
++      )
++    };
++  }
++
++  checkCanStartRun(ownerId: string, projectId: string | null): void {
++    const row = this.sqlite
++      .prepare("SELECT state FROM kosmora_owner_data_lifecycle WHERE owner_id = ?")
++      .get(ownerId) as { state: string } | undefined;
++    if (row && row.state !== "active") {
++      throw new Error("OWNER_DATA_FENCED");
++    }
++
++    if (projectId) {
++      if (this.projectStore && typeof this.projectStore.getProject === "function") {
++        const proj = this.projectStore.getProject(projectId, ownerId);
++        if (!proj) {
++          throw new Error("RESEARCH_PROJECT_FORBIDDEN");
++        }
++      } else {
++        const tableRow = this.sqlite
++          .prepare(
++            "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'projects'"
++          )
++          .get() as { name: string } | undefined;
++        if (tableRow) {
++          const projRow = this.sqlite
++            .prepare("SELECT owner_id FROM projects WHERE id = ?")
++            .get(projectId) as { owner_id: string } | undefined;
++          if (!projRow) {
++            throw new Error("RESEARCH_PROJECT_NOT_FOUND");
++          }
++          if (projRow.owner_id !== ownerId) {
++            throw new Error("RESEARCH_PROJECT_FORBIDDEN");
++          }
++        }
++      }
++    }
++
++    if (this.accountStore && typeof this.accountStore.checkQuota === "function") {
++      const ok = this.accountStore.checkQuota(ownerId);
++      if (!ok) {
++        throw new Error("RESEARCH_QUOTA_EXCEEDED");
++      }
++    }
++  }
++}
++
++export interface EvidenceCitation {
++  sourceId: string;
++  sourceTitle: string;
++  originalUrl: string;
++  canonicalUrl: string;
++  fetchedAt: string;
++  publishedAt: string | null;
++  pageVersion: string;
++  previousPageVersion: string | null;
++  pageChanged: boolean;
++  verbatimQuote: string;
++  startUtf16: number;
++  endUtf16: number;
++  quoteSha256: string;
++  claimedValue: string;
++}
++
++export interface SynthesizedResearchClaim {
++  claimId: string;
++  subject: string;
++  criterion: string;
++  category: "confirmed" | "conflicting" | "unconfirmed";
++  resolvedValue: string;
++  conflictSummary: string | null;
++  unconfirmedReason: string | null;
++  citations: EvidenceCitation[];
++}
++
++export interface CandidateClaimExtraction {
++  subject: string;
++  criterion: string;
++  claimedValue: string;
++  verbatimQuote: string;
++  startUtf16?: number;
++  endUtf16?: number;
++}
++
++export interface SourceRecordForSynthesis {
++  sourceId: string;
++  originalUrl: string;
++  canonicalUrl: string;
++  title: string;
++  fetchedAt: string;
++  publishedAt: string | null;
++  pageVersion: string;
++  previousPageVersion: string | null;
++  pageChanged: boolean;
++  contentText: string;
++  extractedClaims: CandidateClaimExtraction[];
++}
++
++const NEGATION_MARKERS = [
++  "устарел",
++  "отменён",
++  "отменен",
++  "не поддерживает",
++  "опроверг",
++  "deprecated",
++  "discontinued",
++  "not supported"
++];
++
++export function sha256Hex(input: string): string {
++  return createHash("sha256").update(String(input ?? ""), "utf8").digest("hex");
++}
++
++export function normalizeClaimComparableValue(value: string): string {
++  const clean = String(value ?? "").trim().toLowerCase().replace(/,/g, ".");
++  const usdMatch = clean.match(/\$\s*(\d+(?:\.\d+)?)/);
++  if (usdMatch) {
++    return `usd:${Number(usdMatch[1]).toFixed(2)}`;
++  }
++  const numUnit = clean.match(/(\d+(?:\.\d+)?)\s*(%|мс|ms|гб|gb|дней|days)/i);
++  if (numUnit) {
++    return `${Number(numUnit[1]).toFixed(2)}_${numUnit[2].toLowerCase()}`;
++  }
++  return clean.replace(/\s+/g, " ");
++}
++
++/**
++ * Verifies that `verbatimQuote` is an exact slice of `source.contentText` at `[startUtf16..endUtf16]`,
++ * matches `claimedValue`, and does not contain negation/deprecation markers contradicting the claim.
++ */
++export function verifyCandidateClaimAgainstSource(
++  source: SourceRecordForSynthesis,
++  candidate: CandidateClaimExtraction
++): EvidenceCitation | null {
++  const quote = String(candidate.verbatimQuote ?? "").trim();
++  if (!quote) return null;
++
++  const startUtf16 =
++    typeof candidate.startUtf16 === "number" && candidate.startUtf16 >= 0
++      ? candidate.startUtf16
++      : source.contentText.indexOf(quote);
++  if (startUtf16 < 0) return null;
++
++  const endUtf16 =
++    typeof candidate.endUtf16 === "number" && candidate.endUtf16 > startUtf16
++      ? candidate.endUtf16
++      : startUtf16 + quote.length;
++
++  if (source.contentText.slice(startUtf16, endUtf16) !== quote) {
++    return null;
++  }
++
++  const quoteLower = quote.toLowerCase().replace(/,/g, ".");
++  const valLower = String(candidate.claimedValue ?? "").trim().toLowerCase().replace(/,/g, ".");
++  if (!valLower) return null;
++
++  const numbers = valLower.match(/\d+(?:\.\d+)?/g) ?? [];
++  for (const num of numbers) {
++    if (!quoteLower.includes(num)) {
++      return null;
++    }
++  }
++  if (numbers.length === 0 && !quoteLower.includes(valLower)) {
++    return null;
++  }
++
++  for (const neg of NEGATION_MARKERS) {
++    if (quoteLower.includes(neg) && !valLower.includes(neg)) {
++      return null;
++    }
++  }
++
++  return {
++    sourceId: source.sourceId,
++    sourceTitle: source.title,
++    originalUrl: source.originalUrl,
++    canonicalUrl: source.canonicalUrl,
++    fetchedAt: source.fetchedAt,
++    publishedAt: source.publishedAt,
++    pageVersion: source.pageVersion,
++    previousPageVersion: source.previousPageVersion,
++    pageChanged: source.pageChanged,
++    verbatimQuote: quote,
++    startUtf16,
++    endUtf16,
++    quoteSha256: sha256Hex(quote),
++    claimedValue: candidate.claimedValue
++  };
++}
++
++/**
++ * Synthesizes verified source citations into three strictly separated categories:
++ * - `confirmed` (all sources agree)
++ * - `conflicting` (sources provide conflicting values; both positions and quotes are preserved)
++ * - `unconfirmed` (no verified quote found; marked `"не удалось установить"`)
++ */
++export function synthesizeResearchClaims(params: {
++  runId: string;
++  expectedTargets: Array<{ subject: string; criterion: string }>;
++  sources: SourceRecordForSynthesis[];
++}): {
++  allClaims: SynthesizedResearchClaim[];
++  confirmedClaims: SynthesizedResearchClaim[];
++  conflictingClaims: SynthesizedResearchClaim[];
++  unconfirmedClaims: SynthesizedResearchClaim[];
++} {
++  const citationsByKey = new Map<string, EvidenceCitation[]>();
++
++  for (const source of params.sources) {
++    for (const candidate of source.extractedClaims) {
++      const verified = verifyCandidateClaimAgainstSource(source, candidate);
++      if (!verified) continue;
++      const key = `${candidate.subject}:::${candidate.criterion}`;
++      const list = citationsByKey.get(key) ?? [];
++      // Deduplicate identical (canonicalUrl, quoteSha256)
++      if (
++        !list.some(
++          (item) =>
++            item.canonicalUrl === verified.canonicalUrl &&
++            item.quoteSha256 === verified.quoteSha256
++        )
++      ) {
++        list.push(verified);
++      }
++      citationsByKey.set(key, list);
++    }
++  }
++
++  const targetKeys = new Set<string>();
++  const orderedTargets: Array<{ subject: string; criterion: string }> = [];
++
++  for (const t of params.expectedTargets) {
++    const k = `${t.subject}:::${t.criterion}`;
++    if (!targetKeys.has(k)) {
++      targetKeys.add(k);
++      orderedTargets.push(t);
++    }
++  }
++  for (const k of citationsByKey.keys()) {
++    if (!targetKeys.has(k)) {
++      targetKeys.add(k);
++      const [subject, criterion] = k.split(":::");
++      orderedTargets.push({ subject, criterion });
++    }
++  }
++
++  const allClaims: SynthesizedResearchClaim[] = [];
++  let idx = 1;
++
++  for (const { subject, criterion } of orderedTargets) {
++    const key = `${subject}:::${criterion}`;
++    const citations = citationsByKey.get(key) ?? [];
++    const claimId = `clm-${params.runId}-${idx++}`;
++
++    if (citations.length === 0) {
++      allClaims.push({
++        claimId,
++        subject,
++        criterion,
++        category: "unconfirmed",
++        resolvedValue: "не удалось установить",
++        conflictSummary: null,
++        unconfirmedReason: "Подтверждающая цитата в проверенных источниках не обнаружена.",
++        citations: []
++      });
++      continue;
++    }
++
++    const byNormValue = new Map<string, EvidenceCitation[]>();
++    for (const cit of citations) {
++      const norm = normalizeClaimComparableValue(cit.claimedValue);
++      const bucket = byNormValue.get(norm) ?? [];
++      bucket.push(cit);
++      byNormValue.set(norm, bucket);
++    }
++
++    if (byNormValue.size === 1) {
++      allClaims.push({
++        claimId,
++        subject,
++        criterion,
++        category: "confirmed",
++        resolvedValue: citations[0].claimedValue,
++        conflictSummary: null,
++        unconfirmedReason: null,
++        citations
++      });
++    } else {
++      const sortedCitations = [...citations].sort((a, b) =>
++        String(b.publishedAt ?? b.fetchedAt).localeCompare(String(a.publishedAt ?? a.fetchedAt))
++      );
++      const distinctValues = Array.from(byNormValue.values()).map((b) => b[0].claimedValue);
++      allClaims.push({
++        claimId,
++        subject,
++        criterion,
++        category: "conflicting",
++        resolvedValue: sortedCitations[0].claimedValue,
++        conflictSummary: `Конфликт источников по параметру «${criterion}» (${subject}): ${distinctValues.join(" против ")}`,
++        unconfirmedReason: null,
++        citations: sortedCitations
++      });
++    }
++  }
++
++  return {
++    allClaims,
++    confirmedClaims: allClaims.filter((c) => c.category === "confirmed"),
++    conflictingClaims: allClaims.filter((c) => c.category === "conflicting"),
++    unconfirmedClaims: allClaims.filter((c) => c.category === "unconfirmed")
++  };
++}
++
++/**
++ * Renders deterministic Markdown report with verifiable links, exact quotes, pageVersion,
++ * fetchedAt, and three distinct sections (confirmed, conflicting, unconfirmed).
++ * Used identically by both the backend store/export and the UI report export.
++ */
++export function renderDeterministicResearchReportMarkdown(params: {
++  runId: string;
++  query: string;
++  status: string;
++  sources: Array<{
++    sourceId: string;
++    title: string;
++    originalUrl: string;
++    canonicalUrl: string;
++    fetchedAt: string;
++    pageVersion: string;
++    previousPageVersion: string | null;
++    pageChanged: boolean;
++  }>;
++  confirmedClaims: SynthesizedResearchClaim[];
++  conflictingClaims: SynthesizedResearchClaim[];
++  unconfirmedClaims: SynthesizedResearchClaim[];
++}): string {
++  const lines: string[] = [];
++  lines.push(`# Исследовательский отчёт: ${params.query}`);
++  lines.push(`- **ID задачи:** \`${params.runId}\``);
++  lines.push(`- **Статус:** \`${params.status}\``);
++  lines.push("");
++
++  lines.push("## 1. Подтверждённые утверждения");
++  if (params.confirmedClaims.length === 0) {
++    lines.push("- Нет однозначно подтверждённых утверждений.");
++  } else {
++    for (const claim of params.confirmedClaims) {
++      lines.push(`- **${claim.subject} — ${claim.criterion}:** ${claim.resolvedValue}`);
++      for (const cit of claim.citations) {
++        const changedBadge = cit.pageChanged
++          ? ` [страница обновилась: ${cit.previousPageVersion} -> ${cit.pageVersion}]`
++          : "";
++        lines.push(
++          `  - Цитата: «${cit.verbatimQuote}» — [${cit.sourceTitle}](${cit.originalUrl}) (версия: \`${cit.pageVersion}\`${changedBadge}, получено: \`${cit.fetchedAt}\`, UTF-16: \`[${cit.startUtf16}..${cit.endUtf16}]\`)`
++        );
++      }
++    }
++  }
++  lines.push("");
++
++  lines.push("## 2. Противоречащие утверждения (конфликт источников)");
++  if (params.conflictingClaims.length === 0) {
++    lines.push("- Противоречий между источниками не зафиксировано.");
++  } else {
++    for (const claim of params.conflictingClaims) {
++      lines.push(
++        `- **${claim.subject} — ${claim.criterion}:** ${claim.conflictSummary ?? claim.resolvedValue} (приоритетное значение: ${claim.resolvedValue})`
++      );
++      for (const cit of claim.citations) {
++        lines.push(
++          `  - Позиция \`${cit.claimedValue}\`: «${cit.verbatimQuote}» — [${cit.sourceTitle}](${cit.originalUrl}) (версия: \`${cit.pageVersion}\`, получено: \`${cit.fetchedAt}\`, UTF-16: \`[${cit.startUtf16}..${cit.endUtf16}]\`)`
++        );
++      }
++    }
++  }
++  lines.push("");
++
++  lines.push("## 3. Неподтверждённые утверждения");
++  if (params.unconfirmedClaims.length === 0) {
++    lines.push("- Все целевые параметры получили подтверждение.");
++  } else {
++    for (const claim of params.unconfirmedClaims) {
++      lines.push(
++        `- **${claim.subject} — ${claim.criterion}:** ${claim.resolvedValue} (${claim.unconfirmedReason ?? "нет данных"})`
++      );
++    }
++  }
++  lines.push("");
++
++  lines.push("## 4. Проверенные источники");
++  for (const src of params.sources) {
++    const changeNote = src.pageChanged
++      ? ` (обновлена с ${src.previousPageVersion} до ${src.pageVersion})`
++      : "";
++    lines.push(
++      `- [${src.title}](${src.originalUrl}) — канонический URL: \`${src.canonicalUrl}\`, версия: \`${src.pageVersion}\`${changeNote}, получено: \`${src.fetchedAt}\``
++    );
++  }
++
++  return lines.join("\n") + "\n";
++}
+diff --git a/packages/db/migrations/0064_research_resume_evidence.sql b/packages/db/migrations/0064_research_resume_evidence.sql
+new file mode 100644
+index 0000000..2ba739c
+--- /dev/null
++++ b/packages/db/migrations/0064_research_resume_evidence.sql
+@@ -0,0 +1,95 @@
++-- Additive migration 0064: Persistent Research Runs, Step Checkpoints, Deduplicated Sources, and Separated Evidence Claims
++CREATE TABLE IF NOT EXISTS research_runs (
++  id TEXT PRIMARY KEY NOT NULL,
++  owner_id TEXT NOT NULL,
++  project_id TEXT,
++  query TEXT NOT NULL,
++  normalized_query TEXT NOT NULL DEFAULT '',
++  client_request_id TEXT,
++  status TEXT NOT NULL CHECK(status IN ('queued', 'running', 'paused', 'cancelled', 'failed', 'completed')),
++  current_step_index INTEGER NOT NULL DEFAULT 0,
++  total_steps INTEGER NOT NULL DEFAULT 0,
++  max_depth INTEGER NOT NULL DEFAULT 2,
++  max_sources INTEGER NOT NULL DEFAULT 6,
++  max_runtime_ms INTEGER NOT NULL DEFAULT 15000,
++  elapsed_ms INTEGER NOT NULL DEFAULT 0,
++  depth_reached INTEGER NOT NULL DEFAULT 0,
++  error_code TEXT,
++  error_message TEXT,
++  report_markdown TEXT,
++  report_json TEXT,
++  created_at TEXT NOT NULL,
++  updated_at TEXT NOT NULL
++);
++--> statement-breakpoint
++CREATE INDEX IF NOT EXISTS idx_research_runs_owner_project
++  ON research_runs (owner_id, project_id, created_at DESC);
++--> statement-breakpoint
++CREATE UNIQUE INDEX IF NOT EXISTS idx_research_runs_idempotency
++  ON research_runs (owner_id, IFNULL(project_id, ''), client_request_id)
++  WHERE client_request_id IS NOT NULL;
++--> statement-breakpoint
++CREATE TABLE IF NOT EXISTS research_run_steps (
++  run_id TEXT NOT NULL,
++  step_index INTEGER NOT NULL,
++  step_key TEXT NOT NULL,
++  step_kind TEXT NOT NULL CHECK(step_kind IN ('search', 'read_source', 'synthesize')),
++  target_url TEXT,
++  depth INTEGER NOT NULL DEFAULT 1,
++  status TEXT NOT NULL CHECK(status IN ('pending', 'running', 'completed', 'failed', 'skipped', 'cancelled')),
++  attempts INTEGER NOT NULL DEFAULT 0,
++  checkpoint_json TEXT NOT NULL DEFAULT '{}',
++  error_code TEXT,
++  updated_at TEXT NOT NULL,
++  PRIMARY KEY (run_id, step_index),
++  UNIQUE (run_id, step_key)
++);
++--> statement-breakpoint
++CREATE TABLE IF NOT EXISTS research_sources (
++  source_id TEXT PRIMARY KEY NOT NULL,
++  run_id TEXT NOT NULL,
++  owner_id TEXT NOT NULL,
++  original_url TEXT NOT NULL,
++  canonical_url TEXT NOT NULL,
++  title TEXT NOT NULL,
++  domain TEXT NOT NULL,
++  fetched_at TEXT NOT NULL,
++  published_at TEXT,
++  page_version TEXT NOT NULL,
++  previous_page_version TEXT,
++  page_changed INTEGER NOT NULL DEFAULT 0,
++  content_sha256 TEXT NOT NULL,
++  content_text TEXT NOT NULL,
++  depth INTEGER NOT NULL DEFAULT 1,
++  http_status INTEGER NOT NULL DEFAULT 200,
++  UNIQUE (run_id, canonical_url)
++);
++--> statement-breakpoint
++CREATE TABLE IF NOT EXISTS research_claims (
++  claim_id TEXT PRIMARY KEY NOT NULL,
++  run_id TEXT NOT NULL,
++  owner_id TEXT NOT NULL,
++  subject TEXT NOT NULL,
++  criterion TEXT NOT NULL,
++  category TEXT NOT NULL CHECK(category IN ('confirmed', 'conflicting', 'unconfirmed')),
++  resolved_value TEXT NOT NULL,
++  conflict_summary TEXT,
++  unconfirmed_reason TEXT,
++  citations_json TEXT NOT NULL DEFAULT '[]',
++  created_at TEXT NOT NULL,
++  UNIQUE (run_id, subject, criterion)
++);
++--> statement-breakpoint
++CREATE TRIGGER IF NOT EXISTS stage2_fence_research_runs_ins
++BEFORE INSERT ON research_runs
++BEGIN
++  SELECT RAISE(ABORT, 'OWNER_DATA_FENCED')
++  WHERE EXISTS (SELECT 1 FROM kosmora_owner_data_lifecycle WHERE owner_id = NEW.owner_id AND state <> 'active');
++END;
++--> statement-breakpoint
++CREATE TRIGGER IF NOT EXISTS stage2_fence_research_runs_upd
++BEFORE UPDATE ON research_runs
++BEGIN
++  SELECT RAISE(ABORT, 'OWNER_DATA_FENCED')
++  WHERE EXISTS (SELECT 1 FROM kosmora_owner_data_lifecycle WHERE owner_id = NEW.owner_id AND state <> 'active');
++END;
+-- 
+2.39.5
+

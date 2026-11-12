@@ -1,0 +1,3 @@
+BASE_SHA=09369af668e9ab22fd9de175f74fa03304892637
+HEAD_SHA=b81067daaf0d37bd30a8e22dd2752d4b03a8fc40
+BRANCH=feature/research-resume-evidence
