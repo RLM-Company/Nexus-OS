@@ -51,7 +51,8 @@
 }
 .root button,
 .toolbar button,
-.auditPanel button {
+.auditPanel button,
+.assetPanel button {
   font: inherit;
   color: inherit;
   padding: 8px 12px;
@@ -159,4 +160,30 @@
 }
 .auditPanel li {
   margin: 4px 0;
+}
+
+.assetPanel {
+  display: grid;
+  gap: 8px;
+  border: 1px solid var(--line, #ddd);
+  border-radius: var(--radius-control, 9px);
+  padding: 12px;
+  margin: 12px 0;
+  font-size: 12px;
+}
+.assetPanel p {
+  margin: 0;
+}
+.assetPanel label {
+  display: grid;
+  gap: 6px;
+}
+.assetPanel input {
+  width: 100%;
+  padding: 8px;
+  font: inherit;
+  color: inherit;
+  background: var(--bg, #fff);
+  border: 1px solid var(--line, #ddd);
+  border-radius: var(--radius-control, 9px);
 }

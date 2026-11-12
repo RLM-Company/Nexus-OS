@@ -189,3 +189,57 @@ test("audits inert HTML source and invalidates stale findings", async ({ page, r
   await expect(audit).toContainText("Явных ограничений");
   await expect(audit).not.toContainText("Скрипты (1)");
 });
+
+test("embeds an image in site HTML, rejects SVG and preserves it through export and reload", async ({
+  page,
+  request
+}) => {
+  const id = await project(request);
+  await page.goto("/?surface=sites&project=" + id);
+  await page.getByRole("combobox", { name: "Проект сайта", exact: true }).selectOption(id);
+  const canvas = page.getByRole("region", { name: "Редактор Canvas", exact: true });
+  await canvas.getByRole("combobox", { name: "Формат", exact: true }).selectOption("html");
+  const source = canvas.getByRole("textbox", { name: "Содержимое", exact: true });
+  const original = "<!doctype html><html><body><h1>Атлас</h1></body></html>";
+  await source.fill(original);
+  const assets = canvas.getByRole("region", { name: "Изображения сайта", exact: true });
+  const fileInput = assets.getByLabel("Файл изображения сайта", { exact: true });
+  const alt = assets.getByRole("textbox", { name: "Описание изображения (alt)", exact: true });
+  const insert = assets.getByRole("button", { name: "Встроить изображение", exact: true });
+  await fileInput.setInputFiles({
+    name: "unsafe.svg",
+    mimeType: "image/svg+xml",
+    buffer: Buffer.from("<svg><script>alert(1)</script></svg>")
+  });
+  await insert.click();
+  await expect(assets.getByRole("alert")).toContainText("PNG, JPEG и WebP");
+  await expect(source).toHaveValue(original);
+
+  const image = Buffer.from(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/Nv0AAAAASUVORK5CYII=",
+    "base64"
+  );
+  await fileInput.setInputFiles({ name: "mark.png", mimeType: "image/png", buffer: image });
+  await alt.fill("Знак студии");
+  await insert.click();
+  await expect(source).toHaveValue(/data:image\/png;base64,/);
+  const current = await source.inputValue();
+  expect(current).toContain('alt="Знак студии"');
+  const preview = page.frameLocator('iframe[title="Статический предпросмотр сайта"]');
+  await expect(preview.getByRole("img", { name: "Знак студии" })).toHaveAttribute(
+    "src",
+    /^data:image\/png;base64,/
+  );
+  await canvas.getByRole("button", { name: "Сохранить версию", exact: true }).click();
+  await expect(canvas.getByRole("status")).toContainText("Артефакт создан");
+  const downloaded = page.waitForEvent("download");
+  await canvas.getByRole("button", { name: "Скачать", exact: true }).click();
+  expect(await readFile(await (await downloaded).path(), "utf8")).toBe(current);
+  await page.reload();
+  await page.getByRole("combobox", { name: "Проект сайта", exact: true }).selectOption(id);
+  await canvas
+    .getByRole("navigation", { name: "Артефакты проекта" })
+    .getByRole("button", { name: /v1/ })
+    .click();
+  await expect(source).toHaveValue(current);
+});

@@ -20,6 +20,7 @@ import { createDocxReport, createPdfReport, downloadReport } from "../studio-fil
 import { MarkdownToolbar } from "./markdown-toolbar";
 import { CanvasSearch } from "./canvas-search";
 import { SitePreview } from "../sites/site-preview";
+import { SiteImageImport } from "../sites/site-image-import";
 import { GamePreview } from "../games/game-preview";
 import { GameSourceEditor } from "../games/game-source-editor";
 import { GameSourcePreview } from "../games/game-source-preview";
@@ -992,6 +993,19 @@ function ScopedCanvasEditor({
                   setDraft((d) => ({ ...d, content: value }));
                 }}
               />
+              {sitePreview && draft.format === "html" && (
+                <SiteImageImport
+                  content={draft.content}
+                  disabled={working || loading}
+                  onChange={(content) => {
+                    if (canvasBytes(content) > CANVAS_MAX_CONTENT_BYTES) {
+                      setError("Изображение превысит предел HTML 512 КиБ.");
+                      return;
+                    }
+                    setDraft((d) => ({ ...d, content }));
+                  }}
+                />
+              )}
             </>
           )}
           <div className={styles.count}>
