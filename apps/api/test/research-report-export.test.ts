@@ -78,12 +78,18 @@ it("resumes a temporarily unavailable source after restart without repeating ear
       overrides: []
     });
     register(search);
-    const initial = await app.inject({
-      method: "POST",
-      url: "/api/v1/research",
-      payload: { project_id: projectId, question: "История промышленности", synthesize: false }
-    });
+    const body = {
+      project_id: projectId,
+      question: "История промышленности",
+      synthesize: false,
+      client_request_id: randomUUID()
+    };
+    const start = (payload = body) =>
+      app.inject({ method: "POST", url: "/api/v1/research", payload });
+    const [initial, duplicate] = await Promise.all([start(), start()]);
     expect(initial.statusCode, initial.body).toBe(201);
+    expect(duplicate.statusCode, duplicate.body).toBe(200);
+    expect(duplicate.json<ResearchRun>().id).toBe(initial.json<ResearchRun>().id);
     const runUrl = `/api/v1/research/${initial.json<ResearchRun>().id}`;
     const getRun = async () => (await app.inject({ url: runUrl })).json<ResearchRun>();
     await expect.poll(async () => (await getRun()).status).toBe("paused");
@@ -97,7 +103,19 @@ it("resumes a temporarily unavailable source after restart without repeating ear
     db = openDatabase(path);
     app = Fastify();
     register(new WebSearch());
+    const recovered = await start();
+    expect(recovered.statusCode, recovered.body).toBe(200);
+    expect(recovered.json<ResearchRun>()).toMatchObject({
+      id: initial.json<ResearchRun>().id,
+      status: "paused"
+    });
+    expect((await start({ ...body, synthesize: true })).statusCode).toBe(409);
+    expect((await start({ ...body, question: "Другой исследовательский запрос" })).statusCode).toBe(
+      409
+    );
+    expect(db.sqlite.prepare("SELECT count(*) AS n FROM research_v1_runs").get()).toEqual({ n: 1 });
     owner = "another-owner";
+    expect((await start()).statusCode).toBe(404);
     expect((await app.inject({ method: "POST", url: runUrl + "/resume" })).statusCode).toBe(404);
     owner = "owner-a";
     expect((await app.inject({ method: "POST", url: runUrl + "/resume" })).statusCode).toBe(200);

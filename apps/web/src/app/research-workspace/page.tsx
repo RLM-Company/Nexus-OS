@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import styles from "./research-workspace.module.css";
 import { ReportCanvas } from "../canvas-editor/report-canvas";
 
@@ -97,6 +97,8 @@ export default function ResearchWorkspace() {
   const [selected, setSelected] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const pendingStart = useRef<{ payload: string; id: string } | null>(null);
+  const startInFlight = useRef(false);
   const current = runs.find((run) => run.id === selected) ?? null;
   const sync = useCallback(async () => {
     try {
@@ -162,22 +164,40 @@ export default function ResearchWorkspace() {
   };
   const create = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (busy || !projectId || question.trim().length < 8) return;
+    if (busy || startInFlight.current || !projectId || question.trim().length < 8) return;
+    startInFlight.current = true;
+    const body = { project_id: projectId, question: question.trim(), synthesize };
+    const payload = JSON.stringify(body);
+    const previous = pendingStart.current;
+    const id =
+      previous?.payload === payload
+        ? previous.id
+        : (crypto.randomUUID?.() ??
+          "research-" + Date.now() + "-" + Math.random().toString(36).slice(2));
+    pendingStart.current = { payload, id };
     setBusy(true);
     setNotice(null);
     try {
       const run = await api<Run>("/api/v1/research", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ project_id: projectId, question: question.trim(), synthesize })
+        body: JSON.stringify({ ...body, client_request_id: id })
       });
+      pendingStart.current = null;
       setSelected(run.id);
       setQuestion("");
       setSynthesize(false);
       await sync();
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : "Не удалось запустить исследование");
+      setNotice(
+        error instanceof TypeError
+          ? "Связь прервалась. Повторите запуск с тем же вопросом."
+          : error instanceof Error
+            ? error.message
+            : "Не удалось запустить исследование"
+      );
     } finally {
+      startInFlight.current = false;
       setBusy(false);
     }
   };

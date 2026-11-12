@@ -73,6 +73,7 @@ export interface ResearchRun {
   attempts: number;
   error_code: string | null;
   model_requested?: boolean;
+  initial_model_requested?: boolean;
   answer?: ResearchAnswer | null;
   model?: ResearchModelState;
   created_at: string;

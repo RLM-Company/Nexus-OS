@@ -13,6 +13,20 @@ import { ResearchSynthesis, type ResearchOwnerBudget } from "./research-synthesi
 import type { ModelGateway } from "@cosmora/model-gateway";
 import type { ManagerService } from "@cosmora/core";
 
+function researchRequestId(ownerId: string, actorId: string, projectId: string, requestId: string) {
+  const digest = createHash("sha256")
+    .update(JSON.stringify(["research.v1", ownerId, actorId, projectId, requestId]))
+    .digest("hex");
+  // The existing research routes use UUIDs for persisted run identifiers.
+  return [
+    digest.slice(0, 8),
+    digest.slice(8, 12),
+    "8" + digest.slice(13, 16),
+    "8" + digest.slice(17, 20),
+    digest.slice(20, 32)
+  ].join("-");
+}
+
 export function registerResearchRoutes(options: {
   app: FastifyInstance;
   store: ResearchStore;
@@ -84,7 +98,9 @@ export function registerResearchRoutes(options: {
     model_usage: synthesis ? "accounted_gateway" : "unavailable"
   }));
   app.get("/api/v1/research", (request) => ({ items: store.list(identityFor(request).owner_id) }));
-  app.post<{ Body: { project_id: string; question: string; synthesize: boolean } }>(
+  app.post<{
+    Body: { project_id: string; question: string; synthesize: boolean; client_request_id?: string };
+  }>(
     "/api/v1/research",
     {
       schema: {
@@ -92,7 +108,10 @@ export function registerResearchRoutes(options: {
           {
             project_id: Type.String({ minLength: 1, maxLength: 128 }),
             question: Type.String({ minLength: 8, maxLength: 240 }),
-            synthesize: Type.Boolean()
+            synthesize: Type.Boolean(),
+            client_request_id: Type.Optional(
+              Type.String({ minLength: 1, maxLength: 128, pattern: "^[a-z0-9-]+$" })
+            )
           },
           { additionalProperties: false }
         )
@@ -100,8 +119,27 @@ export function registerResearchRoutes(options: {
     },
     (request, reply) => {
       const { owner_id, actor_id } = identityFor(request);
-      if (!projects.getProject(request.body.project_id, owner_id))
+      const { project_id, synthesize, client_request_id } = request.body;
+      if (!projects.getProject(project_id, owner_id))
         return reply.code(404).send({ error: { code: "PROJECT_NOT_FOUND" } });
+      const question = request.body.question.trim();
+      if (question.length < 8) return reply.code(400).send({ error: { code: "VALIDATION_ERROR" } });
+      const id = client_request_id
+        ? researchRequestId(owner_id, actor_id, project_id, client_request_id)
+        : randomUUID();
+      const replay = (previous: ResearchRun) =>
+        previous.question === question && previous.initial_model_requested === synthesize
+          ? reply.code(200).send(previous)
+          : reply.code(409).send({
+              error: {
+                code: "RESEARCH_REQUEST_CONFLICT",
+                message: "Этот запрос уже использован для другого исследования."
+              }
+            });
+      if (client_request_id) {
+        const previous = store.get(id, owner_id);
+        if (previous) return replay(previous);
+      }
       if (!search.configured)
         return reply.code(503).send({ error: { code: "SEARCH_UNAVAILABLE" } });
       if (request.body.synthesize && !synthesis)
@@ -116,11 +154,9 @@ export function registerResearchRoutes(options: {
         options.emergency?.getProjectStop(request.body.project_id, owner_id)
       )
         return reply.code(423).send({ error: { code: "EMERGENCY_STOP" } });
-      const question = request.body.question.trim();
-      if (question.length < 8) return reply.code(400).send({ error: { code: "VALIDATION_ERROR" } });
       // Policy check before creating durable state or making any external read.
       const candidate: ResearchRun = {
-        id: randomUUID(),
+        id,
         owner_id,
         actor_id,
         project_id: request.body.project_id,
@@ -145,11 +181,12 @@ export function registerResearchRoutes(options: {
         });
       let run: ResearchRun;
       try {
-        run = store.create(owner_id, actor_id, request.body.project_id, question, candidate.id);
-        store.update(run.id, owner_id, ["queued"], (value) => {
-          value.model_requested = request.body.synthesize;
-        });
+        run = store.create(owner_id, actor_id, project_id, question, id, synthesize);
       } catch {
+        if (client_request_id) {
+          const previous = store.get(id, owner_id);
+          if (previous) return replay(previous);
+        }
         return reply.code(429).send({ error: { code: "RESEARCH_LIMIT" } });
       }
       if (!coordinator.launch(run)) {
