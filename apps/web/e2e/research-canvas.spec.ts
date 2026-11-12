@@ -58,6 +58,57 @@ async function routes(
   ).toBeVisible();
 }
 
+test("compares stored evidence within a project and clears the comparison on navigation", async ({
+  page,
+  request
+}) => {
+  const projectId = await project(request);
+  const before = run(projectId, "Предыдущий отчёт");
+  const after = run(projectId, "Текущий отчёт");
+  const source = before.sources[0]!;
+  const earlier = {
+    ...before,
+    sources: [
+      { ...source, content_digest: "a".repeat(64) },
+      { ...source, title: "Старый адрес", url: "https://example.org/old" },
+      { ...source, title: "Проверка доступа", url: "https://example.org/access" }
+    ]
+  };
+  const current = {
+    ...after,
+    sources: [
+      { ...source, content_digest: "b".repeat(64), passages: ["Новая цитата"] },
+      { ...source, title: "Новый адрес", url: "https://example.org/new" },
+      {
+        ...source,
+        title: "Проверка доступа",
+        url: "https://example.org/access",
+        status: "unavailable",
+        passages: []
+      }
+    ]
+  };
+  const foreign = run(randomUUID(), "Отчёт другого проекта");
+  await routes(page, [current, earlier, foreign], (route) => route.fulfill({ body: report }));
+  await page.getByText("Сравнить источники", { exact: true }).click();
+  const select = page.getByRole("combobox", { name: "Отчёт для сравнения" });
+  await expect(select.getByRole("option")).toHaveCount(2);
+  await select.selectOption(earlier.id);
+  await expect(page.getByText("Изменился прочитанный текст · Изменились выдержки")).toBeVisible();
+  await expect(page.getByText("Отсутствует в текущем отчёте", { exact: true })).toBeVisible();
+  await expect(page.getByText("Добавлен", { exact: true })).toBeVisible();
+  await expect(page.getByText("Прочитан → Недоступен", { exact: true })).toBeVisible();
+  await page
+    .getByRole("listitem")
+    .filter({ hasText: "Изменился прочитанный текст" })
+    .getByText("Сохранённые выдержки")
+    .click();
+  await expect(page.getByText("Новая цитата", { exact: true }).last()).toBeVisible();
+
+  await page.getByRole("button", { name: /Предыдущий отчёт/ }).click();
+  await expect(page.getByText("Изменился прочитанный текст · Изменились выдержки")).toHaveCount(0);
+});
+
 test("research launch retries an unchanged form with the original request ID", async ({
   page,
   request
