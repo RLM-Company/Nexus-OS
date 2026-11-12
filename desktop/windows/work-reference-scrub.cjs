@@ -3,8 +3,12 @@
 // distillation decision: docs/product/EXPERIENCE_DISTILL_PLAN_RU.md).
 // Adapted from the measurement-only bench candidate
 // extractive-drop-candidate-v1 (scripts/bench-semantic-experience-distill.mjs,
-// Ruflo adoption line "Опыт выполнения"): the seven prohibition classes are
-// that candidate's exact patterns. Matching stays conservative on purpose:
+// Ruflo adoption line "Опыт выполнения"). Owner-approved divergence
+// (2026-11-12): the two ASCII-\b patterns (credential_assignment,
+// date_or_old_ref) now use letter/digit lookaround boundaries so their
+// Cyrillic alternatives work in real Russian text; the frozen panel was
+// measured with the original patterns, the product is re-measured on the
+// same panel with the fixed ones. Matching stays conservative on purpose:
 // any hit drops the whole plan step, the goal excerpt stops where the first
 // stale sentence begins, and unusable input is refused instead of weakened.
 // Recall beyond the frozen measurement panel is not claimed.
@@ -17,13 +21,13 @@ const PATTERNS = [
   { id: "email_or_handle", re: /[\w.+-]+@[\w-]+\.[\w.-]+|@[A-Za-z0-9_]{3,}/ },
   {
     id: "credential_assignment",
-    re: /\b(?:логин|пароль|токен|ключ|секрет|password|token|pin-код)\s*[:=]/i
+    re: /(?<![\p{L}\p{N}])(?:логин|пароль|токен|ключ|секрет|password|token|pin-код)\s*[:=]/iu
   },
   { id: "credential_token", re: /\b[A-Z]{2,5}-\d{4,6}-[A-Za-z0-9]{4,8}\b|\b[A-Za-z0-9_-]{24,}\b/ },
   { id: "coordinate_pair", re: /\d{1,3}[.,]\d{3,}\s*,\s*\d{1,3}[.,]\d{3,}/ },
   {
     id: "date_or_old_ref",
-    re: /\b20\d{2}-\d{2}-\d{2}\b|\b(?:см\.|смотри)\s|#\d{2,6}\b|\bревизия\b/i
+    re: /\b20\d{2}-\d{2}-\d{2}\b|(?<![\p{L}\p{N}])(?:см\.|смотри)\s|#\d{2,6}\b|(?<![\p{L}\p{N}])ревизия(?![\p{L}])/iu
   },
   {
     id: "approval_or_checked",

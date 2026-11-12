@@ -12,17 +12,22 @@ test("prohibition classes match the seven bench candidate categories", () => {
     ["email_or_handle", "спросить @curator"],
     ["credential_assignment", "password: значение"],
     ["credential_assignment", "token=abc"],
-    // Inherited bench quirk: \b is ASCII-only without the u flag, so the
-    // Cyrillic keyword alternatives (пароль:, см., ревизия) only fire after an
-    // ASCII word character. The upstream start()/checkpoint() gates already
-    // refuse credential text regardless; the quirk is recorded, not papered
-    // over here (patterns stay bench-verbatim by the approved plan).
+    ["credential_assignment", "пароль: значение"],
+    ["credential_assignment", "Введи пароль: x"],
+    ["credential_assignment", "ключ: 1234-ABCD"],
+    // Owner-approved divergence (2026-11-12): letter/digit lookaround replaces
+    // the broken ASCII-\b, Cyrillic keyword alternatives fire after spaces;
+    // embedded-word false positives stay blocked (выключатель:, аппароль:).
     ["credential_token", "ключ ABC-12345-XYZ9"],
     ["credential_token", "cccccccc-cccc-4ccc-8ccc-cccccccccccc"],
     ["credential_token", "проверить чат:cccccccc-cccc-4ccc-8ccc-cccccccccccc"],
     ["coordinate_pair", "клик по 55.751, 37.629"],
     ["date_or_old_ref", "отчёт за 2026-11-01"],
     ["date_or_old_ref", "задание #12345"],
+    ["date_or_old_ref", "см. задачу"],
+    ["date_or_old_ref", "Введи см. документ"],
+    ["date_or_old_ref", "смотри задание #12345"],
+    ["date_or_old_ref", "третья ревизия"],
     ["approval_or_checked", "проверено владельцем"],
     ["approval_or_checked", "согласована бухгалтерия"],
     ["approval_or_checked", "одобрено куратором"],
@@ -37,7 +42,15 @@ test("plausible goal and step texts stay unmatched", () => {
     "Проверить источники",
     "Файл проверен",
     "Обработать отчёт за квартал",
-    "Отправь сводку до 09:00"
+    "Отправь сводку до 09:00",
+    // The lookaround boundary must not fire inside embedded words.
+    "выключатель: проверить",
+    "аппароль: x",
+    "ID2026-11-01",
+    // Inherited bench trailing-\s on см./смотри: a bare sentence-final "См."
+    // (the splitter already consumed its space) stays unmatched; the marker
+    // still fires mid-sentence ("Введи см. документ", "смотри задачу").
+    "См."
   ])
     assert.equal(matchesProhibition(text), null, text);
 });
