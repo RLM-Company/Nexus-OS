@@ -1,0 +1,20 @@
+{
+  "kind": "synthetic_inputs_only_not_a_model_result",
+  "seeded_to_github": true,
+  "files": [
+    {
+      "path": "src/add.mjs",
+      "content": "// article 00123\nexport const add = (a, b) => a - b;\n"
+    },
+    {
+      "path": "src/add.test.mjs",
+      "content": "import assert from 'node:assert/strict';\nimport { add } from './add.mjs';\nassert.equal(add(2, 3), 5);\n"
+    },
+    {
+      "path": "README.md",
+      "content": "Synthetic Coscode acceptance. Preserve article 00123 and this file unchanged.\n"
+    }
+  ],
+  "base_branch": "ops/coscode-live-base-2026-11-12",
+  "base_sha": "e03ba58f95189e72d8da5658808f1e845250e128"
+}

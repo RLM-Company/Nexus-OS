@@ -1,0 +1,17 @@
+Scope: 8 of 10 workspace projects
+packages/config build$ tsc -p tsconfig.build.json
+packages/contracts build$ tsc -p tsconfig.build.json
+packages/config build: Done
+packages/contracts build: Done
+packages/policy-engine build$ tsc -p tsconfig.build.json
+packages/core build$ tsc -p tsconfig.build.json
+packages/policy-engine build: Done
+packages/model-gateway build$ tsc -p tsconfig.build.json
+packages/model-gateway build: Done
+packages/db build$ tsc -p tsconfig.build.json
+packages/db build: Done
+packages/tool-runtime build$ tsc -p tsconfig.build.json
+packages/core build: Done
+packages/tool-runtime build: Done
+apps/api build$ tsc -p tsconfig.build.json && node ../../scripts/copy-api-semantic-assets.mjs && node ../../scripts/copy-office-engine.mjs
+apps/api build: Done

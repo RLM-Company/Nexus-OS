@@ -1,3 +1,13 @@
+# Актуализация12ноября
+
+- Интеграция PR519/main подтверждена; main CI все3jobs success.
+- Живые GitHub/HTTP/OCI и Draft PR542 пройдены на synthetic branch workspace.
+- Реальный модельный цикл не выполнен: отсутствует HY4 connection. Release не принят.
+- User попросил work-as-is, права не расширять; больше не повторять CreateRepository.
+- Подробности и точка продолжения — LIVE_ACCEPTANCE_2026-11-12_RU.md / CHECKPOINT.md.
+
+---
+
 # Coscode: проверенный backlog
 
 Дополнительное ревью: stale-check approval закрыт source40a3a9e/9877f5b.

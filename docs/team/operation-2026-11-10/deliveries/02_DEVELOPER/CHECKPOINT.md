@@ -1,47 +1,33 @@
-# Coscode: проверено исправление stale-check approval
+# Coscode: продолжение после живой GitHub/OCI приёмки
 
-11 ноября 2026, Москва. Статус **готово к интеграции**, branch ops/developer-coscode,
-Draft PR https://github.com/RLM-Company/Nexus-OS/pull/519. Не merge/deploy/release.
-BASE c2e093ee0e79d99f8b4c64b1a646728654196de4 сохраняет main0ddb9d0;
-входили только6OpenCode preload/test/report paths, общие API/contracts не менялись.
-Source HEAD40a3a9ed5ceaec68c46a8e9e904cb7e08d2e5879,
-source treea35aa87ea182cd967e473345c22d3d508b7a51b3, guard9877f5b.
-GitHub/local source tree equality проверена. Финальный docs SHA — в PR/history.
+12 ноября2026, Москва. User разрешил интеграцию/live model/test PR/release verification,
+позднее попросил работать с текущими правами. Не спрашивать то же разрешение снова.
+BASE ea2f4aafe8e9609b678f8743a08c43d43f911f9f; branch ops/developer-coscode-live-2026-11-12.
 
-## Изменение после дополнительного ревью
+1. PR519 уже merged c702c0f, delivery c36bee4 — ancestor main. Relevant Code/common
+   entrypoints/registry не изменились после merge. Main CI43192292131 все3jobs success.
+2. CreateRepository denied. После steering создан isolated branch workspace в Nexus,
+   base ops/coscode-live-base-2026-11-12 SHAe03ba58f95189e72d8da5658808f1e845250e128.
+   Через нынешний Code API+real HTTP executor+OCI+GitHubIntegration создан Draft PR542,
+   head a58b7314c967d33331dfd48b337d8f88f3cca5ab. Два synthetic files, README/00123
+   сохранены. Failed1→manual review→passed0 cleanup true; stale-check409; replay publish409
+   без новыхPOST, command replayEEXIST до network. GitHub POST4, PR1, main unchanged.
+3. Full release acceptance НЕ подтверждена: real model/HY4 не вызывалась, adapters0.
+   MODEL_API_KEY/BASE_URL/NAME отсутствуют; URL настроенного стенда не получен.
+   Не превращать доказанный GitHub/OCI/manual-diff case в утверждение об AI-autonomy.
 
-Другая вкладка могла обновить check, сохранив review hash. Старое согласие принималось
-для новой ошибки; baseline реально упал. Теперь repair-v2 требует expected_run_version,
-отказывает STALE_CHECK до записи/модели при mismatch. Source version сохраняется в
-прежнем run JSON. Точный повтор UUID+исходной версии идемпотентен, изменённый payload
-запрещён. UI repair_once:2, checkbox сбрасывается при новой версии, тип Node check
-показан. Существующий load checkpoint требует нового согласия на новую проверку.
-Отдельный v2 route не позволяет старому handler проигнорировать version field;
-legacy /repair404, missing/invalid version400. API+web поставлять вместе.
+Новый CLI apps/api/test/code-agent-live-github.acceptance.ts opt-in: требует точный
+repository:base, GH auth, pinned OCI image, fresh report directory. На uncertain
+записи НЕ перезапускать publisher: persistent synthetic DB в /tmp/coscode-github-live-2026-11-12,
+сначала existing read/reconcile. DB/секреты не включать в артефакты. Test PR542 и base
+не объединять в main, это synthetic root tree. Target/API scopes не расширялись.
 
-Прежние context/search/patch/CAS/checkpoint/tree recovery/navigation/publish сохраняются.
-Новых runtime/store/dependencies/migrations/provider/quota/permission changes нет.
+Новые lint/types/build0, scoped117+1skip, real live0, guard expected1. First dependency
+state errors сохранились; native tools выполнили реальные проверки после fix.
+Команды/outputs/receipt/check hashes в LIVE_ACCEPTANCE_2026-11-12_RU.md и fixtures/live-2026-11-12.
+Runtime/app/contracts/DB/grants/provider/quotas не менялись. Production/tag/deploy нет.
 
-## Проверки
-
-- API/GitHub/tree117PASS+1opt-inSKIP, baselineFAIL сохранён.
-- Полный root check:core40a3a9e exit0: API1031/web290 fresh, остальные cache.
-- Real HTTP repair-v2 → OCI → Git1PASS (85filtered skips), failed1→passed0,
-  cleanup true,2files/00123/README сохранены. External model/GitHub fixtures.
-- Strict E2E types0, production Chromium15630PASS0, workers1/retries0.
-- Source40 весь CI43024980295 success: monorepo130537461796,
-  browser130537462097, isolation130537462197. Identity43024980309 success.
-  Квитанция ci-source.json относится к HEAD40a3a9e; новый docs HEAD проверяется
-  отдельно, его CI не выдаётся за завершённый. Предыдущий10f50a1 также был green.
-- Новые receipts/logs/patch/fixtures/hashes в fixtures/stale-check; подробности DELIVERY.
-
-## Продолжение интегратора
-
-Проверить актуальный PR519 и full CI на точном HEAD, затем канонические общие контракты
-перед объединением. Общий adapterb22b4f3 отдельно описан в INTEGRATION.md. Новых
-общих исходников этот fix не меняет. Все найденные в этом ревью программные пробелы
-закрыты. Не создавать новый продукт/блок ради продолжения.
-
-Live модель/foreign publish/ownerPC/VPS/merge/deploy не разрешены и не выполнялись.
-Node checks по snapshot без сети/install/arbitrary shell; tree budgets и browser
-compatibility остаются прежними, см. DELIVERY. Максимальный статус — готово к интеграции.
+Продолжить с real-model acceptance только когда существующее подключение HY4 доступно.
+Нужен доступ к настроенному стенду или защищённые runtime bindings; ключи в чат не
+запрашивать, .env/owner DB не читать. Техническая конфигурация — единственная причина
+не выполнить модельный этап, а не отсутствие пользовательского разрешения.

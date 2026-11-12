@@ -1,3 +1,42 @@
+# Обновление12ноября: интеграция и живая GitHub/OCI приёмка
+
+Новое поручение владельца разрешило три пункта; затем владелец указал работать
+с текущими правами. Пункт1 подтверждён: PR519 уже объединён c702c0f в main;
+проверенный main ea2f4aa имеет полный green CI43192292131.
+
+Пункт2 выполнен в доступной части: настоящий API/HTTP executor/OCI/GitHub adapter
+создал [Draft PR542](https://github.com/RLM-Company/Nexus-OS/pull/542) на изолированной
+синтетической base ops/coscode-live-base-2026-11-12. Отдельный repo создать не удалось
+(CreateRepository denied); после steering использована доступная ветка существующего
+Nexus-OS. GitHub reads/writes настоящие, модельные adapters0: provider не подменялся
+фикстурой. Ошибка1 → ручной review → успешный Node0/cleanup true, stale-check409,
+повтор publish409 без новых POST. Два файла прочитаны обратно, README/00123 сохранены,
+main before/after одинаков. Тестовый PR один. Ни test PR, ни synthetic base в main
+не объединялись. Настоящая модель/HY4 не подключена, поэтому полный модельный путь
+не проверен. Пункт3: **готовность к выпуску не подтверждена**; production не выкатывался.
+
+BASE_SHA ea2f4aafe8e9609b678f8743a08c43d43f911f9f;
+branch ops/developer-coscode-live-2026-11-12. Opt-in test CLI — единственный новый
+исходник apps/api/test/code-agent-live-github.acceptance.ts; прочие изменения только
+свои handoff files и синтетические inputs/actual receipts. Runtime/contracts/grants/
+provider/quotas не менялись. Fixture DB и секреты в поставку не включены.
+
+Новые проверки: native ESLint0, API typecheck0, API+dependencies build0,
+scoped117PASS+1opt-inSKIP, live CLI0, replay-guard expected exit1/EEXIST.
+Исходные ошибки dependency-state symlinks сохранены; проверки тогда не стартовали.
+Security check не отключался, packages не устанавливались; затем private state
+исправлен и checks выполнены. Docs format/secrets/diff проверяются перед commit.
+Реальные команды/результаты/ограничения/откат в LIVE_ACCEPTANCE_2026-11-12_RU.md,
+input/output/patch/receipt/hashes — fixtures/live-2026-11-12. Финальный HEAD/PR сдачи
+отражён в Git history и ответе, самоссылка SHA не создаётся.
+
+Новый CLI тестирует ручной import-diff путь существующего продукта; не выдаётся
+за автономный цикл с настоящей моделью. Для финальной модельной приёмки требуется
+подключённый HY4-стенд либо защищённая конфигурация модели в среде. Разрешение на
+живой прогон уже дано, техническое подключение отсутствует.
+
+---
+
 # 02_DEVELOPER: подтверждение исправления привязано к результату проверки
 
 11 ноября 2026, Москва. Статус: **готово к интеграции**, Draft PR519,
