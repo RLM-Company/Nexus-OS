@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { inspectSiteSource, type SiteSourceFinding } from "./site-source-diagnostics";
 import styles from "./sites.module.css";
 
 const tags = new Set(
@@ -46,6 +47,8 @@ export function SitePreview({ content }: { content: string }) {
   const [viewport, setViewport] = useState("desktop");
   const [preview, setPreview] = useState<{ source: string; document: string } | null>(null);
   const [error, setError] = useState("");
+  const [audit, setAudit] = useState<{ source: string; findings: SiteSourceFinding[] } | null>(null);
+  const [auditError, setAuditError] = useState("");
   useEffect(() => {
     const timer = setTimeout(() => {
       try {
@@ -79,6 +82,43 @@ export function SitePreview({ content }: { content: string }) {
       <p className={styles.caption}>
         Статический просмотр: скрипты, формы и внешние ресурсы отключены.
       </p>
+      <section className={styles.auditPanel} aria-label="Диагностика сайта">
+        <button
+          type="button"
+          onClick={() => {
+            try {
+              setAudit({ source: content, findings: inspectSiteSource(content) });
+              setAuditError("");
+            } catch (cause) {
+              setAudit(null);
+              setAuditError(cause instanceof Error ? cause.message : "Проверка исходника не удалась.");
+            }
+          }}
+        >
+          Проверить HTML
+        </button>
+        {auditError && <p role="alert">{auditError}</p>}
+        {audit?.source !== content && audit && (
+          <p role="status">Исходник изменился. Повторите проверку HTML.</p>
+        )}
+        {audit?.source === content && (
+          <>
+            <p role="status">
+              {audit.findings.length
+                ? "Найдено ограничений или замечаний: " + audit.findings.length + "."
+                : "Явных ограничений статического предпросмотра не обнаружено."}
+            </p>
+            {!!audit.findings.length && (
+              <ul>
+                {audit.findings.map((finding) => (
+                  <li key={finding.code}>{finding.message}</li>
+                ))}
+              </ul>
+            )}
+            <p>Это локальная проверка исходника, не аудит безопасности опубликованного сайта.</p>
+          </>
+        )}
+      </section>
       {error ? (
         <p role="alert">{error}</p>
       ) : preview?.source === content ? (
