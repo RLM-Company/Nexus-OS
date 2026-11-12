@@ -66,38 +66,89 @@ function readGuiAcceptanceConfig({
   if (resolvedConfig === resolvedOutput || fs.statSync(resolvedConfig).size > 64000)
     throw new Error("Invalid GUI acceptance config/output files.");
   const raw = JSON.parse(fs.readFileSync(resolvedConfig, "utf8"));
-  if (!raw || typeof raw !== "object" || !LOOPBACK_ORIGIN.test(String(raw.origin || ""))) {
-    throw new Error("GUI acceptance requires a loopback http://127.0.0.1:<port> fixture origin.");
+  if (!raw || typeof raw !== "object") {
+    throw new Error("Invalid GUI acceptance config object.");
   }
-  if (raw.phase !== "first-launch" && raw.phase !== "relaunch-and-recovery") {
-    throw new Error("Invalid GUI acceptance phase.");
+  // A non-loopback origin is accepted only with both explicit opt-ins: the
+  // config flag and the environment gate. This keeps fixture runs (and CI)
+  // on the loopback by default while allowing an owner-directed live-server
+  // acceptance run on a disposable runner (LIVE_ACCEPTANCE_PLAN_RU.md).
+  const rawOrigin = String(raw.origin || "");
+  const remoteOrigin =
+    raw.remoteOrigin === true && environment.KOSMORA_GUI_ACCEPTANCE_ALLOW_REMOTE_ORIGIN === "1";
+  if (remoteOrigin && !/^https:\/\//i.test(rawOrigin)) {
+    throw new Error("GUI acceptance remote origin requires an https URL.");
+  }
+  if (!remoteOrigin && !LOOPBACK_ORIGIN.test(rawOrigin)) {
+    throw new Error(
+      "GUI acceptance requires a loopback http://127.0.0.1:<port> fixture origin " +
+        "(a live-server origin additionally needs remoteOrigin: true and " +
+        "KOSMORA_GUI_ACCEPTANCE_ALLOW_REMOTE_ORIGIN=1)."
+    );
   }
   if (
-    typeof raw.workspaceRoute !== "string" ||
-    safeWorkspaceRoute(raw.workspaceRoute) !== raw.workspaceRoute
+    raw.phase !== "first-launch" &&
+    raw.phase !== "relaunch-and-recovery" &&
+    raw.phase !== "live-smoke"
   ) {
-    throw new Error("Invalid GUI acceptance workspaceRoute.");
+    throw new Error("Invalid GUI acceptance phase.");
   }
-  if (typeof raw.draftScope !== "string" || !raw.draftScope.trim()) {
-    throw new Error("Invalid GUI acceptance draftScope.");
-  }
-  if (typeof raw.draftText !== "string" || !raw.draftText.trim()) {
-    throw new Error("Invalid GUI acceptance draftText.");
+  if (raw.phase === "live-smoke") {
+    // The live smoke never touches fixture-only state (login form, drafts,
+    // downloads): it must prove the packaged app reaches a real Kosmora
+    // server without credentials and lands on its honest /login page.
+    if (!remoteOrigin) {
+      throw new Error(
+        "live-smoke requires remoteOrigin: true with KOSMORA_GUI_ACCEPTANCE_ALLOW_REMOTE_ORIGIN=1."
+      );
+    }
+    let liveHost = "";
+    try {
+      liveHost = new URL(rawOrigin).hostname.toLowerCase();
+    } catch {
+      throw new Error("live-smoke requires a valid https live-server origin.");
+    }
+    if (
+      liveHost === "127.0.0.1" ||
+      liveHost === "localhost" ||
+      liveHost === "[::1]" ||
+      liveHost === "::1"
+    ) {
+      throw new Error("live-smoke requires a non-loopback live-server origin.");
+    }
+  } else {
+    if (
+      typeof raw.workspaceRoute !== "string" ||
+      safeWorkspaceRoute(raw.workspaceRoute) !== raw.workspaceRoute
+    ) {
+      throw new Error("Invalid GUI acceptance workspaceRoute.");
+    }
+    if (typeof raw.draftScope !== "string" || !raw.draftScope.trim()) {
+      throw new Error("Invalid GUI acceptance draftScope.");
+    }
+    if (typeof raw.draftText !== "string" || !raw.draftText.trim()) {
+      throw new Error("Invalid GUI acceptance draftText.");
+    }
   }
   const runnerRoot = path.resolve(environment.RUNNER_TEMP);
   const downloadDirectory =
-    typeof raw.downloadDirectory === "string" ? path.resolve(raw.downloadDirectory) : "";
-  const downloadRelative = path.relative(runnerRoot, downloadDirectory);
-  if (
-    !downloadDirectory ||
-    !downloadRelative ||
-    downloadRelative.startsWith("..") ||
-    path.isAbsolute(downloadRelative)
-  )
-    throw new Error("GUI acceptance downloads must stay within RUNNER_TEMP.");
+    raw.phase === "live-smoke" || typeof raw.downloadDirectory !== "string"
+      ? ""
+      : path.resolve(raw.downloadDirectory);
+  if (raw.phase !== "live-smoke") {
+    const downloadRelative = path.relative(runnerRoot, downloadDirectory);
+    if (
+      !downloadDirectory ||
+      !downloadRelative ||
+      downloadRelative.startsWith("..") ||
+      path.isAbsolute(downloadRelative)
+    )
+      throw new Error("GUI acceptance downloads must stay within RUNNER_TEMP.");
+  }
   return {
     phase: raw.phase,
     origin: raw.origin,
+    remoteOrigin,
     workspaceRoute: raw.workspaceRoute,
     draftScope: raw.draftScope,
     draftText: raw.draftText,
@@ -159,6 +210,83 @@ async function runPackagedGuiAcceptance({
       askWhereToSave: false,
       restorePage: true
     });
+  }
+
+  if (config.phase === "live-smoke") {
+    // Unauthenticated live-server connectivity smoke (LIVE_ACCEPTANCE_PLAN_RU.md,
+    // scenario matrix): prove the packaged app can reach the real https origin
+    // and land on its honest /login page WITHOUT any owner credentials, then
+    // stop. No drafts, downloads or workspace access ever happen in this phase.
+    const win = await waitFor(
+      () => {
+        const w = getMainWindow();
+        return w &&
+          !w.isDestroyed() &&
+          !w.webContents.isLoading() &&
+          w.webContents.getURL().endsWith("/connection.html")
+          ? w
+          : null;
+      },
+      { label: "initial connection.html load", timeoutMs: 45000 }
+    );
+
+    const setupState = await win.webContents.executeJavaScript(
+      `window.cosmoraDesktop.getConnectionState()`
+    );
+    if (setupState.mode !== "setup") {
+      throw new Error(`Expected setup mode for live smoke, got ${setupState.mode}`);
+    }
+    checkpoint("connection-page-ready");
+
+    await win.webContents.executeJavaScript(
+      `(() => {
+        const input = document.querySelector("#origin");
+        if (input) input.value = ${JSON.stringify(config.origin)};
+        void window.cosmoraDesktop.connect({ origin: ${JSON.stringify(config.origin)} });
+        return true;
+      })()`
+    );
+
+    // An unreachable or failing origin keeps the window on connection.html;
+    // the waitFor then times out and the app exits non-zero (honest failure).
+    await waitFor(
+      () =>
+        !win.webContents.isLoading() &&
+        win.webContents.getURL().startsWith(`${config.origin}/login`),
+      { label: "live origin /login redirect", timeoutMs: 45000 }
+    );
+    checkpoint("connected-to-live-login");
+
+    const bridgeCheck = await win.webContents.executeJavaScript(
+      `({
+        hasConnectionBridge: typeof window.cosmoraDesktop !== "undefined",
+        hasDraftBridge: typeof window.kosmoraDesktopDraft === "object"
+      })`
+    );
+    if (bridgeCheck.hasConnectionBridge || !bridgeCheck.hasDraftBridge) {
+      throw new Error(
+        `Unexpected remote bridge exposure on live /login: ${JSON.stringify(bridgeCheck)}`
+      );
+    }
+
+    await waitFor(() => readSavedOrigin().origin === config.origin, {
+      label: "persisted live origin",
+      timeoutMs: 45000
+    });
+
+    writeGuiAcceptanceReport({
+      outputPath: config.outputPath,
+      tempDir,
+      payload: {
+        schemaVersion: 1,
+        phase: "live-smoke",
+        ok: true,
+        landedOnLogin: true,
+        savedOrigin: readSavedOrigin().origin
+      }
+    });
+    app.quit();
+    return;
   }
 
   if (config.phase === "first-launch") {

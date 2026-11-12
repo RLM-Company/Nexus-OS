@@ -160,6 +160,102 @@ test("GUI acceptance mode is explicit, packaged-only, temp-constrained, and loop
       "utf8"
     );
     assert.throws(() => readGuiAcceptanceConfig(options), /loopback/);
+
+    // The remote-origin gate is fail-closed: the config flag alone, the
+    // environment gate alone, a non-boolean flag or a remote http origin are
+    // all rejected; both opt-ins with an https origin are accepted.
+    const remoteConfig = {
+      phase: "first-launch",
+      origin: "https://kosmora.example",
+      remoteOrigin: true,
+      workspaceRoute: WORKSPACE_ROUTE,
+      draftScope: DRAFT_SCOPE,
+      draftText: DRAFT_TEXT,
+      downloadDirectory: path.join(tempDir, "downloads")
+    };
+    fs.writeFileSync(cfgPath, JSON.stringify(remoteConfig));
+    assert.throws(() => readGuiAcceptanceConfig(options), /loopback/);
+    const remoteOptions = {
+      ...options,
+      environment: {
+        ...options.environment,
+        KOSMORA_GUI_ACCEPTANCE_ALLOW_REMOTE_ORIGIN: "1"
+      }
+    };
+    const parsedRemote = readGuiAcceptanceConfig(remoteOptions);
+    assert.equal(parsedRemote.origin, "https://kosmora.example");
+    assert.equal(parsedRemote.remoteOrigin, true);
+    fs.writeFileSync(cfgPath, JSON.stringify({ ...remoteConfig, remoteOrigin: "yes" }));
+    assert.throws(() => readGuiAcceptanceConfig(remoteOptions), /loopback/);
+    fs.writeFileSync(
+      cfgPath,
+      JSON.stringify({ ...remoteConfig, origin: "http://kosmora.example" })
+    );
+    assert.throws(() => readGuiAcceptanceConfig(remoteOptions), /https/);
+    fs.writeFileSync(cfgPath, JSON.stringify(validConfig));
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("live-smoke phase requires the remote-origin opt-in, a non-loopback https origin, and ignores fixture-only fields", () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "kosmora-gui-live-unit-"));
+  const cfgPath = path.join(tempDir, "cosmora-gui-acceptance-cfg.json");
+  const outPath = path.join(tempDir, "cosmora-gui-acceptance-out.json");
+  const options = {
+    isPackaged: true,
+    configPath: cfgPath,
+    outputPath: outPath,
+    tempDir,
+    platform: "win32",
+    environment: {
+      GITHUB_ACTIONS: "true",
+      RUNNER_ENVIRONMENT: "github-hosted",
+      RUNNER_TEMP: tempDir,
+      KOSMORA_GUI_ACCEPTANCE_ALLOW_REMOTE_ORIGIN: "1"
+    }
+  };
+  const liveConfig = { phase: "live-smoke", origin: "https://kosmora.example", remoteOrigin: true };
+  try {
+    fs.writeFileSync(cfgPath, JSON.stringify(liveConfig));
+    const parsed = readGuiAcceptanceConfig(options);
+    assert.equal(parsed.phase, "live-smoke");
+    assert.equal(parsed.origin, "https://kosmora.example");
+    assert.equal(parsed.remoteOrigin, true);
+    assert.equal(parsed.downloadDirectory, "");
+
+    // Fail-closed: a missing env gate, a missing or non-boolean config flag
+    // and loopback live origins are all rejected.
+    const fixtureGateOnly = {
+      GITHUB_ACTIONS: "true",
+      RUNNER_ENVIRONMENT: "github-hosted",
+      RUNNER_TEMP: tempDir
+    };
+    assert.throws(
+      () => readGuiAcceptanceConfig({ ...options, environment: fixtureGateOnly }),
+      /remoteOrigin: true/
+    );
+    fs.writeFileSync(
+      cfgPath,
+      JSON.stringify({ phase: "live-smoke", origin: "https://kosmora.example" })
+    );
+    assert.throws(() => readGuiAcceptanceConfig(options), /remoteOrigin: true/);
+    fs.writeFileSync(cfgPath, JSON.stringify({ ...liveConfig, remoteOrigin: "true" }));
+    assert.throws(() => readGuiAcceptanceConfig(options), /remoteOrigin: true/);
+    fs.writeFileSync(cfgPath, JSON.stringify({ ...liveConfig, origin: "https://127.0.0.1:8443" }));
+    assert.throws(() => readGuiAcceptanceConfig(options), /non-loopback/);
+    fs.writeFileSync(cfgPath, JSON.stringify({ ...liveConfig, origin: "https://[::1]:8443" }));
+    assert.throws(() => readGuiAcceptanceConfig(options), /non-loopback/);
+
+    // Unknown fixture-only fields never reach the live phase and downloads
+    // stay disabled for it.
+    fs.writeFileSync(
+      cfgPath,
+      JSON.stringify({ ...liveConfig, workspaceRoute: "/github", draftScope: "s", draftText: "t" })
+    );
+    const withExtras = readGuiAcceptanceConfig(options);
+    assert.equal(withExtras.phase, "live-smoke");
+    assert.equal(withExtras.downloadDirectory, "");
   } finally {
     fs.rmSync(tempDir, { recursive: true, force: true });
   }

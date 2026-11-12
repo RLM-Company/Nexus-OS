@@ -34,7 +34,7 @@ export class ChatSkillStore {
       .get(chatId) as { version: number; updated_at: string } | undefined;
     const items = this.sql
       .prepare(
-        `SELECT s.skill_id,s.version,v.name,v.summary,v.instructions
+        `SELECT s.skill_id,s.version,v.name,v.summary,v.instructions,'chat' AS scope
       FROM chat_skill_selections s JOIN owner_skill_versions v ON v.skill_id=s.skill_id AND v.version=s.version
       WHERE s.chat_id=? AND v.owner_id=? ORDER BY s.position`
       )
@@ -83,7 +83,7 @@ export class ChatSkillStore {
       const items = refs.map((ref) => {
         const row = this.sql
           .prepare(
-            `SELECT skill_id,version,name,summary,instructions FROM owner_skill_versions
+            `SELECT skill_id,version,name,summary,instructions,'chat' AS scope FROM owner_skill_versions
           WHERE skill_id=? AND version=? AND owner_id=?`
           )
           .get(ref.skill_id, ref.version, ownerId) as ChatSkillSnapshot | undefined;

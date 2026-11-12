@@ -601,16 +601,69 @@ img-src 'none'`; весь динамический контент через tex
     после одобрения плана). Требует владельца: живой сервер (выкладка —
     отдельно), лицензия/учётные данные, решение о GitHub-секретах для
     VM-сценариев, финальная приёмка на ноутбуке. docs-only.
+39. **Срез: live-харнесс — параметризация origin в gui-acceptance (код)**.
+    Первый кодовый шаг плана приёмки (item 38, раздел 5 п.1):
+    `gui-acceptance.cjs` принимает не-loopback origin только при ДВОЙНОМ
+    явном opt-in — `remoteOrigin: true` в конфиге И env-гейт
+    `KOSMORA_GUI_ACCEPTANCE_ALLOW_REMOTE_ORIGIN=1` (оба отсутствуют по
+    умолчанию → поведение CI без изменений, loopback-фикстура остаётся
+    обязательной); удалённый origin строго `https://` (http-удалённый
+    отклоняется — паритет с connection-policy); флаг не-boolean трактуется
+    как отсутствие; `remoteOrigin` возвращается в разобранной конфигурации
+    для наблюдаемости. Fail-closed по дизайну: fixture-прогоны и текущий CI
+    не меняются, live-сервер возможен только явно. Тест: gate-кейсы
+    (без env-гейта / с env-гейтом / не-boolean флаг / удалённый http)
+    в существующем тесте `gui-acceptance.test.cjs` (5/0).
+    `npm run check` → **459 / 0 fail**, prettier clean, `check:secrets`
+    пройден. Дальше по плану приёмки: open-вопросы владельца (origin
+    живого сервера, GitHub-секреты, учётная запись, время участия) →
+    подключение live-сценариев в workflow (env-гейт + секреты) → VM-прогоны.
+40. **Срез: вайринг live-сценариев в windows-desktop workflow (код)** —
+    одобрение владельца «Вайрить сейчас, секреты потом» (2026-11-12).
+    (1) Новая фаза `live-smoke` в `gui-acceptance.cjs`: не-loopback https
+    origin + оба opt-in'а (`remoteOrigin: true` И env-гейт) + hostname не
+    loopback (127.0.0.1/localhost/[::1]); fixture-поля (workspaceRoute,
+    draftScope, draftText, downloadDirectory) для фазы не требуются и
+    игнорируются; ветка прогона: connection.html в setup-режиме → connect
+    БЕЗ учётных данных → честный `/login` живого origin (недостижимый
+    сервер = таймаут waitFor → честный красный, не тишина) → инвариант
+    бриджей на /login (нет connection-бриджа, есть draft-бридж — как в
+    first-launch) → origin сохранён → отчёт `{ok, landedOnLogin, savedOrigin}`
+    - quit. Никаких черновиков, загрузок или workspace-доступа в фазе.
+      (2) Драйвер `ci/gui-acceptance-live.cjs`: guard'ы disposable-runner
+      (DI environment/platform как в пакете), work-root строго в RUNNER_TEMP,
+      EXE строго Kosmora.exe внутри work-root; origin только из env
+      `KOSMORA_LIVE_ORIGIN` (https, не-loopback, без credentials в URL,
+      нормализация schema://host:port, на диск не пишется); пишет конфиг
+      (`phase: live-smoke, remoteOrigin: true`), спавнит packaged-приложение,
+      ждёт отчёт, валидирует (ok/phase/savedOrigin/landedOnLogin), пишет
+      `cosmora-gui-acceptance-live-report.json` (и честный fail-отчёт с
+      checkpoint'ом при ошибке); env-гейт приложения остаётся на workflow-шаге.
+      (3) Отдельное задание «Live server acceptance smoke» в
+      `.github/workflows/windows-desktop.yml`: `needs: build` (артефакт
+      installer'а), секрет-гейт уровня шагов (`if: env.KOSMORA_LIVE_ORIGIN
+== ''` → шаг-отчёт «skipped» и задание остаётся зелёным no-op, видимым
+      в чеках; job-level `if` не может видеть secrets/env — поэтому шаги);
+      install NSIS `/S /D=` по образцу `Invoke-Installer`, запуск драйвера
+      с `KOSMORA_GUI_ACCEPTANCE_ALLOW_REMOTE_ORIGIN=1`, uninstall `/S`,
+      upload отчёта. NSIS-задание не тронуто. Тесты: live-smoke-конфиг
+      (обязательность opt-in'ов, отказ loopback/не-boolean/без-гейта,
+      игнорирование fixture-полей) + драйвер (parseLiveOrigin 9 кейсов,
+      guard-отказы до спавна 6 кейсов). `npm run check` → **462 / 0 fail**,
+      prettier clean, `check:secrets` пройден. Реальный live-прогон ждёт
+      секрета `KOSMORA_LIVE_ORIGIN` от владельца; без него задание — no-op.
 
 ## Что делать следующему запуску (в порядке приоритета)
 
-1. **Merge плана живой приёмки** (PR с ветки ops/opencode-windows, item 38,
-   docs-only): CI — 3 чека; merge только владельцем.
+1. **Merge среза вайринга** (PR с ветки ops/opencode-windows, item 40):
+   CI — 4 чека + новое задание live-smoke (no-op до секрета); merge только
+   владельцем.
 
-2. **После merge плана приёмки**: решить с владельцем open-вопросы
-   (origin живого сервера, GitHub-секреты, учётная запись для VM-сценариев,
-   время участия) → срез «live-харнесс» (код) → VM-прогоны → участие
-   владельца → финальный пользовательский цикл.
+2. **Секрет и origin — решение владельца**: создать GitHub-секрет
+   `KOSMORA_LIVE_ORIGIN` (https origin живого сервера) → задание включится
+   само на следующем PR/диспетче; затем VM-прогоны (C1-C4, B1/B2/B5, A4)
+   → участие владельца (A1-A3, B3-B4) → финальный пользовательский цикл →
+   ACCEPTANCE-отчёт.
 
 3. **Очередь владельца**: дистилляция закрыта; Multi-Agent — последний
    раздел; новых продуктовых срезов без указания владельца не начинать.

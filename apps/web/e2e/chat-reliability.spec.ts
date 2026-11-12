@@ -359,9 +359,78 @@ for (const kind of ["personal", "project"] as const)
     await expect(page.locator(".message.user")).toHaveCount(1);
     await expect(page.locator(".message.assistant")).toHaveCount(1);
     expect(
-      await page.evaluate(() => sessionStorage.getItem("cosmora:pending-chat-send:v1"))
+      await page.evaluate(() => sessionStorage.getItem("cosmora:pending-chat-sends:v2"))
     ).toBeNull();
   });
+
+test("two uncertain sends remain independently retryable after navigation and reload", async ({
+  page,
+  request
+}) => {
+  const createChat = async (initialMessage: string, content: string) => {
+    const response = await request.post("/api/v1/chats", {
+      data: { initial_message: initialMessage, client_message_id: crypto.randomUUID() }
+    });
+    expect(response.status()).toBe(201);
+    const { chat } = (await response.json()) as { chat: { id: string } };
+    const posts: unknown[] = [];
+    const statuses: number[] = [];
+    await page.route("**/api/v1/chats/" + chat.id + "/messages", async (route) => {
+      if (route.request().method() !== "POST") return route.continue();
+      posts.push(route.request().postDataJSON());
+      const accepted = await route.fetch();
+      statuses.push(accepted.status());
+      if (posts.length === 1) await route.abort("connectionreset");
+      else await route.fulfill({ response: accepted });
+    });
+    return { id: chat.id, content, posts, statuses };
+  };
+  const first = await createChat("История проверки повтора", "Первое сообщение без подтверждения");
+  const second = await createChat("Другой чат для проверки", "Второе сообщение без подтверждения");
+  const editor = page.getByLabel("Сообщение Kosmora");
+  const send = page.getByRole("button", { name: "Отправить", exact: true });
+  const markers = () =>
+    page.evaluate(() => sessionStorage.getItem("cosmora:pending-chat-sends:v2"));
+  const selectChat = async (id: string) => {
+    await page
+      .locator(".sidebar button.chat-item")
+      .filter({ has: page.locator("#pin-chat-" + id) })
+      .click();
+    await expect(page).toHaveURL(new RegExp("[?&]chat=" + id));
+  };
+  const sendWithoutAcknowledgement = async (content: string) => {
+    await expect(editor).toHaveValue("");
+    await editor.fill(content);
+    await send.click();
+    await expect(page.locator(".composer").getByText(/результат запроса неизвестен/)).toBeVisible();
+  };
+
+  await page.goto("/?chat=" + first.id);
+  await sendWithoutAcknowledgement(first.content);
+  await selectChat(second.id);
+  await sendWithoutAcknowledgement(second.content);
+  await page.locator(".sidebar").getByRole("button", { name: "Новый чат", exact: true }).click();
+  await expect(page).not.toHaveURL(/chat=/);
+  const saved = (await markers()) ?? "[]";
+  expect(JSON.parse(saved)).toHaveLength(2);
+  for (const chat of [first, second]) {
+    expect(saved).not.toContain(chat.id);
+    expect(saved).not.toContain(chat.content);
+  }
+
+  await page.reload();
+  for (const chat of [first, second]) {
+    await selectChat(chat.id);
+    await expect(editor).toHaveValue(chat.content);
+    await expect(page.locator(".message.user").filter({ hasText: chat.content })).toHaveCount(1);
+    await send.click();
+    await expect.poll(() => chat.statuses).toEqual([202, 200]);
+    expect(chat.posts[1]).toEqual(chat.posts[0]);
+    await expect(editor).toHaveValue("");
+    await expect(page.locator(".message.user").filter({ hasText: chat.content })).toHaveCount(1);
+  }
+  expect(await markers()).toBeNull();
+});
 
 test("reload and lost network recover the same run without duplicate POSTs or messages", async ({
   page,
