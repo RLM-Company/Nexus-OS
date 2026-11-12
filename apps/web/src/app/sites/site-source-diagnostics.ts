@@ -10,13 +10,13 @@ const embeddedImage = /^data:image\/(?:png|jpeg|webp);base64,[a-z0-9+/=]+$/i;
 const externalCss = /@import\b|url\(\s*["']?(?:https?:)?\/\//i;
 
 /**
- * Report only observable limitations of the STATIC preview, never execute source.
+ * Report observable limitations of STATIC preview, never execute source.
  * Parsing happens in an inert template. This is not a publication security audit.
  */
 export function inspectSiteSource(content: string): SiteSourceFinding[] {
-  if (new TextEncoder().encode(content).byteLength > MAX_SOURCE_BYTES)
+  if (new TextEncoder().encode(content).byteLength > MAX_SOURCE_BYTES) {
     throw new Error("Размер диагностики превышает 512 КиБ.");
-
+  }
   const template = document.createElement("template");
   template.innerHTML = content;
   const elements = template.content.querySelectorAll("*");
@@ -35,8 +35,9 @@ export function inspectSiteSource(content: string): SiteSourceFinding[] {
     const tag = element.localName;
     if (tag === "script") scripts++;
     if (["form", "button", "input", "select", "textarea"].includes(tag)) formControls++;
-    if (["iframe", "object", "embed", "video", "audio", "canvas", "svg", "math"].includes(tag))
+    if (["iframe", "object", "embed", "video", "audio", "canvas", "svg", "math"].includes(tag)) {
       unsupported++;
+    }
     const id = element.getAttribute("id");
     if (id) {
       if (seenIds.has(id)) repeatedIds.add(id);
@@ -63,32 +64,39 @@ export function inspectSiteSource(content: string): SiteSourceFinding[] {
   }
 
   const findings: SiteSourceFinding[] = [];
-  const push = (code: string, message: string) => findings.push({ code, message });
-  if (elements.length > MAX_INSPECTED_ELEMENTS)
-    push("truncated", "Документ большой: проверены только первые 3000 элементов.");
-  if (scripts)
-    push("scripts", "Скрипты (" + scripts + ") не исполняются в статическом предпросмотре.");
-  if (formControls)
-    push("forms", "Формы и элементы ввода (" + formControls + ") не работают в предпросмотре.");
-  if (unsupported)
-    push("elements", "Активные или неподдерживаемые элементы (" + unsupported + ") удаляются из предпросмотра.");
-  if (externalReferences || externalStyles)
-    push(
-      "external",
-      "Внешние ссылки на ресурсы (" + (externalReferences + externalStyles) +
-        ") в статическом предпросмотре не загружаются. Экспорт исходного HTML их сохраняет."
-    );
-  if (unavailableImages)
-    push(
-      "images",
-      "Изображения (" + unavailableImages + ") не отобразятся: preview разрешает только встроенные PNG/JPEG/WebP в формате data URI."
-    );
-  if (missingImageAlt)
-    push("alt", "Изображения без атрибута alt: " + missingImageAlt + ".");
-  if (repeatedIds.size)
-    push("duplicate-id", "Повторяющиеся id: " + [...repeatedIds].slice(0, 5).join(", ") + ".");
+  const record = (code: string, message: string) => {
+    findings.push({ code, message });
+  };
+  if (elements.length > MAX_INSPECTED_ELEMENTS) {
+    record("truncated", "Документ большой: проверены только первые 3000 элементов.");
+  }
+  if (scripts > 0) {
+    record("scripts", "Скрипты (" + scripts + ") не исполняются в статическом предпросмотре.");
+  }
+  if (formControls > 0) {
+    record("forms", "Формы и элементы ввода (" + formControls + ") не работают в предпросмотре.");
+  }
+  if (unsupported > 0) {
+    record("elements", "Неподдерживаемых элементов: " + unsupported + ". В preview они удаляются.");
+  }
+  if (externalReferences + externalStyles > 0) {
+    const count = externalReferences + externalStyles;
+    record("external", "Внешние ссылки на ресурсы: " + count + ". Preview блокирует загрузку.");
+  }
+  if (unavailableImages > 0) {
+    record("images", "Изображения без встроенного PNG/JPEG/WebP: " + unavailableImages + ".");
+  }
+  if (missingImageAlt > 0) {
+    record("alt", "Изображения без атрибута alt: " + missingImageAlt + ".");
+  }
+  if (repeatedIds.size > 0) {
+    const names = [...repeatedIds].slice(0, 5).join(", ");
+    record("duplicate-id", "Повторяющиеся id: " + names + ".");
+  }
   const missingTargets = [...new Set(targets.filter((target) => !seenIds.has(target)))];
-  if (missingTargets.length)
-    push("anchors", "Не найдены цели внутренних ссылок: " + missingTargets.slice(0, 5).map((item) => "#" + item).join(", ") + ".");
+  if (missingTargets.length > 0) {
+    const names = missingTargets.slice(0, 5).map((item) => "#" + item).join(", ");
+    record("anchors", "Не найдены цели внутренних ссылок: " + names + ".");
+  }
   return findings;
 }

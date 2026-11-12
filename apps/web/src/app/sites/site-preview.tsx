@@ -47,7 +47,9 @@ export function SitePreview({ content }: { content: string }) {
   const [viewport, setViewport] = useState("desktop");
   const [preview, setPreview] = useState<{ source: string; document: string } | null>(null);
   const [error, setError] = useState("");
-  const [audit, setAudit] = useState<{ source: string; findings: SiteSourceFinding[] } | null>(null);
+  const [audit, setAudit] = useState<{ source: string; findings: SiteSourceFinding[] } | null>(
+    null
+  );
   const [auditError, setAuditError] = useState("");
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -91,7 +93,9 @@ export function SitePreview({ content }: { content: string }) {
               setAuditError("");
             } catch (cause) {
               setAudit(null);
-              setAuditError(cause instanceof Error ? cause.message : "Проверка исходника не удалась.");
+              setAuditError(
+                cause instanceof Error ? cause.message : "Проверка исходника не удалась."
+              );
             }
           }}
         >
