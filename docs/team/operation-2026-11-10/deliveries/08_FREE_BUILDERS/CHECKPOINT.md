@@ -1,6 +1,27 @@
 # 08_FREE_BUILDERS — точка продолжения
 
-## Актуальная точка — 2026-11-12
+## Проверенный код — 2026-11-12
+
+Статус: **готово к интеграционному ревью Codex**, не production и не live.
+
+- BASE_SHA: `00ceac8b47f220cd798e3f4cbd0596af14b3443d`.
+- CODE_HEAD_SHA: `746486542dcb8093d8cd2695114e04b8cbe68627`.
+- Branch: `ops/free-studio-builders`.
+- PR: https://github.com/RLM-Company/Nexus-OS/pull/556
+- CI run: https://github.com/RLM-Company/Nexus-OS/actions/runs/43261579390
+- Verify monorepo: SUCCESS.
+- Code sandbox isolation: SUCCESS.
+- Browser acceptance: SUCCESS, 492 + 3 + 5 + 4 тестов.
+- Ни одного временного probe test или `prettier-ignore` в итоговом коде нет.
+- Была исправлена ошибка Set.has и ошибки линтера HTML/asset-модулей.
+- В CI использовались browser fixtures, не настоящие оплачиваемые модели.
+
+Следующий шаг: Codex сверяет актуальный main и разрешает интеграцию PR.
+После принятия — отдельная живая приёмка существующего preview/Canvas.
+Дальнейший API patch+expected_version остаётся за согласованием Codex.
+Не выполнять merge, деплой, VPS, платные вызовы или управление ПК владельца.
+
+## Историческая точка до CI — 2026-11-12
 
 **Статус:** в работе, PR #556; не сливать и не выкатывать самостоятельно.
 
