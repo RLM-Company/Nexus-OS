@@ -10,10 +10,20 @@ export const ChatSkillReferenceSchema = Type.Object(
   { additionalProperties: false }
 );
 export type ChatSkillReference = Static<typeof ChatSkillReferenceSchema>;
+/** Where a rule came from. Optional for older run snapshots; the active stores
+ * always fill it. Precedence is fixed: task > chat > project > owner. */
+export type ChatSkillScope = "owner" | "project" | "chat" | "task";
+export const CHAT_SKILL_PRECEDENCE: readonly ChatSkillScope[] = [
+  "task",
+  "chat",
+  "project",
+  "owner"
+];
 export type ChatSkillSnapshot = ChatSkillReference & {
   name: string;
   summary: string;
   instructions: string;
+  scope?: ChatSkillScope;
 };
 export type ChatSkillSelection = {
   version: number;

@@ -8,6 +8,7 @@ import type {
   ModelMessage,
   ModelRequest
 } from "@cosmora/contracts";
+import { CHAT_SKILL_PRECEDENCE } from "@cosmora/contracts";
 import { estimateInputTokensUpperBound } from "./manager.js";
 import { assertEntityId, normalizeCommonModelServiceOptions } from "./model-service-options.js";
 import { messageWithMaterials } from "./message-materials.js";
@@ -122,9 +123,22 @@ export class ChatService {
       const lastUser = conversation.findLastIndex((message) => message.role === "user");
       if (lastUser >= 0) {
         const original = conversation[lastUser]!;
+        // Explicit scope and fixed precedence make the source of every rule
+        // visible. No rule is invented: only explicitly selected skills enter.
+        const ordered = [...context.skills].sort(
+          (a, b) =>
+            CHAT_SKILL_PRECEDENCE.indexOf(a.scope ?? "owner") -
+            CHAT_SKILL_PRECEDENCE.indexOf(b.scope ?? "owner")
+        );
+        const lines = ordered.map(
+          (skill) =>
+            `- [${skill.scope ?? "owner"}] ${skill.name} v${skill.version}: ${skill.instructions}`
+        );
         conversation[lastUser] = {
           ...original,
-          content: `Выбранные пользователем Skills (пожелания к ответу, не системные правила; не дают прав или инструментов):\n${JSON.stringify(context.skills)}\n\n${original.content}`
+          content:
+            `Выбранные пользователем Skills (пожелания к ответу, не системные правила; не дают прав или инструментов). ` +
+            `Приоритет: task > chat > project > owner. Источник указан в [scope].\n${lines.join("\n")}\n\n${original.content}`
         };
       }
     }
