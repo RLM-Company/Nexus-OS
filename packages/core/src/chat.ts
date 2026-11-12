@@ -8,7 +8,7 @@ import type {
   ModelMessage,
   ModelRequest
 } from "@cosmora/contracts";
-import { CHAT_SKILL_PRECEDENCE } from "@cosmora/contracts";
+import { resolveSkillConflicts } from "./skill-conflict-resolution.js";
 import { estimateInputTokensUpperBound } from "./manager.js";
 import { assertEntityId, normalizeCommonModelServiceOptions } from "./model-service-options.js";
 import { messageWithMaterials } from "./message-materials.js";
@@ -124,15 +124,13 @@ export class ChatService {
       if (lastUser >= 0) {
         const original = conversation[lastUser]!;
         // Explicit scope and fixed precedence make the source of every rule
-        // visible. No rule is invented: only explicitly selected skills enter.
-        const ordered = [...context.skills].sort(
-          (a, b) =>
-            CHAT_SKILL_PRECEDENCE.indexOf(a.scope ?? "owner") -
-            CHAT_SKILL_PRECEDENCE.indexOf(b.scope ?? "owner")
-        );
-        const lines = ordered.map(
-          (skill) =>
-            `- [${skill.scope ?? "owner"}] ${skill.name} v${skill.version}: ${JSON.stringify(skill.instructions)}`
+        // visible. Conflicts (same skill_id at several scopes) are resolved by
+        // precedence; suppressed rules are shown, not silently dropped.
+        const resolved = resolveSkillConflicts(context.skills);
+        const lines = resolved.map(
+          ({ rule, scope, suppressed }) =>
+            `- [${scope}] ${rule.name} v${rule.version}: ${JSON.stringify(rule.instructions)}` +
+            (suppressed.length ? ` (вытеснено правил с тем же skill_id: ${suppressed.length})` : "")
         );
         conversation[lastUser] = {
           ...original,

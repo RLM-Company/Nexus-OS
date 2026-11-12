@@ -63,6 +63,40 @@ prettier --check . / check:secrets       passed
 
 Миграций нет, схема БД не менялась, новых зависимостей нет. Внешний провайдер не вызывался.
 
+## Срез B — разрешение конфликтов и preview правил
+
+- `packages/core/src/skill-conflict-resolution.ts` — **новый** чистый
+  `resolveSkillConflicts()`: конфликт определяется **только по `skill_id`**
+  (одна специализация выбрана на нескольких уровнях), никогда по похожим
+  словам. Побеждает высший scope; проигравшие возвращаются в `suppressed`, а не
+  выбрасываются молча. Снимки без scope трактуются как `owner`.
+- `ChatService.buildRequest()` использует резолвер: в модель попадает только
+  правило-победитель, а строка честно сообщает «вытеснено правил с тем же
+  skill_id: N». `JSON.stringify(instructions)` сохранён (security-тест из
+  среза A).
+- `apps/web/src/app/chat-skill-settings.tsx` — в уже существующем `<details>`
+  «Подключённые инструкции» показываются `[scope]`, приоритет и пояснение о
+  разрешении конфликта. Новой панели, API, CSS и зависимости web от
+  `@cosmora/core` нет.
+- Тесты: +3 (победа по scope, отсутствие склейки разных правил с одинаковым
+  текстом, рендер только победителя с пометкой). Итого 8/8 в файле.
+
+## Проверки срезов A+B (фактические)
+
+```
+packages/core полный vitest              397 passed (35 файлов), новый файл 8/8
+packages/db  полный, --maxWorkers=2     218 passed (38 файлов), новый файл 4/4
+apps/api     chat-skills.test.ts        11 passed (security-тест экранирования)
+apps/api     целевые 4 файла            51 passed
+typecheck/lint contracts/core/db/api/web · prettier --check . · check:secrets · web build — green
+```
+
+`web build` сначала вернул 1 из-за ошибки «Export DRIVE_OFFICE_FILE_MAX_BYTES
+doesn't exist» — это устаревший `dist` контрактов в локальном дереве после
+merge `main`. После `pnpm --filter @cosmora/contracts build` сборка = 0; в моей
+ветке файлы drive/office не менялись, в CI сборка идёт с нуля. Зафиксировано,
+чтобы не выдать за продуктовую ошибку.
+
 ## Полномочия и границы
 
 Не менялись тарифы, квоты, провайдер HY4, права, keys, auth, gateway, system prompt, composer/sidebar/global CSS, чужие memory tables. Multi-Agent/Jarvis/VPS/production/merge — не выполнялись. Реальные данные владельца, .env, токены, БД пользователей не читались.
