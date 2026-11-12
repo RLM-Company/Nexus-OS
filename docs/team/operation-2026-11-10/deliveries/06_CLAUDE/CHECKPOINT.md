@@ -3,8 +3,10 @@
 - **Обновлено:** срез A готов к интеграции; петля продолжается по указанию владельца.
 - **BASE_SHA:** `5c7ac4de7cd2e18232349342e209676fff6dc579`.
 - **Ветка:** `ops/claude-specializations` (новая; `06_CLAUDE` на доске была `prepared`, без ветки/отчётов).
-- **PR:** открывается в `main`, без merge/deploy. HEAD_SHA — `git log -1` ветки.
+- **PR:** [#538](https://github.com/RLM-Company/Nexus-OS/pull/538) — `CLEAN / MERGEABLE / OPEN`, без merge/deploy. CI `43197084402`: `Verify monorepo` pass 5m15s, `Browser acceptance` pass 11m41s, sandbox, identity — 4/4.
+- **HEAD_SHA (на origin):** `efdcb6a97119327e39a19eb32d7c808bd5124552`.
 - **Переназначение:** задание именует Claude; взято по прямому указанию владельца («2»).
+- **Локальная правка отчётов после CI:** этот CHECKPOINT и DELIVERY.md обновлены локально и **не запушены** намеренно, чтобы не перезапускать зелёный CI doc-коммитом (урок прошлых петель). Код и тесты на origin полностью соответствуют проверенному HEAD.
 
 ## Выполнено
 

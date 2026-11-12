@@ -3,8 +3,13 @@
 - **Статус:** готово к интеграции (дальнейшие статусы подтверждает Codex).
 - **BASE_SHA:** `5c7ac4de7cd2e18232349342e209676fff6dc579` (актуальный `main`).
 - **Ветка:** `ops/claude-specializations` (новая; сфера на доске была `prepared`, без ветки и отчётов).
-- **PR:** открывается в `main`, без merge/deploy.
-- **HEAD_SHA:** см. `git log -1` ветки / CHECKPOINT.md.
+- **PR:** [#538](https://github.com/RLM-Company/Nexus-OS/pull/538), `CLEAN / MERGEABLE / OPEN`, без merge/deploy. Финальный CI `43197084402` — 4/4 pass (`Verify monorepo` 5m15s, `Browser acceptance` 11m41s, sandbox, identity).
+- **HEAD_SHA:** `efdcb6a97119327e39a19eb32d7c808bd5124552`.
+
+Первый CI (`43194574320`) упал на `Verify monorepo`: мой рендер выводил инструкции Skills сырым текстом и сломал существующий security-тест `apps/api/test/chat-skills.test.ts:140`, требующий `JSON.stringify(instructions)`. Исправлено содержательно (экранирование восстановлено) + добавлен регрессионный тест; повторный CI зелёный.
+
+Примечание: правая колонка отчётов обновлена локально после финального CI и **не запушена**, чтобы не перезапускать проверки doc-коммитом. Код, тесты и отчёты на origin соответствуют проверенному HEAD `efdcb6a`.
+
 - **Переназначение:** задание `06_CLAUDE.md` именует исполнителем Claude; петля взята по прямому указанию владельца («2»).
 
 ## Сценарий до / после
