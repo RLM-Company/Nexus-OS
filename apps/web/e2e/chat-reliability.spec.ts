@@ -363,6 +363,58 @@ for (const kind of ["personal", "project"] as const)
     ).toBeNull();
   });
 
+test("a lost send acknowledgement survives switching between existing chats", async ({
+  page,
+  request
+}) => {
+  const createChat = async (initialMessage: string) => {
+    const response = await request.post("/api/v1/chats", {
+      data: { initial_message: initialMessage, client_message_id: crypto.randomUUID() }
+    });
+    expect(response.status()).toBe(201);
+    return ((await response.json()) as { chat: { id: string } }).chat.id;
+  };
+  const target = await createChat("История проверки повтора");
+  const other = await createChat("Другой чат для проверки");
+  const content = "Сообщение с потерянным подтверждением";
+  const posts: unknown[] = [];
+  const statuses: number[] = [];
+  await page.route("**/api/v1/chats/" + target + "/messages", async (route) => {
+    if (route.request().method() !== "POST") return route.continue();
+    posts.push(route.request().postDataJSON());
+    const response = await route.fetch();
+    statuses.push(response.status());
+    if (posts.length === 1) await route.abort("connectionreset");
+    else await route.fulfill({ response });
+  });
+
+  await page.goto("/?chat=" + target);
+  const editor = page.getByLabel("Сообщение Kosmora");
+  const send = page.getByRole("button", { name: "Отправить", exact: true });
+  await editor.fill(content);
+  await send.click();
+  await expect(page.locator(".composer").getByText(/результат запроса неизвестен/)).toBeVisible();
+
+  const selectChat = async (id: string) => {
+    await page
+      .locator(".sidebar button.chat-item")
+      .filter({ has: page.locator("#pin-chat-" + id) })
+      .click();
+    await expect(page).toHaveURL(new RegExp("[?&]chat=" + id));
+  };
+  await selectChat(other);
+  await expect(editor).toHaveValue("");
+  await selectChat(target);
+  await expect(editor).toHaveValue(content);
+  await expect(page.locator(".message.user").filter({ hasText: content })).toHaveCount(1);
+  await send.click();
+
+  await expect.poll(() => statuses).toEqual([202, 200]);
+  expect(posts[1]).toEqual(posts[0]);
+  await expect(editor).toHaveValue("");
+  await expect(page.locator(".message.user").filter({ hasText: content })).toHaveCount(1);
+});
+
 test("reload and lost network recover the same run without duplicate POSTs or messages", async ({
   page,
   context

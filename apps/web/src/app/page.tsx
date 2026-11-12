@@ -630,7 +630,6 @@ export default function Home() {
   const greetingInitializedRef = useRef(false);
   const submitPendingRef = useRef(false);
   const pendingChatSendRef = useRef<{
-    epoch: number;
     path: string;
     payload: string;
     id: string;
@@ -1939,10 +1938,7 @@ export default function Home() {
     const postChatMessage = async <T,>(path: string, body: object): Promise<T> => {
       const payload = JSON.stringify(body);
       const previous = pendingChatSendRef.current;
-      let id =
-        previous?.epoch === submittedEpoch && previous.path === path && previous.payload === payload
-          ? previous.id
-          : undefined;
+      let id = previous?.path === path && previous.payload === payload ? previous.id : undefined;
       let fingerprint: string | undefined;
       try {
         if (crypto.subtle) {
@@ -1969,7 +1965,7 @@ export default function Home() {
       }
       if (submittedEpoch !== viewEpochRef.current) throw Error("Чат изменился");
       id ??= clientId();
-      pendingChatSendRef.current = { epoch: submittedEpoch, path, payload, id };
+      pendingChatSendRef.current = { path, payload, id };
       if (fingerprint) {
         try {
           window.sessionStorage.setItem(PENDING_CHAT_SEND_KEY, JSON.stringify({ fingerprint, id }));
@@ -2210,8 +2206,10 @@ export default function Home() {
 
   const resetToLocalChat = (chatId: string | null, rotate = false): void => {
     pendingComposeRef.current = null;
-    pendingChatSendRef.current = null;
-    forgetPendingChatSend();
+    if (chatId === null) {
+      pendingChatSendRef.current = null;
+      forgetPendingChatSend();
+    }
     viewEpochRef.current += 1;
     // An explicit navigation replaces a still-pending initial route selection.
     setInitialRouteReady(true);
