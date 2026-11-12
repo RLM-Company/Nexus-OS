@@ -35,6 +35,7 @@ import {
 } from "./skill-creation";
 import { emptySkillHistory, recordSkillEdit, travelSkillHistory } from "./skill-history";
 import { SkillSearchPanel } from "./skill-search-panel";
+import { SkillCorrectionForm } from "./skill-correction-form";
 import type { SkillMatch } from "./skill-search";
 const catalog = loadMockSkillCatalog();
 
@@ -386,6 +387,7 @@ function SkillsLibrary({ ownerScope }: { ownerScope: string }) {
             установка пакетов и выдача разрешений здесь недоступны.
           </p>
         </section>
+        <SkillCorrectionForm onSaved={() => void refresh()} />
         <div className={styles.workspace}>
           <aside className={styles.sidebar} aria-label="Мои Skills">
             <div className={styles.sidebarHeader}>
