@@ -271,6 +271,81 @@ export function parseResearchAnswer(raw: string, run: ResearchRun): ResearchAnsw
   return { summary, disagreements, gaps: object.gaps };
 }
 
+/** Explicit claim check against a TRUSTED source excerpt from the run.
+ *
+ * The caller may pass only data that came from `researchEvidence(run)` — never
+ * from model/client output. A matching token is not proof of truth; numbers are
+ * compared with their boundaries and unit, and an ambiguous subject, criterion,
+ * negation, unit or page version yields `unconfirmed`, never `verified`. */
+export interface ResearchClaimCheckInput {
+  evidence: ReturnType<typeof researchEvidence>[number];
+  claim_text: string;
+  expected_value: string;
+  expected_unit: string;
+  trusted_page_version: string;
+  cited_page_version: string;
+  trusted_snapshot_digest: string;
+  cited_snapshot_digest: string;
+}
+export interface ResearchClaimCheckReport {
+  source_quote_verified: boolean;
+  claim_assessment: "verified" | "unconfirmed" | "refuted";
+  reason: string;
+}
+const NUMBER_WITH_UNIT = /(\d[\d\s\u00a0\u202f]*[.,]?\d*)\s*([^\s\d,.;:!?]+)?/gu;
+
+export function verifyResearchClaim(input: ResearchClaimCheckInput): ResearchClaimCheckReport {
+  const { evidence, claim_text, expected_value, expected_unit } = input;
+  const fail = (reason: string): ResearchClaimCheckReport => ({
+    source_quote_verified: false,
+    claim_assessment: "unconfirmed",
+    reason
+  });
+
+  // The excerpt must belong to the trusted snapshot the claim cites.
+  if (
+    !input.trusted_snapshot_digest ||
+    input.cited_snapshot_digest !== input.trusted_snapshot_digest ||
+    input.cited_page_version !== input.trusted_page_version ||
+    input.trusted_page_version !== evidence.excerpt_id
+  )
+    return fail("Цитата не привязана к доверенному снимку/версии страницы.");
+  if (!claim_text.trim() || !expected_value.trim() || !expected_unit.trim())
+    return fail("Не задано утверждение, значение или единица.");
+  // Ambiguity checks MUST run before the literal excerpt match: otherwise a
+  // negation copied into claim_text would match the very excerpt that contains it.
+  if (/(?<!\p{L})(?:не|никогда|кроме|исключ|без)(?!\p{L})/iu.test(claim_text))
+    return fail("Отрицание требует явной проверки источника.");
+  if (!evidence.excerpt.includes(claim_text.trim()))
+    return fail("Текст утверждения отсутствует в доверенной выдержке.");
+
+  // Compare the numeric literal WITH boundaries and its unit. Never multiply by
+  // 1000/1024/12 or accept a substring match such as "50" inside "5000".
+  const wanted = expected_value.trim();
+  const unit = expected_unit.trim();
+  let found = false;
+  for (const match of evidence.excerpt.matchAll(NUMBER_WITH_UNIT)) {
+    const value = match[1]!.replace(/[\s\u00a0\u202f]/g, "");
+    const matchedUnit = (match[2] ?? "").replace(/[.,;:!?]+$/u, "");
+    if (value !== wanted || matchedUnit !== unit) continue;
+    // A number is only unambiguous when it is not part of a longer literal.
+    const before = evidence.excerpt.slice(0, match.index).match(/[\p{L}\p{N}]+$/u);
+    const after = evidence.excerpt.slice(match.index + match[0].length).match(/^[\p{L}\p{N}]+/u);
+    if (before || after) continue;
+    found = true;
+    break;
+  }
+  if (!found)
+    return fail(
+      `Значение ${JSON.stringify(wanted)} ${JSON.stringify(unit)} не найдено с границами и единицей в выдержке.`
+    );
+  return {
+    source_quote_verified: true,
+    claim_assessment: "verified",
+    reason: "Значение, единица, версия и снимок совпали с доверенной выдержкой."
+  };
+}
+
 const safeMarkdown = (text: string): string =>
   text.replace(/[\r\n]/g, " ").replace(/[\\`*_{}[\]()#+!<>|]/g, "\\$&");
 
@@ -306,6 +381,8 @@ export function researchMarkdown(run: ResearchRun): string {
       lines.indexOf("## Ответ по проверенным выдержкам"),
       3,
       "## Синтез модели по прочитанным источникам",
+      "",
+      "Ссылки ниже означают только то, что цитата существует в прочитанном снимке (`source_quote_verified`). Они не подтверждают истинность утверждения (`claim_assessment`); при неоднозначном субъекте, единице, отрицании или версии страницы результат считается неподтверждённым.",
       "",
       ...run.answer.summary.map((claim) => `- ${linked(claim)}`),
       "",
