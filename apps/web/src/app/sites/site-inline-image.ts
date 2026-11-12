@@ -10,12 +10,14 @@ const escapeMap: Record<string, string> = {
 };
 
 /** Inline a bounded, magic-validated image; do not decode or execute its content. */
-// prettier-ignore
 export function embedSiteImage(html: string, bytes: Uint8Array, alt: string): string {
   if (!bytes.byteLength || bytes.byteLength > SITE_IMAGE_MAX_BYTES) {
     throw new Error("Файл изображения должен быть от 1 байта до 64 КиБ.");
   }
-  if (alt.length > 200 || [...alt].some((char) => char.charCodeAt(0) < 32 || char.charCodeAt(0) === 127)) {
+  if (
+    alt.length > 200 ||
+    [...alt].some((char) => char.charCodeAt(0) < 32 || char.charCodeAt(0) === 127)
+  ) {
     throw new Error("Описание изображения должно быть до 200 символов без управляющих знаков.");
   }
   const mime = (() => {
@@ -31,7 +33,8 @@ export function embedSiteImage(html: string, bytes: Uint8Array, alt: string): st
       bytes[9] === 69 &&
       bytes[10] === 66 &&
       bytes[11] === 80
-    ) return "image/webp";
+    )
+      return "image/webp";
     throw new Error("Поддерживаются только PNG, JPEG и WebP. SVG не принимается.");
   })();
 

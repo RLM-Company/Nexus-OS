@@ -4,7 +4,6 @@ import { useEffect, useRef, useState } from "react";
 import { embedSiteImage, SITE_IMAGE_MAX_BYTES } from "./site-inline-image";
 import styles from "./sites.module.css";
 
-// prettier-ignore
 export function SiteImageImport({
   content,
   disabled,
@@ -84,9 +83,7 @@ export function SiteImageImport({
       </button>
       {working && <p role="status">Проверяю изображение…</p>}
       {error && <p role="alert">{error}</p>}
-      <p>
-        Изображение станет частью черновика и войдёт в сохранённую версию и HTML-экспорт.
-      </p>
+      <p>Изображение станет частью черновика и войдёт в сохранённую версию и HTML-экспорт.</p>
     </section>
   );
 }

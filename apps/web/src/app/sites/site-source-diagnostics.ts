@@ -14,8 +14,6 @@ const unsupportedTags = new Set("iframe object embed video audio canvas svg math
  * Report observable limitations of STATIC preview, never execute source.
  * Parsing happens in an inert template. This is not a publication security audit.
  */
-// Temporary local exception while verifying the typed checker and browser suite.
-// prettier-ignore
 export function inspectSiteSource(content: string): SiteSourceFinding[] {
   if (new TextEncoder().encode(content).byteLength > MAX_SOURCE_BYTES) {
     throw new Error("Размер диагностики превышает 512 КиБ.");
@@ -99,7 +97,10 @@ export function inspectSiteSource(content: string): SiteSourceFinding[] {
   }
   const missingTargets = [...new Set(targets.filter((target) => !seenIds.has(target)))];
   if (missingTargets.length > 0) {
-    const names = missingTargets.slice(0, 5).map((item) => "#" + item).join(", ");
+    const names = missingTargets
+      .slice(0, 5)
+      .map((item) => "#" + item)
+      .join(", ");
     record("anchors", "Не найдены цели внутренних ссылок: " + names + ".");
   }
   return findings;
