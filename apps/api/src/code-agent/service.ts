@@ -1563,7 +1563,12 @@ export class CodeAgentService {
     const working = [...files.values()];
     const digest = computeCodeAgentSnapshotDigest(working);
     if (proof.snapshotDigest !== digest) throw new CodeAgentError("CHECK_SNAPSHOT_MISMATCH");
-    validateCodeAgentCheckResult(proof, digest);
+    let feedback: ReturnType<typeof validateCodeAgentCheckResult>;
+    try {
+      feedback = validateCodeAgentCheckResult(proof, digest);
+    } catch {
+      throw new CodeAgentError("REPAIR_CHECK_REQUIRED");
+    }
     if (
       working.length > 40 ||
       working.reduce((n, f) => n + Buffer.byteLength(f.content), 0) > 500000
@@ -1586,10 +1591,11 @@ export class CodeAgentService {
           working_snapshot_digest: digest,
           untrusted_execution_feedback: {
             check: proof.check_type,
-            exitCode: proof.exitCode,
-            stdout: proof.stdout.slice(0, 8000),
-            stderr: proof.stderr.slice(0, 8000),
-            truncated: proof.truncated || proof.stdout.length > 8000 || proof.stderr.length > 8000
+            exitCode: feedback.exitCode,
+            stdout: feedback.stdout.slice(0, 8000),
+            stderr: feedback.stderr.slice(0, 8000),
+            truncated:
+              feedback.truncated || feedback.stdout.length > 8000 || feedback.stderr.length > 8000
           },
           files: codePromptFiles(working)
         })
@@ -1604,6 +1610,9 @@ export class CodeAgentService {
         status: "running",
         error: undefined,
         publication_token: undefined,
+        // Historical rows may predate output redaction. Reuse only the validator's
+        // canonical result in the new checkpoint as well as the model prompt.
+        check: { ...feedback, review_hash: input.review_hash, check_type: proof.check_type },
         auto_check_requested: proof.check_type,
         repair_request: {
           client_request_id: input.client_request_id,
@@ -1612,7 +1621,7 @@ export class CodeAgentService {
           source_snapshot_digest: digest,
           source_draft_id: draft.id,
           check_type: proof.check_type,
-          source_check: proof,
+          source_check: feedback,
           state: "started"
         }
       },

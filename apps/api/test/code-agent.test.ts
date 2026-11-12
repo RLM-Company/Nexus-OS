@@ -3152,6 +3152,206 @@ async function failedRepair(f: Awaited<ReturnType<typeof fixture>>) {
 }
 
 describe("bounded explicit check-feedback repair", () => {
+  it("redacts legacy check feedback before repair dispatch and preserves factual evidence", async () => {
+    const f = await fixture({ responses: repairResponses(), runner: repairRunner() });
+    const request = await failedRepair(f);
+    const run = f.get(request.id);
+    const token = "ghp_" + "R".repeat(36);
+    const keyBody = "SYNTHETIC_PRIVATE_MATERIAL";
+    const legacy = f.store.save(
+      {
+        ...run,
+        check: {
+          ...run.check!,
+          stdout: `\u001b[31mexpected 5, actual -1; 19 700; 00123; кроме доставки\u001b[0m\n${token}`,
+          stderr:
+            "-----BEGIN " +
+            "PRIVATE KEY-----\n" +
+            keyBody +
+            "\n-----END " +
+            "PRIVATE KEY-----\nnot enabled",
+          journal: [
+            { at: "2026-11-12T00:00:00.000Z", event: "finished", detail: `legacy ${token}` }
+          ]
+        }
+      },
+      "fixture historical unredacted check"
+    );
+    const { id, ...payload } = { ...request, expected_run_version: legacy.version };
+    const response = await f.app.inject({
+      method: "POST",
+      url: `${f.base}/${id}/repair-v2`,
+      payload
+    });
+    expect(response.statusCode).toBe(200);
+    const result = await f.wait(id, "proposed");
+    const sent = JSON.stringify(f.providerCalls[3]);
+    expect(sent.includes(token)).toBe(false);
+    expect(sent.includes(keyBody)).toBe(false);
+    const messages = f.providerCalls[3]!.messages as Array<{ content: string }>;
+    const context = JSON.parse(messages[1]!.content) as {
+      untrusted_execution_feedback: {
+        stdout: string;
+        stderr: string;
+        exitCode: number;
+        truncated: boolean;
+      };
+    };
+    const feedback = context.untrusted_execution_feedback;
+    expect(feedback.stdout.includes("\u001b")).toBe(false);
+    expect(feedback.stdout).toContain("expected 5, actual -1; 19 700; 00123; кроме доставки");
+    expect(feedback.stdout).toContain("[REDACTED]");
+    expect(feedback.stderr).toContain("not enabled");
+    expect(feedback.stderr).toContain("[REDACTED]");
+    expect(feedback.exitCode).toBe(1);
+    expect(feedback.truncated).toBe(false);
+    const source = result.repair_request!.source_check;
+    expect(source.snapshotDigest).toBe(legacy.check!.snapshotDigest);
+    expect(source.exitCode).toBe(1);
+    expect(source.journal[0]!.at).toBe("2026-11-12T00:00:00.000Z");
+    expect(f.providerCalls).toHaveLength(4);
+    expect(f.githubCalls.every((call) => call.method === "GET")).toBe(true);
+  });
+  it("stores only validated redacted feedback while a reserved repair is awaiting its base read", async () => {
+    let release!: () => void;
+    const barrier = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let block = false;
+    const f = await fixture({
+      responses: repairResponses(),
+      runner: repairRunner(),
+      githubBarrier: () => (block ? barrier : Promise.resolve())
+    });
+    const request = await failedRepair(f);
+    const token = "sk-proj-" + "S".repeat(36);
+    const run = f.get(request.id);
+    const legacy = f.store.save(
+      {
+        ...run,
+        check: {
+          ...run.check!,
+          stdout: `source ${token}`,
+          stderr: `Bearer ${token}`,
+          journal: [{ at: "2026-11-12T00:00:00.000Z", event: "finished", detail: token }]
+        }
+      },
+      "fixture legacy check"
+    );
+    const payload = { ...request, expected_run_version: legacy.version };
+    block = true;
+    try {
+      const started = f.service.repair(request.id, owner, payload);
+      expect(JSON.stringify(started.repair_request!.source_check).includes(token)).toBe(false);
+      expect(JSON.stringify(started.check).includes(token)).toBe(false);
+      expect(started.check).toMatchObject({
+        status: "failed",
+        exitCode: 1,
+        review_hash: request.review_hash,
+        check_type: "node-test"
+      });
+      expect(started.repair_request!.source_check.journal[0]!.detail).toContain("[REDACTED]");
+      expect(f.service.repair(request.id, owner, payload).id).toBe(request.id);
+      expect(f.providerCalls).toHaveLength(3);
+      f.service.cancel(request.id, owner);
+    } finally {
+      release();
+    }
+    await f.service.whenIdle();
+    expect(f.get(request.id).status).toBe("cancelled");
+    expect(f.providerCalls).toHaveLength(3);
+  });
+
+  it.each([
+    {
+      name: "redaction before excerpt",
+      stdout:
+        "x".repeat(7900) +
+        "\n-----BEGIN " +
+        "PRIVATE KEY-----\n" +
+        "SYNTHETIC_BODY_".repeat(50) +
+        "\n-----END " +
+        "PRIVATE KEY-----\n00123",
+      truncated: false,
+      expectedTruncated: false
+    },
+    {
+      name: "long safe output",
+      stdout: "safe output\n".repeat(1000),
+      truncated: false,
+      expectedTruncated: true
+    },
+    {
+      name: "runner already truncated",
+      stdout: "actual -1; expected 5",
+      truncated: true,
+      expectedTruncated: true
+    }
+  ])("bounds canonical feedback: $name", async ({ name, stdout, truncated, expectedTruncated }) => {
+    const runner = repairRunner();
+    const execute = vi.spyOn(runner, "run");
+    const f = await fixture({ responses: repairResponses(), runner });
+    const request = await failedRepair(f);
+    const before = f.get(request.id);
+    const legacy = f.store.save(
+      { ...before, check: { ...before.check!, stdout, truncated } },
+      "fixture feedback boundary"
+    );
+    f.service.repair(request.id, owner, { ...request, expected_run_version: legacy.version });
+    const result = await f.wait(request.id, "proposed");
+    const messages = f.providerCalls[3]!.messages as Array<{ content: string }>;
+    const feedback = (
+      JSON.parse(messages[1]!.content) as {
+        untrusted_execution_feedback: { stdout: string; truncated: boolean };
+      }
+    ).untrusted_execution_feedback;
+    expect(feedback.stdout.length).toBeLessThanOrEqual(8000);
+    expect(feedback.truncated).toBe(expectedTruncated);
+    expect(result.repair_request!.source_check.truncated).toBe(truncated);
+    if (name === "redaction before excerpt") {
+      expect(feedback.stdout.includes("SYNTHETIC_BODY_")).toBe(false);
+      expect(feedback.stdout.endsWith("00123")).toBe(true);
+      expect(feedback.stdout).toContain("[REDACTED]");
+    }
+    if (name === "long safe output") {
+      expect(feedback.stdout.length).toBe(8000);
+      expect(result.repair_request!.source_check.stdout).toBe(stdout);
+    }
+    expect(f.providerCalls).toHaveLength(4);
+    expect(execute).toHaveBeenCalledTimes(2);
+  });
+
+  it("returns a repair refusal for malformed legacy evidence without reserving a model attempt", async () => {
+    const runner = repairRunner();
+    const execute = vi.spyOn(runner, "run");
+    const f = await fixture({ responses: repairResponses(), runner });
+    const request = await failedRepair(f);
+    const run = f.get(request.id);
+    const legacy = f.store.save(
+      {
+        ...run,
+        check: {
+          ...run.check!,
+          journal: [
+            { at: "not-a-time", event: "finished", detail: "synthetic malformed legacy event" }
+          ]
+        }
+      },
+      "fixture invalid legacy evidence"
+    );
+    const { id, ...payload } = { ...request, expected_run_version: legacy.version };
+    const response = await f.app.inject({
+      method: "POST",
+      url: `${f.base}/${id}/repair-v2`,
+      payload
+    });
+    expect(response.statusCode).toBe(409);
+    expect(response.json()).toEqual({ error: { code: "REPAIR_CHECK_REQUIRED" } });
+    expect(f.get(id)).toEqual(legacy);
+    expect(f.get(id).repair_request).toBeUndefined();
+    expect(f.providerCalls).toHaveLength(3);
+    expect(execute).toHaveBeenCalledTimes(1);
+  });
   it("uses the owner's working bytes, preserves two files, reruns the same check and requires fresh review; duplicate dispatch is inert", async () => {
     const f = await fixture({ responses: repairResponses(), runner: repairRunner() });
     const request = await failedRepair(f);
