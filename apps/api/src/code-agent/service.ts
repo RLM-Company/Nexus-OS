@@ -36,6 +36,7 @@ import {
 } from "../github-integration.js";
 import {
   applyCodeExactEdits,
+  assertCodeContextContentSafe,
   codePromptFiles,
   decodeCodeProposal,
   selectCodeContextPaths,
@@ -906,7 +907,13 @@ export class CodeAgentService {
         latest,
         "read-" + hash(path),
         ["context.project.read", "integration.private.use"],
-        async () => (await this.deps.github.file(entry.sha, this.readScope(latest))).content
+        async () => {
+          const file = await this.deps.github.file(entry.sha, this.readScope(latest));
+          // GuardedToolRuntime persists successful results. Check inside the callback,
+          // before returning bytes to the policy journal as well as the run snapshot.
+          assertCodeContextContentSafe(file.content);
+          return file.content;
+        }
       );
       const fresh = this.current(id, owner);
       this.live(fresh, signal);
@@ -1184,6 +1191,7 @@ export class CodeAgentService {
     if (run.proposal_hash !== hash({ base: run.base_sha, proposal: run.proposal }))
       throw new CodeAgentError("PATCH_BASE");
     this.assertSafeContext(run);
+    for (const file of input.files) assertCodeContextContentSafe(file.content);
     this.assertReviewParent(run, input.expected_review_hash);
     // A failed read-only preparation must not permanently replay a previous
     // policy recovery result. Each explicit attempt has a durable CAS/version.
@@ -1408,12 +1416,15 @@ export class CodeAgentService {
   private assertSafeContext(run: CodeAgentRun) {
     if ([...run.snapshot, ...(run.proposal ?? [])].some((file) => !safeCodePath(file.path)))
       throw new CodeAgentError("CONTEXT_PATH_FORBIDDEN");
+    for (const file of [...run.snapshot, ...(run.proposal ?? [])])
+      assertCodeContextContentSafe(file.content);
   }
   private reviewed(run: CodeAgentRun, reviewHash: string) {
     this.assertSafeContext(run);
     const draft = run.draft_id ? this.deps.drafts.get(run.draft_id, run.owner_id) : null;
     if (!draft || draft.plan.review_hash !== reviewHash || draft.status !== "review")
       throw new CodeAgentError("STALE_REVIEW");
+    for (const file of draft.plan.files) assertCodeContextContentSafe(file.content);
     return draft;
   }
   check(

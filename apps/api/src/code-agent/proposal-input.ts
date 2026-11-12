@@ -1,8 +1,26 @@
 import { isSafeCodeAgentDiffPath } from "@cosmora/tool-runtime";
 import { CodeAgentError } from "./store.js";
 
+// High-confidence formats only: ordinary variables named password/apiKey are code,
+// not evidence of a credential. No entropy scoring, external lookup or source rewriting.
+const embeddedCredentialFormats = [
+  /-----BEGIN (?:[A-Z0-9]+ )*PRIVATE KEY(?: BLOCK)?-----/u,
+  /\bgh[opsur]_[A-Za-z0-9]{30,}\b/u,
+  /\bgithub_pat_[A-Za-z0-9_]{20,}\b/u,
+  /\bsk-(?:proj-)?[A-Za-z0-9_-]{24,}\b/u,
+  /\b(?:AKIA|ASIA)[A-Z0-9]{16}\b/u
+];
+
+/** Refuse the entire source before it becomes a durable read result or model input. */
+export function assertCodeContextContentSafe(content: string): void {
+  if (embeddedCredentialFormats.some((pattern) => pattern.test(content)))
+    throw new CodeAgentError("CONTEXT_CONTENT_FORBIDDEN");
+}
+
 /** Line labels belong to the prompt, never to the canonical snapshot or patch. */
 export function codePromptFiles(files: Array<{ path: string; content: string }>) {
+  // Also covers legacy snapshots and the explicitly approved repair prompt.
+  for (const file of files) assertCodeContextContentSafe(file.content);
   return files.map(({ path, content }) => ({
     path,
     numbered_lines: content

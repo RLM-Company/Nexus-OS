@@ -135,6 +135,7 @@ async function fixture(
     providerDelayMs?: number;
     providerStatus?: number;
     providerResponse?: (signal: AbortSignal | null | undefined) => Response;
+    sourceFiles?: Record<string, string>;
     extraTreePaths?: number;
     additionalTreePaths?: string[];
     truncatedTree?: boolean;
@@ -150,6 +151,7 @@ async function fixture(
     registryNow?: number;
   } = {}
 ) {
+  const sources = { ...originals, ...options.sourceFiles };
   const database = openDatabase(options.databaseFile ?? ":memory:");
   await runMigrations(database);
   const projects = new ProjectStore(database.sqlite),
@@ -213,7 +215,7 @@ async function fixture(
               : {
                   sha: "8".repeat(40),
                   truncated: false,
-                  tree: Object.keys(originals).map((path, i) => ({
+                  tree: Object.keys(sources).map((path, i) => ({
                     path: path.split("/").at(-1)!,
                     type: "blob",
                     mode: "100644",
@@ -224,7 +226,7 @@ async function fixture(
           value = {
             truncated: options.truncatedTree ?? false,
             tree: [
-              ...Object.keys(originals),
+              ...Object.keys(sources),
               ...(options.additionalTreePaths ?? []),
               ...Array.from(
                 { length: options.extraTreePaths ?? 0 },
@@ -240,10 +242,10 @@ async function fixture(
         }
       } else if (path.startsWith("/git/blobs/")) {
         const content = options.blobShas
-          ? originals[
+          ? sources[
               Object.keys(options.blobShas).find((file) => path.endsWith(options.blobShas![file]!))!
             ]!
-          : Object.values(originals)[Number(path.at(-1)) - 1]!;
+          : Object.values(sources)[Number(path.at(-1)) - 1]!;
         value = {
           encoding: "base64",
           content: Buffer.from(content).toString("base64"),
@@ -454,6 +456,266 @@ async function fixture(
 }
 
 describe("Code agent real gateway/GitHub/policy vertical", () => {
+  it.each([true, false])(
+    "refuses embedded credential source before durable context and model dispatch (tools=%s)",
+    async (toolCalling) => {
+      const token = "ghp_" + "X".repeat(36);
+      const f = await fixture({
+        toolCalling,
+        sourceFiles: { "src/add.js": `export const token = "${token}";\n` }
+      });
+      const id = await f.start();
+      const run = await f.wait(id, "failed");
+      expect(run.error).toBe("CONTEXT_CONTENT_FORBIDDEN");
+      expect(run.snapshot).toEqual([]);
+      expect(f.providerCalls).toHaveLength(0);
+      expect(f.checked).toHaveLength(0);
+      const durable = JSON.stringify(
+        f.database.sqlite.prepare("SELECT * FROM policy_operations").all()
+      );
+      expect(durable).not.toContain(token);
+      expect(JSON.stringify(f.service.view(run))).not.toContain(token);
+      expect(f.githubCalls.every((call) => call.method === "GET")).toBe(true);
+    }
+  );
+  it("refuses an embedded credential from a negotiated read_file without forwarding or caching its content", async () => {
+    const token = "sk-proj-" + "Z".repeat(36);
+    const f = await fixture({
+      sourceFiles: { "src/add.test.js": `const key = "${token}";\n` },
+      responses: [toolResponse("read_file", { path: "src/add.test.js" }, "read-sensitive-content")]
+    });
+    const id = await f.start();
+    const run = await f.wait(id, "failed");
+    expect(run.error).toBe("CONTEXT_CONTENT_FORBIDDEN");
+    expect(run.snapshot).toEqual([{ path: "src/add.js", content: originals["src/add.js"] }]);
+    expect(f.providerCalls).toHaveLength(1);
+    expect(JSON.stringify(f.providerCalls)).not.toContain(token);
+    expect(
+      JSON.stringify(f.database.sqlite.prepare("SELECT * FROM policy_operations").all())
+    ).not.toContain(token);
+    expect(JSON.stringify(f.service.view(run))).not.toContain(token);
+    expect(f.checked).toHaveLength(0);
+    expect(f.githubCalls.every((call) => call.method === "GET")).toBe(true);
+  });
+
+  it("blocks a legacy embedded credential checkpoint before review, check, repair and publication without deleting it", async () => {
+    const f = await fixture();
+    const id = await f.start();
+    const proposed = await f.wait(id, "proposed");
+    const secret = "ghp_" + "L".repeat(36);
+    const snapshot = [
+      ...proposed.snapshot,
+      { path: "src/legacy.js", content: `const token = "${secret}";\n` }
+    ];
+    f.store.save(
+      { ...proposed, snapshot, proposal_snapshot_digest: computeCodeAgentSnapshotDigest(snapshot) },
+      "fixture legacy source"
+    );
+    const reads = f.githubCalls.length;
+    await expect(f.review(id)).rejects.toThrow("CONTEXT_CONTENT_FORBIDDEN");
+    expect(f.githubCalls).toHaveLength(reads);
+    f.store.save(
+      {
+        ...f.get(id),
+        snapshot: proposed.snapshot,
+        proposal_snapshot_digest: proposed.proposal_snapshot_digest
+      },
+      "fixture restores clean source"
+    );
+    const review = await f.review(id);
+    f.store.save({ ...f.get(id), snapshot }, "fixture legacy reviewed source");
+    const before = f.get(id);
+    const hash = review.draft!.plan.review_hash;
+    expect(() =>
+      f.service.check(id, owner, { review_hash: hash, check: "syntax", approve: true })
+    ).toThrow("CONTEXT_CONTENT_FORBIDDEN");
+    expect(() =>
+      f.service.repair(id, owner, {
+        review_hash: hash,
+        expected_run_version: before.version,
+        client_request_id: randomUUID(),
+        approve: true
+      })
+    ).toThrow("CONTEXT_CONTENT_FORBIDDEN");
+    const response = await f.app.inject({
+      method: "POST",
+      url: `${f.base}/${id}/publish`,
+      payload: { review_hash: hash, publication_token: randomUUID(), approve: true }
+    });
+    expect(response.statusCode).toBe(409);
+    expect(response.json()).toEqual({ error: { code: "CONTEXT_CONTENT_FORBIDDEN" } });
+    expect(f.checked).toHaveLength(0);
+    expect(f.providerCalls).toHaveLength(3);
+    expect(f.get(id)).toEqual(before);
+    expect(f.githubCalls.every((call) => call.method === "GET")).toBe(true);
+  });
+  it("rejects credentials typed into an edited review before creating a durable draft", async () => {
+    const f = await fixture();
+    const id = await f.start();
+    await f.wait(id, "proposed");
+    const token = "sk-proj-" + "R".repeat(36);
+    const before = f.get(id);
+    const reads = f.githubCalls.length;
+    await expect(
+      f.review(id, [{ path: "src/add.js", content: `const key = "${token}";\n` }])
+    ).rejects.toThrow("CONTEXT_CONTENT_FORBIDDEN");
+    expect(f.get(id)).toEqual(before);
+    expect(f.githubCalls).toHaveLength(reads);
+    expect(
+      JSON.stringify(f.database.sqlite.prepare("SELECT * FROM policy_operations").all())
+    ).not.toContain(token);
+    expect(f.checked).toHaveLength(0);
+  });
+
+  it("keeps a refused source request idempotent without rereading or dispatching", async () => {
+    const token = "ghp_" + "I".repeat(36);
+    const f = await fixture({ sourceFiles: { "src/add.js": `const token = "${token}";\n` } });
+    const payload = {
+      client_request_id: randomUUID(),
+      task: "Fix src/add.js",
+      base_branch: "main",
+      files: ["src/add.js"]
+    };
+    const first = f.service.create(f.project, LOCAL_DEVELOPMENT_IDENTITY, payload);
+    await f.wait(first.id, "failed");
+    await f.service.whenIdle();
+    const reads = f.githubCalls.length;
+    const again = f.service.create(f.project, LOCAL_DEVELOPMENT_IDENTITY, payload);
+    expect(again).toMatchObject({
+      id: first.id,
+      status: "failed",
+      error: "CONTEXT_CONTENT_FORBIDDEN"
+    });
+    await f.service.whenIdle();
+    expect(f.githubCalls).toHaveLength(reads);
+    expect(f.providerCalls).toHaveLength(0);
+  });
+  it.each(["cancel", "revoke"])(
+    "does not admit pending credential source after %s",
+    async (action) => {
+      let enter!: () => void, release!: () => void;
+      const entered = new Promise<void>((resolve) => {
+        enter = resolve;
+      });
+      const pending = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const token = "ghp_" + "C".repeat(36);
+      const f = await fixture({
+        sourceFiles: { "src/add.js": `const token = "${token}";\n` },
+        githubBarrier: async (path) => {
+          if (path.startsWith("/git/blobs/")) {
+            enter();
+            await pending;
+          }
+        }
+      });
+      const id = await f.start();
+      await entered;
+      try {
+        if (action === "cancel") f.service.cancel(id, owner);
+        else
+          f.policy.updateProfile({
+            projectId: f.project,
+            baseLevel: "A0",
+            overrides: [],
+            expectedVersion: f.policy.getProfile(f.project)!.version
+          });
+      } finally {
+        release();
+      }
+      await f.service.whenIdle();
+      expect(f.get(id).status).toBe(action === "cancel" ? "cancelled" : "failed");
+      expect(f.get(id).snapshot).toEqual([]);
+      expect(f.providerCalls).toHaveLength(0);
+      expect(f.checked).toHaveLength(0);
+      expect(
+        JSON.stringify(f.database.sqlite.prepare("SELECT * FROM policy_operations").all())
+      ).not.toContain(token);
+      expect(f.githubCalls.every((call) => call.method === "GET")).toBe(true);
+    }
+  );
+  it("refuses a historical edited draft containing credentials before check, repair or publish", async () => {
+    const f = await fixture();
+    const id = await f.start();
+    const review = await f.review(id);
+    const token = "ghp_" + "D".repeat(36);
+    const draft = f.drafts.get(review.draft_id!, owner)!;
+    const legacyPlan = {
+      ...draft.plan,
+      files: draft.plan.files.map((file, i) =>
+        i === 0 ? { ...file, content: `const key = "${token}";\n` } : file
+      )
+    };
+    f.database.sqlite
+      .prepare("UPDATE github_change_drafts SET plan_json=? WHERE id=? AND owner_id=?")
+      .run(JSON.stringify(legacyPlan), draft.id, owner);
+    const before = f.get(id),
+      reads = f.githubCalls.length;
+    const hash = draft.plan.review_hash;
+    expect(() =>
+      f.service.check(id, owner, { review_hash: hash, check: "syntax", approve: true })
+    ).toThrow("CONTEXT_CONTENT_FORBIDDEN");
+    expect(() =>
+      f.service.repair(id, owner, {
+        review_hash: hash,
+        expected_run_version: before.version,
+        client_request_id: randomUUID(),
+        approve: true
+      })
+    ).toThrow("CONTEXT_CONTENT_FORBIDDEN");
+    await expect(
+      f.service.publish(id, owner, {
+        review_hash: hash,
+        publication_token: randomUUID(),
+        approve: true
+      })
+    ).rejects.toThrow("CONTEXT_CONTENT_FORBIDDEN");
+    expect(f.get(id)).toEqual(before);
+    expect(f.drafts.get(draft.id, owner)!.plan).toEqual(legacyPlan);
+    expect(f.githubCalls).toHaveLength(reads);
+    expect(f.checked).toHaveLength(0);
+    expect(f.providerCalls).toHaveLength(3);
+  });
+  it("preserves safe source bytes through text context, exact edit, review and check", async () => {
+    const source =
+      originals["src/add.js"] +
+      "// 19 700; 00123; 2026-11-12; кроме доставки; not enabled\r\nconst apiKey = process.env.API_KEY;";
+    const replacement = source.replace("a-b", "a+b");
+    const response = sse(
+      {
+        choices: [
+          {
+            index: 0,
+            delta: {
+              content: JSON.stringify({
+                summary: "Fix",
+                edits: [{ path: "src/add.js", old_text: "a-b", new_text: "a+b" }]
+              })
+            }
+          }
+        ]
+      },
+      { choices: [{ index: 0, delta: {}, finish_reason: "stop" }] },
+      { choices: [], usage: { prompt_tokens: 100, completion_tokens: 40 } },
+      "[DONE]"
+    );
+    const f = await fixture({
+      sourceFiles: { "src/add.js": source },
+      toolCalling: false,
+      responses: [response]
+    });
+    const id = await f.start();
+    const run = await f.wait(id, "proposed");
+    expect(run.snapshot).toEqual([{ path: "src/add.js", content: source }]);
+    expect(run.proposal).toEqual([{ path: "src/add.js", before: source, content: replacement }]);
+    const review = await f.review(id, [{ path: "src/add.js", content: replacement }]);
+    await f.check(id, review.draft!.plan.review_hash);
+    expect(f.checked[0]!.files).toEqual([{ path: "src/add.js", content: replacement }]);
+    expect(f.get(id).publication_token).toBeTruthy();
+    expect(f.providerCalls).toHaveLength(1);
+    expect(f.githubCalls.every((call) => call.method === "GET")).toBe(true);
+  });
   it("saves streamed text on cancel, refuses publication and replays the same creation without a paid retry", async () => {
     let cancelled = false;
     const prefix = '{"summary":',
