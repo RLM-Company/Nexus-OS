@@ -518,7 +518,7 @@ describe("Code agent real gateway/GitHub/policy vertical", () => {
       {
         ...f.get(id),
         snapshot: proposed.snapshot,
-        proposal_snapshot_digest: proposed.proposal_snapshot_digest
+        proposal_snapshot_digest: computeCodeAgentSnapshotDigest(proposed.snapshot)
       },
       "fixture restores clean source"
     );
