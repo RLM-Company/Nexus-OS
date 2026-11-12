@@ -548,3 +548,50 @@ http (отклонён /https/).
 
 **Проверки**: `npm run check` → **459 / 0 fail**, prettier clean,
 `check:secrets` пройден до пуша.
+
+---
+
+## Срез 15 (2026-11-12): вайринг live-сценариев в windows-desktop workflow
+
+**Одобрение**: владелец — «Вайрить сейчас, секреты потом» (question-tool,
+2026-11-12, после merge #552). Секреты GitHub владельец создаёт, когда
+готов; до тех пор задание — видимый no-op.
+
+**Фаза `live-smoke` в `gui-acceptance.cjs`**: не-loopback https origin +
+оба opt-in'а (`remoteOrigin: true` И env-гейт) + hostname не loopback;
+fixture-поля (workspaceRoute/draftScope/draftText/downloadDirectory) не
+требуются и игнорируются. Ветка прогона: connection.html (setup) → connect
+БЕЗ учётных данных → честный `/login` живого origin (недостижимый сервер —
+таймаут → честный красный, не тишина) → инвариант бриджей на /login →
+origin сохранён → отчёт `{ok, landedOnLogin, savedOrigin}`. Никаких
+черновиков, загрузок и workspace-доступа в фазе нет.
+
+**Драйвер `ci/gui-acceptance-live.cjs`**: guard'ы disposable-runner
+(DI environment/platform), work-root строго в RUNNER_TEMP, EXE строго
+Kosmora.exe внутри work-root; origin только из env `KOSMORA_LIVE_ORIGIN`
+(https, не-loopback, без credentials в URL, нормализация schema://host:port,
+на диск не пишется); пишет конфиг (`phase: live-smoke, remoteOrigin:
+true`), спавнит packaged-приложение, ждёт отчёт, валидирует, пишет
+`cosmora-gui-acceptance-live-report.json` (честный fail-отчёт с
+checkpoint'ом при ошибке). Env-гейт приложения остаётся на workflow-шаге.
+
+**Задание «Live server acceptance smoke» в windows-desktop.yml**:
+`needs: build` (артефакт installer'а), секрет-гейт уровня шагов — job-level
+`if` не может видеть secrets/env, поэтому `if: env.KOSMORA_LIVE_ORIGIN
+== ''` на шагах: без секрета задание зелёное с шагом-отчётом «skipped»,
+видимо в чеках; с секретом — install NSIS `/S /D=` (образец
+`Invoke-Installer`), запуск драйвера с
+`KOSMORA_GUI_ACCEPTANCE_ALLOW_REMOTE_ORIGIN=1`, uninstall `/S`, upload
+отчёта. NSIS-задание не тронуто.
+
+**Тесты**: live-smoke-конфиг (opt-in'ы, отказ loopback/не-boolean/без
+гейта, игнорирование fixture-полей) в `gui-acceptance.test.cjs`; драйвер
+(parseLiveOrigin — 9 кейсов; guard-отказы до спавна — 6 кейсов) в новом
+`test/gui-acceptance-live.test.cjs`.
+
+**Дальше**: секрет `KOSMORA_LIVE_ORIGIN` от владельца (задание включится
+само) → VM-прогоны (C1-C4, B1/B2/B5, A4) → участие владельца (A1-A3,
+B3-B4) → финальный цикл → ACCEPTANCE-отчёт.
+
+**Проверки**: `npm run check` → **462 / 0 fail**, prettier clean,
+`check:secrets` пройден до пуша.
