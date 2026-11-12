@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { installOfflineImageCapabilities } from "./fixtures/media-capabilities";
 
 test("publishes an installable standalone app manifest and icons", async ({ request }) => {
   const response = await request.get("/manifest.webmanifest");
@@ -152,6 +153,7 @@ test("suggests a project for a complex task and creates it only after confirmati
 test("opens the image workspace and keeps generation local until a model is connected", async ({
   page
 }) => {
+  await installOfflineImageCapabilities(page);
   await page.goto("/");
 
   const tools = page.locator(".sidebar-tools");
@@ -187,7 +189,8 @@ test("opens the image workspace and keeps generation local until a model is conn
   await page
     .getByLabel("Описание изображения", { exact: true })
     .fill("Минималистичный космический город на рассвете");
-  await page.getByRole("button", { name: "16:9", exact: true }).click();
+  await expect(page.getByRole("button", { name: "16:9", exact: true })).toHaveCount(0);
+  await page.getByRole("button", { name: "3:2 · 1536 × 1024" }).click();
   await expect(
     page.getByRole("region", { name: "Параметры генерации", exact: true })
   ).toBeVisible();
