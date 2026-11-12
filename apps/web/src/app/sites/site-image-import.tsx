@@ -78,12 +78,18 @@ export function SiteImageImport({
           onChange={(event) => setAlt(event.target.value)}
         />
       </label>
-      <button type="button" disabled={disabled || working || !file} onClick={() => void insert()}>
+      <button
+        type="button"
+        disabled={disabled || working || !file}
+        onClick={() => void insert()}
+      >
         Встроить изображение
       </button>
       {working && <p role="status">Проверяю изображение…</p>}
       {error && <p role="alert">{error}</p>}
-      <p>Изображение станет частью текущего черновика и войдёт в сохранённую версию и HTML-экспорт.</p>
+      <p>
+        Изображение станет частью черновика и войдёт в сохранённую версию и HTML-экспорт.
+      </p>
     </section>
   );
 }

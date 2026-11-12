@@ -35,7 +35,7 @@ export function embedSiteImage(html: string, bytes: Uint8Array, alt: string): st
   ) {
     mime = "image/webp";
   } else {
-    throw new Error("Поддерживаются только PNG, JPEG и WebP. SVG и другие форматы не принимаются.");
+    throw new Error("Поддерживаются только PNG, JPEG и WebP. SVG не принимается.");
   }
 
   let binary = "";
@@ -43,14 +43,15 @@ export function embedSiteImage(html: string, bytes: Uint8Array, alt: string): st
     binary += String.fromCharCode(...bytes.subarray(index, index + 8192));
   }
   const safeAlt = alt.replace(/[&<>"']/g, (character) => escapeMap[character] ?? "");
-  const markup = '<img alt="' + safeAlt + '" src="data:' + mime + ';base64,' + btoa(binary) + '">';
+  const uri = "data:" + mime + ";base64," + btoa(binary);
+  const markup = '<img alt="' + safeAlt + '" src="' + uri + '">';
   const bodyClose = html.toLowerCase().lastIndexOf("</body>");
   const updated =
     bodyClose < 0
       ? html + "\n" + markup
       : html.slice(0, bodyClose) + "\n" + markup + "\n" + html.slice(bodyClose);
   if (new TextEncoder().encode(updated).byteLength > MAX_HTML_BYTES) {
-    throw new Error("С изображением HTML превысит предел 512 КиБ. Сожмите файл или удалите данные.");
+    throw new Error("HTML с изображением превысит 512 КиБ. Уменьшите файл.");
   }
   return updated;
 }
