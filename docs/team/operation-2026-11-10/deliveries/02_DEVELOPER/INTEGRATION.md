@@ -1,3 +1,22 @@
+# Интеграция chief chat recovery, 12 ноября
+
+Draft PR549, source HEAD05fc4936cda966bf27a6d5f1d0d7c2fa58f5054f.
+Маленький общий commit `49806ca8a63ee0d6905298e86438a1dff9613430` меняет
+только `packages/contracts/src/domain.ts`: export isValidChatTextAction использует
+имеющуюся ChatTextActionSchema и установленный typebox/value.
+Новая схема/route/миграция/permission не добавляются. Web import требует этого
+export; поставлять вместе. Chat chain539/541 ancestry сохранена mergea58625e.
+Обновление page.tsx минимально подключает состояние к текущему draft lifecycle,
+без изменения оболочки/верстки. maina5f6511 сохранён.
+
+Проверить новый main перед объединением; не разрешать conflicts автоматическим
+выбором своей версии. Откат: отдельный revert fix, затем helper при отсутствии
+других потребителей; сохранённые optional actions предыдущим reader игнорируются.
+
+Предыдущие integration notes ниже остаются историческими.
+
+---
+
 # Интеграция Coscode: доказательства проверок
 
 Статус первого среза: готово к интеграции. Integration commit

@@ -1,3 +1,35 @@
+# Продолжение: 12 ноября, chief chat recovery
+
+Владелец временно назначил главным разработчиком; очередь восстановлена по actual
+main/ancestry, а не старым open PR. Текущая рабочая ветка
+`ops/chief-chat-recovery-2026-11-12`, Draft PR #549. Source HEAD
+`05fc4936cda966bf27a6d5f1d0d7c2fa58f5054f`, tree
+`49b6efb393fdbf69e42d01e2dd1f6ea563e26d9b`. BASE checkout03cd454,
+новый maina5f6511 сохранён. GitHub/local tree equality проверена.
+
+Срез: #539/#541 + canonical browser draft actions persistence закрывают потерю
+действия после lost ACK/reload и сохраняют точный повтор запроса.
+Baseline 1FAIL; новый production browser suite18PASS; unit22PASS; contracts206PASS;
+build/strict E2E types/source lint passed. Полный check:core exit0; отдельные composer races12PASS.
+Статус **готово к интеграции**, без merge/deploy. Scoped evidence/receipt/hashes
+сохранены в fixtures/chat-action-recovery-2026-11-12/.
+Подробности/команды/неудачные подготовительные проверки —
+[CHIEF_CHAT_RECOVERY_DELIVERY_RU.md](CHIEF_CHAT_RECOVERY_DELIVERY_RU.md).
+
+Следующее действие: проверить CI точного финального HEAD PR549 и свежий main;
+сохранён source tree49b6efb3, итоговый docs HEAD указан в истории PR.
+Source CI identity/isolation/monorepo уже success; browser job на момент записи выполняется.
+Новый docs CI не выдавать за завершённый. Не выдавать Draft PR за merged/release. Чужие branch/BOARD не менять.
+Office/Drive527 и Coscode519 уже предки main; повторно не реализовывать.
+Coscode live receipt source PR546 — отдельный Draft; модель не вызывалась.
+Тестовый PR542 на synthetic base не объединять в main. Native Windows actions
+после restart и live HY4 — реальные непроверенные границы; owner-PC/VPS/deploy
+не выполнять. Новую значительную функцию без согласованного объёма не начинать.
+
+Предыдущий checkpoint ниже сохраняется как историческая запись 11 ноября.
+
+---
+
 # Coscode: проверено исправление stale-check approval
 
 11 ноября 2026, Москва. Статус **готово к интеграции**, branch ops/developer-coscode,

@@ -1,3 +1,24 @@
+# Актуальная очередь после восстановления из репозитория, 12 ноября
+
+- Работает в main: Office/Drive через #527; Coscode software через #519
+  (оба подтверждены ancestry maina5f6511).
+- Исправлено в кандидате #549: независимые uncertain sends разных чатов,
+  scoped composer actions и browser reload с полным действием/исходным retry id.
+  Проверка baseline действительно падала; после fix browser18/unit22 passed.
+- Проверено: полный check:core exit0 и composer draft races12PASS.
+- Перед интеграцией: проверить CI точного финального HEAD и новый main.
+- Остаётся проверить: native owner-scoped desktop action recovery после restart;
+  не переносить selection/text в незащищённые fallback records ради теста.
+- Внешняя граница Coscode: live HY4 не настроен; реальный GitHub/OCI без модели
+  записан в Draft PR546. CreateRepository ранее denied, тестовый542 не merge.
+- Решение владельца уже в main #545: вариант A, Sketch fork не реализовывать.
+- Активные изменения других авторов #538/#548 не присваивать и не переписывать.
+  Перед следующим срезом перечитать их актуальные heads и shared contracts.
+
+Исторический backlog ниже; прежние pending-статусы не отменяют ancestry выше.
+
+---
+
 # Coscode: проверенный backlog
 
 Дополнительное ревью: stale-check approval закрыт source40a3a9e/9877f5b.

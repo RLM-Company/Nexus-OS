@@ -1,0 +1,23 @@
+{
+  "scenario": "rejected-submit-reload",
+  "source": "docs/handoff/fixtures/kosmora-composer/input.json",
+  "scope": "new-chat",
+  "model_called": false,
+  "text": "  19 700 ₽\n00123; кроме доставки  ",
+  "materials": {
+    "version": 1,
+    "savedAt": 1794482070127,
+    "files": [
+      {
+        "name": "brief.txt",
+        "content": "00123; 19 700 ₽; кроме доставки"
+      }
+    ],
+    "actions": {
+      "web_search": false,
+      "text_action": null
+    }
+  },
+  "text_sha256": "1cacb0ddb003e7e2e3ba0bce09fe5bd3b29e5833c492e02ed643d152a04adbde",
+  "file_sha256": "12d17092483be37c7c2dcba433be93cb8b41ca704ca2edff669f285401370aa9"
+}
