@@ -286,3 +286,31 @@
   height: 1rem;
   flex-shrink: 0;
 }
+
+.comparison {
+  margin-block: 1.5rem;
+}
+
+.comparison summary {
+  cursor: pointer;
+  font-weight: 650;
+}
+
+.comparison label {
+  display: grid;
+  gap: 0.4rem;
+  margin-top: 0.8rem;
+}
+
+.comparison select {
+  width: 100%;
+  padding: 0.55rem;
+  color: inherit;
+  background: inherit;
+  border: 1px solid #d0d0d0;
+  border-radius: 8px;
+}
+
+.comparison li {
+  overflow-wrap: anywhere;
+}

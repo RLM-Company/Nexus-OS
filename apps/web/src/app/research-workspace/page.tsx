@@ -4,16 +4,10 @@ import Link from "next/link";
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import styles from "./research-workspace.module.css";
 import { ReportCanvas } from "../canvas-editor/report-canvas";
+import { ResearchComparison, type ResearchSourceSnapshot } from "./research-comparison";
 
 type Project = { id: string; title: string };
-type Source = {
-  title: string;
-  url: string;
-  snippet: string;
-  status: "read" | "duplicate" | "robots_denied" | "network_denied" | "unavailable";
-  passages: string[];
-  checked_at: string;
-};
+type Source = ResearchSourceSnapshot & { snippet: string; checked_at: string };
 type Citation = { source_id: string; excerpt_id: string };
 type Claim = { text: string; citations: Citation[] };
 type Answer = { summary: Claim[]; disagreements: Claim[]; gaps: string[] };
@@ -530,6 +524,19 @@ export default function ResearchWorkspace() {
                   ) : null
                 )}
               </ol>
+              {current.status === "completed" && (
+                <ResearchComparison
+                  key={current.id}
+                  current={current}
+                  candidates={runs.filter(
+                    (run) =>
+                      run.id !== current.id &&
+                      run.project_id === current.project_id &&
+                      run.status === "completed"
+                  )}
+                  statusLabels={sourceStatuses}
+                />
+              )}
               <h3>Реестр источников</h3>
               <ul className={styles.sources}>
                 {current.sources.map((source, index) => (
