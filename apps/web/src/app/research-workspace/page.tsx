@@ -527,7 +527,7 @@ export default function ResearchWorkspace() {
               </ol>
               {current.status === "completed" && (
                 <ResearchComparison
-                  key={current.id}
+                  key={"compare-" + current.id}
                   current={current}
                   candidates={runs.filter(
                     (run) =>
@@ -540,7 +540,7 @@ export default function ResearchWorkspace() {
               )}
               {current.status === "completed" && current.sources.length > 0 && (
                 <ResearchSourceRecheck
-                  key={current.id}
+                  key={"recheck-" + current.id}
                   sources={current.sources}
                   check={(index, signal) =>
                     api<SourceRecheckResult>(
