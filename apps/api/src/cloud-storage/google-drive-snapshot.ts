@@ -2,7 +2,12 @@ import { createHash } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
 import { Type, type Static } from "typebox";
 import { Value } from "typebox/value";
-import { isValidChatAttachments, type ChatAttachment } from "@cosmora/contracts";
+import {
+  DRIVE_OFFICE_FILE_MAX_BYTES,
+  DRIVE_OFFICE_FILE_MAX_NAME,
+  isValidChatAttachments,
+  type ChatAttachment
+} from "@cosmora/contracts";
 import { createArchive } from "../account-settings/privacy/archive.js";
 import { DriveStorageError } from "./google-drive.js";
 
@@ -35,7 +40,7 @@ const attachment = Type.Union([
 const schema = Type.Object(
   {
     format: Type.Literal("kosmora-chat-backup"),
-    version: Type.Literal(1),
+    version: Type.Union([Type.Literal(1), Type.Literal(2)]),
     exported_at: date,
     chats: Type.Array(
       Type.Object(
@@ -71,8 +76,9 @@ const schema = Type.Object(
     files: Type.Array(
       Type.Object(
         {
-          name: Type.String({ minLength: 1, maxLength: 160 }),
-          content: Type.String({ maxLength: 2000000 }),
+          name: Type.String({ minLength: 1, maxLength: DRIVE_OFFICE_FILE_MAX_NAME }),
+          content: Type.String({ maxLength: Math.ceil(DRIVE_OFFICE_FILE_MAX_BYTES / 3) * 4 }),
+          encoding: Type.Optional(Type.Literal("base64")),
           sha256: Type.String({ pattern: "^[a-f0-9]{64}$" }),
           version: Type.Integer({ minimum: 1 }),
           project: Type.String({ maxLength: 200 })
@@ -85,11 +91,52 @@ const schema = Type.Object(
   strict
 );
 export type DriveSnapshot = Static<typeof schema>;
+type SnapshotFile = DriveSnapshot["files"][number];
 export type SnapshotSelection = {
   chat_ids?: string[];
   file_ids?: string[];
   include_results: boolean;
+  office_file?: SnapshotFile;
 };
+
+const safeFileName = (name: string, maxLength = 160) =>
+  name.length > 0 &&
+  name.length <= maxLength &&
+  !/[\\/]/.test(name) &&
+  ![...name].some((c) => c.charCodeAt(0) < 32 || c.charCodeAt(0) === 127);
+
+export function snapshotFileBytes(file: SnapshotFile): Buffer {
+  if (!file.encoding && file.content.length <= 2000000) return Buffer.from(file.content, "utf8");
+  if (file.encoding === "base64" && /\.(?:docx|xlsx|pptx)$/i.test(file.name)) {
+    const bytes = Buffer.from(file.content, "base64");
+    if (
+      bytes.length >= 4 &&
+      bytes.length <= DRIVE_OFFICE_FILE_MAX_BYTES &&
+      bytes.readUInt32LE(0) === 0x04034b50 &&
+      bytes.toString("base64") === file.content
+    )
+      return bytes;
+  }
+  throw new DriveStorageError("BACKUP_INVALID");
+}
+
+export function selectedOfficeFile(name: string, content: string): SnapshotFile {
+  const file = {
+    name,
+    content,
+    encoding: "base64" as const,
+    version: 1,
+    project: "Office",
+    sha256: ""
+  };
+  try {
+    if (safeFileName(name, DRIVE_OFFICE_FILE_MAX_NAME))
+      return { ...file, sha256: snapshotHash(snapshotFileBytes(file)) };
+  } catch (error) {
+    if (!(error instanceof DriveStorageError)) throw error;
+  }
+  throw new DriveStorageError("BACKUP_INVALID_OFFICE_FILE");
+}
 
 /** Metadata-only, owner-bound local Work results. Published Kosmora artifacts
  * carry a stored checksum/version. Completed legacy Work files carry the Work
@@ -292,11 +339,12 @@ export function parseSnapshot(bytes: Uint8Array): DriveSnapshot {
         throw new DriveStorageError("BACKUP_INVALID");
     }
   }
+  if ((value.version === 2) !== value.files.some((file) => file.encoding === "base64"))
+    throw new DriveStorageError("BACKUP_INVALID");
   for (const file of value.files) {
     if (
-      /[\\/]/.test(file.name) ||
-      [...file.name].some((c) => c.charCodeAt(0) < 32 || c.charCodeAt(0) === 127) ||
-      snapshotHash(Buffer.from(file.content, "utf8")) !== file.sha256
+      !safeFileName(file.name, file.encoding ? DRIVE_OFFICE_FILE_MAX_NAME : 160) ||
+      snapshotHash(snapshotFileBytes(file)) !== file.sha256
     )
       throw new DriveStorageError("BACKUP_INVALID");
   }
@@ -379,7 +427,10 @@ export function captureSnapshot(
         )
       : [];
     const fileTotal = selectedFiles.reduce((n, s) => n + s.bytes, 0);
-    if (selectedFiles.length > 2000 || fileTotal > SNAPSHOT_MAX_BYTES)
+    if (
+      selectedFiles.length + Number(Boolean(selection.office_file)) > 2000 ||
+      fileTotal > SNAPSHOT_MAX_BYTES
+    )
       throw new DriveStorageError("BACKUP_TOO_LARGE");
     const totals = db
       .prepare(
@@ -401,12 +452,16 @@ export function captureSnapshot(
       throw new DriveStorageError("BACKUP_TOO_LARGE");
     const out: DriveSnapshot = {
       format: "kosmora-chat-backup",
-      version: 1,
+      version: selection.office_file ? 2 : 1,
       exported_at: new Date().toISOString(),
       chats: [],
       files: []
     };
     let encoded = 256;
+    if (selection.office_file) {
+      out.files.push(selection.office_file);
+      encoded += Buffer.byteLength(JSON.stringify(selection.office_file)) + 1;
+    }
     for (const s of selectedFiles) {
       const body = readSelectedResultBody(db, owner, s);
       const file = {

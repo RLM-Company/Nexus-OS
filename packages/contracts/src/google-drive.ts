@@ -1,3 +1,6 @@
+export const DRIVE_OFFICE_FILE_MAX_BYTES = 2 * 1024 * 1024;
+export const DRIVE_OFFICE_FILE_MAX_NAME = 188;
+
 export interface GoogleDriveConnectionView {
   configured: boolean;
   state: "unavailable" | "disconnected" | "preparing" | "connected";
@@ -18,6 +21,7 @@ export interface GoogleDriveSourceList {
   items: { id: string; title: string; mode: string }[];
   chats?: GoogleDriveSourceList["items"];
   file_selection?: boolean;
+  office_file_selection?: boolean;
   files?: {
     id: string;
     name: string;
