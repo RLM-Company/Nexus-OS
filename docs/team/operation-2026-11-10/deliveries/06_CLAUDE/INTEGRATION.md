@@ -24,6 +24,13 @@
   `OwnerSkillStore`, без изменений `app.ts`/`server.ts` (регистрация уже была).
 - `apps/web` в срезе C **не менялся**; UI-форма записана в `VISUAL_WAITLIST.md`.
 
+- `packages/core/src/skill-result-evaluation.ts` — новый чистый модуль,
+  экспортируется из `packages/core/src/index.ts`.
+- `packages/contracts/src/chat-skills.ts` — аддитивные
+  `SkillResultEvaluationSchema` / `SkillResultReport`.
+- `apps/api/src/owner-skill-routes.ts` — stateless `POST /evaluate-result`
+  на существующем регистраторе; `app.ts`/`server.ts` не менялись.
+
 ## Чего НЕ трогали
 
 `app.ts`, `server.ts`, gateway, auth, DB migrations/registration, work-cycle, computer-session, общая навигация, чужие memory tables, Drive importer, runtime задач. Новых зависимостей нет.

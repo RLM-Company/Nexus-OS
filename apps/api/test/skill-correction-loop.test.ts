@@ -91,6 +91,32 @@ describe("owner correction confirmation loop", () => {
     f.db.close();
   });
 
+  it("evaluates an answer against explicit criteria without judging truth", async () => {
+    const f = await fixture();
+    apps.push(f.app);
+    const response = await f.call("POST", "/evaluate-result", {
+      source: "Бюджет 19 700 ₽, кроме доставки.",
+      answer: "- 19 700 ₽\n- кроме доставки",
+      required_facts: ["19 700 ₽"],
+      forbidden: ["21 000"],
+      format: "bullets"
+    });
+    expect(response.statusCode).toBe(200);
+    const report = response.json<{
+      passed: boolean;
+      not_checked: string[];
+      checks: { criterion: string }[];
+    }>();
+    expect(report.passed).toBe(true);
+    expect(report.not_checked).toEqual(["truth", "intelligence", "benchmark_gain"]);
+    expect(report.checks.map((c) => c.criterion)).toEqual([
+      "format",
+      "facts_preserved",
+      "constraints_followed"
+    ]);
+    f.db.close();
+  });
+
   it("rejects a tampered draft and a changed request id payload", async () => {
     const f = await fixture();
     apps.push(f.app);

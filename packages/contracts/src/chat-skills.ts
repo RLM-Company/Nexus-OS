@@ -74,3 +74,33 @@ export const AcceptSkillCorrectionSchema = Type.Object(
   { additionalProperties: false }
 );
 export type AcceptSkillCorrection = Static<typeof AcceptSkillCorrectionSchema>;
+
+/** Deterministic, model-free check of an answer against explicit criteria.
+ * It measures STYLE/STRUCTURE ONLY: never truth, intelligence or benchmark gain. */
+export const SkillResultEvaluationSchema = Type.Object(
+  {
+    source: Type.String({ minLength: 1, maxLength: 20_000 }),
+    answer: Type.String({ minLength: 1, maxLength: 20_000 }),
+    /** Facts that must survive from the source (numbers, codes, dates, names). */
+    required_facts: Type.Array(Type.String({ minLength: 1, maxLength: 500 }), { maxItems: 32 }),
+    /** Explicit prohibitions; each is a literal that must NOT appear in the answer. */
+    forbidden: Type.Array(Type.String({ minLength: 1, maxLength: 500 }), { maxItems: 32 }),
+    /** "bullets" requires a list-like answer; "plain" requires no list markers. */
+    format: Type.Union([Type.Literal("bullets"), Type.Literal("plain"), Type.Literal("any")])
+  },
+  { additionalProperties: false }
+);
+export type SkillResultEvaluation = Static<typeof SkillResultEvaluationSchema>;
+export type SkillResultCheck = {
+  criterion: "format" | "facts_preserved" | "constraints_followed";
+  passed: boolean;
+  /** Factual description, never a score or a confidence value. */
+  detail: string;
+};
+export type SkillResultReport = {
+  format: "kosmora.skill-result-evaluation.v1";
+  passed: boolean;
+  checks: SkillResultCheck[];
+  /** Always present: this evaluator does not verify truth or model quality. */
+  not_checked: ["truth", "intelligence", "benchmark_gain"];
+};

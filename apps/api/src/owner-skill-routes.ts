@@ -3,8 +3,12 @@ import type { FastifyInstance, FastifyRequest } from "fastify";
 import { Type } from "typebox";
 import type { IdentityContext } from "@cosmora/contracts";
 import { OwnerSkillError, type OwnerSkillStore } from "@cosmora/db";
-import { AcceptSkillCorrectionSchema, SkillCorrectionProposalSchema } from "@cosmora/contracts";
-import { proposeSkillCorrection } from "@cosmora/core";
+import {
+  AcceptSkillCorrectionSchema,
+  SkillCorrectionProposalSchema,
+  SkillResultEvaluationSchema
+} from "@cosmora/contracts";
+import { evaluateSkillResult, proposeSkillCorrection } from "@cosmora/core";
 import {
   exportOwnerSkillPackage,
   verifyOwnerSkillPackage,
@@ -72,6 +76,24 @@ export function registerOwnerSkillRoutes(
       } catch {
         return reply.code(400).send({ error: { code: "INVALID_CORRECTION" } });
       }
+    }
+  );
+  // Model-free, stateless check of an answer against explicit criteria. Never
+  // claims to verify truth, intelligence or benchmark gain.
+  app.post<{
+    Body: {
+      source: string;
+      answer: string;
+      required_facts: string[];
+      forbidden: string[];
+      format: "bullets" | "plain" | "any";
+    };
+  }>(
+    `${base}/evaluate-result`,
+    { schema: { body: SkillResultEvaluationSchema } },
+    (request, reply) => {
+      reply.header("Cache-Control", "private, no-store");
+      return evaluateSkillResult(request.body);
     }
   );
   // The ONLY path that persists a correction: explicit owner accept with the

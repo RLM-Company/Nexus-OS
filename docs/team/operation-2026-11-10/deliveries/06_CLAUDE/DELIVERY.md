@@ -111,13 +111,36 @@ prettier --check . / check:secrets       passed
 редактируется `PUT /:id`, экспортируется `/:id/package`, удаляется `DELETE /:id`
 через уже существующие owner-пути; отдельного хранилища нет).
 
-## Проверки срезов A+B+C (фактические)
+## Срез D — оценка результата по критериям специализации
+
+По п.6 `06_CLAUDE.md`. Разведка показала, что готового оценщика style fidelity
+нет; он добавлен как **детерминированный, model-free** модуль, без второго
+runtime и без вызова провайдера.
+
+- `packages/contracts/src/chat-skills.ts` — `SkillResultEvaluationSchema`
+  (source/answer/required_facts/forbidden/format), `SkillResultReport` с
+  обязательным `not_checked: ["truth", "intelligence", "benchmark_gain"]`.
+- `packages/core/src/skill-result-evaluation.ts` — **новый** `evaluateSkillResult()`:
+  проверяет формат (маркеры списка / их отсутствие), сохранность фактов
+  исходника (**точное вхождение, без нормализации чисел** — «19 700» ≠ «19700»)
+  и соблюдение явных запретов. Возвращает по каждому критерию `passed` и
+  фактическое описание, **никогда** оценку/уверенность/процент.
+- `apps/api/src/owner-skill-routes.ts` — stateless
+  `POST /owner-skills/evaluate-result`, `private, no-store`, ничего не сохраняет.
+- Честно: style fidelity ≠ истинность. Тест явно фиксирует, что ложный по смыслу
+  ответ со всеми литералами проходит проверку, а `not_checked` это объявляет.
+
+Тесты: 6 core (успех, обязательный `not_checked`, потеря факта, нарушение
+запрета, формат отдельно от стиля, «ложь не проверяется») + 1 HTTP. Полный core
+406/406.
+
+## Проверки срезов A+B+C+D (фактические)
 
 ```
-packages/core полный vitest              400 passed (36 файлов), новый файл 3/3
+packages/core полный vitest              406 passed (37 файлов), новый файл 6/6
 packages/db  полный, --maxWorkers=2     218 passed (38 файлов), новый файл 4/4
-apps/api     correction-loop            3 passed
-apps/api     owner-skill-creations + chat-skills + correction-loop  16 passed
+apps/api     correction-loop + evaluate 4 passed · lifecycle 1 passed
+apps/api     owner-skill-creations + chat-skills 16 passed
 typecheck/lint contracts/core/db/api/web · prettier --check . · check:secrets · web build — green
 ```
 
@@ -143,7 +166,7 @@ merge `main`. После `pnpm --filter @cosmora/contracts build` сборка =
 
 ## Следующий шаг
 
-Срез D (п.6 `06_CLAUDE.md`): оценка результата по критериям специализации —
-формат, сохранность фактов исходника, следование явным ограничениям; style
-fidelity ≠ истинность. Плюс UI-форма подтверждения из `VISUAL_WAITLIST.md`,
-если владелец согласует её размещение. Живая приёмка и выпуск — за Codex.
+Критерии `06_CLAUDE.md`, доступные без живой модели и без согласования
+компоновки, закрыты срезами A–D. Остаётся: UI-форма подтверждения исправления
+из `VISUAL_WAITLIST.md` (нужно согласие владельца на размещение) и живая
+приёмка/выпуск за Codex. Новый продукт ради продолжения не изобретаем.
