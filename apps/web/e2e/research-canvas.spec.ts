@@ -135,7 +135,7 @@ test("research launch retries an unchanged form with the original request ID", a
     return route.fulfill({ json: { items: posts.length ? [saved] : [] } });
   });
   await page.goto("/research-workspace");
-  await page.getByLabel("Проект", { exact: true }).selectOption(projectId);
+  await page.getByRole("combobox", { name: "Проект", exact: true }).selectOption(projectId);
   const field = page.getByRole("textbox", { name: "Вопрос", exact: true });
   const start = page.getByRole("button", { name: "Исследовать", exact: true });
   await field.fill(question);
