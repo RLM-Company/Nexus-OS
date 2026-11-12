@@ -38,7 +38,7 @@ export function inspectSiteSource(content: string): SiteSourceFinding[] {
     const tag = element.localName;
     if (tag === "script") scripts++;
     if (["form", "button", "input", "select", "textarea"].includes(tag)) formControls++;
-    if (unsupportedTags.includes(tag)) unsupported++;
+    if (unsupportedTags.has(tag)) unsupported++;
     const id = element.getAttribute("id");
     if (id) {
       if (seenIds.has(id)) repeatedIds.add(id);
