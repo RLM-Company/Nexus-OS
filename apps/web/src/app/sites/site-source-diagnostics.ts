@@ -8,6 +8,7 @@ const MAX_INSPECTED_ELEMENTS = 3000;
 const externalUrl = /^(?:https?:)?\/\//i;
 const embeddedImage = /^data:image\/(?:png|jpeg|webp);base64,[a-z0-9+/=]+$/i;
 const externalCss = /@import\b|url\(\s*["']?(?:https?:)?\/\//i;
+const unsupportedTags = new Set("iframe object embed video audio canvas svg math".split(" "));
 
 /**
  * Report observable limitations of STATIC preview, never execute source.
@@ -35,7 +36,6 @@ export function inspectSiteSource(content: string): SiteSourceFinding[] {
     const tag = element.localName;
     if (tag === "script") scripts++;
     if (["form", "button", "input", "select", "textarea"].includes(tag)) formControls++;
-    const unsupportedTags = ["iframe", "object", "embed", "video", "audio", "canvas", "svg", "math"];
     if (unsupportedTags.includes(tag)) unsupported++;
     const id = element.getAttribute("id");
     if (id) {
