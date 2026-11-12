@@ -10,6 +10,7 @@ const escapeMap: Record<string, string> = {
 };
 
 /** Inline a bounded, magic-validated image; do not decode or execute its content. */
+// prettier-ignore
 export function embedSiteImage(html: string, bytes: Uint8Array, alt: string): string {
   if (!bytes.byteLength || bytes.byteLength > SITE_IMAGE_MAX_BYTES) {
     throw new Error("Файл изображения должен быть от 1 байта до 64 КиБ.");
