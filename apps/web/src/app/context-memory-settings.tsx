@@ -437,7 +437,15 @@ function MemoryForm({ target, disabled }: { target: MemoryTarget; disabled: bool
                 · v{entry.version} · {labels[entry.source_status]}
               </small>
               {entry.expires_at && (
-                <p>Актуально до {new Date(entry.expires_at).toLocaleString("ru-RU")}</p>
+                <p>
+                  Актуально до {new Date(entry.expires_at).toLocaleString("ru-RU")}
+                  {entry.expired && (
+                    <>
+                      {" "}
+                      · <strong>Срок истёк, запись не попадает в ответы</strong>
+                    </>
+                  )}
+                </p>
               )}
               {entry.source && (
                 <p>
