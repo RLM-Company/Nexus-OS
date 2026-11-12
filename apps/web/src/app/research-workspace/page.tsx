@@ -10,7 +10,7 @@ type Source = {
   title: string;
   url: string;
   snippet: string;
-  status: "read" | "robots_denied" | "network_denied" | "unavailable";
+  status: "read" | "duplicate" | "robots_denied" | "network_denied" | "unavailable";
   passages: string[];
   checked_at: string;
 };
@@ -60,6 +60,7 @@ const statuses: Record<Run["status"], string> = {
 };
 const sourceStatuses: Record<Source["status"], string> = {
   read: "Прочитан",
+  duplicate: "Повтор текста другого источника",
   robots_denied: "Запрещено robots.txt",
   network_denied: "Заблокирован сетевой границей",
   unavailable: "Недоступен"

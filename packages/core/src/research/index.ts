@@ -22,7 +22,8 @@ export type ResearchStatus =
   | "completed"
   | "failed"
   | "cancelled";
-export type SourceStatus = "read" | "robots_denied" | "network_denied" | "unavailable";
+export type SourceStatus =
+  "read" | "duplicate" | "robots_denied" | "network_denied" | "unavailable";
 export interface ResearchSource {
   title: string;
   url: string;
@@ -30,6 +31,7 @@ export interface ResearchSource {
   status: SourceStatus;
   passages: string[];
   checked_at: string;
+  content_digest?: string;
 }
 export interface ResearchCandidate {
   title: string;
