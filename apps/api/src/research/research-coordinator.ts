@@ -10,7 +10,7 @@ import type { WebSearch } from "../web-search.js";
 import { ResearchNetworkError, ResearchPageReader } from "./page-reader.js";
 import type { ResearchStore } from "./research-store.js";
 import type { ResearchSynthesis } from "./research-synthesis.js";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { performance } from "node:perf_hooks";
 
 export interface ResearchStopGate {
@@ -187,11 +187,21 @@ export class ResearchCoordinator {
       if (!started || started.status !== "reading") return;
       let status: ResearchSource["status"] = "unavailable";
       let passages: string[] = [];
+      let contentDigest: string | undefined;
       try {
         const text = await this.reader.read(candidate.url, timed);
         if (timed.aborted) throw new Error("ABORTED");
-        passages = researchPassages(text, run.question);
-        status = passages.length ? "read" : "unavailable";
+        // Compare the exact bounded text returned by the reader, not the selected excerpts.
+        const digest = createHash("sha256").update(text).digest("hex");
+        if (run.sources.some((source) => source.content_digest === digest)) {
+          status = "duplicate";
+        } else {
+          passages = researchPassages(text, run.question);
+          if (passages.length) {
+            status = "read";
+            contentDigest = digest;
+          }
+        }
       } catch (error) {
         if (timed.aborted) {
           if (!outer.aborted)
@@ -223,7 +233,8 @@ export class ResearchCoordinator {
           ...candidate,
           status,
           passages,
-          checked_at: new Date().toISOString()
+          checked_at: new Date().toISOString(),
+          ...(contentDigest ? { content_digest: contentDigest } : {})
         });
         state.next_index++;
       });

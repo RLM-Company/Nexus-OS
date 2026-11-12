@@ -56,7 +56,8 @@ export class ResearchStore {
     actorId: string,
     projectId: string,
     question: string,
-    id: string = randomUUID()
+    id: string = randomUUID(),
+    modelRequested?: boolean
   ): ResearchRun {
     if (this.isFenced(ownerId)) throw Error("RESEARCH_OWNER_QUIESCED");
     const count = this.sqlite
@@ -77,6 +78,9 @@ export class ResearchStore {
       sources: [],
       attempts: 0,
       error_code: null,
+      ...(modelRequested !== undefined
+        ? { model_requested: modelRequested, initial_model_requested: modelRequested }
+        : {}),
       answer: null,
       model: { phase: "pending", run_id: null, usage_state: "none", error_code: null, revision: 0 },
       created_at: timestamp,

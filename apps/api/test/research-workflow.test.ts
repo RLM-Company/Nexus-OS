@@ -131,6 +131,52 @@ describe("research v1, source-grounded workflow", () => {
       redirected.read("https://example.org/redirect", new AbortController().signal)
     ).rejects.toBeInstanceOf(ResearchNetworkError);
   });
+  it("retains mirror URLs without counting identical extracted text as independent evidence", async () => {
+    const repository = store();
+    const mirrorText = "Стоимость тарифа Alpha составляет 50 рублей за месяц при годовой оплате.";
+    const distinctText = "Стоимость тарифа Alpha при помесячной оплате составляет 70 рублей.";
+    const coordinator = new ResearchCoordinator(
+      repository,
+      {
+        ...searchAdapter,
+        search: async (query) => ({
+          query,
+          searched_at: "2026-11-12T09:00:00.000Z",
+          items: ["original", "mirror", "comparison"].map((name) => ({
+            title: name,
+            url: "https://" + name + ".example.org/report",
+            snippet: ""
+          }))
+        })
+      },
+      new ResearchPageReader({
+        resolver,
+        transport: async (url) => {
+          if (url.pathname === "/robots.txt") return { status: 404, contentType: "", body: "" };
+          const text = url.hostname.startsWith("comparison.") ? distinctText : mirrorText;
+          return { status: 200, contentType: "text/html", body: "<p>" + text + "</p>" };
+        }
+      }),
+      undefined,
+      Date.now,
+      () => true
+    );
+    const run = repository.create(owner, actor, project, "Стоимость тарифа Alpha");
+    expect(coordinator.launch(run)).toBe(true);
+    await waitUntil(() => repository.get(run.id, owner)?.status === "completed");
+    const completed = repository.get(run.id, owner)!;
+    expect(completed.sources.map((source) => source.status)).toEqual(["read", "duplicate", "read"]);
+    expect(completed.sources.map((source) => source.passages)).toEqual([
+      [mirrorText],
+      [],
+      [distinctText]
+    ]);
+    const markdown = researchMarkdown(completed);
+    expect(markdown).toContain("https://mirror.example.org/report (duplicate;");
+    expect(markdown).not.toContain("S2:E1");
+    expect(markdown).toContain("S3:E1");
+  });
+
   it("runs search -> safe fetch -> cited report -> owner-scoped persistence", async () => {
     const repository = store();
     const coordinator = new ResearchCoordinator(

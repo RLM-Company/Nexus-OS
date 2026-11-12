@@ -58,6 +58,50 @@ async function routes(
   ).toBeVisible();
 }
 
+test("research launch retries an unchanged form with the original request ID", async ({
+  page,
+  request
+}) => {
+  const projectId = await project(request);
+  const question = "Как менялась промышленность?";
+  const saved = run(projectId, question);
+  const posts: unknown[] = [];
+  await page.route("**/api/v1/research**", async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    if (path.endsWith("/status"))
+      return route.fulfill({
+        json: {
+          available: true,
+          model_usage: "unavailable",
+          limits: { maxSources: 4, maxRunMilliseconds: 45000 }
+        }
+      });
+    if (route.request().method() === "POST") {
+      posts.push(route.request().postDataJSON());
+      if (posts.length === 1) return route.abort("connectionreset");
+      return route.fulfill({ status: 200, json: saved });
+    }
+    return route.fulfill({ json: { items: posts.length ? [saved] : [] } });
+  });
+  await page.goto("/research-workspace");
+  await page.getByLabel("Проект", { exact: true }).selectOption(projectId);
+  const field = page.getByRole("textbox", { name: "Вопрос", exact: true });
+  const start = page.getByRole("button", { name: "Исследовать", exact: true });
+  await field.fill(question);
+  await start.click();
+  await expect(page.getByRole("main").getByRole("alert")).toContainText("Связь прервалась");
+  await expect(field).toHaveValue(question);
+  await start.click();
+  await expect(field).toHaveValue("");
+  expect(posts).toHaveLength(2);
+  expect(posts[0]).toMatchObject({
+    project_id: projectId,
+    question,
+    client_request_id: expect.any(String)
+  });
+  expect(posts[1]).toEqual(posts[0]);
+});
+
 test("research copy keeps citations, saves real Canvas revisions and reopens edits without a model call", async ({
   page,
   request
