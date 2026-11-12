@@ -1,3 +1,16 @@
+# Последний срез: context envelope, 12 ноября
+
+См. CONTEXT_ENVELOPE_DELIVERY_RU.md, тот же Draft PR551.
+Sourceb764ac26a5bc061167680a8d5782a77848165adc, BASEffc794c (полный CI SUCCESS).
+Закрыта подтверждённая передача известных ключей через filename/task/issue/legacy task:
+private path filter + final messages guard, без переписывания owner input.
+Scoped157PASS+1SKIP/web4PASS/coreexit0 (API1077/web363)/actual tmpGit-OCI1PASS.
+Финальный source CI отдельно; model/GitHub fixtures и DLP/at-rest границы явные.
+
+Историческая программная приёмка далее.
+
+---
+
 # Итоговая программная приёмка, 12 ноября 2026
 
 [SOFTWARE_ACCEPTANCE_RU.md](SOFTWARE_ACCEPTANCE_RU.md), Draft PR551,

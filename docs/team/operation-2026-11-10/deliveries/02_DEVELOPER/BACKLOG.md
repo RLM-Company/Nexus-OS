@@ -1,3 +1,24 @@
+# Закрыт подтверждённый пробел: metadata/envelope, 12 ноября
+
+Базаffc794c: CI43247327193/identity43247327083 SUCCESS с первой попытки,
+включая5OCI; предыдущая combined-main приёмка завершена.
+
+- Read-only probe подтвердил: credential-shaped имя файла проходит safe path filter
+  и попадает в selected prompt tree, даже когда содержимое этого файла не читалось.
+- Baseline actual service:4FAIL на tree/list metadata, task/issue и legacy repair task;
+  после fix4PASS, scoped157PASS+1SKIP/web4PASS/coreexit0/API1077/web363 и real Git/OCI1PASS.
+- Реализовано текущим guard: безопасный path filter и final request
+  envelope check; не добавлять DLP engine/хранилище/новые полномочия.
+- Обычный код/имена/данные и прежние task/version/one-attempt fences сохранены.
+- Sourceb764ac2/tree400edb99; финальный docs HEAD в PR551. Дальше exact HEAD CI
+  и review, без новых функций/перезапуска browser job до результата.
+- Raw owner records не чистятся: это предотвращение known-format model dispatch,
+  не DLP всего хранилища. Live модель по-прежнему отложена владельцем.
+
+Предыдущая приёмка ниже.
+
+---
+
 # Программная приёмка Coscode, 12 ноября 2026
 
 - Проверено объединение main1c07f8d: общие Skills contracts просмотрены, scoped

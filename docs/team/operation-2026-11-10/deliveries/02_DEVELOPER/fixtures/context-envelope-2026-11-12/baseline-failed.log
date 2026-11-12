@@ -1,0 +1,78 @@
+
+ RUN  v4.1.11 /workspace/work/Nexus-OS-chief-2026-11-12/apps/api
+
+ ❯ test/code-agent.test.ts (106 tests | 4 failed | 102 skipped) 922ms
+     × excludes credential-shaped path metadata from an otherwise safe proposal 367ms
+     × blocks credential-bearing task before the first model request 198ms
+     × blocks credential-bearing issue before the first model request 114ms
+     × blocks legacy task metadata before reserving a repair or sending another model request 241ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 4 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  test/code-agent.test.ts > Code agent real gateway/GitHub/policy vertical > excludes credential-shaped path metadata from an otherwise safe proposal
+AssertionError: expected true to be false // Object.is equality
+
+- Expected
++ Received
+
+- false
++ true
+
+ ❯ test/code-agent.test.ts:464:61
+    462|     const id = await f.start();
+    463|     await f.service.whenIdle();
+    464|     expect(JSON.stringify(f.providerCalls).includes(token)).toBe(false…
+       |                                                             ^
+    465|     expect(f.get(id).status).toBe("proposed");
+    466|     expect(f.providerCalls).toHaveLength(3);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/4]⎯
+
+ FAIL  test/code-agent.test.ts > Code agent real gateway/GitHub/policy vertical > blocks credential-bearing task before the first model request
+ FAIL  test/code-agent.test.ts > Code agent real gateway/GitHub/policy vertical > blocks credential-bearing issue before the first model request
+AssertionError: expected true to be false // Object.is equality
+
+- Expected
++ Received
+
+- false
++ true
+
+ ❯ test/code-agent.test.ts:480:61
+    478|     });
+    479|     await f.service.whenIdle();
+    480|     expect(JSON.stringify(f.providerCalls).includes(token)).toBe(false…
+       |                                                             ^
+    481|     expect(f.providerCalls).toHaveLength(0);
+    482|     expect(f.get(created.id)).toMatchObject({ status: "failed", error:…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/4]⎯
+
+ FAIL  test/code-agent.test.ts > bounded explicit check-feedback repair > blocks legacy task metadata before reserving a repair or sending another model request
+AssertionError: expected true to be false // Object.is equality
+
+- Expected
++ Received
+
+- false
++ true
+
+ ❯ test/code-agent.test.ts:3192:61
+    3190|     const response = await f.app.inject({ method: "POST", url: `${f.ba…
+    3191|     await f.service.whenIdle();
+    3192|     expect(JSON.stringify(f.providerCalls).includes(token)).toBe(false…
+       |                                                             ^
+    3193|     expect(response.statusCode).toBe(409);
+    3194|     expect(response.json()).toEqual({ error: { code: "CONTEXT_CONTENT_…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/4]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  4 failed | 102 skipped (106)
+   Start at  15:41:17
+   Duration  4.55s (transform 1.92s, setup 0ms, import 3.45s, tests 922ms, environment 0ms)
+
+undefined
+/workspace/work/Nexus-OS-chief-2026-11-12/apps/api:
+[ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL] Command failed with exit code 1: vitest run test/code-agent.test.ts -t 'credential-shaped path metadata|credential-bearing|legacy task metadata' '--maxWorkers=1'

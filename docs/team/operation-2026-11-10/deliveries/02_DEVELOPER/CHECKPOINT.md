@@ -1,3 +1,28 @@
+# Context envelope: текущая точка, 12 ноября
+
+PR551/ветка ops/developer-coscode-context-secrets-2026-11-12.
+BASEffc794ce3b377eac32a460283fd12c3075f53805 имеет полный CI43247327193/identity43247327083
+SUCCESS attempt1. Затем read-only probe и4actual regressions подтвердили передачу
+известных credential formats через имя файла/task/issue/legacy repair task.
+
+Sourceb764ac26a5bc061167680a8d5782a77848165adc, tree400edb998153f15af6bb7d6d5dc2a02b01c6fb1c.
+Изменены только private context path predicate, final messages guard и текст прежней
+UI ошибки. Metadata names фильтруются до prompt; task/issue/legacy requests с ключом
+отклоняются до model dispatch и новой repair reservation. Raw owner records не чистятся.
+
+Проверки: baseline4FAIL; focused4PASS; scoped157PASS+1SKIP; web4PASS;
+full coreexit0/API1077/web363; fresh actual tmpGit/API/OCI1PASS. Inputs/outputs/patch/
+receipts/hashes в fixtures/context-envelope-2026-11-12/.
+Отчёт CONTEXT_ENVELOPE_DELIVERY_RU.md; максимум **готово к интеграции**.
+Финальный docs HEAD — в PR history. Дальше: exact final HEAD CI, не менять код и
+не сбрасывать browser job до результата. При failure — сохранить причину и исправить
+конкретный сбой. Не начинать новый продукт. Model API отложен; foreign push требует
+отдельного разрешения; owner-PC/VPS/deploy не выполнять. Main1c07 сохранён.
+
+Предыдущие checkpoints далее — история.
+
+---
+
 # Программная приёмка на актуальном main, 12 ноября 2026
 
 Ветка ops/developer-coscode-context-secrets-2026-11-12, Draft PR551.

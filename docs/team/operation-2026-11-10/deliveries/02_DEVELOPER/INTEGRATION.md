@@ -1,3 +1,17 @@
+# Context envelope hardening, 12 ноября
+
+PR551/sourceb764ac26a5bc061167680a8d5782a77848165adc.
+Только scoped Code API helper/service/tests и существующий web error text.
+Общий isSafeCodeAgentDiffPath/tool-runtime не менялся: API-private predicate добавляет
+известные credential formats для model context. Общих schema/contracts/routes/DB/gateway
+изменений нет; integration commit не требуется. Legacy wire errors/commands прежние.
+Owner records не переписываются; metadata/task/issue в messages не дают прав.
+Main1c07 уже в ancestry. До merge — final HEAD CI и свежий canonical contract review.
+
+Исторические integration notes далее.
+
+---
+
 # Интеграция с main1c07, 12 ноября 2026
 
 PR551, mergec3cef4bb79d1e14b4d61979a7010dcc830e94353 сохраняет main1c07f8d.
