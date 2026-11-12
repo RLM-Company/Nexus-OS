@@ -1,3 +1,16 @@
+# Последнее продолжение: legacy repair feedback, 12 ноября
+
+См. [REPAIR_FEEDBACK_DELIVERY_RU.md](REPAIR_FEEDBACK_DELIVERY_RU.md), тот же Draft PR551.
+Source78e516ca4d7a45bf6e7356624b3673649580d2fd: используем канонический очищенный
+check result в repair prompt и новом checkpoint, до excerpt и dispatch.
+API150PASS+1SKIP/validator4PASS; полный новый core exit0 (API1065PASS+1SKIP,
+web361PASS). Main5b6013d с документацией сохранён; после source78e516c code не менялся.
+Первоначальные failures и fixture-counter ошибки сохранены; live ИИ API отложен.
+
+Историческая поставка ниже.
+
+---
+
 # Последняя поставка: Code context credentials, 12 ноября 2026
 
 [Отчёт текущего среза](CONTEXT_CREDENTIALS_DELIVERY_RU.md), Draft PR551,

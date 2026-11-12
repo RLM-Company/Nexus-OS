@@ -1,3 +1,17 @@
+# Repair feedback follow-up, 12 ноября
+
+PR551/source78e516ca4d7a45bf6e7356624b3673649580d2fd; только scoped service/test.
+Переиспользован текущий validator/redactor, общий tool-runtime не менялся.
+Новых integration adapters/contracts/routes/migrations/capabilities/прав нет.
+При новом согласованном repair current check и source_check сохраняют канонический
+результат и прежние identity/status/exit fields. Массовой миграции исторических rows нет.
+Invalid legacy evidence использует прежний REPAIR_CHECK_REQUIRED/HTTP409.
+Откат отдельным revert follow-up, без сброса/повтора reserved attempts.
+
+Предыдущие integration notes ниже.
+
+---
+
 # Context credentials: интеграция, 12 ноября 2026
 
 Draft PR551; source ab53ef4832d3fe79c7441c015fde100edb93a63d.

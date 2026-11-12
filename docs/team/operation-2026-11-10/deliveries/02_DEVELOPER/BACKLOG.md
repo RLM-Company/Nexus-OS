@@ -1,3 +1,19 @@
+# Продолжение PR551: legacy repair feedback, 12 ноября
+
+- Найдено: repair валидирует старый check, но отбрасывает очищенный результат;
+  исходные stdout/stderr/journal копируются в попытку и могут уйти модели.
+- Реализовано: использовать существующий canonical validator/redactor до excerpt,
+  записи repair_request и dispatch; сохранить digest/exit/status/consent/version fences.
+- Входы: только искусственные legacy credentials; model/GitHub/runner — fixtures.
+- Проверено: очистка prompt и нового checkpoint, отмена до dispatch, повтор UUID,
+  точные диагностические факты и размер excerpt. Новый runtime/сканер не нужен.
+- Новый core exit0: API1065PASS+1SKIP, web361PASS. Перед интеграцией — финальный CI
+  PR551 и свежий main; main5b6013d уже сохранён без code/contract changes.
+
+Предыдущий срез далее.
+
+---
+
 # Следующий срез: проверка содержимого Code context, 12 ноября
 
 BASE_SHA a5f6511875ef7ec116e34dd6c35ff445bdea4313; ветка

@@ -1,3 +1,36 @@
+# Продолжение PR551: legacy check feedback, 12 ноября
+
+Ветка ops/developer-coscode-context-secrets-2026-11-12; source HEAD
+78e516ca4d7a45bf6e7356624b3673649580d2fd, tree93a4bbbf28e3732b936de03d8c4f491066fc40ac.
+Follow-up BASE f7a67f0928fa18c0cf00e8a76c255b869cfdb64b, исходный maina5f6511 сохранён.
+GitHub/local source tree equality verified. Тот же Draft PR551, новых PR не создавали.
+
+Найден и исправлен discarded validator result в repair: prompt/excerpt/current check/
+source_check теперь получают канонический redacted result. Invalid legacy journal
+даёт REPAIR_CHECK_REQUIRED409 до резервирования попытки. Version/consent/one-attempt
+fences прежние, исходники не переписываются. API150PASS+1SKIP, validator4PASS;
+baseline2FAIL и два fixture-counter failures сохранены. Новый полный core exit0:
+API1065PASS+1SKIP fresh, web361PASS/unchanged packages cached, остальные gates passed.
+Статус **готово к интеграции**, без merge/deploy.
+
+Точка продолжения: проверить CI точного финального HEAD PR551 и актуальный main.
+Сначала завершить приёмку этого CI; до результата не начинать новый срез и не
+перезапускать длинный browser job очередным попутным push. При failure сохранить
+его причину и исправлять конкретный сбой. После всех зелёных gates закончить
+программную приёмку; live модель остаётся отложенной владельцем.
+Итоговый docs SHA — в истории PR; source78e516c проверен, финальный code идентичен ему.
+Main5b6013d сохранён merge8de00758 (только документация; common contracts не менялись).
+Receipt/logs/SHA256SUMS сохранены в fixtures/repair-feedback-2026-11-12/.
+CI source78e516c на момент записи ещё выполнялся; новые статусы проверять по GitHub,
+а не считать предыдущие сообщения/отчёты подтверждением финального CI. Никаких merge/deploy/owner-PC/VPS.
+Описание и команды: [REPAIR_FEEDBACK_DELIVERY_RU.md](REPAIR_FEEDBACK_DELIVERY_RU.md).
+Модель отложена владельцем; все model/GitHub/runner calls здесь fixtures.
+Старые непереиспользованные rows массово не чистились, универсальный DLP не заявляется.
+
+Предыдущая точка продолжения ниже.
+
+---
+
 # Продолжение: Code context credentials, 12 ноября 2026
 
 Владелец отложил подключение ИИ API; продолжаем программные срезы с fixtures.

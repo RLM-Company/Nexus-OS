@@ -1,0 +1,8 @@
+
+ RUN  v4.1.11 /workspace/work/Nexus-OS-chief-2026-11-12/packages/tool-runtime
+
+
+ Test Files  1 passed (1)
+      Tests  4 passed (4)
+   Start at  11:54:29
+   Duration  337ms (transform 112ms, setup 0ms, import 147ms, tests 9ms, environment 0ms)
