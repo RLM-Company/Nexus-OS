@@ -430,6 +430,41 @@ export function researchMarkdown(run: ResearchRun): string {
       `S${index + 1}. ${safeMarkdown(source.title)} — ${source.url} (${source.status}; ${source.checked_at})`
     );
   }
+  // Honest deduplication: identical bounded text is ONE source, never several
+  // independent confirmations. Disagreements are preserved, never resolved by
+  // majority, and a lexical heuristic is never called semantic proof.
+  const digestGroups = new Map<string, string[]>();
+  for (const [index, source] of run.sources.entries()) {
+    if (source.status !== "read" || !source.content_digest) continue;
+    const id = `S${index + 1}`;
+    const group = digestGroups.get(source.content_digest) ?? [];
+    group.push(id);
+    digestGroups.set(source.content_digest, group);
+  }
+  const duplicates = [...digestGroups.values()].filter((group) => group.length > 1);
+  const duplicateSourceCount = run.sources.filter((s) => s.status === "duplicate").length;
+  lines.push("", "## Дубли и противоречия", "");
+  lines.push(
+    duplicates.length
+      ? `Дословно совпавших групп источников: ${duplicates.length} (${duplicates
+          .map((group) => group.join(", "))
+          .join("; ")}). Это один и тот же текст, а не независимые подтверждения.`
+      : "Дословных дубликатов среди прочитанных страниц не обнаружено; это не доказывает независимость источников."
+  );
+  if (duplicateSourceCount)
+    lines.push(
+      `Помечено дубликатами при чтении: ${duplicateSourceCount}. Они не добавляют голосов за какое-либо значение.`
+    );
+  const disagreements = run.answer?.disagreements.length ?? 0;
+  lines.push(
+    disagreements
+      ? `Зафиксировано расхождений: ${disagreements}. Разные значения с единицами сохранены; победитель по большинству дублирующих сайтов не выбран, противоречие не стёрто.`
+      : "Явных расхождений в доступных фрагментах не зафиксировано; это не означает их отсутствия."
+  );
+  lines.push(
+    "Сопоставление значений здесь — структурная эвристика по числу, единице и доверенному снимку, а не семантическое доказательство истинности.",
+    ""
+  );
   lines.push(
     "",
     "## Ограничения",
