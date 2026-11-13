@@ -44,6 +44,13 @@ export const CreateManagerWorkSchema = Type.Object(
 );
 export type CreateManagerWork = Static<typeof CreateManagerWorkSchema>;
 
+export const MANAGER_WORK_CONTROL_EVENTS = {
+  pause: "Пауза после текущего запроса",
+  resume: "Работа продолжена",
+  approve: "План подтверждён владельцем",
+  cancel: "Остановлено владельцем"
+} as const;
+
 export const ManagerWorkPlanSchema = Type.Object(
   {
     summary: Type.String({ minLength: 1, maxLength: 1000 }),
