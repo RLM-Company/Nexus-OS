@@ -175,6 +175,42 @@ GitHub-токен, к VPS отношения не имеет; содержимо
 пустого пароля и чужого Origin, никакой утечки приватных маршрутов. Это
 дополняет (но не заменяет) авторизованную приёмку.
 
+## Раунд 5 — SSH-доступ получен, инвентаризация `/opt/kosmora` выполнена
+
+Владелец передал пароль SSH `root@169.40.37.32`; он оказался актуальным.
+Пароль `owner` для Kosmora в переписке отсутствует, приватного ключа и токена
+сессии у владельца нет. По просьбе владельца сгенерирована пара `ed25519`
+(публичный ключ — `VPS_PUBLIC_KEY.md`), приватная часть осталась у DeepSeek,
+публичная добавлена в `/root/.ssh/authorized_keys`. Беспарольный вход проверен
+(`KEY_AUTH_OK`). Пароль SSH использовался только через временный askpass в
+`%TEMP%`, удалённый после каждой команды; в репозиторий/env/отчёты не попал.
+
+**Фактические read-only данные (без изменений на сервере):**
+
+| Проверка                           | Результат                                                                                                                                                                                                               |
+| ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Хост                               | `Linux calm-otter.h1cloud.net 6.8.0-111-generic`, Ubuntu, uptime 12 дней                                                                                                                                                |
+| Память / диск                      | 805 МиБ всего (227 доступно на момент проверки), `/dev/vda2` 15G, свободно 3.0G (80%)                                                                                                                                   |
+| `/opt/kosmora`                     | `active-api-runtime.txt`, `compose.small-vps.yaml`, `daily-backup.sh`, `prepare-release.py`, `start-runtime.sh`, каталоги `releases/`, `backups/`, `models/`, `provider-config/`, `private/`                            |
+| Активный рантайм                   | `/opt/kosmora/releases/semantic-history-20261103`                                                                                                                                                                       |
+| `acceptance.json` активного релиза | `source_revision: 74ab1bc6a7c48c9dc27168fd23805e99bf4d67f9`, `main_merge: 2b8c6d9`, `api_health: healthy`, `encoder_ready: true`, `sqlite_quick_check: ok`, `critical_row_counts_unchanged: true`, `paid_test_calls: 0` |
+| Контейнеры                         | `kosmora-edge-1` (caddy:2.11.7-alpine), `kosmora-api-1` (`kosmora-api:semantic-74ab1bc6a7c4`, healthy), `kosmora-owner-access-1` и `kosmora-web-1` (`kosmora-alpha-app:17330ccb86a4`, healthy) — все `Up`               |
+| Порты                              | наружу `22`, `80`, `443` (docker-proxy); API/web — только внутренняя сеть                                                                                                                                               |
+| **Копия за 13 ноября**             | `/opt/kosmora/backups/daily/cosmora-2026-11-13T00-18-20-410Z-e5cf11a1-77c2-4efd-934d-32a399be518b.sqlite`, 1 761 280 байт, 13 Nov 01:18 — **на месте**, как и говорил владелец                                          |
+| Ряд ежедневных копий               | 8–13 ноября, каждый день, ~1.76 МБ                                                                                                                                                                                      |
+| Процессы                           | Next, Caddy, dockerd, containerd;_load average 0.26 — сервис не перегружен                                                                                                                                              |
+
+**Не читалось намеренно:** `/opt/kosmora/private/owner-password`,
+`owner-session.env`, `model.env`, `github.env` и другие файлы `private/`
+(обнаружены по именам, содержимое не извлекалось). Вы дали доступ к VPS, но
+это не равно разрешению извлекать Owner-пароль/сессию; владелец прямо указал,
+что пароля `owner` в переписке нет.
+
+**Ограничение:** `docker compose -f .../compose.small-vps.yaml ps` на сервере
+вернул «service edge has neither an image nor a build context specified», а
+`--format` с шаблоном не поддержан установленной версией — поэтому статус
+взят из `docker ps` и `acceptance.json`, без перезапуска сервисов.
+
 ## Итоговый CI (PR #571)
 
 PR с исправлением workflow и этим отчётом — `CLEAN / MERGEABLE`, **5/5 pass**
