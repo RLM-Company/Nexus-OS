@@ -764,28 +764,94 @@ agent-studio-team-api.test.ts` (3: дефолт без blueprint'ов, полн�
       локально: 13 файлов по 1 тесту падают ПОД ПАРАЛЛЕЛЬНОЙ НАГРУЗКОЙ и
       проходят соло (проверено: write-api 2/2, runtime-clock+github 29/29,
       work-dag+manager-work 129/129) — машина медленная, гейт — CI Verify.
-      Prettier clean, `check:secrets` пройден до пуша.
+      Prettier clean, `check:secrets` пройден до пуша. **Merge**: PR #564
+      слит владельцем 13.11.2026 (main `b47e5cc9`) после трёх CI-прогонов:
+      прогон 1 — Verify упал (мой ESLint `consistent-type-imports` в сторе +
+      2 неиспользуемых type-импорта в app.ts — починены, lint db/api/contracts
+      прогнан локально), Browser acceptance флак `chat-reliability.spec.ts:87`
+      (чужой тест из волны #539); прогон 2 — Verify упал на typecheck db
+      (`possibly 'undefined'` в деструктуризации тест-фикстуры — починено
+      guard'ом, typecheck db/api/contracts прогнан локально), Browser
+      acceptance зелёный; прогон 3 — Verify зелёный 5m13s, Browser acceptance
+      снова флак того же теста → перезапуск упавшего задания зелёный,
+      4/4. Урок: перед пушем прогонять `pnpm run lint` + `pnpm run
+typecheck` в КАЖДОМ затронутом пакете, не только vitest. Гигиена после
+      merge: чужая волна #563 (интеграция поставок 13.11: research,
+      code-agent, sites, composer-drafts, CI; e2e-flaky-policy) мои файлы
+      НЕ тронула (пустой диф app.ts/server.ts/agent-studio/mutation-store);
+      на новом tip — typecheck api чист, тройка agent-studio 9/9,
+      desktop/windows `npm run check` **462/0**; полный локальный прогон db
+      флакует под нагрузкой (разные наборы по 1 тесту от прогона к прогону,
+      все проверенные соло проходят — environmental, гейт CI Verify).
+
+44. **Срез 1 Multi-Agent: исполнение частей + lifecycle + файловые артефакты
+    (13.11.2026, по «продолжаем»; разбиение владельцем: «Два среза: сначала
+    артефакты» и «1 blueprint = 1 узел»)**. Разведка Work-runtime: ни один
+    исполнитель (ManagerWorkCoordinator, WorkDagCoordinator,
+    ComputerControlService, CodeAgent, Research) НЕ читает agent_instances /
+    agent_team_compositions; три сериализатора (active.size>=1, один running
+    на проект в claim, первый ready node за тик) при уже существующих
+    execution_waves / scheduledReadyWorkNodes; `WorkDagCoordinator.control`
+    создаёт дочерний Work на узел с проверенным readback'ом зависимостей;
+    `publish()` + `work_artifact_versions` дают иммутабельные версии с sha256;
+    `run_plan` уже даёт последовательное исполнение по одной с явным
+    разрешением владельца. Дизайн: срез 1 — НЕ новый исполнитель, а связка
+    подтверждённого состава с DAG + lifecycle-слой; срез 2 (сразу после) —
+    снятие сериализаторов, bounded concurrency. Код: контракты
+    `team.activate` (операция в AgentStudioDecisionOperationSchema;
+    objectTypeFor team.* уже покрывает), AgentTeamPartStatus/Part,
+    Activate/Parts Request/Response, `execution_status: "awaiting_owner_run"`
+    (активация НЕ делает модельных вызовов). Миграция
+    `0067_agent_team_parts.sql` (+ journal idx 67): lifecycle в ОТДЕЛЬНОЙ
+    таблице (agent_instances остаётся proposals-only из-за DB CHECK), PK
+    owner/project/composition/instance, FK compositions/instances; drizzle
+    `agentTeamParts` в schema.ts. Новый стор
+    `packages/db/src/agent-team-run-store.ts`: `activate()` идемпотентен
+    (INSERT OR IGNORE + fast-path по agent_team_parts — граф не пересоздаётся
+    при replay), валидирует composition id (64 hex), целостность/размер
+    ростера, goal ≤ 4000 (task_contract ≤ 20000), полный pending-ростер;
+    `parts()` читает статусы из DAG-узлов и `artifact_count` из published
+    work_artifact_versions; `nodeIdFor(line) = "part-"+sha256(line)[:16]`,
+    `goal = task_contract`, `title = "Part <line>"`, `depends_on: []`.
+    Порт `AgentTeamRunGraphPort` (в packages/db) + адаптер
+    `apps/api/src/team-graph-adapter.ts` к `WorkDagCoordinator.create`
+    (идемпотентен по `client_request_id: "team:<composition_id>"`),
+    `nodesOf` читает `works.dag.get`. Маршруты `apps/api/src/app.ts` в
+    СВОЁМ guard-блоке (projectStore + mutations + agentTeamRunStore): POST
+    `.../teams/activate` через mutations.create (resolve → activate
+    идемпотентно), GET `.../teams/:compositionId/parts` → parts(); ошибки
+    AgentTeamRunNotFoundError → 404, AgentTeamRunValidationError → 400.
+    Проводка `apps/api/src/server.ts`: `managerWorkCoordinator.dag`
+    (публичный) + managerWorkStore в TeamGraphAdapter. Тесты:
+    `packages/db/test/agent-team-run-store.test.ts` (6: активация+
+    идемпотентность, unconfirmed→NotFound, неполный ростер→Validation,
+    oversized goal→Validation, статус/artifact_count из DAG, пустые parts),
+    `apps/api/test/agent-studio-team-api.test.ts` расширен до 4 (поток
+    plan→confirm→activate→replay→parts + decision-events team.activate,
+    ошибки 404/400/пустые parts/foreign project). Локально: lint+typecheck
+    contracts/db/api чистые, затронутые тесты db 16/16 + api 4/4,
+    prettier clean, check-secrets пройден. **Статус: готово к интеграции
+    (PR/merge — только по явному одобрению владельца).**
 
 ## Что делать следующему запуску (в порядке приоритета)
 
-1. **Merge среза планировщика команды** (PR, item 43): CI — Verify,
-   Browser acceptance, Sandbox; live-smoke не запускается (desktop/windows
-   не тронут); merge только владельцем.
+1. **Следующие срезы Multi-Agent по очереди** (согласовывать с владельцем):
+   **срез 2 сразу после merge среза 1** — bounded concurrency (снять три
+   сериализатора: `active.size>=1` в manager-work-coordinator.ts, один running
+   на проект в claim в manager-work-store.ts, первый ready node в
+   work-dag-coordinator.ts; использовать execution_waves и
+   scheduledReadyWorkNodes, сохранить owner budget/ledger/verified artifacts),
+   затем arbiter-сборка с проверкой по критериям #538, бюджет команды поверх
+   owner budget, панель хода. Исполнение частей + lifecycle + файловые
+   артефакты с версиями выполнены в срезе 1 (п. 44).
 
-2. **Следующие срезы Multi-Agent по очереди** (после merge item 43,
-   согласовывать с владельцем): исполнение частей поверх активированного
-   состава (жизненный цикл экземпляров — активация proposal'ов, параллельные
-   части существующим Work-исполнителем), затем arbiter-сборка с проверкой
-   по критериям #538, бюджет команды поверх owner budget, панель хода,
-   файловые артефакты завершённых частей с версиями.
-
-3. **Live-приёмка — отложена владельцем** (13.11.2026 подтверждено:
+2. **Live-приёмка — отложена владельцем** (13.11.2026 подтверждено:
    «Multi-Agent впереди»): секрет `KOSMORA_LIVE_ORIGIN` не создан; задание
    включится само на следующем PR/диспетче после появления секрета; затем
    VM-прогоны (C1-C4, B1/B2/B5, A4) → участие владельца (A1-A3, B3-B4) →
    финальный пользовательский цикл → ACCEPTANCE-отчёт.
 
-4. **После любого нового main**: проверить новые общие контракты ПРЕЖДЕ чем
+3. **После любого нового main**: проверить новые общие контракты ПРЕЖДЕ чем
    разрешать конфликты (не автопик своей версии).
 
 ## Границы (не нарушать)

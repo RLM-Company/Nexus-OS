@@ -387,7 +387,8 @@ export const AgentStudioDecisionOperationSchema = Type.Union([
   Type.Literal("proposal.root"),
   Type.Literal("proposal.delegated"),
   Type.Literal("team.plan"),
-  Type.Literal("team.confirm")
+  Type.Literal("team.confirm"),
+  Type.Literal("team.activate")
 ]);
 export type AgentStudioDecisionOperation = Static<typeof AgentStudioDecisionOperationSchema>;
 
@@ -469,6 +470,56 @@ export const ConfirmAgentTeamResponseSchema = Type.Object(
   { additionalProperties: false }
 );
 export type ConfirmAgentTeamResponse = Static<typeof ConfirmAgentTeamResponseSchema>;
+
+// Runtime lifecycle for an instance of a confirmed composition. This state is
+// deliberately separate from `agent_instances` (which is an immutable
+// proposals-only table with a `status='proposed'` DB CHECK). One row per
+// (owner, project, composition, instance) tracks activation and the work DAG
+// node that executes the part; published part artifacts are read from the
+// existing immutable `work_artifact_versions`, not copied here.
+export const AgentTeamPartStatusSchema = Type.Union([
+  Type.Literal("active"),
+  Type.Literal("completed"),
+  Type.Literal("failed"),
+  Type.Literal("cancelled")
+]);
+export type AgentTeamPartStatus = Static<typeof AgentTeamPartStatusSchema>;
+
+export const AgentTeamPartSchema = Type.Object(
+  {
+    instance_id: EntityIdSchema,
+    node_id: Type.String({ minLength: 1, maxLength: 60 }),
+    status: AgentTeamPartStatusSchema,
+    artifact_count: Type.Integer({ minimum: 0 }),
+    updated_at: IsoDateTimeSchema
+  },
+  { additionalProperties: false }
+);
+export type AgentTeamPart = Static<typeof AgentTeamPartSchema>;
+
+export const ActivateAgentTeamRequestSchema = Type.Object(
+  { composition_id: TeamCompositionIdSchema },
+  { additionalProperties: false }
+);
+export type ActivateAgentTeamRequest = Static<typeof ActivateAgentTeamRequestSchema>;
+
+export const ActivateAgentTeamResponseSchema = Type.Object(
+  {
+    composition_id: TeamCompositionIdSchema,
+    graph_id: EntityIdSchema,
+    parts: Type.Array(AgentTeamPartSchema),
+    /** Explicit owner authorization is required before any model dispatch. */
+    execution_status: Type.Literal("awaiting_owner_run")
+  },
+  { additionalProperties: false }
+);
+export type ActivateAgentTeamResponse = Static<typeof ActivateAgentTeamResponseSchema>;
+
+export const AgentTeamPartsResponseSchema = Type.Object(
+  { parts: Type.Array(AgentTeamPartSchema) },
+  { additionalProperties: false }
+);
+export type AgentTeamPartsResponse = Static<typeof AgentTeamPartsResponseSchema>;
 
 export const AgentStudioDecisionEventListResponseSchema = Type.Object(
   { items: Type.Array(AgentStudioDecisionEventSchema, { maxItems: 100 }) },
