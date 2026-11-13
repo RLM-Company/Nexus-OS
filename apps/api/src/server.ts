@@ -13,6 +13,7 @@ import {
   AgentInstanceStore,
   AgentStudioMutationStore,
   AgentTeamStore,
+  AgentTeamRunStore,
   DemoManagerStore,
   ManagerWorkStore,
   EmergencyStopStore,
@@ -26,6 +27,7 @@ import {
 } from "@cosmora/db";
 import { validateAgentDelegation } from "@cosmora/policy-engine";
 import { buildApp } from "./app.js";
+import { TeamGraphAdapter } from "./team-graph-adapter.js";
 import {
   BearerSessionIdentityResolver,
   LOCAL_DEVELOPMENT_IDENTITY,
@@ -396,6 +398,10 @@ try {
     agentTeamStore: new AgentTeamStore(database.sqlite, {
       blueprints: agentBlueprintStore,
       instances: agentInstanceStore
+    }),
+    agentTeamRunStore: new AgentTeamRunStore(database.sqlite, {
+      instances: agentInstanceStore,
+      graph: new TeamGraphAdapter(managerWorkCoordinator.dag, managerWorkStore)
     }),
     agentStudioMutationStore: new AgentStudioMutationStore(database.sqlite),
     modelGateway: modelRuntime.gateway,
