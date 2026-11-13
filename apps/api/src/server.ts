@@ -1,4 +1,5 @@
 import { EnvironmentSecretResolver, loadServerConfig } from "@cosmora/config";
+import { WORK_EXECUTION_CONCURRENCY } from "@cosmora/contracts";
 import { RuntimeClock } from "@cosmora/model-gateway";
 import {
   AgentBlueprintStore,
@@ -195,12 +196,15 @@ try {
   }
   const recoveredRuns = projectStore.recoverInterruptedRuns();
   const recoveredChatRuns = generalChatStore.recoverInterruptedRuns();
-  const managerWorkStore = new ManagerWorkStore(database.sqlite);
+  const managerWorkStore = new ManagerWorkStore(database.sqlite, {
+    maxConcurrentWork: WORK_EXECUTION_CONCURRENCY
+  });
   managerWorkStore.contextMemory.semanticRanker = semanticRanker;
   managerWorkStore.contextMemory.indexedRecall = semanticIndex;
   const policyStore = new PolicyStore(database.sqlite);
   managerWorkCoordinator = new ManagerWorkCoordinator({
     ownerBudget: accountStore,
+    maxConcurrentWork: WORK_EXECUTION_CONCURRENCY,
     store: managerWorkStore,
     projects: projectStore,
     policy: policyStore,

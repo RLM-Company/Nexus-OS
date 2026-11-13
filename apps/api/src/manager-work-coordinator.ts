@@ -12,6 +12,7 @@ import {
 import { WorkDagCoordinator } from "./work-dag-coordinator.js";
 import { createHash } from "node:crypto";
 import {
+  WORK_EXECUTION_CONCURRENCY,
   ManagerWorkFilesSchema,
   ManagerWorkPlanSchema,
   ManagerWorkReviewSchema,
@@ -66,6 +67,7 @@ export type { WorkOwnerBudget } from "@cosmora/contracts";
 
 export interface ManagerWorkDependencies {
   operationTimeoutMs?: number;
+  maxConcurrentWork?: number;
   store: ManagerWorkStore;
   projects: ProjectStore;
   policy: PolicyStore;
@@ -98,6 +100,7 @@ export class ManagerWorkCoordinator {
   // plan, approval, transition or another owner control. No authority is restored.
   private readonly outputVersions = new Map<string, { from: number; to: number }>();
   private readonly operationTimeoutMs: number;
+  private readonly maxConcurrentWork: number;
   private readonly tools: GuardedToolRuntime;
 
   constructor(private readonly dependencies: ManagerWorkDependencies) {
@@ -108,6 +111,13 @@ export class ManagerWorkCoordinator {
       this.operationTimeoutMs > 1_800_000
     )
       throw new Error("Invalid Work operation time budget");
+    this.maxConcurrentWork = dependencies.maxConcurrentWork ?? WORK_EXECUTION_CONCURRENCY;
+    if (
+      !Number.isInteger(this.maxConcurrentWork) ||
+      this.maxConcurrentWork < 1 ||
+      this.maxConcurrentWork > 16
+    )
+      throw new Error("Invalid Work execution concurrency");
     this.dag = new WorkDagCoordinator(dependencies.store, this);
     this.tools = new GuardedToolRuntime(dependencies.policy);
     this.tools.register<{ id: string; ownerId: string }, string[]>({
@@ -145,7 +155,7 @@ export class ManagerWorkCoordinator {
       this.dag.advance();
       for (const work of this.dependencies.store.pending()) {
         if (this.isOwnerFenced(work.owner_id)) continue;
-        if (this.active.size >= 1) break;
+        if (this.active.size >= this.maxConcurrentWork) break;
         void this.execute(work.id, work.owner_id).catch(() => undefined);
       }
     }, 200);
@@ -190,6 +200,10 @@ export class ManagerWorkCoordinator {
   /** Single-process drain status; persisted inflight IDs may denote uncertain spend. */
   hasActiveExecution(workId: string): boolean {
     return this.active.has(workId);
+  }
+  /** Shared admission cap; the DAG scheduler must reserve budget for every slot. */
+  capacity(): number {
+    return this.maxConcurrentWork;
   }
   async stop(): Promise<void> {
     this.stopping = true;
@@ -622,7 +636,7 @@ export class ManagerWorkCoordinator {
 
   async execute(id: string, ownerId: string, signal = new AbortController().signal): Promise<void> {
     if (this.active.has(id)) return this.active.get(id)!.done;
-    if (this.active.size || this.stopping) return Promise.resolve();
+    if (this.active.size >= this.maxConcurrentWork || this.stopping) return Promise.resolve();
     this.dependencies.store.assertWritable(ownerId);
     if (this.isOwnerFenced(ownerId)) return;
     const controller = new AbortController();

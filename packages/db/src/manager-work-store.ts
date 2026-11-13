@@ -3,7 +3,12 @@ import { WorkflowStore } from "./workflow-store.js";
 import { WorkDagStore } from "./work-dag-store.js";
 import { createHash, randomUUID } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
-import type { CreateManagerWork, ManagerWork, ManagerWorkFiles } from "@cosmora/contracts";
+import {
+  WORK_EXECUTION_CONCURRENCY,
+  type CreateManagerWork,
+  type ManagerWork,
+  type ManagerWorkFiles
+} from "@cosmora/contracts";
 import { ProjectMemoryStore } from "./project-memory-store.js";
 import { ContextMemoryStore } from "./context-memory-store.js";
 import { WorkRuntimeStore } from "./work-runtime-store.js";
@@ -25,7 +30,15 @@ export class ManagerWorkStore {
   readonly memory: ProjectMemoryStore;
   readonly contextMemory: ContextMemoryStore;
   readonly runtime: WorkRuntimeStore;
-  constructor(private readonly sqlite: DatabaseSync) {
+  private readonly maxConcurrentWork: number;
+  constructor(
+    private readonly sqlite: DatabaseSync,
+    options: { maxConcurrentWork?: number } = {}
+  ) {
+    const cap = options.maxConcurrentWork ?? WORK_EXECUTION_CONCURRENCY;
+    if (!Number.isInteger(cap) || cap < 1 || cap > 16)
+      throw new Error("Invalid Work execution concurrency");
+    this.maxConcurrentWork = cap;
     this.dag = new WorkDagStore(sqlite);
     this.workflows = new WorkflowStore(sqlite);
     this.skills = new WorkSkillStore(sqlite);
@@ -178,19 +191,26 @@ export class ManagerWorkStore {
     }
   }
 
-  // SQLite CAS also excludes a second active work item in the same project.
+  // SQLite CAS also bounds the number of active work items in the same project.
   claim(state: ManagerWork): ManagerWork | null {
     return this.transaction(() => {
       this.assertWritable(state.owner_id);
       if (this.dag.projectMode(state.project_id, state.owner_id) !== "active") return null;
-      const busy = this.sqlite
-        .prepare(
-          "SELECT id FROM manager_work WHERE project_id = ? AND id != ? AND json_extract(state_json, '$.status') = 'running' LIMIT 1"
-        )
-        .get(state.project_id, state.id);
+      const running = (
+        this.sqlite
+          .prepare(
+            "SELECT COUNT(*) AS count FROM manager_work WHERE project_id = ? AND json_extract(state_json, '$.status') = 'running'"
+          )
+          .get(state.project_id) as { count: number }
+      ).count;
       const latest = this.get(state.id, state.owner_id);
       if (latest?.dag_binding && !latest.dag_binding.bound) return null;
-      if (busy || !latest || latest.version !== state.version || latest.status !== "queued")
+      if (
+        running >= this.maxConcurrentWork ||
+        !latest ||
+        latest.version !== state.version ||
+        latest.status !== "queued"
+      )
         return null;
       return this.persist({ ...latest, status: "running" });
     });
@@ -320,15 +340,15 @@ export class ManagerWorkStore {
         .prepare(
           `SELECT w.state_json FROM manager_work w
            WHERE json_extract(w.state_json, '$.status') = 'queued'
-           AND NOT EXISTS (SELECT 1 FROM manager_work r WHERE r.project_id = w.project_id
-             AND json_extract(r.state_json, '$.status') = 'running')
+           AND (SELECT COUNT(*) FROM manager_work r WHERE r.project_id = w.project_id
+             AND json_extract(r.state_json, '$.status') = 'running') < ?
            AND NOT EXISTS (SELECT 1 FROM work_owner_fences f WHERE f.owner_id = w.owner_id AND f.fenced = 1)
            AND NOT EXISTS (SELECT 1 FROM kosmora_owner_data_lifecycle l WHERE l.owner_id = w.owner_id AND l.state <> 'active')
            AND NOT EXISTS (SELECT 1 FROM work_project_controls c WHERE c.project_id = w.project_id AND c.owner_id = w.owner_id AND c.mode <> 'active')
            AND (json_extract(w.state_json, '$.dag_binding') IS NULL OR json_extract(w.state_json, '$.dag_binding.bound') = 1)
            ORDER BY w.rowid LIMIT 50`
         )
-        .all() as { state_json: string }[]
+        .all(this.maxConcurrentWork) as { state_json: string }[]
     ).map((row) => JSON.parse(row.state_json) as ManagerWork);
   }
 
