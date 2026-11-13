@@ -1,0 +1,30 @@
+{
+  "jobs": [
+    {
+      "completed_at": "2026-11-12T11:35:45Z",
+      "conclusion": "success",
+      "head_sha": "409505e3e5ce98fdf3314102e438eeab1266b66b",
+      "id": 131156125544,
+      "name": "Code sandbox isolation",
+      "status": "completed"
+    },
+    {
+      "completed_at": "2026-11-12T11:37:36Z",
+      "conclusion": "failure",
+      "head_sha": "409505e3e5ce98fdf3314102e438eeab1266b66b",
+      "id": 131156125985,
+      "name": "Verify monorepo",
+      "status": "completed"
+    },
+    {
+      "completed_at": "2026-11-12T11:37:57Z",
+      "conclusion": "cancelled",
+      "head_sha": "409505e3e5ce98fdf3314102e438eeab1266b66b",
+      "id": 131156126068,
+      "name": "Browser acceptance",
+      "status": "completed"
+    }
+  ],
+  "run_id": 43210372702,
+  "source_head": "409505e3e5ce98fdf3314102e438eeab1266b66b"
+}

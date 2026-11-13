@@ -1,3 +1,102 @@
+# Интеграционная приёмка с новым main, 12 ноября 2026
+
+PR [#551](https://github.com/RLM-Company/Nexus-OS/pull/551), ветка
+`ops/developer-coscode-context-secrets-2026-11-12`.
+Предыдущий HEAD `30ff9d1d69703d13f07afc5ec889f6d19eab991d` имеет зелёные
+CI43255526930 и identity43255527039; это не CI нового объединённого дерева.
+
+Main `33f43b8825756d60c67db306783fed9e3de717ee` сохранён merge-коммитом
+`958c8a2e79c71f62a15050ea9b51a446b5dfc1da`, source tree
+`57f5c6de8c05908b96a8ab547284bd77ea8f316e`. Изменения research изучены:
+аддитивные типы/функция и текст отчёта, без изменений CodeAgent/Manager/executor.
+Конфликтов и ручных правок общих файлов нет. Продуктовый код Coscode не менялся.
+
+Подробности: [INTEGRATION_REVIEW_2026_11_12_RU.md](INTEGRATION_REVIEW_2026_11_12_RU.md).
+Дальше — CI точного финального docs HEAD, затем независимое ревью и решение
+об интеграции. Не сбрасывать длинный browser job попутным push. Самостоятельные
+merge в main/deploy, live модель и foreign publish не выполняются.
+Максимальный статус — **готово к интеграции**, не интегрировано и не принято в выпуск.
+
+Предыдущая история ниже.
+
+---
+
+# Закрыт подтверждённый пробел: metadata/envelope, 12 ноября
+
+Базаffc794c: CI43247327193/identity43247327083 SUCCESS с первой попытки,
+включая5OCI; предыдущая combined-main приёмка завершена.
+
+- Read-only probe подтвердил: credential-shaped имя файла проходит safe path filter
+  и попадает в selected prompt tree, даже когда содержимое этого файла не читалось.
+- Baseline actual service:4FAIL на tree/list metadata, task/issue и legacy repair task;
+  после fix4PASS, scoped157PASS+1SKIP/web4PASS/coreexit0/API1077/web363 и real Git/OCI1PASS.
+- Реализовано текущим guard: безопасный path filter и final request
+  envelope check; не добавлять DLP engine/хранилище/новые полномочия.
+- Обычный код/имена/данные и прежние task/version/one-attempt fences сохранены.
+- Sourceb764ac2/tree400edb99; финальный docs HEAD в PR551. Дальше exact HEAD CI
+  и review, без новых функций/перезапуска browser job до результата.
+- Raw owner records не чистятся: это предотвращение known-format model dispatch,
+  не DLP всего хранилища. Live модель по-прежнему отложена владельцем.
+
+Предыдущая приёмка ниже.
+
+---
+
+# Программная приёмка Coscode, 12 ноября 2026
+
+- Проверено объединение main1c07f8d: общие Skills contracts просмотрены, scoped
+  source не изменился, main сохранён без conflicts/ours override.
+- Combined coreexit0/API1070/web363; scoped150PASS+1SKIP; actual tmpGit/API/OCI1PASS.
+- Кандидат mergec3cef4b/treeb455ff73, PR551. Новая реализация не нужна:
+  существующие сильные реализации сохранены и прошли текущую приёмку.
+- Дальше: финальный HEAD CI и review. Не добавлять новый продукт ради продолжения.
+- Отложено владельцем: live model API и модельная приёмка. Остальные реальные
+  границы перечислены в SOFTWARE_ACCEPTANCE_RU.md, не прячутся под статусом completed.
+
+Исторический backlog далее.
+
+---
+
+# Продолжение PR551: legacy repair feedback, 12 ноября
+
+- Найдено: repair валидирует старый check, но отбрасывает очищенный результат;
+  исходные stdout/stderr/journal копируются в попытку и могут уйти модели.
+- Реализовано: использовать существующий canonical validator/redactor до excerpt,
+  записи repair_request и dispatch; сохранить digest/exit/status/consent/version fences.
+- Входы: только искусственные legacy credentials; model/GitHub/runner — fixtures.
+- Проверено: очистка prompt и нового checkpoint, отмена до dispatch, повтор UUID,
+  точные диагностические факты и размер excerpt. Новый runtime/сканер не нужен.
+- Новый core exit0: API1065PASS+1SKIP, web361PASS. Перед интеграцией — финальный CI
+  PR551 и свежий main; main5b6013d уже сохранён без code/contract changes.
+
+Предыдущий срез далее.
+
+---
+
+# Следующий срез: проверка содержимого Code context, 12 ноября
+
+BASE_SHA a5f6511875ef7ec116e34dd6c35ff445bdea4313; ветка
+ops/developer-coscode-context-secrets-2026-11-12. Независима от Draft PR549.
+
+- Работает: immutable tree/blob, исключение secret paths, точные snapshots/diff,
+  negotiated read_file, подтверждённый check/publication и redaction stdout.
+- Найден пробел: обычный source path может содержать встроенный token/private key;
+  read callback возвращает его в policy result, snapshot и затем model context.
+- Реализовано: отказ по распознаваемым credential formats до durable read result и
+  context dispatch; сохранение обычного исходника без маскирования байтов;
+  legacy checkpoint gates и понятное сообщение через существующий UI.
+- Проверено: первоначальный и negotiated read, legacy repair/review/check/publish,
+  обычные значения/числа/отрицания, cancel/revoke/retry; fixtures без реальных секретов.
+- Локальные gates: scoped API144PASS+1SKIP, web adapter4PASS, полный core exit0
+  (API1059PASS+1SKIP/web361PASS). До интеграции нужен CI точного финального HEAD и новый main.
+- Live ИИ API отложен владельцем; не блокирует этот программный срез.
+- Граница: перечисленные credential formats; неизвестные/encoded/частичные строки,
+  task/issue/model output и metadata не получают общей DLP-сертификации.
+
+Историческая очередь далее.
+
+---
+
 # Coscode: проверенный backlog
 
 Дополнительное ревью: stale-check approval закрыт source40a3a9e/9877f5b.

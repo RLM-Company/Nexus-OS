@@ -1,0 +1,64 @@
+{
+  "recorded_at": "2026-11-12T12:04:16.676221+00:00",
+  "original_base": "a5f6511875ef7ec116e34dd6c35ff445bdea4313",
+  "followup_base": "f7a67f0928fa18c0cf00e8a76c255b869cfdb64b",
+  "tested_source_head": "78e516ca4d7a45bf6e7356624b3673649580d2fd",
+  "tested_source_tree": "93a4bbbf28e3732b936de03d8c4f491066fc40ac",
+  "retained_main": "5b6013d9f93b981de1ed2b2da3ca9269fb21c65c",
+  "main_merge": "8de00758f34840cb3760d586fb1d86113a06a6a0",
+  "main_changes": "documentation only; apps/packages/desktop/scripts identical to tested source",
+  "branch": "ops/developer-coscode-context-secrets-2026-11-12",
+  "pr": "https://github.com/RLM-Company/Nexus-OS/pull/551",
+  "model": "fixture",
+  "github": "fixture",
+  "runner": "fixture",
+  "live_model_api": "deferred_by_owner",
+  "owner_pc_used": false,
+  "deployed": false,
+  "checks": {
+    "baseline": {
+      "exit_code": 1,
+      "log": "baseline-failed.log"
+    },
+    "focused": {
+      "exit_code": 0,
+      "log": "focused-passed.log"
+    },
+    "first_expanded_fixture_counter": {
+      "exit_code": 1,
+      "log": "first-expanded-counter-failed.log"
+    },
+    "second_expanded_fixture_counter": {
+      "exit_code": 1,
+      "log": "second-expanded-counter-failed.log"
+    },
+    "expanded_after_spy_fix": {
+      "exit_code": 0,
+      "log": "api-passed.log"
+    },
+    "canonical_validator": {
+      "exit_code": 0,
+      "log": "validator-passed.log"
+    },
+    "scoped_lint": {
+      "exit_code": 0,
+      "log": null
+    },
+    "check_core": {
+      "exit_code": 0,
+      "log": "check-core-passed.log"
+    }
+  },
+  "log_normalization": {
+    "description": "LF, trimmed trailing whitespace, one final newline; original hashes retained.",
+    "raw_sha256": {
+      "first-expanded-counter-failed.log": "28bb4bb3443c74fd9690c186c128ca0600b168561aacc95c89904344c3cd8084",
+      "second-expanded-counter-failed.log": "58f675ebe70fe20bd87b74209695c0dc39861bd731b6a6f2115df37533da500b",
+      "validator-passed.log": "03d92900fa51ac44139f66569cc125fec7c79b8ccfc8e846da62c649458e22cf",
+      "check-core-passed.log": "e0511c8cfee17358f29dfeecff2baf1fb86ed156a88be1e6a2fcb485d4b871e5",
+      "baseline-failed.log": "15ea4250213aba647b41638e40442fb7eba4812db6e76c38399e6f861957cb2a",
+      "focused-passed.log": "beba217ce04591aecf7246d13797231df7e65017e123203d0d972c1951b005b0",
+      "api-passed.log": "b33dd0b7f5dbb4b7559e46d42567454e5e884ef38cf65cf5daaca68fd8647fb9"
+    }
+  }
+}

@@ -1,0 +1,8 @@
+
+ RUN  v4.1.11 /workspace/work/Nexus-OS-chief-2026-11-12/apps/api
+
+
+ Test Files  4 passed (4)
+      Tests  150 passed | 1 skipped (151)
+   Start at  11:55:03
+   Duration  22.94s (transform 2.62s, setup 0ms, import 6.90s, tests 21.02s, environment 0ms)

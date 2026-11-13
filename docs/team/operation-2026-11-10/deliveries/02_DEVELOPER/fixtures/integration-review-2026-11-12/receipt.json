@@ -1,0 +1,12 @@
+{
+  "head_sha": "958c8a2e79c71f62a15050ea9b51a446b5dfc1da",
+  "kind": "Independent artifact Git replay, not API/OCI/model execution",
+  "patch_sha256": "59258aa6f2821deac6549b1cc96294f444fbd5349ee2359deb1a321686e18086",
+  "changed_files": ["src/add.js", "src/add.test.js"],
+  "output_bytes_and_index_match": true,
+  "untouched_readme_00123": true,
+  "repeat_refused_without_changes": true,
+  "stale_file_refused_without_changes": true,
+  "model_called": false,
+  "github_published": false
+}

@@ -1,0 +1,31 @@
+2026-11-12T16:42:23.0622122Z Progress: resolved 361, reused 361, downloaded 0, added 361, done
+2026-11-12T16:42:23.5892225Z ✓ Lockfile passes supply-chain policies (529 entries in 3s)
+2026-11-12T16:42:23.8314919Z
+2026-11-12T16:42:23.8315762Z devDependencies:
+2026-11-12T16:42:23.8316007Z + @eslint/js 10.0.1
+2026-11-12T16:42:23.8316163Z + @types/node 26.2.0
+2026-11-12T16:42:23.8316317Z + eslint 10.8.1
+2026-11-12T16:42:23.8316452Z + prettier 3.9.6
+2026-11-12T16:42:23.8316592Z + turbo 2.10.11
+2026-11-12T16:42:23.8316730Z + typescript 6.0.3
+2026-11-12T16:42:23.8316887Z + typescript-eslint 8.67.0
+2026-11-12T16:42:23.8317039Z + vitest 4.1.11
+2026-11-12T16:42:23.8317118Z
+2026-11-12T16:42:23.8666936Z Done in 3.7s using pnpm v11.19.0
+2026-11-12T16:42:23.9313846Z ##[group]Run pnpm check:core
+2026-11-12T16:42:23.9314053Z pnpm check:core
+2026-11-12T16:42:23.9356386Z shell: /usr/bin/bash -e {0}
+2026-11-12T16:42:23.9356547Z env:
+2026-11-12T16:42:23.9356708Z   PNPM_HOME: /home/runner/setup-pnpm/node_modules/.bin
+2026-11-12T16:42:23.9356902Z   NEXT_TELEMETRY_DISABLED: 1
+2026-11-12T16:42:23.9357048Z   TURBO_TELEMETRY_DISABLED: 1
+2026-11-12T16:42:23.9357198Z ##[endgroup]
+2026-11-12T16:42:24.2621232Z $ pnpm format:check && pnpm check:secrets && pnpm lint && pnpm typecheck && pnpm test && pnpm test:deploy && pnpm test:connection && pnpm test:live-acceptance-guards && pnpm test:coscode-acceptance-guards && pnpm test:secrets && pnpm test:vector-scale && pnpm test:media-acceptance && pnpm build && pnpm test:privacy && pnpm test:profile
+2026-11-12T16:42:24.5544947Z $ prettier --check .
+2026-11-12T16:42:24.6283236Z Checking formatting...
+2026-11-12T16:42:40.3571346Z [warn] docs/team/operation-2026-11-10/deliveries/02_DEVELOPER/fixtures/integration-review-2026-11-12/receipt.json
+2026-11-12T16:42:47.2232115Z [warn] Code style issues found in the above file. Run Prettier with --write to fix.
+2026-11-12T16:42:47.2846177Z [ELIFECYCLE] Command failed with exit code 1.
+2026-11-12T16:42:47.3346111Z [ELIFECYCLE] Command failed with exit code 1.
+2026-11-12T16:42:47.3581948Z ##[error]Process completed with exit code 1.
+2026-11-12T16:42:47.3665624Z Post job cleanup.

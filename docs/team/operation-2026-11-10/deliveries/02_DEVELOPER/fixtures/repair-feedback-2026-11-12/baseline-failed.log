@@ -1,0 +1,56 @@
+
+ RUN  v4.1.11 /workspace/work/Nexus-OS-chief-2026-11-12/apps/api
+
+ ❯ test/code-agent.test.ts (98 tests | 2 failed | 96 skipped) 689ms
+     × redacts legacy check feedback before repair dispatch and preserves factual evidence 477ms
+     × stores only validated redacted feedback while a reserved repair is awaiting its base read 211ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  test/code-agent.test.ts > bounded explicit check-feedback repair > redacts legacy check feedback before repair dispatch and preserves factual evidence
+AssertionError: expected true to be false // Object.is equality
+
+- Expected
++ Received
+
+- false
++ true
+
+ ❯ test/code-agent.test.ts:3171:34
+    3169|     const result = await f.wait(id, "proposed");
+    3170|     const sent = JSON.stringify(f.providerCalls[3]);
+    3171|     expect(sent.includes(token)).toBe(false);
+       |                                  ^
+    3172|     expect(sent.includes(keyBody)).toBe(false);
+    3173|     const messages = f.providerCalls[3]!.messages as Array<{ content: …
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  test/code-agent.test.ts > bounded explicit check-feedback repair > stores only validated redacted feedback while a reserved repair is awaiting its base read
+AssertionError: expected true to be false // Object.is equality
+
+- Expected
++ Received
+
+- false
++ true
+
+ ❯ test/code-agent.test.ts:3203:84
+    3201|     try {
+    3202|       const started = f.service.repair(request.id, owner, payload);
+    3203|       expect(JSON.stringify(started.repair_request!.source_check).incl…
+       |                                                                                    ^
+    3204|       expect(JSON.stringify(started.check).includes(token)).toBe(false…
+    3205|       expect(started.check).toMatchObject({ status: "failed", exitCode…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 96 skipped (98)
+   Start at  11:51:23
+   Duration  4.53s (transform 2.08s, setup 0ms, import 3.65s, tests 689ms, environment 0ms)
+
+undefined
+/workspace/work/Nexus-OS-chief-2026-11-12/apps/api:
+[ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL] Command failed with exit code 1: vitest run test/code-agent.test.ts -t 'redacts legacy check feedback|stores only validated redacted feedback' '--maxWorkers=1'

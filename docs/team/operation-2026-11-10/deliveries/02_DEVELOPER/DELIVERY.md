@@ -1,3 +1,84 @@
+# Интеграционная приёмка с новым main, 12 ноября 2026
+
+PR [#551](https://github.com/RLM-Company/Nexus-OS/pull/551), ветка
+`ops/developer-coscode-context-secrets-2026-11-12`.
+Предыдущий HEAD `30ff9d1d69703d13f07afc5ec889f6d19eab991d` имеет зелёные
+CI43255526930 и identity43255527039; это не CI нового объединённого дерева.
+
+Main `33f43b8825756d60c67db306783fed9e3de717ee` сохранён merge-коммитом
+`958c8a2e79c71f62a15050ea9b51a446b5dfc1da`, source tree
+`57f5c6de8c05908b96a8ab547284bd77ea8f316e`. Изменения research изучены:
+аддитивные типы/функция и текст отчёта, без изменений CodeAgent/Manager/executor.
+Конфликтов и ручных правок общих файлов нет. Продуктовый код Coscode не менялся.
+
+Подробности: [INTEGRATION_REVIEW_2026_11_12_RU.md](INTEGRATION_REVIEW_2026_11_12_RU.md).
+Дальше — CI точного финального docs HEAD, затем независимое ревью и решение
+об интеграции. Не сбрасывать длинный browser job попутным push. Самостоятельные
+merge в main/deploy, live модель и foreign publish не выполняются.
+Максимальный статус — **готово к интеграции**, не интегрировано и не принято в выпуск.
+
+Предыдущая история ниже.
+
+---
+
+# Последний срез: context envelope, 12 ноября
+
+См. CONTEXT_ENVELOPE_DELIVERY_RU.md, тот же Draft PR551.
+Sourceb764ac26a5bc061167680a8d5782a77848165adc, BASEffc794c (полный CI SUCCESS).
+Закрыта подтверждённая передача известных ключей через filename/task/issue/legacy task:
+private path filter + final messages guard, без переписывания owner input.
+Scoped157PASS+1SKIP/web4PASS/coreexit0 (API1077/web363)/actual tmpGit-OCI1PASS.
+Финальный source CI отдельно; model/GitHub fixtures и DLP/at-rest границы явные.
+
+Историческая программная приёмка далее.
+
+---
+
+# Итоговая программная приёмка, 12 ноября 2026
+
+[SOFTWARE_ACCEPTANCE_RU.md](SOFTWARE_ACCEPTANCE_RU.md), Draft PR551,
+ветка ops/developer-coscode-context-secrets-2026-11-12.
+Main1c07f8d сохранён mergec3cef4b (treeb455ff73).
+Combined coreexit0/API1070/web363/core406/DB223, scoped150+1SKIP;
+реальный temporary Git/OCI failed1→passed0/cleanuptrue/readback1PASS.
+Модель/GitHub fixtures, не live HY4. Первый local OCI default-executable failure
+и прежний CI warm-up failure сохранены; не объявлены PASS.
+Финальный HEAD CI проверяется отдельно; максимум готово к интеграции.
+
+Исторические поставки далее.
+
+---
+
+# Последнее продолжение: legacy repair feedback, 12 ноября
+
+См. [REPAIR_FEEDBACK_DELIVERY_RU.md](REPAIR_FEEDBACK_DELIVERY_RU.md), тот же Draft PR551.
+Source78e516ca4d7a45bf6e7356624b3673649580d2fd: используем канонический очищенный
+check result в repair prompt и новом checkpoint, до excerpt и dispatch.
+API150PASS+1SKIP/validator4PASS; полный новый core exit0 (API1065PASS+1SKIP,
+web361PASS). Main5b6013d с документацией сохранён; после source78e516c code не менялся.
+Первоначальные failures и fixture-counter ошибки сохранены; live ИИ API отложен.
+
+Историческая поставка ниже.
+
+---
+
+# Последняя поставка: Code context credentials, 12 ноября 2026
+
+[Отчёт текущего среза](CONTEXT_CREDENTIALS_DELIVERY_RU.md), Draft PR551,
+ветка `ops/developer-coscode-context-secrets-2026-11-12`, source
+ab53ef4832d3fe79c7441c015fde100edb93a63d. BASE maina5f6511.
+Initial/negotiated read → credential refusal до durable context и model dispatch;
+legacy snapshot/draft/edited review gates; безопасный исходник сохраняет байты.
+Полный повтор check:core exit0; API1059PASS+1SKIP, web361PASS, все локальные
+core gates прошли. Ранние failures сохранены в отчёте, не объявлены успехом.
+Искусственные credentials/provider/GitHub/runner явно отмечены как fixtures.
+Живой ИИ API отложен владельцем.
+
+Предыдущий #549 final0d36f8c имеет полный зелёный CI; это отдельный Draft-кандидат.
+Исторические результаты ниже.
+
+---
+
 # 02_DEVELOPER: подтверждение исправления привязано к результату проверки
 
 11 ноября 2026, Москва. Статус: **готово к интеграции**, Draft PR519,

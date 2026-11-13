@@ -1,3 +1,89 @@
+# Интеграционная приёмка с новым main, 12 ноября 2026
+
+PR [#551](https://github.com/RLM-Company/Nexus-OS/pull/551), ветка
+`ops/developer-coscode-context-secrets-2026-11-12`.
+Предыдущий HEAD `30ff9d1d69703d13f07afc5ec889f6d19eab991d` имеет зелёные
+CI43255526930 и identity43255527039; это не CI нового объединённого дерева.
+
+Main `33f43b8825756d60c67db306783fed9e3de717ee` сохранён merge-коммитом
+`958c8a2e79c71f62a15050ea9b51a446b5dfc1da`, source tree
+`57f5c6de8c05908b96a8ab547284bd77ea8f316e`. Изменения research изучены:
+аддитивные типы/функция и текст отчёта, без изменений CodeAgent/Manager/executor.
+Конфликтов и ручных правок общих файлов нет. Продуктовый код Coscode не менялся.
+
+Подробности: [INTEGRATION_REVIEW_2026_11_12_RU.md](INTEGRATION_REVIEW_2026_11_12_RU.md).
+Дальше — CI точного финального docs HEAD, затем независимое ревью и решение
+об интеграции. Не сбрасывать длинный browser job попутным push. Самостоятельные
+merge в main/deploy, live модель и foreign publish не выполняются.
+Максимальный статус — **готово к интеграции**, не интегрировано и не принято в выпуск.
+
+Предыдущая история ниже.
+
+---
+
+# Context envelope hardening, 12 ноября
+
+PR551/sourceb764ac26a5bc061167680a8d5782a77848165adc.
+Только scoped Code API helper/service/tests и существующий web error text.
+Общий isSafeCodeAgentDiffPath/tool-runtime не менялся: API-private predicate добавляет
+известные credential formats для model context. Общих schema/contracts/routes/DB/gateway
+изменений нет; integration commit не требуется. Legacy wire errors/commands прежние.
+Owner records не переписываются; metadata/task/issue в messages не дают прав.
+Main1c07 уже в ancestry. До merge — final HEAD CI и свежий canonical contract review.
+
+Исторические integration notes далее.
+
+---
+
+# Интеграция с main1c07, 12 ноября 2026
+
+PR551, mergec3cef4bb79d1e14b4d61979a7010dcc830e94353 сохраняет main1c07f8d.
+Это отдельный integration merge, без ручных изменений общих файлов и форматирования.
+Просмотрены optional ChatSkillSnapshot.scope и новые Skills types/core exports/ChatService;
+CodeAgent/Manager/executor request contracts не менялись. Main Skills/Windows/chat retry
+source и чужие delivery files перенесены точными canonical blob bytes.
+
+Scoped production source равенc9625d6. Совместимость проверена на combined treeb455ff73:
+coreexit0 и real tmpGit/OCI1PASS; финальный HEAD CI отдельно. Список main-only paths:
+см. git diff c9625d6..c3cef4b. Это inherited source других владельцев, не новая сфера работ.
+Общих собственных adapter/schema/route/DB migrations нет. Не выбирать ours при будущем
+conflict; снова читать canonical contracts. Merge в main/deploy не выполняются автоматически.
+
+Исторические integration notes далее.
+
+---
+
+# Repair feedback follow-up, 12 ноября
+
+PR551/source78e516ca4d7a45bf6e7356624b3673649580d2fd; только scoped service/test.
+Переиспользован текущий validator/redactor, общий tool-runtime не менялся.
+Новых integration adapters/contracts/routes/migrations/capabilities/прав нет.
+При новом согласованном repair current check и source_check сохраняют канонический
+результат и прежние identity/status/exit fields. Массовой миграции исторических rows нет.
+Invalid legacy evidence использует прежний REPAIR_CHECK_REQUIRED/HTTP409.
+Откат отдельным revert follow-up, без сброса/повтора reserved attempts.
+
+Предыдущие integration notes ниже.
+
+---
+
+# Context credentials: интеграция, 12 ноября 2026
+
+Draft PR551; source ab53ef4832d3fe79c7441c015fde100edb93a63d.
+Только scoped code-agent API, tests и web patch-client message.
+Общих contracts/gateway/DB/registration/app/navigation изменений нет; новый
+integration commit/миграция не нужны. Ошибка CodeAgentError проходит действующий
+error envelope как HTTP409; новых negotiated tools и команд не добавляли.
+
+Поставлять API guard вместе с web объяснением. Проверить CI точного HEAD и актуальный
+main перед объединением. Форматы credentials консервативные; пример с похожим ключом
+также может быть отклонён. Новый guard не переписывает snapshots и не чистит legacy.
+Откат отдельным revert исходного commit, без reset/удаления данных или автоповтора runs.
+
+Исторические integration notes ниже.
+
+---
+
 # Интеграция Coscode: доказательства проверок
 
 Статус первого среза: готово к интеграции. Integration commit

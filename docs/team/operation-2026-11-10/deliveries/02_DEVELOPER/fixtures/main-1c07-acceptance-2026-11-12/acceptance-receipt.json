@@ -1,0 +1,56 @@
+{
+  "recorded_at": "2026-11-12T15:17:38.768483+00:00",
+  "previous_head": "c9625d600e4c97a5bb93df8cbed62b0ba5154d54",
+  "main": "1c07f8dc291b38d0faf92088c53e704e348d0256",
+  "tested_merge": "c3cef4bb79d1e14b4d61979a7010dcc830e94353",
+  "tested_tree": "b455ff73906f2b0a6bc3183deef546ae38a78459",
+  "branch": "ops/developer-coscode-context-secrets-2026-11-12",
+  "pr": "https://github.com/RLM-Company/Nexus-OS/pull/551",
+  "checks": {
+    "scoped_api": {
+      "exit_code": 0,
+      "log": "scoped-api-passed.log"
+    },
+    "check_core": {
+      "exit_code": 0,
+      "log": "check-core-passed.log"
+    },
+    "first_oci_default_executable": {
+      "exit_code": 1,
+      "log": "first-oci-environment-failed.log"
+    },
+    "oci_configured_executable": {
+      "exit_code": 0,
+      "log": "real-oci-passed.log"
+    }
+  },
+  "local_docker": "29.9.2",
+  "image": "sha256:280af3207172947339cc2e8c9d2efac585716fd906af49f57d6fdf0dbb829a73",
+  "configured_executable": "/usr/local/bin/docker",
+  "model": "fixture",
+  "github": "fixture",
+  "git": "real temporary repository",
+  "execution": "real OCI",
+  "live_model_called": false,
+  "github_published": false,
+  "owner_pc_used": false,
+  "deployed": false,
+  "artifact_normalization": {
+    "logs": "LF, trimmed trailing whitespace, one final newline",
+    "json": "Prettier formatting only, values retained",
+    "raw_sha256": {
+      "oci-changes.patch": "59258aa6f2821deac6549b1cc96294f444fbd5349ee2359deb1a321686e18086",
+      "scoped-api-passed.log": "4e20e60a0ba49cd0abf234e81f3482c169a3d8e15a5afb9e4f098904aff2cc08",
+      "oci-output.json": "ac92e5995272797982348f49c8db443af3f3ce093bea96154402aeb3cafcdd63",
+      "oci-reviewed.json": "96fede89323f6770641fac945ae5b3cdab8e2fbaa9830792877d2734363883ba",
+      "first-oci-environment-failed.log": "ae45328ef7e002a87f1b791a71e6c38e42a48dcac602bee30d8aa173bbf2c075",
+      "check-core-passed.log": "b1582528a6d1f90151d2d4aa98a8995be68397079795495b864c8ad55b125978",
+      "previous-c962-ci.json": "c50a413f7aabb9a79b0c7fedaf857f64568ac9bde17829278c6babad0afef29d",
+      "previous-c962-jobs.json": "a7449e8349e5a739e0f2b52a22305679ff2f00b30c7f4abddfd4641029b16163",
+      "previous-c962-identity.json": "0a411841dda57b73cfbf9e46e939eef003bf254fc236609d74b8838c3bc247b3",
+      "oci-receipt.json": "49b2ad0e1f072813f6eaa5bcaf78f3c27376a0fbc7e8100c78cc56190a5e0e7e",
+      "real-oci-passed.log": "5494c60583ab4eb998a6aadc1e64c84ca77a63cd4acfbfafdc4c269ef5b437ce",
+      "oci-input.json": "f911cd0767a7d8d752d879ed256e0f78a58c50d454c778efb59335782b5e6a6e"
+    }
+  }
+}
