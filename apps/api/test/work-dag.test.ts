@@ -1844,16 +1844,27 @@ describe("executable durable Work DAG", () => {
       expect(f.store.get(works[2]!.id, owner)?.status).toBe("completed");
     });
 
-    it("reserves the full cap in the plan budget (+6) before launching a wave", async () => {
+    it("reserves one budget per first-wave node (up to cap) without double-charging", async () => {
       const f = await fixture({ maxConcurrentWork: 2 });
-      const graph = f.dag.create(f.project.id, owner, owner, {
+      const wide = f.dag.create(f.project.id, owner, owner, {
         client_request_id: "budget-cap",
         title: "Budget cap",
         nodes: [nodes[0]!, nodes[2]!]
       });
-      // Allocation is 0, so the first wave needs 3 * cap = 6 reserved requests.
-      expect(() => arm(f, graph, 5)).toThrow("PLAN_REQUEST_LIMIT");
-      expect(() => arm(f, graph, 6)).not.toThrow();
+      // Two independent ready nodes: the first wave reserves 3 * 2 = 6.
+      expect(() => arm(f, wide, 5)).toThrow("PLAN_REQUEST_LIMIT");
+      expect(() => arm(f, wide, 6)).not.toThrow();
+      const chained = f.dag.create(f.project.id, owner, owner, {
+        client_request_id: "budget-chained",
+        title: "Chained budget",
+        nodes: [nodes[0]!, nodes[1]!]
+      });
+      // A dependency plan has only one ready node in the first wave: reserve 3,
+      // not 3 * cap, so the UI's nodes*3 limit (6) still admits the whole plan.
+      expect(() => arm(f, chained, 6)).not.toThrow();
+      const g = await autoTick(f, chained.id);
+      expect(g.nodes[0]!.status).toBe("completed");
+      expect(g.execution?.status).not.toBe("stopped");
     });
 
     it("never exceeds the cap while a first part is still executing", async () => {

@@ -168,9 +168,11 @@ export class WorkDagCoordinator {
         }
         const ready = scheduledReadyWorkNodes(graph).slice(0, free);
         if (!ready.length) continue;
-        // Reserve a full three-request budget for every concurrent slot, even
-        // when fewer parts are ready this tick: admission never exceeds the cap.
-        if (this.allocatedRequests(graph) + 3 * capacity > graph.execution.max_model_requests) {
+        // allocatedRequests() already reserves a full 3-request budget for every
+        // live child; reserve one more budget per node launched this tick, never
+        // more than the free slots. This keeps the cap's total reserve honest
+        // without double-charging live attempts against the owner's plan limit.
+        if (this.allocatedRequests(graph) + 3 * ready.length > graph.execution.max_model_requests) {
           graph.execution.status = "stopped";
           graph.execution.reason = "PLAN_REQUEST_LIMIT";
           this.works.dag.save(graph, "Достигнут общий лимит запросов плана; новый шаг не запущен");
@@ -460,8 +462,11 @@ export class WorkDagCoordinator {
       if (graph.nodes.every((node) => node.status === "completed"))
         throw new WorkDagConflict("PLAN_COMPLETED");
       const allocation = this.allocatedRequests(graph);
-      if (allocation + 3 * this.manager.capacity() > limit)
-        throw new WorkDagConflict("PLAN_REQUEST_LIMIT");
+      // Budget the first wave: up to cap ready nodes can start on the next tick,
+      // each reserving three requests. allocatedRequests() already covers any
+      // live attempts from a previously paused plan.
+      const firstWave = Math.min(this.manager.capacity(), scheduledReadyWorkNodes(graph).length);
+      if (allocation + 3 * firstWave > limit) throw new WorkDagConflict("PLAN_REQUEST_LIMIT");
       graph.execution = {
         status: "running",
         max_model_requests: limit,
