@@ -21,12 +21,17 @@ if (!password) {
 }
 
 try {
-  const result = await verifyAccess({ origin: ORIGIN, password, authMode: "form" });
+  const result = await verifyAccess({
+    origin: ORIGIN,
+    password,
+    authMode: "form",
+    closeFormSession: true
+  });
   process.stdout.write(
     JSON.stringify(
       {
         origin: ORIGIN,
-        scope: "owner login and health/session/assets checks; no model request",
+        scope: "temporary owner login, health/session/assets checks and logout; no model request",
         ok: true,
         session_expires_at: result.session_expires_at,
         model_requests_paused: result.model_requests_paused
