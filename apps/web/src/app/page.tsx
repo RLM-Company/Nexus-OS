@@ -1870,8 +1870,7 @@ export default function Home() {
 
   const submit = async (event?: FormEvent, voiceContent?: string): Promise<void> => {
     event?.preventDefault();
-    const submitted = { ...latestDraftRef.current, files: chatAttachments.snapshotFiles() };
-    const recoverableDraft = voiceContent ?? submitted.text;
+    const recoverableDraft = voiceContent ?? latestDraftRef.current.text;
     const content = recoverableDraft.trim();
     if (
       !content ||
@@ -1884,9 +1883,18 @@ export default function Home() {
       executionGate !== "clear"
     )
       return;
+    if (voiceContent !== undefined) {
+      if (latestDraftRef.current.text.trim() || chatAttachments.snapshotFiles().length) return;
+      setDraft(recoverableDraft);
+    }
+    const submitted = { ...latestDraftRef.current, files: chatAttachments.snapshotFiles() };
     submitPendingRef.current = true;
     const submittedEpoch = viewEpochRef.current;
     saveBrowserDraft();
+    const nativeDraft = desktopDraftBridge(window);
+    const nativeScope = nativeDraftScope(composerDraftKey);
+    if (voiceContent !== undefined && nativeDraft && nativeScope)
+      void nativeDraft.save(nativeScope, recoverableDraft).catch(() => undefined);
     let stored: ReturnType<typeof captureComposerDraft> | null = null;
     try {
       if (!desktopDraftBridge(window))
