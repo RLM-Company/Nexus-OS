@@ -673,3 +673,57 @@ live-приёмка остаётся отложенной. Решения зап
 поверхностная перепроверка тестов на «Главный чат проекта»/
 «project-mode-label» — закрепление текста только в обновлённом месте;
 Browser acceptance (Playwright) — в CI этого PR.
+
+---
+
+## Срез 18 (2026-11-13): планировщик команды Multi-Agent — ядро team.plan / team.confirm
+
+**Одобрение**: владелец одобрил старт реализации с планировщика команды
+(question-tool, 2026-11-13, после того как все 4 открытых вопроса карточки
+решены и исполнены — срез 17). Объём среза — только планировщик: порождение
+pending-ростера из blueprint'ов проекта и подтверждение состава владельцем;
+исполнение частей, arbiter, бюджет команды, панель хода и файловые
+артефакты — следующие срезы.
+
+**Контракты** (`packages/contracts/src/agent-studio.ts`): операции
+`team.plan` / `team.confirm` в decision-журнале, объектный тип `team`,
+схемы `PlanAgentTeamRequest/Response`, `ConfirmAgentTeamRequest/Response`,
+`TeamCompositionIdSchema`. Composition id = sha256 над отсортированными
+строками `blueprint_id@version` — равные наборы blueprint'ов дают один id
+независимо от порядка proposal'ов; пустая строка = «без blueprint'ов — один
+агент» (сегодняшнее поведение по умолчанию, решение владельца).
+
+**Данные** (`packages/db`): миграция `0066_agent_team_compositions.sql`
+(+ journal idx 66) — подтверждённые составы: PK (owner, project,
+composition), FK (project_id, owner_id) → projects ON DELETE CASCADE,
+индекс (project, confirmed_at); drizzle-таблица `agentTeamCompositions` в
+schema.ts. Новый стор `agent-team-store.ts`: `plan` (реиспользует
+pending-ростер — один самый ранний proposed parentless экземпляр на
+blueprint — или порождает `proposeRoot`'ы), `resolvePlan`,
+`confirm` (все owned/parentless/proposed, re-assert expiry грантов,
+INSERT OR IGNORE — повторное подтверждение того же состава no-op),
+`resolveConfirm`, `compositionConfirmed`. `agent_instances` хранит ТОЛЬКО
+proposal'ы (DB CHECK `status='proposed'`) — активация и жизненный цикл
+остаются сущностью будущего среза исполнения; миграция agent_instances не
+требовалась.
+
+**API** (`apps/api/src/app.ts`, `server.ts`): POST
+`/api/v1/projects/:projectId/agent-studio/teams/plan` — при пустом ростере
+(нет неистёкших blueprint'ов) отвечает дефолтом без записи mutation; иначе
+идемпотентная запись `team.plan` с reference = composition id. POST
+`.../teams/confirm` — идемпотентная запись `team.confirm`. Ошибки:
+валидация команды → 400, несоответствие записанного состава своему ростеру
+(целостность) → честный 409; чужие/неизвестные экземпляры → 404. Team-
+маршруты в собственном guard-блоке — большие agent-studio маршруты не
+требуют team-стора (промежуточная версия с общим guard'ом ломала write/read
+API тесты; поймано локально, исправлено до коммита).
+
+**Тесты**: `packages/db/test/agent-team-store.test.ts` (7), `apps/api/test/
+agent-studio-team-api.test.ts` (3: дефолт, полный поток plan→replay→confirm
+→replay→plan-без-подтверждения + decision-events, ошибки). Локально: db
+230/230, agent-studio 9/9, typecheck apps/api чист. Полный apps/api прогон
+локально нестабилен под параллельной нагрузкой (13 файлов по 1 тесту;
+все проверенные соло проходят) — authoritative гейт CI Verify.
+
+**Проверки**: prettier clean, `check:secrets` пройден до пуша. NSIS не
+запускается (desktop/windows не тронут).

@@ -11,7 +11,7 @@ import { Value } from "typebox/value";
 import { AgentBlueprintStore } from "./agent-blueprint-store.js";
 
 type SqlRow = Record<string, unknown>;
-type AgentInstanceIdentity = Pick<IdentityContext, "owner_id" | "actor_id">;
+export type AgentInstanceIdentity = Pick<IdentityContext, "owner_id" | "actor_id">;
 
 export interface AgentDelegationDecision {
   allowed: boolean;

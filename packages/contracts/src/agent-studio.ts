@@ -385,7 +385,9 @@ export const AgentStudioDecisionOperationSchema = Type.Union([
   Type.Literal("blueprint.create"),
   Type.Literal("blueprint.version"),
   Type.Literal("proposal.root"),
-  Type.Literal("proposal.delegated")
+  Type.Literal("proposal.delegated"),
+  Type.Literal("team.plan"),
+  Type.Literal("team.confirm")
 ]);
 export type AgentStudioDecisionOperation = Static<typeof AgentStudioDecisionOperationSchema>;
 
@@ -393,7 +395,8 @@ export const AgentStudioDecisionObjectTypeSchema = Type.Union([
   Type.Literal("function"),
   Type.Literal("pattern"),
   Type.Literal("blueprint"),
-  Type.Literal("proposal")
+  Type.Literal("proposal"),
+  Type.Literal("team")
 ]);
 export type AgentStudioDecisionObjectType = Static<typeof AgentStudioDecisionObjectTypeSchema>;
 
@@ -435,6 +438,37 @@ export const AgentInstanceListResponseSchema = Type.Object(
   { additionalProperties: false }
 );
 export type AgentInstanceListResponse = Static<typeof AgentInstanceListResponseSchema>;
+
+// Team composition identity: sha256 hex over the canonical sorted
+// `blueprint_id@version` list. Empty string means "no blueprints — single
+// agent default", which proposes nothing and needs no confirmation.
+export const TeamCompositionIdSchema = Type.String({ minLength: 0, maxLength: 64 });
+export type TeamCompositionId = Static<typeof TeamCompositionIdSchema>;
+
+export const PlanAgentTeamResponseSchema = Type.Object(
+  {
+    items: Type.Array(AgentInstanceSchema),
+    composition_id: TeamCompositionIdSchema,
+    confirmation_required: Type.Boolean()
+  },
+  { additionalProperties: false }
+);
+export type PlanAgentTeamResponse = Static<typeof PlanAgentTeamResponseSchema>;
+
+export const PlanAgentTeamRequestSchema = Type.Object({}, { additionalProperties: false });
+export type PlanAgentTeamRequest = Static<typeof PlanAgentTeamRequestSchema>;
+
+export const ConfirmAgentTeamRequestSchema = Type.Object(
+  { instance_ids: Type.Array(EntityIdSchema, { minItems: 1, maxItems: 50, uniqueItems: true }) },
+  { additionalProperties: false }
+);
+export type ConfirmAgentTeamRequest = Static<typeof ConfirmAgentTeamRequestSchema>;
+
+export const ConfirmAgentTeamResponseSchema = Type.Object(
+  { items: Type.Array(AgentInstanceSchema), composition_id: TeamCompositionIdSchema },
+  { additionalProperties: false }
+);
+export type ConfirmAgentTeamResponse = Static<typeof ConfirmAgentTeamResponseSchema>;
 
 export const AgentStudioDecisionEventListResponseSchema = Type.Object(
   { items: Type.Array(AgentStudioDecisionEventSchema, { maxItems: 100 }) },

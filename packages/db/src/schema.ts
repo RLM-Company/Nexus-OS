@@ -349,6 +349,27 @@ export const agentInstances = sqliteTable(
   ]
 );
 
+export const agentTeamCompositions = sqliteTable(
+  "agent_team_compositions",
+  {
+    ownerId: text("owner_id").notNull(),
+    projectId: text("project_id").notNull(),
+    compositionId: text("composition_id").notNull(),
+    blueprintRefsJson: text("blueprint_refs_json").notNull(),
+    confirmedByActorId: text("confirmed_by_actor_id").notNull(),
+    confirmedAt: text("confirmed_at").notNull()
+  },
+  (table) => [
+    primaryKey({ columns: [table.ownerId, table.projectId, table.compositionId] }),
+    index("agent_team_compositions_project_confirmed_idx").on(table.projectId, table.confirmedAt),
+    foreignKey({
+      columns: [table.projectId, table.ownerId],
+      foreignColumns: [projects.id, projects.ownerId],
+      name: "agent_team_compositions_project_owner_fk"
+    }).onDelete("cascade")
+  ]
+);
+
 export const chats = sqliteTable(
   "chats",
   {
