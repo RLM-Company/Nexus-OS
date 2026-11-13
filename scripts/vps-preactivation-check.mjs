@@ -19,6 +19,13 @@ import process from "node:process";
 import { verifyBackup } from "../deploy/alpha/sqlite-backup.mjs";
 
 const root = resolve(import.meta.dirname, "..");
+// The deployed Windows archive recorded migration 0063 with CRLF. Accept only
+// the verified pair of byte digests; all other history checks remain exact.
+const semanticHistory0063 = {
+  timestamp: 1793620800001,
+  lf: "7f2ed59b1034cd0f4baf84f377866d01a0686945bb729d6fcb9f0d3cd37c1a8c",
+  crlf: "83ced5ed2188ee97326e01955d154fe9c657b36d7c3f14e3304d45a219a8ab99"
+};
 const digest = async (file) => {
   const hash = createHash("sha256");
   for await (const bytes of createReadStream(file)) hash.update(bytes);
@@ -44,7 +51,12 @@ const migrationHistory = (sqlite, entries) => {
   const seen = new Set();
   for (const row of rows) {
     const entry = entries.find((candidate) => candidate.when === row.created_at);
-    if (!entry || seen.has(row.created_at) || row.hash !== entry.sha256)
+    const deployedCrlf =
+      entry?.tag === "0063_semantic_history_index" &&
+      row.created_at === semanticHistory0063.timestamp &&
+      entry.sha256 === semanticHistory0063.lf &&
+      row.hash === semanticHistory0063.crlf;
+    if (!entry || seen.has(row.created_at) || (row.hash !== entry.sha256 && !deployedCrlf))
       throw Error("PREACTIVATION_MIGRATION_HISTORY_MISMATCH");
     seen.add(row.created_at);
   }
