@@ -743,3 +743,51 @@ test("a lost acknowledgement reload restores the exact text action before retryi
     page.locator(".message.user").filter({ hasText: "Объясни тестовый пример 00123" })
   ).toHaveCount(1);
 });
+
+test("a spoken request survives reload before the server acknowledgement", async ({ page }) => {
+  const transcript = "Проверка сохранения голосовой фразы";
+  await page.addInitScript((text) => {
+    class FixtureSpeechRecognition {
+      onresult?: (event: { results: { transcript: string }[][] }) => void;
+      start() {
+        queueMicrotask(() => this.onresult?.({ results: [[{ transcript: text }]] }));
+      }
+      stop() {}
+      abort() {}
+    }
+    Object.defineProperty(window, "SpeechRecognition", { value: FixtureSpeechRecognition });
+  }, transcript);
+  const posts: unknown[] = [];
+  const statuses: number[] = [];
+  let releaseFirst!: () => void;
+  const firstResponse = new Promise<void>((resolve) => {
+    releaseFirst = resolve;
+  });
+  await page.route("**/api/v1/chats", async (route) => {
+    if (route.request().method() !== "POST") return route.continue();
+    posts.push(route.request().postDataJSON());
+    const response = await route.fetch();
+    statuses.push(response.status());
+    if (posts.length === 1) {
+      await firstResponse;
+      await route.abort("connectionreset").catch(() => undefined);
+    } else await route.fulfill({ response });
+  });
+  try {
+    await page.goto("/");
+    await page.getByRole("button", { name: "Открыть голосового помощника", exact: true }).click();
+    await page.getByRole("button", { name: "Говорить", exact: true }).click();
+    await expect.poll(() => statuses).toEqual([201]);
+    await page.reload();
+  } finally {
+    releaseFirst();
+  }
+  const editor = page.getByLabel("Сообщение Kosmora", { exact: true });
+  await expect(editor).toHaveValue(transcript);
+  await page.getByRole("button", { name: "Отправить", exact: true }).click();
+  await expect(page.getByRole("status")).toHaveText(/Ответ получен/);
+  expect(statuses).toEqual([201, 200]);
+  expect(posts[1]).toEqual(posts[0]);
+  await expect(page.locator(".message.user").filter({ hasText: transcript })).toHaveCount(1);
+  await expect(editor).toHaveValue("");
+});
