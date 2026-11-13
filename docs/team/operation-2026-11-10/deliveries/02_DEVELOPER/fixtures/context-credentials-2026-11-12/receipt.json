@@ -1,0 +1,66 @@
+{
+  "recorded_at": "2026-11-12T11:44:49.058111+00:00",
+  "base_sha": "a5f6511875ef7ec116e34dd6c35ff445bdea4313",
+  "source_head": "ab53ef4832d3fe79c7441c015fde100edb93a63d",
+  "source_tree": "585330c92836da90896085eaaccf13b551470b0e",
+  "branch": "ops/developer-coscode-context-secrets-2026-11-12",
+  "pr": "https://github.com/RLM-Company/Nexus-OS/pull/551",
+  "live_ai_api": "deferred_by_owner",
+  "model": "fixture",
+  "github": "fixture",
+  "check_runner": "fixture",
+  "owner_data_used": false,
+  "owner_pc_used": false,
+  "deployed": false,
+  "fixture_sources": [
+    "apps/api/test/code-agent.test.ts",
+    "apps/api/test/code-proposal-input.test.ts",
+    "apps/web/src/app/code-agent/patch-client.test.ts"
+  ],
+  "checks": {
+    "baseline": {
+      "exit_code": 1,
+      "log": "baseline-failed.log"
+    },
+    "first_api_schema_fixture": {
+      "exit_code": 1,
+      "log": "first-api-fixture-schema-failed.log"
+    },
+    "scoped_api": {
+      "exit_code": 0,
+      "log": "scoped-api-passed.log"
+    },
+    "first_core_typecheck_fixture": {
+      "exit_code": 2,
+      "log": "first-core-typecheck-failed.log"
+    },
+    "core_after_digest_fix": {
+      "exit_code": 0,
+      "log": "check-core-passed.log"
+    },
+    "web_adapter": {
+      "exit_code": 0,
+      "log": "web-adapter-passed.log"
+    },
+    "types_after_digest_fix": {
+      "exit_code": 0,
+      "log": "api-types-fixed.log"
+    },
+    "scoped_lint": {
+      "exit_code": 0,
+      "log": null
+    }
+  },
+  "log_normalization": {
+    "description": "LF, trimmed trailing whitespace, one final newline; raw hashes retained.",
+    "raw_sha256": {
+      "first-core-typecheck-failed.log": "f07ca5de56ece7a065708906162fa29a9e0149b0b8aef76e3f038553ae5dcdce",
+      "scoped-api-passed.log": "3ee274d14307b6e6a3b1e4b5b89cb3865e1debe915136341d63b0b5cc75610af",
+      "check-core-passed.log": "3268eb034dab6f15e13df50bb8036e003cc28933ec59d99aebaad8d14a68c555",
+      "web-adapter-passed.log": "e16f199178d8c6513c73360296083e1e38f74ba3aab24af2ea4dbedfdf9680b1",
+      "baseline-failed.log": "5522d6c4676e23b3c498f57b7b437279f054f5fbd050c2264723a32e7ecd3653",
+      "api-types-fixed.log": "38ac890c60e7f38d59ddfb410325cdfb5fca83c9411765c5481754e01c021630",
+      "first-api-fixture-schema-failed.log": "346a1dcc896d967240a28c694ea4fc53748d50993b101c512521b2326e29d524"
+    }
+  }
+}

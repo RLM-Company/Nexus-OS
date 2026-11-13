@@ -1,0 +1,40 @@
+{
+  "base_sha": "33f43b8825756d60c67db306783fed9e3de717ee",
+  "source_head": "33f601479a82e1cd471274db1b1ff3ba98be7623",
+  "integration_head": "49876e6da50d874a459ae169efef2d1f32a99c75",
+  "branch": "fix/chat-draft-e2e-diagnosis-2026-11-12",
+  "historical_ci": 43262386490,
+  "historical_browser_job": 131336988797,
+  "historical_chat_root_cause": "unconfirmed; no retained trace in original successful job",
+  "baseline_isolated": {
+    "passed": 10,
+    "retries": 0
+  },
+  "baseline_mixed": {
+    "passed": 160,
+    "failed": 1,
+    "interrupted": 1,
+    "did_not_run": 328,
+    "outside_test_errors": 1,
+    "failure": "Games file:// blocked by managed Chromium administrator policy",
+    "target_chat_passed": true
+  },
+  "policy_regression": {
+    "before": "Playwright reports flaky=1 but exits0; regression fails",
+    "after": "Playwright reports flaky=1 and exits1; regression passes"
+  },
+  "after": {
+    "chat": 16,
+    "chat_retries": 0,
+    "web_unit": 363,
+    "studio_node_checks": 10,
+    "types": "passed",
+    "lint": "passed"
+  },
+  "provider": "fixture only",
+  "live_model_called": false,
+  "node": "24.22.1",
+  "pnpm": "11.25.0; frozen lockfile, ignore-scripts",
+  "browser": "/usr/bin/chromium; managed file:// policy preserved",
+  "normalization": "logs LF/trailing whitespace only; JSON Prettier"
+}

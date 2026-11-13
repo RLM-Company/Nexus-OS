@@ -2,8 +2,15 @@
 import { useCallback, useEffect, useRef } from "react";
 import type { ChatAttachment } from "@cosmora/contracts/chat-attachments";
 import { saveComposerDraft } from "./composer-draft-storage";
+import type { KosmoraComposerActionsValue } from "./kosmora-composer-actions";
 
-type Snapshot = { key: string; text: string; revision: number; files: ChatAttachment[] };
+type Snapshot = {
+  key: string;
+  text: string;
+  revision: number;
+  files: ChatAttachment[];
+  actions?: KosmoraComposerActionsValue;
+};
 export function useBrowserComposerDraft(
   snapshot: () => Snapshot | null,
   notice: (value: string | null) => void
@@ -19,11 +26,18 @@ export function useBrowserComposerDraft(
       written.current?.key === next.key &&
       written.current.revision === next.revision &&
       written.current.text === next.text &&
-      written.current.files === next.files
+      written.current.files === next.files &&
+      written.current.actions === next.actions
     )
       return;
     try {
-      const message = saveComposerDraft(window.localStorage, next.key, next.text, next.files);
+      const message = saveComposerDraft(
+        window.localStorage,
+        next.key,
+        next.text,
+        next.files,
+        next.actions
+      );
       current.current.notice(message);
       if (!message) written.current = next;
     } catch {

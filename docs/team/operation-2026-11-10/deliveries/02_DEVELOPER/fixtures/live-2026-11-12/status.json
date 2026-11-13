@@ -1,0 +1,73 @@
+{
+  "date_moscow": "2026-11-12",
+  "authorization": "User explicitly requested all three steps: integration, live acceptance with real model/test Draft PR, release-result verification. User later requested work with existing permissions.",
+  "base_sha": "ea2f4aafe8e9609b678f8743a08c43d43f911f9f",
+  "integration": {
+    "pr": 519,
+    "merged": true,
+    "merge_sha": "c702c0f0658a0933384be6182fb03b1b8b96c45a",
+    "merged_at": "2026-11-12T09:31:39Z",
+    "delivered_sha": "c36bee429047673f656b73869ba0060e22d3a5f6",
+    "delivery_is_ancestor_of_main": true,
+    "code_agent_and_checked_shared_entrypoints_unchanged_since_merge": true,
+    "ci": [
+      {
+        "id": 131094505956,
+        "name": "Browser acceptance",
+        "head_sha": "ea2f4aafe8e9609b678f8743a08c43d43f911f9f",
+        "status": "completed",
+        "conclusion": "success",
+        "url": "https://github.com/RLM-Company/Nexus-OS/actions/runs/43192292131/job/131094505956"
+      },
+      {
+        "id": 131094505602,
+        "name": "Code sandbox isolation",
+        "head_sha": "ea2f4aafe8e9609b678f8743a08c43d43f911f9f",
+        "status": "completed",
+        "conclusion": "success",
+        "url": "https://github.com/RLM-Company/Nexus-OS/actions/runs/43192292131/job/131094505602"
+      },
+      {
+        "id": 131094505256,
+        "name": "Verify monorepo",
+        "head_sha": "ea2f4aafe8e9609b678f8743a08c43d43f911f9f",
+        "status": "completed",
+        "conclusion": "success",
+        "url": "https://github.com/RLM-Company/Nexus-OS/actions/runs/43192292131/job/131094505256"
+      }
+    ]
+  },
+  "live_acceptance": {
+    "status": "github_and_oci_passed_model_pending",
+    "real_model_called": false,
+    "test_repository_created": false,
+    "test_pull_request_created": true,
+    "model_connection": {
+      "api_origin": "not_supplied",
+      "missing_environment_names": ["MODEL_API_KEY", "MODEL_BASE_URL", "MODEL_NAME"]
+    },
+    "test_repository": {
+      "requested": "wareon1112-crypto/coscode-acceptance-2026-11-12",
+      "creation_attempts": 1,
+      "command_exit_code": 1,
+      "error": "GitHub CreateRepository permission denied",
+      "next_required": "No creation retry; existing-repository isolated branch used after user steering."
+    },
+    "workspace_kind": "isolated_synthetic_branch_in_existing_repository",
+    "base_branch": "ops/coscode-live-base-2026-11-12",
+    "base_sha": "e03ba58f95189e72d8da5658808f1e845250e128",
+    "pr": "https://github.com/RLM-Company/Nexus-OS/pull/542",
+    "output_sha": "a58b7314c967d33331dfd48b337d8f88f3cca5ab"
+  },
+  "release": {
+    "status": "not_accepted",
+    "reason": "Model/HY4 connection and real-model acceptance have not run. Live GitHub and OCI passed with manually supplied synthetic edits.",
+    "production_deployed": false
+  },
+  "scope": {
+    "owner_env_files_read": false,
+    "owner_database_used": false,
+    "provider_or_quotas_changed": false,
+    "account_permissions_expanded": false
+  }
+}

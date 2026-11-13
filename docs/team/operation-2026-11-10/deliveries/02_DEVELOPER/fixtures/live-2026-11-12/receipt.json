@@ -1,0 +1,123 @@
+{
+  "source_main": "ea2f4aafe8e9609b678f8743a08c43d43f911f9f",
+  "repository": "RLM-Company/Nexus-OS",
+  "base_branch": "ops/coscode-live-base-2026-11-12",
+  "base_sha": "e03ba58f95189e72d8da5658808f1e845250e128",
+  "data": "synthetic only",
+  "real_github": true,
+  "real_http_executor": true,
+  "real_oci": true,
+  "real_model_called": false,
+  "model_adapter_count": 0,
+  "failed_check": {
+    "status": "failed",
+    "snapshotDigest": "6f9f16d1fd3af16192e937b25c292455b24153ec5e0c47bcc347bbee0e7747bf",
+    "exitCode": 1,
+    "stdout": "node:internal/modules/run_main:107\n    triggerUncaughtException(\n    ^\n\nAssertionError [ERR_ASSERTION]: Expected values to be strictly equal:\n\n-1 !== 5\n\n    at file:///snapshot/workspace/src/add.test.mjs:3:8\n    at ModuleJob.run (node:internal/modules/esm/module_job:561:25)\n    at async node:internal/modules/esm/loader:647:26\n    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5) {\n  generatedMessage: true,\n  code: 'ERR_ASSERTION',\n  actual: -1,\n  expected: 5,\n  operator: 'strictEqual',\n  diff: 'simple'\n}\n\nNode.js v24.22.2\n✖ /snapshot/workspace/src/add.test.mjs (32.571988ms)\nℹ tests 1\nℹ suites 0\nℹ pass 0\nℹ fail 1\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 40.631718\n\n✖ failing tests:\n\ntest at src/add.test.mjs:1:1\n✖ /snapshot/workspace/src/add.test.mjs (32.571988ms)\n  'test failed'\n",
+    "stderr": "",
+    "truncated": false,
+    "cleanupVerified": true,
+    "journal": [
+      {
+        "at": "2026-11-12T10:22:09.315Z",
+        "event": "snapshot",
+        "detail": "6f9f16d1fd3af16192e937b25c292455b24153ec5e0c47bcc347bbee0e7747bf"
+      },
+      {
+        "at": "2026-11-12T10:22:09.315Z",
+        "event": "started",
+        "detail": "node-test:oci:no-network:non-root:read-only"
+      },
+      {
+        "at": "2026-11-12T10:22:13.376Z",
+        "event": "finished",
+        "detail": "failed:1"
+      }
+    ],
+    "review_hash": "0b7818dab538d9bee713b6a4f24b60d13fa35077c2477cfce8b2d90482f4836d",
+    "check_type": "node-test"
+  },
+  "repeated_check": {
+    "status": "failed",
+    "snapshotDigest": "6f9f16d1fd3af16192e937b25c292455b24153ec5e0c47bcc347bbee0e7747bf",
+    "exitCode": 1,
+    "stdout": "node:internal/modules/run_main:107\n    triggerUncaughtException(\n    ^\n\nAssertionError [ERR_ASSERTION]: Expected values to be strictly equal:\n\n-1 !== 5\n\n    at file:///snapshot/workspace/src/add.test.mjs:3:8\n    at ModuleJob.run (node:internal/modules/esm/module_job:561:25)\n    at async node:internal/modules/esm/loader:647:26\n    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5) {\n  generatedMessage: true,\n  code: 'ERR_ASSERTION',\n  actual: -1,\n  expected: 5,\n  operator: 'strictEqual',\n  diff: 'simple'\n}\n\nNode.js v24.22.2\n✖ /snapshot/workspace/src/add.test.mjs (28.45352ms)\nℹ tests 1\nℹ suites 0\nℹ pass 0\nℹ fail 1\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 36.409246\n\n✖ failing tests:\n\ntest at src/add.test.mjs:1:1\n✖ /snapshot/workspace/src/add.test.mjs (28.45352ms)\n  'test failed'\n",
+    "stderr": "",
+    "truncated": false,
+    "cleanupVerified": true,
+    "journal": [
+      {
+        "at": "2026-11-12T10:22:13.534Z",
+        "event": "snapshot",
+        "detail": "6f9f16d1fd3af16192e937b25c292455b24153ec5e0c47bcc347bbee0e7747bf"
+      },
+      {
+        "at": "2026-11-12T10:22:13.534Z",
+        "event": "started",
+        "detail": "node-test:oci:no-network:non-root:read-only"
+      },
+      {
+        "at": "2026-11-12T10:22:17.524Z",
+        "event": "finished",
+        "detail": "failed:1"
+      }
+    ],
+    "review_hash": "0b7818dab538d9bee713b6a4f24b60d13fa35077c2477cfce8b2d90482f4836d",
+    "check_type": "node-test"
+  },
+  "stale_conflict": "STALE_CHECK",
+  "passed_check": {
+    "status": "passed",
+    "snapshotDigest": "9febae7d7564bd5730460ed33cb7a8c3ffb4552279cd80f8140a7ce404ef1d05",
+    "exitCode": 0,
+    "stdout": "✔ /snapshot/workspace/src/add.test.mjs (31.870961ms)\nℹ tests 1\nℹ suites 0\nℹ pass 1\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 39.143432\n",
+    "stderr": "",
+    "truncated": false,
+    "cleanupVerified": true,
+    "journal": [
+      {
+        "at": "2026-11-12T10:22:20.297Z",
+        "event": "snapshot",
+        "detail": "9febae7d7564bd5730460ed33cb7a8c3ffb4552279cd80f8140a7ce404ef1d05"
+      },
+      {
+        "at": "2026-11-12T10:22:20.297Z",
+        "event": "started",
+        "detail": "node-test:oci:no-network:non-root:read-only"
+      },
+      {
+        "at": "2026-11-12T10:22:26.300Z",
+        "event": "finished",
+        "detail": "passed:0"
+      }
+    ],
+    "review_hash": "ae276f873feaceae973fc48270b75872a19f413c6be64a74c529e25f337a1c63",
+    "check_type": "node-test"
+  },
+  "output_sha": "a58b7314c967d33331dfd48b337d8f88f3cca5ab",
+  "pr": {
+    "number": 542,
+    "draft": true,
+    "state": "open",
+    "html_url": "https://github.com/RLM-Company/Nexus-OS/pull/542",
+    "head": {
+      "sha": "a58b7314c967d33331dfd48b337d8f88f3cca5ab",
+      "ref": "kosmora/change-da6c93a7-a0bc-42dd-a33e-bdfc1ff85335"
+    },
+    "base": {
+      "ref": "ops/coscode-live-base-2026-11-12"
+    }
+  },
+  "publication_invocations": 1,
+  "github_post_count": 4,
+  "duplicate_publish_rejected": true,
+  "readme_preserved": true,
+  "main_before": "632e57de8e43c9a2a5e2350207e67e5a02ede48d",
+  "main_after": "632e57de8e43c9a2a5e2350207e67e5a02ede48d",
+  "main_same": true,
+  "release_accepted": false,
+  "limitations": [
+    "Model provider is not connected; edits are manually supplied synthetic input.",
+    "Isolated branch workspace in existing repository; separate repository creation denied."
+  ]
+}

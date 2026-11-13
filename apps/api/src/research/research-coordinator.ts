@@ -20,7 +20,7 @@ export interface ResearchStopGate {
 
 export class ResearchCoordinator {
   private readonly active = new Map<string, AbortController>();
-  private readonly tasks = new Set<Promise<void>>();
+  private readonly tasks = new Set<Promise<unknown>>();
   constructor(
     private readonly store: ResearchStore,
     private readonly search: Pick<WebSearch, "search" | "configured">,
@@ -74,6 +74,50 @@ export class ResearchCoordinator {
     this.tasks.add(task);
     return true;
   }
+  async recheckSource(run: ResearchRun, source: ResearchSource) {
+    if (this.store.isFenced(run.owner_id) || !this.allowed(run))
+      return { status: "blocked" } as const;
+    if (this.active.has(run.id) || this.active.size >= 2) return { status: "busy" } as const;
+    const controller = new AbortController();
+    this.active.set(run.id, controller);
+    const task = (async () => {
+      let text: string;
+      try {
+        text = await this.reader.read(
+          source.url,
+          AbortSignal.any([
+            controller.signal,
+            AbortSignal.timeout(RESEARCH_LIMITS.maxRunMilliseconds)
+          ])
+        );
+      } catch {
+        text = "";
+      }
+      if (
+        controller.signal.aborted ||
+        this.store.isFenced(run.owner_id) ||
+        !this.store.get(run.id, run.owner_id) ||
+        !this.allowed(run)
+      )
+        return { status: "blocked" } as const;
+      const checked_at = new Date().toISOString();
+      if (!text.trim()) return { status: "unavailable", checked_at } as const;
+      if (!source.content_digest) return { status: "no_baseline", checked_at } as const;
+      const digest = createHash("sha256").update(text).digest("hex");
+      return {
+        status: digest === source.content_digest ? "unchanged" : "changed",
+        checked_at
+      } as const;
+    })();
+    this.tasks.add(task);
+    try {
+      return await task;
+    } finally {
+      this.active.delete(run.id);
+      this.tasks.delete(task);
+    }
+  }
+
   pause(id: string, ownerId: string): ResearchRun | null {
     const run = this.store.update(
       id,

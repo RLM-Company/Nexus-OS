@@ -1,0 +1,96 @@
+{
+  "base_sha": "ea2f4aafe8e9609b678f8743a08c43d43f911f9f",
+  "branch": "ops/developer-coscode-live-2026-11-12",
+  "integration_pr": 519,
+  "integration_merge_sha": "c702c0f0658a0933384be6182fb03b1b8b96c45a",
+  "main_ci_run": 43192292131,
+  "actual_test_pr": 542,
+  "actual_test_head": "a58b7314c967d33331dfd48b337d8f88f3cca5ab",
+  "live_command_exit_code": 0,
+  "replay_command_exit_code": 1,
+  "replay_expected_error": "EEXIST before network and publish",
+  "test_pr_count": 1,
+  "native_lint_exit_code": 0,
+  "native_types_exit_code": 0,
+  "api_dependency_build_exit_code": 0,
+  "scoped_tests": {
+    "passed": 117,
+    "opt_in_skipped": 1,
+    "exit_code": 0
+  },
+  "real_model_called": false,
+  "github_and_oci_live": true,
+  "release_accepted": false,
+  "raw_log_sha256": {
+    "live.log": "0e10a5d19a9e9fd9d95eeaafafbe72c8ddeec2f4e49957c856552ab22d67f52d",
+    "replay-guard.log": "19f218d38ebc692e20c0aa01fd1e3833888836d3254cebd0c6ae9b77876857af",
+    "scoped-tests.log": "41f46462720e203fe3fd62484ba602a95289014f1e310fc3501e57f97ccae4cb",
+    "build.log": "9718a24377fc27c5bd392241a9b763bbfe760610adff521c3b32375b6993381d",
+    "initial-dependency-state.log": "36e9768a8ff7ae205d007fdadf762cfc79dac92262f17e080318e67f015dc627",
+    "second-dependency-state.log": "e484d433f89ad229f61135f848e859ecda458f3d9752c08425b866bbd1aac817",
+    "repository-create-denied.log": "82c0365628997038bc6eab49be9494f102abdcd61398d9a4888171cda5b06742"
+  },
+  "normalization": "LF, trailing whitespace and empty EOF lines only. Initial state errors retained; they prevented checks from starting.",
+  "files": {
+    "build.log": {
+      "sha256": "9718a24377fc27c5bd392241a9b763bbfe760610adff521c3b32375b6993381d",
+      "bytes": 774
+    },
+    "changes.patch": {
+      "sha256": "38b3df2e10e774d47201d0b22f81838ef30315d04d4ff21aad22850eb0f52f95",
+      "bytes": 458
+    },
+    "github-requests.json": {
+      "sha256": "4a7c037a6cb52f692af1ad1cf47fb976592d379bf7fa2f02a573d658b6821e9c",
+      "bytes": 4303
+    },
+    "initial-dependency-state.log": {
+      "sha256": "36e9768a8ff7ae205d007fdadf762cfc79dac92262f17e080318e67f015dc627",
+      "bytes": 195
+    },
+    "input.json": {
+      "sha256": "477dd2a8d0e68b0fd05d1c9f0915fe119d31df5dd879c5c411383ab83fc906e2",
+      "bytes": 407
+    },
+    "live.log": {
+      "sha256": "0e10a5d19a9e9fd9d95eeaafafbe72c8ddeec2f4e49957c856552ab22d67f52d",
+      "bytes": 229
+    },
+    "output.json": {
+      "sha256": "e861aa98a577e577c6788aaafbbfffaf1bd2de067b9ddd72c5706046fdc698ae",
+      "bytes": 335
+    },
+    "receipt.json": {
+      "sha256": "68747eef89b60f8c2433cdb4ea6a8e4e8274674653bdad3bab57f175d8c93b93",
+      "bytes": 5751
+    },
+    "replay-guard.log": {
+      "sha256": "19f218d38ebc692e20c0aa01fd1e3833888836d3254cebd0c6ae9b77876857af",
+      "bytes": 73
+    },
+    "repository-create-denied.log": {
+      "sha256": "82c0365628997038bc6eab49be9494f102abdcd61398d9a4888171cda5b06742",
+      "bytes": 114
+    },
+    "scoped-tests.log": {
+      "sha256": "138b3193fd05aadc7a79653d0c190e4fef808ee8d183adcec6f6d18502a01bd4",
+      "bytes": 259
+    },
+    "second-dependency-state.log": {
+      "sha256": "e484d433f89ad229f61135f848e859ecda458f3d9752c08425b866bbd1aac817",
+      "bytes": 219
+    },
+    "seed-files.json": {
+      "sha256": "a8be854ee81f9a65aa8b47a728810e4de66be000b45b2ca0731cabe52d76dbcc",
+      "bytes": 641
+    },
+    "status.json": {
+      "sha256": "07329e65daff351d39cdf01a90f019209ccfffcdda9dd06ba0bc7e80dd5ee7d4",
+      "bytes": 2974
+    }
+  },
+  "receipt_export": {
+    "original_sha256": "6623fcf3c11daf2e4bdc725ced6a49d28d5acd34149242ef80697819315b7caf",
+    "rule": "Only relevant actual PR fields exported; repository/profile metadata omitted. Check results and all assertions retained."
+  }
+}

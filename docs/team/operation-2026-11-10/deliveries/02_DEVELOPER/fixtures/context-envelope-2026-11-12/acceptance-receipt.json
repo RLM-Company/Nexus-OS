@@ -1,0 +1,67 @@
+{
+  "recorded_at": "2026-11-12T16:00:07.558998+00:00",
+  "base_sha": "ffc794ce3b377eac32a460283fd12c3075f53805",
+  "source_head": "b764ac26a5bc061167680a8d5782a77848165adc",
+  "source_tree": "400edb998153f15af6bb7d6d5dc2a02b01c6fb1c",
+  "main": "1c07f8dc291b38d0faf92088c53e704e348d0256",
+  "branch": "ops/developer-coscode-context-secrets-2026-11-12",
+  "pr": "https://github.com/RLM-Company/Nexus-OS/pull/551",
+  "checks": {
+    "baseline": {
+      "exit_code": 1,
+      "log": "baseline-failed.log"
+    },
+    "focused": {
+      "exit_code": 0,
+      "log": "focused-passed.log"
+    },
+    "scoped_api": {
+      "exit_code": 0,
+      "log": "scoped-api-passed.log"
+    },
+    "web_adapter": {
+      "exit_code": 0,
+      "log": "web-adapter-passed.log"
+    },
+    "check_core": {
+      "exit_code": 0,
+      "log": "check-core-passed.log"
+    },
+    "real_oci": {
+      "exit_code": 0,
+      "log": "real-oci-passed.log"
+    },
+    "scoped_lint": {
+      "exit_code": 0,
+      "log": null
+    }
+  },
+  "model": "fixture",
+  "github": "fixture",
+  "oci_and_git": "real",
+  "live_model_called": false,
+  "github_published": false,
+  "owner_pc_used": false,
+  "deployed": false,
+  "normalization": {
+    "logs": "LF, trailing whitespace trimmed, one final newline",
+    "json": "Prettier only; values retained",
+    "raw_sha256": {
+      "previous-ffc-jobs.json": "43f5fbe8339716ff2a616b87c6bfd22741d75322fe9495e39e15d3f0675e29d1",
+      "oci-changes.patch": "59258aa6f2821deac6549b1cc96294f444fbd5349ee2359deb1a321686e18086",
+      "scoped-api-passed.log": "2ff05dbcafe057eaa54c24ae1a8ed2e0446519843982a4441ad1729248ca2307",
+      "oci-output.json": "ac92e5995272797982348f49c8db443af3f3ce093bea96154402aeb3cafcdd63",
+      "oci-reviewed.json": "96fede89323f6770641fac945ae5b3cdab8e2fbaa9830792877d2734363883ba",
+      "check-core-passed.log": "c56aa356c3cb88150d6c6d85349aff4821ddbab43835b2545ef42c70a02e4e68",
+      "web-adapter-passed.log": "0a5bedbbf3c29518083d5296073690274e6f7e3129a8cfb02269ee237fa93744",
+      "previous-ffc-ci.json": "d5352b026318e1422a4bb341eeafd74f0e632d458c9267bf5cda167623dc5a84",
+      "baseline-failed.log": "06c9de5d63645db9ac1c4c53cef1d62bffbf9ba4ae16499e21bf9cfcc7bed0db",
+      "readonly-metadata-probe.log": "00bd1b9f0ccc92750e59909ec34f7887248de619cd6380c7d2fe317fcb10ddd8",
+      "focused-passed.log": "1c8058d22dcaaf69e3466aea13dcb7006e96c426bad1610dc428947fea56fce0",
+      "oci-receipt.json": "95d170951acd70fdf0b12b2f0c6dca9ed14ae1e7b500c3dd10b03536dd2897ff",
+      "real-oci-passed.log": "fb1c6086eb3bf1a2d55e9468fb94407278cdc511b6c44ff2cdebd095e850a69a",
+      "oci-input.json": "f911cd0767a7d8d752d879ed256e0f78a58c50d454c778efb59335782b5e6a6e",
+      "previous-ffc-identity.json": "1768e6a40b963d017fd3f36a2e912d81434f6ce6e38af639c2cbc419fec3bd0c"
+    }
+  }
+}

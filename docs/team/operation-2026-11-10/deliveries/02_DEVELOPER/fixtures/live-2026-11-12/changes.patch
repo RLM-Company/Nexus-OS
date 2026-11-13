@@ -1,0 +1,16 @@
+diff --git a/src/add.mjs b/src/add.mjs
+--- a/src/add.mjs
++++ b/src/add.mjs
+@@ -1,2 +1,3 @@
+ // article 00123
+-export const add = (a, b) => a - b;
++export const add = (a, b) => a + b;
++// accepted synthetic edit
+diff --git a/src/add.test.mjs b/src/add.test.mjs
+--- a/src/add.test.mjs
++++ b/src/add.test.mjs
+@@ -1,3 +1,4 @@
+ import assert from 'node:assert/strict';
+ import { add } from './add.mjs';
+ assert.equal(add(2, 3), 5);
++assert.equal(add(-2, 1), -1);

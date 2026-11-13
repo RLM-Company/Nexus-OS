@@ -1,0 +1,72 @@
+
+ RUN  v4.1.11 /workspace/work/Nexus-OS-chief-2026-11-12/apps/api
+
+ ❯ test/code-agent.test.ts (89 tests | 3 failed | 86 skipped) 3557ms
+     × refuses embedded credential source before durable context and model dispatch (tools=true) 3251ms
+     × refuses embedded credential source before durable context and model dispatch (tools=false) 180ms
+     × refuses an embedded credential from a negotiated read_file without forwarding or caching its content 125ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 3 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  test/code-agent.test.ts > Code agent real gateway/GitHub/policy vertical > refuses embedded credential source before durable context and model dispatch (tools=true)
+AssertionError: expected 'proposed' to be 'failed' // Object.is equality
+
+Expected: "failed"
+Received: "proposed"
+
+ ❯ Object.wait test/code-agent.test.ts:407:8
+    405|     await expect
+    406|       .poll(() => get(id).status, { timeout: options.waitTimeoutMs ?? …
+    407|       .toBe(status);
+       |        ^
+    408|     return get(id);
+    409|   };
+ ❯ test/code-agent.test.ts:463:25
+
+Caused by: Error: Matcher did not succeed in time.
+ ❯ Object.wait test/code-agent.test.ts:405:5
+ ❯ test/code-agent.test.ts:463:17
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/3]⎯
+
+ FAIL  test/code-agent.test.ts > Code agent real gateway/GitHub/policy vertical > refuses embedded credential source before durable context and model dispatch (tools=false)
+AssertionError: expected 'PROVIDER_ERROR' to be 'CONTEXT_CONTENT_FORBIDDEN' // Object.is equality
+
+Expected: "CONTEXT_CONTENT_FORBIDDEN"
+Received: "PROVIDER_ERROR"
+
+ ❯ test/code-agent.test.ts:464:23
+    462|     const id = await f.start();
+    463|     const run = await f.wait(id, "failed");
+    464|     expect(run.error).toBe("CONTEXT_CONTENT_FORBIDDEN");
+       |                       ^
+    465|     expect(run.snapshot).toEqual([]);
+    466|     expect(f.providerCalls).toHaveLength(0);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/3]⎯
+
+ FAIL  test/code-agent.test.ts > Code agent real gateway/GitHub/policy vertical > refuses an embedded credential from a negotiated read_file without forwarding or caching its content
+AssertionError: expected 'PROVIDER_ERROR' to be 'CONTEXT_CONTENT_FORBIDDEN' // Object.is equality
+
+Expected: "CONTEXT_CONTENT_FORBIDDEN"
+Received: "PROVIDER_ERROR"
+
+ ❯ test/code-agent.test.ts:481:23
+    479|     const id = await f.start();
+    480|     const run = await f.wait(id, "failed");
+    481|     expect(run.error).toBe("CONTEXT_CONTENT_FORBIDDEN");
+       |                       ^
+    482|     expect(run.snapshot).toEqual([{ path: "src/add.js", content: origi…
+    483|     expect(f.providerCalls).toHaveLength(1);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/3]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  3 failed | 86 skipped (89)
+   Start at  11:27:01
+   Duration  7.12s (transform 1.79s, setup 0ms, import 3.39s, tests 3.56s, environment 0ms)
+
+undefined
+/workspace/work/Nexus-OS-chief-2026-11-12/apps/api:
+[ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL] Command failed with exit code 1: vitest run test/code-agent.test.ts -t 'refuses embedded credential source|refuses an embedded credential from' '--maxWorkers=1'

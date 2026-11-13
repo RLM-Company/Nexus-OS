@@ -1,0 +1,158 @@
+[
+  {
+    "method": "GET",
+    "path": "/repos/RLM-Company/Nexus-OS/git/ref/heads/main"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/RLM-Company/Nexus-OS/commits/ops%2Fcoscode-live-base-2026-11-12"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/RLM-Company/Nexus-OS/git/trees/574d04301cd185accda05d68aa68f3914d41b524"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/RLM-Company/Nexus-OS/git/blobs/0d3cf70f8d99d280f608cb031cbfa99c9d185de6"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/RLM-Company/Nexus-OS/git/blobs/05790ce098873152fece823a0a70e5e1df3f7155"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/RLM-Company/Nexus-OS/git/blobs/e3e96b154a11e8bd87651647bc270ed8b396a130"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/RLM-Company/Nexus-OS"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/RLM-Company/Nexus-OS/commits/ops%2Fcoscode-live-base-2026-11-12"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/RLM-Company/Nexus-OS/git/trees/574d04301cd185accda05d68aa68f3914d41b524"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/RLM-Company/Nexus-OS/git/blobs/05790ce098873152fece823a0a70e5e1df3f7155"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/RLM-Company/Nexus-OS/git/blobs/e3e96b154a11e8bd87651647bc270ed8b396a130"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/RLM-Company/Nexus-OS"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/RLM-Company/Nexus-OS/git/ref/heads/ops%2Fcoscode-live-base-2026-11-12"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/RLM-Company/Nexus-OS/commits/e03ba58f95189e72d8da5658808f1e845250e128"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/RLM-Company/Nexus-OS/git/trees/574d04301cd185accda05d68aa68f3914d41b524"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/RLM-Company/Nexus-OS/git/blobs/05790ce098873152fece823a0a70e5e1df3f7155"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/RLM-Company/Nexus-OS/git/blobs/e3e96b154a11e8bd87651647bc270ed8b396a130"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/RLM-Company/Nexus-OS"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/RLM-Company/Nexus-OS/git/ref/heads/ops%2Fcoscode-live-base-2026-11-12"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/RLM-Company/Nexus-OS/commits/e03ba58f95189e72d8da5658808f1e845250e128"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/RLM-Company/Nexus-OS/git/trees/574d04301cd185accda05d68aa68f3914d41b524"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/RLM-Company/Nexus-OS/git/blobs/05790ce098873152fece823a0a70e5e1df3f7155"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/RLM-Company/Nexus-OS/git/blobs/e3e96b154a11e8bd87651647bc270ed8b396a130"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/RLM-Company/Nexus-OS"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/RLM-Company/Nexus-OS/git/ref/heads/ops%2Fcoscode-live-base-2026-11-12"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/RLM-Company/Nexus-OS/commits/e03ba58f95189e72d8da5658808f1e845250e128"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/RLM-Company/Nexus-OS/git/trees/574d04301cd185accda05d68aa68f3914d41b524"
+  },
+  {
+    "method": "POST",
+    "path": "/repos/RLM-Company/Nexus-OS/git/trees"
+  },
+  {
+    "method": "POST",
+    "path": "/repos/RLM-Company/Nexus-OS/git/commits"
+  },
+  {
+    "method": "POST",
+    "path": "/repos/RLM-Company/Nexus-OS/git/refs"
+  },
+  {
+    "method": "POST",
+    "path": "/repos/RLM-Company/Nexus-OS/pulls"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/RLM-Company/Nexus-OS/pulls/542"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/RLM-Company/Nexus-OS/commits/kosmora%2Fchange-da6c93a7-a0bc-42dd-a33e-bdfc1ff85335"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/RLM-Company/Nexus-OS/git/trees/c7dee188f329fea22db7923bb7a14534fe5b437a"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/RLM-Company/Nexus-OS/git/blobs/aeea03475f59c859cda63277c263f249706e56da"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/RLM-Company/Nexus-OS/git/blobs/358feebc2b56f570723dbb44bb860a2f7e80c47e"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/RLM-Company/Nexus-OS/commits/ops%2Fcoscode-live-base-2026-11-12"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/RLM-Company/Nexus-OS/git/trees/574d04301cd185accda05d68aa68f3914d41b524"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/RLM-Company/Nexus-OS/git/ref/heads/main"
+  }
+]

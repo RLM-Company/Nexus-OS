@@ -2,6 +2,18 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { codePatchRequest } from "./patch-client";
 afterEach(() => vi.unstubAllGlobals());
 describe("same-origin Code adapter", () => {
+  it("explains credential context refusal without retry or raw credential data", async () => {
+    const request = vi.fn(() =>
+      Promise.resolve(
+        Response.json({ error: { code: "CONTEXT_CONTENT_FORBIDDEN" } }, { status: 409 })
+      )
+    );
+    vi.stubGlobal("fetch", request);
+    await expect(codePatchRequest("project", "/run/publish", {})).rejects.toThrow(
+      "выберите файлы без учётных данных"
+    );
+    expect(request).toHaveBeenCalledTimes(1);
+  });
   it("encodes project scope and sends a single proposal/import request without following redirects", async () => {
     const request = vi.fn(() => Promise.resolve(Response.json({ id: "run" })));
     vi.stubGlobal("fetch", request);

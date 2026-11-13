@@ -1,0 +1,60 @@
+
+ RUN  v4.1.11 /workspace/work/Nexus-OS-chief-2026-11-12/apps/api
+
+ ❯ test/code-agent.test.ts (102 tests | 4 failed | 1 skipped) 19651ms
+     × bounds canonical feedback: 'redaction before excerpt' 254ms
+     × bounds canonical feedback: 'long safe output' 285ms
+     × bounds canonical feedback: 'runner already truncated' 242ms
+     × returns a repair refusal for malformed legacy evidence without reserving a model attempt 187ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 4 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  test/code-agent.test.ts > bounded explicit check-feedback repair > bounds canonical feedback: 'redaction before excerpt'
+ FAIL  test/code-agent.test.ts > bounded explicit check-feedback repair > bounds canonical feedback: 'long safe output'
+ FAIL  test/code-agent.test.ts > bounded explicit check-feedback repair > bounds canonical feedback: 'runner already truncated'
+AssertionError: expected [] to have a length of 2 but got +0
+
+- Expected
++ Received
+
+- 2
++ 0
+
+ ❯ test/code-agent.test.ts:3319:23
+    3317|     }
+    3318|     expect(f.providerCalls).toHaveLength(4);
+    3319|     expect(f.checked).toHaveLength(2);
+       |                       ^
+    3320|   });
+    3321|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/4]⎯
+
+ FAIL  test/code-agent.test.ts > bounded explicit check-feedback repair > returns a repair refusal for malformed legacy evidence without reserving a model attempt
+AssertionError: expected [] to have a length of 1 but got +0
+
+- Expected
++ Received
+
+- 1
++ 0
+
+ ❯ test/code-agent.test.ts:3349:23
+    3347|     expect(f.get(id).repair_request).toBeUndefined();
+    3348|     expect(f.providerCalls).toHaveLength(3);
+    3349|     expect(f.checked).toHaveLength(1);
+       |                       ^
+    3350|   });
+    3351|   it("uses the owner's working bytes, preserves two files, reruns the …
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/4]⎯
+
+
+ Test Files  1 failed | 3 passed (4)
+      Tests  4 failed | 146 passed | 1 skipped (151)
+   Start at  11:54:01
+   Duration  22.66s (transform 2.35s, setup 0ms, import 6.33s, tests 20.78s, environment 0ms)
+
+undefined
+/workspace/work/Nexus-OS-chief-2026-11-12/apps/api:
+[ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL] Command failed with exit code 1: vitest run test/code-agent.test.ts test/code-proposal-input.test.ts test/code-agent-github-tree.test.ts test/github-integration.test.ts '--maxWorkers=2'

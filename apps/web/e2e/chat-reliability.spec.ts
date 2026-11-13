@@ -88,13 +88,27 @@ test("restores text and files after closing the tab, isolates chats, removes and
   page,
   context,
   request
-}) => {
+}, testInfo) => {
   const response = await request.post("/api/v1/chats", {
     data: { initial_message: "Чат для черновика", client_message_id: crypto.randomUUID() }
   });
   const { chat } = (await response.json()) as { chat: { id: string } };
+  await expect
+    .poll(async () => {
+      const detail = await request.get(`/api/v1/chats/${chat.id}`);
+      if (!detail.ok()) return false;
+      const { messages } = (await detail.json()) as {
+        messages: { role: string; status: string }[];
+      };
+      return messages.some(
+        (message) => message.role === "assistant" && message.status === "completed"
+      );
+    })
+    .toBe(true);
   await page.goto(`/?chat=${chat.id}`);
-  await page.getByLabel("Сообщение Kosmora").fill("Несохранённый текст");
+  const editor = page.getByRole("textbox", { name: "Сообщение Kosmora" });
+  await editor.fill("Несохранённый текст");
+  await expect(editor).toHaveValue("Несохранённый текст");
   await page.getByLabel("Текстовые файлы и код").setInputFiles(draftFiles);
   await expect(page.getByRole("list", { name: "Прикреплённые файлы" })).toContainText("draft.ts");
   expect(await page.getByLabel("Сообщение Kosmora").inputValue()).toBe("Несохранённый текст");
@@ -120,8 +134,47 @@ test("restores text and files after closing the tab, isolates chats, removes and
   await reopened.reload();
   await expect(reopened.getByRole("list", { name: "Прикреплённые файлы" })).toHaveCount(0);
   await reopened.getByLabel("Текстовые файлы и код").setInputFiles(draftFiles);
+  const acknowledgement = reopened.waitForResponse(
+    (reply) =>
+      reply.request().method() === "POST" &&
+      new URL(reply.url()).pathname === `/api/v1/chats/${chat.id}/messages`
+  );
   await reopened.getByRole("button", { name: "Отправить", exact: true }).click();
-  await expect(reopened.getByRole("status")).toHaveText(/Ответ получен/);
+  const accepted = await acknowledgement;
+  const acceptedBody = (await accepted.json()) as { error?: { code?: string } };
+  expect(
+    accepted.ok(),
+    `HTTP ${accepted.status()}: ${acceptedBody.error?.code ?? "accepted"}`
+  ).toBe(true);
+  try {
+    await expect(reopened.getByRole("status")).toHaveText(/Ответ получен/);
+  } catch (error) {
+    // Preserve the original assertion even if diagnostic retrieval itself fails.
+    await request
+      .get(`/api/v1/chats/${chat.id}`, { timeout: 3000 })
+      .then(async (detail) => {
+        const body = await detail.json();
+        await testInfo.attach("draft-chat-terminal-state", {
+          body: JSON.stringify(
+            {
+              status: detail.status(),
+              messages: body.messages?.map(
+                (message: { role: string; status: string; error_code: string | null }) => ({
+                  role: message.role,
+                  status: message.status,
+                  error_code: message.error_code
+                })
+              )
+            },
+            null,
+            2
+          ),
+          contentType: "application/json"
+        });
+      })
+      .catch(() => undefined);
+    throw error;
+  }
   await reopened.reload();
   await expect(reopened.getByLabel("Сообщение Kosmora")).toHaveValue("");
   await expect(reopened.getByRole("list", { name: "Прикреплённые файлы" })).toHaveCount(0);
@@ -432,6 +485,63 @@ test("two uncertain sends remain independently retryable after navigation and re
   expect(await markers()).toBeNull();
 });
 
+test("composer actions belong to their own chat and stay out of another chat request", async ({
+  page,
+  request
+}) => {
+  const createChat = async (initialMessage: string) => {
+    const response = await request.post("/api/v1/chats", {
+      data: { initial_message: initialMessage, client_message_id: crypto.randomUUID() }
+    });
+    expect(response.status()).toBe(201);
+    return ((await response.json()) as { chat: { id: string } }).chat.id;
+  };
+  const first = await createChat("Черновик с поиском");
+  const second = await createChat("Обычный черновик");
+  const selectChat = async (id: string) => {
+    await page
+      .locator(".sidebar button.chat-item")
+      .filter({ has: page.locator("#pin-chat-" + id) })
+      .click();
+    await expect(page).toHaveURL(new RegExp("[?&]chat=" + id));
+  };
+
+  await page.goto("/?chat=" + first);
+  const editor = page.getByLabel("Сообщение Kosmora");
+  const webSearch = page.getByRole("checkbox", { name: "Искать в интернете" });
+  const defaultAction = page.getByRole("button", { name: "Действие с текстом", exact: true });
+  const explain = page.getByRole("button", { name: "Объяснить тему", exact: true });
+  await editor.fill("Первый черновик");
+  await webSearch.check();
+  await defaultAction.click();
+  await page.getByRole("menuitem", { name: "Объяснить тему", exact: true }).click();
+  await expect(explain).toBeVisible();
+
+  await selectChat(second);
+  await expect(webSearch).not.toBeChecked();
+  await expect(defaultAction).toBeVisible();
+  await editor.fill("Обычное сообщение");
+  const sent = page.waitForRequest(
+    (request) =>
+      request.method() === "POST" &&
+      new URL(request.url()).pathname === "/api/v1/chats/" + second + "/messages"
+  );
+  await page.getByRole("button", { name: "Отправить", exact: true }).click();
+  const payload = (await sent).postDataJSON() as Record<string, unknown>;
+  expect(payload).toHaveProperty("content", "Обычное сообщение");
+  expect(payload).not.toHaveProperty("web_search");
+  expect(payload).not.toHaveProperty("text_action");
+  await expect(editor).toHaveValue("");
+
+  await selectChat(first);
+  await expect(editor).toHaveValue("Первый черновик");
+  await expect(webSearch).toBeChecked();
+  await expect(explain).toBeVisible();
+  await page.locator(".sidebar").getByRole("button", { name: "Новый чат", exact: true }).click();
+  await expect(webSearch).not.toBeChecked();
+  await expect(defaultAction).toBeVisible();
+});
+
 test("reload and lost network recover the same run without duplicate POSTs or messages", async ({
   page,
   context
@@ -588,4 +698,48 @@ test("a pre-completion history snapshot cannot reopen a completed run", async ({
   await expect(page.getByRole("button", { name: "Остановить", exact: true })).toHaveCount(0);
   await expect(page.getByLabel("Сообщение Kosmora")).toBeEnabled();
   await expect(page.locator(".message.assistant")).toHaveCount(1);
+});
+
+test("a lost acknowledgement reload restores the exact text action before retrying one request", async ({
+  page,
+  request
+}) => {
+  const created = await request.post("/api/v1/chats", {
+    data: {
+      initial_message: "История для восстановления действия",
+      client_message_id: crypto.randomUUID()
+    }
+  });
+  expect(created.status()).toBe(201);
+  const { chat } = (await created.json()) as { chat: { id: string } };
+  const posts: Array<Record<string, unknown>> = [];
+  const statuses: number[] = [];
+  await page.route(`**/api/v1/chats/${chat.id}/messages`, async (route) => {
+    if (route.request().method() !== "POST") return route.continue();
+    posts.push(route.request().postDataJSON() as Record<string, unknown>);
+    const response = await route.fetch();
+    statuses.push(response.status());
+    if (posts.length === 1) await route.abort("connectionreset");
+    else await route.fulfill({ response });
+  });
+  await page.goto(`/?chat=${chat.id}`);
+  const editor = page.getByLabel("Сообщение Kosmora");
+  const send = page.getByRole("button", { name: "Отправить", exact: true });
+  await editor.fill("Объясни тестовый пример 00123");
+  await page.getByRole("button", { name: "Действие с текстом", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Объяснить тему", exact: true }).click();
+  await send.click();
+  await expect(page.locator(".composer").getByText(/результат запроса неизвестен/)).toBeVisible();
+  expect(posts[0]).toMatchObject({ text_action: { kind: "explain" } });
+  await page.reload();
+  await expect(editor).toHaveValue("Объясни тестовый пример 00123");
+  await expect(page.getByRole("button", { name: "Объяснить тему", exact: true })).toBeVisible();
+  expect(posts).toHaveLength(1);
+  await send.click();
+  await expect.poll(() => statuses).toEqual([202, 200]);
+  expect(posts[1]).toEqual(posts[0]);
+  await expect(editor).toHaveValue("");
+  await expect(
+    page.locator(".message.user").filter({ hasText: "Объясни тестовый пример 00123" })
+  ).toHaveCount(1);
 });

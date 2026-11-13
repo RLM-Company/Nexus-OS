@@ -39,3 +39,32 @@ CI: Browser acceptance и sandbox PASS на `af140067`.
 из нового main, отсутствующим в ветке Builders. Не забирать этот файл
 в Builders PR и не маскировать проверку; Codex должен исправить его отдельно.
 PR #518 оставить без merge и production.
+
+## Узкий общий adapter — PR #556
+
+Единственная общая кодовая область:
+`apps/web/src/app/canvas-editor/canvas-editor.tsx`.
+Компонент `SiteImageImport` отображается только при
+`sitePreview && draft.format === "html"`, получает текущий текст,
+проверенный по Canvas 512-КиБ limit, и использует штатное `setDraft`.
+
+Не изменены Canvas save/version/conflict алгоритмы, DB, API, auth, Work,
+Coscode и глобальный UI. Этот integration adapter не следует переносить
+без сайтового компонента и валидатора PNG/JPEG/WebP.
+
+Требуется ревью Codex на сохранение owner/project isolation и отсутствие
+несогласованного поведения при смене редактора. Публикация запрещена.
+
+## Закрытие узкой интеграции 2026-11-12
+
+Проверенный кодовый коммит: `746486542dcb8093d8cd2695114e04b8cbe68627`.
+Все три CI job успешны в run `43261579390`.
+
+В итоговом дереве нет `site-format-probe.test.ts` и `prettier-ignore`.
+Codex получает узкий Canvas adapter и собственные Sites-компоненты
+в одном PR #556; переносить адаптер отдельно нельзя.
+
+Не менялись серверные contracts, DB, owner isolation, pay gates,
+runtime sandbox, work engine и модель разрешений. Нужна ручная
+проверка схемы импорта и ограничений 64 КиБ для изображений.
+Публикация сайта не является частью этой поставки.

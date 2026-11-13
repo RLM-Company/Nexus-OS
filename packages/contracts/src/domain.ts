@@ -1,4 +1,5 @@
 import { Type, type Static } from "typebox";
+import { Value } from "typebox/value";
 import { EntityIdSchema, IsoDateTimeSchema } from "./primitives.js";
 import { CHAT_ATTACHMENT_LIMITS } from "./chat-attachments.js";
 
@@ -248,6 +249,11 @@ export const ChatTextActionSchema = Type.Object(
   { additionalProperties: false }
 );
 export type ChatTextAction = Static<typeof ChatTextActionSchema>;
+
+/** Validate persisted client metadata against the same contract as chat requests. */
+export function isValidChatTextAction(value: unknown): value is ChatTextAction {
+  return Value.Check(ChatTextActionSchema, value);
+}
 
 export const CreateGeneralChatRequestSchema = Type.Object(
   {

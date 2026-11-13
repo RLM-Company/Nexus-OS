@@ -135,6 +135,7 @@ async function fixture(
     providerDelayMs?: number;
     providerStatus?: number;
     providerResponse?: (signal: AbortSignal | null | undefined) => Response;
+    sourceFiles?: Record<string, string>;
     extraTreePaths?: number;
     additionalTreePaths?: string[];
     truncatedTree?: boolean;
@@ -150,6 +151,7 @@ async function fixture(
     registryNow?: number;
   } = {}
 ) {
+  const sources = { ...originals, ...options.sourceFiles };
   const database = openDatabase(options.databaseFile ?? ":memory:");
   await runMigrations(database);
   const projects = new ProjectStore(database.sqlite),
@@ -213,7 +215,7 @@ async function fixture(
               : {
                   sha: "8".repeat(40),
                   truncated: false,
-                  tree: Object.keys(originals).map((path, i) => ({
+                  tree: Object.keys(sources).map((path, i) => ({
                     path: path.split("/").at(-1)!,
                     type: "blob",
                     mode: "100644",
@@ -224,7 +226,7 @@ async function fixture(
           value = {
             truncated: options.truncatedTree ?? false,
             tree: [
-              ...Object.keys(originals),
+              ...Object.keys(sources),
               ...(options.additionalTreePaths ?? []),
               ...Array.from(
                 { length: options.extraTreePaths ?? 0 },
@@ -240,10 +242,10 @@ async function fixture(
         }
       } else if (path.startsWith("/git/blobs/")) {
         const content = options.blobShas
-          ? originals[
+          ? sources[
               Object.keys(options.blobShas).find((file) => path.endsWith(options.blobShas![file]!))!
             ]!
-          : Object.values(originals)[Number(path.at(-1)) - 1]!;
+          : Object.values(sources)[Number(path.at(-1)) - 1]!;
         value = {
           encoding: "base64",
           content: Buffer.from(content).toString("base64"),
@@ -454,6 +456,315 @@ async function fixture(
 }
 
 describe("Code agent real gateway/GitHub/policy vertical", () => {
+  it("excludes credential-shaped path metadata from an otherwise safe proposal", async () => {
+    const token = "ghp_" + "M".repeat(36);
+    const f = await fixture({ additionalTreePaths: [`src/${token}.js`] });
+    const id = await f.start();
+    await f.service.whenIdle();
+    expect(JSON.stringify(f.providerCalls).includes(token)).toBe(false);
+    expect(f.get(id).status).toBe("proposed");
+    expect(f.providerCalls).toHaveLength(3);
+    expect(f.get(id).snapshot.map((file) => file.path)).toEqual(["src/add.js", "src/add.test.js"]);
+    expect(f.githubCalls.filter((call) => call.path.startsWith("/git/blobs/"))).toHaveLength(2);
+  });
+  it.each(["task", "issue"] as const)(
+    "blocks credential-bearing %s before the first model request",
+    async (field) => {
+      const token = "github_pat_" + "I".repeat(40);
+      const body = `Synthetic issue context ${token}`;
+      const f = await fixture();
+      const created = f.service.create(f.project, LOCAL_DEVELOPMENT_IDENTITY, {
+        task: field === "task" ? `Fix src/add.js ${token}` : "Fix src/add.js",
+        base_branch: "main",
+        files: ["src/add.js"],
+        ...(field === "issue"
+          ? {
+              issue_context: {
+                repository: "RLM-Company/Nexus-OS",
+                number: 17,
+                title: "Fixture issue",
+                body,
+                source_body_chars: body.length,
+                source_updated_at: "2026-11-12T00:00:00Z",
+                truncated: false,
+                truncation_approved: false
+              }
+            }
+          : {})
+      });
+      await f.service.whenIdle();
+      expect(JSON.stringify(f.providerCalls).includes(token)).toBe(false);
+      expect(f.providerCalls).toHaveLength(0);
+      expect(f.get(created.id)).toMatchObject({
+        status: "failed",
+        error: "CONTEXT_CONTENT_FORBIDDEN"
+      });
+      expect(f.get(created.id).model_run_ids ?? []).toHaveLength(0);
+      expect(f.checked).toHaveLength(0);
+      expect(f.githubCalls.every((call) => call.method === "GET")).toBe(true);
+    }
+  );
+
+  it.each([true, false])(
+    "refuses embedded credential source before durable context and model dispatch (tools=%s)",
+    async (toolCalling) => {
+      const token = "ghp_" + "X".repeat(36);
+      const f = await fixture({
+        toolCalling,
+        sourceFiles: { "src/add.js": `export const token = "${token}";\n` }
+      });
+      const id = await f.start();
+      const run = await f.wait(id, "failed");
+      expect(run.error).toBe("CONTEXT_CONTENT_FORBIDDEN");
+      expect(run.snapshot).toEqual([]);
+      expect(f.providerCalls).toHaveLength(0);
+      expect(f.checked).toHaveLength(0);
+      const durable = JSON.stringify(
+        f.database.sqlite.prepare("SELECT * FROM policy_operations").all()
+      );
+      expect(durable).not.toContain(token);
+      expect(JSON.stringify(f.service.view(run))).not.toContain(token);
+      expect(f.githubCalls.every((call) => call.method === "GET")).toBe(true);
+    }
+  );
+  it("refuses an embedded credential from a negotiated read_file without forwarding or caching its content", async () => {
+    const token = "sk-proj-" + "Z".repeat(36);
+    const f = await fixture({
+      sourceFiles: { "src/add.test.js": `const key = "${token}";\n` },
+      responses: [toolResponse("read_file", { path: "src/add.test.js" }, "read-sensitive-content")]
+    });
+    const id = await f.start();
+    const run = await f.wait(id, "failed");
+    expect(run.error).toBe("CONTEXT_CONTENT_FORBIDDEN");
+    expect(run.snapshot).toEqual([{ path: "src/add.js", content: originals["src/add.js"] }]);
+    expect(f.providerCalls).toHaveLength(1);
+    expect(JSON.stringify(f.providerCalls)).not.toContain(token);
+    expect(
+      JSON.stringify(f.database.sqlite.prepare("SELECT * FROM policy_operations").all())
+    ).not.toContain(token);
+    expect(JSON.stringify(f.service.view(run))).not.toContain(token);
+    expect(f.checked).toHaveLength(0);
+    expect(f.githubCalls.every((call) => call.method === "GET")).toBe(true);
+  });
+
+  it("blocks a legacy embedded credential checkpoint before review, check, repair and publication without deleting it", async () => {
+    const f = await fixture();
+    const id = await f.start();
+    const proposed = await f.wait(id, "proposed");
+    const secret = "ghp_" + "L".repeat(36);
+    const snapshot = [
+      ...proposed.snapshot,
+      { path: "src/legacy.js", content: `const token = "${secret}";\n` }
+    ];
+    f.store.save(
+      { ...proposed, snapshot, proposal_snapshot_digest: computeCodeAgentSnapshotDigest(snapshot) },
+      "fixture legacy source"
+    );
+    const reads = f.githubCalls.length;
+    await expect(f.review(id)).rejects.toThrow("CONTEXT_CONTENT_FORBIDDEN");
+    expect(f.githubCalls).toHaveLength(reads);
+    f.store.save(
+      {
+        ...f.get(id),
+        snapshot: proposed.snapshot,
+        proposal_snapshot_digest: computeCodeAgentSnapshotDigest(proposed.snapshot)
+      },
+      "fixture restores clean source"
+    );
+    const review = await f.review(id);
+    f.store.save({ ...f.get(id), snapshot }, "fixture legacy reviewed source");
+    const before = f.get(id);
+    const hash = review.draft!.plan.review_hash;
+    expect(() =>
+      f.service.check(id, owner, { review_hash: hash, check: "syntax", approve: true })
+    ).toThrow("CONTEXT_CONTENT_FORBIDDEN");
+    expect(() =>
+      f.service.repair(id, owner, {
+        review_hash: hash,
+        expected_run_version: before.version,
+        client_request_id: randomUUID(),
+        approve: true
+      })
+    ).toThrow("CONTEXT_CONTENT_FORBIDDEN");
+    const response = await f.app.inject({
+      method: "POST",
+      url: `${f.base}/${id}/publish`,
+      payload: { review_hash: hash, publication_token: randomUUID(), approve: true }
+    });
+    expect(response.statusCode).toBe(409);
+    expect(response.json()).toEqual({ error: { code: "CONTEXT_CONTENT_FORBIDDEN" } });
+    expect(f.checked).toHaveLength(0);
+    expect(f.providerCalls).toHaveLength(3);
+    expect(f.get(id)).toEqual(before);
+    expect(f.githubCalls.every((call) => call.method === "GET")).toBe(true);
+  });
+  it("rejects credentials typed into an edited review before creating a durable draft", async () => {
+    const f = await fixture();
+    const id = await f.start();
+    await f.wait(id, "proposed");
+    const token = "sk-proj-" + "R".repeat(36);
+    const before = f.get(id);
+    const reads = f.githubCalls.length;
+    await expect(
+      f.review(id, [{ path: "src/add.js", content: `const key = "${token}";\n` }])
+    ).rejects.toThrow("CONTEXT_CONTENT_FORBIDDEN");
+    expect(f.get(id)).toEqual(before);
+    expect(f.githubCalls).toHaveLength(reads);
+    expect(
+      JSON.stringify(f.database.sqlite.prepare("SELECT * FROM policy_operations").all())
+    ).not.toContain(token);
+    expect(f.checked).toHaveLength(0);
+  });
+
+  it("keeps a refused source request idempotent without rereading or dispatching", async () => {
+    const token = "ghp_" + "I".repeat(36);
+    const f = await fixture({ sourceFiles: { "src/add.js": `const token = "${token}";\n` } });
+    const payload = {
+      client_request_id: randomUUID(),
+      task: "Fix src/add.js",
+      base_branch: "main",
+      files: ["src/add.js"]
+    };
+    const first = f.service.create(f.project, LOCAL_DEVELOPMENT_IDENTITY, payload);
+    await f.wait(first.id, "failed");
+    await f.service.whenIdle();
+    const reads = f.githubCalls.length;
+    const again = f.service.create(f.project, LOCAL_DEVELOPMENT_IDENTITY, payload);
+    expect(again).toMatchObject({
+      id: first.id,
+      status: "failed",
+      error: "CONTEXT_CONTENT_FORBIDDEN"
+    });
+    await f.service.whenIdle();
+    expect(f.githubCalls).toHaveLength(reads);
+    expect(f.providerCalls).toHaveLength(0);
+  });
+  it.each(["cancel", "revoke"])(
+    "does not admit pending credential source after %s",
+    async (action) => {
+      let enter!: () => void, release!: () => void;
+      const entered = new Promise<void>((resolve) => {
+        enter = resolve;
+      });
+      const pending = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const token = "ghp_" + "C".repeat(36);
+      const f = await fixture({
+        sourceFiles: { "src/add.js": `const token = "${token}";\n` },
+        githubBarrier: async (path) => {
+          if (path.startsWith("/git/blobs/")) {
+            enter();
+            await pending;
+          }
+        }
+      });
+      const id = await f.start();
+      await entered;
+      try {
+        if (action === "cancel") f.service.cancel(id, owner);
+        else
+          f.policy.updateProfile({
+            projectId: f.project,
+            baseLevel: "A0",
+            overrides: [],
+            expectedVersion: f.policy.getProfile(f.project)!.version
+          });
+      } finally {
+        release();
+      }
+      await f.service.whenIdle();
+      expect(f.get(id).status).toBe(action === "cancel" ? "cancelled" : "failed");
+      expect(f.get(id).snapshot).toEqual([]);
+      expect(f.providerCalls).toHaveLength(0);
+      expect(f.checked).toHaveLength(0);
+      expect(
+        JSON.stringify(f.database.sqlite.prepare("SELECT * FROM policy_operations").all())
+      ).not.toContain(token);
+      expect(f.githubCalls.every((call) => call.method === "GET")).toBe(true);
+    }
+  );
+  it("refuses a historical edited draft containing credentials before check, repair or publish", async () => {
+    const f = await fixture();
+    const id = await f.start();
+    const review = await f.review(id);
+    const token = "ghp_" + "D".repeat(36);
+    const draft = f.drafts.get(review.draft_id!, owner)!;
+    const legacyPlan = {
+      ...draft.plan,
+      files: draft.plan.files.map((file, i) =>
+        i === 0 ? { ...file, content: `const key = "${token}";\n` } : file
+      )
+    };
+    f.database.sqlite
+      .prepare("UPDATE github_change_drafts SET plan_json=? WHERE id=? AND owner_id=?")
+      .run(JSON.stringify(legacyPlan), draft.id, owner);
+    const before = f.get(id),
+      reads = f.githubCalls.length;
+    const hash = draft.plan.review_hash;
+    expect(() =>
+      f.service.check(id, owner, { review_hash: hash, check: "syntax", approve: true })
+    ).toThrow("CONTEXT_CONTENT_FORBIDDEN");
+    expect(() =>
+      f.service.repair(id, owner, {
+        review_hash: hash,
+        expected_run_version: before.version,
+        client_request_id: randomUUID(),
+        approve: true
+      })
+    ).toThrow("CONTEXT_CONTENT_FORBIDDEN");
+    await expect(
+      f.service.publish(id, owner, {
+        review_hash: hash,
+        publication_token: randomUUID(),
+        approve: true
+      })
+    ).rejects.toThrow("CONTEXT_CONTENT_FORBIDDEN");
+    expect(f.get(id)).toEqual(before);
+    expect(f.drafts.get(draft.id, owner)!.plan).toEqual(legacyPlan);
+    expect(f.githubCalls).toHaveLength(reads);
+    expect(f.checked).toHaveLength(0);
+    expect(f.providerCalls).toHaveLength(3);
+  });
+  it("preserves safe source bytes through text context, exact edit, review and check", async () => {
+    const source =
+      originals["src/add.js"] +
+      "// 19 700; 00123; 2026-11-12; кроме доставки; not enabled\r\nconst apiKey = process.env.API_KEY;";
+    const replacement = source.replace("a-b", "a+b");
+    const response = sse(
+      {
+        choices: [
+          {
+            index: 0,
+            delta: {
+              content: JSON.stringify({
+                summary: "Fix",
+                edits: [{ path: "src/add.js", old_text: "a-b", new_text: "a+b" }]
+              })
+            }
+          }
+        ]
+      },
+      { choices: [{ index: 0, delta: {}, finish_reason: "stop" }] },
+      { choices: [], usage: { prompt_tokens: 100, completion_tokens: 40 } },
+      "[DONE]"
+    );
+    const f = await fixture({
+      sourceFiles: { "src/add.js": source },
+      toolCalling: false,
+      responses: [response]
+    });
+    const id = await f.start();
+    const run = await f.wait(id, "proposed");
+    expect(run.snapshot).toEqual([{ path: "src/add.js", content: source }]);
+    expect(run.proposal).toEqual([{ path: "src/add.js", before: source, content: replacement }]);
+    const review = await f.review(id, [{ path: "src/add.js", content: replacement }]);
+    await f.check(id, review.draft!.plan.review_hash);
+    expect(f.checked[0]!.files).toEqual([{ path: "src/add.js", content: replacement }]);
+    expect(f.get(id).publication_token).toBeTruthy();
+    expect(f.providerCalls).toHaveLength(1);
+    expect(f.githubCalls.every((call) => call.method === "GET")).toBe(true);
+  });
   it("saves streamed text on cancel, refuses publication and replays the same creation without a paid retry", async () => {
     let cancelled = false;
     const prefix = '{"summary":',
@@ -2890,6 +3201,229 @@ async function failedRepair(f: Awaited<ReturnType<typeof fixture>>) {
 }
 
 describe("bounded explicit check-feedback repair", () => {
+  it("blocks legacy task metadata before reserving a repair or sending another model request", async () => {
+    const f = await fixture({ responses: repairResponses(), runner: repairRunner() });
+    const request = await failedRepair(f);
+    const token = "sk-proj-" + "L".repeat(36);
+    const legacy = f.store.save(
+      { ...f.get(request.id), task: `Legacy task ${token}` },
+      "fixture legacy metadata"
+    );
+    const { id, ...payload } = { ...request, expected_run_version: legacy.version };
+    const response = await f.app.inject({
+      method: "POST",
+      url: `${f.base}/${id}/repair-v2`,
+      payload
+    });
+    await f.service.whenIdle();
+    expect(JSON.stringify(f.providerCalls).includes(token)).toBe(false);
+    expect(response.statusCode).toBe(409);
+    expect(response.json()).toEqual({ error: { code: "CONTEXT_CONTENT_FORBIDDEN" } });
+    expect(f.providerCalls).toHaveLength(3);
+    expect(f.get(id)).toEqual(legacy);
+    expect(f.get(id).repair_request).toBeUndefined();
+  });
+
+  it("redacts legacy check feedback before repair dispatch and preserves factual evidence", async () => {
+    const f = await fixture({ responses: repairResponses(), runner: repairRunner() });
+    const request = await failedRepair(f);
+    const run = f.get(request.id);
+    const token = "ghp_" + "R".repeat(36);
+    const keyBody = "SYNTHETIC_PRIVATE_MATERIAL";
+    const legacy = f.store.save(
+      {
+        ...run,
+        check: {
+          ...run.check!,
+          stdout: `\u001b[31mexpected 5, actual -1; 19 700; 00123; кроме доставки\u001b[0m\n${token}`,
+          stderr:
+            "-----BEGIN " +
+            "PRIVATE KEY-----\n" +
+            keyBody +
+            "\n-----END " +
+            "PRIVATE KEY-----\nnot enabled",
+          journal: [
+            { at: "2026-11-12T00:00:00.000Z", event: "finished", detail: `legacy ${token}` }
+          ]
+        }
+      },
+      "fixture historical unredacted check"
+    );
+    const { id, ...payload } = { ...request, expected_run_version: legacy.version };
+    const response = await f.app.inject({
+      method: "POST",
+      url: `${f.base}/${id}/repair-v2`,
+      payload
+    });
+    expect(response.statusCode).toBe(200);
+    const result = await f.wait(id, "proposed");
+    const sent = JSON.stringify(f.providerCalls[3]);
+    expect(sent.includes(token)).toBe(false);
+    expect(sent.includes(keyBody)).toBe(false);
+    const messages = f.providerCalls[3]!.messages as Array<{ content: string }>;
+    const context = JSON.parse(messages[1]!.content) as {
+      untrusted_execution_feedback: {
+        stdout: string;
+        stderr: string;
+        exitCode: number;
+        truncated: boolean;
+      };
+    };
+    const feedback = context.untrusted_execution_feedback;
+    expect(feedback.stdout.includes("\u001b")).toBe(false);
+    expect(feedback.stdout).toContain("expected 5, actual -1; 19 700; 00123; кроме доставки");
+    expect(feedback.stdout).toContain("[REDACTED]");
+    expect(feedback.stderr).toContain("not enabled");
+    expect(feedback.stderr).toContain("[REDACTED]");
+    expect(feedback.exitCode).toBe(1);
+    expect(feedback.truncated).toBe(false);
+    const source = result.repair_request!.source_check;
+    expect(source.snapshotDigest).toBe(legacy.check!.snapshotDigest);
+    expect(source.exitCode).toBe(1);
+    expect(source.journal[0]!.at).toBe("2026-11-12T00:00:00.000Z");
+    expect(f.providerCalls).toHaveLength(4);
+    expect(f.githubCalls.every((call) => call.method === "GET")).toBe(true);
+  });
+  it("stores only validated redacted feedback while a reserved repair is awaiting its base read", async () => {
+    let release!: () => void;
+    const barrier = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let block = false;
+    const f = await fixture({
+      responses: repairResponses(),
+      runner: repairRunner(),
+      githubBarrier: () => (block ? barrier : Promise.resolve())
+    });
+    const request = await failedRepair(f);
+    const token = "sk-proj-" + "S".repeat(36);
+    const run = f.get(request.id);
+    const legacy = f.store.save(
+      {
+        ...run,
+        check: {
+          ...run.check!,
+          stdout: `source ${token}`,
+          stderr: `Bearer ${token}`,
+          journal: [{ at: "2026-11-12T00:00:00.000Z", event: "finished", detail: token }]
+        }
+      },
+      "fixture legacy check"
+    );
+    const payload = { ...request, expected_run_version: legacy.version };
+    block = true;
+    try {
+      const started = f.service.repair(request.id, owner, payload);
+      expect(JSON.stringify(started.repair_request!.source_check).includes(token)).toBe(false);
+      expect(JSON.stringify(started.check).includes(token)).toBe(false);
+      expect(started.check).toMatchObject({
+        status: "failed",
+        exitCode: 1,
+        review_hash: request.review_hash,
+        check_type: "node-test"
+      });
+      expect(started.repair_request!.source_check.journal[0]!.detail).toContain("[REDACTED]");
+      expect(f.service.repair(request.id, owner, payload).id).toBe(request.id);
+      expect(f.providerCalls).toHaveLength(3);
+      f.service.cancel(request.id, owner);
+    } finally {
+      release();
+    }
+    await f.service.whenIdle();
+    expect(f.get(request.id).status).toBe("cancelled");
+    expect(f.providerCalls).toHaveLength(3);
+  });
+
+  it.each([
+    {
+      name: "redaction before excerpt",
+      stdout:
+        "x".repeat(7900) +
+        "\n-----BEGIN " +
+        "PRIVATE KEY-----\n" +
+        "SYNTHETIC_BODY_".repeat(50) +
+        "\n-----END " +
+        "PRIVATE KEY-----\n00123",
+      truncated: false,
+      expectedTruncated: false
+    },
+    {
+      name: "long safe output",
+      stdout: "safe output\n".repeat(1000),
+      truncated: false,
+      expectedTruncated: true
+    },
+    {
+      name: "runner already truncated",
+      stdout: "actual -1; expected 5",
+      truncated: true,
+      expectedTruncated: true
+    }
+  ])("bounds canonical feedback: $name", async ({ name, stdout, truncated, expectedTruncated }) => {
+    const runner = repairRunner();
+    const execute = vi.spyOn(runner, "run");
+    const f = await fixture({ responses: repairResponses(), runner });
+    const request = await failedRepair(f);
+    const before = f.get(request.id);
+    const legacy = f.store.save(
+      { ...before, check: { ...before.check!, stdout, truncated } },
+      "fixture feedback boundary"
+    );
+    f.service.repair(request.id, owner, { ...request, expected_run_version: legacy.version });
+    const result = await f.wait(request.id, "proposed");
+    const messages = f.providerCalls[3]!.messages as Array<{ content: string }>;
+    const feedback = (
+      JSON.parse(messages[1]!.content) as {
+        untrusted_execution_feedback: { stdout: string; truncated: boolean };
+      }
+    ).untrusted_execution_feedback;
+    expect(feedback.stdout.length).toBeLessThanOrEqual(8000);
+    expect(feedback.truncated).toBe(expectedTruncated);
+    expect(result.repair_request!.source_check.truncated).toBe(truncated);
+    if (name === "redaction before excerpt") {
+      expect(feedback.stdout.includes("SYNTHETIC_BODY_")).toBe(false);
+      expect(feedback.stdout.endsWith("00123")).toBe(true);
+      expect(feedback.stdout).toContain("[REDACTED]");
+    }
+    if (name === "long safe output") {
+      expect(feedback.stdout.length).toBe(8000);
+      expect(result.repair_request!.source_check.stdout).toBe(stdout);
+    }
+    expect(f.providerCalls).toHaveLength(4);
+    expect(execute).toHaveBeenCalledTimes(2);
+  });
+
+  it("returns a repair refusal for malformed legacy evidence without reserving a model attempt", async () => {
+    const runner = repairRunner();
+    const execute = vi.spyOn(runner, "run");
+    const f = await fixture({ responses: repairResponses(), runner });
+    const request = await failedRepair(f);
+    const run = f.get(request.id);
+    const legacy = f.store.save(
+      {
+        ...run,
+        check: {
+          ...run.check!,
+          journal: [
+            { at: "not-a-time", event: "finished", detail: "synthetic malformed legacy event" }
+          ]
+        }
+      },
+      "fixture invalid legacy evidence"
+    );
+    const { id, ...payload } = { ...request, expected_run_version: legacy.version };
+    const response = await f.app.inject({
+      method: "POST",
+      url: `${f.base}/${id}/repair-v2`,
+      payload
+    });
+    expect(response.statusCode).toBe(409);
+    expect(response.json()).toEqual({ error: { code: "REPAIR_CHECK_REQUIRED" } });
+    expect(f.get(id)).toEqual(legacy);
+    expect(f.get(id).repair_request).toBeUndefined();
+    expect(f.providerCalls).toHaveLength(3);
+    expect(execute).toHaveBeenCalledTimes(1);
+  });
   it("uses the owner's working bytes, preserves two files, reruns the same check and requires fresh review; duplicate dispatch is inert", async () => {
     const f = await fixture({ responses: repairResponses(), runner: repairRunner() });
     const request = await failedRepair(f);

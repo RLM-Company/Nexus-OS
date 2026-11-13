@@ -1,0 +1,52 @@
+[WebServer] (node:3979) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:3979) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:4004) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+
+Running 1 test using 1 worker
+
+(node:4018) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✘  1 [chromium] › e2e/chat-reliability.spec.ts:650:5 › a lost acknowledgement reload restores the exact text action before retrying one request (17.6s)
+
+
+  1) [chromium] › e2e/chat-reliability.spec.ts:650:5 › a lost acknowledgement reload restores the exact text action before retrying one request
+
+    Error: expect(locator).toBeVisible() failed
+
+    Locator: getByRole('button', { name: 'Объяснить тему', exact: true })
+    Expected: visible
+    Timeout: 15000ms
+    Error: element(s) not found
+
+    Call log:
+      - Expect "toBeVisible" with timeout 15000ms
+      - waiting for getByRole('button', { name: 'Объяснить тему', exact: true })
+
+
+      681 |   await page.reload();
+      682 |   await expect(editor).toHaveValue("Объясни тестовый пример 00123");
+    > 683 |   await expect(page.getByRole("button", { name: "Объяснить тему", exact: true })).toBeVisible();
+          |                                                                                   ^
+      684 |   expect(posts).toHaveLength(1);
+      685 |   await send.click();
+      686 |   await expect.poll(() => statuses).toEqual([202, 200]);
+        at /workspace/work/Nexus-OS-chief-2026-11-12/apps/web/e2e/chat-reliability.spec.ts:683:83
+
+    Error Context: test-results/chat-reliability-a-lost-ac-863d4-before-retrying-one-request-chromium/error-context.md
+
+    attachment #2: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results/chat-reliability-a-lost-ac-863d4-before-retrying-one-request-chromium/trace.zip
+    Usage:
+
+        pnpm exec playwright show-trace test-results/chat-reliability-a-lost-ac-863d4-before-retrying-one-request-chromium/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  1 failed
+    [chromium] › e2e/chat-reliability.spec.ts:650:5 › a lost acknowledgement reload restores the exact text action before retrying one request
+undefined
+/workspace/work/Nexus-OS-chief-2026-11-12/apps/web:
+[ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL] Command failed with exit code 1: playwright test -c playwright.acceptance.config.ts e2e/chat-reliability.spec.ts -g 'a lost acknowledgement reload restores' '--workers=1' '--retries=0'

@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   applyCodeExactEdits,
+  assertCodeContextContentSafe,
+  isSafeCodeContextPath,
   codePromptFiles,
   decodeCodeProposal,
   searchCodeContextPaths,
@@ -131,5 +133,73 @@ describe("single text proposal input", () => {
       { query: "a", limit: 100000 }
     ])
       expect(() => searchCodeContextPaths(value, paths)).toThrow("INVALID_TOOL_CALL");
+  });
+});
+
+describe("embedded credential context admission", () => {
+  const samples = [
+    "ghp_" + "G".repeat(36),
+    "github_pat_" + "F".repeat(40),
+    "sk-proj-" + "O".repeat(36),
+    "sk-" + "S".repeat(32),
+    "AK" + "IA" + "A".repeat(16),
+    "AS" + "IA" + "B".repeat(16),
+    "-----BEGIN " + "PRIVATE KEY-----\nsynthetic-only\n",
+    "-----BEGIN " + "OPENSSH PRIVATE KEY-----\nsynthetic-only\n"
+  ];
+  it.each(samples.map((value, i) => ({ value, format: i })))(
+    "rejects recognized format $format on repeated scans without exposing it",
+    ({ value }) => {
+      const content = `// ordinary file\r\nconst value = "${value}";`;
+      for (let attempt = 0; attempt < 2; attempt++) {
+        expect(() => assertCodeContextContentSafe(content)).toThrow("CONTEXT_CONTENT_FORBIDDEN");
+        try {
+          codePromptFiles([{ path: "src/config.ts", content }]);
+        } catch (error) {
+          expect(String(error)).not.toContain(value);
+          continue;
+        }
+        throw new Error("Credential entered model prompt");
+      }
+    }
+  );
+  it("preserves benign credential variable names and exact source bytes", () => {
+    const content =
+      "const apiKey = process.env.API_KEY;\r\nconst password = config.password;\r\n// 19 700; 00123; 2026-11-12; кроме доставки; not enabled";
+    const file = { path: "src/config.js", content };
+    expect(() => assertCodeContextContentSafe(content)).not.toThrow();
+    const prompt = codePromptFiles([file]);
+    expect(prompt[0]!.numbered_lines).toBe(
+      content
+        .split("\n")
+        .map((line, i) => `${i + 1}: ${line}`)
+        .join("\n")
+    );
+    expect(file.content).toBe(content);
+  });
+});
+
+describe("credential-shaped path metadata", () => {
+  it.each(["ghp_", "sk-proj-"])(
+    "excludes %s names consistently from search and prompt files",
+    (prefix) => {
+      const token = prefix + "P".repeat(36);
+      const path = `src/${token}.js`;
+      expect(isSafeCodeContextPath(path)).toBe(false);
+      expect(() => codePromptFiles([{ path, content: "ordinary file" }])).toThrow(
+        "CONTEXT_PATH_FORBIDDEN"
+      );
+      const result = searchCodeContextPaths({ query: "src" }, [{ path }, { path: "src/add.js" }]);
+      expect(JSON.stringify(result).includes(token)).toBe(false);
+      expect(result).toEqual({ files: ["src/add.js"], total_count: 1, partial: false });
+    }
+  );
+  it("retains normal code names and preserves ordinary credential variable text", () => {
+    const path = "src/api-key-validator.js";
+    const content = "const apiKey = config.apiKey; // 19 700; 00123; кроме доставки";
+    expect(isSafeCodeContextPath(path)).toBe(true);
+    expect(codePromptFiles([{ path, content }])).toEqual([
+      { path, numbered_lines: `1: ${content}` }
+    ]);
   });
 });

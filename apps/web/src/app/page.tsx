@@ -30,6 +30,7 @@ import { ProjectTitleEditor } from "./project-title-editor";
 import { QuickSwitcher } from "./quick-switcher";
 import { pinsFirst } from "./pinned-navigation";
 import {
+  DRAFT_LIMITS,
   captureComposerDraft,
   clearComposerDraft,
   clearComposerDraftIfUnchanged,
@@ -407,6 +408,10 @@ const SIDEBAR_SECTIONS_STORAGE_KEY = "cosmora:sidebar-sections";
 const WORKSPACE_SURFACE_STORAGE_KEY = "cosmora:workspace-surface";
 const COMPOSER_DRAFT_STORAGE_PREFIX = "cosmora:composer-draft:";
 const EMPTY_LOCAL_CHAT_MESSAGES: LocalChatMessage[] = [];
+const DEFAULT_COMPOSER_ACTIONS: KosmoraComposerActionsValue = {
+  web_search: false,
+  text_action: null
+};
 
 const composerDraftStorageKey = (projectId: string | null, chatId: string | null): string =>
   `${COMPOSER_DRAFT_STORAGE_PREFIX}${projectId ? `project:${projectId}` : chatId ? `chat:${chatId}` : "new-chat"}`;
@@ -561,10 +566,9 @@ export default function Home() {
   const [demoRuns, setDemoRuns] = useState<DemoManagerRun[]>([]);
   const [demoActionPending, setDemoActionPending] = useState(false);
   const [draft, setDraft, latestDraftRef] = useLiveComposerText();
-  const [composerActions, setComposerActions] = useState<KosmoraComposerActionsValue>({
-    web_search: false,
-    text_action: null
-  });
+  const [draftActions, setDraftActions] = useState(
+    () => new Map<string, KosmoraComposerActionsValue>()
+  );
   const [draftStorageReadyKey, setDraftStorageReadyKey] = useState<string | null>(null);
   const [draftNotice, setDraftNotice] = useState<string | null>(null);
   const [draftRecoveryNotice, setDraftRecoveryNotice] = useState<string | null>(null);
@@ -658,6 +662,23 @@ export default function Home() {
     activeProject?.id ?? selectedProjectRef.current,
     activeLocalChatId
   );
+  const composerActions = draftActions.get(composerDraftKey) ?? DEFAULT_COMPOSER_ACTIONS;
+  const updateDraftActions = (
+    key: string,
+    actions: KosmoraComposerActionsValue,
+    expected?: KosmoraComposerActionsValue
+  ) => {
+    setDraftActions((current) => {
+      const previous = current.get(key) ?? DEFAULT_COMPOSER_ACTIONS;
+      if ((expected && previous !== expected) || previous === actions) return current;
+      const next = new Map(current);
+      next.delete(key);
+      if (actions.web_search || actions.text_action) next.set(key, actions);
+      return next.size > DRAFT_LIMITS.entries
+        ? new Map([...next].slice(-DRAFT_LIMITS.entries))
+        : next;
+    });
+  };
   const chatAttachments = useChatAttachments(`${composerDraftKey}:${viewEpochRef.current}`);
   const pendingComposeRef = useRef<{
     prompt: string;
@@ -693,7 +714,8 @@ export default function Home() {
       key: composerDraftKey,
       text: latest.text,
       revision: latest.revision,
-      files: chatAttachments.snapshotFiles()
+      files: chatAttachments.snapshotFiles(),
+      actions: composerActions
     };
   }, setDraftNotice);
   const updateDraftFromInput = (event: FormEvent<HTMLTextAreaElement>) => {
@@ -766,6 +788,7 @@ export default function Home() {
       const saved = readComposerDraft(window.localStorage, composerDraftKey);
       setDraft(saved.text);
       chatAttachments.replace(saved.files);
+      if ("actions" in saved && saved.actions) updateDraftActions(composerDraftKey, saved.actions);
       const sameScope = draftRecoveryKeyRef.current === composerDraftKey;
       draftRecoveryKeyRef.current = composerDraftKey;
       // Strict-mode remount/reconciliation must not erase a recovery warning after
@@ -878,6 +901,7 @@ export default function Home() {
     draft,
     draftStorageReadyKey,
     chatAttachments.files,
+    composerActions,
     saveBrowserDraft,
     draftEpoch,
     latestDraftRef
@@ -1972,6 +1996,8 @@ export default function Home() {
           };
           const accepted = await postChatMessage<GeneralChatAcceptedResponse>(path, body);
           const clearedDraft = acknowledgeDraft();
+          if (clearedDraft)
+            updateDraftActions(composerDraftKey, DEFAULT_COMPOSER_ACTIONS, composerActions);
           if (epoch !== viewEpochRef.current) {
             void loadGeneralChats().catch(() => undefined);
             return;
@@ -1979,7 +2005,6 @@ export default function Home() {
           if (clearedDraft) {
             chatAttachments.replace([]);
             setDraft("");
-            setComposerActions({ web_search: false, text_action: null });
           }
           viewRequestRef.current += 1;
           const materials = [
@@ -2180,6 +2205,7 @@ export default function Home() {
     if (chatId === null) {
       if (pendingChatSendRef.current?.path === "/api/v1/chats") pendingChatSendRef.current = null;
       clearNewChatRetry();
+      updateDraftActions(composerDraftStorageKey(null, null), DEFAULT_COMPOSER_ACTIONS);
     }
     viewEpochRef.current += 1;
     // An explicit navigation replaces a still-pending initial route selection.
@@ -3477,9 +3503,10 @@ export default function Home() {
               <ModelPicker disabled={sending || loading || !initialRouteReady} />
               {!activeProject && (
                 <KosmoraComposerActions
+                  key={composerDraftKey}
                   disabled={sending || loading || !initialRouteReady}
                   value={composerActions}
-                  onChange={setComposerActions}
+                  onChange={(actions) => updateDraftActions(composerDraftKey, actions)}
                   composerRef={composerRef}
                 />
               )}

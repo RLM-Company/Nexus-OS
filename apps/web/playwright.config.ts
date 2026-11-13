@@ -14,6 +14,8 @@ export default defineConfig({
   timeout: 30_000,
   expect: { timeout: 15_000 },
   retries: process.env.CI ? 1 : 0,
+  // Keep the retry for diagnostics; a recovered failure must still fail the gate.
+  failOnFlakyTests: Boolean(process.env.CI),
   workers: 2,
   reporter: process.env.CI ? "github" : "list",
   use: {
