@@ -1,0 +1,46 @@
+{
+  "results": [
+    {
+      "trial": 1,
+      "exit_code": 0,
+      "log": "nexus-chat-settings-trial-1.log"
+    },
+    {
+      "trial": 2,
+      "exit_code": 0,
+      "log": "nexus-chat-settings-trial-2.log"
+    },
+    {
+      "trial": 3,
+      "exit_code": 0,
+      "log": "nexus-chat-settings-trial-3.log"
+    },
+    {
+      "trial": 4,
+      "exit_code": 0,
+      "log": "nexus-chat-settings-trial-4.log"
+    },
+    {
+      "trial": 5,
+      "exit_code": 0,
+      "log": "nexus-chat-settings-trial-5.log"
+    }
+  ],
+  "fresh_fixture_per_trial": true,
+  "retries": 0,
+  "source_head": "ff51c4fec29c013c12c7454cc925bac219d70967",
+  "source_tree": "191159c5b8da6be7a9fdc43113d7ebaa77e3a331",
+  "main": "9f79c6d5f5e09c21368a7bb9c66ce843a6c74382",
+  "previous_head": "289dce707f4971651294431be7c2904aea7dd9c4",
+  "browser_cases_passed": 15,
+  "distinct_scenarios": 3,
+  "research_cases_passed": 13,
+  "gate_regression_passed": 1,
+  "historical_cause": "unconfirmed; overlap hypothesis not reproduced in these conditions",
+  "model": "fixture",
+  "live_model_called": false,
+  "app_source_changed_by_this_followup": false,
+  "normalization": "logs LF/trailing whitespace and one final newline; JSON Prettier",
+  "previous_exact_ci_success": 43272293412,
+  "new_combined_ci": "pending publication"
+}

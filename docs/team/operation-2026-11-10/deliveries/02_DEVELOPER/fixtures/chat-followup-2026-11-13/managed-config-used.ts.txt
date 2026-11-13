@@ -1,0 +1,13 @@
+import config from "/workspace/work/Nexus-OS-chat-flake-2026-11-12/apps/web/playwright.config";
+export default {
+  ...config,
+  testDir: "/workspace/work/Nexus-OS-chat-flake-2026-11-12/apps/web/e2e",
+  outputDir: "/tmp/nexus-chat-baseline-results",
+  retries: 0,
+  use: { ...config.use, launchOptions: { executablePath: "/usr/bin/chromium" } },
+  webServer: config.webServer.map(server => ({
+    ...server,
+    cwd: "/workspace/work/Nexus-OS-chat-flake-2026-11-12/apps/web",
+    env: { ...server.env, pnpm_config_verify_deps_before_run: "" }
+  }))
+};
