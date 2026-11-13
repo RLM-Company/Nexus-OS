@@ -1,0 +1,16 @@
+{
+  "source_text": "Реквизиты: 19 700 ₽; артикул 00123; 13.11.2026; кроме доставки",
+  "source_files": [
+    {
+      "name": "original.txt",
+      "content": "Не включать доставку: 00123; 19 700"
+    }
+  ],
+  "new_pending_file": {
+    "name": "pending.txt",
+    "content": "Новый ожидающий файл 00123"
+  },
+  "status_fixtures": ["failed", "cancelled"],
+  "history_shape": "user only, no assistant",
+  "model_provider": "fixture; no real model call"
+}

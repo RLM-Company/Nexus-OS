@@ -1,3 +1,26 @@
+Перед публикацией сохранён новый main501d403 (PR573) без изменения своих7 source
+paths; общие contracts прочитаны. Final merge HEAD требует отдельного CI;
+локальный core receipt относится к281. Новая миграция0067 — inherited main, не наша.
+
+# Request recovery, 13 ноября 2026
+
+BASE281604b, branch ops/developer-request-recovery-2026-11-13. Новый Draft PR.
+Отдельный integration commit `6d3fd5a8c46660062a5a4771c34a8aebdec28e7d`
+(локально7a70d40): page.tsx — общий selector и live draft guards;
+chat-attachments.tsx — snapshotReading на существующем latest ref;
+tsconfig.composer-e2e.json — одна строка регистрации strict E2E.
+Полные пути — apps/web/src/app/{page.tsx,chat-attachments.tsx} и
+apps/web/tsconfig.composer-e2e.json. Helper/tests commit9c25062a обязателен вместе с ним.
+Дополнительный integration44eb6f1 — apps/web/playwright.composer.config.ts:
+две новые suites включены в существующий test:e2e:composer. Никаких новых runner/SDK.
+API/contracts/DB/registry не меняются. Макет/CSS и права прежние.
+Закрытый PR566 не обновляется; main281 и изменения PR565/566 сохранены без переписывания.
+Подробности/откат: [отчёт](REQUEST_RECOVERY_2026_11_13_RU.md).
+
+Исторические интеграции ниже.
+
+---
+
 # Terminal run recovery, 13 ноября 2026
 
 BASE7c2abad, source04c4b2e/tree78443d83. Отдельный integration commit
