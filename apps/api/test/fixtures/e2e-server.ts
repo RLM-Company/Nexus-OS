@@ -1,8 +1,35 @@
 import { MockProviderAdapter } from "@cosmora/model-gateway";
+import { ResearchPageReader } from "../../src/research/page-reader.js";
+import { WebSearch } from "../../src/web-search.js";
 import { installPresentationWorkFixture } from "./presentation-work-provider.js";
 import { installChatReliabilityFixture } from "./chat-reliability-provider.js";
 import { installSiteWorkFixture } from "./site-work-provider.js";
 import { installGameWorkFixture } from "./game-work-provider.js";
+
+const researchQuestion = "Какой код указан в архиве лунной станции?";
+const researchUrl = "https://example.org/lunar-station-archive";
+const researchEvidence = "Код архива лунной станции — SELENE-047.";
+const originalSearch = WebSearch.prototype.search;
+const originalRead = ResearchPageReader.prototype.read;
+const searchOrigin = process.env.WEB_SEARCH_ORIGIN;
+process.env.WEB_SEARCH_ORIGIN = searchOrigin || "http://127.0.0.1:8080";
+WebSearch.prototype.search = async function (query, signal, engine) {
+  if (query === researchQuestion) {
+    return {
+      query,
+      searched_at: new Date().toISOString(),
+      items: [{ title: "Архив лунной станции", url: researchUrl, snippet: "" }]
+    };
+  }
+  if (!searchOrigin) throw new Error("Search unavailable");
+  return originalSearch.call(this, query, signal, engine);
+};
+ResearchPageReader.prototype.read = function (url, signal) {
+  if (url === researchUrl) {
+    return Promise.resolve(researchEvidence + " Запись подтверждена реестром станции.");
+  }
+  return originalRead.call(this, url, signal);
+};
 
 // Only the Playwright server imports this fixture. Keep the real HTTP server,
 // coordinator and SQLite lifecycle; hold this synthetic provider response until
@@ -23,6 +50,24 @@ MockProviderAdapter.prototype.stream = async function* (request, signal) {
       model: this.modelId,
       finishReason: "stop",
       usage: { inputTokens: 8, outputTokens: 90 }
+    };
+    return;
+  }
+  if (prompt?.content === "Назови код из отчёта в материалах проекта.") {
+    const reportAttached = request.messages.some(
+      (message) =>
+        message.content.includes(researchEvidence) && message.content.includes(researchUrl)
+    );
+    yield {
+      type: "text.delta",
+      delta: reportAttached ? "Код из отчёта: SELENE-047." : "Отчёт отсутствует в контексте."
+    };
+    yield {
+      type: "response.completed",
+      provider: this.id,
+      model: this.modelId,
+      finishReason: "stop",
+      usage: { inputTokens: 80, outputTokens: 12 }
     };
     return;
   }
