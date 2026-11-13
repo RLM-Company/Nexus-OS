@@ -1,0 +1,14 @@
+{
+  "kind": "chat",
+  "phase": "failed",
+  "text": "Реквизиты: 19 700 ₽; артикул 00123; 13.11.2026; кроме доставки",
+  "files": [
+    {
+      "name": "original.txt",
+      "content": "Не включать доставку: 00123; 19 700"
+    }
+  ],
+  "all_posts": ["/api/v1/chat-navigation/import-pins"],
+  "execution_posts": [],
+  "real_model_called": false
+}

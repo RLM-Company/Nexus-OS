@@ -1,3 +1,26 @@
+Перед публикацией сохранён новый main501d403 (PR573) без изменения своих7 source
+paths; общие contracts прочитаны. Final merge HEAD требует отдельного CI;
+локальный core receipt относится к281. Новая миграция0067 — inherited main, не наша.
+
+# Готово к интеграции: безопасное восстановление запроса, 13 ноября 2026
+
+BASE_SHA281604b726e25118f3edb80e6b2108dc44368339. Branch
+`ops/developer-request-recovery-2026-11-13`, [Draft PR](https://github.com/RLM-Company/Nexus-OS/pulls?q=is%3Apr+head%3Aops%2Fdeveloper-request-recovery-2026-11-13).
+[Отчёт и команды](REQUEST_RECOVERY_2026_11_13_RU.md). Source44eb6f1/tree4867702f;
+final HEAD — в PR/history. GitHub/local source bytes совпали. PR566 интегрирован
+другим участником; закрытая ветка/PR не обновлялись, новая ветка начата от actual main.
+Early failed/cancelled → восстановление текста/вложений → browser draft → reload;
+новые files/whitespace/pending reads защищены. Нового runtime/store/прав нет.
+Baseline8FAIL+2PASS и pending2FAIL сохранены. Первый combined85PASS+4test-counterFAIL,
+затем targeted12PASS. Финальный main281: coreexit0/API1085PASS+1SKIP/web394/DB230,
+production12PASS через штатный config с6readbacks, final types/lint passed.
+Новый HEAD CI проверяется отдельно, затем ревью интегратора. Live ИИ/foreign publish/
+owner-PC/VPS отложены; собственные merge/deploy не выполнялись.
+
+Исторические поставки ниже.
+
+---
+
 # Текущий срез: terminal run recovery, 13 ноября 2026
 
 BASE main7c2abad; ветка ops/developer-postmerge-acceptance-2026-11-13.
