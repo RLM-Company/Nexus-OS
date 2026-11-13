@@ -135,6 +135,7 @@ export { schema };
 export * from "./agent-blueprint-store.js";
 export * from "./agent-instance-store.js";
 export * from "./agent-team-store.js";
+export * from "./agent-team-run-store.js";
 export * from "./agent-studio-mutation-store.js";
 export * from "./emergency-stop-store.js";
 export * from "./general-chat-store.js";

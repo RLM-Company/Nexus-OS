@@ -727,3 +727,65 @@ agent-studio-team-api.test.ts` (3: дефолт, полный поток plan→
 
 **Проверки**: prettier clean, `check:secrets` пройден до пуша. NSIS не
 запускается (desktop/windows не тронут).
+
+**Интеграция (13.11.2026)**: PR #564 слит владельцем — main `b47e5cc9`.
+CI потребовал три прогона: (1) Verify — мой ESLint
+`consistent-type-imports` в сторе + 2 неиспользуемых type-импорта в app.ts
+(починены `edd0d711`), (2) Verify — typecheck db на тест-фикстуре
+(починено `29047473`), Browser acceptance между прогонами флакал на чужом
+`chat-reliability.spec.ts:87` (волна #539) — перезапуск задания зелёный,
+итог 4/4. Урок записан: перед пушем — `pnpm run lint` + `pnpm run
+typecheck` в каждом затронутом пакете. Гигиена на новом tip: волна #563
+мои файлы не тронула; typecheck api чист, тройка agent-studio 9/9,
+desktop/windows 462/0.
+
+---
+
+## Срез 19 (2026-11-13): Multi-Agent, срез 1 — исполнение частей, lifecycle, файловые артефакты с версиями
+
+**Одобрение**: по «продолжаем» владелец выбрал разбиение «Два среза: сначала
+артефакты» и формат «1 blueprint = 1 узел» (вопросы заданы после разведки
+Work-runtime, см. CHECKPOINT п. 44). Потолок статуса — **готово к
+интеграции**; merge только по явному одобрению владельца.
+
+**Разведка (факты)**: планировщик и исполнитель не связаны — ни один
+`ManagerWorkCoordinator` / `WorkDagCoordinator` / `ComputerControlService` /
+CodeAgent / Research не читает `agent_instances` / `agent_team_compositions`.
+Переиспользуемо без изменений: admission, единый WorkOwnerBudget/ledger,
+чекпоинты, `recover()`, `work_artifact_versions` (immutable, sha256/bytes/
+version/published), `WorkDagCoordinator.control` (дочерний Work на узел +
+проверенный readback зависимостей), `run_plan` (последовательное исполнение
+по одной с явным `acknowledge_cost`). Три сериализатора остаются на срез 2.
+
+**Стало (минимальное ядро, без нового исполнителя)**:
+
+- Контракты `packages/contracts/src/agent-studio.ts`: операция
+  `team.activate`, `AgentTeamPartStatus/Part`, Activate/Parts Request/Response,
+  `execution_status: "awaiting_owner_run"` (активация не делает модельных
+  вызовов; платное исполнение остаётся за `run_plan`).
+- Миграция `0067_agent_team_parts.sql` + journal idx 67 + drizzle
+  `agentTeamParts`: lifecycle в **отдельной** таблице (`agent_instances`
+  proposals-only из-за DB CHECK `status='proposed'`), FK на compositions и
+  instances binding.
+- `packages/db/src/agent-team-run-store.ts`: `activate()` (проверка 64-hex
+  composition id, целостность/размер ростера, `goal ≤ 4000`, полный pending
+  ростер, `INSERT OR IGNORE` + fast-path по `agent_team_parts` → граф не
+  пересоздаётся при replay), `parts()` (статус из DAG-узлов, `artifact_count`
+  из published `work_artifact_versions`); 1 blueprint = 1 узел,
+  `goal = task_contract`, `depends_on: []`, стабильный `node_id` из sha256.
+- `apps/api/src/team-graph-adapter.ts`: адаптер `AgentTeamRunGraphPort` к
+  `WorkDagCoordinator.create` (идемпотентен по
+  `client_request_id: "team:<composition_id>"`).
+- Маршруты `apps/api/src/app.ts` в отдельном guard-блоке: POST
+  `.../teams/activate` (через `mutations.create`, replay → activate), GET
+  `.../teams/:compositionId/parts`; error mapping 404/400. Проводка в
+  `apps/api/src/server.ts` через публичный `managerWorkCoordinator.dag`.
+
+**Проверки**: `lint` + `typecheck` в `packages/contracts`, `packages/db`,
+`apps/api` — чистые; затронутые тесты db **16/16** + api **4/4** (включая
+новые `agent-team-run-store.test.ts` 6 сценариев и расширенный team-api до 4);
+prettier clean; `node scripts/check-secrets.mjs` — passed. NSIS/GUI/VM не
+запускались (desktop/windows не тронут); live-приёмка остаётся отложенной.
+
+**Следом (срез 2)**: bounded concurrency — снятие трёх сериализаторов, затем
+arbiter (#538), бюджет команды, панель хода.

@@ -370,6 +370,27 @@ export const agentTeamCompositions = sqliteTable(
   ]
 );
 
+export const agentTeamParts = sqliteTable(
+  "agent_team_parts",
+  {
+    ownerId: text("owner_id").notNull(),
+    projectId: text("project_id").notNull(),
+    compositionId: text("composition_id").notNull(),
+    graphId: text("graph_id").notNull(),
+    instanceId: text("instance_id").notNull(),
+    nodeId: text("node_id").notNull(),
+    status: text("status").notNull(),
+    createdAt: text("created_at").notNull(),
+    updatedAt: text("updated_at").notNull()
+  },
+  (table) => [
+    primaryKey({
+      columns: [table.ownerId, table.projectId, table.compositionId, table.instanceId]
+    }),
+    index("agent_team_parts_project_status_idx").on(table.projectId, table.status, table.updatedAt)
+  ]
+);
+
 export const chats = sqliteTable(
   "chats",
   {
