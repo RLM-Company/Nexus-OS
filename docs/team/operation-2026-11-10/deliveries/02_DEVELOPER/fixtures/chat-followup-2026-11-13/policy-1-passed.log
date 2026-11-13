@@ -1,0 +1,8 @@
+
+ RUN  v4.1.11 /workspace/work/Nexus-OS-chat-flake-2026-11-12/apps/web
+
+
+ Test Files  1 passed (1)
+      Tests  1 passed (1)
+   Start at  07:11:14
+   Duration  2.03s (transform 30ms, setup 0ms, import 41ms, tests 1.75s, environment 0ms)
