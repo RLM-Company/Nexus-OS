@@ -188,6 +188,91 @@ test("saves a complete copy, previews and restores into new chat/file links", as
   });
 });
 
+test("recovers a Drive restore after a lost response and reload", async ({ page }) => {
+  const id = "11111111-1111-4111-8111-111111111111";
+  const chat = "22222222-2222-4222-8222-222222222222";
+  const summary = {
+    chats: 1,
+    files: 0,
+    messages: 2,
+    exported_at: new Date().toISOString(),
+    unfinished_messages: 0,
+    extracted_documents: 0,
+    titles: ["Исходный чат"],
+    filenames: []
+  };
+  const restored = {
+    id,
+    chats: [{ id: chat, title: "Исходный чат · копия" }],
+    files: []
+  };
+  const requests: { token: string; operation_id: string }[] = [];
+  const operations = new Set<string>();
+  let previews = 0;
+  await page.route("**/api/v1/storage/drive**", async (route) => {
+    const request = route.request();
+    const path = new URL(request.url()).pathname;
+    if (path.endsWith("/restore")) {
+      const body = request.postDataJSON() as { token: string; operation_id: string };
+      requests.push(body);
+      operations.add(body.operation_id);
+      if (requests.length === 1) return route.abort("connectionclosed");
+      return route.fulfill({ json: restored });
+    }
+    if (path.endsWith("/preview")) {
+      const token = (++previews === 1 ? "a" : "b").repeat(43);
+      return route.fulfill({ json: { ...summary, token, expires_at: Date.now() + 600000 } });
+    }
+    if (path.endsWith("/backups")) {
+      return route.fulfill({
+        json: {
+          items: [
+            {
+              id,
+              state: "verified",
+              bytes: 200,
+              parts: 1,
+              saved_parts: 1,
+              created_at: summary.exported_at,
+              can_retry: false,
+              preview: summary
+            }
+          ]
+        }
+      });
+    }
+    if (path.endsWith("/sources") || path.endsWith("/restored-files")) {
+      return route.fulfill({ json: { items: [] } });
+    }
+    return route.fulfill({ json: view(true) });
+  });
+
+  await page.goto("/personal-settings#drive-storage");
+  const panel = page.locator("#drive-storage");
+  const open = panel.getByRole("button", { name: "Проверить и восстановить" });
+  const preview = panel.getByRole("region", { name: "Предпросмотр восстановления" });
+  const confirm = preview.getByRole("button", { name: "Восстановить копии" });
+  await open.click();
+  await confirm.click();
+  await expect(panel.getByRole("alert")).toBeVisible();
+  await page.reload();
+  await open.click();
+  await expect(preview).toContainText("Предыдущая попытка не подтвердилась");
+  expect(requests).toHaveLength(1);
+  await confirm.click();
+  await expect(panel.getByRole("link", { name: "Исходный чат · копия" })).toHaveAttribute(
+    "href",
+    `/?chat=${chat}`
+  );
+  expect(requests).toEqual([
+    { token: "a".repeat(43), operation_id: expect.any(String) },
+    { token: "b".repeat(43), operation_id: requests[0]?.operation_id }
+  ]);
+  expect(operations.size).toBe(1);
+  await open.click();
+  await expect(preview).not.toContainText("Предыдущая попытка не подтвердилась");
+});
+
 test("retries an exact Drive selection after the source list changes", async ({
   page
 }, testInfo) => {
