@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCodeEditorNavigationGuard } from "./editor-navigation";
 import { CodeRepairControl } from "./repair-control";
+import { acceptsCodeSnapshot, type CodeSnapshotStamp } from "./snapshot-order";
 import { CodeCheckEvidence, hasVerifiedCodeCheck } from "./check-evidence";
 import { TerminalOutput } from "../ui/terminal-output";
 import { CodePatchEditor } from "./patch-editor";
@@ -226,11 +227,19 @@ export default function CodeAgentPage() {
   const approvalIdentity = useRef("");
   const epoch = useRef(0);
   const activeRun = useRef<string | null>(null);
+  const snapshotSequence = useRef(0);
+  const acceptedSnapshot = useRef<CodeSnapshotStamp | null>(null);
   const requestBusy = useRef(false);
   const createAttempt = useRef<{ signature: string; id: string } | null>(null);
   const root = `/api/v1/projects/${encodeURIComponent(project)}/code-agent`;
 
-  function accept(value: Run, restore = false) {
+  function accept(value: Run, restore = false, sequence = ++snapshotSequence.current): boolean {
+    if (!acceptsCodeSnapshot(acceptedSnapshot.current, value, sequence)) return false;
+    acceptedSnapshot.current = {
+      id: value.id,
+      version: value.version ?? null,
+      sequence: Math.max(sequence, acceptedSnapshot.current?.sequence ?? 0)
+    };
     setRun(value);
     activeRun.current = value.id;
     setRuns((current) => [value, ...current.filter((item) => item.id !== value.id)]);
@@ -265,6 +274,7 @@ export default function CodeAgentPage() {
       markPublication(project, value.id, false);
       setUnknownPublish(false);
     }
+    return true;
   }
 
   useEffect(() => {
@@ -303,6 +313,7 @@ export default function CodeAgentPage() {
   useEffect(() => {
     const requestEpoch = ++epoch.current;
     activeRun.current = null;
+    acceptedSnapshot.current = null;
     proposalIdentity.current = "";
     approvalIdentity.current = "";
     setRun(null);
@@ -313,6 +324,7 @@ export default function CodeAgentPage() {
     setCheckApproved(false);
     setPublishApproved(false);
     if (!project) return;
+    const sequence = ++snapshotSequence.current;
     void api<{ items: Run[] }>(root)
       .then(async (list) => {
         if (epoch.current !== requestEpoch) return;
@@ -323,7 +335,7 @@ export default function CodeAgentPage() {
         if (epoch.current !== requestEpoch) return;
         if (wanted && (!desired || desired.id !== wanted))
           throw new Error("Ответ не подтверждает запрошенную задачу. Другая задача не открыта.");
-        if (desired) accept(desired, true);
+        if (desired) accept(desired, true, sequence);
         linkedRun.current = null;
       })
       .catch((reason: unknown) => {
@@ -338,9 +350,11 @@ export default function CodeAgentPage() {
     const id = run.id;
     const timer = setInterval(() => {
       if (requestBusy.current) return;
+      const sequence = ++snapshotSequence.current;
       void api<Run>(`${root}/${encodeURIComponent(id)}`)
         .then((value) => {
-          if (alive && epoch.current === requestEpoch && activeRun.current === id) accept(value);
+          if (alive && epoch.current === requestEpoch && activeRun.current === id)
+            accept(value, false, sequence);
         })
         .catch((reason: unknown) => {
           if (alive) setError(failureMessage(reason));
@@ -391,12 +405,16 @@ export default function CodeAgentPage() {
     }
     requestBusy.current = true;
     const actionEpoch = epoch.current;
+    const sequence = ++snapshotSequence.current;
     setBusy(true);
     setError(null);
     try {
       const value = await operation();
       if (epoch.current !== actionEpoch) return;
-      accept(value, replacesEditor);
+      if (!accept(value, replacesEditor, sequence)) {
+        setError("Получено устаревшее состояние задачи. Показана последняя принятая версия.");
+        return;
+      }
       if (reconcile && !["uncertain", "publishing"].includes(value.status)) {
         markPublication(project, value.id, false);
         setUnknownPublish(false);
@@ -449,12 +467,14 @@ export default function CodeAgentPage() {
     editingInvalidated.current = true;
     const id = run.id,
       requestEpoch = epoch.current;
+    const sequence = ++snapshotSequence.current;
     const pending = api<Run>(`${root}/${encodeURIComponent(id)}/invalidate-review`, {
       proposal_hash: run.proposal_hash,
       expected_review_hash: editorReviewHash.current
     })
       .then((value) => {
-        if (epoch.current === requestEpoch && activeRun.current === id) accept(value);
+        if (epoch.current === requestEpoch && activeRun.current === id)
+          accept(value, false, sequence);
       })
       .catch((e: unknown) => {
         if (epoch.current === requestEpoch && activeRun.current === id) {
