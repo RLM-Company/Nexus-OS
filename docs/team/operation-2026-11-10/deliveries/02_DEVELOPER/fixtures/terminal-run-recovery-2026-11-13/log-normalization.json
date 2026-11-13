@@ -1,0 +1,50 @@
+{
+  "reason": "git diff --check initially rejected trailing whitespace in captured test logs; only ANSI formatting and trailing whitespace normalized, test failures retained",
+  "logs": [
+    {
+      "file": "api-oci-base-main/test-passed.log",
+      "raw_sha256": "ada0e5171fb9d9050533b7d5112b13464faa71c6091759f9c0647c64e2c76a4d",
+      "normalized_sha256": "76432a93d003d2b3777a8882e50c35e3c8262108d4876f5497ab9e4ba98bc67a"
+    },
+    {
+      "file": "baseline-browser.log",
+      "raw_sha256": "ac110053ea53a35e33e6f00471491ea0321d2d045f237e663554eb363e02159d",
+      "normalized_sha256": "80cd4996ac37142378d1975d395e0dd443ae41ec3508e10f922c8da93248ce93"
+    },
+    {
+      "file": "browser-passed.log",
+      "raw_sha256": "4f4410c0817fc65d40c496db4a0a7b67cc4bb60a4c18e4a69377111f5aaac665",
+      "normalized_sha256": "4f4410c0817fc65d40c496db4a0a7b67cc4bb60a4c18e4a69377111f5aaac665"
+    },
+    {
+      "file": "core-summary.log",
+      "raw_sha256": "90958711829984c0930b97915c18b7eeda2a1a4d3c77851eca87f8596ca9de0e",
+      "normalized_sha256": "90958711829984c0930b97915c18b7eeda2a1a4d3c77851eca87f8596ca9de0e"
+    },
+    {
+      "file": "initial-test-precondition-failure.log",
+      "raw_sha256": "d18b6a71a362e06b2771b43ed49a109caa3938ca98136306c5fa2d34e2981809",
+      "normalized_sha256": "f5312a0e6613d7e41cea9524834a9d83ef160ff911cd53afc83e531d4082b66f"
+    },
+    {
+      "file": "initial-unit-syntax-failure.log",
+      "raw_sha256": "ef9b709d1e5b987a84fb8041e87ce7f7ed3abc56870f567ba6e4cd40eadb5d6b",
+      "normalized_sha256": "eb02c202ad09a12dd3691c70f5f9fc175abea73f78a8da510262d6ed85908792"
+    },
+    {
+      "file": "lint-passed.log",
+      "raw_sha256": "dd1bf47cbb2da617b6ddb7cf1a7d8d01728f9ef51cf35d7bc2540dd5dd63bfea",
+      "normalized_sha256": "dd1bf47cbb2da617b6ddb7cf1a7d8d01728f9ef51cf35d7bc2540dd5dd63bfea"
+    },
+    {
+      "file": "typecheck-passed.log",
+      "raw_sha256": "1475f78050db187184afa0ab45921cf738a9f01a81845f49feb40360f4307064",
+      "normalized_sha256": "1475f78050db187184afa0ab45921cf738a9f01a81845f49feb40360f4307064"
+    },
+    {
+      "file": "unit-passed.log",
+      "raw_sha256": "0374a7e58bbca8161f68e6069210bfe06bc2dc7c38f76d6ed889c900fbc6d99a",
+      "normalized_sha256": "da4fa03510eb2bb9e98c784dda89f10f2cb1166e8c958a1a01c06bb78a145f38"
+    }
+  ]
+}

@@ -1,0 +1,187 @@
+{
+  "source": {
+    "run_id": 43389934875,
+    "job_id": 131767263951,
+    "artifact_id": 14020214341,
+    "artifact_sha256": "c08fc944137e8b5d5a49169dca0f475e2445985d344a458853fb7643970aed69",
+    "head_sha": "6aad823df1e74f009d79ab277980f9bfde95543b"
+  },
+  "terminal_streams": [
+    {
+      "at_ms": 89867.298,
+      "event": "run.cancelled"
+    },
+    {
+      "at_ms": 89909.941,
+      "event": "run.cancelled"
+    },
+    {
+      "at_ms": 89931.087,
+      "event": "run.cancelled"
+    },
+    {
+      "at_ms": 89948.529,
+      "event": "run.cancelled"
+    },
+    {
+      "at_ms": 89980.129,
+      "event": "run.cancelled"
+    },
+    {
+      "at_ms": 89996.262,
+      "event": "run.cancelled"
+    },
+    {
+      "at_ms": 90052.975,
+      "event": "run.cancelled"
+    },
+    {
+      "at_ms": 90096.879,
+      "event": "run.cancelled"
+    },
+    {
+      "at_ms": 90141.389,
+      "event": "run.cancelled"
+    },
+    {
+      "at_ms": 90208.837,
+      "event": "run.cancelled"
+    },
+    {
+      "at_ms": 90251.943,
+      "event": "run.cancelled"
+    }
+  ],
+  "history_reads": [
+    {
+      "at_ms": 89793.414,
+      "messages": [
+        {
+          "role": "user",
+          "status": "completed",
+          "has_run_id": true
+        }
+      ]
+    },
+    {
+      "at_ms": 89823.405,
+      "messages": []
+    },
+    {
+      "at_ms": 89886.428,
+      "messages": [
+        {
+          "role": "user",
+          "status": "completed",
+          "has_run_id": true
+        }
+      ]
+    },
+    {
+      "at_ms": 89918.535,
+      "messages": [
+        {
+          "role": "user",
+          "status": "completed",
+          "has_run_id": true
+        }
+      ]
+    },
+    {
+      "at_ms": 89940.647,
+      "messages": [
+        {
+          "role": "user",
+          "status": "completed",
+          "has_run_id": true
+        }
+      ]
+    },
+    {
+      "at_ms": 89957.622,
+      "messages": [
+        {
+          "role": "user",
+          "status": "completed",
+          "has_run_id": true
+        }
+      ]
+    },
+    {
+      "at_ms": 89984.306,
+      "messages": [
+        {
+          "role": "user",
+          "status": "completed",
+          "has_run_id": true
+        }
+      ]
+    },
+    {
+      "at_ms": 90014.617,
+      "messages": [
+        {
+          "role": "user",
+          "status": "completed",
+          "has_run_id": true
+        }
+      ]
+    },
+    {
+      "at_ms": 90062.067,
+      "messages": [
+        {
+          "role": "user",
+          "status": "completed",
+          "has_run_id": true
+        }
+      ]
+    },
+    {
+      "at_ms": 90104.622,
+      "messages": [
+        {
+          "role": "user",
+          "status": "completed",
+          "has_run_id": true
+        }
+      ]
+    },
+    {
+      "at_ms": 90163.418,
+      "messages": [
+        {
+          "role": "user",
+          "status": "completed",
+          "has_run_id": true
+        }
+      ]
+    },
+    {
+      "at_ms": 90217.239,
+      "messages": [
+        {
+          "role": "user",
+          "status": "completed",
+          "has_run_id": true
+        }
+      ]
+    },
+    {
+      "at_ms": 90253.064,
+      "messages": [
+        {
+          "role": "user",
+          "status": "completed",
+          "has_run_id": true
+        }
+      ]
+    }
+  ],
+  "finding": "run.cancelled repeatedly reopened because user-only history was inferred as queued",
+  "limits": [
+    "Trace does not prove that React accepted text and then erased it. The field alternated disabled/enabled while fill ran.",
+    "The reason the original run was cancelled is not established here.",
+    "Historical November 12 error-launch failure remains separate and its missing trace is not reconstructed."
+  ]
+}

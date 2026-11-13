@@ -1,0 +1,13 @@
+{
+  "base_sha": "7c2abadfe7d0e42ee9b72bc77608290584023996",
+  "local_source_sha": "3b27dbda129db0655970ace0e511bf79d7699c15",
+  "remote_source_sha": "04c4b2eb03dc0fa8541041d593352ad9ce84a8f6",
+  "expected_source_tree": "78443d831e1c9ca3c7d0fa879039e751776dee15",
+  "actual_remote_source_tree": "78443d831e1c9ca3c7d0fa879039e751776dee15",
+  "source_tree_match": true,
+  "rejected_prepublication_tree": "ff3be2fa66eef732f612793c3301996174ad8c62",
+  "rejection_reason": "Large-file tool output was truncated; Git tree equality gate stopped branch publication. Source re-read in bounded chunks.",
+  "branch_updated_at_mismatch": false,
+  "force_push": false,
+  "main_updated_by_this_session": false
+}

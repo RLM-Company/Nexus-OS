@@ -1,0 +1,67 @@
+{
+  "base_sha": "55446cbd60582df571e65c91f2717132505a0a1a",
+  "base_tree": "ba714b99b1409e332d8d6308beadec4a1fe95156",
+  "image": "sha256:5ba3c1ded6eada2ea16582327a87c672fb3889fca362ee3ac0d78ed742b583c0",
+  "source_review": "0b2f29e5ac5b3d5f12d161446a0246424d1fd03737ce717af97eb37b2f68b53d",
+  "before": {
+    "status": "failed",
+    "snapshotDigest": "e79e58eb056cc093d0bca17696f6b7f2c334b7a5b65166eaf9174d336a7a85bb",
+    "exitCode": 1,
+    "stdout": "node:internal/modules/run_main:107\n    triggerUncaughtException(\n    ^\n\nAssertionError [ERR_ASSERTION]: Expected values to be strictly equal:\n\n-1 !== 5\n\n    at file:///snapshot/workspace/src/add.test.js:3:8\n    at ModuleJob.run (node:internal/modules/esm/module_job:561:25)\n    at async node:internal/modules/esm/loader:647:26\n    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5) {\n  generatedMessage: true,\n  code: 'ERR_ASSERTION',\n  actual: -1,\n  expected: 5,\n  operator: 'strictEqual',\n  diff: 'simple'\n}\n\nNode.js v24.22.3\n✖ /snapshot/workspace/src/add.test.js (30.987612ms)\nℹ tests 1\nℹ suites 0\nℹ pass 0\nℹ fail 1\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 37.588199\n\n✖ failing tests:\n\ntest at src/add.test.js:1:1\n✖ /snapshot/workspace/src/add.test.js (30.987612ms)\n  'test failed'\n",
+    "stderr": "",
+    "truncated": false,
+    "cleanupVerified": true,
+    "journal": [
+      {
+        "at": "2026-11-13T08:35:11.845Z",
+        "event": "snapshot",
+        "detail": "e79e58eb056cc093d0bca17696f6b7f2c334b7a5b65166eaf9174d336a7a85bb"
+      },
+      {
+        "at": "2026-11-13T08:35:11.845Z",
+        "event": "started",
+        "detail": "node-test:oci:no-network:non-root:read-only"
+      },
+      {
+        "at": "2026-11-13T08:35:14.799Z",
+        "event": "finished",
+        "detail": "failed:1"
+      }
+    ],
+    "review_hash": "0b2f29e5ac5b3d5f12d161446a0246424d1fd03737ce717af97eb37b2f68b53d",
+    "check_type": "node-test"
+  },
+  "after": {
+    "status": "passed",
+    "snapshotDigest": "454923c6c8ecefca797b9a852cdee09eff00a90b2bc322cb223b041d03f95491",
+    "exitCode": 0,
+    "stdout": "✔ /snapshot/workspace/src/add.test.js (28.500017ms)\nℹ tests 1\nℹ suites 0\nℹ pass 1\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 36.438101\n",
+    "stderr": "",
+    "truncated": false,
+    "cleanupVerified": true,
+    "journal": [
+      {
+        "at": "2026-11-13T08:35:14.901Z",
+        "event": "snapshot",
+        "detail": "454923c6c8ecefca797b9a852cdee09eff00a90b2bc322cb223b041d03f95491"
+      },
+      {
+        "at": "2026-11-13T08:35:14.901Z",
+        "event": "started",
+        "detail": "node-test:oci:no-network:non-root:read-only"
+      },
+      {
+        "at": "2026-11-13T08:35:20.002Z",
+        "event": "finished",
+        "detail": "passed:0"
+      }
+    ],
+    "proposal_hash": "146896f8d6503f1bee3ce453f3fdd99e602cf4cb17443d8f453b667600fcb540",
+    "check_type": "node-test"
+  },
+  "model_calls": 4,
+  "repair_calls": 1,
+  "real_model_called": false,
+  "github_published": false,
+  "readme_preserved": true
+}

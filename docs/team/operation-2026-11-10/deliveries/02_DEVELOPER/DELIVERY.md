@@ -1,3 +1,18 @@
+# Текущий срез: terminal run recovery, 13 ноября 2026
+
+BASE main7c2abad; ветка ops/developer-postmerge-acceptance-2026-11-13.
+[Поставка и доказательства](TERMINAL_RUN_RECOVERY_2026_11_13_RU.md).
+Предыдущие #549/#551/#558 включены RLM-Company через PR563; в этом сеансе merge нет.
+Подтверждён и исправлен loop terminal → stale user-only history → queued → SSE.
+Source04c4b2e/tree78443d83, 7unitPASS/69browserPASS, scoped types/lintPASS;
+полный check:core exit0 (API1077PASS+1SKIP/web385PASS), build/secretsPASS. Старый baseline3FAIL (12/15/17 observer) сохранён.
+Статус: **готово к интеграции**. [Draft PR по ветке](https://github.com/RLM-Company/Nexus-OS/pulls?q=is%3Apr+head%3Aops%2Fdeveloper-postmerge-acceptance-2026-11-13).
+Следующий шаг: проверить точный HEAD CI нового PR, затем ревью интегратора.
+Настоящая модель, foreign publish и owner-PC/VPS не проверялись и не запускались.
+Предыдущие точки ниже — история, не текущее состояние этого среза.
+
+---
+
 # Интеграционная приёмка с новым main, 12 ноября 2026
 
 PR [#551](https://github.com/RLM-Company/Nexus-OS/pull/551), ветка

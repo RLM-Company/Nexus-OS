@@ -1,0 +1,8 @@
+
+ RUN  v4.1.11 /workspace/work/Nexus-OS-postmerge-2026-11-13/apps/web
+
+
+ Test Files  1 passed (1)
+      Tests  7 passed (7)
+   Start at  08:45:31
+   Duration  229ms (transform 28ms, setup 0ms, import 43ms, tests 4ms, environment 0ms)
