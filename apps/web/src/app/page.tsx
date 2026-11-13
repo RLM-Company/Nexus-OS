@@ -37,6 +37,7 @@ import {
   readComposerDraft
 } from "./composer-draft-storage";
 import { restoredRunState, type TerminalRunObservation } from "./restored-run-state";
+import { recoverableRunDraft } from "./recoverable-run-draft";
 import { useLiveComposerText } from "./use-live-composer-text";
 import {
   chatSendRetryKey,
@@ -460,23 +461,6 @@ const displayedGeneralContent = (message: LocalChatMessage): string | null => {
         ? "Для этого запроса нет доступного маршрута модели с нужными возможностями."
         : "Ответ завершился с ошибкой.";
   return message.content || null;
-};
-
-const recoverableUserMessage = (messages: Message[]): Message | null => {
-  const latestRunMessage = [...messages].reverse().find((message) => message.run_id !== null);
-  if (!latestRunMessage?.run_id) return null;
-  const runId = latestRunMessage.run_id;
-  const terminalAssistant = [...messages]
-    .reverse()
-    .find((message) => message.run_id === runId && message.role === "assistant");
-  if (terminalAssistant?.status !== "failed" && terminalAssistant?.status !== "cancelled") {
-    return null;
-  }
-  return (
-    [...messages]
-      .reverse()
-      .find((message) => message.run_id === runId && message.role === "user") ?? null
-  );
 };
 
 const latestDemoSource = (messages: Message[]): Message | null =>
@@ -1774,16 +1758,19 @@ export default function Home() {
     });
   };
 
-  const failedChatReply = localChatMessages.findLast((message) => message.role === "assistant");
-  const recoverableChatMessage =
-    failedChatReply && ["failed", "cancelled"].includes(failedChatReply.status)
-      ? localChatMessages.find(
-          (message) => message.role === "user" && message.run_id === failedChatReply.run_id
-        )
-      : undefined;
   const recoverableMessage = activeProject
-    ? recoverableUserMessage(messages)
-    : recoverableChatMessage;
+    ? recoverableRunDraft(messages, terminalRunRef.current)
+    : recoverableRunDraft(localChatMessages, terminalRunRef.current);
+  const canRestoreRunDraft = Boolean(
+    recoverableMessage &&
+    !draft.length &&
+    !chatAttachments.files.length &&
+    !chatAttachments.reading &&
+    !sending &&
+    !loading &&
+    initialRouteReady &&
+    draftStorageReadyKey === attachmentScope
+  );
   const demoSource = latestDemoSource(messages);
   const latestDemoRun = demoRuns[0] ?? null;
 
@@ -1865,7 +1852,16 @@ export default function Home() {
   };
 
   const restoreRunDraft = (): void => {
-    if (!recoverableMessage) return;
+    if (
+      !canRestoreRunDraft ||
+      !recoverableMessage ||
+      viewEpochRef.current !== draftEpoch ||
+      submitPendingRef.current ||
+      latestDraftRef.current.text.length ||
+      chatAttachments.snapshotFiles().length ||
+      chatAttachments.snapshotReading()
+    )
+      return;
     setDraft(recoverableMessage.content);
     chatAttachments.replace(recoverableMessage.attachments ?? []);
     setError(null);
@@ -1874,8 +1870,7 @@ export default function Home() {
 
   const submit = async (event?: FormEvent, voiceContent?: string): Promise<void> => {
     event?.preventDefault();
-    const submitted = { ...latestDraftRef.current, files: chatAttachments.snapshotFiles() };
-    const recoverableDraft = voiceContent ?? submitted.text;
+    const recoverableDraft = voiceContent ?? latestDraftRef.current.text;
     const content = recoverableDraft.trim();
     if (
       !content ||
@@ -1888,9 +1883,18 @@ export default function Home() {
       executionGate !== "clear"
     )
       return;
+    if (voiceContent !== undefined) {
+      if (latestDraftRef.current.text.trim() || chatAttachments.snapshotFiles().length) return;
+      setDraft(recoverableDraft);
+    }
+    const submitted = { ...latestDraftRef.current, files: chatAttachments.snapshotFiles() };
     submitPendingRef.current = true;
     const submittedEpoch = viewEpochRef.current;
     saveBrowserDraft();
+    const nativeDraft = desktopDraftBridge(window);
+    const nativeScope = nativeDraftScope(composerDraftKey);
+    if (voiceContent !== undefined && nativeDraft && nativeScope)
+      void nativeDraft.save(nativeScope, recoverableDraft).catch(() => undefined);
     let stored: ReturnType<typeof captureComposerDraft> | null = null;
     try {
       if (!desktopDraftBridge(window))
@@ -3519,7 +3523,7 @@ export default function Home() {
                       ↻ Повторить
                     </button>
                   )}
-                  {recoverableMessage && !draft.trim() && (
+                  {canRestoreRunDraft && (
                     <button type="button" className="restore-run" onClick={restoreRunDraft}>
                       ↻ Вернуть запрос в редактор
                     </button>

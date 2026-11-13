@@ -22,7 +22,13 @@ type Backup = {
   has_preview?: boolean;
   preview: Summary;
 };
-type Preview = Summary & { token: string; expires_at: number; backup: string; operation: string };
+type Preview = Summary & {
+  token: string;
+  expires_at: number;
+  backup: string;
+  operation: string;
+  recovering: boolean;
+};
 type Restored = {
   id: string;
   chats: { id: string; title: string }[];
@@ -36,6 +42,23 @@ type BackupRequest = {
   office_file?: { name: string; bytes: string };
 };
 const root = "/api/v1/storage/drive";
+const restoreKey = (backup: string) => `kosmora.drive.restore.v1:${backup}`;
+const readRestoreOperation = (backup: string): string | null => {
+  try {
+    const operation = window.sessionStorage.getItem(restoreKey(backup));
+    return operation && /^[0-9a-f-]{36}$/.test(operation) ? operation : null;
+  } catch {
+    return null;
+  }
+};
+const saveRestoreOperation = (backup: string, operation: string | null) => {
+  try {
+    if (operation) window.sessionStorage.setItem(restoreKey(backup), operation);
+    else window.sessionStorage.removeItem(restoreKey(backup));
+  } catch {
+    // The open preview can still retry with its in-memory operation ID.
+  }
+};
 async function api<T>(path: string, body?: object): Promise<T> {
   const r = await fetch(root + path, {
     cache: "no-store",
@@ -362,7 +385,13 @@ export function GoogleDriveBackupControls({
                         {}
                       );
                       setRestored(null);
-                      setPreview({ ...p, backup: item.id, operation: crypto.randomUUID() });
+                      const pending = readRestoreOperation(item.id);
+                      setPreview({
+                        ...p,
+                        backup: item.id,
+                        operation: pending ?? crypto.randomUUID(),
+                        recovering: pending !== null
+                      });
                     })
                   }
                 >
@@ -420,6 +449,11 @@ export function GoogleDriveBackupControls({
             Будут созданы новые чаты и отдельные файлы. Существующие данные не перезаписываются;
             задачи, доступы и подключения не восстанавливаются. Подтверждение действует 10 минут.
           </p>
+          {preview.recovering && (
+            <p>
+              Предыдущая попытка не подтвердилась. Продолжение вернёт результат той же операции.
+            </p>
+          )}
           {preview.unfinished_messages > 0 && (
             <p>
               Прерванных сообщений: {preview.unfinished_messages}. Они останутся остановленными.
@@ -443,10 +477,12 @@ export function GoogleDriveBackupControls({
             type="button"
             onClick={() =>
               void run(async () => {
+                saveRestoreOperation(preview.backup, preview.operation);
                 const result = await api<Restored>(`/backups/${preview.backup}/restore`, {
                   token: preview.token,
                   operation_id: preview.operation
                 });
+                saveRestoreOperation(preview.backup, null);
                 setRestored(result);
                 setPreview(null);
                 setNotice("Новые копии восстановлены.");

@@ -1,0 +1,60 @@
+{
+  "reason": "Only ANSI and trailing whitespace normalized; failures retained",
+  "logs": [
+    {
+      "name": "baseline-browser.log",
+      "raw_sha256": "f5455654e07babbbfd23324c63e061d0b03bd55b3a7be28497dbe14c20d539ff",
+      "normalized_sha256": "dda7fdd44f61ab12eda5ce1f759f742051f7d6861c87345270bd9076bb8b9184"
+    },
+    {
+      "name": "baseline-pending-file.log",
+      "raw_sha256": "b6f63ca20dc56cbadad565934d8f9e787db1f81b99826f9964107691ae01a595",
+      "normalized_sha256": "854af0eb696227e7a6a2df60d10f48f048ebb0f201db15df5f18a0925145781d"
+    },
+    {
+      "name": "browser-final-main281-passed.log",
+      "raw_sha256": "87e962a2a032989037fd668eb705acd69ce5dab6860f23ef56c93f8d8c51f8d3",
+      "normalized_sha256": "87e962a2a032989037fd668eb705acd69ce5dab6860f23ef56c93f8d8c51f8d3"
+    },
+    {
+      "name": "browser-recovery-passed.log",
+      "raw_sha256": "9602e56d9d29b418562613a48c62acd2a75092df3b9828006b31565af1915d4b",
+      "normalized_sha256": "9602e56d9d29b418562613a48c62acd2a75092df3b9828006b31565af1915d4b"
+    },
+    {
+      "name": "core-final-summary.log",
+      "raw_sha256": "c22654e5bbe21d9d74e7b11974e5caee9273ce51bf79d422e8d479551da16e39",
+      "normalized_sha256": "c22654e5bbe21d9d74e7b11974e5caee9273ce51bf79d422e8d479551da16e39"
+    },
+    {
+      "name": "final-lint-passed.log",
+      "raw_sha256": "dd1bf47cbb2da617b6ddb7cf1a7d8d01728f9ef51cf35d7bc2540dd5dd63bfea",
+      "normalized_sha256": "dd1bf47cbb2da617b6ddb7cf1a7d8d01728f9ef51cf35d7bc2540dd5dd63bfea"
+    },
+    {
+      "name": "final-types-passed.log",
+      "raw_sha256": "1475f78050db187184afa0ab45921cf738a9f01a81845f49feb40360f4307064",
+      "normalized_sha256": "1475f78050db187184afa0ab45921cf738a9f01a81845f49feb40360f4307064"
+    },
+    {
+      "name": "first-browser-run-test-counter-failure.log",
+      "raw_sha256": "1e7174f652b1c7d7c6ebf6a461641934e4c06712d882f604bf72400c8f78d461",
+      "normalized_sha256": "de3bb3bb005bab582bf29066dd40439cb94d5c3838ea28d33d1d5763132bb3bc"
+    },
+    {
+      "name": "registered-suite-list.log",
+      "raw_sha256": "5dc5c5747c8c160df730621007a3b6fb20de6faf2d5ebe10c2ea62a028eeba00",
+      "normalized_sha256": "5dc5c5747c8c160df730621007a3b6fb20de6faf2d5ebe10c2ea62a028eeba00"
+    },
+    {
+      "name": "source-first-format-failure.log",
+      "raw_sha256": "5ee0e78ba0073236f9c7ed0a8f3612b7ef52531f85d8046764c78c2b26b0b2cf",
+      "normalized_sha256": "5ee0e78ba0073236f9c7ed0a8f3612b7ef52531f85d8046764c78c2b26b0b2cf"
+    },
+    {
+      "name": "unit-initial-passed.log",
+      "raw_sha256": "3c8bdb92fa3d976178f5dc4afda432f7f4255d4dbc43f387186bb424abb56f88",
+      "normalized_sha256": "bbd746ac78f1f7b653f3b0afa40367d69d48bbc7c2707469a17db0013fb9c3d6"
+    }
+  ]
+}

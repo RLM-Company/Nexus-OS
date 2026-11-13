@@ -9,7 +9,7 @@ import { WorkManagerProgress } from "./work-manager-progress";
 import { WorkManagerMemory } from "./work-manager-memory";
 import { DesktopComputerButton } from "./desktop-computer-button";
 import { useEffect, useRef, useState } from "react";
-import type { CreateManagerWork } from "@cosmora/contracts";
+import { MANAGER_WORK_CONTROL_EVENTS, type CreateManagerWork } from "@cosmora/contracts";
 import { startVisibleReadPolling } from "./visible-read-poller";
 import { executionGateLabels, useExecutionGate } from "./use-execution-gate";
 
@@ -66,7 +66,16 @@ const errors: Record<string, string> = {
   WAITING_CONFIRMATION: "Подтвердите сохранение в центре управления, затем продолжите работу."
 };
 
-async function json<T>(url: string, init?: RequestInit): Promise<T> {
+class WorkHttpError extends Error {
+  constructor(
+    message: string,
+    readonly status: number
+  ) {
+    super(message);
+  }
+}
+
+async function json<T>(url: string, init?: RequestInit, onMissing?: () => T): Promise<T> {
   const response = await fetch(url, {
     ...init,
     cache: "no-store",
@@ -74,6 +83,7 @@ async function json<T>(url: string, init?: RequestInit): Promise<T> {
       ? AbortSignal.any([init.signal, AbortSignal.timeout(15000)])
       : AbortSignal.timeout(15000)
   });
+  if (response.status === 404 && onMissing) return onMissing();
   if (!response.ok) {
     let code: unknown;
     try {
@@ -81,15 +91,76 @@ async function json<T>(url: string, init?: RequestInit): Promise<T> {
     } catch {
       // Only known error codes are shown; arbitrary server text stays private.
     }
-    throw new Error(
-      typeof code === "string" && Object.hasOwn(errors, code)
-        ? errors[code]
-        : response.status === 409
+    const message =
+      typeof code === "string" && Object.hasOwn(errors, code) ? errors[code] : undefined;
+    throw new WorkHttpError(
+      message ??
+        (response.status === 409
           ? "Состояние уже изменилось. Обновите его и повторите действие."
-          : "Не удалось выполнить запрос. Проверьте соединение."
+          : "Не удалось выполнить запрос. Проверьте соединение."),
+      response.status
     );
   }
   return response.json() as Promise<T>;
+}
+
+function readPendingWork(key: string): CreateManagerWork | null {
+  try {
+    const raw = window.sessionStorage.getItem(key);
+    if (!raw || raw.length > 50_000) return null;
+    const draft = JSON.parse(raw) as Partial<CreateManagerWork> | null;
+    if (
+      !draft ||
+      Object.keys(draft).length !== 7 ||
+      typeof draft.client_request_id !== "string" ||
+      !/^[a-f0-9-]{36}$/.test(draft.client_request_id) ||
+      typeof draft.goal !== "string" ||
+      !draft.goal.trim() ||
+      draft.goal.length > 8000 ||
+      (draft.worker_role !== "analyst" && draft.worker_role !== "architect") ||
+      typeof draft.require_critic !== "boolean" ||
+      draft.max_model_requests !== 3 ||
+      typeof draft.max_input_tokens !== "number" ||
+      !Number.isInteger(draft.max_input_tokens) ||
+      draft.max_input_tokens < 1000 ||
+      draft.max_input_tokens > 3_000_000 ||
+      typeof draft.max_output_tokens !== "number" ||
+      !Number.isInteger(draft.max_output_tokens) ||
+      draft.max_output_tokens < 256 ||
+      draft.max_output_tokens > 300_000
+    )
+      return null;
+    return draft as CreateManagerWork;
+  } catch {
+    return null;
+  }
+}
+
+function readWorkSelection(key: string): string | null {
+  try {
+    const id = window.sessionStorage.getItem(key);
+    return id && /^[a-f0-9-]{36}$/.test(id) ? id : null;
+  } catch {
+    return null;
+  }
+}
+
+function savePendingWork(key: string, request: CreateManagerWork | null) {
+  try {
+    if (request) window.sessionStorage.setItem(key, JSON.stringify(request));
+    else window.sessionStorage.removeItem(key);
+  } catch {
+    // The in-memory request remains available for a retry in the open panel.
+  }
+}
+
+function saveWorkSelection(key: string, id: string | null) {
+  try {
+    if (id) window.sessionStorage.setItem(key, id);
+    else window.sessionStorage.removeItem(key);
+  } catch {
+    // The current selection still works when browser storage is unavailable.
+  }
 }
 
 export function ManagerWorkPanel({
@@ -120,6 +191,8 @@ export function ManagerWorkPanel({
   const mutationEpoch = useRef(0);
   const pending = useRef<CreateManagerWork | null>(null);
   const base = "/api/v1/projects/" + encodeURIComponent(projectId) + "/work";
+  const pendingKey = "kosmora:manager-work-pending:v1:" + projectId;
+  const selectionKey = "kosmora:manager-work-selection:v1:" + projectId;
   const draft = pending.current;
   const pendingRequest =
     draft &&
@@ -139,6 +212,22 @@ export function ManagerWorkPanel({
       ? Math.max(256, Math.min(300_000, runtime.max_output_tokens * 3))
       : 6000);
   useEffect(() => {
+    let active = true;
+    queueMicrotask(() => {
+      if (!active) return;
+      const saved = readPendingWork(pendingKey);
+      if (!saved) return;
+      pending.current = saved;
+      setGoal(saved.goal);
+      setRole(saved.worker_role);
+      setCritic(Boolean(saved.require_critic));
+      setError("Подтверждение предыдущего запуска потеряно. Повтор отправит тот же запрос.");
+    });
+    return () => {
+      active = false;
+    };
+  }, [pendingKey]);
+  useEffect(() => {
     return startVisibleReadPolling(
       async (signal) => {
         const epoch = mutationEpoch.current;
@@ -149,15 +238,23 @@ export function ManagerWorkPanel({
           })
         ]);
         // History is bounded. Its window moving is not a change of selection.
-        const selected = selectedWorkId
-          ? (list.items.find((item) => item.id === selectedWorkId) ??
-            (await json<Work>(base + "/" + encodeURIComponent(selectedWorkId), { signal })))
+        const wanted = selectedWorkId ?? readWorkSelection(selectionKey);
+        const selected = wanted
+          ? (list.items.find((item) => item.id === wanted) ??
+            (await json<Work | null>(
+              base + "/" + encodeURIComponent(wanted),
+              { signal },
+              () => null
+            )))
           : null;
+        if (selected && selected.id !== wanted) throw Error("Unexpected work selection");
         const items =
           selected && !list.items.some((item) => item.id === selected.id)
             ? [...list.items, selected]
             : list.items;
         if (!signal.aborted && epoch === mutationEpoch.current && !lock.current) {
+          if (wanted && !selected) saveWorkSelection(selectionKey, null);
+          setSelectedWorkId(selected?.id ?? null);
           const latest = selected ?? items[0] ?? null;
           setWorks((current) =>
             items.map((item) => {
@@ -180,7 +277,7 @@ export function ManagerWorkPanel({
         onError: () => setReadError("Состояние временно недоступно. Работа сохраняется на сервере.")
       }
     );
-  }, [base, selectedWorkId]);
+  }, [base, selectedWorkId, selectionKey]);
   const recordMutation = (updated: Work, epoch: number) => {
     setWorks((current) =>
       current.some((item) => item.id === updated.id)
@@ -192,16 +289,18 @@ export function ManagerWorkPanel({
     // A later history selection is the current intent. A late command response
     // updates its own history row without switching the selected task back.
     if (epoch === mutationEpoch.current) {
+      saveWorkSelection(selectionKey, updated.id);
       setSelectedWorkId(updated.id);
       setWork((previous) =>
         previous?.id === updated.id && previous.version > updated.version ? previous : updated
       );
     }
   };
-  const act = async (action?: "pause" | "resume" | "approve" | "cancel") => {
+  const act = async (action?: keyof typeof MANAGER_WORK_CONTROL_EVENTS) => {
     if ((!action || action === "resume" || action === "approve") && executionGate !== "clear")
       return;
-    if (lock.current) return;
+    if (lock.current || (action && !work)) return;
+    const controlled = action && work ? work : null;
     const epoch = ++mutationEpoch.current;
     lock.current = true;
     setBusy(true);
@@ -224,6 +323,7 @@ export function ManagerWorkPanel({
             max_output_tokens: taskOutputBudget
           };
         body = pendingRequest ?? pending.current;
+        savePendingWork(pendingKey, pending.current);
       }
       const updated = await json<Work>(url, {
         method: "POST",
@@ -231,8 +331,30 @@ export function ManagerWorkPanel({
         body: JSON.stringify(body)
       });
       recordMutation(updated, epoch);
-      if (!action) pending.current = null;
+      if (!action) {
+        pending.current = null;
+        savePendingWork(pendingKey, null);
+      }
     } catch (cause) {
+      if (action && controlled && !(cause instanceof WorkHttpError && cause.status < 500)) {
+        const path = base + "/" + encodeURIComponent(controlled.id);
+        const current = await json<Work>(path).catch(() => null);
+        const lastSequence = controlled.events.at(-1)?.sequence ?? 0;
+        if (
+          current?.id === controlled.id &&
+          current.version > controlled.version &&
+          current.events.some(
+            (event) =>
+              event.sequence > lastSequence && event.message === MANAGER_WORK_CONTROL_EVENTS[action]
+          )
+        ) {
+          recordMutation(current, epoch);
+          return;
+        }
+        if (epoch === mutationEpoch.current)
+          setError("Ответ на команду потерян. Проверьте историю задачи перед повтором.");
+        return;
+      }
       if (epoch === mutationEpoch.current)
         setError(
           cause instanceof Error && cause.name === "TimeoutError"
@@ -402,6 +524,7 @@ export function ManagerWorkPanel({
                 aria-pressed={item.id === (selectedWorkId ?? works[0]?.id)}
                 onClick={() => {
                   mutationEpoch.current++;
+                  saveWorkSelection(selectionKey, item.id);
                   setSelectedWorkId(item.id);
                   setWork(item);
                   setError("");

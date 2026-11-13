@@ -40,6 +40,22 @@ describe("tab-scoped chat send retries", () => {
     expect(records.size).toBe(0);
   });
 
+  it("retains different uncertain requests in the same chat and acknowledges each independently", async () => {
+    const path = "/api/v1/chats/example/messages";
+    const first = (await chatSendRetryKey(path, "first request"))!;
+    const second = (await chatSendRetryKey(path, "second request"))!;
+    saveChatSendRetry(first, "first-id");
+    saveChatSendRetry(second, "second-id");
+    expect(readChatSendRetry(first)).toBe("first-id");
+    expect(readChatSendRetry(second)).toBe("second-id");
+
+    clearChatSendRetry(second.scope, "second-id");
+    expect(readChatSendRetry(second)).toBeUndefined();
+    expect(readChatSendRetry(first)).toBe("first-id");
+    clearChatSendRetry(first.scope, "first-id");
+    expect(records.size).toBe(0);
+  });
+
   it("keeps only the newest 16 markers and clears a fresh chat independently", async () => {
     const fresh = (await chatSendRetryKey("/api/v1/chats", "new conversation"))!;
     const keys = await Promise.all(

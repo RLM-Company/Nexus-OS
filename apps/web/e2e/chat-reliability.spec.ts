@@ -485,6 +485,55 @@ test("two uncertain sends remain independently retryable after navigation and re
   expect(await markers()).toBeNull();
 });
 
+test("a later send in the same chat cannot erase the retry of an accepted message", async ({
+  page,
+  request
+}) => {
+  const created = await request.post("/api/v1/chats", {
+    data: { initial_message: "Чат для проверки", client_message_id: crypto.randomUUID() }
+  });
+  expect(created.status()).toBe(201);
+  const { chat } = (await created.json()) as { chat: { id: string } };
+  const first = "Первое сообщение без подтверждения";
+  const second = "Другой запрос в том же чате";
+  const posts: unknown[] = [];
+  const statuses: number[] = [];
+  let acceptedStream = "";
+  await page.route(`**/api/v1/chats/${chat.id}/messages`, async (route) => {
+    if (route.request().method() !== "POST") return route.continue();
+    posts.push(route.request().postDataJSON());
+    const accepted = await route.fetch();
+    statuses.push(accepted.status());
+    if (posts.length === 1) {
+      acceptedStream = ((await accepted.json()) as { stream_url: string }).stream_url;
+      await route.abort("connectionreset");
+    } else await route.fulfill({ response: accepted });
+  });
+
+  await page.goto(`/?chat=${chat.id}`);
+  const editor = page.getByLabel("Сообщение Kosmora");
+  const send = page.getByRole("button", { name: "Отправить", exact: true });
+  await editor.fill(first);
+  await send.click();
+  await expect(page.locator(".composer").getByText(/результат запроса неизвестен/)).toBeVisible();
+  expect(acceptedStream).toBeTruthy();
+  const stream = await request.get(acceptedStream);
+  expect(await stream.text()).toContain("event: run.completed");
+  await editor.fill(second);
+  await send.click();
+  await expect(page.getByRole("status")).toHaveText(/Ответ получен/);
+
+  await page.reload();
+  await expect(page.locator(".message.user").filter({ hasText: first })).toHaveCount(1);
+  await editor.fill(first);
+  await send.click();
+  await expect.poll(() => statuses).toEqual([202, 202, 200]);
+  expect(posts[2]).toEqual(posts[0]);
+  await expect(editor).toHaveValue("");
+  for (const content of [first, second])
+    await expect(page.locator(".message.user").filter({ hasText: content })).toHaveCount(1);
+});
+
 test("composer actions belong to their own chat and stay out of another chat request", async ({
   page,
   request
@@ -742,4 +791,52 @@ test("a lost acknowledgement reload restores the exact text action before retryi
   await expect(
     page.locator(".message.user").filter({ hasText: "Объясни тестовый пример 00123" })
   ).toHaveCount(1);
+});
+
+test("a spoken request survives reload before the server acknowledgement", async ({ page }) => {
+  const transcript = "Проверка сохранения голосовой фразы";
+  await page.addInitScript((text) => {
+    class FixtureSpeechRecognition {
+      onresult?: (event: { results: { transcript: string }[][] }) => void;
+      start() {
+        queueMicrotask(() => this.onresult?.({ results: [[{ transcript: text }]] }));
+      }
+      stop() {}
+      abort() {}
+    }
+    Object.defineProperty(window, "SpeechRecognition", { value: FixtureSpeechRecognition });
+  }, transcript);
+  const posts: unknown[] = [];
+  const statuses: number[] = [];
+  let releaseFirst!: () => void;
+  const firstResponse = new Promise<void>((resolve) => {
+    releaseFirst = resolve;
+  });
+  await page.route("**/api/v1/chats", async (route) => {
+    if (route.request().method() !== "POST") return route.continue();
+    posts.push(route.request().postDataJSON());
+    const response = await route.fetch();
+    statuses.push(response.status());
+    if (posts.length === 1) {
+      await firstResponse;
+      await route.abort("connectionreset").catch(() => undefined);
+    } else await route.fulfill({ response });
+  });
+  try {
+    await page.goto("/");
+    await page.getByRole("button", { name: "Открыть голосового помощника", exact: true }).click();
+    await page.getByRole("button", { name: "Говорить", exact: true }).click();
+    await expect.poll(() => statuses).toEqual([201]);
+    await page.reload();
+  } finally {
+    releaseFirst();
+  }
+  const editor = page.getByLabel("Сообщение Kosmora", { exact: true });
+  await expect(editor).toHaveValue(transcript);
+  await page.getByRole("button", { name: "Отправить", exact: true }).click();
+  await expect(page.getByRole("status")).toHaveText(/Ответ получен/);
+  expect(statuses).toEqual([201, 200]);
+  expect(posts[1]).toEqual(posts[0]);
+  await expect(page.locator(".message.user").filter({ hasText: transcript })).toHaveCount(1);
+  await expect(editor).toHaveValue("");
 });

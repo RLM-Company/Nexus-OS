@@ -3,7 +3,12 @@ import base from "./playwright.config";
 const executablePath = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH;
 export default defineConfig({
   ...base,
-  testMatch: ["**/chat-reliability.spec.ts", "**/composer-draft-races.spec.ts"],
+  testMatch: [
+    "**/chat-reliability.spec.ts",
+    "**/composer-draft-races.spec.ts",
+    "**/terminal-run-recovery.spec.ts",
+    "**/run-draft-recovery.spec.ts"
+  ],
   retries: 0,
   workers: 1,
   use: {
