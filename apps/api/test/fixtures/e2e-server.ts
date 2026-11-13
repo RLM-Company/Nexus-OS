@@ -9,7 +9,10 @@ import { installGameWorkFixture } from "./game-work-provider.js";
 const researchQuestion = "Какой код указан в архиве лунной станции?";
 const researchUrl = "https://example.org/lunar-station-archive";
 const researchEvidence = "Код архива лунной станции — SELENE-047.";
+// Retain the prototype methods for the fixture and forward their original receiver with .call.
+// eslint-disable-next-line @typescript-eslint/unbound-method
 const originalSearch = WebSearch.prototype.search;
+// eslint-disable-next-line @typescript-eslint/unbound-method
 const originalRead = ResearchPageReader.prototype.read;
 const searchOrigin = process.env.WEB_SEARCH_ORIGIN;
 process.env.WEB_SEARCH_ORIGIN = searchOrigin || "http://127.0.0.1:8080";
