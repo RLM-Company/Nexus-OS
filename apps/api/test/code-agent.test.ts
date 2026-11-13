@@ -3671,13 +3671,24 @@ it.skipIf(!process.env.CODE_AGENT_TEST_IMAGE)(
     const blobShas = Object.fromEntries(
       Object.keys(originals).map((path) => [path, git("rev-parse", `HEAD:${path}`).trim()])
     );
-    const runner = createCodeAgentWorkspaceRunner({
+    const ociRunner = createCodeAgentWorkspaceRunner({
       runtime: "docker",
       image: process.env.CODE_AGENT_TEST_IMAGE!,
       ...(process.env.CODE_AGENT_TEST_EXECUTABLE
         ? { executable: process.env.CODE_AGENT_TEST_EXECUTABLE }
         : {}),
       limits: { timeoutMs: 30000 }
+    });
+    const executorToken = randomUUID().replaceAll("-", "");
+    const sidecar = createCodeAgentExecutorServer({ token: executorToken, runner: ociRunner });
+    await new Promise<void>((resolve) => sidecar.server.listen(0, "127.0.0.1", resolve));
+    const address = sidecar.server.address();
+    if (!address || typeof address === "string") throw new Error("NO_ADDRESS");
+    resources.push(() => sidecar.stop());
+    const runner = createCodeAgentHttpExecutor({
+      url: `http://127.0.0.1:${address.port}`,
+      token: executorToken,
+      pollMs: 20
     });
     const f = await fixture({
       responses: repairResponses(),
@@ -3776,6 +3787,7 @@ it.skipIf(!process.env.CODE_AGENT_TEST_IMAGE)(
               after: after.proposal_check,
               model_calls: 4,
               repair_calls: 1,
+              executor_transport: "authenticated_loopback_http",
               checkpoint_status: f.get(id).status,
               publication: {
                 adapter_fixture: true,
