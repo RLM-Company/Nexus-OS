@@ -1,5 +1,11 @@
 # Отчёт №2 завершён
 
+## 2026-11-13 — смена документа Office
+
+База 281604b7. Приёмка выполнена на локальной production-сборке и настоящем
+разборе DOCX/PPTX с тестовой выдачей исходного файла Drive. Открыта живая проверка
+на подключённом аккаунте Google после обновления окружения.
+
 Продуктовый main5e01c4fddf2bfc87c7e60b82bae5259f154ce879, дерево совпадает
 с testedheadae2568e9. PR510 и 511 merged. WAVE_2.json/O-003_ACCEPTANCE.json
 фиксируют exact source/test/merge и проверенные jobs. Windows candidate0.27.0.
