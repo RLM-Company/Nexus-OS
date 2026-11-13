@@ -48,11 +48,13 @@ const nodes: WorkDagNodeInput[] = [
 async function fixture(
   options: {
     path?: string;
+    maxConcurrentWork?: number;
     ownerBudget?: WorkOwnerBudget;
     onCall?: (request: ModelRequest, signal: AbortSignal) => Promise<void>;
     output?: (request: ModelRequest) => unknown;
   } = {}
 ) {
+  const cap = options.maxConcurrentWork ?? 1;
   const db = openDatabase(options.path ?? ":memory:");
   let closed = false;
   const close = () => {
@@ -65,7 +67,7 @@ async function fixture(
   await runMigrations(db);
   const accountStore = new AccountStore(db.sqlite);
   accountStore.migrate();
-  const store = new ManagerWorkStore(db.sqlite),
+  const store = new ManagerWorkStore(db.sqlite, { maxConcurrentWork: cap }),
     projects = new ProjectStore(db.sqlite),
     policy = new PolicyStore(db.sqlite),
     emergency = new EmergencyStopStore(db.sqlite);
@@ -135,7 +137,8 @@ async function fixture(
     emergency,
     gateway,
     manager: runtime.manager,
-    ownerBudget: options.ownerBudget ?? accountStore
+    ownerBudget: options.ownerBudget ?? accountStore,
+    maxConcurrentWork: cap
   };
   const coordinator = new ManagerWorkCoordinator(deps),
     dag = coordinator.dag;
@@ -1792,5 +1795,113 @@ describe("executable durable Work DAG", () => {
     expect(g.nodes[0]!.attempts[0]!.work_id).not.toBe(orphan.id);
     expect(f.store.get(orphan.id, owner)!.status).toBe("paused");
     expect(f.calls).toHaveLength(2);
+  });
+
+  describe("bounded concurrency (cap=2)", () => {
+    const directRequest = (id: string) => ({
+      client_request_id: id,
+      goal: "Create " + id,
+      worker_role: "analyst" as const,
+      max_model_requests: 3,
+      max_input_tokens: 32000,
+      max_output_tokens: 6000
+    });
+
+    it("launches two independent nodes in one wave, re-reading graph.version between CAS writes", async () => {
+      const f = await fixture({ maxConcurrentWork: 2 });
+      let graph = f.dag.create(f.project.id, owner, owner, {
+        client_request_id: "concurrent-wave",
+        title: "Concurrent wave",
+        nodes: [nodes[0]!, nodes[2]!]
+      });
+      graph = arm(f, graph, 9);
+      const versionBefore = graph.version;
+      f.dag.advance();
+      const launched = f.dag.get(graph.id, owner)!;
+      expect(launched.nodes.filter((node) => node.attempts.length)).toHaveLength(2);
+      expect(launched.version).toBeGreaterThan(versionBefore);
+      expect(launched.execution_waves).toEqual([["brief", "independent"]]);
+      // Both children were prepared and bound without a STALE_DAG conflict.
+      for (const node of launched.nodes)
+        expect(f.store.get(node.attempts[0]!.work_id, owner)?.dag_binding?.bound).toBe(true);
+      await Promise.all(f.store.pending().map((child) => f.coordinator.execute(child.id, owner)));
+      expect(f.dag.get(graph.id, owner)!.nodes.every((node) => node.status === "completed")).toBe(
+        true
+      );
+    });
+
+    it("admits exactly the shared cap, then runs a fenced third Work after release", async () => {
+      const f = await fixture({ maxConcurrentWork: 2 });
+      const works = ["first", "second", "third"].map((id) =>
+        f.store.create(f.project.id, owner, owner, directRequest(id))!
+      );
+      await Promise.all(works.slice(0, 2).map((w) => f.coordinator.execute(w.id, owner)));
+      expect(works.slice(0, 2).every((w) => f.store.get(w.id, owner)?.status === "completed")).toBe(
+        true
+      );
+      expect(f.store.get(works[2]!.id, owner)?.status).toBe("queued");
+      await f.coordinator.execute(works[2]!.id, owner);
+      expect(f.store.get(works[2]!.id, owner)?.status).toBe("completed");
+    });
+
+    it("reserves one budget per first-wave node (up to cap) without double-charging", async () => {
+      const f = await fixture({ maxConcurrentWork: 2 });
+      const wide = f.dag.create(f.project.id, owner, owner, {
+        client_request_id: "budget-cap",
+        title: "Budget cap",
+        nodes: [nodes[0]!, nodes[2]!]
+      });
+      // Two independent ready nodes: the first wave reserves 3 * 2 = 6.
+      expect(() => arm(f, wide, 5)).toThrow("PLAN_REQUEST_LIMIT");
+      expect(() => arm(f, wide, 6)).not.toThrow();
+      const chained = f.dag.create(f.project.id, owner, owner, {
+        client_request_id: "budget-chained",
+        title: "Chained budget",
+        nodes: [nodes[0]!, nodes[1]!]
+      });
+      // A dependency plan has only one ready node in the first wave: reserve 3,
+      // not 3 * cap, so the UI's nodes*3 limit (6) still admits the whole plan.
+      expect(() => arm(f, chained, 6)).not.toThrow();
+      const g = await autoTick(f, chained.id);
+      expect(g.nodes[0]!.status).toBe("completed");
+      expect(g.execution?.status).not.toBe("stopped");
+    });
+
+    it("never exceeds the cap while a first part is still executing", async () => {
+      let begin!: () => void, finish!: () => void;
+      const began = new Promise<void>((resolve) => {
+        begin = resolve;
+      });
+      const late = new Promise<void>((resolve) => {
+        finish = resolve;
+      });
+      let first = true;
+      const f = await fixture({
+        maxConcurrentWork: 2,
+        onCall: async () => {
+          if (first) {
+            first = false;
+            begin();
+            await late;
+          }
+        }
+      });
+      const graph = arm(f, f.create(), 9);
+      f.dag.advance();
+      const children = f.store.pending().map((w) => w.id);
+      expect(children).toHaveLength(2);
+      const runs = children.map((id) => f.coordinator.execute(id, owner));
+      await began;
+      // A third direct launch is still fenced by the shared in-memory cap.
+      const extra = f.store.create(f.project.id, owner, owner, directRequest("extra"))!;
+      await f.coordinator.execute(extra.id, owner);
+      expect(f.store.get(extra.id, owner)?.status).toBe("queued");
+      expect(f.coordinator.capacity()).toBe(2);
+      finish();
+      await Promise.all(runs);
+      expect(children.every((id) => f.store.get(id, owner)?.status === "completed")).toBe(true);
+      // The dependent step is still pending until the next wave reconciles it.
+      expect(f.dag.get(graph.id, owner)!.nodes[1]!.attempts).toHaveLength(0);
+    });
   });
 });
