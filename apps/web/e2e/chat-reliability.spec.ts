@@ -93,8 +93,22 @@ test("restores text and files after closing the tab, isolates chats, removes and
     data: { initial_message: "Чат для черновика", client_message_id: crypto.randomUUID() }
   });
   const { chat } = (await response.json()) as { chat: { id: string } };
+  await expect
+    .poll(async () => {
+      const detail = await request.get(`/api/v1/chats/${chat.id}`);
+      if (!detail.ok()) return false;
+      const { messages } = (await detail.json()) as {
+        messages: { role: string; status: string }[];
+      };
+      return messages.some(
+        (message) => message.role === "assistant" && message.status === "completed"
+      );
+    })
+    .toBe(true);
   await page.goto(`/?chat=${chat.id}`);
-  await page.getByLabel("Сообщение Kosmora").fill("Несохранённый текст");
+  const editor = page.getByRole("textbox", { name: "Сообщение Kosmora" });
+  await editor.fill("Несохранённый текст");
+  await expect(editor).toHaveValue("Несохранённый текст");
   await page.getByLabel("Текстовые файлы и код").setInputFiles(draftFiles);
   await expect(page.getByRole("list", { name: "Прикреплённые файлы" })).toContainText("draft.ts");
   expect(await page.getByLabel("Сообщение Kosmora").inputValue()).toBe("Несохранённый текст");
