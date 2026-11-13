@@ -212,8 +212,10 @@ export default function CodeAgentPage() {
   const [error, setError] = useState<string | null>(null);
   const [checkType, setCheckType] = useState("syntax");
   const [autoCheck, setAutoCheck] = useState(false);
-  const [proofDirty, setProofDirty] = useState(false);
-  const [patchTextDirty, setPatchTextDirty] = useState(false);
+  const [proofDirty, updateProofDirty] = useState(false);
+  const [patchTextDirty, updatePatchTextDirty] = useState(false);
+  const editorDirty = useRef({ files: false, patch: false });
+  const [editorConflict, setEditorConflict] = useState(false);
   const [editorRevision, setEditorRevision] = useState(0);
   const confirmDiscard = useCodeEditorNavigationGuard(proofDirty || patchTextDirty);
   const invalidation = useRef<Promise<void> | null>(null);
@@ -233,6 +235,15 @@ export default function CodeAgentPage() {
   const createAttempt = useRef<{ signature: string; id: string } | null>(null);
   const root = `/api/v1/projects/${encodeURIComponent(project)}/code-agent`;
 
+  function setProofDirty(dirty: boolean) {
+    editorDirty.current.files = dirty;
+    updateProofDirty(dirty);
+  }
+  function setPatchTextDirty(dirty: boolean) {
+    editorDirty.current.patch = dirty;
+    updatePatchTextDirty(dirty);
+  }
+
   function accept(value: Run, restore = false, sequence = ++snapshotSequence.current): boolean {
     if (!acceptsCodeSnapshot(acceptedSnapshot.current, value, sequence)) return false;
     acceptedSnapshot.current = {
@@ -240,6 +251,21 @@ export default function CodeAgentPage() {
       version: value.version ?? null,
       sequence: Math.max(sequence, acceptedSnapshot.current?.sequence ?? 0)
     };
+    const identity = `${value.id}:${value.proposal_hash ?? ""}`;
+    if (
+      !restore &&
+      activeRun.current === value.id &&
+      proposalIdentity.current !== identity &&
+      (editorDirty.current.files || editorDirty.current.patch)
+    ) {
+      // Keep the observed version watermark so even explicit reload cannot rewind it.
+      setEditorConflict(true);
+      setCheckApproved(false);
+      setPublishApproved(false);
+      throw new Error(
+        "Предложение на сервере изменилось. Ваши несохранённые правки оставлены в редакторе. Чтобы перейти к новой версии, нажмите «Загрузить сохранённые правки»."
+      );
+    }
     setRun(value);
     activeRun.current = value.id;
     setRuns((current) => [value, ...current.filter((item) => item.id !== value.id)]);
@@ -249,8 +275,8 @@ export default function CodeAgentPage() {
       setCheckApproved(false);
       setPublishApproved(false);
     }
-    const identity = `${value.id}:${value.proposal_hash ?? ""}`;
     if (restore || proposalIdentity.current !== identity) {
+      setEditorConflict(false);
       if (restore) setEditorRevision((version) => version + 1);
       editingInvalidated.current = false;
       editorReviewHash.current = value.draft?.plan.review_hash ?? null;
@@ -314,6 +340,7 @@ export default function CodeAgentPage() {
     const requestEpoch = ++epoch.current;
     activeRun.current = null;
     acceptedSnapshot.current = null;
+    setEditorConflict(false);
     proposalIdentity.current = "";
     approvalIdentity.current = "";
     setRun(null);
@@ -344,7 +371,8 @@ export default function CodeAgentPage() {
   }, [project]); // Project scope changes invalidate all outstanding reads.
 
   useEffect(() => {
-    if (!run || !["running", "checking", "publishing"].includes(run.status)) return;
+    if (editorConflict || !run || !["running", "checking", "publishing"].includes(run.status))
+      return;
     let alive = true;
     const requestEpoch = epoch.current;
     const id = run.id;
@@ -364,7 +392,7 @@ export default function CodeAgentPage() {
       alive = false;
       clearInterval(timer);
     };
-  }, [project, run?.id, run?.status]);
+  }, [project, run?.id, run?.status, editorConflict]);
 
   async function createProject() {
     if (requestBusy.current || !confirmDiscard()) return;
@@ -455,6 +483,7 @@ export default function CodeAgentPage() {
     !!run &&
     ["proposed", "review", "checked", "failed"].includes(run.status) &&
     !unknownPublish &&
+    !editorConflict &&
     !busy;
   const needsReconciliation =
     !!run && (unknownPublish || ["uncertain", "publishing"].includes(run.status));
@@ -750,7 +779,7 @@ export default function CodeAgentPage() {
                 Обновить состояние
               </button>
               <button
-                disabled={!editable || !run.proposal}
+                disabled={busy || unknownPublish || !run.proposal || (!editable && !editorConflict)}
                 onClick={() =>
                   void action(() => api<Run>(`${root}/${encodeURIComponent(run.id)}`), false, true)
                 }
