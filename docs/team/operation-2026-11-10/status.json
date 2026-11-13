@@ -108,7 +108,7 @@
   ],
   "started_confirmed_by_owner": true,
   "integration_candidate": null,
-  "current_main": "338e5e47a44d4b543f47ce52e3a325433616fefb",
+  "current_main": "500f1beec12e282828eb96a611c307bb4a93ed95",
   "integrated_product_slices": 8,
   "integrated_maintenance_slices": 1,
   "live_release_accepted": false,
@@ -117,10 +117,11 @@
   "product_slice_count_definition": "Historical counters refer to report 2. integrated_prs lists verified delivery references by sphere; production acceptance is tracked separately.",
   "status_checked_on": "2026-11-13",
   "deployment": {
-    "status": "update_pending",
-    "last_verified_vps_source": "74ab1bc6a7c48c9dc27168fd23805e99bf4d67f9",
-    "target_code_revision": "338e5e47a44d4b543f47ce52e3a325433616fefb",
+    "status": "deployed_acceptance_pending",
+    "last_verified_vps_source": "d6307e9c9fdfe4ca71abf9fc59e2138ddbda3243",
+    "target_code_revision": "0bbcc2fcf15ab41befc19ba9a8aa2725b9d4f62e",
     "live_model_accepted": false,
-    "owner_windows_accepted": false
+    "owner_windows_accepted": false,
+    "live_chat_smoke_passed": true
   }
 }
