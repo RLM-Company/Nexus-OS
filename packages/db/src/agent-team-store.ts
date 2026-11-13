@@ -1,12 +1,9 @@
 import { createHash } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
 import type { AgentBlueprint, AgentInstance } from "@cosmora/contracts";
-import { AgentBlueprintStore } from "./agent-blueprint-store.js";
-import {
-  AgentInstanceNotFoundError,
-  AgentInstanceStore,
-  type AgentInstanceIdentity
-} from "./agent-instance-store.js";
+import type { AgentBlueprintStore } from "./agent-blueprint-store.js";
+import { AgentInstanceNotFoundError } from "./agent-instance-store.js";
+import type { AgentInstanceIdentity, AgentInstanceStore } from "./agent-instance-store.js";
 
 export interface AgentTeamStoreOptions {
   now?: () => number;
