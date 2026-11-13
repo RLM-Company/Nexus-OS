@@ -407,7 +407,7 @@ test("selected work stays open outside the history window and keeps control comm
   ).toBe("awaiting_approval");
 });
 
-test("a lost create acknowledgement keeps its complete request across model budget refresh", async ({
+test("a lost create acknowledgement keeps its complete request across reload and model budget refresh", async ({
   page,
   request
 }) => {
@@ -454,7 +454,11 @@ test("a lost create acknowledgement keeps its complete request across model budg
   await expect(
     manager.getByText("Не удалось выполнить запрос. Проверьте соединение.", { exact: true })
   ).toBeVisible();
+  await page.reload();
+  await expect(manager.getByLabel("Задача для выполнения", { exact: true })).toHaveValue(goal);
+  await expect(manager).toContainText("Подтверждение предыдущего запуска потеряно");
   await expect(manager.locator(".manager-work-runtime")).toContainText("fixture-window-B");
+  expect(payloads).toHaveLength(1);
   await expect(manager.locator(".manager-work-limits")).toContainText(/384\s*000/);
   const retry = page.waitForResponse(
     (r) => r.url().endsWith(list) && r.request().method() === "POST"

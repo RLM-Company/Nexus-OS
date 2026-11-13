@@ -92,6 +92,47 @@ async function json<T>(url: string, init?: RequestInit): Promise<T> {
   return response.json() as Promise<T>;
 }
 
+function readPendingWork(key: string): CreateManagerWork | null {
+  try {
+    const raw = window.sessionStorage.getItem(key);
+    if (!raw || raw.length > 50_000) return null;
+    const draft = JSON.parse(raw) as Partial<CreateManagerWork> | null;
+    if (
+      !draft ||
+      Object.keys(draft).length !== 7 ||
+      typeof draft.client_request_id !== "string" ||
+      !/^[a-f0-9-]{36}$/.test(draft.client_request_id) ||
+      typeof draft.goal !== "string" ||
+      !draft.goal.trim() ||
+      draft.goal.length > 8000 ||
+      (draft.worker_role !== "analyst" && draft.worker_role !== "architect") ||
+      typeof draft.require_critic !== "boolean" ||
+      draft.max_model_requests !== 3 ||
+      typeof draft.max_input_tokens !== "number" ||
+      !Number.isInteger(draft.max_input_tokens) ||
+      draft.max_input_tokens < 1000 ||
+      draft.max_input_tokens > 3_000_000 ||
+      typeof draft.max_output_tokens !== "number" ||
+      !Number.isInteger(draft.max_output_tokens) ||
+      draft.max_output_tokens < 256 ||
+      draft.max_output_tokens > 300_000
+    )
+      return null;
+    return draft as CreateManagerWork;
+  } catch {
+    return null;
+  }
+}
+
+function savePendingWork(key: string, request: CreateManagerWork | null) {
+  try {
+    if (request) window.sessionStorage.setItem(key, JSON.stringify(request));
+    else window.sessionStorage.removeItem(key);
+  } catch {
+    // The in-memory request remains available for a retry in the open panel.
+  }
+}
+
 export function ManagerWorkPanel({
   projectId,
   initialGoal
@@ -120,6 +161,7 @@ export function ManagerWorkPanel({
   const mutationEpoch = useRef(0);
   const pending = useRef<CreateManagerWork | null>(null);
   const base = "/api/v1/projects/" + encodeURIComponent(projectId) + "/work";
+  const pendingKey = "kosmora:manager-work-pending:v1:" + projectId;
   const draft = pending.current;
   const pendingRequest =
     draft &&
@@ -138,6 +180,22 @@ export function ManagerWorkPanel({
     (runtime?.max_output_tokens
       ? Math.max(256, Math.min(300_000, runtime.max_output_tokens * 3))
       : 6000);
+  useEffect(() => {
+    let active = true;
+    queueMicrotask(() => {
+      if (!active) return;
+      const saved = readPendingWork(pendingKey);
+      if (!saved) return;
+      pending.current = saved;
+      setGoal(saved.goal);
+      setRole(saved.worker_role);
+      setCritic(Boolean(saved.require_critic));
+      setError("Подтверждение предыдущего запуска потеряно. Повтор отправит тот же запрос.");
+    });
+    return () => {
+      active = false;
+    };
+  }, [pendingKey]);
   useEffect(() => {
     return startVisibleReadPolling(
       async (signal) => {
@@ -224,6 +282,7 @@ export function ManagerWorkPanel({
             max_output_tokens: taskOutputBudget
           };
         body = pendingRequest ?? pending.current;
+        savePendingWork(pendingKey, pending.current);
       }
       const updated = await json<Work>(url, {
         method: "POST",
@@ -231,7 +290,10 @@ export function ManagerWorkPanel({
         body: JSON.stringify(body)
       });
       recordMutation(updated, epoch);
-      if (!action) pending.current = null;
+      if (!action) {
+        pending.current = null;
+        savePendingWork(pendingKey, null);
+      }
     } catch (cause) {
       if (epoch === mutationEpoch.current)
         setError(
