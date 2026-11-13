@@ -789,3 +789,14 @@ prettier clean; `node scripts/check-secrets.mjs` — passed. NSIS/GUI/VM не
 
 **Следом (срез 2)**: bounded concurrency — снятие трёх сериализаторов, затем
 arbiter (#538), бюджет команды, панель хода.
+
+**Интеграция (13.11.2026)**: PR #573 слит владельцем (одобрение «Слить и
+продолжить срез 2») — merge-коммит `501d403f`. CI 4/4 зелёный с первого
+прогона: Verify monorepo 4m14s, identity-tests 40s, Browser acceptance
+12m26s, Code sandbox isolation 42s. `main` к моменту merge вырос до
+`281604b7` (чужая волна #565/#566 — web/research/docs); конфликтов нет
+(`merge-tree` чистый): задетый `app.ts:970` (researchStore в
+registerArtifactContextRoutes) не пересекается с моим блоком team-маршрутов.
+Гигиена на новом tip: `..\Nexus-OS` синхронизирован до `501d403f`;
+desktop/windows `npm run check` **462/0**; typecheck api чист;
+agent-studio-team-api 4/4.

@@ -830,8 +830,10 @@ typecheck` в КАЖДОМ затронутом пакете, не только 
     plan→confirm→activate→replay→parts + decision-events team.activate,
     ошибки 404/400/пустые parts/foreign project). Локально: lint+typecheck
     contracts/db/api чистые, затронутые тесты db 16/16 + api 4/4,
-    prettier clean, check-secrets пройден. **Статус: готово к интеграции
-    (PR/merge — только по явному одобрению владельца).**
+    prettier clean, check-secrets пройден. **Интеграция**: PR #573 слит
+    владельцем 13.11.2026 (merge-коммит `501d403f`, CI 4/4 с первого
+    прогона); гигиена: desktop/windows 462/0, typecheck api чист,
+    team-api 4/4, desc-чекаут синхронизирован.
 
 ## Что делать следующему запуску (в порядке приоритета)
 
