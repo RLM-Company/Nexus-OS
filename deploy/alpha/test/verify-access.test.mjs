@@ -17,6 +17,7 @@ const currentSession = {
 async function fixture(t, overrides = {}) {
   const requests = [];
   let unauthenticatedNavigations = 0;
+  let loggedOut = false;
   const authorization = `Basic ${Buffer.from(`owner:${password}`).toString("base64")}`;
   const server = createServer((request, response) => {
     requests.push({ path: request.url, authorization: request.headers.authorization });
@@ -49,7 +50,20 @@ async function fixture(t, overrides = {}) {
         });
         return;
       }
-      if (request.headers.cookie !== "__Host-cosmora-owner=" + "a".repeat(64)) {
+      const authenticated =
+        !loggedOut && request.headers.cookie === "__Host-cosmora-owner=" + "a".repeat(64);
+      if (request.url === "/__owner/logout") {
+        const valid =
+          authenticated && request.method === "POST" && request.headers.origin === origin;
+        if (!valid || overrides.logoutFailure) {
+          response.writeHead(503).end();
+          return;
+        }
+        loggedOut = true;
+        response.writeHead(303, { location: "/login" }).end();
+        return;
+      }
+      if (!authenticated) {
         if (request.url === "/") unauthenticatedNavigations += 1;
         response
           .writeHead(
@@ -116,10 +130,8 @@ async function fixture(t, overrides = {}) {
   });
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
   t.after(() => new Promise((resolve) => server.close(resolve)));
-  return {
-    origin: `http://127.0.0.1:${server.address().port}`,
-    requests
-  };
+  const origin = `http://127.0.0.1:${server.address().port}`;
+  return { origin, requests, loggedOut: () => loggedOut };
 }
 
 test("verifies password protection, current owner expiry and stop without model requests", async (t) => {
@@ -258,4 +270,31 @@ test("rejects origins with embedded credentials or public cleartext HTTP", async
   ]) {
     await assert.rejects(verifyAccess({ origin, password, now }), /HTTPS origin/u);
   }
+});
+
+test("temporary verification signs out on success and after an authenticated check fails", async (t) => {
+  const verify = (origin) =>
+    verifyAccess({ origin, password, now, authMode: "form", closeFormSession: true });
+
+  const healthy = await fixture(t, { form: true });
+  await verify(healthy.origin);
+  assert.equal(healthy.loggedOut(), true);
+
+  const unhealthy = await fixture(t, { form: true, health: { status: "error" } });
+  await assert.rejects(verify(unhealthy.origin), /SQLite is not healthy/);
+  assert.equal(unhealthy.loggedOut(), true);
+});
+
+test("temporary verification fails when the owner session cannot be closed", async (t) => {
+  const failed = await fixture(t, { form: true, logoutFailure: true });
+  await assert.rejects(
+    verifyAccess({
+      origin: failed.origin,
+      password,
+      now,
+      authMode: "form",
+      closeFormSession: true
+    }),
+    /Owner logout was not confirmed/
+  );
 });
