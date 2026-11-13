@@ -31,6 +31,9 @@ import {
   AgentStudioDecisionEventListResponseSchema,
   ApiErrorSchema,
   ActivateEmergencyStopRequestSchema,
+  ActivateAgentTeamRequestSchema,
+  ActivateAgentTeamResponseSchema,
+  AgentTeamPartsResponseSchema,
   AUTONOMY_MATRIX,
   BehaviorPatternListResponseSchema,
   BehaviorPatternSchema,
@@ -137,6 +140,9 @@ import {
   AgentTeamCompositionDriftError,
   AgentTeamValidationError,
   type AgentTeamStore,
+  AgentTeamRunValidationError,
+  AgentTeamRunNotFoundError,
+  type AgentTeamRunStore,
   DemoManagerStoreValidationError,
   IdempotencyConflictError,
   PatternLibraryConflictError,
@@ -268,6 +274,7 @@ export interface AppDependencies {
   agentInstanceStore?: AgentInstanceStore;
   agentStudioMutationStore?: AgentStudioMutationStore;
   agentTeamStore?: AgentTeamStore;
+  agentTeamRunStore?: AgentTeamRunStore;
   modelGateway?: ModelGateway;
   chat?: ChatService;
   manager?: ManagerService;
@@ -397,6 +404,14 @@ const AgentStudioBlueprintParamsSchema = Type.Object(
   { additionalProperties: false }
 );
 
+const AgentStudioTeamParamsSchema = Type.Object(
+  {
+    projectId: Type.String({ minLength: 1 }),
+    compositionId: Type.String({ minLength: 1, maxLength: 64 })
+  },
+  { additionalProperties: false }
+);
+
 const sendAgentStudioMutationError = (
   error: unknown,
   request: FastifyRequest,
@@ -405,7 +420,8 @@ const sendAgentStudioMutationError = (
   if (
     error instanceof PatternLibraryNotFoundError ||
     error instanceof AgentBlueprintNotFoundError ||
-    error instanceof AgentInstanceNotFoundError
+    error instanceof AgentInstanceNotFoundError ||
+    error instanceof AgentTeamRunNotFoundError
   ) {
     return reply
       .status(404)
@@ -459,7 +475,8 @@ const sendAgentStudioMutationError = (
     error instanceof AgentBlueprintValidationError ||
     error instanceof AgentInstanceValidationError ||
     error instanceof AgentStudioMutationValidationError ||
-    error instanceof AgentTeamValidationError
+    error instanceof AgentTeamValidationError ||
+    error instanceof AgentTeamRunValidationError
   ) {
     return reply
       .status(400)
@@ -2245,6 +2262,96 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
             .header("idempotency-replayed", String(result.replayed))
             .status(result.replayed ? 200 : 201)
             .send(result.value);
+        } catch (error) {
+          return sendAgentStudioMutationError(error, request, reply);
+        }
+      }
+    );
+  }
+
+  if (
+    dependencies.projectStore &&
+    dependencies.agentStudioMutationStore &&
+    dependencies.agentTeamRunStore
+  ) {
+    const projectStore = dependencies.projectStore;
+    const mutations = dependencies.agentStudioMutationStore;
+    const runs = dependencies.agentTeamRunStore;
+    const isOwnedProject = (projectId: string, ownerId: string): boolean =>
+      projectStore.getProject(projectId, ownerId) !== null;
+
+    // Activate a confirmed composition into its part DAG. The mutation keeps
+    // this owner-authorized step idempotent; activation itself performs no
+    // model dispatch (run_plan remains the explicit paid-operation gate).
+    app.post(
+      "/api/v1/projects/:projectId/agent-studio/teams/activate",
+      {
+        schema: {
+          params: AgentStudioProjectParamsSchema,
+          headers: AgentStudioCreateHeadersSchema,
+          body: ActivateAgentTeamRequestSchema,
+          response: {
+            200: ActivateAgentTeamResponseSchema,
+            201: ActivateAgentTeamResponseSchema,
+            400: ApiErrorSchema,
+            404: ApiErrorSchema,
+            409: ApiErrorSchema
+          }
+        }
+      },
+      async (request, reply) => {
+        const identity = identityFor(request);
+        if (!isOwnedProject(request.params.projectId, identity.owner_id)) {
+          return reply
+            .status(404)
+            .send(errorBody(request.id, "PROJECT_NOT_FOUND", "Project not found"));
+        }
+        try {
+          const result = mutations.create(identity, {
+            project_id: request.params.projectId,
+            idempotency_key: request.headers["idempotency-key"],
+            operation: "team.activate",
+            request: request.body,
+            execute: () =>
+              runs.activate(identity, request.params.projectId, request.body.composition_id),
+            reference_of: (value) => ({ id: value.composition_id, version: 1 }),
+            resolve: (reference) => runs.activate(identity, request.params.projectId, reference.id)
+          });
+          return reply
+            .header("idempotency-replayed", String(result.replayed))
+            .status(result.replayed ? 200 : 201)
+            .send(result.value);
+        } catch (error) {
+          return sendAgentStudioMutationError(error, request, reply);
+        }
+      }
+    );
+
+    // Read-only lifecycle of the parts: status and published artifact counts
+    // are projected from the DAG nodes and work_artifact_versions on each call.
+    app.get(
+      "/api/v1/projects/:projectId/agent-studio/teams/:compositionId/parts",
+      {
+        schema: {
+          params: AgentStudioTeamParamsSchema,
+          response: {
+            200: AgentTeamPartsResponseSchema,
+            400: ApiErrorSchema,
+            404: ApiErrorSchema
+          }
+        }
+      },
+      async (request, reply) => {
+        const identity = identityFor(request);
+        if (!isOwnedProject(request.params.projectId, identity.owner_id)) {
+          return reply
+            .status(404)
+            .send(errorBody(request.id, "PROJECT_NOT_FOUND", "Project not found"));
+        }
+        try {
+          return reply
+            .status(200)
+            .send(runs.parts(identity, request.params.projectId, request.params.compositionId));
         } catch (error) {
           return sendAgentStudioMutationError(error, request, reply);
         }
