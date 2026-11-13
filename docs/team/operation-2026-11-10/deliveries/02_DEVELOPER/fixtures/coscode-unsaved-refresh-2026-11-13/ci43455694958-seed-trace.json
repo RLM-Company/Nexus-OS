@@ -1,0 +1,23 @@
+{
+  "artifact_id": 14053609515,
+  "artifact_sha256": "ab01e642a2237dec52ef1cc1597c72ba68fbf90df6e83f2d5dbd112a60d5ec50",
+  "seed_get_count": 18,
+  "last_seed_response": {
+    "http_status": 200,
+    "messages": [
+      {
+        "role": "user",
+        "status": "completed",
+        "error_code": null,
+        "run_id": "1faf7805-67d4-4925-b804-bea0e74813e4"
+      },
+      {
+        "role": "assistant",
+        "status": "failed",
+        "error_code": "INTERRUPTED",
+        "run_id": "1faf7805-67d4-4925-b804-bea0e74813e4"
+      }
+    ]
+  },
+  "conclusion": "seed assistant was already failed/INTERRUPTED, so completed-only polling could never succeed; product lifecycle interruption not fixed by test setup change"
+}

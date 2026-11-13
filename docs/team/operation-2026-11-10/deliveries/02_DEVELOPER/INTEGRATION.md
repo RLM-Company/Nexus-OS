@@ -1,3 +1,21 @@
+# Дополнительная CI-интеграция, 13 ноября 2026
+
+Commit `23bbcde7a23c10f6d55d38e28defd718db80fe9e`; единственный общий файл
+`apps/web/e2e/chat-reliability.spec.ts`,18 добавлений/14 удалений.
+Предусловие draft test теперь создаёт существующий held mock run и явно отменяет
+его через owner API; проверяет HTTP200, cancelled и реальную persisted row.
+Это не смена production lifecycle: исходный INTERRUPTED seed из CI43455694958
+сохранён для отдельного исследования владельцем chat runtime. UI assertions,
+финальный successful answer, failOnFlakyTests, retries и timeout CI не ослаблены.
+Проверено5 повторов при workers2/retries0, exit0; строгие web types/lint0.
+Все продуктовые изменения Coscode2b8b895 остаются без правок.
+Откат этой адаптации — отдельный revert integration commit; запускать точный HEAD CI.
+[Разбор и исходный failure](COSCODE_UNSAVED_REFRESH_DELIVERY_RU.md).
+
+История ниже.
+
+---
+
 # Coscode unsaved refresh, 13 ноября 2026
 
 Новых общих изменений нет: только `apps/web/src/app/code-agent/page.tsx`

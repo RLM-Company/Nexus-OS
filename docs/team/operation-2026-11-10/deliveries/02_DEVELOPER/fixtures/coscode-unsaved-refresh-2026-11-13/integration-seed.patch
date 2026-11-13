@@ -1,0 +1,45 @@
+diff --git a/apps/web/e2e/chat-reliability.spec.ts b/apps/web/e2e/chat-reliability.spec.ts
+index 0d3e0ad..7f1fd21 100644
+--- a/apps/web/e2e/chat-reliability.spec.ts
++++ b/apps/web/e2e/chat-reliability.spec.ts
+@@ -89,22 +89,26 @@ test("restores text and files after closing the tab, isolates chats, removes and
+   context,
+   request
+ }, testInfo) => {
++  // This case needs an idle chat, not successful seed generation. Use the held
++  // fixture and confirm owner cancellation before exercising draft persistence.
+   const response = await request.post("/api/v1/chats", {
+-    data: { initial_message: "Чат для черновика", client_message_id: crypto.randomUUID() }
++    data: {
++      initial_message: "Останови этот тестовый запуск",
++      client_message_id: crypto.randomUUID()
++    }
+   });
+-  const { chat } = (await response.json()) as { chat: { id: string } };
+-  await expect
+-    .poll(async () => {
+-      const detail = await request.get(`/api/v1/chats/${chat.id}`);
+-      if (!detail.ok()) return false;
+-      const { messages } = (await detail.json()) as {
+-        messages: { role: string; status: string }[];
+-      };
+-      return messages.some(
+-        (message) => message.role === "assistant" && message.status === "completed"
+-      );
+-    })
+-    .toBe(true);
++  expect(response.status()).toBe(201);
++  const { chat, run_id } = (await response.json()) as { chat: { id: string }; run_id: string };
++  const cancelled = await request.post(`/api/v1/chat-runs/${run_id}/cancel`);
++  expect(cancelled.status()).toBe(200);
++  expect(await cancelled.json()).toEqual({ run_id, status: "cancelled" });
++  const seed = await request.get(`/api/v1/chats/${chat.id}`);
++  expect(seed.ok()).toBe(true);
++  expect((await seed.json()).messages).toEqual(
++    expect.arrayContaining([
++      expect.objectContaining({ role: "assistant", run_id, status: "cancelled" })
++    ])
++  );
+   await page.goto(`/?chat=${chat.id}`);
+   const editor = page.getByRole("textbox", { name: "Сообщение Kosmora" });
+   await editor.fill("Несохранённый текст");

@@ -20,3 +20,10 @@ Fixture text содержит19 700,00123,2026-11-13 и «кроме доста�
 проверяется точное inputValue, не обещание модели. BASE_SHA включает предыдущий
 slice порядка снимков; MAIN_SHA — фактически сохранённая версия main.
 [Поставка и команды](../../COSCODE_UNSAVED_REFRESH_DELIVERY_RU.md).
+
+Первый общий CI43455694958 остался красным:529PASS+1flaky в unrelated draft seed.
+`ci43455694958-*` сохраняют failure excerpt, оригинальный terminal seed status,
+actual CodeAgent CI readbacks и receipt; artifact14053609515/digest указан в trace JSON.
+`seed-selection-no-tests.log` — диагностический grep без выбранных tests, не PASS.
+`seed-repeat5-passed.log` —5 независимых повторов с явным cancel seed, retries0.
+`integration-types-passed.log` и `integration-lint-passed.log` — exit0.

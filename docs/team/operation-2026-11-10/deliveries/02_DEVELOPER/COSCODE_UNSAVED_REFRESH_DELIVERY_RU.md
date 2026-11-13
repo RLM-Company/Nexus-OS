@@ -46,7 +46,7 @@ proposal_hash, `accept` сбрасывал локальные файлы и remo
 Это воспроизведено через production Next и реальный Chromium:3FAIL+1PASS;
 в actual DOM readback локальная строка заменялась серверным текстом.
 
-Теперь текущие dirty flags синхронно отражаются в двух boolean refs, которые
+Теперь текущие dirty flags синхронно отражаются в двух boolean полях одного ref, которые
 читают и ранее созданные polling callbacks. Если hash поменялся при несохранённых
 правках, data не заменяет editor. Видна причина конфликта, save/review и действия,
 зависящие от editable/check proof, заблокированы; polling остановлен до разрешения.
@@ -114,6 +114,39 @@ publication/repair counters0. Существующая fixture setup до эти
 В full production log сохраняются ECONNREFUSED3413 при root navigation: scoped runner
 не поднимает API, Code API перехватывается; это не live API acceptance.
 Первоначальные3FAIL не скрываются итоговым зелёным прогоном.
+
+## Первый CI и отдельная интеграция теста
+
+CI [43455694958](https://github.com/RLM-Company/Nexus-OS/actions/runs/43455694958)
+на HEAD93082c4: Verify monorepo success, OCI5PASS; Browser failure —
+529PASS+1flaky. Наборы после основного не запускались из-за `&&`.
+FailOnFlakyTests не ослаблялся, успешный retry не выдаётся за зелёный gate.
+Все41 сценария Coscode прошли; artifact содержит10 реальных новых CodeAgent readbacks.
+
+Trace показывает: до загрузки страницы seed assistant уже failed/INTERRUPTED,
+а тест восстановления черновика ждал completed и истёк через15сек. Причина
+production lifecycle interruption не установлена и не исправлялась в этом срезе.
+Для независимой проверки draft существующий held fixture prompt теперь явно
+отменяется через API, проверяются200/cancelled и сохранённая cancelled row.
+Остальные проверки tab close, изоляции, файлов, очистки и финального успешного
+ответа сохранены без ослабления. Production runtime/общая оболочка чата прежние.
+
+Отдельный integration commit `23bbcde7a23c10f6d55d38e28defd718db80fe9e` меняет только
+`apps/web/e2e/chat-reliability.spec.ts`,18 добавлений/14 удалений.
+Повтор целого сценария:5PASS, workers2, retries0, exit0. Строгие web types/lint exit0.
+Первый диагностический anchored grep не выбрал tests, exit1 No tests found;
+лог сохранён, затем pattern исправлен, assertions того запуска не заявляются.
+
+```bash
+pnpm_config_verify_deps_before_run='' PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium KOSMORA_E2E_PRODUCTION=1 pnpm --filter @cosmora/web exec playwright test -c playwright.composer.config.ts --grep 'restores text and files after closing' --repeat-each=5 --workers=2 --retries=0 --output=/tmp/draft-seed-proof
+pnpm_config_verify_deps_before_run='' pnpm --filter @cosmora/web typecheck
+pnpm_config_verify_deps_before_run='' pnpm --filter @cosmora/web lint
+```
+
+[Исходный failure/trace receipt](fixtures/coscode-unsaved-refresh-2026-11-13/ci43455694958-receipt.json)
+и выходы сохранены. Новый exact HEAD CI ожидается после этой интеграции;
+старый красный CI не удаляется и не перезапускается под тем же SHA.
+Для отката test adaptation revert integration commit отдельно от product2b8b895.
 
 ## Полномочия, границы и откат
 

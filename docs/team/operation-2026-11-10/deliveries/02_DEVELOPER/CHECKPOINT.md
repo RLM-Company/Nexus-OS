@@ -11,7 +11,11 @@ Baseline3FAIL+1PASS; targeted5PASS; полный production41PASS, retries0.
 конфликт блокирует save и останавливает polling; explicit reload требует согласия,
 нижняя наблюдавшаяся version и403 не уничтожают локальные правки. Чистый editor обновляется.
 Root gates до и после main14a: exit0; API1086PASS+1SKIP, web399PASS, DB236PASS.
-Следующий шаг: обновить собственный Draft PR581 одним push;
+Первый CI43455694958: verify/OCI success, Browser529PASS+1flaky в seed предусловии chat draft test.
+Trace и10 CI CodeAgent readbacks сохранены. Отдельный test integration23bbcde
+использует held seed и явный owner cancel; все исходные draft assertions остаются.
+Repeated5PASS, workers2/retries0; web types/lint0. Production chat lifecycle не менялся.
+Следующий шаг: опубликовать отдельную test integration и receipt в Draft PR581;
 проверить CI точного HEAD и передать интегратору без merge/deploy.
 Предыдущий CI43447416997 success относится к BASE_SHA, а не к новым изменениям.
 Модель/live foreign publish не вызывались; новых API/DB/runtime/grants/дизайна нет.
