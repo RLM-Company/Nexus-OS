@@ -162,6 +162,9 @@ jobs:
         uses: actions/setup-node@v5
         with:
           node-version: 24
+          # This job only runs a plain `node` script. No package manager is
+          # installed here, so setup-node must not try to cache pnpm.
+          package-manager-cache: false
 
       - name: Download installer artifact
         if: env.KOSMORA_LIVE_ORIGIN != ''
@@ -200,7 +203,13 @@ jobs:
         if: always() && env.KOSMORA_LIVE_ORIGIN != ''
         shell: pwsh
         run: |
+          # This step runs even when an earlier step failed, so a missing
+          # install directory is a legitimate no-op, not a second failure.
           $installDir = Join-Path $env:RUNNER_TEMP "cosmora-live-smoke\install"
+          if (-not (Test-Path -LiteralPath $installDir -PathType Container)) {
+            Write-Host "No live-smoke install to uninstall."
+            exit 0
+          }
           $uninstaller = Get-ChildItem -LiteralPath $installDir -Filter "Uninstall*.exe" -File | Select-Object -First 1
           if (-not $uninstaller) { throw "NSIS uninstaller was not found." }
           $process = Start-Process -FilePath $uninstaller.FullName -ArgumentList "/S" -WindowStyle Hidden -Wait -PassThru
