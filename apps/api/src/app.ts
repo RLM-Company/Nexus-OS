@@ -950,7 +950,8 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
       dependencies.projectStore,
       dependencies.canvasStore,
       identityFor,
-      dependencies.managerWorkStore
+      dependencies.managerWorkStore,
+      dependencies.researchStore
     );
   if (
     dependencies.projectAutomationStore &&
