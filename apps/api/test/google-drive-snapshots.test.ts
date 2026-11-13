@@ -362,6 +362,19 @@ describe("complete Drive snapshots and restore", () => {
     expect(
       db.sqlite.prepare("SELECT count(*) AS n FROM general_chats WHERE owner_id=?").get(owner)
     ).toMatchObject({ n: 2 });
+    const reopened = await preview(item.id);
+    expect(reopened.token).not.toBe(p.token);
+    const recovered = await post(`/backups/${item.id}/restore`, {
+      token: reopened.token,
+      operation_id: op
+    });
+    expect(recovered.statusCode, recovered.body).toBe(200);
+    expect(recovered.json()).toEqual(result);
+    expect(db.sqlite.prepare("SELECT count(*) AS n FROM drive_restored_files").get()).toMatchObject(
+      {
+        n: 1
+      }
+    );
     const normal = new GeneralChatStore(db.sqlite);
     expect(normal.getChat(result.chats[0]!.id, owner)?.mode).toBe("work");
     const next = normal.createMessage(

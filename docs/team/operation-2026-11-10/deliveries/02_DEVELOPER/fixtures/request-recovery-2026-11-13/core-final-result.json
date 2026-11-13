@@ -1,0 +1,31 @@
+{
+  "command": "pnpm_config_verify_deps_before_run='' pnpm check:core",
+  "exit_code": 0,
+  "base_sha": "281604b726e25118f3edb80e6b2108dc44368339",
+  "tested_local_source": "7a70d40d100f64a86aeb837d8e02f55c947581ef",
+  "tested_tree": "887f056594709db74090fa844fd67df8b717b90e",
+  "api": {
+    "passed": 1085,
+    "skipped": 1
+  },
+  "web": {
+    "passed": 394
+  },
+  "db": {
+    "passed": 230
+  },
+  "core": {
+    "passed": 425
+  },
+  "tool_runtime": {
+    "passed": 86,
+    "skipped": 5
+  },
+  "raw_log_sha256": "8fa920066f2871fe2d2c883aae0e20675aab2a37d5104b1ac7105ec850012da2",
+  "raw_log_path": "/tmp/nexus-recovery-core-main281.log",
+  "later_change": "Composer testMatch registration only; separately typechecked, linted and exercised by production Chromium12. Full final HEAD CI remains separate.",
+  "registered_local_source": "aaf3b1a663c2acb4b2f4adce7b295f72fb491ebd",
+  "registered_github_source": "44eb6f1c45ae80842006c57638eee39c0ea0669c",
+  "registered_tree": "4867702f895c341c2a0d9d87cbb53cc787ab2e3d",
+  "real_model_called": false
+}

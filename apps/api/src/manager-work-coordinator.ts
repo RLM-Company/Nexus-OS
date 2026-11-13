@@ -12,6 +12,7 @@ import {
 import { WorkDagCoordinator } from "./work-dag-coordinator.js";
 import { createHash } from "node:crypto";
 import {
+  MANAGER_WORK_CONTROL_EVENTS,
   WORK_EXECUTION_CONCURRENCY,
   ManagerWorkFilesSchema,
   ManagerWorkPlanSchema,
@@ -259,15 +260,7 @@ export class ManagerWorkCoordinator {
       work.status = "queued";
       work.error_code = null;
     } else throw new ManagerWorkConflict("INVALID_TRANSITION");
-    return this.checkpoint(
-      work,
-      {
-        pause: "Пауза после текущего запроса",
-        resume: "Работа продолжена",
-        approve: "План подтверждён владельцем",
-        cancel: "Остановлено владельцем"
-      }[action]
-    );
+    return this.checkpoint(work, MANAGER_WORK_CONTROL_EVENTS[action]);
   }
 
   private checkpoint(work: ManagerWork, message?: string): ManagerWork {

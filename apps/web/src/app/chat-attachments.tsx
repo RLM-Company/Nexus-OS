@@ -34,6 +34,10 @@ export function useChatAttachments(scope: string) {
     () => (latest.current.scope === scopeRef.current ? latest.current.files : []),
     []
   );
+  const snapshotReading = useCallback(
+    () => latest.current.scope === scopeRef.current && latest.current.reading,
+    []
+  );
   const files = state.scope === scope ? state.files : [];
   const reading = state.scope === scope && state.reading;
   const error = state.scope === scope ? state.error : null;
@@ -77,7 +81,7 @@ export function useChatAttachments(scope: string) {
       }
     }
   };
-  return { files, reading, error, add, replace, snapshotFiles };
+  return { files, reading, error, add, replace, snapshotFiles, snapshotReading };
 }
 
 export function ChatAttachmentPicker({
