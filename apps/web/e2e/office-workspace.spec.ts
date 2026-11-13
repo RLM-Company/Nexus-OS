@@ -72,6 +72,43 @@ test("file panel saves and reopens a verified DOCX from Drive", async ({ page },
   await expect(editor.getByText(/Файл новой копии: offer\.koswork\.docx/)).toBeVisible();
   expect(backups).toHaveLength(2);
 });
+test("a failed Office replacement preserves the restored document and its edit plan", async ({
+  page
+}) => {
+  const restoredId = randomUUID();
+  const bytes = await readFile("../../docs/handoff/fixtures/koswork-office/offer.docx");
+  const version = "sha256:" + createHash("sha256").update(bytes).digest("hex");
+  await page.route(`**/api/v1/storage/drive/restored-files/${restoredId}/office`, (route) =>
+    route.fulfill({
+      json: { name: "restored.docx", bytes: bytes.toString("base64"), version }
+    })
+  );
+  await page.goto(`/?surface=files&officeRestore=${restoredId}`);
+  const editor = page.getByRole("region", { name: "Рабочие документы Koswork", exact: true });
+  const upload = editor.locator('input[type="file"]');
+  const add = editor.getByRole("button", { name: "Добавить замену в план" });
+  const preview = editor.getByRole("button", { name: "Посмотреть изменения" });
+  await editor.getByLabel("Адрес", { exact: true }).selectOption("paragraph:3");
+  await editor.getByLabel("Найти точный текст").fill("Компания А");
+  await editor.getByLabel("Заменить на").fill("Компания Б");
+  await add.click();
+
+  await upload.setInputFiles({
+    name: "broken.docx",
+    mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    buffer: Buffer.from("not a Word document")
+  });
+  await expect(editor.getByRole("alert")).toBeVisible();
+  await expect(editor.getByText(`restored.docx · ${version}`, { exact: true })).toBeVisible();
+  await preview.click();
+  await expect(editor.getByRole("heading", { name: "Предлагаемые изменения" })).toBeVisible();
+
+  await upload.setInputFiles("../../docs/handoff/fixtures/koswork-office/offer.pptx");
+  await expect(editor.getByText(/^offer\.pptx · sha256:/)).toBeVisible();
+  await expect(editor.getByRole("heading", { name: "Предлагаемые изменения" })).toHaveCount(0);
+  await expect(preview).toBeDisabled();
+});
+
 for (const format of ["xlsx", "pptx"] as const)
   test(`file panel edits and exports ${format} bytes`, async ({ page }) => {
     await page.goto("/?surface=files");
