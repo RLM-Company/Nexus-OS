@@ -1,3 +1,25 @@
+# Финальная OCI/API приёмка, 13 ноября 2026
+
+Отдельный integration commit `5f1ed5908596e4fe6594aeab26fbb0ba5dbe19ca` меняет только
+`.github/workflows/ci.yml`:20 строк. Существующий OCI job сохраняет реальный Git receipt,
+запускает прежний opt-in API test через pinned image, требует API receipt и выгружает
+input/output/diff в artifact coscode-final-workflow-proof. Retry/timeout/failOnFlakyTests,
+изоляция, network-none и права контейнера не менялись.
+Owned API test расширен в85183fa и5ef2f7a: тот же service/routes → существующий
+HTTP client/server → тот же OCI runner → fresh review → Draft PR adapter → repeat409/0writes.
+Production runtime, routes/contracts/DB/provider/grants не менялись.
+Main `43ffee1db331507dfd984f50f42a2f6779e6e780` сохранён отдельным merge5e63264;10 входящих файлов Work/runtime/DB
+принадлежат main, не этой реализации. Новая общая константа concurrency просмотрена.
+Локальные OCI failures вызваны ENOSPC; source maps/.next своего checkout очищены,
+Docker storage/чужие данные не затрагивались. Итоговый CI должен подтвердить real API case.
+Откат: revert test acceptance commits и CI integration отдельно с сохранением
+предыдущих продуктовых hardening commits и чужих изменений main. Миграций/новых dependencies нет.
+[Полная матрица и границы](COSCODE_FINAL_ACCEPTANCE_RU.md).
+
+История ниже.
+
+---
+
 # Дополнительная CI-интеграция, 13 ноября 2026
 
 Commit `23bbcde7a23c10f6d55d38e28defd718db80fe9e`; единственный общий файл

@@ -1,3 +1,22 @@
+# Итоговая программная приёмка Coscode, 13 ноября 2026
+
+Статус: в работе, свежий real API/OCI в CI обязателен перед закрытием программного блока.
+BASE_SHA `798a3079dde9ab70aee7d8b7702af2a18c8c60a9`; сохранён актуальный main `43ffee1db331507dfd984f50f42a2f6779e6e780`.
+Ветка `ops/developer-coscode-snapshot-order-2026-11-13`, [Draft PR581](https://github.com/RLM-Company/Nexus-OS/pull/581).
+[Матрица всего ТЗ и результаты](COSCODE_FINAL_ACCEPTANCE_RU.md).
+Свежие локальные: API/adapters151PASS+1OCI SKIP; runtime76PASS; web16PASS; types/lint0.
+Предыдущий exact HEAD CI43459723060 success относится к BASE_SHA; семь UI blobs прежние.
+Полный API/HTTP/OCI сценарий расширен до Draft PR adapter и защищённого повторного publish.
+Отдельная CI integration включает этот opt-in и выдаёт input/output/diff/receipt artifact.
+Локальный OCI не пройден из-за Docker VFS ENOSPC; это не PASS. Независимый CI ожидается.
+Исторический live GitHub/HTTP/OCI от12 ноября найден и отделён от свежей приёмки;
+настоящая модель не вызывалась. Новых внешних публикаций/merge в main/deploy нет.
+Далее: exact HEAD CI и проверка настоящего artifact, затем программная передача интегратору.
+
+История ниже.
+
+---
+
 # Coscode: несохранённые правки при обновлении, 13 ноября 2026
 
 Статус: **готово к интеграции** по локальным проверкам; exact HEAD CI ожидается.
