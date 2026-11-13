@@ -800,3 +800,85 @@ registerArtifactContextRoutes) не пересекается с моим бло�
 Гигиена на новом tip: `..\Nexus-OS` синхронизирован до `501d403f`;
 desktop/windows `npm run check` **462/0**; typecheck api чист;
 agent-studio-team-api 4/4.
+
+## Срез 20 (2026-11-13): Multi-Agent, срез 2 — bounded concurrency (cap=2)
+
+**Одобрение**: владелец выбрал «Весь срез, cap=2» (вопрос после срез 1,
+«Слить и продолжить срез 2»). Потолок статуса — **готово к интеграции**;
+merge только по явному одобрению владельца (question-tool, «Слить и
+обновить docs»). Цель — снять три сериализатора, сохранив owner budget/
+ledger/verified artifacts/recover и не меняя UI.
+
+**Стало**:
+
+- `packages/contracts/src/work-schedule.ts`: единая константа
+  `WORK_EXECUTION_CONCURRENCY = 2`, проброшена из `apps/api/src/server.ts`
+  одновременно в `new ManagerWorkStore(...)` и
+  `new ManagerWorkCoordinator(...)` — in-memory исполнитель и SQLite
+  admission не расходятся.
+- `apps/api/src/manager-work-coordinator.ts`: валидируемое
+  `maxConcurrentWork` (default 2, 1..16) заменяет оба `active.size>=1`
+  (`start()` timer и `execute()`); публичный `capacity()`. Сохранены
+  schedulingBlock, owner fence, emergency stop, stop/drain.
+- `packages/db/src/manager-work-store.ts`: `claim` и `pending` внутри
+  `BEGIN IMMEDIATE` считают `running < maxConcurrentWork` по проекту;
+  CAS `version`, `dag_binding.bound`, `assertWritable`, WORK_QUEUE_LIMIT и
+  `recover()` не изменены.
+- `apps/api/src/work-dag-coordinator.ts`: `liveAttempts()` считает живые
+  части; `advance()` запускает волну
+  `scheduledReadyWorkNodes(graph).slice(0, free)` за тик и перечитывает
+  `graph.version` между `control("run")` (иначе STALE_DAG на втором узле
+  волны). CAS-версия, зависимостные волны и двухфазный `dag_binding.bound`
+  сохранены.
+
+**Бюджет (ключевая правка после e2e-регресса)**: формула
+`allocatedRequests() + 3*capacity` оказалась неверной —
+`allocatedRequests()` уже резервирует полные 3 запроса на каждую живую
+часть, поэтому `+3*capacity` дважды засчитывал их и останавливал
+зависимые планы при UI-лимите `nodes*3` (`totalLimit` в
+`apps/web/src/app/work-manager-dag.tsx`) как `PLAN_REQUEST_LIMIT`. Итог:
+`run_plan` резервирует `3 * min(capacity, ready-узлы первой волны)`,
+`advance()` — `3 * ready.length` (по 3 на запускаемый узел, не более
+свободных слотов). Добавлен регрессионный тест зависимого 2-шагового
+плана с лимитом 6.
+
+**Проверки**: `apps/api/test/work-dag.test.ts` — фикстура с
+`maxConcurrentWork` (default 1 для прежних sequential-сценариев) +
+4 новых cap=2 теста; `manager-work.test.ts` (admission, time-budget) и
+`packages/db/test/work-runtime-store.test.ts` («2 running в проекте»,
+отсечение третьего) обновлены. Локально: contracts **206/206**, db
+**236/236**, api затронутые **136/136**; полный api дал 27 timeout-флаков
+под параллельной нагрузкой (каждый файл соло проходит — не регрессия);
+lint + typecheck (contracts/db/api), `prettier --check`,
+`node scripts/check-secrets.mjs` — чисты. UI не менялся; NSIS/GUI/VM и
+live-приёмка не запускались (отложены владельцем).
+
+**Чужая волна и конфликт**: до PR #584 main вырос `501d403f..14a5f48e`
+(#582/#583, `91b4949b` «Reconcile Manager control commands…»,
+`MANAGER_WORK_CONTROL_EVENTS` в `packages/contracts/src/manager-work.ts`).
+Merge `38379b1c` разрешил единственный конфликт — блок импортов
+`manager-work-coordinator.ts`: сохранены ОБА импорта
+(`MANAGER_WORK_CONTROL_EVENTS` и `WORK_EXECUTION_CONCURRENCY`). В PR ушли
+`b08c4f08` (docs срез 1, ранее не запушенный), `3fc977e5` (код),
+`38379b1c` (merge волны) и `7a9cfa4f` (fix бюджета).
+
+**CI**: первый run `43462987699` — Browser acceptance **fail** 13m33s
+(517 passed; упали `e2e/work-manager-dag.spec.ts:4:5` «План выполнен» и
+`e2e/workflows.spec.ts:152:5` «Скачать результаты»), причина — двойной
+резерв бюджета. После `7a9cfa4f` старый rerun отменён (`gh run cancel`),
+новый run `43468511257` сначала `cancelled` («higher priority waiting
+request for ci-CI-refs/pull/584/merge»), перезапущен и зелёный **4/4**:
+Browser acceptance 9m56s, Verify monorepo 5m27s, Code sandbox isolation
+40s, identity-tests 47s; `gh pr checks 584` exit 0.
+
+**Интеграция (13.11.2026)**: владелец «Слить и обновить docs» →
+`gh pr merge 584 --merge`, merge-коммит
+`43ffee1db331507dfd984f50f42a2f6779e6e780` (17:16:45Z; обычный merge
+`14a5f48e` + `7a9cfa4f`). Пост-merge гигиена: локальная ветка
+fast-forward к `43ffee1d`, `..\Nexus-OS` синхронизирован до `43ffee1d`,
+desktop/windows `npm.cmd run check` **462/0**. `tmp/` не коммитится;
+`KOSMORA_LIVE_ORIGIN` не создан, live-smoke no-op.
+
+**Следом** (согласовывать с владельцем): arbiter-сборка с проверкой по
+критериям #538, бюджет команды поверх owner budget, панель хода. Live-
+приёмка stage-one остаётся незавершённой, не объявляется выполненной.
