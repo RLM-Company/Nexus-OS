@@ -8,15 +8,17 @@ import type {
 } from "@cosmora/contracts/artifact-context";
 import type { CanvasArtifactStore, ManagerWorkStore, ProjectStore } from "@cosmora/db";
 import { ArtifactContext, ArtifactContextError } from "./artifact-context.js";
+import type { ResearchStore } from "./research/research-store.js";
 
 export function registerArtifactContextRoutes(
   app: FastifyInstance,
   projects: ProjectStore,
   canvas: CanvasArtifactStore,
   identityFor: (request: FastifyRequest) => IdentityContext,
-  work?: ManagerWorkStore
+  work?: ManagerWorkStore,
+  research?: ResearchStore
 ) {
-  const service = new ArtifactContext(canvas, work);
+  const service = new ArtifactContext(canvas, work, research);
   const path = "/api/v1/projects/:projectId/materials/artifacts";
   const params = Type.Object(
     { projectId: Type.String({ minLength: 1, maxLength: 128 }) },
@@ -45,7 +47,12 @@ export function registerArtifactContextRoutes(
   ]);
   const source = Type.Object(
     {
-      kind: Type.Union([Type.Literal("canvas"), Type.Literal("table"), Type.Literal("work")]),
+      kind: Type.Union([
+        Type.Literal("canvas"),
+        Type.Literal("table"),
+        Type.Literal("work"),
+        Type.Literal("research")
+      ]),
       id: Type.String({ minLength: 1, maxLength: 128 }),
       version: positive,
       sha256: Type.String({ pattern: "^[a-f0-9]{64}$" })
