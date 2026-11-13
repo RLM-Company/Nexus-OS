@@ -277,7 +277,9 @@ describe("AgentTeamStore", () => {
     try {
       await runMigrations(database);
       const environment = prepareTeam(database, [1, 0]);
-      const [parentBlueprint, childBlueprint] = environment.created;
+      const parentBlueprint = environment.created[0];
+      const childBlueprint = environment.created[1];
+      if (!parentBlueprint || !childBlueprint) throw new Error("fixture blueprints missing");
       const parent = environment.instances.proposeRoot(environment.owner, {
         project_id: environment.projectId,
         blueprint_ref: {
