@@ -1,0 +1,124 @@
+[WebServer] (node:16828) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:16842) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:16842) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:16863) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] $ tsc -p tsconfig.build.json
+[WebServer] (node:16910) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] $ node scripts/prepare-pdf-worker.mjs && next build
+[WebServer] (node:16936) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:16936) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:16977) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:16976) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:17003) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] $ next start -H 127.0.0.1
+[WebServer] (node:17018) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+
+Running 3 tests using 1 worker
+
+(node:17037) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✘  1 [chromium] › e2e/terminal-run-recovery.spec.ts:4:7 › a cancelled run without an assistant does not reopen from stale history (509ms)
+(node:17174) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✘  2 [chromium] › e2e/terminal-run-recovery.spec.ts:4:7 › a failed run without an assistant does not reopen from stale history (507ms)
+(node:17314) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✘  3 [chromium] › e2e/terminal-run-recovery.spec.ts:4:7 › a completed run without an assistant does not reopen from stale history (507ms)
+
+
+  1) [chromium] › e2e/terminal-run-recovery.spec.ts:4:7 › a cancelled run without an assistant does not reopen from stale history
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: 202
+    Received: 201
+
+      12 |       }
+      13 |     });
+    > 14 |     expect(created.status()).toBe(202);
+         |                              ^
+      15 |     const accepted = (await created.json()) as {
+      16 |       chat: { id: string };
+      17 |       user_message: { run_id: string };
+        at /workspace/work/Nexus-OS-postmerge-2026-11-13/apps/web/e2e/terminal-run-recovery.spec.ts:14:30
+
+    Error Context: ../../../../../tmp/nexus-postmerge-browser-results/terminal-run-recovery-a-ca-27d52-t-reopen-from-stale-history-chromium/error-context.md
+
+    attachment #2: trace (application/zip) ─────────────────────────────────────────────────────────
+    ../../../../../tmp/nexus-postmerge-browser-results/terminal-run-recovery-a-ca-27d52-t-reopen-from-stale-history-chromium/trace.zip
+    Usage:
+
+        pnpm exec playwright show-trace ../../../../../tmp/nexus-postmerge-browser-results/terminal-run-recovery-a-ca-27d52-t-reopen-from-stale-history-chromium/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  2) [chromium] › e2e/terminal-run-recovery.spec.ts:4:7 › a failed run without an assistant does not reopen from stale history
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: 202
+    Received: 201
+
+      12 |       }
+      13 |     });
+    > 14 |     expect(created.status()).toBe(202);
+         |                              ^
+      15 |     const accepted = (await created.json()) as {
+      16 |       chat: { id: string };
+      17 |       user_message: { run_id: string };
+        at /workspace/work/Nexus-OS-postmerge-2026-11-13/apps/web/e2e/terminal-run-recovery.spec.ts:14:30
+
+    Error Context: ../../../../../tmp/nexus-postmerge-browser-results/terminal-run-recovery-a-fa-d0bf0-t-reopen-from-stale-history-chromium/error-context.md
+
+    attachment #2: trace (application/zip) ─────────────────────────────────────────────────────────
+    ../../../../../tmp/nexus-postmerge-browser-results/terminal-run-recovery-a-fa-d0bf0-t-reopen-from-stale-history-chromium/trace.zip
+    Usage:
+
+        pnpm exec playwright show-trace ../../../../../tmp/nexus-postmerge-browser-results/terminal-run-recovery-a-fa-d0bf0-t-reopen-from-stale-history-chromium/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  3) [chromium] › e2e/terminal-run-recovery.spec.ts:4:7 › a completed run without an assistant does not reopen from stale history
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: 202
+    Received: 201
+
+      12 |       }
+      13 |     });
+    > 14 |     expect(created.status()).toBe(202);
+         |                              ^
+      15 |     const accepted = (await created.json()) as {
+      16 |       chat: { id: string };
+      17 |       user_message: { run_id: string };
+        at /workspace/work/Nexus-OS-postmerge-2026-11-13/apps/web/e2e/terminal-run-recovery.spec.ts:14:30
+
+    Error Context: ../../../../../tmp/nexus-postmerge-browser-results/terminal-run-recovery-a-co-ad5c0-t-reopen-from-stale-history-chromium/error-context.md
+
+    attachment #2: trace (application/zip) ─────────────────────────────────────────────────────────
+    ../../../../../tmp/nexus-postmerge-browser-results/terminal-run-recovery-a-co-ad5c0-t-reopen-from-stale-history-chromium/trace.zip
+    Usage:
+
+        pnpm exec playwright show-trace ../../../../../tmp/nexus-postmerge-browser-results/terminal-run-recovery-a-co-ad5c0-t-reopen-from-stale-history-chromium/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  3 failed
+    [chromium] › e2e/terminal-run-recovery.spec.ts:4:7 › a cancelled run without an assistant does not reopen from stale history
+    [chromium] › e2e/terminal-run-recovery.spec.ts:4:7 › a failed run without an assistant does not reopen from stale history
+    [chromium] › e2e/terminal-run-recovery.spec.ts:4:7 › a completed run without an assistant does not reopen from stale history
+undefined
+/workspace/work/Nexus-OS-postmerge-2026-11-13/apps/web:
+[ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL] Command failed with exit code 1: playwright test '--config=/tmp/nexus-postmerge-browser.config.ts' terminal-run-recovery.spec.ts '--workers=1'

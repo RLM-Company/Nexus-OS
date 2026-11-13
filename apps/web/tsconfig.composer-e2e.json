@@ -3,6 +3,7 @@
   "compilerOptions": { "incremental": false, "noEmit": true },
   "include": [
     "e2e/chat-reliability.spec.ts",
+    "e2e/terminal-run-recovery.spec.ts",
     "e2e/composer-draft-races.spec.ts",
     "playwright.composer.config.ts"
   ],

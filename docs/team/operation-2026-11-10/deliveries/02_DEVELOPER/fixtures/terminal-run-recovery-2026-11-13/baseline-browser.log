@@ -1,0 +1,110 @@
+[WebServer] (node:17515) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:17529) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:17529) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:17543) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] $ next start -H 127.0.0.1
+[WebServer] (node:17558) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+
+Running 3 tests using 1 worker
+
+(node:17577) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✘  1 [chromium] › e2e/terminal-run-recovery.spec.ts:4:7 › a cancelled run without an assistant does not reopen from stale history (2.5s)
+(node:17753) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✘  2 [chromium] › e2e/terminal-run-recovery.spec.ts:4:7 › a failed run without an assistant does not reopen from stale history (2.2s)
+(node:17932) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✘  3 [chromium] › e2e/terminal-run-recovery.spec.ts:4:7 › a completed run without an assistant does not reopen from stale history (2.0s)
+
+
+  1) [chromium] › e2e/terminal-run-recovery.spec.ts:4:7 › a cancelled run without an assistant does not reopen from stale history
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: 1
+    Received: 12
+
+      47 |     // Observe longer than the old immediate terminal/history/reconnect loop.
+      48 |     await page.waitForTimeout(500);
+    > 49 |     expect(observers).toBe(1);
+         |                       ^
+      50 |     const editor = page.getByRole("textbox", { name: "Сообщение Kosmora" });
+      51 |     await expect(editor).toBeEnabled();
+      52 |     const text = "19 700 ₽; артикул 00123; 13.11.2026; кроме доставки";
+        at /workspace/work/Nexus-OS-postmerge-2026-11-13/apps/web/e2e/terminal-run-recovery.spec.ts:49:23
+
+    Error Context: ../../../../../tmp/nexus-postmerge-browser-results/terminal-run-recovery-a-ca-27d52-t-reopen-from-stale-history-chromium/error-context.md
+
+    attachment #2: trace (application/zip) ─────────────────────────────────────────────────────────
+    ../../../../../tmp/nexus-postmerge-browser-results/terminal-run-recovery-a-ca-27d52-t-reopen-from-stale-history-chromium/trace.zip
+    Usage:
+
+        pnpm exec playwright show-trace ../../../../../tmp/nexus-postmerge-browser-results/terminal-run-recovery-a-ca-27d52-t-reopen-from-stale-history-chromium/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  2) [chromium] › e2e/terminal-run-recovery.spec.ts:4:7 › a failed run without an assistant does not reopen from stale history
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: 1
+    Received: 15
+
+      47 |     // Observe longer than the old immediate terminal/history/reconnect loop.
+      48 |     await page.waitForTimeout(500);
+    > 49 |     expect(observers).toBe(1);
+         |                       ^
+      50 |     const editor = page.getByRole("textbox", { name: "Сообщение Kosmora" });
+      51 |     await expect(editor).toBeEnabled();
+      52 |     const text = "19 700 ₽; артикул 00123; 13.11.2026; кроме доставки";
+        at /workspace/work/Nexus-OS-postmerge-2026-11-13/apps/web/e2e/terminal-run-recovery.spec.ts:49:23
+
+    Error Context: ../../../../../tmp/nexus-postmerge-browser-results/terminal-run-recovery-a-fa-d0bf0-t-reopen-from-stale-history-chromium/error-context.md
+
+    attachment #2: trace (application/zip) ─────────────────────────────────────────────────────────
+    ../../../../../tmp/nexus-postmerge-browser-results/terminal-run-recovery-a-fa-d0bf0-t-reopen-from-stale-history-chromium/trace.zip
+    Usage:
+
+        pnpm exec playwright show-trace ../../../../../tmp/nexus-postmerge-browser-results/terminal-run-recovery-a-fa-d0bf0-t-reopen-from-stale-history-chromium/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  3) [chromium] › e2e/terminal-run-recovery.spec.ts:4:7 › a completed run without an assistant does not reopen from stale history
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: 1
+    Received: 17
+
+      47 |     // Observe longer than the old immediate terminal/history/reconnect loop.
+      48 |     await page.waitForTimeout(500);
+    > 49 |     expect(observers).toBe(1);
+         |                       ^
+      50 |     const editor = page.getByRole("textbox", { name: "Сообщение Kosmora" });
+      51 |     await expect(editor).toBeEnabled();
+      52 |     const text = "19 700 ₽; артикул 00123; 13.11.2026; кроме доставки";
+        at /workspace/work/Nexus-OS-postmerge-2026-11-13/apps/web/e2e/terminal-run-recovery.spec.ts:49:23
+
+    Error Context: ../../../../../tmp/nexus-postmerge-browser-results/terminal-run-recovery-a-co-ad5c0-t-reopen-from-stale-history-chromium/error-context.md
+
+    attachment #2: trace (application/zip) ─────────────────────────────────────────────────────────
+    ../../../../../tmp/nexus-postmerge-browser-results/terminal-run-recovery-a-co-ad5c0-t-reopen-from-stale-history-chromium/trace.zip
+    Usage:
+
+        pnpm exec playwright show-trace ../../../../../tmp/nexus-postmerge-browser-results/terminal-run-recovery-a-co-ad5c0-t-reopen-from-stale-history-chromium/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  3 failed
+    [chromium] › e2e/terminal-run-recovery.spec.ts:4:7 › a cancelled run without an assistant does not reopen from stale history
+    [chromium] › e2e/terminal-run-recovery.spec.ts:4:7 › a failed run without an assistant does not reopen from stale history
+    [chromium] › e2e/terminal-run-recovery.spec.ts:4:7 › a completed run without an assistant does not reopen from stale history
+undefined
+/workspace/work/Nexus-OS-postmerge-2026-11-13/apps/web:
+[ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL] Command failed with exit code 1: playwright test '--config=/tmp/nexus-terminal-existing-build.config.ts' terminal-run-recovery.spec.ts '--workers=1'

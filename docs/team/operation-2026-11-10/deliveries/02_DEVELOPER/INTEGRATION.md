@@ -1,3 +1,19 @@
+# Terminal run recovery, 13 ноября 2026
+
+BASE7c2abad, source04c4b2e/tree78443d83. Отдельный integration commit
+`04c4b2eb03dc0fa8541041d593352ad9ce84a8f6` (локально3b27dbd).
+Общие файлы: `apps/web/src/app/page.tsx` — один terminal ref, передача его прежним
+loaders, фиксация6terminal SSE callbacks и успешного cancel acknowledgement;
+прежний resolver вынесен в отдельный модуль без дублирования.
+`apps/web/tsconfig.composer-e2e.json` — одна строка регистрации новой E2E в strict types.
+Нужен вместе с helper/tests commit3a08c3f. Новых API/contracts/DB/registration нет.
+Стиль, маршруты, дизайн и права прежние. Подробности и откат в
+[отчёте](TERMINAL_RUN_RECOVERY_2026_11_13_RU.md).
+
+Исторические интеграции ниже.
+
+---
+
 # Интеграционная приёмка с новым main, 12 ноября 2026
 
 PR [#551](https://github.com/RLM-Company/Nexus-OS/pull/551), ветка

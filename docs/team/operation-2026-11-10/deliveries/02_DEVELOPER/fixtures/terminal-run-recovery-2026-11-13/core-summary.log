@@ -1,0 +1,37 @@
+All matched files use Prettier code style!
+ Tasks:    9 successful, 9 total
+ Tasks:    9 successful, 9 total
+@cosmora/contracts:test:  Test Files  32 passed (32)
+@cosmora/contracts:test:       Tests  206 passed (206)
+@cosmora/config:test:  Test Files  2 passed (2)
+@cosmora/config:test:       Tests  17 passed (17)
+@cosmora/core:test:  Test Files  40 passed (40)
+@cosmora/core:test:       Tests  425 passed (425)
+@cosmora/policy-engine:test:  Test Files  4 passed (4)
+@cosmora/policy-engine:test:       Tests  43 passed (43)
+@cosmora/db:test:  Test Files  39 passed (39)
+@cosmora/db:test:       Tests  223 passed (223)
+@cosmora/model-gateway:test:  Test Files  11 passed (11)
+@cosmora/model-gateway:test:       Tests  151 passed (151)
+@cosmora/tool-runtime:test:  Test Files  6 passed | 2 skipped (8)
+@cosmora/tool-runtime:test:       Tests  86 passed | 5 skipped (91)
+@cosmora/web:test:  Test Files  68 passed (68)
+@cosmora/web:test:       Tests  385 passed (385)
+@cosmora/web:test: PASS 1: strict Russian decimals, ID preserve, duplicates and quoted CRLF
+@cosmora/web:test: PASS 2: large 80,000x10 CSV (800K cells), cross-quoted fields, no silent row trim
+@cosmora/web:test: PASS 3: hard UTF-8 byte/rows/columns/cells, malformed quotes
+@cosmora/web:test: PASS 4: workspace rejects invalid schema/types/columns/row shape, exact dup headers
+@cosmora/web:test: PASS 5: scatter numeric axes, missing/invalid counts, stable X sort and SVG extreme finite
+@cosmora/web:test: PASS 6: CSV spreadsheet injection including invisible prefixes; JSON duplicate headers
+@cosmora/web:test: PASS 7: large JSON export overflow aborts explicitly, CSV full export and bounded attachment rows
+@cosmora/web:test: PASS 8: export/workspace cancellation mid-batch
+@cosmora/web:test: PASS 9: REAL worker parse, filter, numeric scatter response
+@cosmora/web:test: PASS 10: REAL worker termination during 80k-row parse (no late loaded message)
+@cosmora/api:test:  Test Files  106 passed (106)
+@cosmora/api:test:       Tests  1077 passed | 1 skipped (1078)
+ Tasks:    16 successful, 16 total
+ Tasks:    9 successful, 9 total
+PASS root library FTS, original bytes and cross-owner isolation
+PASS archive rejects changed binary metadata; non-destructive fence released
+PASS complete ZIP export with original and manifest under quiesce
+PASS confirmed owner deletion (retained usage without duplicate hold, auth/ledger/other owner intact, late writes denied)

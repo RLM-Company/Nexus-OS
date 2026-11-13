@@ -1,0 +1,30 @@
+{
+  "head_sha": "7c2abadfe7d0e42ee9b72bc77608290584023996",
+  "tree": "3abab3543fe3c2bfaa6c6163bfefb5c5fba37b9f",
+  "pr": 563,
+  "integrated_by": "RLM-Company",
+  "merged_by_this_session": false,
+  "run_id": 43393188091,
+  "event": "push",
+  "status": "completed",
+  "conclusion": "success",
+  "jobs": [
+    {
+      "id": 131777763919,
+      "name": "Browser acceptance",
+      "conclusion": "success",
+      "primary_cases_passed": 495
+    },
+    {
+      "id": 131777763986,
+      "name": "Code sandbox isolation",
+      "conclusion": "success"
+    },
+    {
+      "id": 131777764024,
+      "name": "Verify monorepo",
+      "conclusion": "success"
+    }
+  ],
+  "new_fix_ci": "not yet published; this receipt does not cover the new fix"
+}

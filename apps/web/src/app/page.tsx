@@ -36,6 +36,7 @@ import {
   clearComposerDraftIfUnchanged,
   readComposerDraft
 } from "./composer-draft-storage";
+import { restoredRunState, type TerminalRunObservation } from "./restored-run-state";
 import { useLiveComposerText } from "./use-live-composer-text";
 import {
   chatSendRetryKey,
@@ -461,39 +462,6 @@ const displayedGeneralContent = (message: LocalChatMessage): string | null => {
   return message.content || null;
 };
 
-type RestoredRunState = {
-  phase: RunPhase;
-  activeRunId: string | null;
-};
-
-const restoredRunState = (
-  messages: Array<Pick<Message, "run_id" | "role" | "status">>
-): RestoredRunState => {
-  const latestRunMessage = [...messages].reverse().find((message) => message.run_id !== null);
-  if (!latestRunMessage?.run_id) return { phase: "idle", activeRunId: null };
-  const runId = latestRunMessage.run_id;
-
-  const latestRunMessages = messages.filter((message) => message.run_id === runId);
-  const assistant = [...latestRunMessages]
-    .reverse()
-    .find((message) => message.role === "assistant");
-  if (!assistant) {
-    return latestRunMessages.some((message) => message.role === "user")
-      ? { phase: "queued", activeRunId: runId }
-      : { phase: "idle", activeRunId: null };
-  }
-
-  if (assistant.status === "pending") {
-    return { phase: "running", activeRunId: runId };
-  }
-  if (assistant.status === "streaming") {
-    return { phase: "streaming", activeRunId: runId };
-  }
-  if (assistant.status === "completed") return { phase: "completed", activeRunId: null };
-  if (assistant.status === "failed") return { phase: "failed", activeRunId: null };
-  return { phase: "cancelled", activeRunId: null };
-};
-
 const recoverableUserMessage = (messages: Message[]): Message | null => {
   const latestRunMessage = [...messages].reverse().find((message) => message.run_id !== null);
   if (!latestRunMessage?.run_id) return null;
@@ -616,6 +584,7 @@ export default function Home() {
   const [sidebarSectionsHydrated, setSidebarSectionsHydrated] = useState(false);
   const [workspaceSurfaceHydrated, setWorkspaceSurfaceHydrated] = useState(false);
   const streamRef = useRef<EventSource | null>(null);
+  const terminalRunRef = useRef<TerminalRunObservation | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const followMessagesRef = useRef(true);
   const focusedHistoryTarget = useRef<string | null>(null);
@@ -1165,7 +1134,7 @@ export default function Home() {
       requestId !== viewRequestRef.current
     )
       return;
-    const restoredRun = restoredRunState(detail.messages);
+    const restoredRun = restoredRunState(detail.messages, terminalRunRef.current);
     if (restoredRun.activeRunId === null) {
       streamRef.current?.close();
       streamRef.current = null;
@@ -1203,7 +1172,7 @@ export default function Home() {
     if (epoch !== viewEpochRef.current || requestId !== viewRequestRef.current) return;
     setChatMode(detail.chat.mode ?? "kosmora");
     if (detail.chat.mode !== "work") setCodeSpace(detail.chat.mode === "coscode");
-    const restoredRun = restoredRunState(detail.messages);
+    const restoredRun = restoredRunState(detail.messages, terminalRunRef.current);
     if (restoredRun.activeRunId === null) {
       streamRef.current?.close();
       streamRef.current = null;
@@ -1520,6 +1489,7 @@ export default function Home() {
 
       source.addEventListener("run.completed", (raw) => {
         if (!isCurrent()) return;
+        terminalRunRef.current = { runId: accepted.run_id, phase: "completed" };
         const event = JSON.parse(String(raw.data)) as {
           data: { provider: string; model_resolved: string };
         };
@@ -1546,6 +1516,7 @@ export default function Home() {
 
       source.addEventListener("run.failed", () => {
         if (!isCurrent()) return;
+        terminalRunRef.current = { runId: accepted.run_id, phase: "failed" };
         viewRequestRef.current += 1;
         finished = true;
         closeSource();
@@ -1558,6 +1529,7 @@ export default function Home() {
 
       source.addEventListener("run.cancelled", () => {
         if (!isCurrent()) return;
+        terminalRunRef.current = { runId: accepted.run_id, phase: "cancelled" };
         viewRequestRef.current += 1;
         finished = true;
         closeSource();
@@ -1659,6 +1631,7 @@ export default function Home() {
       });
       source.addEventListener("run.completed", (raw) => {
         if (!isCurrent()) return;
+        terminalRunRef.current = { runId: accepted.run_id, phase: "completed" };
         viewRequestRef.current += 1;
         const event = JSON.parse(String(raw.data)) as {
           data: { provider: string; model_resolved: string };
@@ -1683,6 +1656,7 @@ export default function Home() {
       });
       source.addEventListener("run.failed", (raw) => {
         if (!isCurrent()) return;
+        terminalRunRef.current = { runId: accepted.run_id, phase: "failed" };
         const failure = JSON.parse(String(raw.data)) as { data: { error_code: string } };
         viewRequestRef.current += 1;
         finished = true;
@@ -1724,6 +1698,7 @@ export default function Home() {
       });
       source.addEventListener("run.cancelled", () => {
         if (!isCurrent()) return;
+        terminalRunRef.current = { runId: accepted.run_id, phase: "cancelled" };
         viewRequestRef.current += 1;
         finished = true;
         closeSource();
@@ -1782,6 +1757,7 @@ export default function Home() {
       return;
     }
     if (epoch !== viewEpochRef.current) return;
+    terminalRunRef.current = { runId: activeRunId, phase: "cancelled" };
     viewRequestRef.current += 1;
     streamRef.current?.close();
     streamRef.current = null;

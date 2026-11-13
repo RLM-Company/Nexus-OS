@@ -1,0 +1,39 @@
+{
+  "command": "pnpm_config_verify_deps_before_run='' pnpm check:core",
+  "exit_code": 0,
+  "local_source_sha": "3b27dbda129db0655970ace0e511bf79d7699c15",
+  "equivalent_github_source_sha": "04c4b2eb03dc0fa8541041d593352ad9ce84a8f6",
+  "source_tree": "78443d831e1c9ca3c7d0fa879039e751776dee15",
+  "log_sha256": "1356b501d173aa8bd803281bfe338624e265ee3795a00a36ecabc47edd3654be",
+  "raw_log_workspace_path": "/tmp/nexus-terminal-core.log",
+  "api": {
+    "passed": 1077,
+    "skipped": 1,
+    "fresh": true
+  },
+  "web": {
+    "passed": 385,
+    "fresh": true
+  },
+  "core": {
+    "passed": 425,
+    "cache": true
+  },
+  "db": {
+    "passed": 223,
+    "cache": true
+  },
+  "tool_runtime": {
+    "passed": 86,
+    "skipped": 5
+  },
+  "typecheck": 0,
+  "lint": 0,
+  "format": 0,
+  "secrets": 0,
+  "build": 0,
+  "privacy": 0,
+  "profile_fixture": 0,
+  "real_model_called": false,
+  "new_pr_ci": "not yet published; track independently"
+}
