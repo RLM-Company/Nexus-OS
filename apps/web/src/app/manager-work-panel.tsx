@@ -9,7 +9,7 @@ import { WorkManagerProgress } from "./work-manager-progress";
 import { WorkManagerMemory } from "./work-manager-memory";
 import { DesktopComputerButton } from "./desktop-computer-button";
 import { useEffect, useRef, useState } from "react";
-import type { CreateManagerWork } from "@cosmora/contracts";
+import { MANAGER_WORK_CONTROL_EVENTS, type CreateManagerWork } from "@cosmora/contracts";
 import { startVisibleReadPolling } from "./visible-read-poller";
 import { executionGateLabels, useExecutionGate } from "./use-execution-gate";
 
@@ -66,6 +66,15 @@ const errors: Record<string, string> = {
   WAITING_CONFIRMATION: "Подтвердите сохранение в центре управления, затем продолжите работу."
 };
 
+class WorkHttpError extends Error {
+  constructor(
+    message: string,
+    readonly status: number
+  ) {
+    super(message);
+  }
+}
+
 async function json<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, {
     ...init,
@@ -81,12 +90,14 @@ async function json<T>(url: string, init?: RequestInit): Promise<T> {
     } catch {
       // Only known error codes are shown; arbitrary server text stays private.
     }
-    throw new Error(
-      typeof code === "string" && Object.hasOwn(errors, code)
-        ? errors[code]
-        : response.status === 409
+    const message =
+      typeof code === "string" && Object.hasOwn(errors, code) ? errors[code] : undefined;
+    throw new WorkHttpError(
+      message ??
+        (response.status === 409
           ? "Состояние уже изменилось. Обновите его и повторите действие."
-          : "Не удалось выполнить запрос. Проверьте соединение."
+          : "Не удалось выполнить запрос. Проверьте соединение."),
+      response.status
     );
   }
   return response.json() as Promise<T>;
@@ -256,10 +267,11 @@ export function ManagerWorkPanel({
       );
     }
   };
-  const act = async (action?: "pause" | "resume" | "approve" | "cancel") => {
+  const act = async (action?: keyof typeof MANAGER_WORK_CONTROL_EVENTS) => {
     if ((!action || action === "resume" || action === "approve") && executionGate !== "clear")
       return;
-    if (lock.current) return;
+    if (lock.current || (action && !work)) return;
+    const controlled = action && work ? work : null;
     const epoch = ++mutationEpoch.current;
     lock.current = true;
     setBusy(true);
@@ -295,6 +307,25 @@ export function ManagerWorkPanel({
         savePendingWork(pendingKey, null);
       }
     } catch (cause) {
+      if (action && controlled && !(cause instanceof WorkHttpError && cause.status < 500)) {
+        const path = base + "/" + encodeURIComponent(controlled.id);
+        const current = await json<Work>(path).catch(() => null);
+        const lastSequence = controlled.events.at(-1)?.sequence ?? 0;
+        if (
+          current?.id === controlled.id &&
+          current.version > controlled.version &&
+          current.events.some(
+            (event) =>
+              event.sequence > lastSequence && event.message === MANAGER_WORK_CONTROL_EVENTS[action]
+          )
+        ) {
+          recordMutation(current, epoch);
+          return;
+        }
+        if (epoch === mutationEpoch.current)
+          setError("Ответ на команду потерян. Проверьте историю задачи перед повтором.");
+        return;
+      }
       if (epoch === mutationEpoch.current)
         setError(
           cause instanceof Error && cause.name === "TimeoutError"

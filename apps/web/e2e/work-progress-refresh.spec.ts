@@ -188,6 +188,46 @@ async function preparedWork(request: APIRequestContext, autonomy: "A1" | "A2" = 
   };
 }
 
+for (const outcome of ["committed", "unconfirmed", "rejected"] as const) {
+  test(`a ${outcome} Manager cancellation never posts automatically again`, async ({
+    page,
+    request
+  }) => {
+    const work = await preparedWork(request, "A1");
+    let posts = 0;
+    let reads = 0;
+    await page.route(`**${work.work}`, (route) => {
+      reads++;
+      return route.continue();
+    });
+    await page.route(`**${work.work}/control`, async (route) => {
+      posts++;
+      if (outcome === "rejected") {
+        return route.fulfill({ status: 409, json: { error: "STALE_EXECUTION" } });
+      }
+      if (outcome === "committed") {
+        const response = await route.fetch();
+        expect(response.status()).toBe(200);
+      }
+      await route.abort("connectionreset");
+    });
+    await page.goto(`/?project=${work.project}&view=plan`);
+    const manager = page.getByRole("region", { name: "Выполнение задачи Manager", exact: true });
+    await expect(manager.locator(".manager-work-status")).toHaveText("Нужно подтверждение плана");
+    await manager.getByRole("button", { name: "Остановить задачу", exact: true }).click();
+    if (outcome === "committed") {
+      await expect(manager.locator(".manager-work-status")).toHaveText("Отменено");
+    } else {
+      await expect(manager).toContainText(
+        outcome === "rejected" ? "Состояние уже изменилось" : "Ответ на команду потерян"
+      );
+      await expect(manager.locator(".manager-work-status")).toHaveText("Нужно подтверждение плана");
+    }
+    expect(posts).toBe(1);
+    expect(reads).toBe(outcome === "rejected" ? 0 : 1);
+  });
+}
+
 test("manual memory creation retry recovers a lost acknowledgement without a duplicate", async ({
   page,
   request
