@@ -329,7 +329,7 @@ test("unchanged completed progress does not refetch on a timer", async ({ page, 
   expect(reads).toBe(initial);
 });
 
-test("selected work stays open outside the history window and keeps control commands scoped", async ({
+test("selected work survives reload outside the history window and keeps commands scoped", async ({
   page,
   request
 }) => {
@@ -383,7 +383,7 @@ test("selected work stays open outside the history window and keeps control comm
   await selected.click();
   await expect(selected).toHaveAttribute("aria-pressed", "true");
   outsideWindow = true;
-  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await page.reload();
   await expect.poll(() => detailReads).toBeGreaterThan(0);
   await expect(selected).toHaveAttribute("aria-pressed", "true");
   unavailable = true;
@@ -405,6 +405,29 @@ test("selected work stays open outside the history window and keeps control comm
   expect(
     ((await (await request.get(`${list}/${otherId}`)).json()) as { status: string }).status
   ).toBe("awaiting_approval");
+});
+
+test("a missing saved selection falls back to available work", async ({ page, request }) => {
+  const work = await preparedWork(request);
+  const missing = crypto.randomUUID();
+  const key = "kosmora:manager-work-selection:v1:" + work.project;
+  await page.addInitScript(({ key, missing }) => sessionStorage.setItem(key, missing), {
+    key,
+    missing
+  });
+  let detailReads = 0;
+  await page.route(`**/api/v1/projects/${work.project}/work/${missing}`, (route) => {
+    detailReads++;
+    return route.continue();
+  });
+  await page.goto(`/?project=${work.project}&view=plan`);
+  const manager = page.getByRole("region", { name: "Выполнение задачи Manager", exact: true });
+  const task = manager
+    .getByRole("group", { name: "История задач Manager", exact: true })
+    .getByRole("button", { name: /Create result.md with a short complete report/ });
+  await expect(task).toHaveAttribute("aria-pressed", "true");
+  expect(detailReads).toBe(1);
+  expect(await page.evaluate((key) => sessionStorage.getItem(key), key)).toBeNull();
 });
 
 test("a lost create acknowledgement keeps its complete request across model budget refresh", async ({

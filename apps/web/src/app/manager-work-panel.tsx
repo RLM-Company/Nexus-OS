@@ -66,7 +66,7 @@ const errors: Record<string, string> = {
   WAITING_CONFIRMATION: "Подтвердите сохранение в центре управления, затем продолжите работу."
 };
 
-async function json<T>(url: string, init?: RequestInit): Promise<T> {
+async function json<T>(url: string, init?: RequestInit, onMissing?: () => T): Promise<T> {
   const response = await fetch(url, {
     ...init,
     cache: "no-store",
@@ -74,6 +74,7 @@ async function json<T>(url: string, init?: RequestInit): Promise<T> {
       ? AbortSignal.any([init.signal, AbortSignal.timeout(15000)])
       : AbortSignal.timeout(15000)
   });
+  if (response.status === 404 && onMissing) return onMissing();
   if (!response.ok) {
     let code: unknown;
     try {
@@ -90,6 +91,24 @@ async function json<T>(url: string, init?: RequestInit): Promise<T> {
     );
   }
   return response.json() as Promise<T>;
+}
+
+function readWorkSelection(key: string): string | null {
+  try {
+    const id = window.sessionStorage.getItem(key);
+    return id && /^[a-f0-9-]{36}$/.test(id) ? id : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveWorkSelection(key: string, id: string | null) {
+  try {
+    if (id) window.sessionStorage.setItem(key, id);
+    else window.sessionStorage.removeItem(key);
+  } catch {
+    // The current selection still works when browser storage is unavailable.
+  }
 }
 
 export function ManagerWorkPanel({
@@ -120,6 +139,7 @@ export function ManagerWorkPanel({
   const mutationEpoch = useRef(0);
   const pending = useRef<CreateManagerWork | null>(null);
   const base = "/api/v1/projects/" + encodeURIComponent(projectId) + "/work";
+  const selectionKey = "kosmora:manager-work-selection:v1:" + projectId;
   const draft = pending.current;
   const pendingRequest =
     draft &&
@@ -149,15 +169,23 @@ export function ManagerWorkPanel({
           })
         ]);
         // History is bounded. Its window moving is not a change of selection.
-        const selected = selectedWorkId
-          ? (list.items.find((item) => item.id === selectedWorkId) ??
-            (await json<Work>(base + "/" + encodeURIComponent(selectedWorkId), { signal })))
+        const wanted = selectedWorkId ?? readWorkSelection(selectionKey);
+        const selected = wanted
+          ? (list.items.find((item) => item.id === wanted) ??
+            (await json<Work | null>(
+              base + "/" + encodeURIComponent(wanted),
+              { signal },
+              () => null
+            )))
           : null;
+        if (selected && selected.id !== wanted) throw Error("Unexpected work selection");
         const items =
           selected && !list.items.some((item) => item.id === selected.id)
             ? [...list.items, selected]
             : list.items;
         if (!signal.aborted && epoch === mutationEpoch.current && !lock.current) {
+          if (wanted && !selected) saveWorkSelection(selectionKey, null);
+          setSelectedWorkId(selected?.id ?? null);
           const latest = selected ?? items[0] ?? null;
           setWorks((current) =>
             items.map((item) => {
@@ -180,7 +208,7 @@ export function ManagerWorkPanel({
         onError: () => setReadError("Состояние временно недоступно. Работа сохраняется на сервере.")
       }
     );
-  }, [base, selectedWorkId]);
+  }, [base, selectedWorkId, selectionKey]);
   const recordMutation = (updated: Work, epoch: number) => {
     setWorks((current) =>
       current.some((item) => item.id === updated.id)
@@ -192,6 +220,7 @@ export function ManagerWorkPanel({
     // A later history selection is the current intent. A late command response
     // updates its own history row without switching the selected task back.
     if (epoch === mutationEpoch.current) {
+      saveWorkSelection(selectionKey, updated.id);
       setSelectedWorkId(updated.id);
       setWork((previous) =>
         previous?.id === updated.id && previous.version > updated.version ? previous : updated
@@ -402,6 +431,7 @@ export function ManagerWorkPanel({
                 aria-pressed={item.id === (selectedWorkId ?? works[0]?.id)}
                 onClick={() => {
                   mutationEpoch.current++;
+                  saveWorkSelection(selectionKey, item.id);
                   setSelectedWorkId(item.id);
                   setWork(item);
                   setError("");
