@@ -20,7 +20,7 @@ const errors: Record<string, string> = {
   ARTIFACT_CONTEXT_INVALID_SELECTION: "Проверьте границы диапазона и номера столбцов.",
   ARTIFACT_CONTEXT_INVALID_TEXT: "В источнике есть недопустимые для контекста управляющие символы."
 };
-const kinds = { canvas: "Canvas", table: "Таблица", work: "Work" };
+const kinds = { canvas: "Canvas", table: "Таблица", work: "Work", research: "Исследование" };
 
 export function ProjectArtifactPicker({
   projectId,

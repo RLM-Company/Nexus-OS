@@ -1,6 +1,8 @@
 import type { ChatTextAttachment } from "./chat-attachments.js";
 
-export type ArtifactContextKind = "canvas" | "table" | "work";
+/** "research" is a completed Deep Research report, exposed as a bounded text
+ * snapshot through the existing project material hook. */
+export type ArtifactContextKind = "canvas" | "table" | "work" | "research";
 export type ArtifactContextSource = {
   kind: ArtifactContextKind;
   id: string;

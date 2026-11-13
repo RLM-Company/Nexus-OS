@@ -7,8 +7,9 @@ import type {
   ArtifactContextPreview
 } from "@cosmora/contracts/artifact-context";
 import { parseDataWorkspace } from "@cosmora/contracts/data-workspace";
-import { profileTable, selectTable, TableAnalysisError } from "@cosmora/core";
+import { profileTable, researchMarkdown, selectTable, TableAnalysisError } from "@cosmora/core";
 import type { CanvasArtifactStore, ManagerWorkStore } from "@cosmora/db";
+import type { ResearchStore } from "./research/research-store.js";
 
 const hash = (content: string) => createHash("sha256").update(content).digest("hex");
 export class ArtifactContextError extends Error {}
@@ -16,8 +17,23 @@ export class ArtifactContextError extends Error {}
 export class ArtifactContext {
   constructor(
     private readonly canvas: CanvasArtifactStore,
-    private readonly work?: ManagerWorkStore
+    private readonly work?: ManagerWorkStore,
+    private readonly research?: ResearchStore
   ) {}
+  /** A completed report of THIS project and owner, as a bounded text snapshot. */
+  private researchContent(
+    project: string,
+    owner: string,
+    source: ArtifactContextSource
+  ): { content: string; title: string } {
+    const run = this.research?.get(source.id, owner);
+    if (!run || run.project_id !== project || run.owner_id !== owner || run.status !== "completed")
+      throw new ArtifactContextError("ARTIFACT_CONTEXT_NOT_FOUND");
+    const content = researchMarkdown(run);
+    if (hash(content) !== source.sha256 || source.version !== 1)
+      throw new ArtifactContextError("ARTIFACT_CONTEXT_VERSION_CONFLICT");
+    return { content, title: run.question };
+  }
   /** Compact evidence for existing chat/project attachments; never claims to include raw rows. */
   tableSummary(
     project: string,
@@ -99,12 +115,28 @@ export class ArtifactContext {
         bytes: file.bytes,
         title: file.name
       }));
-    return [...canvas, ...work];
+    const research = (this.research?.list(owner) ?? [])
+      .filter((run) => run.project_id === project && run.status === "completed")
+      .slice(0, 25)
+      .map((run) => {
+        const content = researchMarkdown(run);
+        return {
+          kind: "research" as const,
+          id: run.id,
+          version: 1,
+          sha256: hash(content),
+          bytes: Buffer.byteLength(content),
+          title: run.question
+        };
+      });
+    return [...canvas, ...work, ...research];
   }
   preview(project: string, owner: string, input: ArtifactContextRequest): ArtifactContextPreview {
     const { source, selection } = input;
     let content: string, title: string;
-    if (source.kind === "work") {
+    if (source.kind === "research") {
+      ({ content, title } = this.researchContent(project, owner, source));
+    } else if (source.kind === "work") {
       const file = this.work?.runtime.artifact(project, owner, source.id);
       if (
         !file ||
