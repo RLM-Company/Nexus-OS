@@ -893,12 +893,45 @@ typecheck` в КАЖДОМ затронутом пакете, не только 
     untracked и не коммитится; KOSMORA_LIVE_ORIGIN не создан, live-smoke
     no-op (live-приёмка отложена владельцем).
 
+46. **Согласование объёма arbiter/#538 (13.11.2026, владелец «Согласовать
+    объём arbiter/#538»)**. Реализации НЕ было — только разведка и
+    обсуждение по STAGE_TWO_WORKFLOW_RU. Разведка (subagent): переиспользуемые
+    first-party узлы — `evaluateSkillResult()`
+    (packages/core/src/skill-result-evaluation.ts, #538 срез D: 3 явных
+    критерия format/facts_preserved/constraints_followed, выход
+    passed/checks/not_checked, «style fidelity ≠ correctness», без LLM),
+    `resolveSkillConflicts()` (срез B, precedence), `resultsFor()` /
+    `buildWorkResultsArchive()` (инертная сборка published-артефактов,
+    конкатенация не слияние), `verifiedArtifact()`/`reconcile()` (байт-проверка
+    sha256), `workflowResultsView()` (conformance по замороженному
+    `expected_results`), `AgentTeamRunStore`/`TeamGraphAdapter` (части → DAG,
+    нет team-result endpoint), `AgentStudioMutationStore` (decision events
+    plan/confirm/activate, каркас для assembly). Внешних license-заголовков
+    у этих узлов нет (#538, merge `a3a9d7e2`); при адаптации Ruflo/Gemini —
+    правило MIT-уведомления и pin upstream. genuinely нового: объект
+    «собранный результат команды» с provenance, проверка целого по критериям,
+    замороженный снимок критериев, конфликты → владельцу, assembly decision
+    event. Материал: `docs/product/KOSMORA_MULTI_AGENT_ARBITER_SCOPE_RU.md`.
+    **Решения владельца (question-tool, 3 рекомендованных варианта)**:
+    (1) критерии задаёт владелец при подтверждении состава/запуске и они
+    замораживаются immutable-снимком (как expected_results); (2) сборка —
+    инертный бандл/ZIP с provenance без переписывания, без платных вызовов,
+    byte-верифицируемо (смысловое слияние исключено); (3) граница — ТОЛЬКО
+    arbiter (сборка + проверка + assembly decision event), бюджет команды и
+    панель хода — отдельные следующие срезы. Конфликты → владельцу и
+    model-free проверяющий зафиксированы карточкой раздела. Проверки шага:
+    prettier clean. Ни UI, ни paid-вызовы, ни grants, ни второй ledger, ни
+    новый исполнитель не изменялись; live-приёмка остаётся отложенной.
+
 ## Что делать следующему запуску (в порядке приоритета)
 
 1. **Следующие срезы Multi-Agent по очереди** (согласовывать с владельцем):
    срез 2 (bounded concurrency, cap=2) **выполнен и слит** 13.11.2026
-   (п. 45, merge `43ffee1d`). Далее: arbiter-сборка с проверкой по
-   критериям #538, бюджет команды поверх owner budget, панель хода.
+   (п. 45, merge `43ffee1d`). Объём arbiter/#538 **согласован** 13.11.2026
+   (п. 46, `docs/product/KOSMORA_MULTI_AGENT_ARBITER_SCOPE_RU.md`): только
+   model-free сборка + проверка по замороженным критериям + assembly decision
+   event; это ближайшая реализация. Затем отдельно: бюджет команды поверх
+   owner budget, панель хода (UI — точечный запрос по UI_RULES).
    Multi-Agent остаётся финальным разделом: начинать/перекраивать его без
    указания владельца нельзя.
 
