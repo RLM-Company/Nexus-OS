@@ -200,3 +200,5 @@ legacy /repair404, missing/invalid version400. API+web поставлять вм
 Live модель/foreign publish/ownerPC/VPS/merge/deploy не разрешены и не выполнялись.
 Node checks по snapshot без сети/install/arbitrary shell; tree budgets и browser
 compatibility остаются прежними, см. DELIVERY. Максимальный статус — готово к интеграции.
+
+Живая проверка GitHub и OCI описана в [отчёте от 12 ноября](LIVE_ACCEPTANCE_2026-11-12_RU.md). Проверка с ответом модели остаётся открытой.
