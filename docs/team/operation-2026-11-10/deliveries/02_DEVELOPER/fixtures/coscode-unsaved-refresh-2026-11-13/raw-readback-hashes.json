@@ -1,0 +1,70 @@
+{
+  "baseline-file-preservation.json": {
+    "raw_sha256": "4c395266991611cdbbea96976ee205c4f64ac8063dec41277b88d8af698a3966",
+    "real_model_called": false
+  },
+  "baseline-poll-preservation.json": {
+    "raw_sha256": "34925506aa39e88ab1a13ff92676871c308c0781cc9b61b6188a6de2d717f4f6",
+    "real_model_called": false
+  },
+  "baseline-raw-diff-preservation.json": {
+    "raw_sha256": "55adc015fe1c0a3ea90d7987efae65f2c459f49475124d75f657e37eabc6e7a9",
+    "real_model_called": false
+  },
+  "targeted-file-preservation.json": {
+    "raw_sha256": "4750be2fc423d62b4323b8dd10d7a6486a717878f01c72e422cf4e040a13b110",
+    "real_model_called": false
+  },
+  "targeted-stale-reload-preservation.json": {
+    "raw_sha256": "9ba82736cdb43b49ce29e1737b8b89b6f802d3a023added8661e7530e0544b97",
+    "real_model_called": false
+  },
+  "targeted-poll-preservation.json": {
+    "raw_sha256": "e2d8cbed06665995a0eec07e5b49ad50b7aac31978add595fb297a04ef4fc8ee",
+    "real_model_called": false
+  },
+  "targeted-raw-diff-preservation.json": {
+    "raw_sha256": "c3f33eb49105315c9cb84d1075c0b12611357cffe96affa83b1041dfc582b9c7",
+    "real_model_called": false
+  },
+  "passed-revoked-reload-recovery.json": {
+    "raw_sha256": "08a618178f9c812c69fa315dbeb9e34f7e5288a77299eadcdb9b9d0094e49a30",
+    "real_model_called": false
+  },
+  "passed-revoked-reload-preservation.json": {
+    "raw_sha256": "2ea3a1c80828d4a31c4e969bff240f52a54dcaa25887cd37be9166802766e100",
+    "real_model_called": false
+  },
+  "passed-file-recovery.json": {
+    "raw_sha256": "1d5ee66bf66b7dcfcfbf9ca4f4a9598e54b3afb14e3c0723c3651a36f6f6eb84",
+    "real_model_called": false
+  },
+  "passed-file-preservation.json": {
+    "raw_sha256": "4750be2fc423d62b4323b8dd10d7a6486a717878f01c72e422cf4e040a13b110",
+    "real_model_called": false
+  },
+  "passed-stale-reload-recovery.json": {
+    "raw_sha256": "c04a630661a1c79b17aeaadc8387246485257708509d0c63081d766ee6d28f8a",
+    "real_model_called": false
+  },
+  "passed-stale-reload-preservation.json": {
+    "raw_sha256": "9ba82736cdb43b49ce29e1737b8b89b6f802d3a023added8661e7530e0544b97",
+    "real_model_called": false
+  },
+  "passed-poll-recovery.json": {
+    "raw_sha256": "52bfbb3cea0f0f8f0122ca65ffd200f6f5a5c68a495450d99f8be9416234dcac",
+    "real_model_called": false
+  },
+  "passed-poll-preservation.json": {
+    "raw_sha256": "e2d8cbed06665995a0eec07e5b49ad50b7aac31978add595fb297a04ef4fc8ee",
+    "real_model_called": false
+  },
+  "passed-raw-diff-recovery.json": {
+    "raw_sha256": "41214703592a860d16108ff1f39d101dd4c7cec0c8ac9dcb0297c71c22732969",
+    "real_model_called": false
+  },
+  "passed-raw-diff-preservation.json": {
+    "raw_sha256": "c3f33eb49105315c9cb84d1075c0b12611357cffe96affa83b1041dfc582b9c7",
+    "real_model_called": false
+  }
+}

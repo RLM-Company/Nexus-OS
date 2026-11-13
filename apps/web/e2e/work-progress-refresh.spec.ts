@@ -188,6 +188,46 @@ async function preparedWork(request: APIRequestContext, autonomy: "A1" | "A2" = 
   };
 }
 
+for (const outcome of ["committed", "unconfirmed", "rejected"] as const) {
+  test(`a ${outcome} Manager cancellation never posts automatically again`, async ({
+    page,
+    request
+  }) => {
+    const work = await preparedWork(request, "A1");
+    let posts = 0;
+    let reads = 0;
+    await page.route(`**${work.work}`, (route) => {
+      reads++;
+      return route.continue();
+    });
+    await page.route(`**${work.work}/control`, async (route) => {
+      posts++;
+      if (outcome === "rejected") {
+        return route.fulfill({ status: 409, json: { error: "STALE_EXECUTION" } });
+      }
+      if (outcome === "committed") {
+        const response = await route.fetch();
+        expect(response.status()).toBe(200);
+      }
+      await route.abort("connectionreset");
+    });
+    await page.goto(`/?project=${work.project}&view=plan`);
+    const manager = page.getByRole("region", { name: "Выполнение задачи Manager", exact: true });
+    await expect(manager.locator(".manager-work-status")).toHaveText("Нужно подтверждение плана");
+    await manager.getByRole("button", { name: "Остановить задачу", exact: true }).click();
+    if (outcome === "committed") {
+      await expect(manager.locator(".manager-work-status")).toHaveText("Отменено");
+    } else {
+      await expect(manager).toContainText(
+        outcome === "rejected" ? "Состояние уже изменилось" : "Ответ на команду потерян"
+      );
+      await expect(manager.locator(".manager-work-status")).toHaveText("Нужно подтверждение плана");
+    }
+    expect(posts).toBe(1);
+    expect(reads).toBe(outcome === "rejected" ? 0 : 1);
+  });
+}
+
 test("manual memory creation retry recovers a lost acknowledgement without a duplicate", async ({
   page,
   request
@@ -329,7 +369,7 @@ test("unchanged completed progress does not refetch on a timer", async ({ page, 
   expect(reads).toBe(initial);
 });
 
-test("selected work stays open outside the history window and keeps control commands scoped", async ({
+test("selected work survives reload outside the history window and keeps commands scoped", async ({
   page,
   request
 }) => {
@@ -383,7 +423,7 @@ test("selected work stays open outside the history window and keeps control comm
   await selected.click();
   await expect(selected).toHaveAttribute("aria-pressed", "true");
   outsideWindow = true;
-  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await page.reload();
   await expect.poll(() => detailReads).toBeGreaterThan(0);
   await expect(selected).toHaveAttribute("aria-pressed", "true");
   unavailable = true;
@@ -407,7 +447,30 @@ test("selected work stays open outside the history window and keeps control comm
   ).toBe("awaiting_approval");
 });
 
-test("a lost create acknowledgement keeps its complete request across model budget refresh", async ({
+test("a missing saved selection falls back to available work", async ({ page, request }) => {
+  const work = await preparedWork(request);
+  const missing = crypto.randomUUID();
+  const key = "kosmora:manager-work-selection:v1:" + work.project;
+  await page.addInitScript(({ key, missing }) => sessionStorage.setItem(key, missing), {
+    key,
+    missing
+  });
+  let detailReads = 0;
+  await page.route(`**/api/v1/projects/${work.project}/work/${missing}`, (route) => {
+    detailReads++;
+    return route.continue();
+  });
+  await page.goto(`/?project=${work.project}&view=plan`);
+  const manager = page.getByRole("region", { name: "Выполнение задачи Manager", exact: true });
+  const task = manager
+    .getByRole("group", { name: "История задач Manager", exact: true })
+    .getByRole("button", { name: /Create result.md with a short complete report/ });
+  await expect(task).toHaveAttribute("aria-pressed", "true");
+  expect(detailReads).toBe(1);
+  expect(await page.evaluate((key) => sessionStorage.getItem(key), key)).toBeNull();
+});
+
+test("a lost create acknowledgement keeps its complete request across reload and model budget refresh", async ({
   page,
   request
 }) => {
@@ -454,7 +517,11 @@ test("a lost create acknowledgement keeps its complete request across model budg
   await expect(
     manager.getByText("Не удалось выполнить запрос. Проверьте соединение.", { exact: true })
   ).toBeVisible();
+  await page.reload();
+  await expect(manager.getByLabel("Задача для выполнения", { exact: true })).toHaveValue(goal);
+  await expect(manager).toContainText("Подтверждение предыдущего запуска потеряно");
   await expect(manager.locator(".manager-work-runtime")).toContainText("fixture-window-B");
+  expect(payloads).toHaveLength(1);
   await expect(manager.locator(".manager-work-limits")).toContainText(/384\s*000/);
   const retry = page.waitForResponse(
     (r) => r.url().endsWith(list) && r.request().method() === "POST"

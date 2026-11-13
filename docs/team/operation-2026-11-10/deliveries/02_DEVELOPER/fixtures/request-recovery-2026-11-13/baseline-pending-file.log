@@ -1,0 +1,80 @@
+[WebServer] (node:28268) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:28282) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:28282) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:28296) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] $ next start -H 127.0.0.1
+[WebServer] (node:28311) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+
+Running 2 tests using 1 worker
+
+(node:28330) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✘  1 [chromium] › e2e/run-draft-recovery.spec.ts:166:7 › chat: recovery cannot discard a file that is still being read (2.3s)
+(node:28465) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✘  2 [chromium] › e2e/run-draft-recovery.spec.ts:166:7 › project: recovery cannot discard a file that is still being read (1.9s)
+
+
+  1) [chromium] › e2e/run-draft-recovery.spec.ts:166:7 › chat: recovery cannot discard a file that is still being read
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: ""
+    Received: "Реквизиты: 19 700 ₽; артикул 00123; 13.11.2026; кроме доставки"
+
+      212 |       body: JSON.stringify(result)
+      213 |     });
+    > 214 |     expect(result.text).toBe("");
+          |                         ^
+      215 |     expect(result.files).toEqual([{ name: "pending.txt", content: "Новый ожидающий файл 00123" }]);
+      216 |   });
+      217 | }
+        at /workspace/work/Nexus-OS-postmerge-2026-11-13/apps/web/e2e/run-draft-recovery.spec.ts:214:25
+
+    Error Context: ../../../../../tmp/nexus-postmerge-browser-results/run-draft-recovery-chat-re-53dcd-le-that-is-still-being-read-chromium/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    ../../../../../tmp/nexus-postmerge-browser-results/run-draft-recovery-chat-re-53dcd-le-that-is-still-being-read-chromium/trace.zip
+    Usage:
+
+        pnpm exec playwright show-trace ../../../../../tmp/nexus-postmerge-browser-results/run-draft-recovery-chat-re-53dcd-le-that-is-still-being-read-chromium/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  2) [chromium] › e2e/run-draft-recovery.spec.ts:166:7 › project: recovery cannot discard a file that is still being read
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: ""
+    Received: "Реквизиты: 19 700 ₽; артикул 00123; 13.11.2026; кроме доставки"
+
+      212 |       body: JSON.stringify(result)
+      213 |     });
+    > 214 |     expect(result.text).toBe("");
+          |                         ^
+      215 |     expect(result.files).toEqual([{ name: "pending.txt", content: "Новый ожидающий файл 00123" }]);
+      216 |   });
+      217 | }
+        at /workspace/work/Nexus-OS-postmerge-2026-11-13/apps/web/e2e/run-draft-recovery.spec.ts:214:25
+
+    Error Context: ../../../../../tmp/nexus-postmerge-browser-results/run-draft-recovery-project-9b93b-le-that-is-still-being-read-chromium/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    ../../../../../tmp/nexus-postmerge-browser-results/run-draft-recovery-project-9b93b-le-that-is-still-being-read-chromium/trace.zip
+    Usage:
+
+        pnpm exec playwright show-trace ../../../../../tmp/nexus-postmerge-browser-results/run-draft-recovery-project-9b93b-le-that-is-still-being-read-chromium/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  2 failed
+    [chromium] › e2e/run-draft-recovery.spec.ts:166:7 › chat: recovery cannot discard a file that is still being read
+    [chromium] › e2e/run-draft-recovery.spec.ts:166:7 › project: recovery cannot discard a file that is still being read
+undefined
+/workspace/work/Nexus-OS-postmerge-2026-11-13/apps/web:
+[ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL] Command failed with exit code 1: playwright test '--config=/tmp/nexus-terminal-existing-build.config.ts' run-draft-recovery.spec.ts --grep 'file that is still' '--workers=1'

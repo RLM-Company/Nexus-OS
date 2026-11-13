@@ -1,0 +1,10 @@
+{
+  "kind": "stale reload",
+  "restored": true,
+  "displayed": "export const value = 44;",
+  "cancelled_reload_sent_read": false,
+  "access_refusal_visible": false,
+  "reads": 3,
+  "writes": [],
+  "real_model_called": false
+}

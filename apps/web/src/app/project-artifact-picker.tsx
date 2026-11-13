@@ -162,7 +162,7 @@ export function ProjectArtifactPicker({
   };
   return (
     <section className={styles.artifactPicker} aria-label="Сохранённые источники проекта">
-      <h3>Из Canvas, таблиц и Work</h3>
+      <h3>Из Canvas, таблиц, Work и исследований</h3>
       <p>
         Выберите полный текст или явный фрагмент. Снимок сначала добавится в форму; сохраните
         материалы отдельной кнопкой.

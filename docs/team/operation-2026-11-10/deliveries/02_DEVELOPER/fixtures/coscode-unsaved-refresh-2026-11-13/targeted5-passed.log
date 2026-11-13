@@ -1,0 +1,28 @@
+[WebServer] (node:67511) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] $ tsc -p tsconfig.build.json
+[WebServer] (node:67562) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] $ node scripts/prepare-pdf-worker.mjs && next build
+[WebServer] (node:67588) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:67588) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:67625) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:67624) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:67651) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+
+Running 5 tests using 1 worker
+
+(node:67665) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  1 [chromium] › e2e/code-agent.spec.ts:1343:7 › Code refresh preserves unsaved file until explicit saved-edit reload (5.3s)
+  ✓  2 [chromium] › e2e/code-agent.spec.ts:1343:7 › Code refresh preserves unsaved raw diff until explicit saved-edit reload (3.0s)
+  ✓  3 [chromium] › e2e/code-agent.spec.ts:1343:7 › Code refresh preserves unsaved poll until explicit saved-edit reload (4.5s)
+  ✓  4 [chromium] › e2e/code-agent.spec.ts:1343:7 › Code refresh preserves unsaved stale reload until explicit saved-edit reload (3.0s)
+  ✓  5 [chromium] › e2e/code-agent.spec.ts:1459:5 › Code refresh accepts a new proposal when the editor has no unsaved changes (2.8s)
+
+  5 passed (40.4s)

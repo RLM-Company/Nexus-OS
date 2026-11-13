@@ -1,3 +1,25 @@
+# Coscode unsaved refresh, 13 ноября 2026
+
+Новых общих изменений нет: только `apps/web/src/app/code-agent/page.tsx`
+и `apps/web/e2e/code-agent.spec.ts`, плюс собственные отчёты/fixtures.
+Новых contracts/API/DB/migrations/routes/dependencies/registration нет.
+Используется уже добавленный предыдущим commit404c3ddb strict E2E typecheck и scoped production runner.
+Этот slice стоит после предыдущего snapshot-order slice в том же собственном PR581,
+BASE1d72d9d. Не переносить source commit2b8b895 отдельно без предшествующего acceptance fence.
+Для отката нового поведения revert только product commit2b8b895, сохранить прежнюю
+защиту порядка ответов. Данные/миграции не меняются. Последующие изменения сохранять вручную.
+[Подробная поставка](COSCODE_UNSAVED_REFRESH_DELIVERY_RU.md).
+
+Перед передачей сохранён main14a5f48 (PR582/583):58 входящих файлов,
+аддитивная константа Manager contract просмотрена, семь CodeAgent source blobs прежние.
+Четыре конфликта префиксов02_DEVELOPER объединены с сохранением обоих полных
+префиксов и единого неизменного исторического suffix. Чужие исходники/отчёты
+не переписывались собственными версиями. После объединения root gate повторён, exit0; собственных изменений общих файлов нет.
+
+История ниже.
+
+---
+
 # Coscode snapshot order: отдельная интеграция, 13 ноября 2026
 
 Product commit3ad583333bedb590799d7c984d974edf4e2073d3.
@@ -23,6 +45,29 @@ root package.json, scripts/vps-live-acceptance.mjs, scripts/test/vps-live-accept
 два отчёта05_GEMINI. Это входящая реализация, не собственное изменение этих файлов.
 Контракты/API/CodeAgent не менялись, семь source blobs сверены. Guard test удаляет
 пароль и останавливает wrapper до network; живой VPS не запускался.
+
+Исторические интеграции ниже.
+
+---
+
+Перед публикацией сохранён новый main501d403 (PR573) без изменения своих7 source
+paths; общие contracts прочитаны. Final merge HEAD требует отдельного CI;
+локальный core receipt относится к281. Новая миграция0067 — inherited main, не наша.
+
+# Request recovery, 13 ноября 2026
+
+BASE281604b, branch ops/developer-request-recovery-2026-11-13. Новый Draft PR.
+Отдельный integration commit `6d3fd5a8c46660062a5a4771c34a8aebdec28e7d`
+(локально7a70d40): page.tsx — общий selector и live draft guards;
+chat-attachments.tsx — snapshotReading на существующем latest ref;
+tsconfig.composer-e2e.json — одна строка регистрации strict E2E.
+Полные пути — apps/web/src/app/{page.tsx,chat-attachments.tsx} и
+apps/web/tsconfig.composer-e2e.json. Helper/tests commit9c25062a обязателен вместе с ним.
+Дополнительный integration44eb6f1 — apps/web/playwright.composer.config.ts:
+две новые suites включены в существующий test:e2e:composer. Никаких новых runner/SDK.
+API/contracts/DB/registry не меняются. Макет/CSS и права прежние.
+Закрытый PR566 не обновляется; main281 и изменения PR565/566 сохранены без переписывания.
+Подробности/откат: [отчёт](REQUEST_RECOVERY_2026_11_13_RU.md).
 
 Исторические интеграции ниже.
 
