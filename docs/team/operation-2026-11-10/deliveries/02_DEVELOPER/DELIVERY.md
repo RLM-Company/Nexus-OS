@@ -1,3 +1,25 @@
+# Coscode: порядок снимков задачи, 13 ноября 2026
+
+Статус: **готово к интеграции** по локальным gates; exact HEAD CI ожидается.
+Ветка `ops/developer-coscode-snapshot-order-2026-11-13`; [Draft PR по ветке](https://github.com/RLM-Company/Nexus-OS/pulls?q=is%3Apr+head%3Aops%2Fdeveloper-coscode-snapshot-order-2026-11-13).
+[Поставка, команды и ограничения](COSCODE_SNAPSHOT_ORDER_DELIVERY_RU.md).
+Начальная база501d403, сохранён актуальный main1b73e497.
+Source HEAD404c3ddb3cf69ed473b72d3ad304555942ab783a,
+дерево69766e22c7ca813d5c59ee10bb74b7cd33bd0d52.
+Baseline3FAIL+1PASS; unit4PASS; final production5PASS.
+В существующем accept добавлены version-first и request-order для legacy;
+старый ответ не сбрасывает редактор/approval/publication uncertainty.
+Late403 остаётся видимым. Новых runtime/store/прав нет.
+Финальный check:core exit0; полный scoped production35PASS, retries0.
+API1086PASS+1SKIP, web389PASS, DB236PASS; Turbo cache отмечен в логе.
+Следующий шаг: опубликовать отдельный Draft PR, проверить exact HEAD CI,
+передать интегратору без самостоятельного merge/deploy.
+PR574 остаётся отдельной открытой поставкой; его ветка не менялась.
+
+Исторические точки ниже.
+
+---
+
 # Текущий срез: terminal run recovery, 13 ноября 2026
 
 BASE main7c2abad; ветка ops/developer-postmerge-acceptance-2026-11-13.

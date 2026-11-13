@@ -1,3 +1,27 @@
+# Coscode snapshot order: отдельная интеграция, 13 ноября 2026
+
+Product commit3ad583333bedb590799d7c984d974edf4e2073d3.
+Integration commit404c3ddb3cf69ed473b72d3ad304555942ab783a.
+BASE main1b73e49761a61ef34e25a3ae7958de9cf40cf7f9.
+
+Общие изменения ограничены регистрацией проверки и scoped runner:
+
+- `apps/web/package.json`: одна строка typecheck, добавлен strict CodeAgent E2E config.
+- `apps/web/tsconfig.code-agent-e2e.json`: отдельная конфигурация проверки E2E и runner.
+- `apps/web/playwright.code-agent.config.ts`: optional Chromium path, production build/start,
+  проверяемый непривилегированный loopback port; retries0 и запрет reuse сохранены.
+
+Новых contracts, API, gateway, DB, auth, migrations, routes и зависимостей нет.
+Runtime, ограничения сети и grants прежние. Не переносить dev-stand проблему
+разрешения `.js` TypeScript exports в общий Next config в рамках этого среза.
+Для отката отменить integration commit и product commit в обратном порядке
+с сохранением последующих правок интегратора; данных для миграции нет.
+[Подробная поставка](COSCODE_SNAPSHOT_ORDER_DELIVERY_RU.md).
+
+Исторические интеграции ниже.
+
+---
+
 # Terminal run recovery, 13 ноября 2026
 
 BASE7c2abad, source04c4b2e/tree78443d83. Отдельный integration commit
