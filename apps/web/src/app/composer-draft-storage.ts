@@ -1,4 +1,16 @@
 import { isValidChatAttachments, type ChatAttachment } from "@cosmora/contracts/chat-attachments";
+import { isValidChatTextAction } from "@cosmora/contracts";
+import type { KosmoraComposerActionsValue } from "./kosmora-composer-actions";
+
+function validActions(value: unknown): value is KosmoraComposerActionsValue {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const candidate = value as Record<string, unknown>;
+  return (
+    Object.keys(candidate).every((key) => key === "web_search" || key === "text_action") &&
+    typeof candidate.web_search === "boolean" &&
+    (candidate.text_action === null || isValidChatTextAction(candidate.text_action))
+  );
+}
 
 export const DRAFT_PREFIX = "cosmora:composer-draft:";
 const MATERIAL_PREFIX = "cosmora:composer-materials:";
@@ -21,7 +33,12 @@ export function readComposerDraft(storage: Storage, key: string) {
     const raw = storage.getItem(materialsKey(key));
     if (!raw) return { text, files: [] as ChatAttachment[], notice: null };
     if (raw.length > DRAFT_LIMITS.characters) throw new Error("Oversize record");
-    const value = JSON.parse(raw) as { version?: unknown; savedAt?: unknown; files?: unknown };
+    const value = JSON.parse(raw) as {
+      version?: unknown;
+      savedAt?: unknown;
+      files?: unknown;
+      actions?: unknown;
+    };
     if (value.version !== 1 || typeof value.savedAt !== "number" || !Number.isFinite(value.savedAt))
       throw new Error("Invalid record");
     if (Date.now() - value.savedAt > DRAFT_LIMITS.ageMs) {
@@ -30,7 +47,14 @@ export function readComposerDraft(storage: Storage, key: string) {
     }
     if (!Array.isArray(value.files) || !isValidChatAttachments(value.files as ChatAttachment[]))
       throw new Error("Invalid materials");
-    return { text, files: value.files as ChatAttachment[], notice: null };
+    const result = { text, files: value.files as ChatAttachment[], notice: null };
+    if (value.actions === undefined) return result;
+    if (!validActions(value.actions))
+      return {
+        ...result,
+        notice: "Не удалось восстановить действия черновика. Проверьте их перед отправкой."
+      };
+    return { ...result, actions: value.actions };
   } catch {
     return {
       text,
@@ -66,15 +90,17 @@ export function saveComposerDraft(
   storage: Storage,
   key: string,
   text: string,
-  files: ChatAttachment[]
+  files: ChatAttachment[],
+  actions?: KosmoraComposerActionsValue
 ): string | null {
   try {
-    if (!text && !files.length) {
+    if (!text && !files.length && !actions?.web_search && !actions?.text_action) {
       clearComposerDraft(storage, key);
       return null;
     }
     if (text.length > DRAFT_LIMITS.text) return storageNotice;
-    const record = JSON.stringify({ version: 1, savedAt: Date.now(), files });
+    if (actions !== undefined && !validActions(actions)) return storageNotice;
+    const record = JSON.stringify({ version: 1, savedAt: Date.now(), files, actions });
     const size = key.length + materialsKey(key).length + text.length + record.length;
     if (size > DRAFT_LIMITS.characters) return storageNotice;
     const entries: { key: string; size: number; savedAt: number }[] = [];

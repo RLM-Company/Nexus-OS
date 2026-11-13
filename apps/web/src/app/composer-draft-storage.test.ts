@@ -133,3 +133,73 @@ describe("submitted draft acknowledgement", () => {
     expect(readComposerDraft(storage, key)).toMatchObject({ text: "submitted", files: [] });
   });
 });
+
+describe("draft actions share the canonical material lifecycle", () => {
+  it("restores the full action and search flag without altering text or files", () => {
+    const storage = new MemoryStorage();
+    const actions = {
+      web_search: true,
+      text_action: {
+        kind: "rewrite" as const,
+        selection: "00123 кроме доставки",
+        tone: "деловой",
+        length: "shorter" as const
+      }
+    };
+    expect(saveComposerDraft(storage, key, "19 700", files, actions)).toBeNull();
+    expect(readComposerDraft(storage, key)).toEqual({
+      text: "19 700",
+      files,
+      actions,
+      notice: null
+    });
+    expect(readComposerDraft(storage, `${DRAFT_PREFIX}chat:other`)).not.toHaveProperty("actions");
+    const submitted = captureComposerDraft(storage, key);
+    expect(clearComposerDraftIfUnchanged(storage, key, submitted)).toBe(true);
+    expect(storage.length).toBe(0);
+  });
+  it("preserves action-only changes made after submission with identical text and files", () => {
+    const storage = new MemoryStorage();
+    saveComposerDraft(storage, key, "same", files, { web_search: false, text_action: null });
+    const submitted = captureComposerDraft(storage, key);
+    const actions = { web_search: true, text_action: { kind: "explain" as const } };
+    saveComposerDraft(storage, key, "same", files, actions);
+    expect(clearComposerDraftIfUnchanged(storage, key, submitted)).toBe(false);
+    expect(readComposerDraft(storage, key)).toMatchObject({ actions });
+  });
+  it("saves choices before typing and clears them with the draft", () => {
+    const storage = new MemoryStorage();
+    const actions = { web_search: false, text_action: { kind: "hint" as const } };
+    saveComposerDraft(storage, key, "", [], actions);
+    expect(readComposerDraft(storage, key)).toMatchObject({ actions });
+    saveComposerDraft(storage, key, "", [], { web_search: false, text_action: null });
+    expect(storage.length).toBe(0);
+  });
+  it.each([
+    { web_search: "true", text_action: null },
+    { web_search: false, text_action: { kind: "execute" } },
+    { web_search: false, text_action: { kind: "explain", selection: "" } },
+    { web_search: false, text_action: { kind: "rewrite", tone: "x".repeat(61) } },
+    { web_search: false, text_action: { kind: "rewrite", length: "huge" } },
+    { web_search: false, text_action: { kind: "hint", command: "no" } },
+    { web_search: false, text_action: null, command: "no" },
+    null,
+    []
+  ])("rejects malformed cached actions while recovering valid materials (%j)", (actions) => {
+    const storage = new MemoryStorage();
+    storage.setItem(key, "keep 00123");
+    storage.setItem(
+      "cosmora:composer-materials:chat:a",
+      JSON.stringify({
+        version: 1,
+        savedAt: Date.now(),
+        files,
+        actions
+      })
+    );
+    const recovered = readComposerDraft(storage, key);
+    expect(recovered).toMatchObject({ text: "keep 00123", files });
+    expect(recovered).not.toHaveProperty("actions");
+    expect(recovered.notice).toContain("действия");
+  });
+});

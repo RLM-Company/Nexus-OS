@@ -1,0 +1,25 @@
+[WebServer] (node:12483) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:12483) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:12508) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+
+Running 12 tests using 1 worker
+
+(node:12522) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓   1 [chromium] › e2e/composer-draft-races.spec.ts:21:5 › pagehide persists the last input before React commits its passive effects (1.7s)
+  ✓   2 [chromium] › e2e/composer-draft-races.spec.ts:46:5 › pagehide persists removal of a file without resurrecting the old attachment (1.2s)
+  ✓   3 [chromium] › e2e/composer-draft-races.spec.ts:69:5 › native text-only pagehide flush uses the latest input rather than an older render (1.1s)
+  ✓   4 [chromium] › e2e/composer-draft-races.spec.ts:107:7 › chat rejection preserves exact whitespace and file bytes across reload (1.7s)
+  ✓   5 [chromium] › e2e/composer-draft-races.spec.ts:107:7 › project rejection preserves exact whitespace and file bytes across reload (2.2s)
+  ✓   6 [chromium] › e2e/composer-draft-races.spec.ts:182:5 › closing an unchanged tab does not overwrite another tab's newer draft (1.7s)
+  ✓   7 [chromium] › e2e/composer-draft-races.spec.ts:198:5 › a file finishing after chat navigation cannot leak or replace the next chat's draft (2.8s)
+  ✓   8 [chromium] › e2e/composer-draft-races.spec.ts:246:5 › a follow-up inserted just before pagehide survives without an automatic send (2.2s)
+  ✓   9 [chromium] › e2e/composer-draft-races.spec.ts:280:5 › an input notification already tracked before React change survives attaching a file (1.1s)
+  ✓  10 [chromium] › e2e/composer-draft-races.spec.ts:332:7 › a late acceptance cannot erase a newer prepared follow-up (2.9s)
+  ✓  11 [chromium] › e2e/composer-draft-races.spec.ts:332:7 › a late rejection cannot erase a newer prepared follow-up (2.6s)
+  ✓  12 [chromium] › e2e/composer-draft-races.spec.ts:384:5 › an acceptance cannot clear another tab's newer stored draft (4.2s)
+
+  12 passed (30.3s)

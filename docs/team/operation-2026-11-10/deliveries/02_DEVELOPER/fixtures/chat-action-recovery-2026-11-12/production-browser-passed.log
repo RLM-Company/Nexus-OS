@@ -1,0 +1,31 @@
+[WebServer] (node:4796) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:4796) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:4918) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+
+Running 18 tests using 1 worker
+
+(node:4939) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓   1 [chromium] › e2e/chat-reliability.spec.ts:47:5 › new chat during a delayed initial read stays usable and ignores the late response (2.2s)
+  ✓   2 [chromium] › e2e/chat-reliability.spec.ts:87:5 › restores text and files after closing the tab, isolates chats, removes and clears accepted drafts (6.4s)
+  ✓   3 [chromium] › e2e/chat-reliability.spec.ts:131:5 › retains project materials across reload without leaking into the new-chat draft (3.4s)
+  ✓   4 [chromium] › e2e/chat-reliability.spec.ts:152:5 › recovers text with invalid saved materials and retains a draft on rejected submission (3.0s)
+  ✓   5 [chromium] › e2e/chat-reliability.spec.ts:184:5 › prepares a phone-sized JPEG, restores thumbnail and rejects unsafe dimensions (6.6s)
+  ✓   6 [chromium] › e2e/chat-reliability.spec.ts:238:5 › keeps attachment controls keyboard reachable with clear names and thumbnail text (1.3s)
+  ✓   7 [chromium] › e2e/chat-reliability.spec.ts:260:5 › announces rejected attachment type and keeps the draft editor usable (1.0s)
+  ✓   8 [chromium] › e2e/chat-reliability.spec.ts:273:5 › restored attachment drafts expose the image name to assistive technology (1.5s)
+  ✓   9 [chromium] › e2e/chat-reliability.spec.ts:305:7 › retries an accepted personal chat message with its original attachment after a lost response (2.6s)
+  ✓  10 [chromium] › e2e/chat-reliability.spec.ts:305:7 › retries an accepted project chat message with its original attachment after a lost response (2.9s)
+  ✓  11 [chromium] › e2e/chat-reliability.spec.ts:366:5 › two uncertain sends remain independently retryable after navigation and reload (4.1s)
+  ✓  12 [chromium] › e2e/chat-reliability.spec.ts:435:5 › composer actions belong to their own chat and stay out of another chat request (2.9s)
+  ✓  13 [chromium] › e2e/chat-reliability.spec.ts:492:5 › reload and lost network recover the same run without duplicate POSTs or messages (10.7s)
+  ✓  14 [chromium] › e2e/chat-reliability.spec.ts:525:5 › late history and stream cannot affect the newly selected chat (5.5s)
+  ✓  15 [chromium] › e2e/chat-reliability.spec.ts:558:5 › long Markdown retains the complete answer in copy and chat export (2.7s)
+  ✓  16 [chromium] › e2e/chat-reliability.spec.ts:590:5 › ordinary-chat cancellation after reload restores a request without sending it (2.0s)
+  ✓  17 [chromium] › e2e/chat-reliability.spec.ts:615:5 › a pre-completion history snapshot cannot reopen a completed run (11.9s)
+  ✓  18 [chromium] › e2e/chat-reliability.spec.ts:650:5 › a lost acknowledgement reload restores the exact text action before retrying one request (3.9s)
+
+  18 passed (1.3m)

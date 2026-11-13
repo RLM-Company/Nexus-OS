@@ -1,0 +1,69 @@
+{
+  "recorded_at": "2026-11-12T11:15:45.577540+00:00",
+  "source_head": "05fc4936cda966bf27a6d5f1d0d7c2fa58f5054f",
+  "source_tree": "49b6efb393fdbf69e42d01e2dd1f6ea563e26d9b",
+  "checkout_base": "03cd454089dbe53a32e36d92578180f59357c21c",
+  "retained_main": "a5f6511875ef7ec116e34dd6c35ff445bdea4313",
+  "branch": "ops/chief-chat-recovery-2026-11-12",
+  "pr": "https://github.com/RLM-Company/Nexus-OS/pull/549",
+  "provider": "mock",
+  "live_model_called": false,
+  "owner_pc_used": false,
+  "deployed": false,
+  "checks": {
+    "baseline_browser": {
+      "exit_code": 1,
+      "log": "baseline-browser-failure.log"
+    },
+    "production_browser": {
+      "exit_code": 0,
+      "log": "production-browser-passed.log"
+    },
+    "composer_races": {
+      "exit_code": 0,
+      "log": "composer-races-passed.log"
+    },
+    "production_build": {
+      "exit_code": 0,
+      "log": "production-build-passed.log"
+    },
+    "check_core": {
+      "exit_code": 0,
+      "log": "check-core-passed.log"
+    },
+    "source_lint": {
+      "exit_code": 0,
+      "log": null
+    },
+    "standalone_e2e_types_with_node": {
+      "exit_code": 0,
+      "log": null
+    },
+    "contracts": {
+      "exit_code": 0,
+      "log": "contracts-passed.log"
+    },
+    "direct_e2e_lint_configuration": {
+      "exit_code": 1,
+      "log": "e2e-eslint-configuration-failure.log"
+    },
+    "standalone_e2e_types_without_node": {
+      "exit_code": 1,
+      "log": "standalone-types-without-node-failure.log"
+    }
+  },
+  "log_normalization": {
+    "description": "Display logs use LF, trimmed trailing whitespace and one final newline; results/content retained.",
+    "raw_sha256": {
+      "composer-races-passed.log": "2202cb7accad3fa6718f507c92cc52071fdab939c49ce2bf849bae5e89a2db16",
+      "standalone-types-without-node-failure.log": "fa765e5a0f8a3d6fcdde1c7fea563db6d337c3c07d1aa3a4456b956da1dd1af6",
+      "check-core-passed.log": "99566d30d1c905b2f08029dccc45d13f2e845b72064b1af9dc02ef1f7dfc50c3",
+      "production-browser-passed.log": "e9c40c9907d18a43f19d062da4b6234a16da947176ee2218d2dffebaf848bfe5",
+      "production-build-passed.log": "6196e76d222dac734014cf4211375ddc478d5e76a0eb282d99b072ac72df2a15",
+      "draft-unit-passed.log": "b1c21ad707576da70400a8859e5c32f41f9dbe6577130795b1b253c732e44670",
+      "baseline-browser-failure.log": "8004cdfcec78e4aa4a9b6cf21b448c75d2a03ceec311f9e61a661a7af6d115e8",
+      "e2e-eslint-configuration-failure.log": "91bc3d2a2dc5808b0da74b4588e49e83a4766e8b8566332b6d32c1552c0ca8ae",
+      "contracts-passed.log": "861ed7d2d84f9ad0c795ea9d4da12b580c641a592ca1a2d3da4bba9b37ee690f"
+    }
+  }
+}

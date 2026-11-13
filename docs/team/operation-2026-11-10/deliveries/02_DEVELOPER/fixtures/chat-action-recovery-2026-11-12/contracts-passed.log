@@ -1,0 +1,9 @@
+$ vitest run
+
+ RUN  v4.1.11 /workspace/work/Nexus-OS-chief-2026-11-12/packages/contracts
+
+
+ Test Files  32 passed (32)
+      Tests  206 passed (206)
+   Start at  11:03:47
+   Duration  16.12s (transform 801ms, setup 0ms, import 9.55s, tests 507ms, environment 3ms)
