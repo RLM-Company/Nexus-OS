@@ -3124,7 +3124,7 @@ export default function Home() {
               </span>
               <div>
                 <strong>Kosmora Manager</strong>
-                <span className="project-mode-label">Менеджер · мультиагентный проект</span>
+                <span className="project-mode-label">Менеджер · проект</span>
                 <small>Переписка</small>
               </div>
               <span className={`live-badge ${runPhase}`} role="status" aria-live="polite">

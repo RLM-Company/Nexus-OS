@@ -145,8 +145,10 @@ test("suggests a project for a complex task and creates it only after confirmati
   const created = await createdProject;
   expect(created.status(), await created.text()).toBe(201);
   expect(projectPosts).toBe(1);
+  // The chat heading stays neutral until a real multi-agent team ships
+  // (owner wording decision 2026-11-13); no team is promised.
   await expect(page.getByRole("region", { name: "Главный чат проекта" })).toContainText(
-    "мультиагентный проект"
+    "Менеджер · проект"
   );
 });
 
