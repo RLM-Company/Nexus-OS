@@ -94,3 +94,72 @@
 
 Следующая поставка: после устранения чужого format gate подтвердить весь CI,
 передать Codex отдельный Canvas key commit и не выполнять merge самостоятельно.
+
+## DELIVERY — 2026-11-12, PR #556
+
+**Статус:** новый Sites-срез в работе; полная CI-приёмка пока не заявлена.
+
+- BASE_SHA: `00ceac8b47f220cd798e3f4cbd0596af14b3443d`.
+- CODE_HEAD_SHA: `cfc0df4540d993a117698354a6d4f91f61eb2f2d`.
+- Ветка: `ops/free-studio-builders`.
+- PR: https://github.com/RLM-Company/Nexus-OS/pull/556
+- Entrypoint: Sites → Canvas HTML → статический SitePreview.
+- Backend и данные: прежние Canvas API, owner/project scope, версии, optimistic conflict.
+
+### До и после
+
+До: одностраничный HTML экспортируется, но ошибки внешних ресурсов,
+случайные неподдерживаемые элементы, отсутствие alt или внутренние ссылки
+не объясняются. Сайт не позволял локально встроить изображение без ручного
+редактирования data URI.
+
+После: пользователь явно проверяет HTML и получает ограниченный локальный отчёт.
+При правке отчёт перестаёт быть актуальным; чужой код не выполняется.
+Пользователь также может выбрать PNG/JPEG/WebP, ввести alt и вставить
+код изображения в текущий HTML. После сохранения это тот же версионированный
+Canvas артефакт, который можно скачать и восстановить после reload.
+
+### Файлы
+
+- `apps/web/src/app/sites/site-source-diagnostics.ts`: ограниченная проверка
+  статического HTML без исполнения.
+- `apps/web/src/app/sites/site-preview.tsx`: команда и результаты диагностики.
+- `apps/web/src/app/sites/site-inline-image.ts`: магические сигнатуры,
+  ограничение 64 КиБ, экранирование alt, HTML budget.
+- `apps/web/src/app/sites/site-inline-image.test.ts`: проверки ошибок и вставки.
+- `apps/web/src/app/sites/site-image-import.tsx`: явный file input и вставка.
+- `apps/web/src/app/sites/sites.module.css`: стили только внутри Sites.
+- `apps/web/e2e/sites-workbench.spec.ts`: HTML-audit и PNG roundtrip.
+- `apps/web/src/app/canvas-editor/canvas-editor.tsx`: узкая Site HTML интеграция.
+
+### Ограничения
+
+- Preview остаётся строго статическим, sandbox без scripts и CSP без сети.
+- Экспортируется один HTML-файл с встроенными изображениями; не multipage hosting.
+- Внешние ссылки, JS, формы и неподдерживаемые элементы в preview отключены.
+- Чтение картинки происходит только после явного действия; загрузки в сеть нет.
+- Не установлено новых зависимостей, серверных routes, миграций или permissions.
+- Реальный платный провайдер, публикация и пользовательская live-приёмка не проверялись.
+- Полный CI нового HEAD ещё должен подтвердить результат. Исключение
+  prettier-ignore для site-source-diagnostics временное, требует удаления.
+
+Следующий шаг: CI, устранение замечаний, передача Codex. Typed patch adapter
+для AI-итерации и multi-file Sites остаются интеграционными задачами.
+
+## Финальная проверка новой поставки — 2026-11-12
+
+- Проверенный CODE_HEAD_SHA: `746486542dcb8093d8cd2695114e04b8cbe68627`.
+- CI #43261579390: `Verify monorepo` SUCCESS.
+- В том же CI: `Code sandbox isolation` SUCCESS.
+- В том же CI: `Browser acceptance` SUCCESS (492 + 3 + 5 + 4).
+- Реальная браузерная проверка использует fixtures, не live provider.
+- Temporary format probe удалён, исключения prettier-ignore удалены.
+- Редактирование общего Canvas ограничено подключением Sites image import.
+- Обратная совместимость API/DB и текущий статический sandbox не изменены.
+- Никакие миграции, новые API, зависимости, секреты или тарифы не затронуты.
+- Публикация, merge, рабочий ПК и живая приёмка не выполнялись.
+- PR #556 остаётся на интеграционный review Codex.
+
+Вывод: исходник, HTML-аудит, встроенные изображения и Canvas-roundtrip
+протестированы. Разработка многофайлового сайта и AI-итерация отдельных
+файлов требуют отдельного согласованного общего контракта.

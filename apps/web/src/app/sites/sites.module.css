@@ -50,7 +50,9 @@
   min-height: 120px;
 }
 .root button,
-.toolbar button {
+.toolbar button,
+.auditPanel button,
+.assetPanel button {
   font: inherit;
   color: inherit;
   padding: 8px 12px;
@@ -140,4 +142,48 @@
   .frame {
     height: 520px;
   }
+}
+
+.auditPanel {
+  border: 1px solid var(--line, #ddd);
+  border-radius: var(--radius-control, 9px);
+  padding: 12px;
+  margin: 12px 0;
+  font-size: 12px;
+}
+.auditPanel p {
+  margin: 8px 0 0;
+}
+.auditPanel ul {
+  margin: 8px 0;
+  padding-left: 20px;
+}
+.auditPanel li {
+  margin: 4px 0;
+}
+
+.assetPanel {
+  display: grid;
+  gap: 8px;
+  border: 1px solid var(--line, #ddd);
+  border-radius: var(--radius-control, 9px);
+  padding: 12px;
+  margin: 12px 0;
+  font-size: 12px;
+}
+.assetPanel p {
+  margin: 0;
+}
+.assetPanel label {
+  display: grid;
+  gap: 6px;
+}
+.assetPanel input {
+  width: 100%;
+  padding: 8px;
+  font: inherit;
+  color: inherit;
+  background: var(--bg, #fff);
+  border: 1px solid var(--line, #ddd);
+  border-radius: var(--radius-control, 9px);
 }
