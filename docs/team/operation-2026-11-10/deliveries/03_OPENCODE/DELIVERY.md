@@ -727,3 +727,14 @@ agent-studio-team-api.test.ts` (3: дефолт, полный поток plan→
 
 **Проверки**: prettier clean, `check:secrets` пройден до пуша. NSIS не
 запускается (desktop/windows не тронут).
+
+**Интеграция (13.11.2026)**: PR #564 слит владельцем — main `b47e5cc9`.
+CI потребовал три прогона: (1) Verify — мой ESLint
+`consistent-type-imports` в сторе + 2 неиспользуемых type-импорта в app.ts
+(починены `edd0d711`), (2) Verify — typecheck db на тест-фикстуре
+(починено `29047473`), Browser acceptance между прогонами флакал на чужом
+`chat-reliability.spec.ts:87` (волна #539) — перезапуск задания зелёный,
+итог 4/4. Урок записан: перед пушем — `pnpm run lint` + `pnpm run
+typecheck` в каждом затронутом пакете. Гигиена на новом tip: волна #563
+мои файлы не тронула; typecheck api чист, тройка agent-studio 9/9,
+desktop/windows 462/0.
