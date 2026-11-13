@@ -161,4 +161,24 @@ jobs:
       - name: Verify real OCI execution, isolation and descendant cleanup
         env:
           CODE_AGENT_TEST_RUNTIME: docker
+          CODE_AGENT_GIT_REPORT_DIR: ${{ runner.temp }}/coscode-final-git
         run: pnpm --filter @cosmora/tool-runtime exec vitest run test/code-agent-workspace.oci.test.ts test/code-agent-git.oci.test.ts --maxWorkers=1
+
+      - name: Verify Code API repair through OCI and Draft PR adapter
+        env:
+          CODE_AGENT_REPAIR_REPORT_DIR: ${{ runner.temp }}/coscode-final-api
+        run: |
+          test -n "$CODE_AGENT_TEST_IMAGE"
+          pnpm --filter @cosmora/api exec vitest run test/code-agent.test.ts -t 'real OCI API repair' --maxWorkers=1
+          test -s "$CODE_AGENT_REPAIR_REPORT_DIR/receipt.json"
+
+      - name: Preserve Coscode input, output and exact diff
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: coscode-final-workflow-proof
+          path: |
+            ${{ runner.temp }}/coscode-final-git/
+            ${{ runner.temp }}/coscode-final-api/
+          if-no-files-found: error
+          retention-days: 7
