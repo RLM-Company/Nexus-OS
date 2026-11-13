@@ -126,7 +126,7 @@ GitHub-hosted Windows runner, а не на машине владельца.
 
 - `scripts/vps-live-acceptance.mjs` — обёртка над уже существующим
   `deploy/alpha/verify-access.mjs` (`verifyAccess({ origin, password, authMode:
-  "form" })`). Проверяет 303→/login, неавторизованный 401, form-логин, защищённые
+"form" })`). Проверяет 303→/login, неавторизованный 401, form-логин, защищённые
   ассеты интерфейса, `/api/v1/health` (`status=ok`, `database=ok`), owner-сессию
   и `/api/v1/operations/status`. **Без модельных запросов и записей на сервер.**
   Пароль берётся только из `KOSMORA_OWNER_PASSWORD`, не печатается и не пишется
@@ -136,6 +136,7 @@ GitHub-hosted Windows runner, а не на машине владельца.
   включён в `check:core`.
 
 Запуск после получения пароля:
+
 ```
 KOSMORA_OWNER_PASSWORD=... node scripts/vps-live-acceptance.mjs
 ```
