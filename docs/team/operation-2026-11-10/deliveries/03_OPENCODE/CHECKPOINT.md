@@ -721,20 +721,63 @@ img-src 'none'`; весь динамический контент через tex
     (page.tsx/pwa.spec.ts unchanged после write), `check:secrets` пройден;
     поверхностная перепроверка других тестов (Главный чат проекта/
     project-mode-label) — текст закреплён только в обновлённом месте.
+43. **Срез: планировщик команды Multi-Agent — ядро (13.11.2026, старт по
+    выбору владельца «Начать с планировщика»)**. Объём среза: team.plan /
+    team.confirm API — порождение pending-ростера из blueprint'ов проекта и
+    подтверждение состава владельцем; исполнение частей в этом срезе НЕ
+    входит. Код: контракты `packages/contracts/src/agent-studio.ts` —
+    операции `team.plan`/`team.confirm`, объектный тип `team`, схемы
+    Plan/Confirm (composition id = sha256 над отсортированными строками
+    `blueprint_id@version`; пустая строка = «без blueprint'ов — один агент,
+    дефолт»). Миграция `0066_agent_team_compositions.sql` (+ journal idx 66)
+    — подтверждённые составы (PK owner/project/composition, FK
+    (project_id, owner_id) → projects ON DELETE CASCADE, индекс
+    project+confirmed_at). Новый стор `packages/db/src/agent-team-store.ts`:
+    plan (реиспользует pending-ростер — один самый ранний proposed
+    parentless экземпляр на blueprint — или порождает proposeRoot'ы),
+    resolvePlan, confirm (все owned/parentless/proposed, re-assert expiry,
+    INSERT OR IGNORE), resolveConfirm, compositionConfirmed.
+    `agent-studio-mutation-store`: create-операции team.plan/team.confirm,
+    object type team. Архитектурная граница: таблица `agent_instances`
+    хранит ТОЛЬКО proposal'ы (DB CHECK `status='proposed'`, прецедентов
+    пересборки таблицы нет) — активация/жизненный цикл остаются сущностью
+    будущего среза исполнения. Маршруты `apps/api/src/app.ts`: POST
+    `.../agent-studio/teams/plan` (короткое замыкание при пустом ростере —
+    ответ без записи mutation) и POST `.../teams/confirm`, оба через
+    mutations.create с replay resolve'ами; ошибки AgentTeamValidationError →
+    400, AgentTeamCompositionDriftError (несоответствие записанного состава
+    своему ростеру) → 409; team-маршруты в СВОЁМ guard-блоке (projectStore +
+    mutations + agentTeamStore) — большие agent-studio маршруты не требуют
+    team-стора (сначала поставил team-стор в общий guard — сломал write/read
+    API тесты ROUTE_NOT_FOUND, поймал локально, исправил до коммита).
+    Проводка `apps/api/src/server.ts` (hoist blueprints/instances, те же
+    экземпляры в team-стор). Тесты: `packages/db/test/agent-team-store.test.ts`
+    (7: пустой ростер/дефолт, план+реиспользование+пин алгоритма id, confirm
+    - replay + no-op, просроченные blueprint'ы исключаются и не
+      подтверждаются, чужой owner → NotFound, делегированные не подтверждаются
+      через ростер, тамперинг → честный 409), `apps/api/test/
+agent-studio-team-api.test.ts` (3: дефолт без blueprint'ов, полный
+      поток plan→replay→confirm→replay→plan-без-подтверждения+decision-events
+      team.plan/team.confirm, ошибки 404/400/404). Локально: db 230/230,
+      agent-studio тройка 9/9, typecheck apps/api чист (поймал и починил
+      не-экспортированный AgentInstanceIdentity). Полный apps/api прогон
+      локально: 13 файлов по 1 тесту падают ПОД ПАРАЛЛЕЛЬНОЙ НАГРУЗКОЙ и
+      проходят соло (проверено: write-api 2/2, runtime-clock+github 29/29,
+      work-dag+manager-work 129/129) — машина медленная, гейт — CI Verify.
+      Prettier clean, `check:secrets` пройден до пуша.
 
 ## Что делать следующему запуску (в порядке приоритета)
 
-1. **Merge среза решений+формулировки** (PR, item 42): CI — Verify,
-   Browser acceptance (правка e2e), Sandbox; live-smoke не запускается
-   (desktop/windows не тронут); merge только владельцем.
+1. **Merge среза планировщика команды** (PR, item 43): CI — Verify,
+   Browser acceptance, Sandbox; live-smoke не запускается (desktop/windows
+   не тронут); merge только владельцем.
 
-2. **Реализация первого выпуска Multi-Agent** — объём согласован владельцем
-   (item 42): blueprint-ориентированный, минимальный объём + файловые
-   артефакты частей. Раздел — кросс-пакетный (apps/api, packages/contracts,
-   packages/db, apps/web, packages/core); старт среза и распределение —
-   по указанию владельца (какой пакет/какая часть первой; мой пакет —
-   desktop/windows — в runtime Multi-Agent не входит, но может вести
-   UI-наблюдаемость/панель хода по согласованию).
+2. **Следующие срезы Multi-Agent по очереди** (после merge item 43,
+   согласовывать с владельцем): исполнение частей поверх активированного
+   состава (жизненный цикл экземпляров — активация proposal'ов, параллельные
+   части существующим Work-исполнителем), затем arbiter-сборка с проверкой
+   по критериям #538, бюджет команды поверх owner budget, панель хода,
+   файловые артефакты завершённых частей с версиями.
 
 3. **Live-приёмка — отложена владельцем** (13.11.2026 подтверждено:
    «Multi-Agent впереди»): секрет `KOSMORA_LIVE_ORIGIN` не создан; задание

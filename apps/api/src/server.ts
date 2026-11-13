@@ -12,6 +12,7 @@ import {
   SqliteIntelligenceGraphWorkspaceRepository,
   AgentInstanceStore,
   AgentStudioMutationStore,
+  AgentTeamStore,
   DemoManagerStore,
   ManagerWorkStore,
   EmergencyStopStore,
@@ -289,6 +290,10 @@ try {
       googleDrive.bundleStore
     )
   );
+  const agentBlueprintStore = new AgentBlueprintStore(database.sqlite);
+  const agentInstanceStore = new AgentInstanceStore(database.sqlite, {
+    delegationValidator: validateAgentDelegation
+  });
   app = buildApp({
     indexedRecall: semanticIndex,
     semanticRanker,
@@ -386,9 +391,11 @@ try {
     emergencyStopStore,
     policyStore,
     patternLibraryStore: new PatternLibraryStore(database.sqlite),
-    agentBlueprintStore: new AgentBlueprintStore(database.sqlite),
-    agentInstanceStore: new AgentInstanceStore(database.sqlite, {
-      delegationValidator: validateAgentDelegation
+    agentBlueprintStore,
+    agentInstanceStore,
+    agentTeamStore: new AgentTeamStore(database.sqlite, {
+      blueprints: agentBlueprintStore,
+      instances: agentInstanceStore
     }),
     agentStudioMutationStore: new AgentStudioMutationStore(database.sqlite),
     modelGateway: modelRuntime.gateway,

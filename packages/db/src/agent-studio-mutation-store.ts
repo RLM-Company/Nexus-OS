@@ -15,7 +15,13 @@ type SqlRow = Record<string, unknown>;
 
 export type AgentStudioCreateOperation = Extract<
   AgentStudioDecisionOperation,
-  "function.create" | "pattern.create" | "blueprint.create" | "proposal.root" | "proposal.delegated"
+  | "function.create"
+  | "pattern.create"
+  | "blueprint.create"
+  | "proposal.root"
+  | "proposal.delegated"
+  | "team.plan"
+  | "team.confirm"
 >;
 
 export interface AgentStudioMutationStoreOptions {
@@ -93,6 +99,7 @@ const objectTypeFor = (operation: AgentStudioDecisionOperation): AgentStudioDeci
   if (operation.startsWith("function.")) return "function";
   if (operation.startsWith("pattern.")) return "pattern";
   if (operation.startsWith("blueprint.")) return "blueprint";
+  if (operation.startsWith("team.")) return "team";
   return "proposal";
 };
 

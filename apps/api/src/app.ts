@@ -40,6 +40,8 @@ import {
   ConfirmationDecisionRequestSchema,
   ConfirmationListResponseSchema,
   ConfirmationRequestSchema,
+  ConfirmAgentTeamRequestSchema,
+  ConfirmAgentTeamResponseSchema,
   CreateMessageRequestSchema,
   CreateDemoManagerRunRequestSchema,
   CreateAgentBlueprintRequestSchema,
@@ -72,6 +74,8 @@ import {
   ProposeDelegatedAgentRequestSchema,
   ProposeRootAgentRequestSchema,
   PERMISSION_MODE_RANK,
+  PlanAgentTeamRequestSchema,
+  PlanAgentTeamResponseSchema,
   RevokeSessionRequestSchema,
   RunCancelResponseSchema,
   RuntimeOperationsStatusSchema,
@@ -91,6 +95,7 @@ import {
   type CapabilityId,
   type CapabilityProfilePreviewResponse,
   type CapabilityProfileResponse,
+  type ConfirmAgentTeamResponse,
   type ConfirmationListResponse,
   type EmergencyStopClearanceEvent,
   type EmergencyStopClearanceListResponse,
@@ -106,6 +111,7 @@ import {
   type ModelRuntimeStatus,
   type OwnerSessionListResponse,
   type OwnerSessionView,
+  type PlanAgentTeamResponse,
   type ProjectDetailResponse,
   type ProjectListResponse,
   type ProjectUsageLimit,
@@ -130,6 +136,9 @@ import {
   AgentStudioIdempotencyConflictError,
   type AgentStudioMutationStore,
   AgentStudioMutationValidationError,
+  AgentTeamCompositionDriftError,
+  AgentTeamValidationError,
+  type AgentTeamStore,
   DemoManagerStoreValidationError,
   IdempotencyConflictError,
   PatternLibraryConflictError,
@@ -260,6 +269,7 @@ export interface AppDependencies {
   agentBlueprintStore?: AgentBlueprintStore;
   agentInstanceStore?: AgentInstanceStore;
   agentStudioMutationStore?: AgentStudioMutationStore;
+  agentTeamStore?: AgentTeamStore;
   modelGateway?: ModelGateway;
   chat?: ChatService;
   manager?: ManagerService;
@@ -427,6 +437,17 @@ const sendAgentStudioMutationError = (
         )
       );
   }
+  if (error instanceof AgentTeamCompositionDriftError) {
+    return reply
+      .status(409)
+      .send(
+        errorBody(
+          request.id,
+          "CONFLICT",
+          "Stored team composition does not match its recorded blueprint roster"
+        )
+      );
+  }
   if (
     error instanceof PatternLibraryConflictError ||
     error instanceof AgentBlueprintConflictError
@@ -439,7 +460,8 @@ const sendAgentStudioMutationError = (
     error instanceof PatternLibraryValidationError ||
     error instanceof AgentBlueprintValidationError ||
     error instanceof AgentInstanceValidationError ||
-    error instanceof AgentStudioMutationValidationError
+    error instanceof AgentStudioMutationValidationError ||
+    error instanceof AgentTeamValidationError
   ) {
     return reply
       .status(400)
@@ -2117,6 +2139,114 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
               reference_of: (value) => ({ id: value.blueprint_id, version: value.version })
             })
           );
+        } catch (error) {
+          return sendAgentStudioMutationError(error, request, reply);
+        }
+      }
+    );
+  }
+
+  if (
+    dependencies.projectStore &&
+    dependencies.agentStudioMutationStore &&
+    dependencies.agentTeamStore
+  ) {
+    const projectStore = dependencies.projectStore;
+    const mutations = dependencies.agentStudioMutationStore;
+    const teams = dependencies.agentTeamStore;
+    const isOwnedProject = (projectId: string, ownerId: string): boolean =>
+      projectStore.getProject(projectId, ownerId) !== null;
+
+    app.post(
+      "/api/v1/projects/:projectId/agent-studio/teams/plan",
+      {
+        schema: {
+          params: AgentStudioProjectParamsSchema,
+          headers: AgentStudioCreateHeadersSchema,
+          body: PlanAgentTeamRequestSchema,
+          response: {
+            200: PlanAgentTeamResponseSchema,
+            201: PlanAgentTeamResponseSchema,
+            400: ApiErrorSchema,
+            404: ApiErrorSchema,
+            409: ApiErrorSchema
+          }
+        }
+      },
+      async (request, reply) => {
+        const identity = identityFor(request);
+        if (!isOwnedProject(request.params.projectId, identity.owner_id)) {
+          return reply
+            .status(404)
+            .send(errorBody(request.id, "PROJECT_NOT_FOUND", "Project not found"));
+        }
+        // Single-agent default: no unexpired blueprint roster means nothing is
+        // proposed and nothing needs confirmation; there is no composition to
+        // record a mutation for.
+        const planned = teams.plan(identity, request.params.projectId);
+        if (planned.composition_id === "") {
+          return reply.status(200).send(planned);
+        }
+        try {
+          const result = mutations.create(identity, {
+            project_id: request.params.projectId,
+            idempotency_key: request.headers["idempotency-key"],
+            operation: "team.plan",
+            request: request.body,
+            execute: () => planned,
+            reference_of: (value) => ({ id: value.composition_id, version: 1 }),
+            resolve: (reference) =>
+              teams.resolvePlan(identity, request.params.projectId, reference.id)
+          });
+          return reply
+            .header("idempotency-replayed", String(result.replayed))
+            .status(result.replayed ? 200 : 201)
+            .send(result.value);
+        } catch (error) {
+          return sendAgentStudioMutationError(error, request, reply);
+        }
+      }
+    );
+
+    app.post(
+      "/api/v1/projects/:projectId/agent-studio/teams/confirm",
+      {
+        schema: {
+          params: AgentStudioProjectParamsSchema,
+          headers: AgentStudioCreateHeadersSchema,
+          body: ConfirmAgentTeamRequestSchema,
+          response: {
+            200: ConfirmAgentTeamResponseSchema,
+            201: ConfirmAgentTeamResponseSchema,
+            400: ApiErrorSchema,
+            404: ApiErrorSchema,
+            409: ApiErrorSchema
+          }
+        }
+      },
+      async (request, reply) => {
+        const identity = identityFor(request);
+        if (!isOwnedProject(request.params.projectId, identity.owner_id)) {
+          return reply
+            .status(404)
+            .send(errorBody(request.id, "PROJECT_NOT_FOUND", "Project not found"));
+        }
+        try {
+          const result = mutations.create(identity, {
+            project_id: request.params.projectId,
+            idempotency_key: request.headers["idempotency-key"],
+            operation: "team.confirm",
+            request: request.body,
+            execute: () =>
+              teams.confirm(identity, request.params.projectId, request.body.instance_ids),
+            reference_of: (value) => ({ id: value.composition_id, version: 1 }),
+            resolve: (reference) =>
+              teams.resolveConfirm(identity, request.params.projectId, reference.id)
+          });
+          return reply
+            .header("idempotency-replayed", String(result.replayed))
+            .status(result.replayed ? 200 : 201)
+            .send(result.value);
         } catch (error) {
           return sendAgentStudioMutationError(error, request, reply);
         }
