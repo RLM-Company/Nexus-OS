@@ -485,6 +485,55 @@ test("two uncertain sends remain independently retryable after navigation and re
   expect(await markers()).toBeNull();
 });
 
+test("a later send in the same chat cannot erase the retry of an accepted message", async ({
+  page,
+  request
+}) => {
+  const created = await request.post("/api/v1/chats", {
+    data: { initial_message: "Чат для проверки", client_message_id: crypto.randomUUID() }
+  });
+  expect(created.status()).toBe(201);
+  const { chat } = (await created.json()) as { chat: { id: string } };
+  const first = "Первое сообщение без подтверждения";
+  const second = "Другой запрос в том же чате";
+  const posts: unknown[] = [];
+  const statuses: number[] = [];
+  let acceptedStream = "";
+  await page.route(`**/api/v1/chats/${chat.id}/messages`, async (route) => {
+    if (route.request().method() !== "POST") return route.continue();
+    posts.push(route.request().postDataJSON());
+    const accepted = await route.fetch();
+    statuses.push(accepted.status());
+    if (posts.length === 1) {
+      acceptedStream = ((await accepted.json()) as { stream_url: string }).stream_url;
+      await route.abort("connectionreset");
+    } else await route.fulfill({ response: accepted });
+  });
+
+  await page.goto(`/?chat=${chat.id}`);
+  const editor = page.getByLabel("Сообщение Kosmora");
+  const send = page.getByRole("button", { name: "Отправить", exact: true });
+  await editor.fill(first);
+  await send.click();
+  await expect(page.locator(".composer").getByText(/результат запроса неизвестен/)).toBeVisible();
+  expect(acceptedStream).toBeTruthy();
+  const stream = await request.get(acceptedStream);
+  expect(await stream.text()).toContain("event: run.completed");
+  await editor.fill(second);
+  await send.click();
+  await expect(page.getByRole("status")).toHaveText(/Ответ получен/);
+
+  await page.reload();
+  await expect(page.locator(".message.user").filter({ hasText: first })).toHaveCount(1);
+  await editor.fill(first);
+  await send.click();
+  await expect.poll(() => statuses).toEqual([202, 202, 200]);
+  expect(posts[2]).toEqual(posts[0]);
+  await expect(editor).toHaveValue("");
+  for (const content of [first, second])
+    await expect(page.locator(".message.user").filter({ hasText: content })).toHaveCount(1);
+});
+
 test("composer actions belong to their own chat and stay out of another chat request", async ({
   page,
   request
