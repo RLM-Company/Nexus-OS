@@ -835,17 +835,72 @@ typecheck` в КАЖДОМ затронутом пакете, не только 
     прогона); гигиена: desktop/windows 462/0, typecheck api чист,
     team-api 4/4, desc-чекаут синхронизирован.
 
+45. **Срез 2 Multi-Agent: bounded concurrency, cap=2 (13.11.2026, владелец
+    «Весь срез, cap=2»)**. Единый `WORK_EXECUTION_CONCURRENCY = 2`
+    (`packages/contracts/src/work-schedule.ts`), проброшен из
+    `apps/api/src/server.ts` и в `ManagerWorkStore`, и в
+    `ManagerWorkCoordinator` (in-memory исполнитель и SQLite-admission не
+    расходятся). `ManagerWorkCoordinator`: `maxConcurrentWork` (default 2,
+    валидация 1..16) снимает оба сериализатора (`start()` timer и `execute()`
+    были `active.size>=1`), `capacity()` для планировщика; сохранены
+    schedulingBlock/owner fence/emergency/stop. `ManagerWorkStore`: `claim`
+    и `pending` в `BEGIN IMMEDIATE` считают `running < maxConcurrentWork` на
+    проект (CAS `version`, `dag_binding.bound`, `assertWritable`,
+    WORK_QUEUE_LIMIT, `recover()` без изменений). `WorkDagCoordinator`:
+    `liveAttempts()` (живые части), `advance()` берёт
+    `scheduledReadyWorkNodes(graph).slice(0, free)` за тик, между
+    `control("run")` перечитывает `graph.version` (иначе STALE_DAG на 2-м
+    узле волны); `run_plan` и `advance` резервируют бюджет. **Бюджет (важно,
+    после e2e-регресса)**: НЕ `+3*capacity` поверх `allocatedRequests()` —
+    `allocatedRequests()` уже резервирует полные 3 запроса на каждую живую
+    часть, поэтому `+3*capacity` дважды charged их и останавливал
+    зависимые планы при UI-лимите `nodes*3` (`totalLimit` в
+    `work-manager-dag.tsx`) как `PLAN_REQUEST_LIMIT`. Итог: `run_plan`
+    резервирует `3 * min(capacity, ready-узлы первой волны)`, `advance()` —
+    `3 * ready.length` (по 3 на запускаемый узел, ≤ свободных слотов).
+    Тесты: `work-dag.test.ts` фикстура получила `maxConcurrentWork`
+    (default 1 для старых sequential-сценариев) + 4 новых cap=2 теста и
+    регрессия зависимого плана с лимитом 6; `manager-work.test.ts`
+    admission/тайм-бюджет переписаны под 2 слота; db
+    `work-runtime-store.test.ts` — «2 running в проекте» и отсечение
+    третьего. Локально: contracts 206/206, db 236/236, api затронутые
+    136/136; полный api дал 27 timeout-флаков под параллельной нагрузкой
+    (каждый файл соло проходит); lint/typecheck (contracts/db/api),
+    prettier, `node scripts/check-secrets.mjs` чисты; UI не менялся;
+    owner budget/ledger/verified artifacts/recover/двухфазный
+    `dag_binding.bound` сохранены. **Чужая волна**: до PR main вырос
+    `501d403f..14a5f48e` (#582/#583, `91b4949b` «Reconcile Manager control
+    commands», `MANAGER_WORK_CONTROL_EVENTS` в contracts/manager-work.ts);
+    merge `38379b1c` разрешил конфликт импортов в
+    `manager-work-coordinator.ts`, сохранив ОБА импорта
+    (`MANAGER_WORK_CONTROL_EVENTS` и `WORK_EXECUTION_CONCURRENCY`).
+    В PR #584 ушли 3 коммита: `b08c4f08` (docs срез 1, ранее не запушен),
+    `3fc977e5` (код), `38379b1c` (merge волны), затем `7a9cfa4f` (fix
+    бюджета). **CI**: первый run `43462987699` — Browser acceptance fail
+    13m33s (517 passed, упали `e2e/work-manager-dag.spec.ts:4:5`
+    «План выполнен» и `e2e/workflows.spec.ts:152:5` «Скачать результаты»);
+    причина — двойной резерв бюджета; fix `7a9cfa4f` + регрессионный тест;
+    старый rerun отменён, новый CI run `43468511257` сначала `cancelled`
+    («higher priority waiting request for ci-CI-refs/pull/584/merge»),
+    перезапущен и зелёный 4/4: Browser acceptance 9m56s, Verify monorepo
+    5m27s, Code sandbox isolation 40s, identity-tests 47s;
+    `gh pr checks 584` exit 0. **Интеграция**: владелец «Слить и обновить
+    docs» → `gh pr merge 584 --merge`, merge-коммит
+    `43ffee1db331507dfd984f50f42a2f6779e6e780` (17:16:45Z, обычный
+    merge `14a5f48e` + `7a9cfa4f`). Пост-merge: локальная ветка
+    fast-forward к `43ffee1d`, `..\Nexus-OS` синхронизирован до `43ffee1d`,
+    desktop/windows `npm.cmd run check` **462/0**. `tmp/` остаётся
+    untracked и не коммитится; KOSMORA_LIVE_ORIGIN не создан, live-smoke
+    no-op (live-приёмка отложена владельцем).
+
 ## Что делать следующему запуску (в порядке приоритета)
 
 1. **Следующие срезы Multi-Agent по очереди** (согласовывать с владельцем):
-   **срез 2 сразу после merge среза 1** — bounded concurrency (снять три
-   сериализатора: `active.size>=1` в manager-work-coordinator.ts, один running
-   на проект в claim в manager-work-store.ts, первый ready node в
-   work-dag-coordinator.ts; использовать execution_waves и
-   scheduledReadyWorkNodes, сохранить owner budget/ledger/verified artifacts),
-   затем arbiter-сборка с проверкой по критериям #538, бюджет команды поверх
-   owner budget, панель хода. Исполнение частей + lifecycle + файловые
-   артефакты с версиями выполнены в срезе 1 (п. 44).
+   срез 2 (bounded concurrency, cap=2) **выполнен и слит** 13.11.2026
+   (п. 45, merge `43ffee1d`). Далее: arbiter-сборка с проверкой по
+   критериям #538, бюджет команды поверх owner budget, панель хода.
+   Multi-Agent остаётся финальным разделом: начинать/перекраивать его без
+   указания владельца нельзя.
 
 2. **Live-приёмка — отложена владельцем** (13.11.2026 подтверждено:
    «Multi-Agent впереди»): секрет `KOSMORA_LIVE_ORIGIN` не создан; задание
