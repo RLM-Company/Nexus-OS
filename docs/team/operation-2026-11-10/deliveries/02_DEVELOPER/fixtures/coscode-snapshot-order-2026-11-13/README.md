@@ -22,4 +22,7 @@
 - `SHA256SUMS`: hashes окончательных приложенных файлов, включая нормализованные логи.
 
 Команды и ограничение полноты — в [поставке](../../COSCODE_SNAPSHOT_ORDER_DELIVERY_RU.md).
-BASE_SHA — начало ветки; SYNCED_BASE_SHA — сохранённый последующий main.
+BASE_SHA — начало ветки; SYNCED_BASE_SHA — промежуточный main1b73;
+FINAL_SYNCED_BASE_SHA — сохранённый финальный main4477.
+`main-sync.json` содержит фактические SHA семи неизменившихся source blobs,
+`synced-core-passed.log` — повторный root gate exit0.

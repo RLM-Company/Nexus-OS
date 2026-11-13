@@ -15,8 +15,32 @@
 - Финальный delivery HEAD содержит документы дополнительно к SOURCE_HEAD_SHA;
   точный SHA фиксируется GitHub PR и финальной передачей, а не самоссылкой внутри commit.
 
+Контрольная база поручения9d972e8ba447f681fbfb49253b73d9f02dd1d325 — предок
+сохранённого main4477, проверено git merge-base --is-ancestor.
+
 Входящий main добавил workflow Windows и отчёт05_GEMINI; эти изменения сохранены.
 Собственных правок Windows/VPS нет. PR574 и его ветка не менялись.
+
+## Синхронизация перед финальной передачей
+
+После публикации начального Draft PR [#581](https://github.com/RLM-Company/Nexus-OS/pull/581)
+main продвинулся до `4477dd53e5767a4bb4990c3109c874683a892b63` (PR572).
+Эта версия сохранена отдельным merge; конфликта нет. Просмотрены изменения:
+пять файлов — root package.json, read-only VPS wrapper и его fail-closed тест,
+два отчёта05_GEMINI. CodeAgent/API/contracts/executor не менялись.
+Все семь собственных source blobs побайтово совпадают с SOURCE_HEAD_SHA.
+Входящие VPS файлы не являются собственной реализацией этого среза.
+Новый guard тест явно удаляет пароль из env и проверяет отказ до сетевого вызова;
+сам live wrapper/owner access/VPS в этом сеансе не запускался.
+
+Первоначальный delivery HEAD37c2ce4 имеет tree5e8f211; его CI43446573987
+заменяется новым HEAD при сохранении main. Сбой тестов этим не скрывается:
+это синхронизация пяти независимых файлов, без изменения assertions.
+Локальные35PASS относятся к неизменным семи source blobs. Для объединённого
+дерева check:core повторён, exit0, включая новый fail-closed guard.
+Итоговый exact HEAD CI будет в описании PR, без изменения проверенного commit.
+Финальный HEAD_SHA: смотреть head SHA PR581 / `git rev-parse HEAD` после checkout;
+внутри commit не записывается его собственный ещё не существующий hash.
 
 ## Пользовательский путь до и после
 
@@ -94,6 +118,7 @@ Readbacks сохраняются через `testInfo.outputPath` после р�
 | Финальные targeted5 после review и синхронизации main | 5PASS, включая late403, mutations=[]                                                            |
 | Финальный check:core                                  | exit0: format, secrets, lint, types, tests, build и остальные gates; Turbo cache отмечен в логе |
 | Финальный полный scoped35                             | 35PASS, exit0, retries0, production build/start, 2.1мин; пять readbacks совпали с targeted5     |
+| Check:core после main4477                             | exit0; включая входящий guard тест без пароля и без сетевого вызова                             |
 | Exact delivery HEAD CI                                | ожидается после публикации Draft PR                                                             |
 
 В полном scoped production suite переход Back на корневую страницу пишет

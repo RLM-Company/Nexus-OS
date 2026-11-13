@@ -18,6 +18,12 @@ Runtime, ограничения сети и grants прежние. Не пере
 с сохранением последующих правок интегратора; данных для миграции нет.
 [Подробная поставка](COSCODE_SNAPSHOT_ORDER_DELIVERY_RU.md).
 
+Перед финальным HEAD сохранён новый main4477dd53 (PR572), пять независимых файлов:
+root package.json, scripts/vps-live-acceptance.mjs, scripts/test/vps-live-acceptance.test.mjs,
+два отчёта05_GEMINI. Это входящая реализация, не собственное изменение этих файлов.
+Контракты/API/CodeAgent не менялись, семь source blobs сверены. Guard test удаляет
+пароль и останавливает wrapper до network; живой VPS не запускался.
+
 Исторические интеграции ниже.
 
 ---
