@@ -8,15 +8,15 @@
 
 ### 1. Read-only доступность (локально)
 
-| Проверка | Результат |
-| --- | --- |
-| TCP `:22`, `:443` | открыты |
-| `GET /` | `303` → `Location: /login` |
-| `GET /login` | `200`, `text/html`, жёсткий CSP (`default-src 'none'`, `frame-ancestors 'none'`) |
-| `GET /api/v1/health` | `401 {"error":{"code":"UNAUTHORIZED","message":"Owner login required"}}` |
-| `GET /api/v1/auth/login` | `401` |
-| TLS | issuer `Let's Encrypt`, истекает 16.11.2026 (проверялось с `-k`, подлинность хоста не подтверждалась) |
-| SSH BatchMode | `Permission denied (publickey,password)` |
+| Проверка                 | Результат                                                                                             |
+| ------------------------ | ----------------------------------------------------------------------------------------------------- |
+| TCP `:22`, `:443`        | открыты                                                                                               |
+| `GET /`                  | `303` → `Location: /login`                                                                            |
+| `GET /login`             | `200`, `text/html`, жёсткий CSP (`default-src 'none'`, `frame-ancestors 'none'`)                      |
+| `GET /api/v1/health`     | `401 {"error":{"code":"UNAUTHORIZED","message":"Owner login required"}}`                              |
+| `GET /api/v1/auth/login` | `401`                                                                                                 |
+| TLS                      | issuer `Let's Encrypt`, истекает 16.11.2026 (проверялось с `-k`, подлинность хоста не подтверждалась) |
+| SSH BatchMode            | `Permission denied (publickey,password)`                                                              |
 
 ### 2. Найден и включён штатный opt-in CI-механизм
 
@@ -44,12 +44,14 @@ Run `43408916338` (ветка фикса): `build` success, **Live server accept
 success**.
 
 Лог job `131831322947`:
+
 ```
 Live acceptance smoke OK: landed on login of ***
 Artifact kosmora-windows-gui-acceptance-live.zip finalized
 ```
 
 Содержимое артефакта `cosmora-gui-acceptance-live-report.json`:
+
 ```json
 {
   "schemaVersion": 1,
