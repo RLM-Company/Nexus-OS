@@ -10,6 +10,64 @@ async function fixture(request: APIRequestContext) {
   return { project, base: `/api/v1/projects/${project}` };
 }
 
+test("saves a completed Deep Research report and uses its evidence in project chat", async ({
+  page,
+  request
+}) => {
+  const { project, base } = await fixture(request);
+  const profile = await request.put(base + "/autonomy-profile", {
+    data: { base_level: "A1", overrides: [], expected_version: 1 }
+  });
+  expect(profile.ok()).toBe(true);
+
+  const research = await request.post("/api/v1/research", {
+    data: {
+      project_id: project,
+      question: "Какой код указан в архиве лунной станции?",
+      synthesize: false,
+      client_request_id: randomUUID()
+    }
+  });
+  expect(research.status(), await research.text()).toBe(201);
+  const { id } = (await research.json()) as { id: string };
+  await expect
+    .poll(async () => {
+      const response = await request.get(`/api/v1/research/${id}`);
+      return ((await response.json()) as { status: string }).status;
+    })
+    .toBe("completed");
+
+  await page.goto(`/?project=${project}&view=context`);
+  const panel = page.getByRole("tabpanel", { name: "Контекст проекта" });
+  const picker = panel.getByRole("region", { name: "Сохранённые источники проекта" });
+  await picker.getByLabel("Сохранённый источник").selectOption(`research:${id}`);
+  await picker.getByRole("button", { name: "Подготовить снимок", exact: true }).click();
+  const preview = picker.getByLabel("Текст снимка материала");
+  await expect(preview).toContainText("SELENE-047");
+  await expect(preview).toContainText("https://example.org/lunar-station-archive");
+  await picker.getByRole("button", { name: "Добавить снимок в материалы", exact: true }).click();
+  const saved = page.waitForResponse(
+    (response) =>
+      response.url().endsWith(base + "/materials") && response.request().method() === "PUT"
+  );
+  await panel.getByRole("button", { name: "Сохранить материалы", exact: true }).click();
+  expect((await saved).ok()).toBe(true);
+
+  const message = await request.post(base + "/messages", {
+    data: {
+      content: "Назови код из отчёта в материалах проекта.",
+      client_message_id: randomUUID()
+    }
+  });
+  expect(message.status(), await message.text()).toBe(202);
+  const { stream_url } = (await message.json()) as { stream_url: string };
+  const stream = await request.get(stream_url);
+  expect(stream.ok()).toBe(true);
+  const events = await stream.text();
+  expect(events).toContain("Код из отчёта: SELENE-047.");
+  expect(events).toContain("event: run.completed");
+});
+
 test("stages reviewed Canvas evidence separately from saved project materials and recovers a lost save response", async ({
   page,
   request
