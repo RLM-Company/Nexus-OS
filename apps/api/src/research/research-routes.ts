@@ -280,11 +280,9 @@ export function registerResearchRoutes(options: {
         source
       );
       if (result.status === "blocked")
-        return reply
-          .code(403)
-          .send({
-            error: { code: "WEB_READ_DENIED", message: "Веб-доступ к источнику недоступен." }
-          });
+        return reply.code(403).send({
+          error: { code: "WEB_READ_DENIED", message: "Веб-доступ к источнику недоступен." }
+        });
       if (result.status === "busy")
         return reply.code(429).send({ error: { code: "RESEARCH_BUSY_OR_STOPPED" } });
       return result;
