@@ -3721,6 +3721,46 @@ it.skipIf(!process.env.CODE_AGENT_TEST_IMAGE)(
       review_hash: fresh.draft!.plan.review_hash
     });
     expect(fresh.publication_token).toBeTruthy();
+    const publication = {
+      review_hash: fresh.draft!.plan.review_hash,
+      publication_token: fresh.publication_token!,
+      approve: true
+    };
+    const published = await f.app.inject({
+      method: "POST",
+      url: `${f.base}/${id}/publish`,
+      payload: publication
+    });
+    expect(published.statusCode).toBe(200);
+    const publishedView = published.json<{
+      status: string;
+      version: number;
+      draft: { status: string; pr_url: string };
+    }>();
+    expect(publishedView).toMatchObject({
+      status: "published",
+      draft: { status: "published", pr_url: "https://github.com/RLM-Company/Nexus-OS/pull/1000" }
+    });
+    expect(publishedView.version).toBeGreaterThan(fresh.version);
+    const writes = f.githubCalls.filter((call) => call.method === "POST");
+    expect(writes.map((call) => call.path)).toEqual([
+      "/git/trees",
+      "/git/commits",
+      "/git/refs",
+      "/pulls"
+    ]);
+    expect(writes[0]!.body).toMatchObject({ base_tree: baseTree });
+    expect(writes.at(-1)!.body).toMatchObject({ draft: true, base: "main" });
+    expect(
+      (await f.app.inject({ method: "POST", url: `${f.base}/${id}/publish`, payload: publication }))
+        .statusCode
+    ).toBe(409);
+    expect(f.githubCalls.filter((call) => call.method === "POST")).toHaveLength(writes.length);
+    expect(f.get(id).status).toBe("published");
+    expect(git("rev-parse", "HEAD").trim()).toBe(baseSha);
+    expect(await readFile(join(directory, "README.md"), "utf8")).toBe(
+      "Keep owner file 00123 untouched.\n"
+    );
     if (process.env.CODE_AGENT_REPAIR_REPORT_DIR) {
       const out = process.env.CODE_AGENT_REPAIR_REPORT_DIR;
       await mkdir(out, { recursive: true });
@@ -3736,6 +3776,16 @@ it.skipIf(!process.env.CODE_AGENT_TEST_IMAGE)(
               after: after.proposal_check,
               model_calls: 4,
               repair_calls: 1,
+              checkpoint_status: f.get(id).status,
+              publication: {
+                adapter_fixture: true,
+                status: publishedView.status,
+                draft_pr_url: publishedView.draft.pr_url,
+                post_paths: writes.map((call) => call.path),
+                duplicate_status: 409,
+                duplicate_added_writes: 0
+              },
+              original_git_head_preserved: git("rev-parse", "HEAD").trim() === baseSha,
               real_model_called: false,
               github_published: false,
               readme_preserved: true
