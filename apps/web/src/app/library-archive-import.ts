@@ -47,6 +47,7 @@ export async function prepareLibraryUpload(
       }
       // The library stores a label rather than a filesystem path.
       const name = path.replaceAll("/", " › ");
+      // eslint-disable-next-line no-control-regex -- Archive names must not contain control characters.
       if (name.length > 180 || /[\u0000-\u001f\u007f]/u.test(name) || names.has(name.toLowerCase()))
         throw new Error("ZIP содержит слишком длинные или пересекающиеся имена документов.");
       names.add(name.toLowerCase());
