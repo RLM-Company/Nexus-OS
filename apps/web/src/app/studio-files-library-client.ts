@@ -1,4 +1,5 @@
 import { DOCUMENT_LIBRARY_PDF_MAX_PAGES } from "@cosmora/contracts";
+import type { createLibraryOcr } from "./library-scan-ocr";
 import { decodeStudioDocument } from "./decode-chat-attachment";
 
 export type IndexedPage = { page: number | null; text: string };
@@ -42,7 +43,11 @@ export async function extractLibraryPages(
       disableFontFace: true,
       useSystemFonts: false
     });
+    const lifetime = new AbortController();
+    let ocr: ReturnType<typeof createLibraryOcr> | undefined;
+    const browserSignal = AbortSignal.any([signal, lifetime.signal]);
     const abort = () => {
+      lifetime.abort();
       void task.destroy().catch(() => undefined);
     };
     let stalled = false;
@@ -55,36 +60,55 @@ export async function extractLibraryPages(
     if (signal.aborted) abort();
     signal.addEventListener("abort", abort, { once: true });
     try {
-      const document = await task.promise;
-      if (document.numPages > DOCUMENT_LIBRARY_PDF_MAX_PAGES)
+      const pdfDocument = await task.promise;
+      if (pdfDocument.numPages > DOCUMENT_LIBRARY_PDF_MAX_PAGES)
         throw new Error("PDF: максимум " + DOCUMENT_LIBRARY_PDF_MAX_PAGES + " страниц.");
       const pages: IndexedPage[] = [];
       let characters = 0;
-      for (let i = 1; i <= document.numPages; i++) {
+      for (let i = 1; i <= pdfDocument.numPages; i++) {
         signal.throwIfAborted();
-        const page = await document.getPage(i);
+        const page = await pdfDocument.getPage(i);
         const content = await page.getTextContent();
-        const text =
+        let text =
           content.items
             .map((item) => ("str" in item ? item.str + (item.hasEOL ? "\n" : " ") : ""))
             .join("") || "\n";
+        if (!text.trim()) {
+          onProgress("Распознаём страницу " + i + " из " + pdfDocument.numPages);
+          ocr ??= (await import("./library-scan-ocr")).createLibraryOcr(browserSignal);
+          let cancelOcr: (() => void) | undefined;
+          try {
+            const cancelled = new Promise<never>((_resolve, reject) => {
+              cancelOcr = () =>
+                reject(new DOMException("Распознавание остановлено.", "AbortError"));
+              if (browserSignal.aborted) cancelOcr();
+              else browserSignal.addEventListener("abort", cancelOcr, { once: true });
+            });
+            text = await Promise.race([ocr.recognize(page), cancelled]);
+          } finally {
+            if (cancelOcr) browserSignal.removeEventListener("abort", cancelOcr);
+          }
+        }
         characters += text.length;
         if (characters > 2_000_000) throw new Error("Текст: максимум 2 млн символов.");
         pages.push({ page: i, text });
         page.cleanup();
         window.clearTimeout(timer);
         timer = watchdog();
-        onProgress(`Извлечена страница ${i} из ${document.numPages}`);
+        onProgress(`Извлечена страница ${i} из ${pdfDocument.numPages}`);
       }
       if (!pages.some((p) => p.text.trim()))
-        throw new Error("Не найден текстовый слой PDF. OCR не реализован.");
+        throw new Error("Не удалось найти или распознать текст в PDF.");
       return pages;
     } catch (cause) {
       signal.throwIfAborted();
       if (stalled)
-        throw new Error("Чтение PDF остановилось: за минуту не извлечено ни одной страницы.");
+        throw new Error("Чтение PDF остановилось: за минуту не извлечено ни одной страницы.", {
+          cause
+        });
       throw cause;
     } finally {
+      ocr?.dispose();
       signal.removeEventListener("abort", abort);
       window.clearTimeout(timer);
       await task.destroy().catch(() => undefined);

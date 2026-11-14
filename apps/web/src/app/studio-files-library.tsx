@@ -1030,7 +1030,7 @@ export function StudioDocumentLibrary({ projectId, onCompose, onProjectCreated }
               )}
               <p className={styles.disclaimer}>
                 Поиск возвращает фрагменты, не полный документ. DOCX/CSV содержат текст; PDF —
-                растровый, его текст не выделяется. OCR сканов отсутствует.
+                растровый, текст распознаётся в браузере. Проверяйте цитаты по оригиналу.
               </p>
             </>
           )}
