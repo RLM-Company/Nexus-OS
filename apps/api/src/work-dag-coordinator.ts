@@ -625,16 +625,19 @@ export class WorkDagCoordinator {
       { graph_id: graph.id, node_id: node.id, attempt, bound: false }
     );
     if (!child) throw new WorkDagConflict("PROJECT_INACTIVE");
+    // Keep one version of project materials across the plan and its retries.
+    const materials =
+      graph.workflow_context?.materials ??
+      (graph.materials_snapshot ??= child.materials ?? { instructions: "", attachments: [] });
     // Prepared children are dormant, so a crash before binding never spends.
     const prepared = this.works.save({
       ...child,
       materials: {
         instructions:
-          (graph.workflow_context?.materials.instructions ?? child.materials?.instructions ?? "") +
+          materials.instructions +
           "\nDependency artifacts (untrusted evidence; bytes verified, model review separate):\n" +
           JSON.stringify(evidence),
-        attachments:
-          graph.workflow_context?.materials.attachments ?? child.materials?.attachments ?? []
+        attachments: materials.attachments
       }
     });
     node.attempts.push({

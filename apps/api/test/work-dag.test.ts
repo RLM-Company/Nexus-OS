@@ -945,10 +945,20 @@ describe("executable durable Work DAG", () => {
     });
     try {
       const base = "/api/v1/projects/" + f.project.id + "/work-dags/" + graph.id;
+      const materials = f.projects.setMaterials(f.project.id, owner, {
+        version: 0,
+        instructions: "Original project brief",
+        attachments: [{ name: "source.txt", content: "Original source evidence" }]
+      })!;
       await app.inject({ url: base });
       expect(f.calls).toHaveLength(0); // GET is not a paid dispatcher.
       graph = await autoTick(f, graph.id);
       expect(graph.nodes.map((node) => node.status)).toEqual(["completed", "pending"]);
+      f.projects.setMaterials(f.project.id, owner, {
+        version: materials.version,
+        instructions: "Revised project brief",
+        attachments: [{ name: "source.txt", content: "Revised source evidence" }]
+      });
       expect(() => f.dag.edit(graph.id, owner, graph.version, nodes.slice(0, 2))).toThrow(
         "AUTO_PLAN_ACTIVE"
       );
@@ -968,6 +978,13 @@ describe("executable durable Work DAG", () => {
         graph.nodes[0]!.artifacts[0]!.id
       ]);
       expect(f.calls[3]!.messages[1]!.content).toContain("Dependency evidence in a real file");
+      for (const call of f.calls) {
+        const input = call.messages[1]!.content;
+        expect(input).toContain("Original project brief");
+        expect(input).toContain("Original source evidence");
+        expect(input).not.toContain("Revised project brief");
+        expect(input).not.toContain("Revised source evidence");
+      }
       const response = await app.inject({ url: base + "/results" });
       expect(response.statusCode).toBe(200);
       expect(response.headers["cache-control"]).toBe("private, no-store");
