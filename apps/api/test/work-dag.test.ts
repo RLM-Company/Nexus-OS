@@ -1156,6 +1156,40 @@ describe("executable durable Work DAG", () => {
     expect(f.calls).toHaveLength(4);
     expect(restarted.dag.get(graph.id, owner)!.nodes[0]!.attempts[0]!.work_id).toBe(completed);
   });
+  it("pauses an admitted step on restart and resumes the same attempt explicitly", async () => {
+    const f = await fixture();
+    let graph = await autoTick(f, arm(f, f.create()).id);
+    const previous = graph.nodes[0]!.artifacts[0]!;
+    f.dag.advance();
+    const queued = f.store.pending()[0]!;
+    expect(queued.dag_binding?.node_id).toBe("document");
+
+    const restarted = new ManagerWorkCoordinator(f.deps);
+    restarted.dag.recoverAutomation();
+    restarted.dag.advance();
+    graph = restarted.dag.get(graph.id, owner)!;
+    expect(graph.execution?.reason).toBe("RESTART_REQUIRES_RESUME");
+    expect(graph.nodes[1]).toMatchObject({ status: "blocked", blocked_reason: "PAUSED" });
+    expect(f.store.pending()).toEqual([]);
+    await restarted.execute(queued.id, owner);
+    expect(f.calls).toHaveLength(2);
+    expect(restarted.dag.results(graph.id, owner).files.map((file) => file.id)).toEqual([
+      previous.id
+    ]);
+
+    graph = restarted.dag.control(graph.id, owner, {
+      version: graph.version,
+      action: "resume_step",
+      node_id: "document"
+    });
+    await restarted.execute(queued.id, owner);
+    graph = restarted.dag.get(graph.id, owner)!;
+    expect(graph.nodes[1]!.status).toBe("completed");
+    expect(graph.nodes[1]!.attempts.map((attempt) => attempt.work_id)).toEqual([queued.id]);
+    expect(graph.nodes[0]!.artifacts[0]!.sha256).toBe(previous.sha256);
+    expect(f.calls).toHaveLength(4);
+  });
+
   it("invalidates autostart consent when an unstarted goal is edited while paused", async () => {
     const f = await fixture();
     let graph = arm(f, f.create());
