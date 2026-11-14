@@ -119,7 +119,10 @@ describe("English Relay integration with canonical account schema", () => {
       gateway(() => "English", seen)
     ).prepare("owner", chatId, runId, request, new AbortController().signal);
     expect(prepared.relay).toBe(false);
-    expect(prepared.request.messages).toEqual(request.messages);
+    expect(prepared.request.messages.filter((message) => message.role !== "system")).toEqual(
+      request.messages.filter((message) => message.role !== "system")
+    );
+    expect(prepared.request.messages[1]?.content).toContain("masculine forms by default");
     expect(seen).toHaveLength(0);
   });
   it("translates model copies and charges both translation stages separately", async () => {
@@ -137,7 +140,7 @@ describe("English Relay integration with canonical account schema", () => {
       request,
       new AbortController().signal
     );
-    expect(prepared.request.messages[1]?.content).toBe("Hello");
+    expect(prepared.request.messages.at(-1)?.content).toBe("Hello");
     expect(request.messages[1]?.content).toBe("Привет");
     expect(
       await relay.finish(
