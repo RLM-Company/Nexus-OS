@@ -58,9 +58,10 @@ describe("project folder scenario (slice E)", () => {
     const pA = projectId();
     const pB = projectId();
     // 1. Новый чат сразу в проекте (первый запрос).
+    const clientMessageId = crypto.randomUUID();
     const created = await call("POST", "/api/v1/chats", {
       initial_message: "Срок до 20 ноября",
-      client_message_id: crypto.randomUUID(),
+      client_message_id: clientMessageId,
       project_id: pA
     });
     expect(created.statusCode).toBe(201);
@@ -70,12 +71,11 @@ describe("project folder scenario (slice E)", () => {
     // 2. Повтор того же запроса идемпотентен и не создаёт второй чат.
     const replay = await call("POST", "/api/v1/chats", {
       initial_message: "Срок до 20 ноября",
-      client_message_id:
-        created.json<{ user_message: { client_message_id?: string } }>().user_message
-          .client_message_id ?? "same",
+      client_message_id: clientMessageId,
       project_id: pA
     });
-    // Повтор с тем же client_message_id возвращает 200 duplicate.
+    expect(replay.statusCode).toBe(200); // duplicate, без второго чата
+    expect(replay.json<{ chat: { id: string } }>().chat.id).toBe(chatId);
     const listA = await call("GET", `/api/v1/chats?project_id=${pA}`);
     expect(listA.statusCode).toBe(200);
     expect(
