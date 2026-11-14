@@ -89,20 +89,17 @@ test("shows a searchable plan with real entry points and honest future requireme
   await expect(page).toHaveURL(/surface=studio/);
 });
 
-test("opens Studio from its sidebar folder and keeps a shareable surface URL", async ({ page }) => {
+test("opens Games from the Studio sidebar and keeps a shareable surface URL", async ({ page }) => {
   await page.goto("/?surface=work");
   await page
     .locator(".sidebar-tools")
     .getByRole("button", { name: /Kosmora Studio/ })
     .click();
-  await expect(
-    page.locator(".capability-workspace").getByRole("heading", { name: "Kosmora Studio" })
-  ).toBeVisible();
-  await expect(page).toHaveURL(/surface=studio/);
+  await page.locator(".studio-section").getByRole("button", { name: "Games", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Games", level: 1 })).toBeVisible();
+  await expect(page).toHaveURL(/surface=games/);
   await page.reload();
-  await expect(
-    page.locator(".capability-workspace").getByRole("heading", { name: "Kosmora Studio" })
-  ).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Games", level: 1 })).toBeVisible();
 });
 
 test("restores separate media settings without automatic generation", async ({ page }) => {

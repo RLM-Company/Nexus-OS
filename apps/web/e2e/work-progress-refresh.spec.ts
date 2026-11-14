@@ -470,7 +470,7 @@ test("a missing saved selection falls back to available work", async ({ page, re
   expect(await page.evaluate((key) => sessionStorage.getItem(key), key)).toBeNull();
 });
 
-test("a lost create acknowledgement keeps its complete request across reload and model budget refresh", async ({
+test("a lost create acknowledgement keeps its complete request across reload and model metadata refresh", async ({
   page,
   request
 }) => {
@@ -480,8 +480,6 @@ test("a lost create acknowledgement keeps its complete request across reload and
   const payloads: {
     client_request_id: string;
     goal: string;
-    max_input_tokens: number;
-    max_output_tokens: number;
   }[] = [];
   let accepted = "";
   await page.route("**/api/v1/model-runtime", async (route) => {
@@ -522,7 +520,6 @@ test("a lost create acknowledgement keeps its complete request across reload and
   await expect(manager).toContainText("Подтверждение предыдущего запуска потеряно");
   await expect(manager.locator(".manager-work-runtime")).toContainText("fixture-window-B");
   expect(payloads).toHaveLength(1);
-  await expect(manager.locator(".manager-work-limits")).toContainText(/384\s*000/);
   const retry = page.waitForResponse(
     (r) => r.url().endsWith(list) && r.request().method() === "POST"
   );
@@ -535,14 +532,14 @@ test("a lost create acknowledgement keeps its complete request across reload and
   expect(history.items.filter((item) => item.request.goal === goal).map((item) => item.id)).toEqual(
     [accepted]
   );
-  await expect(manager.locator(".manager-work-limits")).toContainText(/768\s*000/);
   const next = page.waitForResponse(
     (r) => r.url().endsWith(list) && r.request().method() === "POST"
   );
   await manager.getByRole("button", { name: "Создать файлы", exact: true }).click();
   expect((await next).status()).toBe(201);
   expect(payloads[2]!.client_request_id).not.toBe(payloads[0]!.client_request_id);
-  expect(payloads[2]).toMatchObject({ max_input_tokens: 768000, max_output_tokens: 24000 });
+  for (const key of ["max_model_requests", "max_input_tokens", "max_output_tokens"])
+    expect(payloads[2]).not.toHaveProperty(key);
 });
 
 test("successful reads clear network warnings but do not erase failed owner commands", async ({
