@@ -16,7 +16,7 @@ pin/open/rename/archive/delete/export; новый чат проекта не в�
 
 **После.**
 
-1. **Схема/API переноса.** Миграция `0068_general_chat_project.sql` добавляет
+1. **Схема/API переноса.** Миграция `0069_general_chat_project.sql` добавляет
    `general_chats.project_id` (FK → projects, ON DELETE SET NULL) и
    `general_chats.confidential`. `PATCH /api/v1/chats/:chatId` принимает
    `project_id` (строка = папка, `null` = общий список) и `confidential`;
@@ -104,7 +104,7 @@ typecheck/lint contracts/core/db/api/web · prettier --check . · check:secrets 
 
 | Файл                                                                     | Изменение                                          |
 | ------------------------------------------------------------------------ | -------------------------------------------------- |
-| `packages/db/migrations/0068_general_chat_project.sql` + `_journal.json` | новая миграция                                     |
+| `packages/db/migrations/0069_general_chat_project.sql` + `_journal.json` | новая миграция                                     |
 | `packages/db/src/general-chat-store.ts`                                  | project_id/confidential, list/update/create/branch |
 | `packages/contracts/src/domain.ts`                                       | поля в GeneralChat/Create/PATCH-контрактах         |
 | `apps/api/src/general-chat-routes.ts`                                    | query/body/создание/обработка 404                  |

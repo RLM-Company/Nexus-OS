@@ -30,6 +30,21 @@ export type AnswerReport = {
   answer: string | null;
   status: string;
   error_code: string | null;
+  coverage?: {
+    total_chunks: number;
+    analyzed_chunks: number;
+    failed_chunks: number;
+    phase: "reading" | "synthesis" | "complete";
+    files: Array<{
+      name: string;
+      chunks: number;
+      analyzed_chunks: number;
+      failed_chunks: number;
+      is_pdf: boolean;
+      total_pages: number | null;
+      indexed_pages: number | null;
+    }>;
+  } | null;
   citations: string[];
   sources: Array<{
     file_id?: string;
@@ -41,6 +56,41 @@ export type AnswerReport = {
     content: string;
   }>;
 };
+export function answerCoverageLines(coverage: AnswerReport["coverage"]): string[] {
+  if (!coverage) return [];
+  const pending = coverage.total_chunks - coverage.analyzed_chunks - coverage.failed_chunks;
+  return [
+    "Фрагменты разобраны: " +
+      coverage.analyzed_chunks +
+      " из " +
+      coverage.total_chunks +
+      ". Ошибки обработки: " +
+      coverage.failed_chunks +
+      ". Не обработано: " +
+      pending +
+      ".",
+    ...coverage.files.map(
+      (file) =>
+        file.name +
+        " — " +
+        file.analyzed_chunks +
+        " из " +
+        file.chunks +
+        " фрагментов" +
+        (file.failed_chunks ? ", ошибок: " + file.failed_chunks : "") +
+        (file.is_pdf
+          ? file.total_pages === null
+            ? ". Страниц в индексе: " + file.indexed_pages + ". Всего страниц неизвестно."
+            : ". Страниц с текстом в индексе: " +
+              file.indexed_pages +
+              " из " +
+              file.total_pages +
+              "."
+          : ".")
+    )
+  ];
+}
+
 /** This mode exports the ACTUAL saved model answer and the exact evidence snapshot. */
 export function answerReportLines(answer: AnswerReport): string[] {
   return [
@@ -50,6 +100,7 @@ export function answerReportLines(answer: AnswerReport): string[] {
     "Ссылки и дословные цитаты сверены с выбранными фрагментами;",
     "смысловая достоверность остальных интерпретаций модели автоматически не доказана.",
     "",
+    ...answerCoverageLines(answer.coverage),
     "ОТВЕТ МОДЕЛИ",
     answer.answer ?? "Ответ ещё не получен.",
     "",
@@ -69,6 +120,14 @@ export function createAnswerCsvReport(answer: AnswerReport): Blob {
   const rows: string[][] = [
     ["Тип", "Вопрос", "Ответ", "Источник", "Страница", "Фрагмент"],
     ["Ответ модели", answer.question, answer.answer ?? "", "", "", ""],
+    ...answerCoverageLines(answer.coverage).map((line) => [
+      "Охват",
+      answer.question,
+      line,
+      "",
+      "",
+      ""
+    ]),
     ...answer.sources
       .filter((s) => answer.citations.includes(s.ref))
       .map((s) => [

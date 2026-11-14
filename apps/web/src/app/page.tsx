@@ -200,13 +200,13 @@ const SURFACE_TITLE: Record<WorkspaceSurface, string> = {
   studio: "Kosmora Studio",
   files: "Анализ файлов",
   skills: "Skills",
-  code: "Coscode",
+  code: "Koscode",
   work: "Koswork",
   images: "Изображения",
   video: "Видео",
   sound: "Sound",
   "multi-agent": "Multi-Agent",
-  apps: "Приложения",
+  apps: "Интеграции",
   features: "Возможности",
   settings: "Настройки"
 };
@@ -2322,10 +2322,6 @@ export default function Home() {
       window.history.replaceState(window.history.state, "", route.pathname + route.search);
       return;
     }
-    if (nextSurface === "research" || nextSurface === "presentations") {
-      window.location.assign(nextSurface === "research" ? "/research-workspace" : "/presentations");
-      return;
-    }
     setSurface(nextSurface);
     if (nextSurface === "manager") {
       replaceConsoleRoute(
@@ -2335,7 +2331,7 @@ export default function Home() {
       );
       return;
     }
-    if (["studio", "files", "images", "video", "sound"].includes(nextSurface))
+    if (["studio", ...STUDIO_ITEMS.map((item) => item.id)].some((id) => id === nextSurface))
       setStudioExpanded(true);
     const route = new URL(window.location.href);
     route.searchParams.delete("mode");
@@ -2399,7 +2395,7 @@ export default function Home() {
               <WorkspaceIcon name="projects" /> GitHub
             </Link>
             <Link href={controlCenterHref}>
-              <WorkspaceIcon name="settings" /> Настройки Coscode
+              <WorkspaceIcon name="settings" /> Настройки Koscode
             </Link>
           </div>
         )}
@@ -2666,10 +2662,7 @@ export default function Home() {
                   className="projects-heading sidebar-section-toggle studio-toggle"
                   aria-expanded={studioExpanded}
                   aria-controls="studio-tools"
-                  onClick={() => {
-                    if (!studioExpanded) selectSurface("studio");
-                    else setStudioExpanded(false);
-                  }}
+                  onClick={() => setStudioExpanded((expanded) => !expanded)}
                 >
                   <ToolIcon kind="studio" />
                   <span>Kosmora Studio</span>
@@ -2679,15 +2672,6 @@ export default function Home() {
                 </button>
                 {studioExpanded && (
                   <div className="studio-tools" id="studio-tools">
-                    <button
-                      type="button"
-                      className={surface === "studio" ? "sidebar-tool active" : "sidebar-tool"}
-                      aria-current={surface === "studio" ? "page" : undefined}
-                      onClick={() => selectSurface("studio")}
-                    >
-                      <ToolIcon kind="studio" />
-                      <span>Обзор Studio</span>
-                    </button>
                     {STUDIO_ITEMS.map((item) => (
                       <button
                         key={item.id}
@@ -2711,7 +2695,7 @@ export default function Home() {
               onClick={() => selectSurface("apps")}
             >
               <ToolIcon kind="apps" />
-              <span>Приложения</span>
+              <span>Интеграции</span>
             </button>
             <button
               type="button"
@@ -3533,6 +3517,7 @@ export default function Home() {
                     !initialRouteReady ||
                     draftStorageReadyKey !== attachmentScope
                   }
+                  onOpenTool={selectSurface}
                   onAdd={(files) => void chatAttachments.add(files)}
                   onRemove={(index) =>
                     chatAttachments.replace(
@@ -3554,6 +3539,7 @@ export default function Home() {
             </div>
             <div className="composer-footer">
               <VoiceComposer
+                key={composerDraftKey}
                 disabled={sending || loading || !initialRouteReady}
                 onInsert={(text) => setDraft((current) => (current ? `${current} ${text}` : text))}
               />

@@ -40,7 +40,7 @@ test("owner runs the complete reviewed plan once and recovers a lost start respo
   const run = panel.getByRole("button", { name: "Выполнить план", exact: true });
   await expect(run).toBeDisabled();
   await panel
-    .getByLabel("Разрешаю выполнение оставшихся шагов в этом лимите с расходом токенов", {
+    .getByLabel("Разрешаю выполнение оставшихся шагов с расходом токенов", {
       exact: true
     })
     .check();

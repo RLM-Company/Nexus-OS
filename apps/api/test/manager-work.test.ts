@@ -697,7 +697,7 @@ describe("durable Manager work", () => {
 
   it("rejects invalid operation deadlines before accepting execution", async () => {
     const f = await fixture();
-    for (const operationTimeoutMs of [0, -1, 1.5, Infinity, 1800001])
+    for (const operationTimeoutMs of [-1, 1.5, Infinity, 1800001])
       expect(() => new ManagerWorkCoordinator({ ...f.dependencies, operationTimeoutMs })).toThrow(
         /time budget/
       );
@@ -859,6 +859,35 @@ describe("durable Manager work", () => {
       await app.close();
       await f.coordinator.stop();
     }
+  });
+  it("runs every site generation stage when a new task has no cumulative budget", async () => {
+    const stages: string[] = [];
+    const f = await fixture({
+      request: {
+        client_request_id: "website-no-task-budget",
+        goal: "Create a landing page",
+        worker_role: "analyst",
+        output_contract: { kind: "website" }
+      },
+      plan: { ...defaultPlan, needs_critic: true },
+      draft: {
+        files: [
+          {
+            name: "index.html",
+            content:
+              "<!doctype html><html><head><title>Moon</title></head><body><h1>Moon</h1></body></html>"
+          }
+        ]
+      },
+      onCall: (r) => {
+        stages.push(r.task_type);
+        return Promise.resolve();
+      }
+    });
+    await f.coordinator.execute(f.work.id, "local-owner");
+    expect(f.get()).toMatchObject({ status: "completed", model_requests: 3 });
+    expect(stages).toEqual(["manager_work_plan", "manager_work_draft", "manager_work_review"]);
+    await f.coordinator.stop();
   });
   it("retains output budget for a required game source review", async () => {
     const limits: number[] = [];

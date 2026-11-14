@@ -4542,3 +4542,34 @@ body:has(.workspace-drawer[open]) {
     outline: 2px solid Highlight;
   }
 }
+
+.product-shell .composer-tools {
+  position: relative;
+}
+.attachment-actions {
+  position: absolute;
+  z-index: 20;
+  bottom: calc(100% + 8px);
+  left: 0;
+  display: grid;
+  gap: 2px;
+  padding: 6px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: var(--shadow-popover);
+}
+.attachment-actions button {
+  padding: 7px 10px;
+  color: inherit;
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  text-align: left;
+}
+.attachment-actions button:hover:not(:disabled) {
+  background: var(--surface);
+}
+.attachment-actions button:disabled {
+  opacity: 0.45;
+}

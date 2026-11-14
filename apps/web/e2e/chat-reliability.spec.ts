@@ -292,7 +292,7 @@ test("keeps attachment controls keyboard reachable with clear names and thumbnai
   page
 }) => {
   await page.goto("/");
-  const clip = page.getByRole("button", { name: "Прикрепить файл" });
+  const clip = page.getByRole("button", { name: "Добавить в чат" });
   await expect(clip).toBeEnabled();
   await clip.focus();
   await expect(clip).toBeFocused();
@@ -320,7 +320,7 @@ test("announces rejected attachment type and keeps the draft editor usable", asy
   });
   await expect(page.locator(".composer").getByRole("alert")).toContainText("Поддерживаются");
   await expect(page.getByLabel("Сообщение Kosmora")).toHaveValue("Оставь этот текст");
-  await expect(page.getByRole("button", { name: "Прикрепить файл" })).toBeEnabled();
+  await expect(page.getByRole("button", { name: "Добавить в чат" })).toBeEnabled();
 });
 
 test("restored attachment drafts expose the image name to assistive technology", async ({

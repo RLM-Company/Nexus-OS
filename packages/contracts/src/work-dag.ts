@@ -136,7 +136,7 @@ export interface WorkDag {
   };
   execution?: {
     status: "running" | "waiting" | "paused" | "stopped" | "completed" | "failed";
-    max_model_requests: number;
+    max_model_requests: number | null;
     reason: string | null;
     started_at: string;
   };

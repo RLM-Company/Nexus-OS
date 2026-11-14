@@ -17,12 +17,21 @@ async function speechFixture(page: Page, delay = 50) {
           browser.voiceStarted++;
           setTimeout(() => {
             // Deliberately deliver twice, even after stop, to verify deduplication/closing guards.
-            this.onresult?.({ results: [[{ transcript: "Помоги составить план на завтра" }]] });
-            this.onresult?.({ results: [[{ transcript: "Помоги составить план на завтра" }]] });
+            this.onresult?.({
+              resultIndex: 0,
+              results: [[{ transcript: "Помоги составить план на завтра" }]]
+            });
+            this.onresult?.({
+              resultIndex: 0,
+              results: [[{ transcript: "Помоги составить план на завтра" }]]
+            });
             this.onend?.();
           }, delay);
         }
         stop() {
+          this.onend?.();
+        }
+        abort() {
           this.onend?.();
         }
       }
@@ -155,4 +164,34 @@ test("closing a recording suppresses late recognition and keeps an existing draf
   await expect(page.getByLabel("Сообщение Kosmora")).toHaveValue("Мой сохранённый черновик");
   await page.waitForTimeout(600);
   expect(posts).toBe(0);
+});
+
+test("dictation requests microphone access and inserts a deduplicated draft", async ({ page }) => {
+  await speechFixture(page);
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, "mediaDevices", {
+      configurable: true,
+      value: {
+        getUserMedia: async (options: MediaStreamConstraints) => {
+          if (!options.audio) throw new Error("Microphone permission not requested");
+          return new MediaStream();
+        }
+      }
+    });
+  });
+  await page.goto("/");
+  await page.getByLabel("Голосовой ввод", { exact: true }).click();
+  await page.getByRole("button", { name: "Диктовать в браузере" }).click();
+  await expect(page.getByLabel("Сообщение Kosmora")).toHaveValue("Помоги составить план на завтра");
+});
+
+test("composer opens Deep Research inside the workspace", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Добавить в чат" }).click();
+  const actions = page.locator(".attachment-actions");
+  await expect(actions.getByRole("button", { name: "Прикрепить фото" })).toBeVisible();
+  await expect(actions.getByRole("button", { name: "Прикрепить файл" })).toBeVisible();
+  await actions.getByRole("button", { name: "Deep Research" }).click();
+  await expect(page).toHaveURL(/\?surface=research/);
+  await expect(page.getByRole("heading", { name: "Глубокий поиск" })).toBeVisible();
 });
