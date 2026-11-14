@@ -1037,6 +1037,34 @@ describe("executable durable Work DAG", () => {
       await app.close();
     }
   });
+  it("exports a ZIP above the JSON limit with every completed file intact", async () => {
+    const content = "界".repeat(63_000);
+    const f = await fixture({
+      output: (request) =>
+        request.task_type === "manager_work_draft"
+          ? { files: [{ name: "result.md", content }] }
+          : undefined
+    });
+    let graph = f.dag.create(f.project.id, owner, owner, {
+      client_request_id: "large-zip",
+      title: "Large result bundle",
+      nodes: Array.from({ length: 11 }, (_, i) => ({
+        id: "file-" + i,
+        title: "File " + i,
+        goal: "Create a report",
+        depends_on: []
+      }))
+    });
+    for (const node of graph.nodes) graph = await f.execute(graph, node.id);
+    expect(graph.nodes.every((node) => node.status === "completed")).toBe(true);
+    expect(() => f.dag.results(graph.id, owner)).toThrow("RESULTS_LIMIT");
+    const zip = f.dag.resultsArchive(graph.id, owner);
+    expect(zip.readUInt32LE(0)).toBe(0x04034b50);
+    expect(zip.includes(Buffer.from('"complete": true'))).toBe(true);
+    expect(zip.includes(Buffer.from("steps/11/011-result.md"))).toBe(true);
+    expect(zip.length).toBeGreaterThan(Buffer.byteLength(content) * 11);
+  });
+
   it("stops before a new child exceeds the total budget and counts earlier attempts after explicit continuation", async () => {
     const f = await fixture();
     let graph = arm(f, f.create(), 3);
