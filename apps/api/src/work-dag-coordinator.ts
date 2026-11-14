@@ -117,6 +117,20 @@ export class WorkDagCoordinator {
     for (const graph of this.works.dag.active()) {
       if (!graph.execution || !["running", "waiting"].includes(graph.execution.status)) continue;
       if (!this.works.ownerWritable(graph.owner_id)) continue;
+      // Pause already admitted queue entries before recording that the plan is paused.
+      for (const node of graph.nodes) {
+        const attempt = node.attempts.at(-1);
+        if (!attempt) continue;
+        const child = this.works.get(attempt.work_id, graph.owner_id);
+        if (
+          child?.status === "queued" &&
+          child.dag_binding?.bound &&
+          child.dag_binding.graph_id === graph.id &&
+          child.dag_binding.node_id === node.id &&
+          child.dag_binding.attempt === attempt.number
+        )
+          this.manager.control(child.id, graph.owner_id, child.version, "pause");
+      }
       graph.execution.status = "paused";
       graph.execution.reason = "RESTART_REQUIRES_RESUME";
       this.works.dag.save(graph, "После перезапуска автозапуск ожидает явного продолжения");
