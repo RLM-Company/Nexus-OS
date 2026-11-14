@@ -60,7 +60,7 @@ test("reviews one-step cancellation and recovers a lost response with no repeate
   expect(saved.nodes.map((n) => n.status)).toEqual(["cancelled", "blocked", "pending"]);
   expect(saved.nodes.every((n) => !n.attempts.length)).toBe(true);
   const downloadEvent = page.waitForEvent("download");
-  await panel.getByRole("link", { name: "Скачать отчёт и файлы (ZIP)", exact: true }).click();
+  await panel.getByRole("link", { name: "Скачать отчёт (ZIP)", exact: true }).click();
   const download = await downloadEvent;
   expect(download.suggestedFilename()).toBe("work-results.zip");
   const downloadedPath = await download.path();
