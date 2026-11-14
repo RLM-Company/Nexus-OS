@@ -297,7 +297,10 @@ export class WorkDagCoordinator {
   results(id: string, owner: string) {
     const graph = this.get(id, owner);
     if (!graph) throw new WorkDagConflict("DAG_NOT_FOUND");
-    return this.resultsFor(graph);
+    const bundle = this.resultsFor(graph);
+    if (Buffer.byteLength(JSON.stringify(bundle)) > 2000000)
+      throw new WorkDagConflict("RESULTS_LIMIT");
+    return bundle;
   }
   resultsArchive(id: string, owner: string): Buffer {
     const graph = this.get(id, owner);
@@ -328,7 +331,7 @@ export class WorkDagCoordinator {
           };
         })
       );
-    const bundle = {
+    return {
       schema_version: 1,
       graph_id: graph.id,
       title: graph.title,
@@ -336,9 +339,6 @@ export class WorkDagCoordinator {
       total_steps: graph.nodes.length,
       files
     };
-    if (Buffer.byteLength(JSON.stringify(bundle)) > 2000000)
-      throw new WorkDagConflict("RESULTS_LIMIT");
-    return bundle;
   }
   rename(id: string, owner: string, input: WorkDagRename): WorkDag {
     const graph = this.current(id, owner, input.expected_version);
