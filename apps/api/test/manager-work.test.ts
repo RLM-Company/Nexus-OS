@@ -860,6 +860,34 @@ describe("durable Manager work", () => {
       await f.coordinator.stop();
     }
   });
+  it("runs every site generation stage when a new task has no cumulative budget", async () => {
+    const stages: string[] = [];
+    const f = await fixture({
+      request: {
+        client_request_id: "website-no-task-budget",
+        goal: "Create a landing page",
+        worker_role: "analyst",
+        output_contract: { kind: "website" }
+      },
+      plan: { ...defaultPlan, needs_critic: true },
+      draft: {
+        files: [
+          {
+            name: "index.html",
+            content:
+              "<!doctype html><html><head><title>Moon</title></head><body><h1>Moon</h1></body></html>"
+          }
+        ]
+      },
+      onCall: async (r) => {
+        stages.push(r.task_type);
+      }
+    });
+    await f.coordinator.execute(f.work.id, "local-owner");
+    expect(f.get()).toMatchObject({ status: "completed", model_requests: 3 });
+    expect(stages).toEqual(["manager_work_plan", "manager_work_draft", "manager_work_review"]);
+    await f.coordinator.stop();
+  });
   it("retains output budget for a required game source review", async () => {
     const limits: number[] = [];
     const f = await fixture({

@@ -352,7 +352,7 @@ export class ManagerWorkCoordinator {
         })
       }
     ];
-    const remainingInput = work.request.max_input_tokens - work.reserved_input_tokens;
+    const remainingInput = (work.request.max_input_tokens ?? Infinity) - work.reserved_input_tokens;
     if (remainingInput < 0) throw new Error("EXECUTION_BUDGET_EXCEEDED");
     let recalled: ContextMemoryBundle | undefined;
     try {
@@ -378,7 +378,8 @@ export class ManagerWorkCoordinator {
     }
     request.routing.fallback_allowed = false;
     request.routing.estimated_input_tokens = estimateInputTokensUpperBound(request.messages);
-    const remainingOutput = work.request.max_output_tokens - work.reserved_output_tokens;
+    const remainingOutput =
+      (work.request.max_output_tokens ?? Infinity) - work.reserved_output_tokens;
     const gameReviewReserve =
       work.request.output_contract?.kind === "game_project" &&
       stage === "draft" &&
@@ -386,7 +387,9 @@ export class ManagerWorkCoordinator {
         ? Math.min(request.constraints.max_output_tokens, Math.floor(remainingOutput / 4))
         : 0;
     request.constraints.max_output_tokens = Math.min(
-      work.request.output_contract?.kind === "game_project" && stage === "draft"
+      work.request.max_output_tokens !== undefined &&
+        work.request.output_contract?.kind === "game_project" &&
+        stage === "draft"
         ? 6000
         : request.constraints.max_output_tokens,
       remainingOutput - gameReviewReserve
@@ -402,7 +405,7 @@ export class ManagerWorkCoordinator {
     if (signal.aborted || this.isStopped(work)) throw new Error("EMERGENCY_STOP");
     // Every provider dispatch requires the shared AccountStore, even in demo paths.
     if (!this.dependencies.ownerBudget) throw new Error("OWNER_BUDGET_UNAVAILABLE");
-    if (work.model_requests >= work.request.max_model_requests)
+    if (work.model_requests >= (work.request.max_model_requests ?? Infinity))
       throw new Error("EXECUTION_BUDGET_EXCEEDED");
     if (this.dependencies.graph) {
       let timer: ReturnType<typeof setTimeout> | undefined;
@@ -500,11 +503,11 @@ export class ManagerWorkCoordinator {
           throw new Error("EMERGENCY_STOP");
         if (event.type === "route.selected") {
           if (
-            work.model_requests >= work.request.max_model_requests ||
+            work.model_requests >= (work.request.max_model_requests ?? Infinity) ||
             work.reserved_input_tokens + event.route.estimated_input_tokens >
-              work.request.max_input_tokens ||
+              (work.request.max_input_tokens ?? Infinity) ||
             work.reserved_output_tokens + event.route.max_output_tokens >
-              work.request.max_output_tokens
+              (work.request.max_output_tokens ?? Infinity)
           )
             throw new Error("EXECUTION_BUDGET_EXCEEDED");
           try {
@@ -786,7 +789,10 @@ export class ManagerWorkCoordinator {
             work.request.require_critic === true;
           work.plan = value;
           work.stage = "draft";
-          if (value.needs_critic && work.model_requests + 2 > work.request.max_model_requests)
+          if (
+            value.needs_critic &&
+            work.model_requests + 2 > (work.request.max_model_requests ?? Infinity)
+          )
             throw new Error("EXECUTION_BUDGET_EXCEEDED");
           if (value.requires_external_actions) throw new Error("UNSUPPORTED_ACTION");
           const profile = policy.getProfile(work.project_id);

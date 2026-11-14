@@ -131,7 +131,7 @@ export class WorkDagCoordinator {
       if (!child) throw new WorkDagConflict("WORK_NOT_FOUND");
       allocated += ["completed", "failed", "cancelled"].includes(child.status)
         ? child.model_requests
-        : Math.max(child.model_requests, child.request.max_model_requests);
+        : Math.max(child.model_requests, child.request.max_model_requests ?? 3);
     }
     return allocated;
   }
