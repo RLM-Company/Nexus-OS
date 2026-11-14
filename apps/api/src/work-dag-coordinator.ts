@@ -172,7 +172,10 @@ export class WorkDagCoordinator {
         // live child; reserve one more budget per node launched this tick, never
         // more than the free slots. This keeps the cap's total reserve honest
         // without double-charging live attempts against the owner's plan limit.
-        if (this.allocatedRequests(graph) + 3 * ready.length > graph.execution.max_model_requests) {
+        if (
+          this.allocatedRequests(graph) + 3 * ready.length >
+          (graph.execution.max_model_requests ?? Infinity)
+        ) {
           graph.execution.status = "stopped";
           graph.execution.reason = "PLAN_REQUEST_LIMIT";
           this.works.dag.save(graph, "Достигнут общий лимит запросов плана; новый шаг не запущен");
@@ -453,7 +456,7 @@ export class WorkDagCoordinator {
         throw new WorkDagConflict("PROJECT_PAUSED");
       if (!input.acknowledge_cost) throw new WorkDagConflict("EXPLICIT_RETRY_REQUIRED");
       const limit = input.max_model_requests;
-      if (!Number.isInteger(limit) || !limit || limit < 3 || limit > 96)
+      if (limit !== undefined && (!Number.isInteger(limit) || limit < 3 || limit > 96))
         throw new WorkDagConflict("INVALID_PLAN_BUDGET");
       const block = this.manager.schedulingBlock(graph.project_id, owner);
       if (block) throw new WorkDagConflict(block);
@@ -466,16 +469,17 @@ export class WorkDagCoordinator {
       // each reserving three requests. allocatedRequests() already covers any
       // live attempts from a previously paused plan.
       const firstWave = Math.min(this.manager.capacity(), scheduledReadyWorkNodes(graph).length);
-      if (allocation + 3 * firstWave > limit) throw new WorkDagConflict("PLAN_REQUEST_LIMIT");
+      if (limit !== undefined && allocation + 3 * firstWave > limit)
+        throw new WorkDagConflict("PLAN_REQUEST_LIMIT");
       graph.execution = {
         status: "running",
-        max_model_requests: limit,
+        max_model_requests: limit ?? null,
         reason: null,
         started_at: graph.execution?.started_at ?? new Date().toISOString()
       };
       return this.works.dag.save(
         graph,
-        "Владелец разрешил выполнение плана с ограниченным параллелизмом в общем лимите запросов"
+        "Владелец разрешил выполнение плана с ограниченным параллелизмом"
       );
     }
     if (["pause", "resume", "cancel"].includes(input.action)) {
@@ -615,9 +619,7 @@ export class WorkDagCoordinator {
         goal: node.goal,
         worker_role: "analyst",
         ...(node.requires_critic ? { require_critic: true } : {}),
-        max_model_requests: 3,
-        max_input_tokens: graph.workflow_context?.node_budget.max_input_tokens ?? 32000,
-        max_output_tokens: graph.workflow_context?.node_budget.max_output_tokens ?? 6000
+        ...(graph.workflow_context?.node_budget ?? {})
       },
       true,
       { graph_id: graph.id, node_id: node.id, attempt, bound: false }
