@@ -77,7 +77,7 @@ export const ModelRequestSchema = Type.Object(
     tools: Type.Optional(Type.Array(ModelToolDefinitionSchema, { minItems: 1, maxItems: 16 })),
     constraints: Type.Object(
       {
-        timeout_ms: Type.Integer({ minimum: 1, maximum: 600_000 }),
+        timeout_ms: Type.Integer({ minimum: 0, maximum: 600_000 }),
         max_output_tokens: Type.Integer({ minimum: 1, maximum: 100_000 }),
         reasoning_effort: Type.Optional(
           Type.Union([Type.Literal("low"), Type.Literal("medium"), Type.Literal("high")])

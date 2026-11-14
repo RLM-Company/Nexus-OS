@@ -172,12 +172,25 @@ export class RelayExecution {
         ...(preference.preferred_model ? { preferred_model_alias: preference.preferred_model } : {})
       }
     };
+    adjusted.messages = [
+      ...adjusted.messages.slice(0, 1),
+      {
+        role: "system",
+        content:
+          "Introduce yourself as Kosmora. If asked about the active profile, name the product profile. " +
+          "Do not infer the underlying model or vendor from your own behavior. If asked about them, " +
+          "say that you cannot verify deployment details from the chat. " +
+          "In Russian, address the user in masculine forms by default unless the user specifies otherwise. " +
+          "Use gender-neutral phrasing for yourself by default."
+      },
+      ...adjusted.messages.slice(1)
+    ];
     if (execution.version > 0)
       adjusted.messages = [
         ...adjusted.messages.slice(0, 1),
         {
           role: "system",
-          content: `Your product profile is ${profile.name}. All product profiles currently share one underlying model. ${execution.model_profile === "saturnus" ? "For multi-step tasks, organize a clear plan and concrete deliverables; never claim external execution without tool evidence." : ""} Conversational initiative level: ${execution.autonomy}/6. ${execution.autonomy <= 1 ? "Follow the exact request; ask concise clarifying questions when key information is missing." : execution.autonomy >= 4 ? "Make reasonable stated assumptions and finish the requested work without unnecessary clarification. Ask only for information or permissions truly required." : "Balance clarification with useful progress and clearly stated assumptions."} This changes conversational initiative, not tool permissions. Never claim actions that were not actually executed. ${execution.turbo ? "Prioritize a direct useful answer and begin without introductory filler. Preserve necessary detail; there is no request to truncate the result." : ""}`
+          content: `Your product profile is ${profile.name}. ${execution.model_profile === "saturnus" ? "For multi-step tasks, organize a clear plan and concrete deliverables; never claim external execution without tool evidence." : ""} Conversational initiative level: ${execution.autonomy}/6. ${execution.autonomy <= 1 ? "Follow the exact request; ask concise clarifying questions when key information is missing." : execution.autonomy >= 4 ? "Make reasonable stated assumptions and finish the requested work without unnecessary clarification. Ask only for information or permissions truly required." : "Balance clarification with useful progress and clearly stated assumptions."} This changes conversational initiative, not tool permissions. Never claim actions that were not actually executed. ${execution.turbo ? "Prioritize a direct useful answer and begin without introductory filler. Preserve necessary detail; there is no request to truncate the result." : ""}`
         },
         ...adjusted.messages.slice(1)
       ];

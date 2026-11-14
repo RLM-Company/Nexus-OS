@@ -315,8 +315,7 @@ export function PresentationWork({
         {selected && (
           <div role="status">
             <p>
-              {labels[selected.status] ?? selected.status} · запросов: {selected.model_requests}/
-              {selected.request.max_model_requests}
+              {labels[selected.status] ?? selected.status} · запросов: {selected.model_requests}
             </p>
             {selected.plan && <p>{selected.plan.summary}</p>}
             {selected.review && (

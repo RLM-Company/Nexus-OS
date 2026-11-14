@@ -180,7 +180,11 @@ export const loadServerConfig = (env: NodeJS.ProcessEnv = process.env): ServerCo
   }
 
   const managerTimeoutMs = Number(raw.MANAGER_TIMEOUT_MS ?? "60000");
-  if (!Number.isInteger(managerTimeoutMs) || managerTimeoutMs < 100 || managerTimeoutMs > 600_000) {
+  if (
+    !Number.isInteger(managerTimeoutMs) ||
+    (managerTimeoutMs !== 0 && managerTimeoutMs < 100) ||
+    managerTimeoutMs > 600_000
+  ) {
     throw new Error("Invalid server configuration: /MANAGER_TIMEOUT_MS");
   }
 

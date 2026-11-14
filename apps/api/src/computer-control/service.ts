@@ -249,7 +249,7 @@ export class ComputerControlService {
       task_type: "manager_work_draft",
       messages
     });
-    request.constraints.timeout_ms = Math.min(request.constraints.timeout_ms, 120000);
+    request.constraints.timeout_ms = Math.min(request.constraints.timeout_ms || 120000, 120000);
     request.constraints.max_output_tokens = Math.min(
       request.constraints.max_output_tokens,
       documents ? 6000 : 2000

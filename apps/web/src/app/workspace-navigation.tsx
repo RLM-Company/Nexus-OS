@@ -14,7 +14,7 @@ import {
 const WORKSPACE_MODES = [
   { id: "manager", label: "Kosmora", icon: "chats", description: "Диалоги и идеи" },
   { id: "work", label: "Koswork", icon: "work", description: "Задачи и материалы" },
-  { id: "code", label: "Coscode", icon: "code", description: "Код и репозитории" },
+  { id: "code", label: "Koscode", icon: "code", description: "Код и репозитории" },
   { id: "multi-agent", label: "Multi-Agent", icon: "multi-agent", description: "Команда и роли" }
 ] as const;
 
@@ -55,7 +55,7 @@ export function WorkspaceModeMenu({
         <span className="brand-mark">
           <Icon name="cosmora" />
         </span>
-        <span className="brand-name">{surface === "code" ? "Coscode" : "Kosmora"}</span>
+        <span className="brand-name">{surface === "code" ? "Koscode" : "Kosmora"}</span>
         <svg className="brand-chevron" viewBox="0 0 24 24" fill="none" aria-hidden="true">
           <path
             d="m7 10 5 5 5-5"
