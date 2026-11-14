@@ -1,0 +1,420 @@
+[WebServer] (node:51791) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] $ tsc -p tsconfig.build.json
+[WebServer] (node:51818) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] $ node scripts/prepare-pdf-worker.mjs && next build
+[WebServer] (node:51844) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:51844) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:51880) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:51881) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:51907) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+
+Running 34 tests using 1 worker
+
+(node:51921) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓   1 [chromium] › e2e/code-agent.spec.ts:312:5 › creates a Code project directly without starting a model task (1.5s)
+  ✓   2 [chromium] › e2e/code-agent.spec.ts:340:5 › recovers a lost creation response using its request ID without a second generation POST (1.3s)
+  ✓   3 [chromium] › e2e/code-agent.spec.ts:360:5 › selects and edits real server proposal, binds check to review and requires exact publication approval (3.5s)
+  ✓   4 [chromium] › e2e/code-agent.spec.ts:393:5 › an old editor cannot overwrite or invalidate a newer saved review (4.9s)
+  ✓   5 [chromium] › e2e/code-agent.spec.ts:430:5 › explicit checkpoint restoration also discards unapplied raw diff without restoring old proof (3.4s)
+  ✓   6 [chromium] › e2e/code-agent.spec.ts:453:5 › same-document Forward can be cancelled with exact edits retained, then explicitly confirmed (4.4s)
+[WebServer] Failed to proxy http://127.0.0.1:3413/api/v1/personal-settings Error: connect ECONNREFUSED 127.0.0.1:3413
+[WebServer]     at <unknown> (Error: connect ECONNREFUSED 127.0.0.1:3413) {
+[WebServer]   errno: -111,
+[WebServer]   code: 'ECONNREFUSED',
+[WebServer]   syscall: 'connect',
+[WebServer]   address: '127.0.0.1',
+[WebServer]   port: 3413
+[WebServer] }
+[WebServer] Error: connect ECONNREFUSED 127.0.0.1:3413
+[WebServer]     at <unknown> (Error: connect ECONNREFUSED 127.0.0.1:3413) {
+[WebServer]   errno: -111,
+[WebServer]   code: 'ECONNREFUSED',
+[WebServer]   syscall: 'connect',
+[WebServer]   address: '127.0.0.1',
+[WebServer]   port: 3413
+[WebServer] }
+[WebServer] Failed to proxy http://127.0.0.1:3413/api/v1/personal-settings Error: connect ECONNREFUSED 127.0.0.1:3413
+[WebServer]     at <unknown> (Error: connect ECONNREFUSED 127.0.0.1:3413) {
+[WebServer]   errno: -111,
+[WebServer]   code: 'ECONNREFUSED',
+[WebServer]   syscall: 'connect',
+[WebServer]   address: '127.0.0.1',
+[WebServer]   port: 3413
+[WebServer] }
+[WebServer] Error: connect ECONNREFUSED 127.0.0.1:3413
+[WebServer]     at <unknown> (Error: connect ECONNREFUSED 127.0.0.1:3413) {
+[WebServer]   errno: -111,
+[WebServer]   code: 'ECONNREFUSED',
+[WebServer]   syscall: 'connect',
+[WebServer]   address: '127.0.0.1',
+[WebServer]   port: 3413
+[WebServer] }
+[WebServer] Failed to proxy http://127.0.0.1:3413/api/v1/media/capabilities Error: connect ECONNREFUSED 127.0.0.1:3413
+[WebServer]     at <unknown> (Error: connect ECONNREFUSED 127.0.0.1:3413) {
+[WebServer]   errno: -111,
+[WebServer]   code: 'ECONNREFUSED',
+[WebServer]   syscall: 'connect',
+[WebServer]   address: '127.0.0.1',
+[WebServer]   port: 3413
+[WebServer] }
+[WebServer] Error: connect ECONNREFUSED 127.0.0.1:3413
+[WebServer]     at <unknown> (Error: connect ECONNREFUSED 127.0.0.1:3413) {
+[WebServer]   errno: -111,
+[WebServer]   code: 'ECONNREFUSED',
+[WebServer]   syscall: 'connect',
+[WebServer]   address: '127.0.0.1',
+[WebServer]   port: 3413
+[WebServer] }
+[WebServer] Failed to proxy http://127.0.0.1:3413/api/v1/media/jobs Error: connect ECONNREFUSED 127.0.0.1:3413
+[WebServer]     at <unknown> (Error: connect ECONNREFUSED 127.0.0.1:3413) {
+[WebServer]   errno: -111,
+[WebServer]   code: 'ECONNREFUSED',
+[WebServer]   syscall: 'connect',
+[WebServer]   address: '127.0.0.1',
+[WebServer]   port: 3413
+[WebServer] }
+[WebServer] Error: connect ECONNREFUSED 127.0.0.1:3413
+[WebServer]     at <unknown> (Error: connect ECONNREFUSED 127.0.0.1:3413) {
+[WebServer]   errno: -111,
+[WebServer]   code: 'ECONNREFUSED',
+[WebServer]   syscall: 'connect',
+[WebServer]   address: '127.0.0.1',
+[WebServer]   port: 3413
+[WebServer] }
+[WebServer] Failed to proxy http://127.0.0.1:3413/api/v1/operations/status Error: connect ECONNREFUSED 127.0.0.1:3413
+[WebServer]     at <unknown> (Error: connect ECONNREFUSED 127.0.0.1:3413) {
+[WebServer]   errno: -111,
+[WebServer]   code: 'ECONNREFUSED',
+[WebServer]   syscall: 'connect',
+[WebServer]   address: '127.0.0.1',
+[WebServer]   port: 3413
+[WebServer] }
+[WebServer] Error: connect ECONNREFUSED 127.0.0.1:3413
+[WebServer]     at <unknown> (Error: connect ECONNREFUSED 127.0.0.1:3413) {
+[WebServer]   errno: -111,
+[WebServer]   code: 'ECONNREFUSED',
+[WebServer]   syscall: 'connect',
+[WebServer]   address: '127.0.0.1',
+[WebServer]   port: 3413
+[WebServer] }
+[WebServer] Failed to proxy http://127.0.0.1:3413/api/v1/navigation-context Error: connect ECONNREFUSED 127.0.0.1:3413
+[WebServer]     at <unknown> (Error: connect ECONNREFUSED 127.0.0.1:3413) {
+[WebServer]   errno: -111,
+[WebServer]   code: 'ECONNREFUSED',
+[WebServer]   syscall: 'connect',
+[WebServer]   address: '127.0.0.1',
+[WebServer]   port: 3413
+[WebServer] }
+[WebServer] Error: connect ECONNREFUSED 127.0.0.1:3413
+[WebServer]     at <unknown> (Error: connect ECONNREFUSED 127.0.0.1:3413) {
+[WebServer]   errno: -111,
+[WebServer]   code: 'ECONNREFUSED',
+[WebServer]   syscall: 'connect',
+[WebServer]   address: '127.0.0.1',
+[WebServer]   port: 3413
+[WebServer] }
+[WebServer] Failed to proxy http://127.0.0.1:3413/api/v1/projects Error: connect ECONNREFUSED 127.0.0.1:3413
+[WebServer]     at <unknown> (Error: connect ECONNREFUSED 127.0.0.1:3413) {
+[WebServer]   errno: -111,
+[WebServer]   code: 'ECONNREFUSED',
+[WebServer]   syscall: 'connect',
+[WebServer]   address: '127.0.0.1',
+[WebServer]   port: 3413
+[WebServer] }
+[WebServer] Error: connect ECONNREFUSED 127.0.0.1:3413
+[WebServer]     at <unknown> (Error: connect ECONNREFUSED 127.0.0.1:3413) {
+[WebServer]   errno: -111,
+[WebServer]   code: 'ECONNREFUSED',
+[WebServer]   syscall: 'connect',
+[WebServer]   address: '127.0.0.1',
+[WebServer]   port: 3413
+[WebServer] }
+[WebServer] Failed to proxy http://127.0.0.1:3413/api/v1/chats Error: connect ECONNREFUSED 127.0.0.1:3413
+[WebServer]     at <unknown> (Error: connect ECONNREFUSED 127.0.0.1:3413) {
+[WebServer]   errno: -111,
+[WebServer]   code: 'ECONNREFUSED',
+[WebServer]   syscall: 'connect',
+[WebServer]   address: '127.0.0.1',
+[WebServer]   port: 3413
+[WebServer] }
+[WebServer] Error: connect ECONNREFUSED 127.0.0.1:3413
+[WebServer]     at <unknown> (Error: connect ECONNREFUSED 127.0.0.1:3413) {
+[WebServer]   errno: -111,
+[WebServer]   code: 'ECONNREFUSED',
+[WebServer]   syscall: 'connect',
+[WebServer]   address: '127.0.0.1',
+[WebServer]   port: 3413
+[WebServer] }
+[WebServer] Failed to proxy http://127.0.0.1:3413/api/v1/model-runtime Error: connect ECONNREFUSED 127.0.0.1:3413
+[WebServer]     at <unknown> (Error: connect ECONNREFUSED 127.0.0.1:3413) {
+[WebServer]   errno: -111,
+[WebServer]   code: 'ECONNREFUSED',
+[WebServer]   syscall: 'connect',
+[WebServer]   address: '127.0.0.1',
+[WebServer]   port: 3413
+[WebServer] }
+[WebServer] Error: connect ECONNREFUSED 127.0.0.1:3413
+[WebServer]     at <unknown> (Error: connect ECONNREFUSED 127.0.0.1:3413) {
+[WebServer]   errno: -111,
+[WebServer]   code: 'ECONNREFUSED',
+[WebServer]   syscall: 'connect',
+[WebServer]   address: '127.0.0.1',
+[WebServer]   port: 3413
+[WebServer] }
+[WebServer] Failed to proxy http://127.0.0.1:3413/api/v1/chat-navigation Error: connect ECONNREFUSED 127.0.0.1:3413
+[WebServer]     at <unknown> (Error: connect ECONNREFUSED 127.0.0.1:3413) {
+[WebServer]   errno: -111,
+[WebServer]   code: 'ECONNREFUSED',
+[WebServer]   syscall: 'connect',
+[WebServer]   address: '127.0.0.1',
+[WebServer]   port: 3413
+[WebServer] }
+[WebServer] Error: connect ECONNREFUSED 127.0.0.1:3413
+[WebServer]     at <unknown> (Error: connect ECONNREFUSED 127.0.0.1:3413) {
+[WebServer]   errno: -111,
+[WebServer]   code: 'ECONNREFUSED',
+[WebServer]   syscall: 'connect',
+[WebServer]   address: '127.0.0.1',
+[WebServer]   port: 3413
+[WebServer] }
+[WebServer] Failed to proxy http://127.0.0.1:3413/api/v1/personal-settings Error: connect ECONNREFUSED 127.0.0.1:3413
+[WebServer]     at <unknown> (Error: connect ECONNREFUSED 127.0.0.1:3413) {
+[WebServer]   errno: -111,
+[WebServer]   code: 'ECONNREFUSED',
+[WebServer]   syscall: 'connect',
+[WebServer]   address: '127.0.0.1',
+[WebServer]   port: 3413
+[WebServer] }
+[WebServer] Error: connect ECONNREFUSED 127.0.0.1:3413
+[WebServer]     at <unknown> (Error: connect ECONNREFUSED 127.0.0.1:3413) {
+[WebServer]   errno: -111,
+[WebServer]   code: 'ECONNREFUSED',
+[WebServer]   syscall: 'connect',
+[WebServer]   address: '127.0.0.1',
+[WebServer]   port: 3413
+[WebServer] }
+[WebServer] Failed to proxy http://127.0.0.1:3413/api/v1/personal-settings Error: connect ECONNREFUSED 127.0.0.1:3413
+[WebServer]     at <unknown> (Error: connect ECONNREFUSED 127.0.0.1:3413) {
+[WebServer]   errno: -111,
+[WebServer]   code: 'ECONNREFUSED',
+[WebServer]   syscall: 'connect',
+[WebServer]   address: '127.0.0.1',
+[WebServer]   port: 3413
+[WebServer] }
+[WebServer] Error: connect ECONNREFUSED 127.0.0.1:3413
+[WebServer]     at <unknown> (Error: connect ECONNREFUSED 127.0.0.1:3413) {
+[WebServer]   errno: -111,
+[WebServer]   code: 'ECONNREFUSED',
+[WebServer]   syscall: 'connect',
+[WebServer]   address: '127.0.0.1',
+[WebServer]   port: 3413
+[WebServer] }
+[WebServer] Failed to proxy http://127.0.0.1:3413/api/v1/media/capabilities Error: connect ECONNREFUSED 127.0.0.1:3413
+[WebServer]     at <unknown> (Error: connect ECONNREFUSED 127.0.0.1:3413) {
+[WebServer]   errno: -111,
+[WebServer]   code: 'ECONNREFUSED',
+[WebServer]   syscall: 'connect',
+[WebServer]   address: '127.0.0.1',
+[WebServer]   port: 3413
+[WebServer] }
+[WebServer] Error: connect ECONNREFUSED 127.0.0.1:3413
+[WebServer]     at <unknown> (Error: connect ECONNREFUSED 127.0.0.1:3413) {
+[WebServer]   errno: -111,
+[WebServer]   code: 'ECONNREFUSED',
+[WebServer]   syscall: 'connect',
+[WebServer]   address: '127.0.0.1',
+[WebServer]   port: 3413
+[WebServer] }
+[WebServer] Failed to proxy http://127.0.0.1:3413/api/v1/media/jobs Error: connect ECONNREFUSED 127.0.0.1:3413
+[WebServer]     at <unknown> (Error: connect ECONNREFUSED 127.0.0.1:3413) {
+[WebServer]   errno: -111,
+[WebServer]   code: 'ECONNREFUSED',
+[WebServer]   syscall: 'connect',
+[WebServer]   address: '127.0.0.1',
+[WebServer]   port: 3413
+[WebServer] }
+[WebServer] Error: connect ECONNREFUSED 127.0.0.1:3413
+[WebServer]     at <unknown> (Error: connect ECONNREFUSED 127.0.0.1:3413) {
+[WebServer]   errno: -111,
+[WebServer]   code: 'ECONNREFUSED',
+[WebServer]   syscall: 'connect',
+[WebServer]   address: '127.0.0.1',
+[WebServer]   port: 3413
+[WebServer] }
+[WebServer] Failed to proxy http://127.0.0.1:3413/api/v1/operations/status Error: connect ECONNREFUSED 127.0.0.1:3413
+[WebServer]     at <unknown> (Error: connect ECONNREFUSED 127.0.0.1:3413) {
+[WebServer]   errno: -111,
+[WebServer]   code: 'ECONNREFUSED',
+[WebServer]   syscall: 'connect',
+[WebServer]   address: '127.0.0.1',
+[WebServer]   port: 3413
+[WebServer] }
+[WebServer] Error: connect ECONNREFUSED 127.0.0.1:3413
+[WebServer]     at <unknown> (Error: connect ECONNREFUSED 127.0.0.1:3413) {
+[WebServer]   errno: -111,
+[WebServer]   code: 'ECONNREFUSED',
+[WebServer]   syscall: 'connect',
+[WebServer]   address: '127.0.0.1',
+[WebServer]   port: 3413
+[WebServer] }
+[WebServer] Failed to proxy http://127.0.0.1:3413/api/v1/navigation-context Error: connect ECONNREFUSED 127.0.0.1:3413
+[WebServer]     at <unknown> (Error: connect ECONNREFUSED 127.0.0.1:3413) {
+[WebServer]   errno: -111,
+[WebServer]   code: 'ECONNREFUSED',
+[WebServer]   syscall: 'connect',
+[WebServer]   address: '127.0.0.1',
+[WebServer]   port: 3413
+[WebServer] }
+[WebServer] Error: connect ECONNREFUSED 127.0.0.1:3413
+[WebServer]     at <unknown> (Error: connect ECONNREFUSED 127.0.0.1:3413) {
+[WebServer]   errno: -111,
+[WebServer]   code: 'ECONNREFUSED',
+[WebServer]   syscall: 'connect',
+[WebServer]   address: '127.0.0.1',
+[WebServer]   port: 3413
+[WebServer] }
+[WebServer] Failed to proxy http://127.0.0.1:3413/api/v1/projects Error: connect ECONNREFUSED 127.0.0.1:3413
+[WebServer]     at <unknown> (Error: connect ECONNREFUSED 127.0.0.1:3413) {
+[WebServer]   errno: -111,
+[WebServer]   code: 'ECONNREFUSED',
+[WebServer]   syscall: 'connect',
+[WebServer]   address: '127.0.0.1',
+[WebServer]   port: 3413
+[WebServer] }
+[WebServer] Error: connect ECONNREFUSED 127.0.0.1:3413
+[WebServer]     at <unknown> (Error: connect ECONNREFUSED 127.0.0.1:3413) {
+[WebServer]   errno: -111,
+[WebServer]   code: 'ECONNREFUSED',
+[WebServer]   syscall: 'connect',
+[WebServer]   address: '127.0.0.1',
+[WebServer]   port: 3413
+[WebServer] }
+[WebServer] Failed to proxy http://127.0.0.1:3413/api/v1/chats Error: connect ECONNREFUSED 127.0.0.1:3413
+[WebServer]     at <unknown> (Error: connect ECONNREFUSED 127.0.0.1:3413) {
+[WebServer]   errno: -111,
+[WebServer]   code: 'ECONNREFUSED',
+[WebServer]   syscall: 'connect',
+[WebServer]   address: '127.0.0.1',
+[WebServer]   port: 3413
+[WebServer] }
+[WebServer] Error: connect ECONNREFUSED 127.0.0.1:3413
+[WebServer]     at <unknown> (Error: connect ECONNREFUSED 127.0.0.1:3413) {
+[WebServer]   errno: -111,
+[WebServer]   code: 'ECONNREFUSED',
+[WebServer]   syscall: 'connect',
+[WebServer]   address: '127.0.0.1',
+[WebServer]   port: 3413
+[WebServer] }
+[WebServer] Failed to proxy http://127.0.0.1:3413/api/v1/model-runtime Error: connect ECONNREFUSED 127.0.0.1:3413
+[WebServer]     at <unknown> (Error: connect ECONNREFUSED 127.0.0.1:3413) {
+[WebServer]   errno: -111,
+[WebServer]   code: 'ECONNREFUSED',
+[WebServer]   syscall: 'connect',
+[WebServer]   address: '127.0.0.1',
+[WebServer]   port: 3413
+[WebServer] }
+[WebServer] Error: connect ECONNREFUSED 127.0.0.1:3413
+[WebServer]     at <unknown> (Error: connect ECONNREFUSED 127.0.0.1:3413) {
+[WebServer]   errno: -111,
+[WebServer]   code: 'ECONNREFUSED',
+[WebServer]   syscall: 'connect',
+[WebServer]   address: '127.0.0.1',
+[WebServer]   port: 3413
+[WebServer] }
+[WebServer] Failed to proxy http://127.0.0.1:3413/api/v1/chat-navigation Error: connect ECONNREFUSED 127.0.0.1:3413
+[WebServer]     at <unknown> (Error: connect ECONNREFUSED 127.0.0.1:3413) {
+[WebServer]   errno: -111,
+[WebServer]   code: 'ECONNREFUSED',
+[WebServer]   syscall: 'connect',
+[WebServer]   address: '127.0.0.1',
+[WebServer]   port: 3413
+[WebServer] }
+[WebServer] Error: connect ECONNREFUSED 127.0.0.1:3413
+[WebServer]     at <unknown> (Error: connect ECONNREFUSED 127.0.0.1:3413) {
+[WebServer]   errno: -111,
+[WebServer]   code: 'ECONNREFUSED',
+[WebServer]   syscall: 'connect',
+[WebServer]   address: '127.0.0.1',
+[WebServer]   port: 3413
+[WebServer] }
+  ✓   7 [chromium] › e2e/code-agent.spec.ts:508:5 › browser Back can be cancelled with edits visible, then explicitly confirmed without workspace writes (7.2s)
+  ✓   8 [chromium] › e2e/code-agent.spec.ts:559:5 › does not retry lost publication and reconciles it explicitly (3.8s)
+  ✓   9 [chromium] › e2e/code-agent.spec.ts:575:5 › reconciles a request lost before publication, then uses rotated token only after new approval (3.1s)
+  ✓  10 [chromium] › e2e/code-agent.spec.ts:597:5 › previews normalized editable diff on an exact snapshot before a fresh review (1.8s)
+  ✓  11 [chromium] › e2e/code-agent.spec.ts:629:7 › legacy contradictory proof never enables publication: {"exitCode":1} (2.3s)
+  ✓  12 [chromium] › e2e/code-agent.spec.ts:629:7 › legacy contradictory proof never enables publication: {"exitCode":null} (2.2s)
+  ✓  13 [chromium] › e2e/code-agent.spec.ts:629:7 › legacy contradictory proof never enables publication: {"cleanupVerified":false} (2.3s)
+  ✓  14 [chromium] › e2e/code-agent.spec.ts:645:5 › dirty project changes and new tasks require an explicit discard; cancelling retains exact edits (3.5s)
+  ✓  15 [chromium] › e2e/code-agent.spec.ts:685:5 › dirty history selection can be cancelled; confirmed discard opens only the selected saved task (3.2s)
+  ✓  16 [chromium] › e2e/code-agent.spec.ts:718:5 › declining native reload preserves the unsaved text without a new model or publish call (3.5s)
+  ✓  17 [chromium] › e2e/code-agent.spec.ts:746:5 › the Code page GitHub link respects a declined discard (2.9s)
+  ✓  18 [chromium] › e2e/code-agent.spec.ts:757:5 › explicit review checkpoint survives normal reload without another generation or publication (3.4s)
+  ✓  19 [chromium] › e2e/code-agent.spec.ts:778:5 › unapplied raw diff remains dirty after saving selected files and can be discarded explicitly (2.7s)
+  ✓  20 [chromium] › e2e/code-agent.spec.ts:801:5 › an explicit saved-run link outside the latest twenty is fetched exactly without starting work (1.1s)
+  ✓  21 [chromium] › e2e/code-agent.spec.ts:839:7 › an unavailable or mismatched linked task cannot silently open the latest task: missing=true (1.3s)
+  ✓  22 [chromium] › e2e/code-agent.spec.ts:839:7 › an unavailable or mismatched linked task cannot silently open the latest task: missing=false (1.2s)
+  ✓  23 [chromium] › e2e/code-agent.spec.ts:870:5 › a late exact linked lookup cannot replace the selected project's task (1.1s)
+  ✓  24 [chromium] › e2e/code-agent.spec.ts:929:7 › leaving a patch editor fences its late preview-diff without applying files to another task (1.3s)
+  ✓  25 [chromium] › e2e/code-agent.spec.ts:929:7 › leaving a patch editor fences its late invalidate-review without applying files to another task (1.2s)
+  ✓  26 [chromium] › e2e/code-agent.spec.ts:1025:5 › an unavailable project from a link cannot fall back to another owned project's task (997ms)
+  ✓  27 [chromium] › e2e/code-agent.spec.ts:1045:5 › explicit bounded repair requires approval, shows a new diff and requires a fresh review (3.4s)
+  ✓  28 [chromium] › e2e/code-agent.spec.ts:1086:5 › a server without repair capability never receives the new command (2.3s)
+  ✓  29 [chromium] › e2e/code-agent.spec.ts:1100:5 › an old failed-check approval conflicts until the owner reloads and approves the new result (3.9s)
+  ✓  30 [chromium] › e2e/code-agent.spec.ts:1144:5 › legacy repair v1 capability never sends a versioned v2 command (3.0s)
+  ✓  31 [chromium] › e2e/code-agent.spec.ts:1160:7 › Code polling never rewinds a newer response: versioned (4.6s)
+  ✓  32 [chromium] › e2e/code-agent.spec.ts:1160:7 › Code polling never rewinds a newer response: legacy (4.9s)
+  ✓  33 [chromium] › e2e/code-agent.spec.ts:1160:7 › Code polling never rewinds a newer response: higher durable version (4.5s)
+  ✘  34 [chromium] › e2e/code-agent.spec.ts:1237:5 › Code manual refresh cannot replace a newer durable version with an older snapshot (1.7s)
+
+
+  1) [chromium] › e2e/code-agent.spec.ts:1237:5 › Code manual refresh cannot replace a newer durable version with an older snapshot
+
+    Error: expect(locator).toContainText(expected) failed
+
+    Locator: getByRole('alert')
+    Expected substring: "устаревшее состояние"
+    Error: strict mode violation: getByRole('alert') resolved to 2 elements:
+        1) <p role="alert" class="code-agent-module__Cq0wMa__notice">Получено устаревшее состояние задачи. Показана по…</p> aka getByText('Получено устаревшее состояние задачи. Показана последняя принятая версия')
+        2) <div role="alert" aria-live="assertive" id="__next-route-announcer__"></div> aka locator('[id="__next-route-announcer__"]')
+
+    Call log:
+      - Expect "toContainText" with timeout 15000ms
+      - waiting for getByRole('alert')
+
+
+      1271 |   await info.attach("manual-refresh-readback", { path, contentType: "application/json" });
+      1272 |   await expect(page.getByText(fresh.summary, { exact: true })).toBeVisible({ timeout: 1000 });
+    > 1273 |   await expect(page.getByRole("alert")).toContainText("устаревшее состояние");
+           |                                         ^
+      1274 | });
+      1275 |
+        at /workspace/work/Nexus-OS-postmerge-2026-11-13/apps/web/e2e/code-agent.spec.ts:1273:41
+
+    attachment #1: manual-refresh-readback (application/json) ──────────────────────────────────────
+    ../../../../../tmp/nexus-code-order-production-3414-results/code-agent-Code-manual-ref-fbbc2-sion-with-an-older-snapshot-chromium/attachments/manual-refresh-readback-962012e6a1a993fe52bc112d524caaea1f07cd50.json
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: ../../../../../tmp/nexus-code-order-production-3414-results/code-agent-Code-manual-ref-fbbc2-sion-with-an-older-snapshot-chromium/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    ../../../../../tmp/nexus-code-order-production-3414-results/code-agent-Code-manual-ref-fbbc2-sion-with-an-older-snapshot-chromium/trace.zip
+    Usage:
+
+        pnpm exec playwright show-trace ../../../../../tmp/nexus-code-order-production-3414-results/code-agent-Code-manual-ref-fbbc2-sion-with-an-older-snapshot-chromium/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  1 failed
+    [chromium] › e2e/code-agent.spec.ts:1237:5 › Code manual refresh cannot replace a newer durable version with an older snapshot
+  33 passed (2.0m)
+undefined
+/workspace/work/Nexus-OS-postmerge-2026-11-13/apps/web:
+[ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL] Command failed with exit code 1: playwright test -c playwright.code-agent.config.ts '--output=/tmp/nexus-code-order-production-3414-results'

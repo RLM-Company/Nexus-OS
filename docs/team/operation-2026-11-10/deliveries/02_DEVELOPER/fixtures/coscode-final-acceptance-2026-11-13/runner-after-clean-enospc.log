@@ -1,0 +1,29 @@
+{
+  "status": "unavailable",
+  "snapshotDigest": "e5a2a9aa02ad3ec499a5650255fac00fb8f39c87d74fe969c5a8e2e2dacf5800",
+  "exitCode": 1,
+  "stdout": "",
+  "stderr": "Error response from daemon: mkdir /home/dockerd/.local/share/docker/vfs/dir/65d2a2b5fd527e6f87da1c387e2fb4a3704fdded6b3b249aac46b67fd34a1970/usr/local/lib/node_modules/npm/node_modules/glob/dist/esm: no space left on device\n",
+  "truncated": false,
+  "journal": [
+    {
+      "at": "2026-11-13T17:28:07.529Z",
+      "event": "snapshot",
+      "detail": "e5a2a9aa02ad3ec499a5650255fac00fb8f39c87d74fe969c5a8e2e2dacf5800"
+    },
+    {
+      "at": "2026-11-13T17:28:07.530Z",
+      "event": "started",
+      "detail": "node-test:oci:no-network:non-root:read-only"
+    },
+    {
+      "at": "2026-11-13T17:28:10.002Z",
+      "event": "unavailable",
+      "detail": "unavailable:1"
+    }
+  ],
+  "cleanupVerified": true
+}
+undefined
+/workspace/work/Nexus-OS-postmerge-2026-11-13/apps/api:
+[ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL] Command failed with exit code 1: node --import tsx '--conditions=development' '--input-type=module' -e 'import {createCodeAgentWorkspaceRunner} from "@cosmora/tool-runtime"; const r=await createCodeAgentWorkspaceRunner({runtime:"docker",executable:"/usr/local/bin/docker",image:"sha256:5ba3c1ded6eada2ea16582327a87c672fb3889fca362ee3ac0d78ed742b583c0",limits:{timeoutMs:30000}}).run({check:"node-test",files:[{path:"failure.test.mjs",content:"import assert from \"node:assert/strict\";assert.equal(1,2);"}]}); console.log(JSON.stringify(r,null,2));if(r.status!=="failed"||r.exitCode!==1||!r.cleanupVerified)process.exitCode=1;'

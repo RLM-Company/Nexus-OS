@@ -1,0 +1,436 @@
+diff --git a/apps/web/e2e/code-agent.spec.ts b/apps/web/e2e/code-agent.spec.ts
+index fc4c7d5..ba8229f 100644
+--- a/apps/web/e2e/code-agent.spec.ts
++++ b/apps/web/e2e/code-agent.spec.ts
+@@ -1155,3 +1155,186 @@ test("legacy repair v1 capability never sends a versioned v2 command", async ({
+   ).toHaveCount(0);
+   expect(state.repairs()).toBe(0);
+ });
++
++for (const variant of ["versioned", "legacy", "higher durable version"] as const) {
++  test(`Code polling never rewinds a newer response: ${variant}`, async ({ page }, info) => {
++    const state = await scenario(page);
++    const initial: Record<string, unknown> = {
++      ...state.snapshot(),
++      status: "running",
++      summary: "Initial snapshot"
++    };
++    if (variant === "legacy") delete initial.version;
++    const olderRequest = {
++      ...initial,
++      ...(variant === "legacy" ? {} : { version: variant === "higher durable version" ? 5 : 2 }),
++      summary: "Delayed first response"
++    };
++    const laterRequest = {
++      ...initial,
++      ...(variant === "legacy" ? {} : { version: variant === "higher durable version" ? 4 : 3 }),
++      summary: "Second response already displayed"
++    };
++    let release!: () => void;
++    const held = new Promise<void>((resolve) => {
++      release = resolve;
++    });
++    let reads = 0;
++    const mutations: string[] = [];
++    page.on("request", (request) => {
++      if (request.method() === "POST") mutations.push(new URL(request.url()).pathname);
++    });
++    await page.route("**/api/v1/projects/project-1/code-agent", (route) =>
++      route.fulfill({ json: { items: [initial] } })
++    );
++    await page.route("**/api/v1/projects/project-1/code-agent/run-1", async (route) => {
++      if (++reads === 1) {
++        await held;
++        await route.fulfill({ json: olderRequest });
++      } else await route.fulfill({ json: laterRequest });
++    });
++    try {
++      await page.goto("/code-agent");
++      await expect(page.getByText(laterRequest.summary, { exact: true })).toBeVisible();
++      const delayed = page.waitForResponse(
++        async (response) =>
++          response.url().endsWith("/code-agent/run-1") &&
++          ((await response.json()) as { summary: string }).summary === olderRequest.summary
++      );
++      release();
++      await (await delayed).finished();
++      await page.evaluate(
++        () =>
++          new Promise<void>((resolve) =>
++            requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
++          )
++      );
++      const expected =
++        variant === "higher durable version" ? olderRequest.summary : laterRequest.summary;
++      const result = {
++        variant,
++        reads,
++        mutations,
++        displayed: await page
++          .getByRole("region", { name: "Состояние задачи" })
++          .locator("p")
++          .allTextContents(),
++        expected,
++        real_model_called: false
++      };
++      const { writeFileSync } = await import("node:fs");
++      const path = info.outputPath("snapshot-order-readback.json");
++      writeFileSync(path, JSON.stringify(result, null, 2) + "\n");
++      await info.attach("snapshot-order-readback", { path, contentType: "application/json" });
++      expect(result.displayed).toContain(expected);
++      expect(mutations).toEqual([]);
++    } finally {
++      release();
++    }
++  });
++}
++
++test("Code manual refresh cannot replace a newer durable version with an older snapshot", async ({
++  page
++}, info) => {
++  const state = await scenario(page);
++  const fresh = { ...state.snapshot(), version: 8, summary: "Durable version 8" };
++  const stale = { ...fresh, version: 7, summary: "Stale version 7" };
++  await page.route("**/api/v1/projects/project-1/code-agent", (route) =>
++    route.fulfill({ json: { items: [fresh] } })
++  );
++  await page.route("**/api/v1/projects/project-1/code-agent/run-1", (route) =>
++    route.fulfill({ json: stale })
++  );
++  await page.goto("/code-agent");
++  await expect(page.getByText(fresh.summary, { exact: true })).toBeVisible();
++  const response = page.waitForResponse((reply) => reply.url().endsWith("/code-agent/run-1"));
++  await page.getByRole("button", { name: "Обновить состояние", exact: true }).click();
++  await (await response).finished();
++  await page.evaluate(
++    () =>
++      new Promise<void>((resolve) =>
++        requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
++      )
++  );
++  const result = {
++    expected: fresh.summary,
++    displayed: await page
++      .getByRole("region", { name: "Состояние задачи" })
++      .locator("p")
++      .allTextContents(),
++    real_model_called: false
++  };
++  const { writeFileSync } = await import("node:fs");
++  const path = info.outputPath("manual-refresh-readback.json");
++  writeFileSync(path, JSON.stringify(result, null, 2) + "\n");
++  await info.attach("manual-refresh-readback", { path, contentType: "application/json" });
++  await expect(page.getByText(fresh.summary, { exact: true })).toBeVisible({ timeout: 1000 });
++  await expect(
++    page.getByRole("alert").filter({ hasText: "Получено устаревшее состояние задачи" })
++  ).toContainText("устаревшее состояние");
++});
++
++test("Code keeps a late access refusal visible without rewinding the accepted snapshot", async ({
++  page
++}, info) => {
++  const state = await scenario(page);
++  const initial = {
++    ...state.snapshot(),
++    status: "running",
++    version: 1,
++    summary: "Initial access snapshot"
++  };
++  const fresh = { ...initial, version: 3, summary: "Last authorized snapshot" };
++  let release!: () => void;
++  const held = new Promise<void>((resolve) => {
++    release = resolve;
++  });
++  let reads = 0;
++  const mutations: string[] = [];
++  page.on("request", (request) => {
++    if (request.method() === "POST") mutations.push(new URL(request.url()).pathname);
++  });
++  await page.route("**/api/v1/projects/project-1/code-agent", (route) =>
++    route.fulfill({ json: { items: [initial] } })
++  );
++  await page.route("**/api/v1/projects/project-1/code-agent/run-1", async (route) => {
++    if (++reads === 1) {
++      await held;
++      await route.fulfill({
++        status: 403,
++        json: { error: { code: "FORBIDDEN", message: "Доступ к задаче отозван." } }
++      });
++    } else await route.fulfill({ json: fresh });
++  });
++  try {
++    await page.goto("/code-agent");
++    await expect(page.getByText(fresh.summary, { exact: true })).toBeVisible();
++    const refused = page.waitForResponse(
++      (response) => response.url().endsWith("/code-agent/run-1") && response.status() === 403
++    );
++    release();
++    await (await refused).finished();
++    await expect(
++      page.getByRole("alert").filter({ hasText: "Доступ к задаче отозван." })
++    ).toBeVisible();
++    await expect(page.getByText(fresh.summary, { exact: true })).toBeVisible();
++    const result = {
++      expected: fresh.summary,
++      displayed: await page
++        .getByRole("region", { name: "Состояние задачи" })
++        .locator("p")
++        .allTextContents(),
++      access_refusal_visible: true,
++      mutations,
++      real_model_called: false
++    };
++    const { writeFileSync } = await import("node:fs");
++    const path = info.outputPath("access-refusal-readback.json");
++    writeFileSync(path, JSON.stringify(result, null, 2) + "\n");
++    await info.attach("access-refusal-readback", { path, contentType: "application/json" });
++    expect(mutations).toEqual([]);
++  } finally {
++    release();
++  }
++});
+diff --git a/apps/web/package.json b/apps/web/package.json
+index ff551d1..3950061 100644
+--- a/apps/web/package.json
++++ b/apps/web/package.json
+@@ -15,7 +15,7 @@
+     "test:e2e:compaction": "playwright test -c playwright.history-compaction.config.ts",
+     "test:e2e": "pnpm test:e2e:main && pnpm test:e2e:issues && pnpm test:e2e:compaction && pnpm test:e2e:memory",
+     "test:acceptance": "playwright test -c playwright.acceptance.config.ts",
+-    "typecheck": "tsc --noEmit && tsc -p tsconfig.office-e2e.json && tsc -p tsconfig.composer-e2e.json",
++    "typecheck": "tsc --noEmit && tsc -p tsconfig.office-e2e.json && tsc -p tsconfig.composer-e2e.json && tsc -p tsconfig.code-agent-e2e.json",
+     "test:e2e:composer": "playwright test -c playwright.composer.config.ts",
+     "test:e2e:office-composer": "playwright test -c playwright.office-composer.config.ts",
+     "test:e2e:memory": "playwright test --config=playwright.context-memory.config.ts"
+diff --git a/apps/web/playwright.code-agent.config.ts b/apps/web/playwright.code-agent.config.ts
+index d2794be..5126307 100644
+--- a/apps/web/playwright.code-agent.config.ts
++++ b/apps/web/playwright.code-agent.config.ts
+@@ -2,7 +2,11 @@ import { defineConfig, devices } from "@playwright/test";
+ 
+ // This UI suite intercepts the complete Code API contract, uses no AI requests,
+ // and needs only its own web server, independently of production/API fixtures.
+-const port = 3412;
++const port = Number(process.env.KOSMORA_CODE_AGENT_E2E_PORT ?? "3412");
++if (!Number.isSafeInteger(port) || port < 1024 || port > 65535)
++  throw new Error("KOSMORA_CODE_AGENT_E2E_PORT must be a non-privileged TCP port");
++const production = ["1", "true"].includes(process.env.KOSMORA_E2E_PRODUCTION ?? "");
++const executablePath = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH;
+ export default defineConfig({
+   testDir: "./e2e",
+   testMatch: "code-agent.spec.ts",
+@@ -10,12 +14,18 @@ export default defineConfig({
+   expect: { timeout: 15_000 },
+   retries: 0,
+   workers: 1,
+-  use: { baseURL: `http://127.0.0.1:${port}`, trace: "retain-on-failure" },
++  use: {
++    baseURL: `http://127.0.0.1:${port}`,
++    trace: "retain-on-failure",
++    launchOptions: executablePath ? { executablePath } : {}
++  },
+   webServer: {
+-    command: `node node_modules/next/dist/bin/next dev -H 127.0.0.1 -p ${port}`,
++    command: production
++      ? `pnpm --filter @cosmora/contracts build && pnpm build && node node_modules/next/dist/bin/next start -H 127.0.0.1 -p ${port}`
++      : `node node_modules/next/dist/bin/next dev -H 127.0.0.1 -p ${port}`,
+     url: `http://127.0.0.1:${port}/code-agent`,
+     reuseExistingServer: false,
+-    timeout: 90_000,
++    timeout: production ? 180_000 : 90_000,
+     env: { NEXT_TELEMETRY_DISABLED: "1", COSMORA_API_ORIGIN: "http://127.0.0.1:3413" }
+   },
+   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }]
+diff --git a/apps/web/src/app/code-agent/page.tsx b/apps/web/src/app/code-agent/page.tsx
+index 10acdde..5681460 100644
+--- a/apps/web/src/app/code-agent/page.tsx
++++ b/apps/web/src/app/code-agent/page.tsx
+@@ -3,6 +3,7 @@
+ import Link from "next/link";
+ import { useCodeEditorNavigationGuard } from "./editor-navigation";
+ import { CodeRepairControl } from "./repair-control";
++import { acceptsCodeSnapshot, type CodeSnapshotStamp } from "./snapshot-order";
+ import { CodeCheckEvidence, hasVerifiedCodeCheck } from "./check-evidence";
+ import { TerminalOutput } from "../ui/terminal-output";
+ import { CodePatchEditor } from "./patch-editor";
+@@ -226,11 +227,19 @@ export default function CodeAgentPage() {
+   const approvalIdentity = useRef("");
+   const epoch = useRef(0);
+   const activeRun = useRef<string | null>(null);
++  const snapshotSequence = useRef(0);
++  const acceptedSnapshot = useRef<CodeSnapshotStamp | null>(null);
+   const requestBusy = useRef(false);
+   const createAttempt = useRef<{ signature: string; id: string } | null>(null);
+   const root = `/api/v1/projects/${encodeURIComponent(project)}/code-agent`;
+ 
+-  function accept(value: Run, restore = false) {
++  function accept(value: Run, restore = false, sequence = ++snapshotSequence.current): boolean {
++    if (!acceptsCodeSnapshot(acceptedSnapshot.current, value, sequence)) return false;
++    acceptedSnapshot.current = {
++      id: value.id,
++      version: value.version ?? null,
++      sequence: Math.max(sequence, acceptedSnapshot.current?.sequence ?? 0)
++    };
+     setRun(value);
+     activeRun.current = value.id;
+     setRuns((current) => [value, ...current.filter((item) => item.id !== value.id)]);
+@@ -265,6 +274,7 @@ export default function CodeAgentPage() {
+       markPublication(project, value.id, false);
+       setUnknownPublish(false);
+     }
++    return true;
+   }
+ 
+   useEffect(() => {
+@@ -303,6 +313,7 @@ export default function CodeAgentPage() {
+   useEffect(() => {
+     const requestEpoch = ++epoch.current;
+     activeRun.current = null;
++    acceptedSnapshot.current = null;
+     proposalIdentity.current = "";
+     approvalIdentity.current = "";
+     setRun(null);
+@@ -313,6 +324,7 @@ export default function CodeAgentPage() {
+     setCheckApproved(false);
+     setPublishApproved(false);
+     if (!project) return;
++    const sequence = ++snapshotSequence.current;
+     void api<{ items: Run[] }>(root)
+       .then(async (list) => {
+         if (epoch.current !== requestEpoch) return;
+@@ -323,7 +335,7 @@ export default function CodeAgentPage() {
+         if (epoch.current !== requestEpoch) return;
+         if (wanted && (!desired || desired.id !== wanted))
+           throw new Error("Ответ не подтверждает запрошенную задачу. Другая задача не открыта.");
+-        if (desired) accept(desired, true);
++        if (desired) accept(desired, true, sequence);
+         linkedRun.current = null;
+       })
+       .catch((reason: unknown) => {
+@@ -338,9 +350,11 @@ export default function CodeAgentPage() {
+     const id = run.id;
+     const timer = setInterval(() => {
+       if (requestBusy.current) return;
++      const sequence = ++snapshotSequence.current;
+       void api<Run>(`${root}/${encodeURIComponent(id)}`)
+         .then((value) => {
+-          if (alive && epoch.current === requestEpoch && activeRun.current === id) accept(value);
++          if (alive && epoch.current === requestEpoch && activeRun.current === id)
++            accept(value, false, sequence);
+         })
+         .catch((reason: unknown) => {
+           if (alive) setError(failureMessage(reason));
+@@ -391,12 +405,16 @@ export default function CodeAgentPage() {
+     }
+     requestBusy.current = true;
+     const actionEpoch = epoch.current;
++    const sequence = ++snapshotSequence.current;
+     setBusy(true);
+     setError(null);
+     try {
+       const value = await operation();
+       if (epoch.current !== actionEpoch) return;
+-      accept(value, replacesEditor);
++      if (!accept(value, replacesEditor, sequence)) {
++        setError("Получено устаревшее состояние задачи. Показана последняя принятая версия.");
++        return;
++      }
+       if (reconcile && !["uncertain", "publishing"].includes(value.status)) {
+         markPublication(project, value.id, false);
+         setUnknownPublish(false);
+@@ -449,12 +467,14 @@ export default function CodeAgentPage() {
+     editingInvalidated.current = true;
+     const id = run.id,
+       requestEpoch = epoch.current;
++    const sequence = ++snapshotSequence.current;
+     const pending = api<Run>(`${root}/${encodeURIComponent(id)}/invalidate-review`, {
+       proposal_hash: run.proposal_hash,
+       expected_review_hash: editorReviewHash.current
+     })
+       .then((value) => {
+-        if (epoch.current === requestEpoch && activeRun.current === id) accept(value);
++        if (epoch.current === requestEpoch && activeRun.current === id)
++          accept(value, false, sequence);
+       })
+       .catch((e: unknown) => {
+         if (epoch.current === requestEpoch && activeRun.current === id) {
+diff --git a/apps/web/src/app/code-agent/snapshot-order.test.ts b/apps/web/src/app/code-agent/snapshot-order.test.ts
+new file mode 100644
+index 0000000..998deaa
+--- /dev/null
++++ b/apps/web/src/app/code-agent/snapshot-order.test.ts
+@@ -0,0 +1,32 @@
++import { describe, expect, it } from "vitest";
++import { acceptsCodeSnapshot } from "./snapshot-order";
++
++describe("Code snapshots cannot rewind the active run", () => {
++  it("uses durable revision before network arrival or request order", () => {
++    const current = { id: "run", version: 8, sequence: 5 };
++    expect(acceptsCodeSnapshot(current, { id: "run", version: 7 }, 10)).toBe(false);
++    expect(acceptsCodeSnapshot(current, { id: "run", version: 9 }, 2)).toBe(true);
++    expect(acceptsCodeSnapshot(current, { id: "run", version: 8 }, 4)).toBe(false);
++    expect(acceptsCodeSnapshot(current, { id: "run", version: 8 }, 6)).toBe(true);
++  });
++  it("keeps legacy reads usable without allowing late older requests to win", () => {
++    const current = { id: "legacy", sequence: 5 };
++    expect(acceptsCodeSnapshot(current, { id: "legacy" }, 2)).toBe(false);
++    expect(acceptsCodeSnapshot(current, { id: "legacy" }, 6)).toBe(true);
++    expect(acceptsCodeSnapshot(current, { id: "legacy", version: 1 }, 2)).toBe(false);
++    expect(acceptsCodeSnapshot(current, { id: "legacy", version: 1 }, 6)).toBe(true);
++  });
++  it("does not downgrade a known revision to missing or malformed evidence", () => {
++    const current = { id: "run", version: 8, sequence: 5 };
++    for (const version of [undefined, null, 0, -1, NaN, Infinity, 1.5]) {
++      expect(acceptsCodeSnapshot(current, { id: "run", version }, 10)).toBe(false);
++    }
++  });
++  it("scopes revisions to one run and admits a first legacy or versioned snapshot", () => {
++    expect(acceptsCodeSnapshot(null, { id: "first" }, 1)).toBe(true);
++    expect(acceptsCodeSnapshot(null, { id: "first", version: 1 }, 1)).toBe(true);
++    expect(
++      acceptsCodeSnapshot({ id: "old", version: 100, sequence: 10 }, { id: "new", version: 1 }, 11)
++    ).toBe(true);
++  });
++});
+diff --git a/apps/web/src/app/code-agent/snapshot-order.ts b/apps/web/src/app/code-agent/snapshot-order.ts
+new file mode 100644
+index 0000000..f0d9fbf
+--- /dev/null
++++ b/apps/web/src/app/code-agent/snapshot-order.ts
+@@ -0,0 +1,24 @@
++export type CodeSnapshotStamp = {
++  id: string;
++  version?: number | null | undefined;
++  sequence: number;
++};
++
++const knownVersion = (version: number | null | undefined): number | null =>
++  typeof version === "number" && Number.isSafeInteger(version) && version > 0 ? version : null;
++
++/** Durable revisions take precedence; request order also protects legacy servers. */
++export function acceptsCodeSnapshot(
++  previous: CodeSnapshotStamp | null,
++  incoming: { id: string; version?: number | null | undefined },
++  sequence: number
++): boolean {
++  if (!previous || previous.id !== incoming.id) return true;
++  const currentVersion = knownVersion(previous.version);
++  const nextVersion = knownVersion(incoming.version);
++  if (currentVersion !== null) {
++    if (nextVersion === null) return false;
++    if (nextVersion !== currentVersion) return nextVersion > currentVersion;
++  }
++  return sequence >= previous.sequence;
++}
+diff --git a/apps/web/tsconfig.code-agent-e2e.json b/apps/web/tsconfig.code-agent-e2e.json
+new file mode 100644
+index 0000000..ed3794b
+--- /dev/null
++++ b/apps/web/tsconfig.code-agent-e2e.json
+@@ -0,0 +1,6 @@
++{
++  "extends": "./tsconfig.json",
++  "compilerOptions": { "incremental": false, "noEmit": true },
++  "include": ["src/**/*.d.ts", "e2e/code-agent.spec.ts", "playwright.code-agent.config.ts"],
++  "exclude": ["node_modules"]
++}

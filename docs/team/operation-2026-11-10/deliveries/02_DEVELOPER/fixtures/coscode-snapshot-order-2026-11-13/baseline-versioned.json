@@ -1,0 +1,13 @@
+{
+  "variant": "versioned",
+  "reads": 2,
+  "mutations": [],
+  "displayed": [
+    "Чтение репозитория и подготовка изменений",
+    "Основа: main · aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "Delayed first response",
+    "Исходный снимок: ssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss"
+  ],
+  "expected": "Second response already displayed",
+  "real_model_called": false
+}

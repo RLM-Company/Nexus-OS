@@ -1,0 +1,25 @@
+{
+  "head": "93082c4472292b6e93ec9c1198eab8e6c6fae9c4",
+  "run": 43455694958,
+  "conclusion": "failure",
+  "verify": "success",
+  "oci": "success,5PASS",
+  "browser_primary": {
+    "passed": 529,
+    "flaky": 1,
+    "failed_case": "chat-reliability.spec.ts:87: completed-only seed readiness"
+  },
+  "auxiliary_suites": "not run because primary command failed",
+  "integration_commit": "23bbcde7a23c10f6d55d38e28defd718db80fe9e",
+  "diagnostic_first_selection": "exit1 No tests found; anchored grep corrected, no assertions ran",
+  "repeated_test": {
+    "passed": 5,
+    "workers": 2,
+    "retries": 0,
+    "exit": 0
+  },
+  "strict_web_types_exit": 0,
+  "web_lint_exit": 0,
+  "runtime_lifecycle": "INTERRUPTED observed in initial seed; actual production cause not established or fixed here; only fixture prerequisite changed to explicit owner cancellation",
+  "no_live_model": true
+}

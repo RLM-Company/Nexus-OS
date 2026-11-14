@@ -1,0 +1,28 @@
+[WebServer] (node:60220) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] $ tsc -p tsconfig.build.json
+[WebServer] (node:60248) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] $ node scripts/prepare-pdf-worker.mjs && next build
+[WebServer] (node:60274) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:60274) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:60310) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:60311) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:60338) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+
+Running 5 tests using 1 worker
+
+(node:60352) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  1 [chromium] › e2e/code-agent.spec.ts:1160:7 › Code polling never rewinds a newer response: versioned (4.7s)
+  ✓  2 [chromium] › e2e/code-agent.spec.ts:1160:7 › Code polling never rewinds a newer response: legacy (4.7s)
+  ✓  3 [chromium] › e2e/code-agent.spec.ts:1160:7 › Code polling never rewinds a newer response: higher durable version (4.7s)
+  ✓  4 [chromium] › e2e/code-agent.spec.ts:1237:5 › Code manual refresh cannot replace a newer durable version with an older snapshot (1.4s)
+  ✓  5 [chromium] › e2e/code-agent.spec.ts:1278:5 › Code keeps a late access refusal visible without rewinding the accepted snapshot (4.6s)
+
+  5 passed (39.9s)

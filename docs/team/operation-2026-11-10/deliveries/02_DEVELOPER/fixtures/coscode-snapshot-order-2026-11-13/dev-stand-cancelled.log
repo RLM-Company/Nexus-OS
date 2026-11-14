@@ -1,0 +1,76 @@
+Running 34 tests using 1 worker
+  ✓   1 [chromium] › e2e/code-agent.spec.ts:312:5 › creates a Code project directly without starting a model task (2.7s)
+  ✓   2 [chromium] › e2e/code-agent.spec.ts:340:5 › recovers a lost creation response using its request ID without a second generation POST (2.4s)
+  ✓   3 [chromium] › e2e/code-agent.spec.ts:360:5 › selects and edits real server proposal, binds check to review and requires exact publication approval (4.2s)
+  ✓   4 [chromium] › e2e/code-agent.spec.ts:393:5 › an old editor cannot overwrite or invalidate a newer saved review (6.1s)
+  ✓   5 [chromium] › e2e/code-agent.spec.ts:430:5 › explicit checkpoint restoration also discards unapplied raw diff without restoring old proof (3.5s)
+  ✓   6 [chromium] › e2e/code-agent.spec.ts:453:5 › same-document Forward can be cancelled with exact edits retained, then explicitly confirmed (4.1s)
+[WebServer] Error: Module not found: Can't resolve './account-finance.js'
+[WebServer] Error: Module not found: Can't resolve './agent-studio.js'
+[WebServer] Error: Module not found: Can't resolve './auth.js'
+[WebServer] Error: Module not found: Can't resolve './canvas-artifacts.js'
+[WebServer] Error: Module not found: Can't resolve './chat-attachments.js'
+[WebServer] Error: Module not found: Can't resolve './chat-branches.js'
+[WebServer] Error: Module not found: Can't resolve './chat-memory.js'
+[WebServer] Error: Module not found: Can't resolve './chat-skills.js'
+[WebServer] Error: Module not found: Can't resolve './companion.js'
+[WebServer] Error: Module not found: Can't resolve './computer-control.js'
+[WebServer] Error: Module not found: Can't resolve './context-memory.js'
+[WebServer] Error: Module not found: Can't resolve './demo-manager.js'
+[WebServer] Error: Module not found: Can't resolve './domain.js'
+[WebServer] Error: Module not found: Can't resolve './errors.js'
+[WebServer] Error: Module not found: Can't resolve './events.js'
+[WebServer] Error: Module not found: Can't resolve './google-drive.js'
+[WebServer] Error: Module not found: Can't resolve './health.js'
+[WebServer] Error: Module not found: Can't resolve './history-compaction.js'
+[WebServer] Error: Module not found: Can't resolve './identity.js'
+[WebServer] Error: Module not found: Can't resolve './intelligence-graph-context.js'
+[WebServer] Error: Module not found: Can't resolve './intelligence-graph-package.js'
+[WebServer] Error: Module not found: Can't resolve './intelligence-graph-workspace.js'
+[WebServer] Error: Module not found: Can't resolve './intelligence-graph.js'
+[WebServer] Error: Module not found: Can't resolve './manager-runtime-artifact-provenance.js'
+[WebServer] Error: Module not found: Can't resolve './manager-runtime-artifact-task-binding.js'
+[WebServer] Error: Module not found: Can't resolve './manager-runtime-checkpoint.js'
+[WebServer] Error: Module not found: Can't resolve './manager-runtime-conflict.js'
+[WebServer] Error: Module not found: Can't resolve './manager-runtime-context-validation.js'
+[WebServer] Error: Module not found: Can't resolve './manager-runtime-critic-artifacts.js'
+[WebServer] Error: Module not found: Can't resolve './manager-runtime-gates.js'
+[WebServer] Error: Module not found: Can't resolve './manager-runtime-scenario-validation.js'
+[WebServer] Error: Module not found: Can't resolve './manager-runtime-scenarios.js'
+[WebServer] Error: Module not found: Can't resolve './manager-runtime-state.js'
+[WebServer] Error: Module not found: Can't resolve './manager-runtime-suite-gates.js'
+[WebServer] Error: Module not found: Can't resolve './manager-runtime-task-readiness.js'
+[WebServer] Error: Module not found: Can't resolve './manager-runtime.js'
+[WebServer] Error: Module not found: Can't resolve './manager-work.js'
+[WebServer] Error: Module not found: Can't resolve './memory-sensitive.js'
+[WebServer] Error: Module not found: Can't resolve './memory-usage.js'
+[WebServer] Error: Module not found: Can't resolve './model-output-checkpoint.js'
+[WebServer] Error: Module not found: Can't resolve './model-registry.js'
+[WebServer] Error: Module not found: Can't resolve './model.js'
+[WebServer] Error: Module not found: Can't resolve './office-workspace.js'
+[WebServer] Error: Module not found: Can't resolve './policy.js'
+[WebServer] Error: Module not found: Can't resolve './primitives.js'
+[WebServer] Error: Module not found: Can't resolve './profile-candidates.js'
+[WebServer] Error: Module not found: Can't resolve './project-automation.js'
+[WebServer] Error: Module not found: Can't resolve './runtime-clock.js'
+[WebServer] Error: Module not found: Can't resolve './runtime.js'
+[WebServer] Error: Module not found: Can't resolve './step-up.js'
+[WebServer] Error: Module not found: Can't resolve './usage.js'
+[WebServer] Error: Module not found: Can't resolve './work-dag.js'
+[WebServer] Error: Module not found: Can't resolve './work-plan-package.js'
+[WebServer] Error: Module not found: Can't resolve './work-runtime.js'
+[WebServer] Error: Module not found: Can't resolve './work-schedule.js'
+[WebServer] Error: Module not found: Can't resolve './work-skills.js'
+[WebServer] Error: Module not found: Can't resolve './workflows.js'
+[WebServer] Error: Export isValidChatTextAction doesn't exist in target module
+  ✘   7 [chromium] › e2e/code-agent.spec.ts:508:5 › browser Back can be cancelled with edits visible, then explicitly confirmed without workspace writes (23.8s)
+  ✘   8 [chromium] › e2e/code-agent.spec.ts:559:5 › does not retry lost publication and reconciles it explicitly (30.1s)
+  ✘   9 [chromium] › e2e/code-agent.spec.ts:575:5 › reconciles a request lost before publication, then uses rotated token only after new approval (30.1s)
+  ✘  10 [chromium] › e2e/code-agent.spec.ts:597:5 › previews normalized editable diff on an exact snapshot before a fresh review (30.1s)
+  ✘  11 [chromium] › e2e/code-agent.spec.ts:629:7 › legacy contradictory proof never enables publication: {"exitCode":1} (30.1s)
+  ✘  12 [chromium] › e2e/code-agent.spec.ts:629:7 › legacy contradictory proof never enables publication: {"exitCode":null} (30.1s)
+  ✘  13 [chromium] › e2e/code-agent.spec.ts:629:7 › legacy contradictory proof never enables publication: {"cleanupVerified":false} (30.1s)
+  ✘  14 [chromium] › e2e/code-agent.spec.ts:645:5 › dirty project changes and new tasks require an explicit discard; cancelling retains exact edits (30.1s)
+  ✘  15 [chromium] › e2e/code-agent.spec.ts:685:5 › dirty history selection can be cancelled; confirmed discard opens only the selected saved task (30.1s)
+  ✘  16 [chromium] › e2e/code-agent.spec.ts:718:5 › declining native reload preserves the unsaved text without a new model or publish call (30.1s)
+  ✘  17 [chromium] › e2e/code-agent.spec.ts:746:5 › the Code page GitHub link respects a declined discard (30.1s)

@@ -1,0 +1,26 @@
+{
+  "status": "unavailable",
+  "snapshotDigest": "e5a2a9aa02ad3ec499a5650255fac00fb8f39c87d74fe969c5a8e2e2dacf5800",
+  "exitCode": 1,
+  "stdout": "",
+  "stderr": "Error response from daemon: mkdir /home/dockerd/.local/share/docker/vfs/dir/6891da2dc29ec49504552414a11823015e6ff9ee949a8b88cff1e0bc23bfb227/usr/local/etc: no space left on device\n",
+  "truncated": false,
+  "journal": [
+    {
+      "at": "2026-11-13T17:24:45.330Z",
+      "event": "snapshot",
+      "detail": "e5a2a9aa02ad3ec499a5650255fac00fb8f39c87d74fe969c5a8e2e2dacf5800"
+    },
+    {
+      "at": "2026-11-13T17:24:45.331Z",
+      "event": "started",
+      "detail": "node-test:oci:no-network:non-root:read-only"
+    },
+    {
+      "at": "2026-11-13T17:24:48.063Z",
+      "event": "unavailable",
+      "detail": "unavailable:1"
+    }
+  ],
+  "cleanupVerified": true
+}

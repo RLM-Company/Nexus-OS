@@ -1155,3 +1155,374 @@ test("legacy repair v1 capability never sends a versioned v2 command", async ({ 
   ).toHaveCount(0);
   expect(state.repairs()).toBe(0);
 });
+
+for (const variant of ["versioned", "legacy", "higher durable version"] as const) {
+  test(`Code polling never rewinds a newer response: ${variant}`, async ({ page }, info) => {
+    const state = await scenario(page);
+    const initial: Record<string, unknown> = {
+      ...state.snapshot(),
+      status: "running",
+      summary: "Initial snapshot"
+    };
+    if (variant === "legacy") delete initial.version;
+    const olderRequest = {
+      ...initial,
+      ...(variant === "legacy" ? {} : { version: variant === "higher durable version" ? 5 : 2 }),
+      summary: "Delayed first response"
+    };
+    const laterRequest = {
+      ...initial,
+      ...(variant === "legacy" ? {} : { version: variant === "higher durable version" ? 4 : 3 }),
+      summary: "Second response already displayed"
+    };
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let reads = 0;
+    const mutations: string[] = [];
+    page.on("request", (request) => {
+      if (request.method() === "POST") mutations.push(new URL(request.url()).pathname);
+    });
+    await page.route("**/api/v1/projects/project-1/code-agent", (route) =>
+      route.fulfill({ json: { items: [initial] } })
+    );
+    await page.route("**/api/v1/projects/project-1/code-agent/run-1", async (route) => {
+      if (++reads === 1) {
+        await held;
+        await route.fulfill({ json: olderRequest });
+      } else await route.fulfill({ json: laterRequest });
+    });
+    try {
+      await page.goto("/code-agent");
+      await expect(page.getByText(laterRequest.summary, { exact: true })).toBeVisible();
+      const delayed = page.waitForResponse(
+        async (response) =>
+          response.url().endsWith("/code-agent/run-1") &&
+          ((await response.json()) as { summary: string }).summary === olderRequest.summary
+      );
+      release();
+      await (await delayed).finished();
+      await page.evaluate(
+        () =>
+          new Promise<void>((resolve) =>
+            requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+          )
+      );
+      const expected =
+        variant === "higher durable version" ? olderRequest.summary : laterRequest.summary;
+      const result = {
+        variant,
+        reads,
+        mutations,
+        displayed: await page
+          .getByRole("region", { name: "Состояние задачи" })
+          .locator("p")
+          .allTextContents(),
+        expected,
+        real_model_called: false
+      };
+      const { writeFileSync } = await import("node:fs");
+      const path = info.outputPath("snapshot-order-readback.json");
+      writeFileSync(path, JSON.stringify(result, null, 2) + "\n");
+      await info.attach("snapshot-order-readback", { path, contentType: "application/json" });
+      expect(result.displayed).toContain(expected);
+      expect(mutations).toEqual([]);
+    } finally {
+      release();
+    }
+  });
+}
+
+test("Code manual refresh cannot replace a newer durable version with an older snapshot", async ({
+  page
+}, info) => {
+  const state = await scenario(page);
+  const fresh = { ...state.snapshot(), version: 8, summary: "Durable version 8" };
+  const stale = { ...fresh, version: 7, summary: "Stale version 7" };
+  await page.route("**/api/v1/projects/project-1/code-agent", (route) =>
+    route.fulfill({ json: { items: [fresh] } })
+  );
+  await page.route("**/api/v1/projects/project-1/code-agent/run-1", (route) =>
+    route.fulfill({ json: stale })
+  );
+  await page.goto("/code-agent");
+  await expect(page.getByText(fresh.summary, { exact: true })).toBeVisible();
+  const response = page.waitForResponse((reply) => reply.url().endsWith("/code-agent/run-1"));
+  await page.getByRole("button", { name: "Обновить состояние", exact: true }).click();
+  await (await response).finished();
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+      )
+  );
+  const result = {
+    expected: fresh.summary,
+    displayed: await page
+      .getByRole("region", { name: "Состояние задачи" })
+      .locator("p")
+      .allTextContents(),
+    real_model_called: false
+  };
+  const { writeFileSync } = await import("node:fs");
+  const path = info.outputPath("manual-refresh-readback.json");
+  writeFileSync(path, JSON.stringify(result, null, 2) + "\n");
+  await info.attach("manual-refresh-readback", { path, contentType: "application/json" });
+  await expect(page.getByText(fresh.summary, { exact: true })).toBeVisible({ timeout: 1000 });
+  await expect(
+    page.getByRole("alert").filter({ hasText: "Получено устаревшее состояние задачи" })
+  ).toContainText("устаревшее состояние");
+});
+
+test("Code keeps a late access refusal visible without rewinding the accepted snapshot", async ({
+  page
+}, info) => {
+  const state = await scenario(page);
+  const initial = {
+    ...state.snapshot(),
+    status: "running",
+    version: 1,
+    summary: "Initial access snapshot"
+  };
+  const fresh = { ...initial, version: 3, summary: "Last authorized snapshot" };
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let reads = 0;
+  const mutations: string[] = [];
+  page.on("request", (request) => {
+    if (request.method() === "POST") mutations.push(new URL(request.url()).pathname);
+  });
+  await page.route("**/api/v1/projects/project-1/code-agent", (route) =>
+    route.fulfill({ json: { items: [initial] } })
+  );
+  await page.route("**/api/v1/projects/project-1/code-agent/run-1", async (route) => {
+    if (++reads === 1) {
+      await held;
+      await route.fulfill({
+        status: 403,
+        json: { error: { code: "FORBIDDEN", message: "Доступ к задаче отозван." } }
+      });
+    } else await route.fulfill({ json: fresh });
+  });
+  try {
+    await page.goto("/code-agent");
+    await expect(page.getByText(fresh.summary, { exact: true })).toBeVisible();
+    const refused = page.waitForResponse(
+      (response) => response.url().endsWith("/code-agent/run-1") && response.status() === 403
+    );
+    release();
+    await (await refused).finished();
+    await expect(
+      page.getByRole("alert").filter({ hasText: "Доступ к задаче отозван." })
+    ).toBeVisible();
+    await expect(page.getByText(fresh.summary, { exact: true })).toBeVisible();
+    const result = {
+      expected: fresh.summary,
+      displayed: await page
+        .getByRole("region", { name: "Состояние задачи" })
+        .locator("p")
+        .allTextContents(),
+      access_refusal_visible: true,
+      mutations,
+      real_model_called: false
+    };
+    const { writeFileSync } = await import("node:fs");
+    const path = info.outputPath("access-refusal-readback.json");
+    writeFileSync(path, JSON.stringify(result, null, 2) + "\n");
+    await info.attach("access-refusal-readback", { path, contentType: "application/json" });
+    expect(mutations).toEqual([]);
+  } finally {
+    release();
+  }
+});
+
+for (const kind of ["file", "raw diff", "poll", "stale reload", "revoked reload"] as const) {
+  test(`Code refresh preserves unsaved ${kind} until explicit saved-edit reload`, async ({
+    page
+  }, info) => {
+    const state = await scenario(page);
+    await prepare(page);
+    const file = page.getByLabel("+ Итоговое содержимое: src/value.js");
+    const local = "// 19 700 · 00123 · 2026-11-13 · кроме доставки\nexport const value = 77;";
+    if (kind === "raw diff")
+      await page.getByText("Редактировать минимальный diff", { exact: true }).click();
+    const editor =
+      kind === "raw diff" ? page.getByLabel("Редактируемый unified diff", { exact: true }) : file;
+    const invalidated = page.waitForResponse((r) => r.url().endsWith("/invalidate-review"));
+    await editor.fill(local);
+    await (await invalidated).finished();
+    if (kind === "raw diff") {
+      await page
+        .getByRole("button", { name: "Сохранить выбранные изменения", exact: true })
+        .click();
+      await expect(page.getByText("Текст diff ещё не перенесён", { exact: false })).toBeVisible();
+    }
+    const previous = state.snapshot();
+    const remote = {
+      ...previous,
+      version: Number(previous.version) + 2,
+      status: "proposed",
+      proposal_hash: "q".repeat(64),
+      draft: undefined,
+      check: undefined,
+      publication_token: undefined,
+      summary: "Another tab saved a new proposal",
+      proposal: [
+        {
+          path: "src/value.js",
+          before: "export const value = 1;",
+          content: "export const value = 44;"
+        }
+      ],
+      proposal_diff:
+        "--- a/src/value.js\n+++ b/src/value.js\n@@ -1 +1 @@\n-export const value = 1;\n+export const value = 44;\n"
+    };
+    let reads = 0;
+    let staleReload = false;
+    let revokedReload = false;
+    const writes: string[] = [];
+    page.on("request", (r) => {
+      if (r.method() !== "GET" && r.url().includes("/code-agent"))
+        writes.push(new URL(r.url()).pathname);
+    });
+    await page.route("**/api/v1/projects/project-1/code-agent/run-1", (route) => {
+      reads++;
+      if (revokedReload)
+        return route.fulfill({
+          status: 403,
+          json: { error: { code: "FORBIDDEN", message: "Доступ к задаче отозван." } }
+        });
+      return route.fulfill({
+        json: staleReload
+          ? previous
+          : kind === "poll" && reads === 1
+            ? { ...previous, version: Number(previous.version) + 1, status: "checking" }
+            : remote
+      });
+    });
+    const received = page.waitForResponse(
+      (r) => r.url().endsWith("/code-agent/run-1") && (kind !== "poll" || reads >= 2)
+    );
+    await page.getByRole("button", { name: "Обновить состояние", exact: true }).click();
+    await (await received).finished();
+    await page.evaluate(
+      () =>
+        new Promise<void>((resolve) =>
+          requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+        )
+    );
+    const result = {
+      kind,
+      expected: local,
+      displayed: await editor.inputValue(),
+      reads,
+      writes,
+      real_model_called: false
+    };
+    const { writeFileSync } = await import("node:fs");
+    const path = info.outputPath("unsaved-refresh-readback.json");
+    writeFileSync(path, JSON.stringify(result, null, 2) + "\n");
+    await info.attach("unsaved-refresh-readback", { path, contentType: "application/json" });
+    await expect(editor).toHaveValue(local, { timeout: 1000 });
+    await expect(
+      page.getByRole("alert").filter({ hasText: "Предложение на сервере изменилось" })
+    ).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Сохранить выбранные изменения", exact: true })
+    ).toBeDisabled();
+    const restore = page.getByRole("button", { name: "Загрузить сохранённые правки", exact: true });
+    await expect(restore).toBeEnabled();
+    const before = reads;
+    page.once("dialog", (d) => d.dismiss());
+    await restore.click();
+    await expect(editor).toHaveValue(local);
+    expect(reads).toBe(before);
+    if (kind === "stale reload") {
+      staleReload = true;
+      page.once("dialog", (d) => d.accept());
+      await restore.click();
+      await expect(editor).toHaveValue(local);
+      await expect(
+        page.getByRole("alert").filter({ hasText: "Получено устаревшее состояние задачи" })
+      ).toBeVisible();
+      staleReload = false;
+    }
+    if (kind === "revoked reload") {
+      revokedReload = true;
+      page.once("dialog", (d) => d.accept());
+      await restore.click();
+      await expect(editor).toHaveValue(local);
+      await expect(
+        page.getByRole("alert").filter({ hasText: "Доступ к задаче отозван" })
+      ).toBeVisible();
+    } else {
+      page.once("dialog", (d) => d.accept());
+      await restore.click();
+      await expect(file).toHaveValue("export const value = 44;");
+      await expect(
+        page.getByRole("alert").filter({ hasText: "Предложение на сервере изменилось" })
+      ).toHaveCount(0);
+    }
+    const recoveryPath = info.outputPath("unsaved-recovery-readback.json");
+    writeFileSync(
+      recoveryPath,
+      JSON.stringify(
+        {
+          kind,
+          restored: kind !== "revoked reload",
+          displayed: await file.inputValue(),
+          cancelled_reload_sent_read: false,
+          access_refusal_visible: kind === "revoked reload",
+          reads,
+          writes,
+          real_model_called: false
+        },
+        null,
+        2
+      ) + "\n"
+    );
+    await info.attach("unsaved-recovery-readback", {
+      path: recoveryPath,
+      contentType: "application/json"
+    });
+    expect(writes).toEqual([]);
+    expect(state.publications()).toBe(0);
+    expect(state.repairs()).toBe(0);
+  });
+}
+
+test("Code refresh accepts a new proposal when the editor has no unsaved changes", async ({
+  page
+}) => {
+  const state = await scenario(page);
+  await prepare(page);
+  const previous = state.snapshot();
+  await page.route("**/api/v1/projects/project-1/code-agent/run-1", (route) =>
+    route.fulfill({
+      json: {
+        ...previous,
+        version: Number(previous.version) + 1,
+        proposal_hash: "q".repeat(64),
+        draft: undefined,
+        check: undefined,
+        status: "proposed",
+        publication_token: undefined,
+        proposal: [
+          {
+            path: "src/value.js",
+            before: "export const value = 1;",
+            content: "export const value = 44;"
+          }
+        ]
+      }
+    })
+  );
+  await page.getByRole("button", { name: "Обновить состояние", exact: true }).click();
+  await expect(page.getByLabel("+ Итоговое содержимое: src/value.js")).toHaveValue(
+    "export const value = 44;"
+  );
+  expect(state.publications()).toBe(0);
+});
