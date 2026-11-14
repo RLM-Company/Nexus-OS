@@ -1,3 +1,4 @@
+import { DOCUMENT_LIBRARY_PDF_MAX_PAGES } from "@cosmora/contracts";
 import { randomUUID } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
 export type LibraryPage = { page: number | null; text: string };
@@ -11,7 +12,7 @@ export type LibraryChunk = {
 const LIMITS = {
   fileBytes: 20_000_000,
   textCharacters: 2_000_000,
-  pdfPages: 500,
+  pdfPages: DOCUMENT_LIBRARY_PDF_MAX_PAGES,
   chunksPerFile: 5_000,
   filesPerProject: 100,
   bytesPerProject: 100_000_000

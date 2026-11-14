@@ -1,3 +1,4 @@
+import { DOCUMENT_LIBRARY_PDF_MAX_PAGES } from "@cosmora/contracts";
 import { decodeStudioDocument } from "./decode-chat-attachment";
 
 export type IndexedPage = { page: number | null; text: string };
@@ -42,13 +43,21 @@ export async function extractLibraryPages(
       useSystemFonts: false
     });
     const abort = () => {
-      void task.destroy();
+      void task.destroy().catch(() => undefined);
     };
-    const timer = window.setTimeout(abort, 60_000);
+    let stalled = false;
+    const watchdog = () =>
+      window.setTimeout(() => {
+        stalled = true;
+        abort();
+      }, 60_000);
+    let timer = watchdog();
+    if (signal.aborted) abort();
     signal.addEventListener("abort", abort, { once: true });
     try {
       const document = await task.promise;
-      if (document.numPages > 500) throw new Error("PDF: максимум 500 страниц.");
+      if (document.numPages > DOCUMENT_LIBRARY_PDF_MAX_PAGES)
+        throw new Error("PDF: максимум " + DOCUMENT_LIBRARY_PDF_MAX_PAGES + " страниц.");
       const pages: IndexedPage[] = [];
       let characters = 0;
       for (let i = 1; i <= document.numPages; i++) {
@@ -63,15 +72,22 @@ export async function extractLibraryPages(
         if (characters > 2_000_000) throw new Error("Текст: максимум 2 млн символов.");
         pages.push({ page: i, text });
         page.cleanup();
+        window.clearTimeout(timer);
+        timer = watchdog();
         onProgress(`Извлечена страница ${i} из ${document.numPages}`);
       }
       if (!pages.some((p) => p.text.trim()))
         throw new Error("Не найден текстовый слой PDF. OCR не реализован.");
       return pages;
+    } catch (cause) {
+      signal.throwIfAborted();
+      if (stalled)
+        throw new Error("Чтение PDF остановилось: за минуту не извлечено ни одной страницы.");
+      throw cause;
     } finally {
       signal.removeEventListener("abort", abort);
       window.clearTimeout(timer);
-      await task.destroy();
+      await task.destroy().catch(() => undefined);
     }
   }
   const text = await decodeStudioDocument(file, signal, (current, total, unit) =>

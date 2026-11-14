@@ -1,6 +1,6 @@
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { Type } from "typebox";
-import type { IdentityContext } from "@cosmora/contracts";
+import { DOCUMENT_LIBRARY_PDF_MAX_PAGES, type IdentityContext } from "@cosmora/contracts";
 import { DocumentLibraryError, type DocumentLibraryStore } from "@cosmora/db";
 import { chunkLibraryPages, libraryTerms, rankLibraryChunks, libraryCitation } from "@cosmora/core";
 
@@ -92,12 +92,15 @@ export function registerDocumentLibraryRoutes(
             pages: Type.Array(
               Type.Object(
                 {
-                  page: Type.Union([Type.Integer({ minimum: 1, maximum: 500 }), Type.Null()]),
+                  page: Type.Union([
+                    Type.Integer({ minimum: 1, maximum: DOCUMENT_LIBRARY_PDF_MAX_PAGES }),
+                    Type.Null()
+                  ]),
                   text: Type.String({ maxLength: 2_000_000 })
                 },
                 { additionalProperties: false }
               ),
-              { minItems: 1, maxItems: 500 }
+              { minItems: 1, maxItems: DOCUMENT_LIBRARY_PDF_MAX_PAGES }
             )
           },
           { additionalProperties: false }

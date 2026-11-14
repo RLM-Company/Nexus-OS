@@ -1,5 +1,6 @@
 "use client";
 
+import { prepareLibraryUpload } from "./library-archive-import";
 import { useDeferredValue, useEffect, useRef, useState } from "react";
 import type { ChatAttachment } from "@cosmora/contracts/chat-attachments";
 import {
@@ -271,8 +272,16 @@ export function StudioDocumentLibrary({ projectId, onCompose, onProjectCreated }
     setUploadQueue([]);
     setError("");
     try {
-      const result = await runLibraryUploadQueue(
+      setStatus("");
+      const { files: documents, skipped } = await prepareLibraryUpload(
         selectedFiles,
+        controller.signal,
+        (name) => {
+          if (alive.current) setStatus("Распаковываем: " + name);
+        }
+      );
+      const result = await runLibraryUploadQueue(
+        documents,
         uploadAdapter(),
         controller.signal,
         (items) => {
@@ -281,7 +290,7 @@ export function StudioDocumentLibrary({ projectId, onCompose, onProjectCreated }
       );
       if (alive.current)
         setStatus(
-          `Готово: ${result.filter((item) => item.state === "ready").length} из ${result.length}. Подробности — в результатах загрузки.`
+          `Готово: ${result.filter((item) => item.state === "ready").length} из ${result.length}. ${skipped ? "Пропущено файлов в ZIP: " + skipped + ". " : ""}Подробности — в результатах загрузки.`
         );
     } catch (cause) {
       if (alive.current && !controller.signal.aborted)
@@ -576,7 +585,7 @@ export function StudioDocumentLibrary({ projectId, onCompose, onProjectCreated }
               type="file"
               multiple
               hidden
-              accept=".pdf,.docx,.txt,.csv"
+              accept=".pdf,.docx,.txt,.csv,.zip"
               onChange={(event) => {
                 const files = Array.from(event.currentTarget.files ?? []);
                 event.currentTarget.value = "";
@@ -610,7 +619,7 @@ export function StudioDocumentLibrary({ projectId, onCompose, onProjectCreated }
                   Отменить загрузку
                 </button>
               )}
-            <small>Перетащите PDF, DOCX, TXT или CSV сюда · до 20 МБ на файл</small>
+            <small>PDF, DOCX, TXT, CSV до 20 МБ · ZIP с документами до 24 МБ</small>
           </div>
           {status && <p role="status">{busy ? <ShiningText>{status}</ShiningText> : status}</p>}
           {error && <SystemMessage>{error}</SystemMessage>}

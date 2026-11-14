@@ -1,3 +1,4 @@
+import { DOCUMENT_LIBRARY_PDF_MAX_PAGES } from "@cosmora/contracts";
 /** Bounded, deterministic text indexing. No model calls or external services. */
 export type LibraryPage = { page: number | null; text: string };
 export type LibraryChunk = {
@@ -11,7 +12,7 @@ export type LibraryChunk = {
 export const LIBRARY_LIMITS = {
   fileBytes: 20_000_000,
   textCharacters: 2_000_000,
-  pdfPages: 500,
+  pdfPages: DOCUMENT_LIBRARY_PDF_MAX_PAGES,
   chunksPerFile: 5_000,
   filesPerProject: 100,
   bytesPerProject: 100_000_000,
@@ -83,7 +84,10 @@ export function chunkLibraryPages(
   let ordinal = 0;
   for (const page of pages) {
     let globalLine = 0;
-    if (page.page !== null && (!Number.isInteger(page.page) || page.page < 1 || page.page > 500))
+    if (
+      page.page !== null &&
+      (!Number.isInteger(page.page) || page.page < 1 || page.page > LIBRARY_LIMITS.pdfPages)
+    )
       throw new Error("Invalid document page");
     let current = "";
     let start = globalLine + 1;
