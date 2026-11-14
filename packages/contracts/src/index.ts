@@ -70,3 +70,5 @@ export {
   OfficeVersionSchema
 } from "./office-workspace.js";
 export type { OfficeOperation, OfficeCursor } from "./office-workspace.js";
+
+export { DOCUMENT_LIBRARY_PDF_MAX_PAGES } from "./document-library.js";

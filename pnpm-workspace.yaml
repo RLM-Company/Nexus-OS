@@ -8,3 +8,4 @@ allowBuilds:
   onnxruntime-node: false
   # The distributed JS is ready; this script only checks version conventions.
   protobufjs: false
+  tesseract.js: false

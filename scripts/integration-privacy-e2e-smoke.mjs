@@ -21,6 +21,8 @@ const emit = (source, target) => {
     out = out
       .replaceAll('"@cosmora/contracts"', '"./canvas-artifacts.js"')
       .replaceAll('"@cosmora/contracts/data-workspace"', '"./data-workspace.js"');
+  if (source === "packages/db/src/document-library-store.ts")
+    out = out.replaceAll('"@cosmora/contracts"', '"./document-library.js"');
   const p = join(temp, target);
   mkdirSync(resolve(p, ".."), { recursive: true });
   writeFileSync(p, out);
@@ -49,6 +51,7 @@ try {
       "privacy/integrated-adapters.js"
     ],
     ["packages/db/src/document-library-store.ts", "document-library-store.js"],
+    ["packages/contracts/src/document-library.ts", "document-library.js"],
     ["packages/db/src/canvas-artifact-store.ts", "canvas-artifact-store.js"],
     ["packages/contracts/src/canvas-artifacts.ts", "canvas-artifacts.js"],
     ["packages/contracts/src/data-workspace.ts", "data-workspace.js"],
