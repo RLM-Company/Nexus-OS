@@ -179,7 +179,7 @@ export class ResearchSynthesis {
       request.constraints.max_output_tokens,
       RESEARCH_LIMITS.maxSynthesisOutputTokens
     );
-    request.constraints.timeout_ms = Math.min(request.constraints.timeout_ms, 30_000);
+    request.constraints.timeout_ms = Math.min(request.constraints.timeout_ms || 30_000, 30_000);
     request.idempotency_key = `${run.id}-${run.model?.revision ?? 0}`;
     this.gateway.assertRoute(request);
     this.budget.createRun(run.owner_id, run.project_id, modelRunId);

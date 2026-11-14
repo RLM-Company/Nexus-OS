@@ -108,7 +108,7 @@ export class ManagerWorkCoordinator {
     this.operationTimeoutMs = dependencies.operationTimeoutMs ?? 600_000;
     if (
       !Number.isInteger(this.operationTimeoutMs) ||
-      this.operationTimeoutMs < 1 ||
+      this.operationTimeoutMs < 0 ||
       this.operationTimeoutMs > 1_800_000
     )
       throw new Error("Invalid Work operation time budget");
@@ -395,7 +395,11 @@ export class ManagerWorkCoordinator {
       remainingOutput - gameReviewReserve
     );
     if (request.constraints.max_output_tokens < 1) throw new Error("EXECUTION_BUDGET_EXCEEDED");
-    if (work.request.output_contract?.kind === "game_project" && stage === "draft")
+    if (
+      request.constraints.timeout_ms > 0 &&
+      work.request.output_contract?.kind === "game_project" &&
+      stage === "draft"
+    )
       request.constraints.timeout_ms = Math.max(request.constraints.timeout_ms, 180_000);
     return tagContextMemoryRequest(request, recalled);
   }
@@ -636,25 +640,28 @@ export class ManagerWorkCoordinator {
     this.dependencies.store.assertWritable(ownerId);
     if (this.isOwnerFenced(ownerId)) return;
     const controller = new AbortController();
-    const deadline = setTimeout(() => {
-      this.outputWriters.get(id)?.flush();
-      controller.abort(new Error("TASK_TIME_BUDGET"));
-      try {
-        const latest = this.dependencies.store.get(id, ownerId);
-        if (latest?.status === "running" && !this.isOwnerFenced(ownerId))
-          this.checkpoint(
-            {
-              ...latest,
-              status: "failed",
-              error_code: "TASK_TIME_BUDGET"
-            },
-            "Достигнут лимит времени; автоматический повтор отключён"
-          );
-      } catch {
-        /* The active request remains fenced until its transport settles. */
-      }
-    }, this.operationTimeoutMs);
-    deadline.unref?.();
+    const deadline =
+      this.operationTimeoutMs === 0
+        ? undefined
+        : setTimeout(() => {
+            this.outputWriters.get(id)?.flush();
+            controller.abort(new Error("TASK_TIME_BUDGET"));
+            try {
+              const latest = this.dependencies.store.get(id, ownerId);
+              if (latest?.status === "running" && !this.isOwnerFenced(ownerId))
+                this.checkpoint(
+                  {
+                    ...latest,
+                    status: "failed",
+                    error_code: "TASK_TIME_BUDGET"
+                  },
+                  "Достигнут лимит времени; автоматический повтор отключён"
+                );
+            } catch {
+              /* The active request remains fenced until its transport settles. */
+            }
+          }, this.operationTimeoutMs);
+    deadline?.unref?.();
     // Graph/provider hooks can synchronously reenter Work or its lifecycle controls.
     // Publish the real settlement promise before calling any execution dependency.
     let complete!: () => void;

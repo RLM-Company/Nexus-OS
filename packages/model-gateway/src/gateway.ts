@@ -389,10 +389,13 @@ export class ModelGateway {
     let timedOut = false;
     const onExternalAbort = (): void => controller.abort(externalSignal?.reason);
     externalSignal?.addEventListener("abort", onExternalAbort, { once: true });
-    const timer = setTimeout(() => {
-      timedOut = true;
-      controller.abort(new Error("Provider timeout"));
-    }, timeoutMs);
+    const timer =
+      timeoutMs === 0
+        ? undefined
+        : setTimeout(() => {
+            timedOut = true;
+            controller.abort(new Error("Provider timeout"));
+          }, timeoutMs);
 
     try {
       for await (const event of adapter.stream(request, controller.signal)) yield event;

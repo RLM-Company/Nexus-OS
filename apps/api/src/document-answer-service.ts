@@ -183,7 +183,7 @@ export class DocumentAnswerService {
       ];
       if (request.messages[1]!.content.length > 15_000) throw new Error("CONTEXT_TOO_LARGE");
       request.constraints.max_output_tokens = Math.min(request.constraints.max_output_tokens, 900);
-      request.constraints.timeout_ms = Math.min(request.constraints.timeout_ms, 60_000);
+      request.constraints.timeout_ms = Math.min(request.constraints.timeout_ms || 60_000, 60_000);
       request.routing.fallback_allowed = false;
       request.routing.estimated_input_tokens = estimateInputTokensUpperBound(request.messages);
       this.gateway!.assertRoute(request);

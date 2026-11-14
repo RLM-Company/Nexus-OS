@@ -697,7 +697,7 @@ describe("durable Manager work", () => {
 
   it("rejects invalid operation deadlines before accepting execution", async () => {
     const f = await fixture();
-    for (const operationTimeoutMs of [0, -1, 1.5, Infinity, 1800001])
+    for (const operationTimeoutMs of [-1, 1.5, Infinity, 1800001])
       expect(() => new ManagerWorkCoordinator({ ...f.dependencies, operationTimeoutMs })).toThrow(
         /time budget/
       );
