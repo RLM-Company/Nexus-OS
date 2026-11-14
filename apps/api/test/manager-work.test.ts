@@ -879,7 +879,7 @@ describe("durable Manager work", () => {
           }
         ]
       },
-      onCall: async (r) => {
+      onCall: (r) => {
         stages.push(r.task_type);
       }
     });
