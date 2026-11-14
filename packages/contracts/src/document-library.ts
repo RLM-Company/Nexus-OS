@@ -1,0 +1,1 @@
+export const DOCUMENT_LIBRARY_PDF_MAX_PAGES = 3_000;

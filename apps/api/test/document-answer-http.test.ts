@@ -8,6 +8,7 @@ import {
   DocumentLibraryStore,
   DocumentAnswerStore
 } from "@cosmora/db";
+import type { ModelRequest } from "@cosmora/contracts";
 import { ChatService } from "@cosmora/core";
 import { buildApp } from "../src/app.js";
 import {
@@ -35,27 +36,32 @@ describe("real authenticated HTTP document answer flow (fixture transport, zero 
       const project = projectStore.createProject("Document QA", "qa-http-doc").project.id;
       const library = new DocumentLibraryStore(db.sqlite);
       const answers = new DocumentAnswerStore(db.sqlite);
-      const records: string[] = [];
+      const records: number[] = [];
+      const requests: string[] = [];
       const budget: DocumentAnswerOwnerBudget = {
-        reserve: () => {
-          records.push("reserve");
+        reserve: (_owner, _id, attempt) => {
+          records.push(attempt.attempt);
           return true;
         },
-        reconcile: () => {
-          records.push("reconcile");
-        },
+        reconcile: () => undefined,
         uncertain: () => {
-          records.push("uncertain");
+          throw new Error("Unexpected uncertain attempt");
         }
       };
       const gateway = {
         assertRoute: () => undefined,
-        async *stream() {
+        async *stream(request: ModelRequest) {
+          const input = request.messages.at(-1)!.content;
+          requests.push(input);
           yield { type: "route.selected" as const, route };
-          yield {
-            type: "text.delta" as const,
-            delta: "Документ говорит: «Конец договора в октябре 2027» [S1]"
-          };
+          const delta = input.includes("Ошибка обработки")
+            ? "«Придуманная цитата» [S999]"
+            : input.includes("«Маркер без совпадения» [S2]")
+              ? "«Конец договора в октябре 2027» [S1]\n«Маркер без совпадения» [S2]"
+              : input.includes("Маркер без совпадения")
+                ? "«Маркер без совпадения» [S2]"
+                : "Документ говорит: «Конец договора в октябре 2027» [S1]";
+          yield { type: "text.delta" as const, delta };
           yield {
             type: "response.completed" as const,
             provider: "fixture",
@@ -116,10 +122,77 @@ describe("real authenticated HTTP document answer flow (fixture transport, zero 
       }
       expect(saved.status, saved.error_code ?? "").toBe("done");
       expect(saved.answer).toContain("contract.txt, строки 1–1");
-      expect(records).toEqual(["reserve", "reconcile"]);
+      expect(records).toEqual([0]);
       const retrieved = await app.inject({ method: "GET", url: `${url}/answers/${answerId}` });
       expect(retrieved.statusCode).toBe(200);
       expect(retrieved.json<{ status: string }>().status).toBe("done");
+      const pdf = library.stage(
+        project,
+        "local-owner",
+        "appendix.pdf",
+        Buffer.from("%PDF-1.4\nfixture")
+      );
+      const pdfPages = [
+        { page: 1, text: "" },
+        { page: 2, text: "Маркер без совпадения" }
+      ];
+      const failed = library.stage(
+        project,
+        "local-owner",
+        "notes.txt",
+        Buffer.from("Ошибка обработки")
+      );
+      const failedPages = [{ page: null, text: "Ошибка обработки" }];
+      expect(
+        (
+          await app.inject({
+            method: "PUT",
+            url: url + "/" + pdf.id + "/index",
+            payload: { pages: pdfPages }
+          })
+        ).statusCode
+      ).toBe(200);
+      expect(
+        (
+          await app.inject({
+            method: "PUT",
+            url: url + "/" + failed.id + "/index",
+            payload: { pages: failedPages }
+          })
+        ).statusCode
+      ).toBe(200);
+      records.length = 0;
+      requests.length = 0;
+      const deep = await app.inject({
+        method: "POST",
+        url: url + "/answers",
+        payload: {
+          mode: "deep",
+          question: "Когда конец договора?",
+          file_ids: [id, pdf.id, failed.id]
+        }
+      });
+      expect(deep.statusCode).toBe(202);
+      const deepId = deep.json<{ id: string }>().id;
+      await expect.poll(() => answers.get(project, "local-owner", deepId)?.status).toBe("done");
+      const report = answers.get(project, "local-owner", deepId)!;
+      expect(report.coverage).toMatchObject({
+        phase: "complete",
+        total_chunks: 3,
+        analyzed_chunks: 2,
+        failed_chunks: 1,
+        files: [
+          { name: "contract.txt", analyzed_chunks: 1 },
+          { name: "appendix.pdf", analyzed_chunks: 1, indexed_pages: 1, total_pages: 2 },
+          { name: "notes.txt", analyzed_chunks: 0, failed_chunks: 1 }
+        ]
+      });
+      expect(report.answer).toContain("appendix.pdf, стр. 2");
+      expect(records.sort((a, b) => a - b)).toEqual([0, 2, 4, 6]);
+      expect(requests).toHaveLength(4);
+      expect(requests[3]).toContain("Конец договора в октябре 2027");
+      expect(requests[3]).toContain("Маркер без совпадения");
+      expect(requests[3]).not.toContain("Придуманная цитата");
       const deleted = await app.inject({ method: "DELETE", url: `${url}/${id}` });
       expect(deleted.statusCode).toBe(204);
       expect(saved.sources[0]?.content).toContain("2027"); // immutable evidence snapshot retained in answer

@@ -30,6 +30,7 @@ export type LibraryFile = {
   error_code: string | null;
   characters: number;
   chunks: number;
+  pdf_pages: number | null;
   created_at: string;
   updated_at: string;
 };
@@ -60,7 +61,7 @@ export class DocumentLibraryStore {
     if (!this.ownedProject(projectId, ownerId)) throw new DocumentLibraryError("NOT_FOUND");
     return this.sqlite
       .prepare(
-        `SELECT id,project_id,name,format,bytes,status,error_code,characters,chunks,created_at,updated_at
+        `SELECT id,project_id,name,format,bytes,status,error_code,characters,chunks,pdf_pages,created_at,updated_at
       FROM document_library_files WHERE project_id=? AND owner_id=? ORDER BY created_at DESC`
       )
       .all(projectId, ownerId) as LibraryFile[];
@@ -70,7 +71,7 @@ export class DocumentLibraryStore {
     return (
       (this.sqlite
         .prepare(
-          `SELECT id,project_id,name,format,bytes,status,error_code,characters,chunks,created_at,updated_at
+          `SELECT id,project_id,name,format,bytes,status,error_code,characters,chunks,pdf_pages,created_at,updated_at
       FROM document_library_files WHERE id=? AND project_id=? AND owner_id=?`
         )
         .get(id, projectId, ownerId) as LibraryFile | undefined) ?? null
@@ -161,7 +162,7 @@ export class DocumentLibraryStore {
       this.sqlite
         .prepare(
           `UPDATE document_library_files SET status='processing',error_code=NULL,
-        characters=0,chunks=0,updated_at=? WHERE id=? AND project_id=? AND owner_id=?`
+        characters=0,chunks=0,pdf_pages=NULL,updated_at=? WHERE id=? AND project_id=? AND owner_id=?`
         )
         .run(new Date().toISOString(), id, projectId, ownerId);
       this.sqlite.exec("COMMIT");
@@ -247,11 +248,12 @@ export class DocumentLibraryStore {
       this.sqlite
         .prepare(
           `UPDATE document_library_files SET status='ready', error_code=NULL,
-        characters=?, chunks=?, updated_at=? WHERE id=?`
+        characters=?, chunks=?, pdf_pages=?, updated_at=? WHERE id=?`
         )
         .run(
           pages.reduce((sum, page) => sum + page.text.length, 0),
           chunks.length,
+          current.format === "pdf" ? pages.length : null,
           new Date().toISOString(),
           id
         );
@@ -318,6 +320,34 @@ export class DocumentLibraryStore {
         .get(chunkId, fileId, projectId, ownerId) as LibraryHitRow | undefined) ?? null
     );
   }
+  indexedChunks(
+    projectId: string,
+    ownerId: string,
+    fileId: string,
+    afterOrdinal: number
+  ): LibraryHitRow[] {
+    return this.sqlite
+      .prepare(
+        `SELECT c.id AS chunk_id,c.file_id,c.ordinal,c.page,c.line_start,c.line_end,c.content,f.name
+        FROM document_library_chunks c JOIN document_library_files f ON f.id=c.file_id
+        JOIN projects p ON p.id=f.project_id AND p.owner_id=f.owner_id
+        WHERE f.id=? AND f.project_id=? AND f.owner_id=? AND f.status='ready' AND c.ordinal>?
+        ORDER BY c.ordinal LIMIT 24`
+      )
+      .all(fileId, projectId, ownerId, afterOrdinal) as LibraryHitRow[];
+  }
+
+  indexedPdfPages(projectId: string, ownerId: string, fileId: string): number {
+    const row = this.sqlite
+      .prepare(
+        `SELECT COUNT(DISTINCT c.page) AS pages FROM document_library_chunks c
+        JOIN document_library_files f ON f.id=c.file_id
+        WHERE f.id=? AND f.project_id=? AND f.owner_id=? AND f.status='ready'`
+      )
+      .get(fileId, projectId, ownerId) as { pages: number };
+    return row.pages;
+  }
+
   search(
     projectId: string,
     ownerId: string,

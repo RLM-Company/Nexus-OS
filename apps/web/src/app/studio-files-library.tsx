@@ -15,6 +15,7 @@ import {
   createPdfReport,
   downloadReport,
   reportLines,
+  answerCoverageLines,
   answerReportLines,
   createAnswerCsvReport,
   type AnswerReport
@@ -152,7 +153,7 @@ export function StudioDocumentLibrary({ projectId, onCompose, onProjectCreated }
           timer = setTimeout(() => void poll(), 1200);
         else setActiveAnswerId(null);
       } catch {
-        if (!controller.signal.aborted) setActiveAnswerId(null);
+        if (!controller.signal.aborted) timer = setTimeout(() => void poll(), 3000);
       }
     };
     void poll();
@@ -433,13 +434,14 @@ export function StudioDocumentLibrary({ projectId, onCompose, onProjectCreated }
     }
   };
 
-  const askModel = async () => {
+  const askModel = async (mode: "search" | "deep" = "search") => {
     if (
       !base ||
       !answerAvailable ||
       busy ||
+      !!activeAnswerId ||
       !chosen.length ||
-      chosen.length > 20 ||
+      chosen.length > (mode === "deep" ? 100 : 20) ||
       question.trim().length < 2
     )
       return;
@@ -449,11 +451,13 @@ export function StudioDocumentLibrary({ projectId, onCompose, onProjectCreated }
       const result = await libraryFetch<AnswerReport>(`${base}/answers`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ question: question.trim(), file_ids: chosen })
+        body: JSON.stringify({ question: question.trim(), file_ids: chosen, mode })
       });
       setAnswers((old) => [result, ...old.filter((entry) => entry.id !== result.id)]);
       setActiveAnswerId(result.id);
-      setStatus("Запрос модели поставлен в очередь с учётом бюджета. Ссылки будут проверены.");
+      setStatus(
+        mode === "deep" ? "Подробный анализ запущен." : "Запрос модели поставлен в очередь."
+      );
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Не удалось начать ответ модели");
     } finally {
@@ -796,6 +800,7 @@ export function StudioDocumentLibrary({ projectId, onCompose, onProjectCreated }
                 disabled={
                   busy ||
                   !answerAvailable ||
+                  !!activeAnswerId ||
                   !chosen.length ||
                   chosen.length > 20 ||
                   question.trim().length < 2
@@ -804,9 +809,22 @@ export function StudioDocumentLibrary({ projectId, onCompose, onProjectCreated }
               >
                 Ответ модели по выбранным документам
               </button>
+              <button
+                type="button"
+                disabled={
+                  busy ||
+                  !answerAvailable ||
+                  !!activeAnswerId ||
+                  !chosen.length ||
+                  question.trim().length < 2
+                }
+                onClick={() => void askModel("deep")}
+              >
+                Подробный анализ
+              </button>
               <small>
                 {chosen.length > 20
-                  ? "Для одного ответа модели выберите не более 20 файлов"
+                  ? "Для быстрого ответа выберите до 20 файлов. Подробный анализ охватывает всю подборку."
                   : chosen.length
                     ? `По выбранным файлам: ${chosen.length}`
                     : "Для ответа модели выберите файлы выше"}
@@ -827,6 +845,7 @@ export function StudioDocumentLibrary({ projectId, onCompose, onProjectCreated }
                 <select
                   id="saved-answer"
                   value={saved?.id ?? ""}
+                  disabled={!!activeAnswerId}
                   onChange={(event) => {
                     const id = event.target.value;
                     setAnswers((old) => {
@@ -849,13 +868,18 @@ export function StudioDocumentLibrary({ projectId, onCompose, onProjectCreated }
                   {saved.status === "done"
                     ? "Ответ сохранён"
                     : saved.status === "running"
-                      ? "Модель анализирует источники…"
+                      ? saved.coverage?.phase === "synthesis"
+                        ? "Собираем отчёт…"
+                        : "Модель анализирует источники…"
                       : saved.status === "queued"
                         ? "Ожидание запуска"
                         : saved.status === "cancelled"
                           ? "Запрос отменён"
                           : `Ошибка: ${saved.error_code ?? "неизвестно"}`}
                 </p>
+                {saved.coverage && saved.status !== "done" && (
+                  <p>{answerCoverageLines(saved.coverage)[0]}</p>
+                )}
                 {saved.status === "done" && (
                   <pre className={styles.preview}>{answerReportLines(saved).join("\n")}</pre>
                 )}

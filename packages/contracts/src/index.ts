@@ -71,4 +71,4 @@ export {
 } from "./office-workspace.js";
 export type { OfficeOperation, OfficeCursor } from "./office-workspace.js";
 
-export const DOCUMENT_LIBRARY_PDF_MAX_PAGES = 3_000;
+export { DOCUMENT_LIBRARY_PDF_MAX_PAGES } from "./document-library.js";
