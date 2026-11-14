@@ -147,6 +147,8 @@ type LocalChatSession = {
   created_at: string;
   updated_at: string;
   last_message_preview?: string | null;
+  project_id?: string | null;
+  confidential?: boolean;
 };
 
 type GeneralChatAcceptedResponse = {
@@ -533,6 +535,10 @@ export default function Home() {
   const [, setLastCompletedRoute] = useState<CompletedRoute | null>(null);
   const [runPhase, setRunPhase] = useState<RunPhase>("idle");
   const [projectView, setProjectView] = useState<ProjectView>("chat");
+  /** Новый чат, который ещё не создан, но должен родиться в папке проекта. */
+  const [pendingProjectId, setPendingProjectId] = useState<string | null>(null);
+  /** Развёрнутая папка проекта в навигации, независимо от активного экрана. */
+  const [openProjectFolderId, setOpenProjectFolderId] = useState<string | null>(null);
   const [contextPreview, setContextPreview] = useState(false);
   useEffect(() => {
     setContextPreview(new URLSearchParams(window.location.search).get("context_preview") === "1");
@@ -907,7 +913,10 @@ export default function Home() {
   const loadGeneralChats = useCallback(async () => {
     const data = await api<{
       items: Array<
-        Pick<LocalChatSession, "id" | "title" | "created_at" | "updated_at" | "mode"> & {
+        Pick<
+          LocalChatSession,
+          "id" | "title" | "created_at" | "updated_at" | "mode" | "project_id" | "confidential"
+        > & {
           last_message_preview: string | null;
         }
       >;
@@ -1239,6 +1248,7 @@ export default function Home() {
       restoredSurface: WorkspaceSurface = "manager"
     ): Promise<void> => {
       const epoch = ++viewEpochRef.current;
+      setPendingProjectId(null);
       setSurface(restoredSurface);
       selectedProjectRef.current = projectId;
       replaceConsoleRoute(projectId, view);
@@ -1971,6 +1981,7 @@ export default function Home() {
           const body = {
             ...(activeLocalChatId ? { content } : { initial_message: content, mode: chatMode }),
             attachments: submitted.files,
+            ...(!activeLocalChatId && pendingProjectId ? { project_id: pendingProjectId } : {}),
             ...(composerActions.web_search ? { web_search: true } : {}),
             ...(composerActions.text_action ? { text_action: composerActions.text_action } : {})
           };
@@ -1982,6 +1993,7 @@ export default function Home() {
             void loadGeneralChats().catch(() => undefined);
             return;
           }
+          if (!activeLocalChatId && pendingProjectId) setPendingProjectId(null);
           if (clearedDraft) {
             chatAttachments.replace([]);
             setDraft("");
@@ -2181,6 +2193,7 @@ export default function Home() {
   };
 
   const resetToLocalChat = (chatId: string | null, rotate = false): void => {
+    setPendingProjectId(null);
     pendingComposeRef.current = null;
     if (chatId === null) {
       if (pendingChatSendRef.current?.path === "/api/v1/chats") pendingChatSendRef.current = null;
@@ -2467,11 +2480,20 @@ export default function Home() {
                       title={chat.title}
                       pinned={pins.chats.includes(chat.id)}
                       disabled={!pinsHydrated || (sending && activeLocalChatId === chat.id)}
+                      projectId={chat.project_id ?? null}
+                      projects={projects}
                       onPin={() => changePin("chats", chat.id)}
                       onOpen={() => void openLocalChat(chat.id)}
                       onRename={(title) =>
                         setLocalChats((current) =>
                           current.map((item) => (item.id === chat.id ? { ...item, title } : item))
+                        )
+                      }
+                      onMove={(projectId) =>
+                        setLocalChats((current) =>
+                          current.map((item) =>
+                            item.id === chat.id ? { ...item, project_id: projectId } : item
+                          )
                         )
                       }
                       onDelete={() => {
@@ -2529,7 +2551,12 @@ export default function Home() {
                           ? "project-item active"
                           : "project-item"
                       }
-                      onClick={() => void openProject(project.id)}
+                      onClick={() => {
+                        setOpenProjectFolderId((current) =>
+                          current === project.id ? null : project.id
+                        );
+                        void openProject(project.id);
+                      }}
                     >
                       <span className="project-glyph">
                         {project.title.slice(0, 1).toUpperCase()}
@@ -2550,6 +2577,40 @@ export default function Home() {
                     >
                       <PinIcon />
                     </button>
+                    {openProjectFolderId === project.id && (
+                      <div
+                        className="project-chat-folder"
+                        aria-label={`Чаты проекта ${project.title}`}
+                      >
+                        {localChats
+                          .filter((chat) => chat.project_id === project.id)
+                          .map((chat) => (
+                            <button
+                              key={chat.id}
+                              type="button"
+                              className={
+                                activeLocalChatId === chat.id
+                                  ? "project-chat-item active"
+                                  : "project-chat-item"
+                              }
+                              onClick={() => void openLocalChat(chat.id)}
+                            >
+                              <span>{chat.title}</span>
+                            </button>
+                          ))}
+                        <button
+                          type="button"
+                          className="project-chat-item new"
+                          onClick={() => {
+                            newChat();
+                            setPendingProjectId(project.id);
+                            setActiveProject(null);
+                          }}
+                        >
+                          + Новый чат в проекте
+                        </button>
+                      </div>
+                    )}
                   </div>
                 ))}
                 {navigationSearch && matchingProjects.length === 0 && (

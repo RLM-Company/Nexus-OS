@@ -37,6 +37,10 @@ export interface StoredGeneralChat {
   id: string;
   title: string;
   mode: "kosmora" | "work" | "coscode";
+  /** null = общий список; иначе чат принадлежит папке проекта. */
+  project_id: string | null;
+  /** Конфиденциальный чат не участвует в обмене проектным контекстом. */
+  confidential: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -110,7 +114,11 @@ const sameAction = (left: GeneralChatAction, right: StoredGeneralChatMessage): b
 
 type SqlRow = Record<string, unknown>;
 const timestamp = (): string => new Date().toISOString();
-const asChat = (row: SqlRow): StoredGeneralChat => row as unknown as StoredGeneralChat;
+const asChat = (row: SqlRow): StoredGeneralChat => ({
+  ...(row as unknown as StoredGeneralChat),
+  project_id: (row.project_id as string | null) ?? null,
+  confidential: Boolean(row.confidential)
+});
 const asMessage = (row: SqlRow): StoredGeneralChatMessage => {
   const { attachments_json, text_action_json, ...message } = row;
   if (typeof attachments_json !== "string") throw new Error("Invalid persisted chat attachments");
@@ -164,26 +172,33 @@ export class GeneralChatStore {
 
   listChats(
     ownerId = LOCAL_OWNER_ID,
-    archived = false
+    archived = false,
+    projectId?: string | null
   ): Array<StoredGeneralChat & { last_message_preview: string | null }> {
+    // По умолчанию возвращаем ВСЕ чаты владельца (общий список + проектные),
+    // чтобы навигация и поиск не теряли перенесённые чаты. Явный projectId
+    // фильтрует папку проекта; null здесь означает «без фильтра».
+    const projectFilter = typeof projectId === "string" ? " AND c.project_id = ?" : "";
     return this.#sqlite
       .prepare(
-        `SELECT c.id, c.title, c.mode, c.created_at, c.updated_at,
+        `SELECT c.id, c.title, c.mode, c.project_id, c.confidential, c.created_at, c.updated_at,
           (SELECT substr(content, 1, 240) FROM general_chat_messages m
            WHERE m.chat_id = c.id ORDER BY m.created_at DESC, m.rowid DESC LIMIT 1)
            AS last_message_preview
-         FROM general_chats c WHERE c.owner_id = ? AND c.archived = ?
+         FROM general_chats c WHERE c.owner_id = ? AND c.archived = ?${projectFilter}
          ORDER BY c.updated_at DESC`
       )
-      .all(ownerId, Number(archived)) as unknown as Array<
-      StoredGeneralChat & { last_message_preview: string | null }
-    >;
+      .all(
+        ...(typeof projectId === "string"
+          ? [ownerId, Number(archived), projectId]
+          : [ownerId, Number(archived)])
+      ) as unknown as Array<StoredGeneralChat & { last_message_preview: string | null }>;
   }
 
   getChat(chatId: string, ownerId = LOCAL_OWNER_ID): StoredGeneralChat | null {
     const row = this.#sqlite
       .prepare(
-        "SELECT id, title, mode, created_at, updated_at FROM general_chats WHERE id = ? AND owner_id = ?"
+        "SELECT id, title, mode, project_id, confidential, created_at, updated_at FROM general_chats WHERE id = ? AND owner_id = ?"
       )
       .get(chatId, ownerId) as SqlRow | undefined;
     return row ? asChat(row) : null;
@@ -246,12 +261,35 @@ export class GeneralChatStore {
   updateChat(
     chatId: string,
     ownerId: string,
-    update: { title?: string; archived?: boolean }
+    update: {
+      title?: string;
+      archived?: boolean;
+      project_id?: string | null;
+      confidential?: boolean;
+    }
   ): StoredGeneralChat | null {
     const chat = this.getChat(chatId, ownerId);
     if (!chat) return null;
     if (update.title !== undefined && (!update.title.trim() || update.title.length > 160))
       throw new Error("Invalid chat title");
+    if (update.project_id !== undefined && update.project_id !== null) {
+      if (typeof update.project_id !== "string" || !update.project_id.trim())
+        throw new Error("Invalid project id");
+      // Проект должен существовать и принадлежать тому же владельцу.
+      const owned = this.#sqlite
+        .prepare("SELECT 1 FROM projects WHERE id = ? AND owner_id = ?")
+        .get(update.project_id, ownerId);
+      if (!owned) throw new Error("PROJECT_NOT_FOUND");
+      // Перенос во время активного ответа запрещён, как и архивация.
+      if (
+        this.#sqlite
+          .prepare(
+            "SELECT 1 FROM general_chat_runs WHERE chat_id = ? AND status IN ('queued', 'running')"
+          )
+          .get(chatId)
+      )
+        throw new GeneralChatBusyError();
+    }
     if (
       update.archived === true &&
       this.#sqlite
@@ -263,11 +301,17 @@ export class GeneralChatStore {
       throw new GeneralChatBusyError();
     this.#sqlite
       .prepare(
-        "UPDATE general_chats SET title = ?, archived = coalesce(?, archived), updated_at = ? WHERE id = ? AND owner_id = ?"
+        "UPDATE general_chats SET title = ?, archived = coalesce(?, archived), " +
+          "project_id = CASE WHEN ? THEN ? ELSE project_id END, " +
+          "confidential = coalesce(?, confidential), updated_at = ? " +
+          "WHERE id = ? AND owner_id = ?"
       )
       .run(
         update.title?.trim() ?? chat.title,
         update.archived === undefined ? null : Number(update.archived),
+        update.project_id === undefined ? 0 : 1,
+        update.project_id === undefined ? null : update.project_id,
+        update.confidential === undefined ? null : Number(update.confidential),
         timestamp(),
         chatId,
         ownerId
@@ -416,9 +460,18 @@ export class GeneralChatStore {
       const title = `${stem.slice(0, 130)} · вариант ${family.items.length}`;
       this.#sqlite
         .prepare(
-          "INSERT INTO general_chats(id,owner_id,title,mode,created_at,updated_at) VALUES(?,?,?,?,?,?)"
+          "INSERT INTO general_chats(id,owner_id,title,mode,project_id,confidential,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)"
         )
-        .run(input.client_branch_id, ownerId, title, parent.mode, createdAt, createdAt);
+        .run(
+          input.client_branch_id,
+          ownerId,
+          title,
+          parent.mode,
+          parent.project_id,
+          Number(parent.confidential),
+          createdAt,
+          createdAt
+        );
       const copy = this.#sqlite.prepare(
         `INSERT INTO general_chat_messages(id,chat_id,owner_id,role,content_type,content,attachments_json,status,run_id,error_code,created_at,updated_at)
          VALUES(?,?,?,?,'text',?,?,?,NULL,?,?,?)`
@@ -503,10 +556,17 @@ export class GeneralChatStore {
     ownerId = LOCAL_OWNER_ID,
     attachments: ChatAttachment[] = [],
     mode: StoredGeneralChat["mode"] = "kosmora",
-    action: GeneralChatAction = EMPTY_ACTION
+    action: GeneralChatAction = EMPTY_ACTION,
+    projectId: string | null = null
   ): AcceptedGeneralChatMessage {
     assertAttachments(attachments);
     if (!["kosmora", "work", "coscode"].includes(mode)) throw new Error("Invalid chat mode");
+    if (projectId !== null) {
+      const owned = this.#sqlite
+        .prepare("SELECT 1 FROM projects WHERE id = ? AND owner_id = ?")
+        .get(projectId, ownerId);
+      if (!owned) throw new Error("PROJECT_NOT_FOUND");
+    }
     const existing = this.findByClientMessageId(clientMessageId, ownerId);
     if (existing) {
       if (
@@ -525,9 +585,9 @@ export class GeneralChatStore {
     try {
       this.#sqlite
         .prepare(
-          "INSERT INTO general_chats (id, owner_id, title, mode, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)"
+          "INSERT INTO general_chats (id, owner_id, title, mode, project_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)"
         )
-        .run(chatId, ownerId, titleFor(initialMessage), mode, createdAt, createdAt);
+        .run(chatId, ownerId, titleFor(initialMessage), mode, projectId, createdAt, createdAt);
       const accepted = this.#insertMessage(
         chatId,
         initialMessage,

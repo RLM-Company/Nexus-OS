@@ -197,6 +197,10 @@ export const GeneralChatSchema = Type.Object(
     mode: Type.Optional(ChatModeSchema),
     id: EntityIdSchema,
     title: Type.String({ minLength: 1, maxLength: 160 }),
+    /** null/отсутствует = общий список; строка = папка проекта. */
+    project_id: Type.Optional(Type.Union([Type.String({ minLength: 1 }), Type.Null()])),
+    /** Конфиденциальный чат изолирован от проектного контекста. */
+    confidential: Type.Optional(Type.Boolean()),
     created_at: IsoDateTimeSchema,
     updated_at: IsoDateTimeSchema
   },
@@ -261,6 +265,8 @@ export const CreateGeneralChatRequestSchema = Type.Object(
     initial_message: Type.String({ minLength: 1, maxLength: 100_000, pattern: "\\S" }),
     client_message_id: EntityIdSchema,
     attachments: Type.Optional(ChatAttachmentsSchema),
+    /** Новый чат сразу в папке проекта; отсутствует = общий список. */
+    project_id: Type.Optional(Type.String({ minLength: 1, maxLength: 128 })),
     web_search: Type.Optional(Type.Boolean()),
     text_action: Type.Optional(ChatTextActionSchema)
   },
