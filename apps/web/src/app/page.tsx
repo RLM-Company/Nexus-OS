@@ -1248,6 +1248,7 @@ export default function Home() {
       restoredSurface: WorkspaceSurface = "manager"
     ): Promise<void> => {
       const epoch = ++viewEpochRef.current;
+      setPendingProjectId(null);
       setSurface(restoredSurface);
       selectedProjectRef.current = projectId;
       replaceConsoleRoute(projectId, view);
@@ -1985,7 +1986,6 @@ export default function Home() {
             ...(composerActions.text_action ? { text_action: composerActions.text_action } : {})
           };
           const accepted = await postChatMessage<GeneralChatAcceptedResponse>(path, body);
-          if (!activeLocalChatId && pendingProjectId) setPendingProjectId(null);
           const clearedDraft = acknowledgeDraft();
           if (clearedDraft)
             updateDraftActions(composerDraftKey, DEFAULT_COMPOSER_ACTIONS, composerActions);
@@ -1993,6 +1993,7 @@ export default function Home() {
             void loadGeneralChats().catch(() => undefined);
             return;
           }
+          if (!activeLocalChatId && pendingProjectId) setPendingProjectId(null);
           if (clearedDraft) {
             chatAttachments.replace([]);
             setDraft("");
@@ -2012,7 +2013,6 @@ export default function Home() {
             const existing = current.find((chat) => chat.id === accepted.chat.id);
             const updated: LocalChatSession = {
               ...accepted.chat,
-              project_id: pendingProjectId ?? existing?.project_id ?? null,
               last_message_preview: content.slice(0, 240),
               messages: [
                 ...(existing?.messages ?? []).filter(
@@ -2193,6 +2193,7 @@ export default function Home() {
   };
 
   const resetToLocalChat = (chatId: string | null, rotate = false): void => {
+    setPendingProjectId(null);
     pendingComposeRef.current = null;
     if (chatId === null) {
       if (pendingChatSendRef.current?.path === "/api/v1/chats") pendingChatSendRef.current = null;
@@ -2242,7 +2243,6 @@ export default function Home() {
       }
     }
     if (codeSpace) setChatMode("coscode");
-    setPendingProjectId(null);
     resetToLocalChat(null, true);
   };
 

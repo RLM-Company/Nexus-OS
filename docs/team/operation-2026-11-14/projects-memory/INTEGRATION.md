@@ -28,7 +28,7 @@ prompt, Drive, Multi-Agent, VPS/production, sidebar-реструктуризац
 
 `0069_general_chat_project.sql`: два аддитивных `ALTER TABLE` + индекс.
 Существующие чаты получают `project_id = NULL`, `confidential = 0`.
-Журнал миграций дополнен `idx: 68`. Повторный `runMigrations` идемпотентен.
+Журнал миграций дополнен `idx: 69`. Повторный `runMigrations` идемпотентен.
 
 ## Проверка для интегратора
 

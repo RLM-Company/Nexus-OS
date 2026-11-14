@@ -130,5 +130,5 @@ typecheck/lint contracts/core/db/api/web · prettier --check . · check:secrets 
 ## Следующий шаг
 
 Интегратору: слить PR, сверить `page.tsx`/`globals.css` с PR #589 при
-одновременном мердже, затем применить миграцию 0068 на VPS и повторить
+одновременном мердже, затем применить миграцию 0069 на VPS и повторить
 `GET /api/v1/chats?project_id=` на существующих данных.
