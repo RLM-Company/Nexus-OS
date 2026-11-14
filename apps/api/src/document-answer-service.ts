@@ -286,7 +286,7 @@ export class DocumentAnswerService {
     ];
     request.constraints.max_output_tokens = Math.min(
       request.constraints.max_output_tokens,
-      run.coverage ? (final ? 12_288 : 8_192) : 900
+      run.coverage ? (final ? 16_384 : 12_288) : 900
     );
     const callTimeout = run.coverage ? 180_000 : 60_000;
     request.constraints.timeout_ms = Math.min(
@@ -388,7 +388,7 @@ export class DocumentAnswerService {
           try {
             const output = await call(
               rules +
-                " Разбери все переданные фрагменты относительно вопроса. " +
+                " Разбери только эту часть. Это нормально, если она отвечает лишь на часть вопроса. Дай короткие независимые находки в один абзац. " +
                 "Если в партии нет ничего относящегося к вопросу, верни ровно: " +
                 NO_FINDINGS,
               `Вопрос: ${run.question}\n\n` +
