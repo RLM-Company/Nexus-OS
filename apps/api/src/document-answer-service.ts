@@ -286,9 +286,13 @@ export class DocumentAnswerService {
     ];
     request.constraints.max_output_tokens = Math.min(
       request.constraints.max_output_tokens,
-      final ? 3_200 : 900
+      run.coverage ? (final ? 12_288 : 8_192) : 900
     );
-    request.constraints.timeout_ms = Math.min(request.constraints.timeout_ms || 60_000, 60_000);
+    const callTimeout = run.coverage ? 180_000 : 60_000;
+    request.constraints.timeout_ms = Math.min(
+      request.constraints.timeout_ms || callTimeout,
+      callTimeout
+    );
     request.routing.fallback_allowed = false;
     request.routing.estimated_input_tokens = estimateInputTokensUpperBound(request.messages);
     this.gateway!.assertRoute(request);
