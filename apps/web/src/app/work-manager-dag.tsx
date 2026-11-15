@@ -188,6 +188,11 @@ export function WorkManagerDag({ projectId }: { projectId: string }) {
     return () => window.clearInterval(timer);
   }, [projectId, graph?.id]);
   const visibleSteps = graph ? filterWorkSteps(graph.nodes, stepStatus, stepDue, scheduleNow) : [];
+  const completedSteps = graph?.nodes.filter((node) => node.status === "completed").length ?? 0;
+  const hasFiles = graph?.nodes.some(
+    (node) => node.status === "completed" && node.artifacts.length > 0
+  );
+  const partialResults = graph && completedSteps < graph.nodes.length;
   const overdueCount =
     graph?.nodes.filter((node) => workDeadlineState(node, scheduleNow) === "overdue").length ?? 0;
   const browsingLocked =
@@ -1030,9 +1035,15 @@ export function WorkManagerDag({ projectId }: { projectId: string }) {
           </a>
           <p>
             <a href={base + "/" + encodeURIComponent(graph.id) + "/results.zip"}>
-              Скачать отчёт и файлы (ZIP)
+              {!hasFiles
+                ? "Скачать отчёт (ZIP)"
+                : partialResults
+                  ? "Скачать готовые файлы и отчёт (ZIP)"
+                  : "Скачать отчёт и файлы (ZIP)"}
             </a>{" "}
-            — опубликованные результаты, версии и источники. Незавершённые шаги отмечены в отчёте.
+            {partialResults
+              ? "Отчёт показывает, какие шаги завершены и какие ещё остались."
+              : "В отчёте указаны версии файлов и источники."}
           </p>
           {graph.copied_from && (
             <p>
@@ -1054,14 +1065,9 @@ export function WorkManagerDag({ projectId }: { projectId: string }) {
               : graph.mode === "paused"
                 ? "Проект на паузе"
                 : "Проект отменён"}{" "}
-            · версия {graph.version} · завершено{" "}
-            {graph.nodes.filter((n) => n.status === "completed").length} из {graph.nodes.length}
+            · версия {graph.version} · завершено {completedSteps} из {graph.nodes.length}
           </p>
-          <progress
-            aria-label="Прогресс плана"
-            value={graph.nodes.filter((n) => n.status === "completed").length}
-            max={graph.nodes.length}
-          />
+          <progress aria-label="Прогресс плана" value={completedSteps} max={graph.nodes.length} />
           <div className={styles.scheduleFields} role="group" aria-label="Фильтры шагов">
             <label>
               Состояние шага
@@ -1151,9 +1157,13 @@ export function WorkManagerDag({ projectId }: { projectId: string }) {
                 Остановить автозапуск
               </button>
             )}
-            {graph.nodes.some((node) => node.artifacts.length) && (
+            {hasFiles && (
               <p>
-                <a href={base + "/" + graph.id + "/results"}>Скачать все результаты плана</a>
+                <a href={base + "/" + encodeURIComponent(graph.id) + "/results"}>
+                  {partialResults
+                    ? "Скачать готовые результаты (JSON)"
+                    : "Скачать результаты (JSON)"}
+                </a>
               </p>
             )}
             {!!graph.execution_waves?.length && (

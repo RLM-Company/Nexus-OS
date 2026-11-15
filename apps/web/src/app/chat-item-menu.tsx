@@ -12,25 +12,31 @@ export function ChatItemMenu({
   title,
   pinned,
   disabled,
+  projectId,
+  projects,
   onPin,
   onOpen,
   onRename,
+  onMove,
   onDelete
 }: {
   id: string;
   title: string;
   pinned: boolean;
   disabled: boolean;
+  projectId?: string | null;
+  projects: Array<{ id: string; title: string }>;
   onPin: () => void;
   onOpen: () => void;
   onRename: (title: string) => void;
+  onMove: (projectId: string | null) => void;
   onDelete: () => void;
 }) {
   const menu = useRef<HTMLDetailsElement>(null);
   const panel = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
   const [position, setPosition] = useState<CSSProperties>({});
-  const [action, setAction] = useState<"menu" | "rename" | "delete">("menu");
+  const [action, setAction] = useState<"menu" | "rename" | "delete" | "move">("menu");
   const [name, setName] = useState(title);
   const [busy, setBusy] = useState(false);
   const lock = useRef(false);
@@ -142,6 +148,26 @@ export function ChatItemMenu({
       close();
     });
   }
+  async function moveTo(nextProjectId: string | null) {
+    await perform(async () => {
+      const response = await fetch(`/api/v1/chats/${encodeURIComponent(id)}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ project_id: nextProjectId })
+      });
+      if (!response.ok)
+        throw new Error(
+          response.status === 409
+            ? "Сначала остановите ответ в этом чате."
+            : response.status === 404
+              ? "Проект не найден."
+              : "Не удалось перенести чат. Повторите действие."
+        );
+      onMove(nextProjectId);
+      setNotice(nextProjectId ? "Чат перенесён в проект." : "Чат возвращён в общий список.");
+      setAction("menu");
+    });
+  }
   async function exportChat(format: ChatExportFormat) {
     await perform(async () => {
       const response = await fetch(`/api/v1/chats/${encodeURIComponent(id)}`, {
@@ -238,11 +264,38 @@ export function ChatItemMenu({
                     })
                 )}
                 <hr />
+                {item("В проект / переместить", "projects", () => setAction("move"))}
+                {projectId && item("Вернуть в общий список", "chats", () => void moveTo(null))}
+                <hr />
                 {item("Скачать Markdown", "download", () => void exportChat("markdown"))}
                 {item("Скачать JSON", "files", () => void exportChat("json"))}
                 <hr />
                 {item("В архив", "archive", () => void save("archive"))}
                 {item("Удалить чат", "trash", () => setAction("delete"), true)}
+              </>
+            ) : action === "move" ? (
+              <>
+                <label>
+                  Проект
+                  <select
+                    value={projectId ?? ""}
+                    disabled={disabled || busy}
+                    onChange={(event) => void moveTo(event.target.value || null)}
+                  >
+                    <option value="">Общий список</option>
+                    {projects.map((project) => (
+                      <option key={project.id} value={project.id}>
+                        {project.title}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <small>
+                  История, вложения и ссылка на чат сохраняются. Проект виден только владельцу.
+                </small>
+                <button type="button" disabled={busy} onClick={() => setAction("menu")}>
+                  Назад
+                </button>
               </>
             ) : action === "rename" ? (
               <>
