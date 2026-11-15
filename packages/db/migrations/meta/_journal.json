@@ -477,6 +477,13 @@
       "when": 1795348800000,
       "tag": "0069_general_chat_project",
       "breakpoints": true
+    },
+    {
+      "idx": 70,
+      "version": "6",
+      "when": 1795435200000,
+      "tag": "0070_scheduled_dispatches",
+      "breakpoints": true
     }
   ]
 }

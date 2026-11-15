@@ -164,6 +164,7 @@ import {
   type StoredRun,
   type UsageStore
 } from "@cosmora/db";
+import type { ScheduledDispatchStore } from "@cosmora/db";
 import {
   GatewayRunError,
   type ModelGateway,
@@ -211,6 +212,7 @@ import { registerChatHistorySearchRoutes } from "./chat-history-search-routes.js
 import { registerPresentationWorkRoutes } from "./presentation-work-routes.js";
 import { registerPresentationRoutes } from "./presentation-routes.js";
 import { registerNotificationRoutes } from "./notification-routes.js";
+import { registerScheduledDispatchRoutes } from "./scheduled-dispatch-routes.js";
 import { registerOwnerSkillRoutes } from "./owner-skill-routes.js";
 import { registerRegistrationRoutes, type RegistrationOptions } from "./registration-routes.js";
 import { registerGoogleDriveRoutes, safeDriveLogUrl } from "./cloud-storage/google-drive-routes.js";
@@ -255,6 +257,7 @@ export interface AppDependencies {
   researchCoordinatorCreated?: (coordinator: ResearchCoordinator) => void;
   accountModel?: { provider: string; model: string; capabilities: Record<string, boolean> };
   database: DatabaseHealth;
+  scheduledDispatchStore?: ScheduledDispatchStore;
   identityStore?: IdentityStore;
   registration?: RegistrationOptions;
   generalChatStore?: GeneralChatStore;
@@ -951,6 +954,18 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
     registerNotificationRoutes(app, dependencies.notificationStore, identityFor);
   if (dependencies.ownerSkillStore)
     registerOwnerSkillRoutes(app, dependencies.ownerSkillStore, identityFor);
+  if (
+    dependencies.generalChatStore &&
+    dependencies.projectStore &&
+    dependencies.scheduledDispatchStore
+  )
+    registerScheduledDispatchRoutes({
+      app,
+      store: dependencies.scheduledDispatchStore,
+      chats: dependencies.generalChatStore,
+      projects: dependencies.projectStore,
+      identityFor
+    });
   registerWebSearchRoutes(app, dependencies.webSearch ?? new WebSearch());
   if (dependencies.researchStore && dependencies.projectStore && dependencies.policyStore) {
     const coordinator = registerResearchRoutes({
