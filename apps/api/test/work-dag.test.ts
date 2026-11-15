@@ -1251,6 +1251,159 @@ describe("executable durable Work DAG", () => {
     expect(f.calls).toHaveLength(4);
   });
 
+  // Stage-three instruction, item 2: one dataset, one coherent journey through
+  // normal launch, pause, restart, explicit retry and honest partial export.
+  // Cancellation is terminal and retry needs a failed step, so those two are a
+  // short separate branch on the same fixture (below), not a forced fake state.
+  it("walks one material set through launch, pause, restart, explicit retry and an honest partial archive", async () => {
+    const f = await fixture();
+    const materials = f.projects.setMaterials(f.project.id, owner, {
+      version: 0,
+      instructions: "Original project brief",
+      attachments: [{ name: "source.txt", content: "Original source evidence" }]
+    })!;
+    let graph = f.dag.create(f.project.id, owner, owner, {
+      client_request_id: "stage3-one-dataset",
+      title: "Stage-three coherent plan",
+      nodes: nodes.slice(0, 2).map((node) => ({ ...node, requires_critic: true }))
+    });
+    // Owner must explicitly accept the cost before any dispatcher runs.
+    expect(() =>
+      f.dag.control(graph.id, owner, {
+        version: graph.version,
+        action: "run_plan",
+        max_model_requests: 9
+      })
+    ).toThrow("EXPLICIT_RETRY_REQUIRED");
+    graph = arm(f, graph, 9);
+
+    // Normal launch: the first wave completes the brief and admits the dependent
+    // document child into the queue, but does not run it yet (cap = 1).
+    graph = await autoTick(f, graph.id);
+    expect(graph.nodes.map((node) => node.status)).toEqual(["completed", "pending"]);
+    const briefArtifact = graph.nodes[0]!.artifacts[0]!;
+    for (const call of f.calls) {
+      expect(call.messages[1]!.content).toContain("Original project brief");
+      expect(call.messages[1]!.content).toContain("Original source evidence");
+    }
+
+    // Honest partial export BEFORE the plan finishes: only the completed brief,
+    // with complete:false and an accurate completed_steps counter.
+    const partial = f.dag.resultsArchive(graph.id, owner);
+    expect(partial.readUInt32LE(0)).toBe(0x04034b50);
+    expect(partial.includes(Buffer.from('"complete": false'))).toBe(true);
+    expect(partial.includes(Buffer.from('"completed_steps": 1'))).toBe(true);
+    expect(partial.includes(Buffer.from("steps/01/001-result.md"))).toBe(true);
+    expect(partial.includes(Buffer.from("steps/02/002-result.md"))).toBe(false);
+    const partialJson = await (async () => {
+      const app = buildApp({
+        config: f.config,
+        database: f.db,
+        projectStore: f.projects,
+        managerWorkStore: f.store,
+        managerWorkCoordinator: f.coordinator
+      });
+      try {
+        const base = "/api/v1/projects/" + f.project.id + "/work-dags/" + graph.id;
+        const response = await app.inject({ url: base + "/results" });
+        expect(response.statusCode).toBe(200);
+        return response.json<{ files: { content: string; sha256: string }[] }>();
+      } finally {
+        await app.close();
+      }
+    })();
+    expect(partialJson.files).toHaveLength(1);
+    for (const file of partialJson.files)
+      expect(createHash("sha256").update(file.content).digest("hex")).toBe(file.sha256);
+
+    // Pause is a real project-mode transition; the admitted dependent child is
+    // held, no new model call is made while paused.
+    const callsBeforePause = f.calls.length;
+    graph = f.dag.control(graph.id, owner, { version: graph.version, action: "pause" });
+    expect(graph.mode).toBe("paused");
+    expect(f.calls).toHaveLength(callsBeforePause);
+    graph = f.dag.control(graph.id, owner, { version: graph.version, action: "resume" });
+    expect(graph.mode).toBe("active");
+
+    // Restart: a fresh coordinator reads the durable checkpoint, refuses to
+    // auto-resume and preserves the already completed brief (no replay).
+    f.dag.advance();
+    const queued = f.store.pending()[0]!;
+    expect(queued.dag_binding?.node_id).toBe("document");
+    const restarted = new ManagerWorkCoordinator(f.deps);
+    restarted.dag.recoverAutomation();
+    restarted.dag.advance();
+    graph = restarted.dag.get(graph.id, owner)!;
+    expect(graph.execution).toMatchObject({ status: "paused", reason: "RESTART_REQUIRES_RESUME" });
+    expect(graph.nodes[1]).toMatchObject({ status: "blocked", blocked_reason: "PAUSED" });
+    const callsBeforeResume = f.calls.length;
+    await restarted.execute(queued.id, owner);
+    expect(f.calls).toHaveLength(callsBeforeResume); // no generation without explicit consent
+    expect(restarted.dag.results(graph.id, owner).files.map((file) => file.id)).toEqual([
+      briefArtifact.id
+    ]);
+
+    // Explicit retry/continuation of the dependent step: same attempt, original
+    // materials, real dependency file content, no regenerated brief.
+    graph = restarted.dag.control(graph.id, owner, {
+      version: graph.version,
+      action: "resume_step",
+      node_id: "document"
+    });
+    await restarted.execute(queued.id, owner);
+    graph = restarted.dag.get(graph.id, owner)!;
+    expect(graph.nodes[1]!.status).toBe("completed");
+    expect(graph.nodes[1]!.attempts.map((attempt) => attempt.work_id)).toEqual([queued.id]);
+    expect(graph.nodes[0]!.artifacts[0]!.sha256).toBe(briefArtifact.sha256);
+    expect(f.calls.at(-1)!.messages[1]!.content).toContain("Dependency evidence in a real file");
+    expect(f.calls.at(-1)!.messages[1]!.content).toContain("Original source evidence");
+    expect(f.calls.at(-1)!.messages[1]!.content).not.toContain("Revised project brief");
+    const full = restarted.dag.resultsArchive(graph.id, owner);
+    expect(full.includes(Buffer.from('"complete": true'))).toBe(true);
+    expect(full.includes(Buffer.from('"completed_steps": 2'))).toBe(true);
+    expect(full.includes(Buffer.from("steps/02/002-result.md"))).toBe(true);
+
+    // Materials were edited mid-flight; the dependent step still used the
+    // original snapshot pinned to the plan, never the revised text.
+    f.projects.setMaterials(f.project.id, owner, {
+      version: materials.version,
+      instructions: "Revised project brief",
+      attachments: [{ name: "source.txt", content: "Revised source evidence" }]
+    });
+    for (const call of f.calls) {
+      expect(call.messages[1]!.content).not.toContain("Revised project brief");
+      expect(call.messages[1]!.content).not.toContain("Revised source evidence");
+    }
+  });
+
+  // Cancellation is a terminal branch of the same dataset: it must not invoke a
+  // paid dispatcher, must keep the completed sibling result and must refuse an
+  // implicit retry (EXPLICIT_RETRY_REQUIRED).
+  it("keeps the one-dataset journey honest for the cancellation branch", async () => {
+    const f = await fixture();
+    let graph = await f.execute(f.create(), "independent");
+    const preserved = structuredClone(graph.nodes[2]);
+    graph = arm(f, graph);
+    const calls = f.calls.length;
+    graph = f.dag.control(graph.id, owner, {
+      version: graph.version,
+      action: "cancel_step",
+      node_id: "brief"
+    });
+    expect(graph.execution).toMatchObject({ status: "stopped", reason: "STEP_CANCELLED_BY_OWNER" });
+    expect(graph.nodes.map((node) => node.status)).toEqual(["cancelled", "blocked", "completed"]);
+    expect(graph.nodes[2]).toEqual(preserved);
+    expect(f.calls).toHaveLength(calls);
+    expect(() =>
+      f.dag.control(graph.id, owner, {
+        version: graph.version,
+        action: "retry",
+        node_id: "brief",
+        acknowledge_cost: true
+      })
+    ).toThrow("EXPLICIT_RETRY_REQUIRED");
+  });
+
   it("invalidates autostart consent when an unstarted goal is edited while paused", async () => {
     const f = await fixture();
     let graph = arm(f, f.create());
