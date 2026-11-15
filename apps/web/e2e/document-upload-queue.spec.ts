@@ -10,6 +10,7 @@ import {
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { unzipSync, strFromU8 } from "fflate";
+import { settleRouteAction } from "../src/app/browser-route-teardown";
 
 const apiOrigin = "http://127.0.0.1:3100";
 const sha256 = (bytes: Buffer) => createHash("sha256").update(bytes).digest("hex");
@@ -139,7 +140,9 @@ test("cancel stops queued files and a saved original retries without another upl
   });
   await page.route(`**${path}/*/index`, async (route) => {
     await new Promise((resolve) => setTimeout(resolve, 1000));
-    await route.continue().catch(() => undefined);
+    // Cancelling the upload tears down the delayed request. Tolerate only that
+    // Playwright teardown; a real forwarding failure must still fail the test.
+    await settleRouteAction(route.continue(), () => page.isClosed());
   });
   await library
     .locator('input[type="file"]')

@@ -29,7 +29,16 @@ SHA и зависимости перечислены в [манифесте](AGE
 вложений `submitted.files` и `useLiveComposerText`. Сброс действий выполняется
 вместе с подтверждённым черновиком: поздний ответ не стирает новый текст.
 Оба набора проверок native сохранены в `desktop/windows/package.json`.
-Очистка browser route handlers остаётся ожидающей завершения, без подавления ошибок.
+Очистка browser route handlers завершена 15.11.2026 без подавления ошибок:
+подавляющие `.catch(() => undefined)` на действиях `page.route` заменены узким
+правилом `settleRouteAction`/`isExpectedRouteTeardownError`
+(`apps/web/src/app/browser-route-teardown.ts`), которое терпит только известные
+ошибки tear-down при навигации/отмене и пробрасывает любую другую ошибку
+(покрыто юнит-тестами); диагностический отказ в `chat-reliability.spec.ts`
+теперь прикрепляется явно вместо проглатывания. Верификация: vitest web
+400/400, eslint src и `tsc --noEmit` по `tsconfig.json`/`composer-e2e`/`office-e2e`
+— EXIT 0. Полный e2e-прогон этих race-тестов в среде исполнителя недоступен
+(webServer конфигов требует `pnpm`, здесь он отсутствует) и остаётся за общим CI.
 В журналах развития сохранены обе поставки и границы measurement-only.
 
 Миграция 64 защищает создание памяти; миграция 65 относится к действиям Kosmora.
