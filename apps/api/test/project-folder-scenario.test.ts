@@ -152,14 +152,21 @@ describe("project folder scenario (slice E)", () => {
     expect(isolatedId).not.toBe(secondId);
 
     // 8. Конфиденциальный чат проекта не получает и не отдаёт контекст.
-    await call("PATCH", `/api/v1/chats/${secondId}`, { confidential: true });
+    const confidential = await call("PATCH", `/api/v1/chats/${secondId}`, { confidential: true });
+    expect(confidential.statusCode).toBe(200);
+    expect(confidential.json<{ chat: { confidential: boolean } }>().chat.confidential).toBe(true);
+    const beforeConfidential = requests.length;
     const confidentialRun = await call("POST", `/api/v1/chats/${secondId}/messages`, {
       content: "Приватный вопрос",
       client_message_id: crypto.randomUUID()
     });
     expect([200, 201, 202]).toContain(confidentialRun.statusCode);
+    const confidentialStream = confidentialRun.json<{ stream_url: string }>().stream_url;
+    expect(confidentialStream).toBeTruthy();
+    expect((await call("GET", confidentialStream)).statusCode).toBe(200);
+    expect(requests.length).toBeGreaterThan(beforeConfidential);
     const confidentialText = requests
-      .slice(before)
+      .slice(beforeConfidential)
       .flatMap((r) => r.messages)
       .filter((m) => m.role === "user")
       .map((m) => m.content)
