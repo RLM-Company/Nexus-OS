@@ -1,12 +1,14 @@
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { TypeBoxValidatorCompiler, type TypeBoxTypeProvider } from "@fastify/type-provider-typebox";
 import { Type } from "typebox";
-import type { IdentityContext } from "@cosmora/contracts";
+import type { IdentityContext, CreateManagerWork } from "@cosmora/contracts";
 import {
   ScheduledDispatchError,
+  ManagerWorkConflict,
   type ScheduledDispatchStore,
   type GeneralChatStore,
-  type ProjectStore
+  type ProjectStore,
+  type ManagerWorkStore
 } from "@cosmora/db";
 import { tickScheduledDispatches } from "@cosmora/core";
 
@@ -41,6 +43,8 @@ export function registerScheduledDispatchRoutes(options: {
   store: ScheduledDispatchStore;
   chats: GeneralChatStore;
   projects: ProjectStore;
+  /** Существующий admission Work. Без него task-dispatch только фиксирует готовность. */
+  works?: ManagerWorkStore;
   identityFor(request: FastifyRequest): IdentityContext;
 }): void {
   const typed = options.app.withTypeProvider<TypeBoxTypeProvider>();
@@ -135,6 +139,29 @@ export function registerScheduledDispatchRoutes(options: {
         );
         if (!accepted)
           return reply.code(409).send(errorBody("CHAT_BUSY", "Чат недоступен для отправки."));
+      } else if (options.works) {
+        // Реальная постановка задачи в существующий admission Work.
+        // dormant = status 'paused': модель/бюджет не тратятся до явного resume.
+        // Multi-Agent runtime не запускается (AGENTS.md: остаётся последним) —
+        // team_task получает пометку в goal, но тот же безопасный Work-admission.
+        const goal =
+          item.kind === "team_task"
+            ? `[team] ${item.payload.title ?? item.payload.text}`.slice(0, 8000)
+            : item.payload.text.slice(0, 8000);
+        const request: CreateManagerWork = {
+          client_request_id: `scheduled:${item.id}`,
+          goal,
+          worker_role: "analyst"
+        };
+        try {
+          const work = options.works.create(item.project_id!, ownerId, ownerId, request, true);
+          if (!work)
+            return reply.code(409).send(errorBody("PROJECT_INACTIVE", "Проект недоступен."));
+        } catch (cause) {
+          if (cause instanceof ManagerWorkConflict)
+            return reply.code(409).send(errorBody("WORK_CONFLICT", cause.message));
+          throw cause;
+        }
       }
       options.store.markDispatched(item.id, ownerId);
       return { dispatched: true, id: item.id, kind: item.kind };

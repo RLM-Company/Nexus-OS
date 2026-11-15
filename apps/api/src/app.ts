@@ -964,6 +964,7 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
       store: dependencies.scheduledDispatchStore,
       chats: dependencies.generalChatStore,
       projects: dependencies.projectStore,
+      ...(dependencies.managerWorkStore ? { works: dependencies.managerWorkStore } : {}),
       identityFor
     });
   registerWebSearchRoutes(app, dependencies.webSearch ?? new WebSearch());

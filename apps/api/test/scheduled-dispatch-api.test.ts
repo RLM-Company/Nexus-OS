@@ -3,7 +3,8 @@ import {
   runMigrations,
   GeneralChatStore,
   ProjectStore,
-  ScheduledDispatchStore
+  ScheduledDispatchStore,
+  ManagerWorkStore
 } from "@cosmora/db";
 import { afterEach, describe, expect, it } from "vitest";
 import Fastify, { type FastifyInstance } from "fastify";
@@ -17,13 +18,14 @@ afterEach(async () => {
   for (const app of apps.splice(0)) await app.close();
   for (const db of dbs.splice(0)) db.close();
 });
-const fixture = async (owner = "a") => {
+const fixture = async (owner = "a", withWorks = false) => {
   const db = openDatabase(":memory:");
   dbs.push(db);
   await runMigrations(db);
   const chats = new GeneralChatStore(db.sqlite);
   const projects = new ProjectStore(db.sqlite);
   const store = new ScheduledDispatchStore(db.sqlite);
+  const works = withWorks ? new ManagerWorkStore(db.sqlite, { maxConcurrentWork: 1 }) : undefined;
   const app = Fastify();
   apps.push(app);
   const identity: IdentityContext = {
@@ -36,9 +38,10 @@ const fixture = async (owner = "a") => {
     store,
     chats,
     projects,
+    ...(works ? { works } : {}),
     identityFor: () => identity
   });
-  return { db, chats, projects, store, app };
+  return { db, chats, projects, store, works, app };
 };
 const call = (
   app: FastifyInstance,
@@ -176,5 +179,60 @@ describe("scheduled dispatch HTTP scenario", () => {
     ).toBe(404);
     expect((await call(app, "DELETE", `/api/v1/scheduled-dispatches/${id}`)).statusCode).toBe(204);
     expect((await call(app, "DELETE", `/api/v1/scheduled-dispatches/${id}`)).statusCode).toBe(404);
+  });
+
+  it("task dispatch creates a dormant Work task, is idempotent and never starts a model", async () => {
+    const { app, projects, works } = await fixture("a", true);
+    const project = projects.createProject("Проект", "p1", "a").project.id;
+    const dueAt = new Date(Date.now() - 60_000).toISOString();
+    const created = await call(app, "POST", "/api/v1/scheduled-dispatches", {
+      client_request_id: "task-admission-1",
+      kind: "work_task",
+      mode: "once",
+      due_at: dueAt,
+      text: "Собрать ежедневный отчёт",
+      title: "Отчёт",
+      project_id: project
+    });
+    expect(created.statusCode).toBe(201);
+    const id = created.json<{ id: string }>().id;
+    await call(app, "POST", "/api/v1/scheduled-dispatches/tick", {});
+
+    // До dispatch задачи ещё нет.
+    expect(works!.list(project, "a")).toHaveLength(0);
+    const dispatched = await call(app, "POST", `/api/v1/scheduled-dispatches/${id}/dispatch`, {});
+    expect(dispatched.statusCode).toBe(200);
+    const list = works!.list(project, "a");
+    expect(list).toHaveLength(1);
+    expect(list[0]).toMatchObject({ status: "paused" }); // dormant: модель не запущена
+    expect(list[0]!.request.client_request_id).toBe(`scheduled:${id}`);
+    expect(list[0]!.request.goal).toContain("Собрать ежедневный отчёт");
+    // Повторный dispatch невозможен (запись уже dispatched), вторая задача не создаётся.
+    expect(
+      (await call(app, "POST", `/api/v1/scheduled-dispatches/${id}/dispatch`, {})).statusCode
+    ).toBe(409);
+    expect(works!.list(project, "a")).toHaveLength(1);
+  });
+
+  it("team_task is marked for the team but still uses the dormant Work admission", async () => {
+    const { app, projects, works } = await fixture("a", true);
+    const project = projects.createProject("Проект", "p2", "a").project.id;
+    const created = await call(app, "POST", "/api/v1/scheduled-dispatches", {
+      client_request_id: "team-admission-1",
+      kind: "team_task",
+      mode: "once",
+      due_at: new Date(Date.now() - 60_000).toISOString(),
+      text: "Проверить состав команды",
+      project_id: project
+    });
+    const id = created.json<{ id: string }>().id;
+    await call(app, "POST", "/api/v1/scheduled-dispatches/tick", {});
+    expect(
+      (await call(app, "POST", `/api/v1/scheduled-dispatches/${id}/dispatch`, {})).statusCode
+    ).toBe(200);
+    const list = works!.list(project, "a");
+    expect(list).toHaveLength(1);
+    expect(list[0]!.request.goal).toContain("[team]");
+    expect(list[0]!.status).toBe("paused");
   });
 });
