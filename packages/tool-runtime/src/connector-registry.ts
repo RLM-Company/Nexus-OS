@@ -1,9 +1,4 @@
-import type {
-  CapabilityId,
-  ConnectorDescriptor,
-  ConnectorOperation,
-  ConnectorStatus
-} from "@cosmora/contracts";
+import type { ConnectorDescriptor, ConnectorOperation, ConnectorStatus } from "@cosmora/contracts";
 import type {
   GuardedTool,
   GuardedToolRuntime,
@@ -113,7 +108,7 @@ export class ConnectorRegistry {
       const transport = entry.transport;
       const tool: GuardedTool<unknown, unknown> = {
         id: entry.toolId,
-        resolveCapabilities: () => entry.operation.capability_ids as readonly CapabilityId[],
+        resolveCapabilities: () => entry.operation.capability_ids,
         execute: (input, context) => transport.execute(input, context)
       };
       this.#runtime.register(tool);

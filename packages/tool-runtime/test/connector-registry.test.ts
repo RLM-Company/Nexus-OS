@@ -76,9 +76,8 @@ describe("ConnectorRegistry", () => {
     setLevel("A5");
     const registry = new ConnectorRegistry(runtime);
     registry.register(FIRST_SLICE_CONNECTORS);
-    const transport: ConnectorTransport = {
-      execute: vi.fn((input) => Promise.resolve({ read: (input as { path: string }).path }))
-    };
+    const execute = vi.fn((input) => Promise.resolve({ read: (input as { path: string }).path }));
+    const transport: ConnectorTransport = { execute };
     registry.bindTransport(readToolId, transport);
     registry.bindToRuntime();
     const invocation = {
@@ -98,7 +97,7 @@ describe("ConnectorRegistry", () => {
       replayed: false
     });
     expect(replay).toMatchObject({ status: "EXECUTED", replayed: true });
-    expect(transport.execute).toHaveBeenCalledTimes(1);
+    expect(execute).toHaveBeenCalledTimes(1);
     expect(registry.isWired(readToolId)).toBe(true);
   });
 
@@ -106,7 +105,8 @@ describe("ConnectorRegistry", () => {
     setLevel("A0");
     const registry = new ConnectorRegistry(runtime);
     registry.register(FIRST_SLICE_CONNECTORS);
-    const transport: ConnectorTransport = { execute: vi.fn(() => Promise.resolve({ ok: true })) };
+    const execute = vi.fn(() => Promise.resolve({ ok: true }));
+    const transport: ConnectorTransport = { execute };
     registry.bindTransport(connectorToolId("github", "prepare_draft"), transport);
     registry.bindToRuntime();
     const result = await registry.invoke({
@@ -119,7 +119,7 @@ describe("ConnectorRegistry", () => {
       input: {}
     });
     expect(["WAITING_CONFIRMATION", "DENIED", "PAUSED"]).toContain(result.status);
-    expect(transport.execute).not.toHaveBeenCalled();
+    expect(execute).not.toHaveBeenCalled();
   });
 
   it("rejects duplicate registration, duplicate bind and late bind", () => {

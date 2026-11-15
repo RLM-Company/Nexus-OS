@@ -72,7 +72,7 @@ export function parseConnectorDescriptor(value: unknown): ConnectorDescriptor {
   if (!Value.Check(ConnectorDescriptorSchema, value))
     throw new Error("INVALID_CONNECTOR_DESCRIPTOR");
   const seen = new Set<string>();
-  for (const operation of (value as ConnectorDescriptor).operations) {
+  for (const operation of value.operations) {
     if (seen.has(operation.id)) throw new Error("DUPLICATE_CONNECTOR_OPERATION");
     seen.add(operation.id);
   }
@@ -83,7 +83,7 @@ export function parseConnectorDescriptor(value: unknown): ConnectorDescriptor {
     )
   )
     throw new Error("CONNECTOR_CREDENTIAL_FORBIDDEN");
-  return structuredClone(value) as ConnectorDescriptor;
+  return structuredClone(value);
 }
 
 /** Capabilities required by one operation of a connector. */

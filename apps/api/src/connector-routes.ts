@@ -1,5 +1,4 @@
 import type { FastifyInstance } from "fastify";
-import { Type } from "typebox";
 import { ConnectorStatusSchema } from "@cosmora/contracts";
 import type { PolicyStore } from "@cosmora/db";
 import {
