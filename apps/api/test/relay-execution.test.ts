@@ -122,7 +122,8 @@ describe("English Relay integration with canonical account schema", () => {
     expect(prepared.request.messages.filter((message) => message.role !== "system")).toEqual(
       request.messages.filter((message) => message.role !== "system")
     );
-    expect(prepared.request.messages[1]?.content).toContain("masculine forms by default");
+    expect(prepared.request.messages[1]?.content).toContain("Ты — Kosmora");
+    expect(prepared.request.messages[1]?.content).toContain("в мужском роде");
     expect(seen).toHaveLength(0);
   });
   it("translates model copies and charges both translation stages separately", async () => {

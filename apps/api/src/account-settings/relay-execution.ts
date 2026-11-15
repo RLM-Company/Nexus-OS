@@ -9,6 +9,7 @@ import {
 import { protectRelayText, RelayProtectionError } from "@cosmora/model-gateway/english-relay";
 import { QuotaExceededError } from "./account-store.js";
 import type { AccountStore } from "./account-store.js";
+import { ownerIdentityPrompt } from "./owner-identity.js";
 import { MODEL_PROFILES } from "./execution-profile.js";
 
 export { RelayProtectionError, QuotaExceededError };
@@ -176,12 +177,7 @@ export class RelayExecution {
       ...adjusted.messages.slice(0, 1),
       {
         role: "system",
-        content:
-          "Introduce yourself as Kosmora. If asked about the active profile, name the product profile. " +
-          "Do not infer the underlying model or vendor from your own behavior. If asked about them, " +
-          "say that you cannot verify deployment details from the chat. " +
-          "In Russian, address the user in masculine forms by default unless the user specifies otherwise. " +
-          "Use gender-neutral phrasing for yourself by default."
+        content: ownerIdentityPrompt(this.store.get(owner))
       },
       ...adjusted.messages.slice(1)
     ];

@@ -28,7 +28,14 @@ const prefs = Type.Object(
       Type.Literal("concise"),
       Type.Literal("detailed")
     ]),
-    max_total_tokens: Type.Union([Type.Integer({ minimum: 1, maximum: 2000000000 }), Type.Null()])
+    max_total_tokens: Type.Union([Type.Integer({ minimum: 1, maximum: 2000000000 }), Type.Null()]),
+    display_name: Type.Optional(Type.String({ maxLength: 80 })),
+    user_gender: Type.Optional(
+      Type.Union([Type.Literal("masculine"), Type.Literal("feminine"), Type.Literal("neutral")])
+    ),
+    assistant_gender: Type.Optional(
+      Type.Union([Type.Literal("masculine"), Type.Literal("feminine"), Type.Literal("neutral")])
+    )
   },
   { additionalProperties: false }
 );

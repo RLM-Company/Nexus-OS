@@ -881,6 +881,7 @@ describe("durable Manager work", () => {
       },
       onCall: async (r) => {
         stages.push(r.task_type);
+        await Promise.resolve();
       }
     });
     await f.coordinator.execute(f.work.id, "local-owner");

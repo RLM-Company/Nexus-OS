@@ -9,6 +9,9 @@ CREATE TABLE IF NOT EXISTS kosmora_account_preferences (
  preferred_model TEXT,
  chat_style TEXT NOT NULL DEFAULT 'standard' CHECK (chat_style IN ('standard','concise','detailed')),
  max_total_tokens INTEGER CHECK (max_total_tokens IS NULL OR max_total_tokens >= 1),
+ display_name TEXT NOT NULL DEFAULT '',
+ user_gender TEXT NOT NULL DEFAULT 'masculine' CHECK (user_gender IN ('masculine','feminine','neutral')),
+ assistant_gender TEXT NOT NULL DEFAULT 'neutral' CHECK (assistant_gender IN ('masculine','feminine','neutral')),
  updated_at TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS kosmora_chat_preferences (

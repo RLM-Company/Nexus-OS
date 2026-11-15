@@ -18,6 +18,7 @@ import type {
 } from "./general-chat-runtime-store.js";
 import { EmergencyStopActivatedError, type RuntimeMetrics } from "./operations.js";
 import type { AccountStore } from "./account-settings/account-store.js";
+import { ownerIdentityPrompt } from "./account-settings/owner-identity.js";
 import { imageCreationPrompt, ChatImageError } from "./media/chat-images.js";
 import type { WebSearch } from "./web-search.js";
 import { applyKosmoraActions, ChatActionError } from "./kosmora-actions.js";
@@ -238,6 +239,11 @@ export class GeneralChatBackgroundRunCoordinator {
       let modelRequest = this.#chat.buildRequest({
         chatId: queued.chat_id,
         runId: queued.run_id,
+        ...(this.#accountStore
+          ? {
+              identityPrompt: ownerIdentityPrompt(this.#accountStore.get(queued.owner_id))
+            }
+          : {}),
         messages: await this.#applyKosmoraActions(conversation, controller.signal),
         historyCompaction: this.#store.historyCompactionForRun(queued.run_id, queued.owner_id),
         recalledMemory: await this.#store.recallForRunAsync(

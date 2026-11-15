@@ -10,6 +10,7 @@ import { InterfaceSettings } from "./interface-settings";
 import { LocalVaultSettings } from "./local-vault-settings";
 import { GoogleDriveSettings } from "./google-drive-settings";
 
+type Gender = "masculine" | "feminine" | "neutral";
 type Preferences = {
   version: number;
   relay_enabled: boolean;
@@ -19,6 +20,9 @@ type Preferences = {
   preferred_model: string | null;
   chat_style: "standard" | "concise" | "detailed";
   max_total_tokens: number | null;
+  display_name: string;
+  user_gender: Gender;
+  assistant_gender: Gender;
 };
 type Route = { provider: string; model: string; capabilities: Record<string, boolean> };
 type Usage = {
@@ -56,6 +60,7 @@ async function api<T>(path: string, options?: RequestInit): Promise<T> {
 }
 export default function PersonalSettings() {
   const [prefs, setPrefs] = useState<Preferences | null>(null);
+  const [profileName, setProfileName] = useState("");
   const [usage, setUsage] = useState<Usage | null>(null);
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
@@ -65,6 +70,7 @@ export default function PersonalSettings() {
       api<Usage>("/usage")
     ]);
     setPrefs(data.settings);
+    setProfileName(data.settings.display_name ?? "");
     setUsage(meter);
   }, []);
   useEffect(() => {
@@ -84,7 +90,10 @@ export default function PersonalSettings() {
           preferred_provider: next.preferred_provider,
           preferred_model: next.preferred_model,
           chat_style: next.chat_style,
-          max_total_tokens: next.max_total_tokens
+          max_total_tokens: next.max_total_tokens,
+          display_name: next.display_name,
+          user_gender: next.user_gender,
+          assistant_gender: next.assistant_gender
         })
       });
       setPrefs(r.settings);
@@ -104,6 +113,7 @@ export default function PersonalSettings() {
       <h1>Настройки</h1>
       <p className={styles.muted}>Всё для удобной работы с Kosmora.</p>
       <nav className={styles.sectionsNav} aria-label="Разделы настроек">
+        <a href="#profile-settings">Профиль</a>
         <a href="#model-settings">Модель и чат</a>
         <a href="#interface-settings">Интерфейс и голос</a>
         <a href="#relay-settings">English Relay</a>
@@ -115,6 +125,60 @@ export default function PersonalSettings() {
         <p>Загрузка настроек…</p>
       ) : (
         <>
+          <section id="profile-settings">
+            <h2>Профиль</h2>
+            <p className={styles.muted}>
+              Имя используется в приветствии. Род обращения и род ассистента влияют на обычный чат и
+              Koswork; для существующих аккаунтов по умолчанию выбран мужской род обращения и
+              нейтральный род ассистента.
+            </p>
+            <label>
+              Ваше имя
+              <input
+                type="text"
+                maxLength={80}
+                disabled={busy}
+                value={profileName}
+                aria-label="Ваше имя"
+                onChange={(e) => setProfileName(e.target.value)}
+                onBlur={() => {
+                  if (prefs && profileName !== prefs.display_name)
+                    void save({ ...prefs, display_name: profileName });
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") e.currentTarget.blur();
+                }}
+              />
+            </label>
+            <label>
+              Обращение к вам
+              <select
+                disabled={busy}
+                value={prefs.user_gender}
+                aria-label="Род обращения к вам"
+                onChange={(e) => void save({ ...prefs, user_gender: e.target.value as Gender })}
+              >
+                <option value="masculine">Мужской</option>
+                <option value="feminine">Женский</option>
+                <option value="neutral">Нейтральный</option>
+              </select>
+            </label>
+            <label>
+              Род ассистента
+              <select
+                disabled={busy}
+                value={prefs.assistant_gender}
+                aria-label="Род ассистента"
+                onChange={(e) =>
+                  void save({ ...prefs, assistant_gender: e.target.value as Gender })
+                }
+              >
+                <option value="neutral">Нейтральный</option>
+                <option value="masculine">Мужской</option>
+                <option value="feminine">Женский</option>
+              </select>
+            </label>
+          </section>
           <section id="model-settings">
             <h2>Модель и чат</h2>
             <ModelPicker />

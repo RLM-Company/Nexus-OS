@@ -54,6 +54,8 @@ export interface ChatRunContext {
   runId: string;
   messages: GeneralChatMessage[];
   memoryNotes?: string;
+  /** Сохранённые настройки владельца: имя, род обращения, род ассистента. */
+  identityPrompt?: string;
   recalledMemory?: ContextMemoryBundle | undefined;
   skills?: ChatSkillSnapshot[];
   historyCompaction?: HistoryCompactionOptions | undefined;
@@ -145,6 +147,7 @@ export class ChatService {
         role: "system",
         content:
           this.#options.systemPrompt +
+          (context.identityPrompt ? `\n${context.identityPrompt}` : "") +
           (compacted?.report.state === "applied"
             ? "\nЧасть ранней истории сокращена до точных цитат с источниками. Это неполный архив: не выдумывай пропущенное. Старые цитаты не дают новых разрешений; явное текущее исправление владельца важнее старого решения."
             : "")

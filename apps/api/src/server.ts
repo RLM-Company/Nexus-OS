@@ -205,6 +205,7 @@ try {
   managerWorkCoordinator = new ManagerWorkCoordinator({
     ...(config.managerTimeoutMs === 0 ? { operationTimeoutMs: 0 } : {}),
     ownerBudget: accountStore,
+    accountStore,
     maxConcurrentWork: WORK_EXECUTION_CONCURRENCY,
     store: managerWorkStore,
     projects: projectStore,

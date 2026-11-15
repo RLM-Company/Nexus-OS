@@ -544,6 +544,7 @@ export default function Home() {
   const [codeSpace, setCodeSpace] = useState(false);
   const [createProjectOpen, setCreateProjectOpen] = useState(false);
   const [greeting, setGreeting] = useState("Чем могу помочь?");
+  const [displayName, setDisplayName] = useState("");
   const [localChats, setLocalChats] = useState<LocalChatSession[]>([]);
   const chatNavigation = useChatNavigation();
   const pins = chatNavigation.navigation;
@@ -932,7 +933,10 @@ export default function Home() {
       await Promise.all([
         loadProjects(),
         loadGeneralChats(),
-        api<ModelRuntimeStatus>("/api/v1/model-runtime").then(setRuntime)
+        api<ModelRuntimeStatus>("/api/v1/model-runtime").then(setRuntime),
+        api<{ settings?: { display_name?: string } }>("/api/v1/personal-settings")
+          .then((data) => setDisplayName(data.settings?.display_name ?? ""))
+          .catch(() => undefined)
       ]);
     } catch {
       setError("API Kosmora пока недоступен. Проверьте локальное подключение и повторите попытку.");
@@ -3375,6 +3379,7 @@ export default function Home() {
           <>
             <section className="hero">
               <h2>{greeting}</h2>
+              {displayName && <p className="hero-greeting-name">{displayName}, рад вас видеть.</p>}
             </section>
           </>
         ) : null}
