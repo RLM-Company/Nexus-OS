@@ -32,7 +32,9 @@ import {
   type EmergencyStopStore,
   type GeneralChatStore,
   type StoredGeneralChatMessage,
-  type StoredGeneralChatRun
+  type StoredGeneralChatRun,
+  type ProjectStore,
+  type ProjectMemoryStore
 } from "@cosmora/db";
 import {
   GatewayRunError,
@@ -45,6 +47,7 @@ import { EmergencyStopActivatedError, type RuntimeMetrics } from "./operations.j
 import type { AccountStore } from "./account-settings/account-store.js";
 import type { WebSearch } from "./web-search.js";
 import { applyKosmoraActions, ChatActionError } from "./kosmora-actions.js";
+import { projectChatContext } from "./project-chat-context.js";
 import {
   QuotaExceededError,
   RelayExecution,
@@ -62,6 +65,8 @@ export interface GeneralChatRouteOptions {
   app: FastifyInstance;
   accountStore?: AccountStore;
   store: GeneralChatStore;
+  projectStore?: ProjectStore;
+  projectMemory?: ProjectMemoryStore;
   modelGateway: ModelGateway;
   chat: ChatService;
   runtimeMetrics: RuntimeMetrics;
@@ -417,7 +422,11 @@ export const registerGeneralChatRoutes = (options: GeneralChatRouteOptions): voi
         body: Type.Object(
           {
             title: Type.Optional(Type.String({ minLength: 1, maxLength: 160, pattern: "\\S" })),
-            archived: Type.Optional(Type.Boolean())
+            archived: Type.Optional(Type.Boolean()),
+            project_id: Type.Optional(
+              Type.Union([Type.String({ minLength: 1, maxLength: 128 }), Type.Null()])
+            ),
+            confidential: Type.Optional(Type.Boolean())
           },
           { additionalProperties: false, minProperties: 1 }
         )
@@ -434,6 +443,8 @@ export const registerGeneralChatRoutes = (options: GeneralChatRouteOptions): voi
           ? { chat }
           : reply.code(404).send(error(request.id, "CHAT_NOT_FOUND", "Chat not found"));
       } catch (cause) {
+        if (cause instanceof Error && cause.message === "PROJECT_NOT_FOUND")
+          return reply.code(404).send(error(request.id, "PROJECT_NOT_FOUND", "Проект не найден."));
         if (cause instanceof GeneralChatBusyError)
           return reply
             .code(409)
@@ -441,7 +452,7 @@ export const registerGeneralChatRoutes = (options: GeneralChatRouteOptions): voi
               error(
                 request.id,
                 "VALIDATION_ERROR",
-                "Остановите ответ перед переносом чата в архив."
+                "Остановите ответ перед переносом чата в архив или проект."
               )
             );
         throw cause;
@@ -454,14 +465,21 @@ export const registerGeneralChatRoutes = (options: GeneralChatRouteOptions): voi
     {
       schema: {
         querystring: Type.Object(
-          { archived: Type.Optional(Type.Boolean({ default: false })) },
+          {
+            archived: Type.Optional(Type.Boolean({ default: false })),
+            project_id: Type.Optional(Type.String({ minLength: 1 }))
+          },
           { additionalProperties: false }
         ),
         response: { 200: GeneralChatListResponseSchema }
       }
     },
     (request) => ({
-      items: options.store.listChats(options.identityFor(request).owner_id, request.query.archived)
+      items: options.store.listChats(
+        options.identityFor(request).owner_id,
+        request.query.archived,
+        request.query.project_id ?? undefined
+      )
     })
   );
 
@@ -474,6 +492,7 @@ export const registerGeneralChatRoutes = (options: GeneralChatRouteOptions): voi
           200: GeneralChatMessageAcceptedResponseSchema,
           201: GeneralChatMessageAcceptedResponseSchema,
           400: ApiErrorSchema,
+          404: ApiErrorSchema,
           409: ApiErrorSchema
         }
       }
@@ -484,17 +503,27 @@ export const registerGeneralChatRoutes = (options: GeneralChatRouteOptions): voi
           .status(400)
           .send(error(request.id, "VALIDATION_ERROR", "Invalid text attachments"));
       }
-      const accepted = options.store.createChat(
-        request.body.initial_message,
-        request.body.client_message_id,
-        options.identityFor(request).owner_id,
-        request.body.attachments,
-        request.body.mode,
-        {
-          web_search: Boolean(request.body.web_search),
-          text_action: request.body.text_action ?? null
-        }
-      );
+      let accepted;
+      try {
+        accepted = options.store.createChat(
+          request.body.initial_message,
+          request.body.client_message_id,
+          options.identityFor(request).owner_id,
+          request.body.attachments,
+          request.body.mode,
+          {
+            web_search: Boolean(request.body.web_search),
+            text_action: request.body.text_action ?? null
+          },
+          request.body.project_id ?? null
+        );
+      } catch (cause) {
+        if (cause instanceof Error && cause.message === "PROJECT_NOT_FOUND")
+          return reply
+            .status(404)
+            .send(error(request.id, "PROJECT_NOT_FOUND", "Проект не найден."));
+        throw cause;
+      }
       return reply.status(accepted.duplicate ? 200 : 201).send(acceptedResponse(accepted));
     }
   );
@@ -709,6 +738,15 @@ export const registerGeneralChatRoutes = (options: GeneralChatRouteOptions): voi
           ),
           memoryNotes:
             options.store.getChatMemory(run.chat_id, identity.owner_id)?.memory_notes ?? "",
+          ...(options.projectStore && options.projectMemory
+            ? {
+                projectContext: projectChatContext(run.chat_id, identity.owner_id, {
+                  chats: options.store,
+                  projects: options.projectStore,
+                  memory: options.projectMemory
+                })
+              }
+            : {}),
           skills: options.store.skills.forRun(run.id, identity.owner_id)?.items ?? []
         });
         const originalMemoryRequest = modelRequest;
