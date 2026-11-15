@@ -8,7 +8,7 @@ export interface DesktopTextDraftBridge {
 
 const PREFIX = "cosmora:composer-draft:";
 const MATERIALS = "cosmora:composer-materials:";
-const SCOPE = /^(?:new-chat|(?:chat|project):[a-f0-9-]{8,64})$/i;
+const SCOPE = /^(?:new-chat|(?:chat|project|project-new-chat):[a-f0-9-]{8,64})$/i;
 
 export function desktopDraftBridge(
   globalWindow: Window | undefined

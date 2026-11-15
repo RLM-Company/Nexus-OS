@@ -617,10 +617,9 @@ export default function Home() {
   );
   const localChatMessages = activeLocalChat?.messages ?? EMPTY_LOCAL_CHAT_MESSAGES;
   const projectProposal = activeLocalChat?.projectProposal ?? null;
-  const composerDraftKey = composerDraftStorageKey(
-    activeProject?.id ?? selectedProjectRef.current,
-    activeLocalChatId
-  );
+  const composerDraftKey = pendingProjectId
+    ? `${COMPOSER_DRAFT_STORAGE_PREFIX}project-new-chat:${pendingProjectId}`
+    : composerDraftStorageKey(activeProject?.id ?? selectedProjectRef.current, activeLocalChatId);
   const composerActions = draftActions.get(composerDraftKey) ?? DEFAULT_COMPOSER_ACTIONS;
   const updateDraftActions = (
     key: string,
@@ -2230,7 +2229,7 @@ export default function Home() {
   const newChat = (): void => {
     // Explicitly starting afresh from the unnamed composer discards that draft.
     // Named chats/projects retain their own draft when navigating away.
-    if (!activeProject && !selectedProjectRef.current && !activeLocalChatId) {
+    if (!pendingProjectId && !activeProject && !selectedProjectRef.current && !activeLocalChatId) {
       const scope = nativeDraftScope(composerDraftKey);
       if (scope)
         void desktopDraftBridge(window)
@@ -2602,9 +2601,9 @@ export default function Home() {
                           type="button"
                           className="project-chat-item new"
                           onClick={() => {
-                            newChat();
+                            if (codeSpace) setChatMode("coscode");
+                            resetToLocalChat(null, true);
                             setPendingProjectId(project.id);
-                            setActiveProject(null);
                           }}
                         >
                           + Новый чат в проекте
