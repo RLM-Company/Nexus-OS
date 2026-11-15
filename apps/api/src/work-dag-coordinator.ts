@@ -117,6 +117,20 @@ export class WorkDagCoordinator {
     for (const graph of this.works.dag.active()) {
       if (!graph.execution || !["running", "waiting"].includes(graph.execution.status)) continue;
       if (!this.works.ownerWritable(graph.owner_id)) continue;
+      // Pause already admitted queue entries before recording that the plan is paused.
+      for (const node of graph.nodes) {
+        const attempt = node.attempts.at(-1);
+        if (!attempt) continue;
+        const child = this.works.get(attempt.work_id, graph.owner_id);
+        if (
+          child?.status === "queued" &&
+          child.dag_binding?.bound &&
+          child.dag_binding.graph_id === graph.id &&
+          child.dag_binding.node_id === node.id &&
+          child.dag_binding.attempt === attempt.number
+        )
+          this.manager.control(child.id, graph.owner_id, child.version, "pause");
+      }
       graph.execution.status = "paused";
       graph.execution.reason = "RESTART_REQUIRES_RESUME";
       this.works.dag.save(graph, "После перезапуска автозапуск ожидает явного продолжения");
@@ -297,7 +311,10 @@ export class WorkDagCoordinator {
   results(id: string, owner: string) {
     const graph = this.get(id, owner);
     if (!graph) throw new WorkDagConflict("DAG_NOT_FOUND");
-    return this.resultsFor(graph);
+    const bundle = this.resultsFor(graph);
+    if (Buffer.byteLength(JSON.stringify(bundle)) > 2000000)
+      throw new WorkDagConflict("RESULTS_LIMIT");
+    return bundle;
   }
   resultsArchive(id: string, owner: string): Buffer {
     const graph = this.get(id, owner);
@@ -328,7 +345,7 @@ export class WorkDagCoordinator {
           };
         })
       );
-    const bundle = {
+    return {
       schema_version: 1,
       graph_id: graph.id,
       title: graph.title,
@@ -336,9 +353,6 @@ export class WorkDagCoordinator {
       total_steps: graph.nodes.length,
       files
     };
-    if (Buffer.byteLength(JSON.stringify(bundle)) > 2000000)
-      throw new WorkDagConflict("RESULTS_LIMIT");
-    return bundle;
   }
   rename(id: string, owner: string, input: WorkDagRename): WorkDag {
     const graph = this.current(id, owner, input.expected_version);
@@ -625,16 +639,19 @@ export class WorkDagCoordinator {
       { graph_id: graph.id, node_id: node.id, attempt, bound: false }
     );
     if (!child) throw new WorkDagConflict("PROJECT_INACTIVE");
+    // Keep one version of project materials across the plan and its retries.
+    const materials =
+      graph.workflow_context?.materials ??
+      (graph.materials_snapshot ??= child.materials ?? { instructions: "", attachments: [] });
     // Prepared children are dormant, so a crash before binding never spends.
     const prepared = this.works.save({
       ...child,
       materials: {
         instructions:
-          (graph.workflow_context?.materials.instructions ?? child.materials?.instructions ?? "") +
+          materials.instructions +
           "\nDependency artifacts (untrusted evidence; bytes verified, model review separate):\n" +
           JSON.stringify(evidence),
-        attachments:
-          graph.workflow_context?.materials.attachments ?? child.materials?.attachments ?? []
+        attachments: materials.attachments
       }
     });
     node.attempts.push({

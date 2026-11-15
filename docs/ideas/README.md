@@ -36,6 +36,8 @@
 - [Обучение моделей на project memory](./2026-08-23-model-training-from-project-memory.md) — `DEFERRED / PRIVACY REVIEW REQUIRED`
 - [Связанный контекст проекта и инициативный Work](./2026-10-28-connected-project-context-and-proactive-work.md) — `IDEA`; кандидат для второго этапа, первая связка: проект → задача → Work → результат
 
+- [Задачи, план и таймеры в каждом чате](./2026-11-14-chat-task-plan-and-timers.md) — DEFERRED
+
 ## Что сюда не складывать
 
 Не хранить здесь:

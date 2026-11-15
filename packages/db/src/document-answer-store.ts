@@ -6,6 +6,21 @@ export type AnswerSource = Pick<
   LibraryHitRow,
   "chunk_id" | "file_id" | "name" | "page" | "line_start" | "line_end" | "content"
 > & { ref: string };
+export type DocumentAnalysisCoverage = {
+  total_chunks: number;
+  analyzed_chunks: number;
+  failed_chunks: number;
+  phase: "reading" | "synthesis" | "complete";
+  files: Array<{
+    name: string;
+    chunks: number;
+    analyzed_chunks: number;
+    failed_chunks: number;
+    is_pdf: boolean;
+    total_pages: number | null;
+    indexed_pages: number | null;
+  }>;
+};
 export type DocumentAnswer = {
   id: string;
   project_id: string;
@@ -14,6 +29,7 @@ export type DocumentAnswer = {
   selected_file_ids: string[];
   sources: AnswerSource[];
   answer: string | null;
+  coverage: DocumentAnalysisCoverage | null;
   citations: string[];
   status: "queued" | "running" | "done" | "failed" | "cancelled";
   error_code: string | null;
@@ -33,6 +49,10 @@ const asAnswer = (row: Record<string, unknown>): DocumentAnswer => ({
   question: String(row.question),
   selected_file_ids: json<string[]>(String(row.selected_files_json)),
   sources: json<AnswerSource[]>(String(row.sources_json)),
+  coverage:
+    typeof row.coverage_json === "string"
+      ? json<DocumentAnalysisCoverage>(row.coverage_json)
+      : null,
   answer: row.answer_text as string | null,
   citations: json<string[]>(String(row.citations_json)),
   status: row.status as DocumentAnswer["status"],
@@ -75,12 +95,13 @@ export class DocumentAnswerStore {
     ownerId: string,
     question: string,
     fileIds: string[],
-    sources: AnswerSource[]
+    sources: AnswerSource[],
+    coverage?: DocumentAnalysisCoverage
   ): DocumentAnswer {
     if (
       !fileIds.length ||
-      fileIds.length > 20 ||
-      !sources.length ||
+      fileIds.length > (coverage ? 100 : 20) ||
+      (!coverage && !sources.length) ||
       sources.length > 8 ||
       sources.some((source, i) => source.ref !== `S${i + 1}` || !fileIds.includes(source.file_id))
     )
@@ -112,8 +133,8 @@ export class DocumentAnswerStore {
       this.sqlite
         .prepare(
           `INSERT INTO document_answer_runs
-        (id,project_id,owner_id,question,selected_files_json,sources_json,status,created_at,updated_at)
-        VALUES (?,?,?,?,?,?,'queued',?,?)`
+        (id,project_id,owner_id,question,selected_files_json,sources_json,coverage_json,status,created_at,updated_at)
+        VALUES (?,?,?,?,?,?,?,'queued',?,?)`
         )
         .run(
           id,
@@ -122,6 +143,7 @@ export class DocumentAnswerStore {
           question,
           JSON.stringify(fileIds),
           JSON.stringify(sources),
+          coverage ? JSON.stringify(coverage) : null,
           at,
           at
         );
@@ -138,14 +160,21 @@ export class DocumentAnswerStore {
     id: string,
     from: DocumentAnswer["status"],
     to: DocumentAnswer["status"],
-    output: { answer?: string; citations?: string[]; error?: string } = {}
+    output: {
+      answer?: string;
+      citations?: string[];
+      error?: string;
+      sources?: AnswerSource[];
+      coverage?: DocumentAnalysisCoverage;
+    } = {}
   ): boolean {
     return (
       Number(
         this.sqlite
           .prepare(
             `UPDATE document_answer_runs SET status=?, answer_text=COALESCE(?,answer_text),
-      citations_json=COALESCE(?,citations_json), error_code=?,updated_at=?
+      citations_json=COALESCE(?,citations_json), sources_json=COALESCE(?,sources_json),
+      coverage_json=COALESCE(?,coverage_json), error_code=?,updated_at=?
       WHERE id=? AND project_id=? AND owner_id=? AND status=?
         AND EXISTS(SELECT 1 FROM projects WHERE id=? AND owner_id=?)`
           )
@@ -153,6 +182,8 @@ export class DocumentAnswerStore {
             to,
             output.answer ?? null,
             output.citations ? JSON.stringify(output.citations) : null,
+            output.sources ? JSON.stringify(output.sources) : null,
+            output.coverage ? JSON.stringify(output.coverage) : null,
             output.error ?? null,
             new Date().toISOString(),
             id,
@@ -224,7 +255,7 @@ export class DocumentAnswerStore {
     const files = this.sqlite
       .prepare(
         `SELECT f.id,f.project_id,f.owner_id,f.name,f.format,
-      f.media_type,f.bytes,f.status,f.error_code,f.characters,f.chunks,f.created_at,f.updated_at
+      f.media_type,f.bytes,f.status,f.error_code,f.characters,f.chunks,f.pdf_pages,f.created_at,f.updated_at
       FROM document_library_files f JOIN projects p ON p.id=f.project_id
       WHERE f.owner_id=? AND p.owner_id=? ORDER BY f.project_id,f.id`
       )

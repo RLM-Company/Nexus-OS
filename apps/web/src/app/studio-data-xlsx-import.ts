@@ -1,5 +1,5 @@
 /** XLSX import is strictly local. No DOMParser, external I/O, eval, or formula execution. */
-import { inflateSync } from "fflate";
+import { BoundedZip, zipMemberNameOk } from "./bounded-zip";
 import type { CsvTable } from "./studio-csv";
 
 export const XLSX_IMPORT_LIMITS = {
@@ -13,15 +13,6 @@ export const XLSX_IMPORT_LIMITS = {
   cells: 1_000_000
 } as const;
 
-type Entry = {
-  name: string;
-  compressed: number;
-  size: number;
-  crc: number;
-  offset: number;
-  method: number;
-  flags: number;
-};
 export type XlsxSheet = { name: string; path: string; hidden: boolean };
 export type XlsxIndex = { sheets: XlsxSheet[]; workbookDate1904: boolean };
 export type XlsxImported = {
@@ -31,224 +22,30 @@ export type XlsxImported = {
   formulaUncached: number;
 };
 const decoder = new TextDecoder("utf-8", { fatal: true });
-const MAX_U32 = 0xffffffff;
 const utf8 = (bytes: Uint8Array) => decoder.decode(bytes);
 function assert(ok: unknown, error: string): asserts ok {
   if (!ok) throw new Error(error);
 }
-function read16(v: DataView, n: number) {
-  return v.getUint16(n, true);
-}
-function read32(v: DataView, n: number) {
-  return v.getUint32(n, true);
-}
-function crc32(data: Uint8Array): number {
-  let crc = -1;
-  for (let i = 0; i < data.length; i++) {
-    crc ^= data[i]!;
-    for (let n = 0; n < 8; n++) crc = (crc >>> 1) ^ (crc & 1 ? 0xedb88320 : 0);
-  }
-  return (crc ^ -1) >>> 0;
-}
-function nameOk(name: string) {
-  return (
-    name.length > 0 &&
-    name.length < 512 &&
-    !name.startsWith("/") &&
-    !name.includes("\\") &&
-    !name.includes(":") &&
-    !name.includes("\0") &&
-    name.split("/").every((part) => part !== ".." && part !== "." && part !== "")
-  );
-}
 
-/** ZIP central-directory reader: refuses ZIP64, encryption, overlap, links, and ambiguous members. */
-export class SafeXlsxZip {
-  readonly names: string[];
-  private entries = new Map<string, Entry>();
-  private data: Uint8Array;
-  private view: DataView;
-  private start: number;
+export class SafeXlsxZip extends BoundedZip {
   constructor(input: ArrayBuffer | Uint8Array) {
-    const data = input instanceof Uint8Array ? input : new Uint8Array(input);
+    super(input, XLSX_IMPORT_LIMITS);
     assert(
-      data.byteLength > 21 && data.byteLength <= XLSX_IMPORT_LIMITS.zipBytes,
-      "Размер XLSX превышает 24 МБ или архив повреждён."
+      this.has("[Content_Types].xml") &&
+        this.has("_rels/.rels") &&
+        this.has("xl/workbook.xml") &&
+        this.has("xl/_rels/workbook.xml.rels"),
+      "Это не поддерживаемый XLSX-пакет."
     );
-    this.data = data;
-    this.view = new DataView(data.buffer, data.byteOffset, data.byteLength);
-    let end = -1;
-    for (let i = data.byteLength - 22; i >= Math.max(0, data.byteLength - 65557); i--) {
-      if (
-        read32(this.view, i) === 0x06054b50 &&
-        i + 22 + read16(this.view, i + 20) === data.byteLength
-      ) {
-        end = i;
-        break;
-      }
-    }
-    assert(end >= 0, "Центральный каталог ZIP не найден.");
-    const v = this.view;
-    assert(!read16(v, end + 4) && !read16(v, end + 6), "Многотомные ZIP не поддерживаются.");
-    const count = read16(v, end + 10);
     assert(
-      count && count === read16(v, end + 8) && count <= XLSX_IMPORT_LIMITS.entries,
-      "В XLSX слишком много вложений либо каталог повреждён."
-    );
-    const size = read32(v, end + 12),
-      offset = read32(v, end + 16);
-    assert(size !== MAX_U32 && offset !== MAX_U32 && count !== 65535, "ZIP64 не поддерживается.");
-    assert(offset + size === end && offset <= data.length, "Некорректные границы ZIP.");
-    this.start = offset;
-    let cursor = offset,
-      total = 0;
-    const insensitive = new Set<string>();
-    for (let i = 0; i < count; i++) {
-      assert(cursor + 46 <= end && read32(v, cursor) === 0x02014b50, "Повреждён каталог ZIP.");
-      const flags = read16(v, cursor + 8),
-        method = read16(v, cursor + 10);
-      const crc = read32(v, cursor + 16),
-        compressed = read32(v, cursor + 20);
-      const length = read32(v, cursor + 24);
-      const nameSize = read16(v, cursor + 28),
-        extra = read16(v, cursor + 30),
-        comment = read16(v, cursor + 32);
-      const disk = read16(v, cursor + 34),
-        mode = read32(v, cursor + 38);
-      const localOffset = read32(v, cursor + 42);
-      const next = cursor + 46 + nameSize + extra + comment;
-      assert(next <= end && nameSize > 0, "Неверная длина ZIP-записи.");
-      assert(
-        (flags & 0x0001) === 0 && (flags & 0x0040) === 0 && (flags & 0x2000) === 0,
-        "Зашифрованные ZIP-файлы не поддерживаются."
-      );
-      assert(
-        (flags & ~(0x0008 | 0x0800)) === 0 && (method === 0 || method === 8),
-        "Метод сжатия XLSX не поддерживается."
-      );
-      let extraAt = cursor + 46 + nameSize;
-      while (extraAt < cursor + 46 + nameSize + extra) {
-        assert(extraAt + 4 <= next, "Некорректное расширение ZIP.");
-        const extraId = read16(v, extraAt),
-          extraSize = read16(v, extraAt + 2);
-        assert(extraId !== 0x0001, "ZIP64 не поддерживается.");
-        extraAt += 4 + extraSize;
-        assert(extraAt <= cursor + 46 + nameSize + extra, "Некорректное расширение ZIP.");
-      }
-      assert(
-        compressed !== MAX_U32 && length !== MAX_U32 && localOffset !== MAX_U32 && !disk,
-        "ZIP64 и многотомные XLSX не поддерживаются."
-      );
-      assert(
-        length <= XLSX_IMPORT_LIMITS.entryBytes && compressed <= XLSX_IMPORT_LIMITS.zipBytes,
-        "XML-файл в XLSX превышает лимит."
-      );
-      assert(
-        !compressed ? length === 0 : length <= compressed * 400,
-        "ZIP содержит недопустимую степень сжатия."
-      );
-      total += length;
-      assert(total <= XLSX_IMPORT_LIMITS.inflatedBytes, "Суммарный размер ZIP превышает 96 МБ.");
-      const name = utf8(data.subarray(cursor + 46, cursor + 46 + nameSize));
-      assert(nameOk(name), "Опасный путь в ZIP.");
-      // POSIX symlinks and exotic entries are not valid OOXML package members.
-      assert(((mode >>> 16) & 0xf000) !== 0xa000, "Ссылки в XLSX запрещены.");
-      assert(
-        !this.entries.has(name) && !insensitive.has(name.toLowerCase()),
-        "Дублирующиеся пути ZIP запрещены."
-      );
-      insensitive.add(name.toLowerCase());
-      assert(
-        !(
+      !this.names.some(
+        (name) =>
           name === "xl/vbaProject.bin" ||
           name.startsWith("xl/externalLinks/") ||
           name.startsWith("xl/embeddings/")
-        ),
-        "Внешние или встроенные объекты в XLSX запрещены."
-      );
-      this.entries.set(name, {
-        name,
-        compressed,
-        size: length,
-        crc,
-        offset: localOffset,
-        method,
-        flags
-      });
-      cursor = next;
-    }
-    assert(cursor === end, "Повреждён центральный каталог ZIP.");
-    // No ZIP data entries may overlap each other or central directory.
-    const spans: [number, number][] = [];
-    for (const entry of this.entries.values()) {
-      const start = entry.offset;
-      assert(
-        start + 30 <= this.start && read32(v, start) === 0x04034b50,
-        "Повреждён ZIP-заголовок."
-      );
-      const flags = read16(v, start + 6),
-        method = read16(v, start + 8);
-      assert(
-        flags === entry.flags && method === entry.method,
-        "ZIP-заголовки противоречат друг другу."
-      );
-      const n = read16(v, start + 26),
-        ext = read16(v, start + 28);
-      let extraAt = start + 30 + n;
-      while (extraAt < start + 30 + n + ext) {
-        assert(extraAt + 4 <= this.start, "Некорректное расширение ZIP.");
-        const extraId = read16(v, extraAt),
-          extraSize = read16(v, extraAt + 2);
-        assert(extraId !== 0x0001, "ZIP64 не поддерживается.");
-        extraAt += 4 + extraSize;
-        assert(extraAt <= start + 30 + n + ext, "Некорректное расширение ZIP.");
-      }
-      const first = start + 30 + n + ext,
-        last = first + entry.compressed;
-      assert(last <= this.start && first >= start + 30, "Некорректные смещения ZIP.");
-      assert(
-        utf8(data.subarray(start + 30, start + 30 + n)) === entry.name,
-        "ZIP-заголовки содержат разные пути."
-      );
-      if (!(flags & 8))
-        assert(
-          read32(v, start + 14) === entry.crc &&
-            read32(v, start + 18) === entry.compressed &&
-            read32(v, start + 22) === entry.size,
-          "ZIP-заголовки содержат разные размеры."
-        );
-      spans.push([start, last]);
-    }
-    spans.sort((a, b) => a[0] - b[0]);
-    for (let i = 1; i < spans.length; i++)
-      assert(spans[i]![0] >= spans[i - 1]![1], "Наложение ZIP-записей запрещено.");
-    this.names = [...this.entries.keys()];
-    assert(
-      this.entries.has("[Content_Types].xml") &&
-        this.entries.has("_rels/.rels") &&
-        this.entries.has("xl/workbook.xml") &&
-        this.entries.has("xl/_rels/workbook.xml.rels"),
-      "Это не поддерживаемый XLSX-пакет."
+      ),
+      "Внешние или встроенные объекты в XLSX запрещены."
     );
-  }
-  has(name: string) {
-    return this.entries.has(name);
-  }
-  read(name: string): Uint8Array {
-    const entry = this.entries.get(name);
-    assert(entry, `В XLSX отсутствует ${name}.`);
-    const start =
-      entry.offset +
-      30 +
-      read16(this.view, entry.offset + 26) +
-      read16(this.view, entry.offset + 28);
-    const raw = this.data.subarray(start, start + entry.compressed);
-    const output = entry.method === 0 ? raw : inflateSync(raw, { out: new Uint8Array(entry.size) });
-    assert(
-      output.byteLength === entry.size && crc32(output) === entry.crc,
-      "ZIP-файл повреждён: размер или контрольная сумма неверны."
-    );
-    return output;
   }
   xml(name: string): string {
     const bytes = this.read(name);
@@ -393,7 +190,7 @@ function partPath(parent: string, relative: string) {
     } else if (part && part !== ".") dirs.push(part);
   }
   const path = dirs.join("/");
-  assert(nameOk(path), "Некорректный путь XLSX.");
+  assert(zipMemberNameOk(path), "Некорректный путь XLSX.");
   return path;
 }
 function relationships(xml: string, parent: string) {

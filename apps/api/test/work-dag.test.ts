@@ -945,10 +945,20 @@ describe("executable durable Work DAG", () => {
     });
     try {
       const base = "/api/v1/projects/" + f.project.id + "/work-dags/" + graph.id;
+      const materials = f.projects.setMaterials(f.project.id, owner, {
+        version: 0,
+        instructions: "Original project brief",
+        attachments: [{ name: "source.txt", content: "Original source evidence" }]
+      })!;
       await app.inject({ url: base });
       expect(f.calls).toHaveLength(0); // GET is not a paid dispatcher.
       graph = await autoTick(f, graph.id);
       expect(graph.nodes.map((node) => node.status)).toEqual(["completed", "pending"]);
+      f.projects.setMaterials(f.project.id, owner, {
+        version: materials.version,
+        instructions: "Revised project brief",
+        attachments: [{ name: "source.txt", content: "Revised source evidence" }]
+      });
       expect(() => f.dag.edit(graph.id, owner, graph.version, nodes.slice(0, 2))).toThrow(
         "AUTO_PLAN_ACTIVE"
       );
@@ -968,6 +978,13 @@ describe("executable durable Work DAG", () => {
         graph.nodes[0]!.artifacts[0]!.id
       ]);
       expect(f.calls[3]!.messages[1]!.content).toContain("Dependency evidence in a real file");
+      for (const call of f.calls) {
+        const input = call.messages[1]!.content;
+        expect(input).toContain("Original project brief");
+        expect(input).toContain("Original source evidence");
+        expect(input).not.toContain("Revised project brief");
+        expect(input).not.toContain("Revised source evidence");
+      }
       const response = await app.inject({ url: base + "/results" });
       expect(response.statusCode).toBe(200);
       expect(response.headers["cache-control"]).toBe("private, no-store");
@@ -1037,6 +1054,34 @@ describe("executable durable Work DAG", () => {
       await app.close();
     }
   });
+  it("exports a ZIP above the JSON limit with every completed file intact", async () => {
+    const content = "界".repeat(63_000);
+    const f = await fixture({
+      output: (request) =>
+        request.task_type === "manager_work_draft"
+          ? { files: [{ name: "result.md", content }] }
+          : undefined
+    });
+    let graph = f.dag.create(f.project.id, owner, owner, {
+      client_request_id: "large-zip",
+      title: "Large result bundle",
+      nodes: Array.from({ length: 11 }, (_, i) => ({
+        id: "file-" + i,
+        title: "File " + i,
+        goal: "Create a report",
+        depends_on: []
+      }))
+    });
+    for (const node of graph.nodes) graph = await f.execute(graph, node.id);
+    expect(graph.nodes.every((node) => node.status === "completed")).toBe(true);
+    expect(() => f.dag.results(graph.id, owner)).toThrow("RESULTS_LIMIT");
+    const zip = f.dag.resultsArchive(graph.id, owner);
+    expect(zip.readUInt32LE(0)).toBe(0x04034b50);
+    expect(zip.includes(Buffer.from('"complete": true'))).toBe(true);
+    expect(zip.includes(Buffer.from("steps/11/011-result.md"))).toBe(true);
+    expect(zip.length).toBeGreaterThan(Buffer.byteLength(content) * 11);
+  });
+
   it("stops before a new child exceeds the total budget and counts earlier attempts after explicit continuation", async () => {
     const f = await fixture();
     let graph = arm(f, f.create(), 3);
@@ -1156,6 +1201,56 @@ describe("executable durable Work DAG", () => {
     expect(f.calls).toHaveLength(4);
     expect(restarted.dag.get(graph.id, owner)!.nodes[0]!.attempts[0]!.work_id).toBe(completed);
   });
+  it("pauses an admitted step on restart and resumes the same attempt explicitly", async () => {
+    const f = await fixture();
+    const materials = f.projects.setMaterials(f.project.id, owner, {
+      version: 0,
+      instructions: "",
+      attachments: [{ name: "terms.txt", content: "Original terms: 12 months" }]
+    })!;
+    let graph = await autoTick(f, arm(f, f.create()).id);
+    f.projects.setMaterials(f.project.id, owner, {
+      version: materials.version,
+      instructions: "",
+      attachments: [{ name: "terms.txt", content: "Updated terms: 24 months" }]
+    });
+    const previous = graph.nodes[0]!.artifacts[0]!;
+    f.dag.advance();
+    const queued = f.store.pending()[0]!;
+    expect(queued.dag_binding?.node_id).toBe("document");
+
+    const restarted = new ManagerWorkCoordinator(f.deps);
+    restarted.dag.recoverAutomation();
+    restarted.dag.advance();
+    graph = restarted.dag.get(graph.id, owner)!;
+    expect(graph.execution?.reason).toBe("RESTART_REQUIRES_RESUME");
+    expect(graph.nodes[1]).toMatchObject({ status: "blocked", blocked_reason: "PAUSED" });
+    expect(f.store.pending()).toEqual([]);
+    await restarted.execute(queued.id, owner);
+    expect(f.calls).toHaveLength(2);
+    expect(restarted.dag.results(graph.id, owner).files.map((file) => file.id)).toEqual([
+      previous.id
+    ]);
+
+    graph = restarted.dag.control(graph.id, owner, {
+      version: graph.version,
+      action: "resume_step",
+      node_id: "document"
+    });
+    await restarted.execute(queued.id, owner);
+    graph = restarted.dag.get(graph.id, owner)!;
+    expect(graph.nodes[1]!.status).toBe("completed");
+    expect(graph.nodes[1]!.attempts.map((attempt) => attempt.work_id)).toEqual([queued.id]);
+    expect(graph.nodes[0]!.artifacts[0]!.sha256).toBe(previous.sha256);
+    expect(f.calls[2]!.messages[1]!.content).toContain("Original terms: 12 months");
+    expect(f.calls[2]!.messages[1]!.content).not.toContain("Updated terms: 24 months");
+    expect(f.calls[2]!.messages[1]!.content).toContain("Dependency evidence in a real file");
+    const archive = restarted.dag.resultsArchive(graph.id, owner);
+    expect(archive.includes(Buffer.from("steps/01/001-result.md"))).toBe(true);
+    expect(archive.includes(Buffer.from("steps/02/002-result.md"))).toBe(true);
+    expect(f.calls).toHaveLength(4);
+  });
+
   it("invalidates autostart consent when an unstarted goal is edited while paused", async () => {
     const f = await fixture();
     let graph = arm(f, f.create());

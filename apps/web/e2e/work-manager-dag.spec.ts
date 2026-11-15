@@ -68,7 +68,7 @@ test("owner runs the complete reviewed plan once and recovers a lost start respo
   expect(starts).toBe(1);
   const bundle = await request.get(
     (await panel
-      .getByRole("link", { name: "Скачать все результаты плана", exact: true })
+      .getByRole("link", { name: "Скачать результаты (JSON)", exact: true })
       .getAttribute("href"))!
   );
   expect(bundle.status()).toBe(200);
@@ -118,6 +118,16 @@ test("owner creates, edits and executes a dependency plan with durable versioned
   await panel.getByRole("button", { name: "Запустить шаг", exact: true }).click();
   const versionOne = panel.getByRole("link", { name: "result.md · версия 1", exact: true });
   await expect(versionOne).toBeVisible();
+  const partialArchive = panel.getByRole("link", {
+    name: "Скачать готовые файлы и отчёт (ZIP)",
+    exact: true
+  });
+  const download = await request.get((await partialArchive.getAttribute("href"))!);
+  expect(download.status()).toBe(200);
+  const zip = await download.body();
+  expect(zip.includes(Buffer.from('"complete": false'))).toBe(true);
+  expect(zip.includes(Buffer.from('"completed_steps": 1'))).toBe(true);
+  expect(zip.includes(Buffer.from("steps/01/001-result.md"))).toBe(true);
   await expect(panel.getByRole("button", { name: "Запустить шаг", exact: true })).toHaveCount(1);
   await page.reload();
   await expect(versionOne).toBeVisible();
