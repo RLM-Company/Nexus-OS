@@ -25,6 +25,7 @@ import { ChatBranches, ChatBranchButton } from "./chat-branches";
 import { useChatNavigation, ChatContextPanel, ChatToCanvas } from "./chat-workspace";
 import { ChatItemMenu } from "./chat-item-menu";
 import { CreateProjectDialog } from "./create-project-dialog";
+import { ProfileOnboarding } from "./profile-onboarding";
 import { ChatSearchTrigger } from "./chat-search-trigger";
 import { ProjectTitleEditor } from "./project-title-editor";
 import { QuickSwitcher } from "./quick-switcher";
@@ -3442,6 +3443,8 @@ export default function Home() {
               <h2>{greeting}</h2>
               {displayName && <p className="hero-greeting-name">{displayName}, рад вас видеть.</p>}
             </section>
+            {/* Вне .hero: чужие e2e проверяют единственный h2 и отсутствие p в hero. */}
+            <ProfileOnboarding onSaved={(name) => setDisplayName(name)} />
           </>
         ) : null}
 
