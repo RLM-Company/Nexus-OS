@@ -50,6 +50,8 @@ export function VoiceComposer({
   const [notice, setNotice] = useState("");
   const [failed, setFailed] = useState(false);
   const recognition = useRef<Recognition | null>(null);
+  /** Явная остановка пользователем не считается ошибкой и не предлагает повтор. */
+  const stoppedByUser = useRef(false);
 
   useEffect(
     () => () => {
@@ -73,6 +75,7 @@ export function VoiceComposer({
     instance.continuous = true;
     instance.interimResults = false;
     recognition.current = instance;
+    stoppedByUser.current = false;
     setRecording(true);
     setFailed(false);
     setNotice("Ожидаю разрешения на доступ к микрофону…");
@@ -107,9 +110,15 @@ export function VoiceComposer({
       if (recognition.current !== instance) return;
       recognition.current = null;
       setRecording(false);
-      // «Речь не распознана» — тоже ошибка, после которой можно повторить.
-      setFailed(!receivedSpeech);
-      setNotice(receivedSpeech ? "Текст добавлен в черновик." : errors["no-speech"]);
+      // «Речь не распознана» — ошибка, но явная остановка пользователем — нет.
+      setFailed(!receivedSpeech && !stoppedByUser.current);
+      setNotice(
+        stoppedByUser.current
+          ? "Диктовка остановлена."
+          : receivedSpeech
+            ? "Текст добавлен в черновик."
+            : errors["no-speech"]
+      );
     };
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -133,6 +142,7 @@ export function VoiceComposer({
   function stop() {
     const active = recognition.current;
     if (!active) return;
+    stoppedByUser.current = true;
     try {
       active.stop();
     } catch {
@@ -145,6 +155,7 @@ export function VoiceComposer({
 
   function retry() {
     recognition.current = null;
+    stoppedByUser.current = false;
     setRecording(false);
     setFailed(false);
     setNotice("");

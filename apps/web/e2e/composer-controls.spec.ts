@@ -252,13 +252,31 @@ test("dictation stops explicitly and retries after a recognition error", async (
   await expect(retry).toBeEnabled();
   await retry.click();
   await expect(editor).toHaveValue("Помоги составить план на завтра");
-  // Явная остановка доступна во время записи и не теряет черновик.
+  await expect(page.getByRole("status")).toContainText("Текст добавлен в черновик");
+});
+
+test("dictation can be stopped explicitly without losing the draft", async ({ page }) => {
+  await speechFixture(page, 800);
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, "mediaDevices", {
+      configurable: true,
+      value: {
+        getUserMedia: async (options: MediaStreamConstraints) =>
+          options.audio ? new MediaStream() : Promise.reject(new Error("No audio requested"))
+      }
+    });
+  });
+  await page.goto("/");
+  const editor = page.getByLabel("Сообщение Kosmora");
+  await expect(editor).toBeEnabled();
   await page.getByLabel("Голосовой ввод", { exact: true }).click();
   await page.getByRole("button", { name: "Диктовать в браузере" }).click();
   const stop = page.getByRole("button", { name: "Остановить диктовку" });
   await expect(stop).toBeEnabled();
   await stop.click();
-  await expect(editor).toHaveValue("Помоги составить план на завтра");
+  await expect(page.getByRole("status")).toContainText("Диктовка остановлена");
+  await expect(page.getByRole("button", { name: "Диктовать в браузере" })).toBeEnabled();
+  await expect(editor).toHaveValue("");
 });
 
 test("composer opens Deep Research inside the workspace", async ({ page }) => {
