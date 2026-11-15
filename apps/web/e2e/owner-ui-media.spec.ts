@@ -1,5 +1,18 @@
 import { expect, test } from "@playwright/test";
 
+// First-run profile onboarding is a separate owner flow with its own spec.
+// Its modal intercepts clicks on these UI/media checks, so mark it done before
+// every test here. No product code or onboarding behaviour is changed.
+test.beforeEach(async ({ page }) => {
+  await page.addInitScript(() => {
+    try {
+      localStorage.setItem("kosmora:profile-onboarding.v1", "done");
+    } catch {
+      /* Storage may be unavailable; the tests then still exercise the surface. */
+    }
+  });
+});
+
 test("centered mode control and project creation without a model call", async ({ page }) => {
   await page.goto("/");
   const switcher = page.getByRole("group", { name: "Режим нового чата" });
@@ -143,5 +156,71 @@ test("media uses generator workspaces, local references and no fake prompt resul
     page.getByRole("button", { name: "Сгенерировать видео", exact: true })
   ).toBeDisabled();
   await expect(page.getByRole("button", { name: "Подготовить промпт" })).toHaveCount(0);
+  expect(mediaPosts).toBe(0);
+});
+
+// Stage-three Studio: "сохранить настройки генерации". The Sound draft test in
+// media-job-recovery.spec.ts covers an unsent TEXT draft; the image generator's
+// prompt and negotiated options are a different local draft and are asserted
+// here without creating any paid media job.
+test("image generation settings survive navigation and reload without a paid job", async ({
+  page
+}) => {
+  let mediaPosts = 0;
+  page.on("request", (request) => {
+    if (request.method() === "POST" && request.url().includes("/api/v1/media/")) mediaPosts++;
+  });
+  const capabilities = {
+    capabilities: {
+      image_generation: {
+        ready: true,
+        model: "gpt-image-1",
+        reason: null,
+        constraints: {
+          sizes: ["1024x1024", "1536x1024", "1024x1536"],
+          aspectRatios: ["1:1", "3:2", "2:3"],
+          qualities: ["low", "medium", "high", "auto"],
+          formats: ["png", "jpeg", "webp"],
+          maxCount: 1,
+          maxPromptLength: 2000,
+          supportsReferenceImage: false
+        }
+      },
+      speech: { ready: false },
+      transcription: { ready: false }
+    }
+  };
+  await page.route("**/api/v1/media/capabilities", (route) =>
+    route.fulfill({ json: capabilities })
+  );
+  await page.route("**/api/v1/media/jobs", (route) => route.fulfill({ json: { items: [] } }));
+  await page.goto("/?surface=images");
+  await page.getByLabel("Описание изображения", { exact: true }).fill("Лунная станция");
+  await page.getByRole("button", { name: "3:2 · 1536 × 1024" }).click();
+  await page.getByLabel("Качество изображения").selectOption("high");
+  await page.getByLabel("Формат результата").selectOption("webp");
+  await expect(page.getByRole("button", { name: "3:2 · 1536 × 1024" })).toHaveAttribute(
+    "aria-pressed",
+    "true"
+  );
+
+  const expectSaved = async () => {
+    await expect(page.getByLabel("Описание изображения", { exact: true })).toHaveValue(
+      "Лунная станция"
+    );
+    await expect(page.getByLabel("Качество изображения")).toHaveValue("high");
+    await expect(page.getByLabel("Формат результата")).toHaveValue("webp");
+    await expect(page.getByRole("button", { name: "3:2 · 1536 × 1024" })).toHaveAttribute(
+      "aria-pressed",
+      "true"
+    );
+  };
+  // Leaving the surface and coming back keeps the same local draft.
+  await page.goto("/?surface=video");
+  await page.goto("/?surface=images");
+  await expectSaved();
+  // A full reload restores it too; no generation was ever dispatched.
+  await page.reload();
+  await expectSaved();
   expect(mediaPosts).toBe(0);
 });
