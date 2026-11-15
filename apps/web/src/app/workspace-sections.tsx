@@ -28,6 +28,7 @@ export type ToolSurface =
   | "images"
   | "video"
   | "sound"
+  | "music"
   | "apps"
   | "features"
   | "settings";
@@ -36,11 +37,11 @@ export const TOOL_ITEMS: { id: ToolSurface; label: string; description: string }
   { id: "code", label: "Koscode", description: "Задачи разработки" },
   { id: "multi-agent", label: "Multi-Agent", description: "Команда и роли" },
   { id: "skills", label: "Skills", description: "Навыки и специализации" },
-  { id: "studio", label: "Kosmora Studio", description: "Изображения, видео и звук" },
   { id: "files", label: "Анализ файлов", description: "Документы, данные и код" },
   { id: "images", label: "Изображения", description: "Кадр, стиль и композиция" },
   { id: "video", label: "Видео", description: "Сцена и движение" },
-  { id: "sound", label: "Sound", description: "Голос, музыка и атмосфера" },
+  { id: "sound", label: "Sound", description: "Озвучивание текста и записи" },
+  { id: "music", label: "Music", description: "Музыка и атмосфера" },
   { id: "research", label: "Deep Research", description: "Поиск, источники и отчёты" },
   { id: "presentations", label: "Презентации", description: "Слайды и PPTX" },
   { id: "sites", label: "Сайты", description: "Идея, структура и реализация" },
@@ -50,9 +51,17 @@ export const TOOL_ITEMS: { id: ToolSurface; label: string; description: string }
   { id: "settings", label: "Настройки", description: "Ваше пространство" }
 ];
 export const STUDIO_ITEMS = TOOL_ITEMS.filter((item) =>
-  ["files", "images", "video", "sound", "research", "presentations", "sites", "games"].includes(
-    item.id
-  )
+  [
+    "files",
+    "images",
+    "video",
+    "sound",
+    "music",
+    "research",
+    "presentations",
+    "sites",
+    "games"
+  ].includes(item.id)
 );
 export type UiPreferences = { compact: boolean; largeText: boolean };
 type OwnerSessionView = {
@@ -602,104 +611,21 @@ function Code({ onCompose }: Props) {
   );
 }
 
-function Media({ surface }: { surface: "images" | "video" | "sound" }) {
+function Media({ surface }: { surface: "images" | "video" | "sound" | "music" }) {
   return <MediaWorkbench key={surface} surface={surface} />;
 }
 
-function Studio({ onNavigate }: Props) {
-  const tools = {
-    files: {
-      description: "Читайте документы, находите нужные фрагменты и готовьте выборку для чата.",
-      action: "Открыть анализ",
-      status: "Локальный анализ"
-    },
-    images: {
-      description: "Создавайте изображения: описание, параметры, референсы и результат.",
-      action: "Открыть студию",
-      status: "Медиа-студия"
-    },
-    video: {
-      description: "Настройте сцену, формат, длительность и визуальные референсы.",
-      action: "Открыть студию",
-      status: "Медиа-студия"
-    },
-    sound: {
-      description: "Озвучивайте текст и сохраняйте записи.",
-      action: "Открыть студию",
-      status: "Медиа-студия"
-    },
-    research: {
-      description: "Исследуйте тему с источниками и отчётом.",
-      action: "Открыть Deep Research",
-      status: "Поиск и отчёты"
-    },
-    presentations: {
-      description: "Соберите слайды и экспортируйте PPTX.",
-      action: "Открыть презентации",
-      status: "Слайды"
-    },
-    sites: {
-      description: "Создайте страницу с ИИ, отредактируйте HTML и сохраните версии.",
-      action: "Создать сайт",
-      status: "HTML и CSS"
-    },
-    games: {
-      description:
-        "Разрабатывайте браузерные игры: код, запуск, отладка, версии и экспорт проекта.",
-      action: "Создать игру",
-      status: "Прототипирование"
-    }
-  } as const;
+/** The Studio overview page was removed per the stage-three instruction.
+ * Old `?surface=studio` links now open the first real tool instead of a card
+ * catalog; no overview grid is rendered. */
+function StudioRedirect({ onNavigate }: Props) {
+  useEffect(() => {
+    onNavigate("files");
+  }, [onNavigate]);
   return (
-    <>
-      <Header icon="studio" eyebrow="Файлы и медиа" title="Kosmora Studio">
-        Разберите документ или подготовьте идею для следующей работы.
-      </Header>
-      <div className={styles.studioGrid}>
-        {STUDIO_ITEMS.map((item) => {
-          const detail = tools[item.id as keyof typeof tools];
-          const featured = item.id === "files";
-          return (
-            <button
-              type="button"
-              className={`${styles.studioCard}${featured ? ` ${styles.studioFeatured}` : ""}`}
-              key={item.id}
-              onClick={() => onNavigate(item.id)}
-            >
-              <div className={styles.studioArt} aria-hidden="true">
-                <Icon name={item.id} />
-              </div>
-              <div className={styles.studioCopy}>
-                <span className={styles.studioStatus}>{detail.status}</span>
-                <h3>{item.label}</h3>
-                <p>{detail.description}</p>
-                {featured && (
-                  <div className={styles.studioFormats} aria-hidden="true">
-                    <span>PDF</span>
-                    <span>DOCX</span>
-                    <span>CSV</span>
-                    <span>Текст и код</span>
-                  </div>
-                )}
-                <span className={styles.studioAction}>
-                  {detail.action}
-                  <Icon name="arrow" />
-                </span>
-              </div>
-            </button>
-          );
-        })}
-      </div>
-      <div className={styles.studioFooter}>
-        <p>
-          Доступность генерации зависит от подключённой модели. Параметры и результаты собраны
-          внутри каждого инструмента.
-        </p>
-        <button type="button" onClick={() => onNavigate("features")}>
-          Возможности Studio <Icon name="arrow" />
-        </button>
-      </div>
-    </>
+    <Header icon="studio" eyebrow="Файлы и медиа" title="Kosmora Studio">
+      Открываю рабочие инструменты…
+    </Header>
   );
 }
 
@@ -1308,7 +1234,7 @@ export function WorkspaceSections(props: Props) {
       content = <Skills {...props} />;
       break;
     case "studio":
-      content = <Studio {...props} />;
+      content = <StudioRedirect {...props} />;
       break;
     case "files":
       // Resolve the URL's project before accepting local input. Otherwise a late

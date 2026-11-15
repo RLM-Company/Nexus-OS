@@ -21,6 +21,7 @@ export type IconName =
   | "images"
   | "video"
   | "sound"
+  | "music"
   | "microphone"
   | "headphones"
   | "apps"
@@ -203,6 +204,13 @@ const paths: Record<Exclude<IconName, "cosmora">, React.ReactNode> = {
     </>
   ),
   sound: <path d="M3 9v6m4-9v12m5-16v20m5-16v12m4-9v6" />,
+  music: (
+    <>
+      <path d="M9 18V5l10-2v13" />
+      <circle cx="6" cy="18" r="3" />
+      <circle cx="16" cy="16" r="3" />
+    </>
+  ),
   apps: (
     <>
       <rect x="3" y="3" width="7" height="7" rx="2" />

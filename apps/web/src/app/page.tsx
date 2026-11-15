@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import Link from "next/link";
 import {
@@ -209,6 +209,7 @@ const SURFACE_TITLE: Record<WorkspaceSurface, string> = {
   images: "Изображения",
   video: "Видео",
   sound: "Sound",
+  music: "Music",
   "multi-agent": "Multi-Agent",
   apps: "Интеграции",
   features: "Возможности",
@@ -426,6 +427,12 @@ const composerDraftStorageKey = (projectId: string | null, chatId: string | null
 
 const isToolSurface = (value: string | null): value is ToolSurface =>
   TOOL_ITEMS.some((item) => item.id === value);
+/** Legacy `?surface=studio` links: the overview page was removed, so they open
+ * the first real Studio tool. Keeps shared links working without the catalog. */
+const resolveToolSurface = (value: string | null): ToolSurface | null => {
+  const resolved = value === "studio" ? "files" : value;
+  return isToolSurface(resolved) ? resolved : null;
+};
 
 const greetingSeed = (): number => {
   if (typeof crypto.getRandomValues === "function") {
@@ -1021,21 +1028,30 @@ export default function Home() {
         setWorkspaceSurfaceHydrated(true);
         return;
       }
-      if (isToolSurface(requestedSurface)) {
-        setSurface(requestedSurface);
-        if (["studio", "files", "images", "video", "sound"].includes(requestedSurface))
+      const resolvedSurface = resolveToolSurface(requestedSurface);
+      if (resolvedSurface) {
+        if (requestedSurface === "studio") {
+          // Old Studio-overview links now point at the real tool, so the shared
+          // URL must not keep advertising the removed catalog.
+          const url = new URL(window.location.href);
+          url.searchParams.set("surface", resolvedSurface);
+          window.history.replaceState(window.history.state, "", url.toString());
+        }
+        setSurface(resolvedSurface);
+        if (["files", "images", "video", "sound", "music"].includes(resolvedSurface))
           setStudioExpanded(true);
         setWorkspaceSurfaceHydrated(true);
         return;
       }
       const savedSurface = window.localStorage.getItem(WORKSPACE_SURFACE_STORAGE_KEY);
-      if (isToolSurface(savedSurface)) {
-        if (savedSurface === "work" || savedSurface === "code") {
-          setChatMode(savedSurface === "code" ? "coscode" : "work");
-          setCodeSpace(savedSurface === "code");
+      const resolvedSaved = resolveToolSurface(savedSurface);
+      if (resolvedSaved) {
+        if (resolvedSaved === "work" || resolvedSaved === "code") {
+          setChatMode(resolvedSaved === "code" ? "coscode" : "work");
+          setCodeSpace(resolvedSaved === "code");
           setSurface("manager");
-        } else setSurface(savedSurface);
-        if (["studio", "files", "images", "video", "sound"].includes(savedSurface))
+        } else setSurface(resolvedSaved);
+        if (["files", "images", "video", "sound", "music"].includes(resolvedSaved))
           setStudioExpanded(true);
       }
     } catch {
@@ -2655,6 +2671,7 @@ export default function Home() {
                   "images",
                   "video",
                   "sound",
+                  "music",
                   "settings",
                   "apps",
                   "features",

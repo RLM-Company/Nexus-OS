@@ -168,14 +168,13 @@ test("model and effort picker persists the effort and fits mobile; Studio routes
   await expect(page.getByLabel("Сообщение Kosmora", { exact: true })).toBeEnabled();
   await page
     .getByRole("navigation", { name: "Мобильная навигация" })
-    .getByRole("button", { name: "Studio", exact: true })
+    .getByRole("button", { name: "Студия", exact: true })
     .click();
-  await expect(page).toHaveURL(/surface=studio/);
+  await expect(page).toHaveURL(/surface=files/);
   expect(new URL(page.url()).searchParams.has("mode")).toBe(false);
   await page.reload();
+  // The Studio overview catalog was removed; the real tool opens directly.
   await expect(
     page.getByRole("heading", { name: "Kosmora Studio", exact: true, level: 2 })
-  ).toBeVisible();
-  for (const title of ["Анализ файлов", "Deep Research", "Презентации", "Сайты", "Games"])
-    await expect(page.getByRole("heading", { name: title, exact: true })).toBeVisible();
+  ).toHaveCount(0);
 });
