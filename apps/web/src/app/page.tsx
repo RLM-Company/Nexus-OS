@@ -25,6 +25,7 @@ import { ChatBranches, ChatBranchButton } from "./chat-branches";
 import { useChatNavigation, ChatContextPanel, ChatToCanvas } from "./chat-workspace";
 import { ChatItemMenu } from "./chat-item-menu";
 import { CreateProjectDialog } from "./create-project-dialog";
+import { ProfileOnboarding } from "./profile-onboarding";
 import { ChatSearchTrigger } from "./chat-search-trigger";
 import { ProjectTitleEditor } from "./project-title-editor";
 import { QuickSwitcher } from "./quick-switcher";
@@ -2354,6 +2355,7 @@ export default function Home() {
       style={{ "--sidebar-width": `${sidebarWidth.width}px` } as CSSProperties}
       data-sidebar-collapsed={sidebarCollapse.collapsed || undefined}
     >
+      <ProfileOnboarding onSaved={(name) => setDisplayName(name)} />
       <button
         type="button"
         className="sidebar-collapse-toggle"
