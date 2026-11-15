@@ -26,8 +26,12 @@ test("persists original documents, searches cited evidence and exports an editab
       .getByRole("group", { name: "Сохранённые документы" })
       .getByText("договор.txt", { exact: true })
   ).toBeVisible();
-  await expect(library).toContainText("Готов");
+  const savedFile = library
+    .getByRole("group", { name: "Сохранённые документы" })
+    .getByRole("checkbox", { name: /^договор\.txt Готов ·/ });
+  await expect(savedFile).toBeEnabled();
   await page.reload();
+  await expect(savedFile).toBeEnabled();
   await expect(
     library
       .getByRole("group", { name: "Сохранённые документы" })
