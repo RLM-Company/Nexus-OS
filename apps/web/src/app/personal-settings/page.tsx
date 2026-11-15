@@ -7,6 +7,7 @@ import PrivacyPanel from "./privacy-panel";
 import { Switch, SystemMessage } from "../ui/kosmora-controls";
 import { ModelPicker } from "../ui/model-picker";
 import { InterfaceSettings } from "./interface-settings";
+import { ScheduledDispatches } from "./scheduled-dispatches";
 import { LocalVaultSettings } from "./local-vault-settings";
 import { GoogleDriveSettings } from "./google-drive-settings";
 
@@ -114,6 +115,7 @@ export default function PersonalSettings() {
       <p className={styles.muted}>Всё для удобной работы с Kosmora.</p>
       <nav className={styles.sectionsNav} aria-label="Разделы настроек">
         <a href="#profile-settings">Профиль</a>
+        <a href="#scheduled-dispatches">Планировка</a>
         <a href="#model-settings">Модель и чат</a>
         <a href="#interface-settings">Интерфейс и голос</a>
         <a href="#relay-settings">English Relay</a>
@@ -293,6 +295,7 @@ export default function PersonalSettings() {
             <UsageActivity rows={usage?.rows ?? []} />
           </section>
           <InterfaceSettings />
+          <ScheduledDispatches />
           <LocalVaultSettings />
           <GoogleDriveSettings />
           <div id="account-data">

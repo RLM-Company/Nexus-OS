@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import Link from "next/link";
 import {
@@ -26,6 +26,9 @@ import { useChatNavigation, ChatContextPanel, ChatToCanvas } from "./chat-worksp
 import { ChatItemMenu } from "./chat-item-menu";
 import { CreateProjectDialog } from "./create-project-dialog";
 import { ProfileOnboarding } from "./profile-onboarding";
+import { ClarificationCardPanel } from "./clarification-card";
+import { ChatTaskPlanPanel } from "./chat-task-plan-panel";
+import { emitChatTaskEvent, useChatTaskPlan } from "./use-chat-task-plan";
 import { ChatSearchTrigger } from "./chat-search-trigger";
 import { ProjectTitleEditor } from "./project-title-editor";
 import { QuickSwitcher } from "./quick-switcher";
@@ -623,6 +626,10 @@ export default function Home() {
     activeProject?.id ?? selectedProjectRef.current,
     activeLocalChatId
   );
+  const taskPlanScope = activeProject?.id ?? activeLocalChatId ?? "new-chat";
+  const taskPlanScopeRef = useRef(taskPlanScope);
+  taskPlanScopeRef.current = taskPlanScope;
+  const taskPlan = useChatTaskPlan(taskPlanScope);
   const composerActions = draftActions.get(composerDraftKey) ?? DEFAULT_COMPOSER_ACTIONS;
   const updateDraftActions = (
     key: string,
@@ -1443,6 +1450,7 @@ export default function Home() {
         if (!isCurrent()) return;
         setError(null);
         setRunPhase("running");
+        emitChatTaskEvent(taskPlanScopeRef.current, { type: "run.started" });
       });
 
       source.addEventListener("message.started", (raw) => {
@@ -1468,6 +1476,7 @@ export default function Home() {
       source.addEventListener("message.delta", (raw) => {
         if (!isCurrent()) return;
         setRunPhase("streaming");
+        emitChatTaskEvent(taskPlanScopeRef.current, { type: "message.delta" });
         const event = JSON.parse(String(raw.data)) as {
           data: { message_id: string; seq: number; delta: string };
         };
@@ -1495,6 +1504,7 @@ export default function Home() {
         viewRequestRef.current += 1;
         finished = true;
         closeSource();
+        emitChatTaskEvent(taskPlanScopeRef.current, { type: "run.completed" });
         setLastCompletedRoute({
           provider: event.data.provider,
           model: event.data.model_resolved
@@ -1515,6 +1525,7 @@ export default function Home() {
 
       source.addEventListener("run.failed", () => {
         if (!isCurrent()) return;
+        emitChatTaskEvent(taskPlanScopeRef.current, { type: "run.failed" });
         terminalRunRef.current = { runId: accepted.run_id, phase: "failed" };
         viewRequestRef.current += 1;
         finished = true;
@@ -1528,6 +1539,7 @@ export default function Home() {
 
       source.addEventListener("run.cancelled", () => {
         if (!isCurrent()) return;
+        emitChatTaskEvent(taskPlanScopeRef.current, { type: "run.cancelled" });
         terminalRunRef.current = { runId: accepted.run_id, phase: "cancelled" };
         viewRequestRef.current += 1;
         finished = true;
@@ -1592,6 +1604,7 @@ export default function Home() {
         if (!isCurrent()) return;
         setError(null);
         setRunPhase("running");
+        emitChatTaskEvent(taskPlanScopeRef.current, { type: "run.started" });
       });
       source.addEventListener("message.started", (raw) => {
         if (!isCurrent()) return;
@@ -1611,6 +1624,7 @@ export default function Home() {
       source.addEventListener("message.delta", (raw) => {
         if (!isCurrent()) return;
         setRunPhase("streaming");
+        emitChatTaskEvent(taskPlanScopeRef.current, { type: "message.delta" });
         const event = JSON.parse(String(raw.data)) as {
           data: { message_id: string; seq: number; delta: string };
         };
@@ -1637,6 +1651,7 @@ export default function Home() {
         };
         finished = true;
         closeSource();
+        emitChatTaskEvent(taskPlanScopeRef.current, { type: "run.completed" });
         setLastCompletedRoute({
           provider: event.data.provider,
           model: event.data.model_resolved
@@ -1655,6 +1670,7 @@ export default function Home() {
       });
       source.addEventListener("run.failed", (raw) => {
         if (!isCurrent()) return;
+        emitChatTaskEvent(taskPlanScopeRef.current, { type: "run.failed" });
         terminalRunRef.current = { runId: accepted.run_id, phase: "failed" };
         const failure = JSON.parse(String(raw.data)) as { data: { error_code: string } };
         viewRequestRef.current += 1;
@@ -1697,6 +1713,7 @@ export default function Home() {
       });
       source.addEventListener("run.cancelled", () => {
         if (!isCurrent()) return;
+        emitChatTaskEvent(taskPlanScopeRef.current, { type: "run.cancelled" });
         terminalRunRef.current = { runId: accepted.run_id, phase: "cancelled" };
         viewRequestRef.current += 1;
         finished = true;
@@ -3447,6 +3464,20 @@ export default function Home() {
             <ProfileOnboarding onSaved={(name) => setDisplayName(name)} />
           </>
         ) : null}
+
+        {taskPlan.plan && <ChatTaskPlanPanel plan={taskPlan.plan} onChange={taskPlan.setPlan} />}
+
+        {activeProject && (
+          <ClarificationCardPanel
+            projectId={activeProject.id}
+            taskScope={activeProject.id}
+            onDraft={(answer) => {
+              setDraft(answer);
+              saveBrowserDraft();
+              composerRef.current?.focus();
+            }}
+          />
+        )}
 
         <form
           autoComplete="off"
