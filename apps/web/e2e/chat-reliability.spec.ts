@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { settleRouteAction } from "../src/app/browser-route-teardown";
 
 // Optional diagnostic stress; never retries a failed case.
 if (process.env.DRAFT_STRESS_CPU === "1") {
@@ -172,7 +173,21 @@ test("restores text and files after closing the tab, isolates chats, removes and
           contentType: "application/json"
         });
       })
-      .catch(() => undefined);
+      // The assertion below still fails the test; this only records why the
+      // best-effort diagnostic snapshot could not be attached, instead of
+      // silently swallowing that diagnostic failure.
+      .catch(async (diagnosticError: unknown) => {
+        const detail =
+          diagnosticError instanceof Error
+            ? diagnosticError.message
+            : typeof diagnosticError === "string"
+              ? diagnosticError
+              : "unknown diagnostic error";
+        await testInfo.attach("draft-chat-diagnostic-unavailable", {
+          body: detail,
+          contentType: "text/plain"
+        });
+      });
     throw error;
   }
   await reopened.reload();
@@ -819,7 +834,9 @@ test("a spoken request survives reload before the server acknowledgement", async
     statuses.push(response.status());
     if (posts.length === 1) {
       await firstResponse;
-      await route.abort("connectionreset").catch(() => undefined);
+      // The reload tears down the held request. Tolerate only that specific
+      // Playwright teardown; any other failure of abort() must fail the test.
+      await settleRouteAction(route.abort("connectionreset"), () => page.isClosed());
     } else await route.fulfill({ response });
   });
   try {

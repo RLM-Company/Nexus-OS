@@ -51,6 +51,7 @@ export * from "./chat-branches.js";
 
 export * from "./work-skills.js";
 export * from "./work-plan-package.js";
+export * from "./integrations.js";
 
 export * from "./intelligence-graph-package.js";
 export type { IntelligenceGraphEvidenceAudit } from "./intelligence-graph-audit.js";

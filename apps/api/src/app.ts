@@ -8,6 +8,7 @@ import { registerHistoryCompactionRoutes } from "./history-compaction-routes.js"
 import { ComputerControlService } from "./computer-control/service.js";
 import { registerComputerControlRoutes } from "./computer-control/routes.js";
 import { registerApexRoutes } from "./apex-routes.js";
+import { registerConnectorRoutes } from "./connector-routes.js";
 import { registerProjectKnowledgeRoutes } from "./project-knowledge-routes.js";
 import { registerProjectAutomationRoutes } from "./project-automation-routes.js";
 import { ProjectAutomation } from "./project-automation.js";
@@ -855,6 +856,7 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
     identityFor
   );
   registerRuntimeClockRoutes(app, dependencies.runtimeClock ?? new RuntimeClock());
+  registerConnectorRoutes(app, dependencies.policyStore, "owner");
   if (dependencies.projectStore) registerApexRoutes(app, dependencies.projectStore, identityFor);
   if (dependencies.payStore)
     registerPayRoutes(app, {
