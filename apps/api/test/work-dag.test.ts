@@ -1203,7 +1203,17 @@ describe("executable durable Work DAG", () => {
   });
   it("pauses an admitted step on restart and resumes the same attempt explicitly", async () => {
     const f = await fixture();
+    const materials = f.projects.setMaterials(f.project.id, owner, {
+      version: 0,
+      instructions: "",
+      attachments: [{ name: "terms.txt", content: "Original terms: 12 months" }]
+    })!;
     let graph = await autoTick(f, arm(f, f.create()).id);
+    f.projects.setMaterials(f.project.id, owner, {
+      version: materials.version,
+      instructions: "",
+      attachments: [{ name: "terms.txt", content: "Updated terms: 24 months" }]
+    });
     const previous = graph.nodes[0]!.artifacts[0]!;
     f.dag.advance();
     const queued = f.store.pending()[0]!;
@@ -1232,6 +1242,12 @@ describe("executable durable Work DAG", () => {
     expect(graph.nodes[1]!.status).toBe("completed");
     expect(graph.nodes[1]!.attempts.map((attempt) => attempt.work_id)).toEqual([queued.id]);
     expect(graph.nodes[0]!.artifacts[0]!.sha256).toBe(previous.sha256);
+    expect(f.calls[2]!.messages[1]!.content).toContain("Original terms: 12 months");
+    expect(f.calls[2]!.messages[1]!.content).not.toContain("Updated terms: 24 months");
+    expect(f.calls[2]!.messages[1]!.content).toContain("Dependency evidence in a real file");
+    const archive = restarted.dag.resultsArchive(graph.id, owner);
+    expect(archive.includes(Buffer.from("steps/01/001-result.md"))).toBe(true);
+    expect(archive.includes(Buffer.from("steps/02/002-result.md"))).toBe(true);
     expect(f.calls).toHaveLength(4);
   });
 
