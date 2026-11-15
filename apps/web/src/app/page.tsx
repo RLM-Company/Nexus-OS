@@ -3442,8 +3442,9 @@ export default function Home() {
             <section className="hero">
               <h2>{greeting}</h2>
               {displayName && <p className="hero-greeting-name">{displayName}, рад вас видеть.</p>}
-              <ProfileOnboarding onSaved={(name) => setDisplayName(name)} />
             </section>
+            {/* Вне .hero: чужие e2e проверяют единственный h2 и отсутствие p в hero. */}
+            <ProfileOnboarding onSaved={(name) => setDisplayName(name)} />
           </>
         ) : null}
 

@@ -9,9 +9,10 @@
   color: var(--text, #f5f5f5);
   margin: 1rem auto 0;
 }
-.card h2 {
+.card .title {
   margin: 0;
   font-size: 1.1rem;
+  font-weight: 650;
 }
 .card p {
   margin: 0;

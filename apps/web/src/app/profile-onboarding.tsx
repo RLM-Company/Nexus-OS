@@ -88,7 +88,9 @@ export function ProfileOnboarding({ onSaved }: { onSaved: (name: string) => void
   if (!open) return null;
   return (
     <section className={styles.card} role="region" aria-labelledby="profile-onboarding-title">
-      <h2 id="profile-onboarding-title">Давайте познакомимся</h2>
+      <strong id="profile-onboarding-title" className={styles.title}>
+        Давайте познакомимся
+      </strong>
       <p>
         Это настройки первого входа. Имя появится в приветствии, выбор рода — в ответах обычного
         чата и Koswork. Для существующих аккаунтов уже выбраны мужской род обращения и нейтральный
