@@ -45,6 +45,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { Type } from "typebox";
 import { EmergencyStopActivatedError, type RuntimeMetrics } from "./operations.js";
 import type { AccountStore } from "./account-settings/account-store.js";
+import { ownerIdentityPrompt } from "./account-settings/owner-identity.js";
 import type { WebSearch } from "./web-search.js";
 import { applyKosmoraActions, ChatActionError } from "./kosmora-actions.js";
 import { projectChatContext } from "./project-chat-context.js";
@@ -738,6 +739,11 @@ export const registerGeneralChatRoutes = (options: GeneralChatRouteOptions): voi
           ),
           memoryNotes:
             options.store.getChatMemory(run.chat_id, identity.owner_id)?.memory_notes ?? "",
+          ...(options.accountStore
+            ? {
+                identityPrompt: ownerIdentityPrompt(options.accountStore.get(identity.owner_id))
+              }
+            : {}),
           ...(options.projectStore && options.projectMemory
             ? {
                 projectContext: projectChatContext(run.chat_id, identity.owner_id, {

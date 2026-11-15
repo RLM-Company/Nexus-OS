@@ -185,6 +185,100 @@ test("dictation requests microphone access and inserts a deduplicated draft", as
   await expect(page.getByLabel("Сообщение Kosmora")).toHaveValue("Помоги составить план на завтра");
 });
 
+test("dictation stops explicitly and retries after a recognition error", async ({ page }) => {
+  await page.addInitScript(() => {
+    const state = window as unknown as { dictationAttempts: number };
+    state.dictationAttempts = 0;
+    Object.defineProperty(navigator, "mediaDevices", {
+      configurable: true,
+      value: {
+        getUserMedia: async (options: MediaStreamConstraints) => {
+          if (!options.audio) throw new Error("Microphone permission not requested");
+          return new MediaStream();
+        }
+      }
+    });
+    class Recognition {
+      lang = "ru-RU";
+      continuous = true;
+      interimResults = false;
+      onresult: ((event: unknown) => void) | null = null;
+      onerror: ((event: { error: string }) => void) | null = null;
+      onend: (() => void) | null = null;
+      start() {
+        state.dictationAttempts++;
+        if (state.dictationAttempts === 1) {
+          // Первый запуск: браузер не распознал речь.
+          setTimeout(() => this.onerror?.({ error: "no-speech" }), 30);
+          return;
+        }
+        setTimeout(() => {
+          this.onresult?.({
+            resultIndex: 0,
+            results: [[{ transcript: "Помоги составить план на завтра" }]]
+          });
+          this.onend?.();
+        }, 30);
+      }
+      stop() {
+        this.onend?.();
+      }
+      abort() {
+        this.onend?.();
+      }
+    }
+    Object.defineProperty(window, "SpeechRecognition", {
+      configurable: true,
+      value: Recognition
+    });
+    Object.defineProperty(window, "SpeechSynthesisUtterance", {
+      configurable: true,
+      value: class {
+        constructor(public text: string) {}
+      }
+    });
+    Object.defineProperty(window, "speechSynthesis", {
+      configurable: true,
+      value: { cancel() {}, speak() {} }
+    });
+  });
+  await page.goto("/");
+  const editor = page.getByLabel("Сообщение Kosmora");
+  await expect(editor).toBeEnabled();
+  await page.getByLabel("Голосовой ввод", { exact: true }).click();
+  await page.getByRole("button", { name: "Диктовать в браузере" }).click();
+  await expect(page.getByRole("status")).toContainText("Речь не распознана");
+  const retry = page.getByRole("button", { name: "Повторить диктовку" });
+  await expect(retry).toBeEnabled();
+  await retry.click();
+  await expect(editor).toHaveValue("Помоги составить план на завтра");
+  await expect(page.getByRole("status")).toContainText("Текст добавлен в черновик");
+});
+
+test("dictation can be stopped explicitly without losing the draft", async ({ page }) => {
+  await speechFixture(page, 800);
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, "mediaDevices", {
+      configurable: true,
+      value: {
+        getUserMedia: async (options: MediaStreamConstraints) =>
+          options.audio ? new MediaStream() : Promise.reject(new Error("No audio requested"))
+      }
+    });
+  });
+  await page.goto("/");
+  const editor = page.getByLabel("Сообщение Kosmora");
+  await expect(editor).toBeEnabled();
+  await page.getByLabel("Голосовой ввод", { exact: true }).click();
+  await page.getByRole("button", { name: "Диктовать в браузере" }).click();
+  const stop = page.getByRole("button", { name: "Остановить диктовку" });
+  await expect(stop).toBeEnabled();
+  await stop.click();
+  await expect(page.getByRole("status")).toContainText("Диктовка остановлена");
+  await expect(page.getByRole("button", { name: "Диктовать в браузере" })).toBeEnabled();
+  await expect(editor).toHaveValue("");
+});
+
 test("composer opens Deep Research inside the workspace", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "Добавить в чат" }).click();

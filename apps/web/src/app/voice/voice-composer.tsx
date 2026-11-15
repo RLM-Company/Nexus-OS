@@ -48,7 +48,10 @@ export function VoiceComposer({
 }) {
   const [recording, setRecording] = useState(false);
   const [notice, setNotice] = useState("");
+  const [failed, setFailed] = useState(false);
   const recognition = useRef<Recognition | null>(null);
+  /** Явная остановка пользователем не считается ошибкой и не предлагает повтор. */
+  const stoppedByUser = useRef(false);
 
   useEffect(
     () => () => {
@@ -64,6 +67,7 @@ export function VoiceComposer({
     const Constructor = browserRecognition();
     if (!Constructor || !navigator.mediaDevices?.getUserMedia) {
       setNotice("Диктовка недоступна в этом браузере. Откройте Kosmora в Chrome или Edge.");
+      setFailed(true);
       return;
     }
     const instance = new Constructor();
@@ -71,7 +75,9 @@ export function VoiceComposer({
     instance.continuous = true;
     instance.interimResults = false;
     recognition.current = instance;
+    stoppedByUser.current = false;
     setRecording(true);
+    setFailed(false);
     setNotice("Ожидаю разрешения на доступ к микрофону…");
     let receivedSpeech = false;
     let lastResultIndex = -1;
@@ -95,6 +101,7 @@ export function VoiceComposer({
       if (recognition.current !== instance) return;
       recognition.current = null;
       setRecording(false);
+      setFailed(true);
       setNotice(
         errors[error as keyof typeof errors] ?? "Распознавание прервалось. Попробуйте ещё раз."
       );
@@ -103,7 +110,15 @@ export function VoiceComposer({
       if (recognition.current !== instance) return;
       recognition.current = null;
       setRecording(false);
-      setNotice(receivedSpeech ? "Текст добавлен в черновик." : errors["no-speech"]);
+      // «Речь не распознана» — ошибка, но явная остановка пользователем — нет.
+      setFailed(!receivedSpeech && !stoppedByUser.current);
+      setNotice(
+        stoppedByUser.current
+          ? "Диктовка остановлена."
+          : receivedSpeech
+            ? "Текст добавлен в черновик."
+            : errors["no-speech"]
+      );
     };
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -115,6 +130,7 @@ export function VoiceComposer({
       if (recognition.current !== instance) return;
       recognition.current = null;
       setRecording(false);
+      setFailed(true);
       setNotice(
         error instanceof DOMException && error.name === "NotAllowedError"
           ? errors["not-allowed"]
@@ -126,13 +142,24 @@ export function VoiceComposer({
   function stop() {
     const active = recognition.current;
     if (!active) return;
+    stoppedByUser.current = true;
     try {
       active.stop();
     } catch {
       recognition.current = null;
       setRecording(false);
+      setFailed(false);
       setNotice("Диктовка остановлена.");
     }
+  }
+
+  function retry() {
+    recognition.current = null;
+    stoppedByUser.current = false;
+    setRecording(false);
+    setFailed(false);
+    setNotice("");
+    void start();
   }
 
   return (
@@ -158,8 +185,12 @@ export function VoiceComposer({
               Остановить диктовку
             </button>
           ) : (
-            <button type="button" disabled={disabled} onClick={() => void start()}>
-              Диктовать в браузере
+            <button
+              type="button"
+              disabled={disabled}
+              onClick={() => (failed ? retry() : void start())}
+            >
+              {failed ? "Повторить диктовку" : "Диктовать в браузере"}
             </button>
           )}
         </div>
