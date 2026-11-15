@@ -756,42 +756,97 @@ function Skills({ agentStudioHref, controlCenterHref }: Props) {
   );
 }
 
+type ConnectorState = {
+  id: string;
+  app: string;
+  state: string;
+  transport_wired: boolean;
+  operations: number;
+};
 function Apps({ onNavigate, activeProjectId }: Props) {
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState("all");
+  const [connectors, setConnectors] = useState<ConnectorState[] | null>(null);
+  useEffect(() => {
+    const controller = new AbortController();
+    void fetch("/api/v1/integrations/status", {
+      cache: "no-store",
+      signal: controller.signal
+    })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data: { connectors?: ConnectorState[] } | null) => {
+        if (Array.isArray(data?.connectors)) setConnectors(data.connectors);
+      })
+      .catch(() => undefined);
+    return () => controller.abort();
+  }, []);
+  // `implemented` reflects code already shipped, not a hardcoded preview flag.
+  // Google Drive really works through personal-settings, GitHub through /github;
+  // Office is in the connector registry; Telegram is still planned.
   const applications = [
     {
+      id: "github",
       name: "GitHub",
       icon: "code",
       category: "Разработка",
       text: "Чтение и редактирование файлов, проверка изменений и создание черновика PR.",
-      available: true
+      implemented: true,
+      href: "/github",
+      action: "Открыть GitHub"
     },
     {
+      id: "graph",
       name: "Граф знаний",
       icon: "multi-agent",
       category: "Знания",
       text: "Узлы, связи, источники и история графа вашего проекта.",
-      available: true
+      implemented: true,
+      href: `/graph-workspace${activeProjectId ? `?projectId=${encodeURIComponent(activeProjectId)}` : ""}`,
+      action: "Открыть граф"
     },
     {
+      id: "google-drive",
       name: "Google Drive",
       icon: "projects",
       category: "Материалы",
-      text: "Документы и файлы для контекста проекта.",
-      available: false
+      text: "Документы и файлы для контекста проекта. Подключается в личных настройках.",
+      implemented: true,
+      href: "/personal-settings#drive-storage",
+      action: "Настроить Drive"
     },
     {
+      id: "office",
+      name: "Office",
+      icon: "files",
+      category: "Документы",
+      text: "DOCX, XLSX и PPTX через локальное рабочее пространство с проверкой байтов.",
+      implemented: true,
+      href: "/?surface=files",
+      action: "Открыть файлы"
+    },
+    {
+      id: "telegram",
       name: "Telegram",
       icon: "chats",
       category: "Общение",
       text: "Материалы из чатов и уведомления проекта.",
-      available: false
+      implemented: false,
+      href: "",
+      action: ""
     }
   ];
+  const statusOf = (id: string): string => {
+    const connector = connectors?.find((item) => item.id === id);
+    if (!connector) return "Статус подключения недоступен";
+    return connector.state === "connected"
+      ? "Подключено"
+      : connector.transport_wired
+        ? "Транспорт подключён"
+        : "Ожидает подключения владельца";
+  };
   const items = applications.filter(
     (a) =>
-      (filter === "all" || a.available) &&
+      (filter === "all" || a.implemented) &&
       `${a.name} ${a.category}`.toLowerCase().includes(query.toLowerCase())
   );
   return (
@@ -833,18 +888,13 @@ function Apps({ onNavigate, activeProjectId }: Props) {
             </div>
             <div className={styles.appStatus}>
               <span className={styles.badge}>
-                {app.available ? "Серверное подключение" : "Запланировано"}
+                {app.implemented ? "Реализовано" : "Запланировано"}
               </span>
-              {app.available ? (
-                <ActionLink
-                  href={
-                    app.name === "GitHub"
-                      ? "/github"
-                      : `/graph-workspace${activeProjectId ? `?projectId=${encodeURIComponent(activeProjectId)}` : ""}`
-                  }
-                >
-                  {app.name === "GitHub" ? "Открыть GitHub" : "Открыть граф"}
-                </ActionLink>
+              {app.implemented ? (
+                <>
+                  <span className={styles.unavailable}>{statusOf(app.id)}</span>
+                  <ActionLink href={app.href}>{app.action}</ActionLink>
+                </>
               ) : (
                 <span className={styles.unavailable}>Интеграция ещё недоступна</span>
               )}
@@ -866,7 +916,8 @@ function Apps({ onNavigate, activeProjectId }: Props) {
         </p>
       </div>
       <FutureHint onNavigate={onNavigate}>
-        Подключение аккаунтов появится после настройки входа и управления доступом.
+        Состояние подключений берётся из реестра коннекторов; новые сервисы и привязка транспорта
+        появятся после согласования владельцем.
       </FutureHint>
     </>
   );
