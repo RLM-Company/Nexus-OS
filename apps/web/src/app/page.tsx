@@ -2355,7 +2355,6 @@ export default function Home() {
       style={{ "--sidebar-width": `${sidebarWidth.width}px` } as CSSProperties}
       data-sidebar-collapsed={sidebarCollapse.collapsed || undefined}
     >
-      <ProfileOnboarding onSaved={(name) => setDisplayName(name)} />
       <button
         type="button"
         className="sidebar-collapse-toggle"
@@ -3443,6 +3442,7 @@ export default function Home() {
             <section className="hero">
               <h2>{greeting}</h2>
               {displayName && <p className="hero-greeting-name">{displayName}, рад вас видеть.</p>}
+              <ProfileOnboarding onSaved={(name) => setDisplayName(name)} />
             </section>
           </>
         ) : null}

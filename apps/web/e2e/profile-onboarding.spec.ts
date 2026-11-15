@@ -63,7 +63,7 @@ async function settingsFixture(page: Page) {
 test("first run: onboarding saves the profile and greets the first dialog", async ({ page }) => {
   const fixture = await settingsFixture(page);
   await page.goto("/");
-  const dialog = page.getByRole("dialog", { name: "Давайте познакомимся" });
+  const dialog = page.getByRole("region", { name: "Давайте познакомимся" });
   await expect(dialog).toBeVisible();
 
   await dialog.getByLabel("Ваше имя").fill("Анна");
@@ -86,7 +86,7 @@ test("first run: onboarding saves the profile and greets the first dialog", asyn
 
   // После перезагрузки онбординг не повторяется, имя берётся с сервера.
   await page.reload();
-  await expect(page.getByRole("dialog", { name: "Давайте познакомимся" })).toHaveCount(0);
+  await expect(page.getByRole("region", { name: "Давайте познакомимся" })).toHaveCount(0);
   await expect(page.getByText("Анна, рад вас видеть.")).toBeVisible();
   expect(fixture.read()).toMatchObject({
     display_name: "Анна",
@@ -105,7 +105,7 @@ test("first run: onboarding saves the profile and greets the first dialog", asyn
 test("first run can be skipped without changing server defaults", async ({ page }) => {
   const fixture = await settingsFixture(page);
   await page.goto("/");
-  const dialog = page.getByRole("dialog", { name: "Давайте познакомимся" });
+  const dialog = page.getByRole("region", { name: "Давайте познакомимся" });
   await expect(dialog).toBeVisible();
   await dialog.getByRole("button", { name: "Пропустить" }).click();
   await expect(dialog).not.toBeVisible();
@@ -120,5 +120,5 @@ test("first run can be skipped without changing server defaults", async ({ page 
   });
 
   await page.reload();
-  await expect(page.getByRole("dialog", { name: "Давайте познакомимся" })).toHaveCount(0);
+  await expect(page.getByRole("region", { name: "Давайте познакомимся" })).toHaveCount(0);
 });

@@ -87,68 +87,61 @@ export function ProfileOnboarding({ onSaved }: { onSaved: (name: string) => void
 
   if (!open) return null;
   return (
-    <div className={styles.backdrop} role="presentation">
-      <section
-        className={styles.card}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="profile-onboarding-title"
-      >
-        <h2 id="profile-onboarding-title">Давайте познакомимся</h2>
-        <p>
-          Это настройки первого входа. Имя появится в приветствии, выбор рода — в ответах обычного
-          чата и Koswork. Для существующих аккаунтов уже выбраны мужской род обращения и нейтральный
-          род ассистента.
-        </p>
-        <label>
-          Как к вам обращаться
-          <input
-            type="text"
-            maxLength={80}
-            value={name}
-            autoFocus
-            aria-label="Ваше имя"
-            placeholder="Имя"
-            onChange={(event) => setName(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") void submit();
-            }}
-          />
-        </label>
-        <label>
-          Обращение к вам
-          <select
-            value={userGender}
-            aria-label="Род обращения к вам"
-            onChange={(event) => setUserGender(event.target.value as Gender)}
-          >
-            <option value="masculine">Мужской</option>
-            <option value="feminine">Женский</option>
-            <option value="neutral">Нейтральный</option>
-          </select>
-        </label>
-        <label>
-          Род ассистента
-          <select
-            value={assistantGender}
-            aria-label="Род ассистента"
-            onChange={(event) => setAssistantGender(event.target.value as Gender)}
-          >
-            <option value="neutral">Нейтральный</option>
-            <option value="masculine">Мужской</option>
-            <option value="feminine">Женский</option>
-          </select>
-        </label>
-        {error && <p role="alert">{error}</p>}
-        <div className={styles.actions}>
-          <button type="button" disabled={busy} onClick={markDone}>
-            Пропустить
-          </button>
-          <button type="button" disabled={busy} onClick={() => void submit()}>
-            Сохранить и начать
-          </button>
-        </div>
-      </section>
-    </div>
+    <section className={styles.card} role="region" aria-labelledby="profile-onboarding-title">
+      <h2 id="profile-onboarding-title">Давайте познакомимся</h2>
+      <p>
+        Это настройки первого входа. Имя появится в приветствии, выбор рода — в ответах обычного
+        чата и Koswork. Для существующих аккаунтов уже выбраны мужской род обращения и нейтральный
+        род ассистента.
+      </p>
+      <label>
+        Как к вам обращаться
+        <input
+          type="text"
+          maxLength={80}
+          value={name}
+          autoFocus
+          aria-label="Ваше имя"
+          placeholder="Имя"
+          onChange={(event) => setName(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") void submit();
+          }}
+        />
+      </label>
+      <label>
+        Обращение к вам
+        <select
+          value={userGender}
+          aria-label="Род обращения к вам"
+          onChange={(event) => setUserGender(event.target.value as Gender)}
+        >
+          <option value="masculine">Мужской</option>
+          <option value="feminine">Женский</option>
+          <option value="neutral">Нейтральный</option>
+        </select>
+      </label>
+      <label>
+        Род ассистента
+        <select
+          value={assistantGender}
+          aria-label="Род ассистента"
+          onChange={(event) => setAssistantGender(event.target.value as Gender)}
+        >
+          <option value="neutral">Нейтральный</option>
+          <option value="masculine">Мужской</option>
+          <option value="feminine">Женский</option>
+        </select>
+      </label>
+      {error && <p role="alert">{error}</p>}
+      <div className={styles.actions}>
+        <button type="button" disabled={busy} onClick={markDone}>
+          Пропустить
+        </button>
+        <button type="button" disabled={busy} onClick={() => void submit()}>
+          Сохранить и начать
+        </button>
+      </div>
+    </section>
   );
 }
