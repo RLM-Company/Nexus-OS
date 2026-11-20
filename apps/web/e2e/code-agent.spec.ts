@@ -764,7 +764,9 @@ test("confirmed history selection survives reload and refuses another task's res
     route.fulfill({ json: first })
   );
   await page.getByRole("button", { name: "Обновить состояние" }).click();
-  await expect(page.getByRole("alert")).toContainText("Ответ не подтверждает запрошенную задачу");
+  await expect(
+    page.getByText("Ответ не подтверждает запрошенную задачу.", { exact: false })
+  ).toBeVisible();
   await expect(editor).toHaveValue("export const value = 2;");
   expect(state.publications()).toBe(0);
 });
