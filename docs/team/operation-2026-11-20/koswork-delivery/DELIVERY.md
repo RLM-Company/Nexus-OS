@@ -78,13 +78,18 @@
 fan-in (`parse → anchor-a/anchor-b → total`). Проверены цель+материалы+снимок при
 admission, два `blocked` якоря, сохранение fan-in после reopen.
 
-**Живая модель не запускалась**: в этой сессии нет переданной «согласованной
-среды» с ключом провайдера (env пуст; `MODEL_API_KEY` есть только как GitHub
-secret, который я не извлекаю и не печатаю). Подготовлен guard-скрипт
-`scripts/koswork-owner-live.mjs`: он ничего не отправляет без явного
-`KOSMORA_WORK_LIVE_CONFIRM=RUN_ONE_OWNER_SCENARIO` и локального loopback origin,
-не читает и не печатает секреты. Это **готовность сценария**, а не факт
-пройденной живой приёмки — статус остаётся честно «ожидает согласованной среды».
+**Живая модель не запускалась — конкретное препятствие зафиксировано:** VPS
+`169.40.37.32` доступен по SSH-ключу, `/api/v1/health` отвечает `200`, form-логин
+владельца даёт cookie, но все защищённые endpoint'ы (`/projects`,
+`/model-runtime`, `/identity/sessions`, `/step-up/*`) отвечают
+`401 "Verified identity is required"`. Причина в коде: `canAccessOwnerApi()`
+(`apps/api/src/identity.ts:9`) требует `identity.actor_kind === "owner"`; cookie
+этого развёртывания разрешается в не-owner actor. Я не обходил и не менял auth/
+step-up границы, не извлекал ключи провайдера из GitHub secrets. Guard-скрипт
+`scripts/koswork-owner-live.mjs` готов: он ничего не отправляет без явного
+`KOSMORA_WORK_LIVE_CONFIRM=RUN_ONE_OWNER_SCENARIO` и loopback origin, не читает и
+не печатает секреты. Это **готовность сценария**, а не факт пройденной живой
+приёмки — статус остаётся «ожидает согласованной среды / корректной owner-сессии».
 
 ## Проверки (фактические)
 
