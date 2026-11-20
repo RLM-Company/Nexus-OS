@@ -1,6 +1,7 @@
 export * from "./code-agent-workspace.js";
 export * from "./connector-registry.js";
 export * from "./connector-catalog.js";
+export * from "./http-connector.js";
 import { randomUUID } from "node:crypto";
 import type {
   CapabilityId,
