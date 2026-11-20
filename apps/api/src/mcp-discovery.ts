@@ -94,15 +94,10 @@ export function configuredMcpDiscovery(
   const uri = env.KOSMORA_MCP_DOCUMENT_URI;
   const name = env.KOSMORA_MCP_DOCUMENT_NAME;
   const repo = env.KOSMORA_MCP_DEEPWIKI_REPO;
-  const wikiRepo =
-    repo &&
-    endpoint.href === "https://mcp.deepwiki.com/mcp" &&
-    !KOSMORA_MCP_BEARER &&
-    !uri &&
-    /^[A-Za-z0-9][A-Za-z0-9-]{0,38}\/[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/u.test(repo)
-      ? repo
-      : undefined;
-  const makeDocument = (uri: unknown, name: unknown): McpDocumentSource | undefined => {
+  const deepWiki = endpoint.href === "https://mcp.deepwiki.com/mcp" && !KOSMORA_MCP_BEARER;
+  const wikiList = env.KOSMORA_MCP_DEEPWIKI_DOCUMENTS_JSON;
+  type ConfiguredDocument = McpDocumentSource & { wikiRepo?: string };
+  const makeDocument = (uri: unknown, name: unknown): ConfiguredDocument | undefined => {
     if (
       typeof name !== "string" ||
       !/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,78}\.(txt|md)$/u.test(name) ||
@@ -114,33 +109,53 @@ export function configuredMcpDiscovery(
       return;
     return { id: createHash("sha256").update(uri).digest("hex").slice(0, 32), uri, name };
   };
-  const list = env.KOSMORA_MCP_DOCUMENTS_JSON;
-  let documents: McpDocumentSource[] = [];
-  if (list !== undefined) {
-    if (list.length <= 8192 && !repo && !uri && !name) {
-      try {
-        const items: unknown = JSON.parse(list);
-        if (Array.isArray(items) && items.length > 0 && items.length <= 8) {
-          const parsed = items.map((item: unknown) => {
-            const entry = record(item);
-            return Object.keys(entry).length === 2
-              ? makeDocument(entry.uri, entry.name)
-              : undefined;
-          });
-          if (
-            parsed.every((item) => item !== undefined) &&
-            new Set(parsed.map((item) => item.id)).size === parsed.length &&
-            new Set(parsed.map((item) => item.name.toLowerCase())).size === parsed.length
-          )
-            documents = parsed;
-        }
-      } catch {
-        // An invalid allowlist disables document access.
-      }
+  const makeWikiDocument = (
+    repository: unknown,
+    filename: unknown
+  ): ConfiguredDocument | undefined => {
+    if (
+      typeof repository !== "string" ||
+      !/^[A-Za-z0-9][A-Za-z0-9-]{0,38}\/[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/u.test(repository)
+    )
+      return;
+    const document = makeDocument("https://deepwiki.com/" + repository, filename);
+    if (document) return { ...document, wikiRepo: repository };
+  };
+  function parseList(raw: string, wiki: boolean): ConfiguredDocument[] {
+    if (raw.length > 8192) return [];
+    try {
+      const items: unknown = JSON.parse(raw);
+      if (!Array.isArray(items) || items.length === 0 || items.length > 8) return [];
+      const parsed = items.map((item: unknown) => {
+        const entry = record(item);
+        if (Object.keys(entry).length !== 2) return;
+        return wiki
+          ? makeWikiDocument(entry.repo, entry.name)
+          : makeDocument(entry.uri, entry.name);
+      });
+      if (
+        parsed.every((item) => item !== undefined) &&
+        new Set(parsed.map((item) => item.wikiRepo?.toLowerCase() ?? item.id)).size ===
+          parsed.length &&
+        new Set(parsed.map((item) => item.name.toLowerCase())).size === parsed.length
+      )
+        return parsed;
+    } catch {
+      // An invalid allowlist disables document access.
     }
+    return [];
+  }
+
+  const list = env.KOSMORA_MCP_DOCUMENTS_JSON;
+  let documents: ConfiguredDocument[] = [];
+  if (wikiList !== undefined) {
+    if (deepWiki && list === undefined && !repo && !uri && !name)
+      documents = parseList(wikiList, true);
+  } else if (list !== undefined) {
+    if (!repo && !uri && !name) documents = parseList(list, false);
   } else {
     const document = repo
-      ? wikiRepo && makeDocument("https://deepwiki.com/" + wikiRepo, name)
+      ? deepWiki && !uri && makeWikiDocument(repo, name)
       : makeDocument(uri, name);
     if (document) documents = [document];
   }
@@ -238,8 +253,7 @@ export function configuredMcpDiscovery(
           KOSMORA_MCP_PROJECT,
           KOSMORA_MCP_OWNER,
           env.KOSMORA_MCP_REVISION ?? "1",
-          documents,
-          wikiRepo
+          documents
         ])
       )
       .digest("hex")
@@ -267,7 +281,7 @@ export function configuredMcpDiscovery(
           ...(documents.length === 1
             ? { document: { uri: documents[0]!.uri, name: documents[0]!.name } }
             : {}),
-          documents,
+          documents: documents.map(({ id, uri, name }) => ({ id, uri, name })),
           readDocument: (documentId) => {
             const document = documentId
               ? documents.find(({ id }) => id === documentId)
@@ -275,6 +289,7 @@ export function configuredMcpDiscovery(
                 ? documents[0]
                 : undefined;
             if (!document) return Promise.reject(new Error("MCP_DOCUMENT_UNAVAILABLE"));
+            const wikiRepo = document.wikiRepo;
             return run(async (capabilities, call) => {
               if (wikiRepo) {
                 record(capabilities.tools);

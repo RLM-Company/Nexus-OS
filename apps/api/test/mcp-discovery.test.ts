@@ -399,3 +399,67 @@ it.each([
   });
   expect(pilot?.readDocument).toBeUndefined();
 });
+
+const multipleWikiEnv = {
+  KOSMORA_MCP_URL: wikiEndpoint,
+  KOSMORA_MCP_OWNER: "owner",
+  KOSMORA_MCP_PROJECT: "project",
+  KOSMORA_MCP_DEEPWIKI_DOCUMENTS_JSON: JSON.stringify([
+    { repo: wikiRepo, name: "mcp.txt" },
+    { repo: "octocat/Hello-World", name: "hello.txt" }
+  ])
+};
+
+it("uses the selected DeepWiki document ID to read exactly one configured repository", async () => {
+  const calls: string[] = [];
+  const pilot = configuredMcpDiscovery(multipleWikiEnv, (_url, init) => {
+    if (typeof init?.body !== "string") throw new Error("Invalid request");
+    const rpc = JSON.parse(init.body) as { id?: string; method: string; params?: object };
+    calls.push(rpc.method);
+    if (!rpc.id) return Promise.resolve(new Response(null, { status: 202 }));
+    if (rpc.method === "tools/call")
+      expect(rpc.params).toEqual({
+        name: "read_wiki_structure",
+        arguments: { repoName: "octocat/Hello-World" }
+      });
+    return Promise.resolve(
+      Response.json({
+        jsonrpc: "2.0",
+        id: rpc.id,
+        result:
+          rpc.method === "initialize"
+            ? { protocolVersion: "2025-11-25", capabilities: { tools: {} } }
+            : {
+                content: [
+                  { type: "text", text: "Available pages for octocat/Hello-World:\n- Overview" }
+                ]
+              }
+      })
+    );
+  });
+  await expect(pilot?.readDocument?.()).rejects.toThrow("MCP_DOCUMENT_UNAVAILABLE");
+  await expect(pilot?.readDocument?.("0".repeat(32))).rejects.toThrow("MCP_DOCUMENT_UNAVAILABLE");
+  expect(calls).toEqual([]);
+  expect(pilot?.documents?.map(({ name }) => name)).toEqual(["mcp.txt", "hello.txt"]);
+  await expect(pilot?.readDocument?.(pilot.documents?.[1]?.id)).resolves.toContain(
+    "octocat/Hello-World"
+  );
+  expect(calls).toEqual(["initialize", "notifications/initialized", "tools/call"]);
+});
+
+it.each([
+  { KOSMORA_MCP_URL: "https://example.org/mcp" },
+  { KOSMORA_MCP_DOCUMENTS_JSON: "[]" },
+  { KOSMORA_MCP_BEARER: "synthetic" },
+  {
+    KOSMORA_MCP_DEEPWIKI_DOCUMENTS_JSON: JSON.stringify([
+      { repo: "octocat/Hello-World", name: "hello.txt" },
+      { repo: "OCTOCAT/hello-world", name: "duplicate.txt" }
+    ])
+  }
+])(
+  "disables a DeepWiki list when it conflicts with the provider or contains duplicates",
+  (changes) => {
+    expect(configuredMcpDiscovery({ ...multipleWikiEnv, ...changes })?.documents).toBeUndefined();
+  }
+);
