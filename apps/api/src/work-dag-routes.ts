@@ -199,20 +199,47 @@ export function registerWorkDagRoutes(options: {
         .send(result);
     }, reply)
   );
-  app.get<{ Params: Params }>(base + "/:id/results.zip", { schema: { params } }, (r, reply) =>
-    safe(() => {
-      reply.header("cache-control", "private, no-store");
-      const owner = identityFor(r).owner_id;
-      if (!coordinator.owns(r.params.id, owner, r.params.projectId))
-        return reply.code(404).send({ error: "DAG_NOT_FOUND" });
-      const archive = coordinator.resultsArchive(r.params.id, owner);
-      return reply
-        .header("content-disposition", 'attachment; filename="work-results.zip"')
-        .header("x-content-type-options", "nosniff")
-        .header("content-length", String(archive.byteLength))
-        .type("application/zip")
-        .send(archive);
-    }, reply)
+  app.get<{ Params: Params; Querystring: { node_ids?: string } }>(
+    base + "/:id/results.zip",
+    {
+      schema: {
+        params,
+        querystring: Type.Object(
+          { node_ids: Type.Optional(Type.String({ minLength: 1, maxLength: 2000 })) },
+          { additionalProperties: false }
+        )
+      }
+    },
+    (r, reply) =>
+      safe(() => {
+        reply.header("cache-control", "private, no-store");
+        const owner = identityFor(r).owner_id;
+        if (!coordinator.owns(r.params.id, owner, r.params.projectId))
+          return reply.code(404).send({ error: "DAG_NOT_FOUND" });
+        const raw = r.query.node_ids;
+        const nodeIds = raw
+          ? [
+              ...new Set(
+                raw
+                  .split(",")
+                  .map((id) => id.trim())
+                  .filter(Boolean)
+              )
+            ]
+          : undefined;
+        if (nodeIds && (!nodeIds.length || nodeIds.length > 32))
+          return reply.code(400).send({ error: "INVALID_NODE_IDS" });
+        const archive = coordinator.resultsArchive(r.params.id, owner, nodeIds);
+        return reply
+          .header(
+            "content-disposition",
+            `attachment; filename="${nodeIds ? "work-results-partial" : "work-results"}.zip"`
+          )
+          .header("x-content-type-options", "nosniff")
+          .header("content-length", String(archive.byteLength))
+          .type("application/zip")
+          .send(archive);
+      }, reply)
   );
   app.put<{ Params: Params; Body: { version: number; nodes: WorkDagNodeInput[] } }>(
     base + "/:id",
