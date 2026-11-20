@@ -12,8 +12,15 @@ import { connectorToolId, type ConnectorRegistry } from "@cosmora/tool-runtime";
 import type { McpDiscovery } from "./mcp-discovery.js";
 
 type Params = { projectId: string };
-type Body = { request_id: string; preview_id?: string };
-type Preview = { actor: string; text: string; version: number; expires: number; saved: boolean };
+type Body = { request_id: string; preview_id?: string; document_id?: string };
+type Preview = {
+  documentId: string;
+  actor: string;
+  text: string;
+  version: number;
+  expires: number;
+  saved: boolean;
+};
 type ReadResult = { preview_id: string };
 type SaveResult = { version: number } | { error: "MCP_MATERIALS_CHANGED" | "MCP_MATERIALS_LIMIT" };
 const ttl = 5 * 60_000;
@@ -33,7 +40,13 @@ export function registerMcpDocumentRoutes(
   }
 ) {
   const { pilot, registry, projects, owned, enabled, stopped, origin } = options;
-  const document = pilot?.document;
+  const documents = pilot?.documents ?? [];
+  const findDocument = (id: unknown) =>
+    typeof id === "string"
+      ? documents.find((document) => document.id === id)
+      : documents.length === 1
+        ? documents[0]
+        : undefined;
   const previews = new Map<string, Preview>();
   function previewFor(id: string, actor: string) {
     const value = previews.get(id);
@@ -45,7 +58,7 @@ export function registerMcpDocumentRoutes(
   }
   const read = connectorToolId("mcp-document", "preview");
   const save = connectorToolId("mcp-document", "save");
-  if (pilot?.readDocument && document && registry && projects) {
+  if (pilot?.readDocument && documents.length && registry && projects) {
     const readDocument = pilot.readDocument;
     const { ownerId, projectId } = pilot;
     registry.register([
@@ -75,9 +88,11 @@ export function registerMcpDocumentRoutes(
       })
     ]);
     registry.bindTransport(read, {
-      async execute(_input, context): Promise<ReadResult> {
+      async execute(input, context): Promise<ReadResult> {
+        const document = findDocument(input);
+        if (!document) throw new Error("MCP_DOCUMENT_UNAVAILABLE");
         if (stopped(projectId, ownerId)) throw new Error("MCP_STOPPED");
-        const text = await readDocument();
+        const text = await readDocument(document.id);
         if (
           stopped(projectId, ownerId) ||
           !isValidChatAttachments([{ name: document.name, content: text }])
@@ -90,6 +105,7 @@ export function registerMcpDocumentRoutes(
         const oldest = previews.keys().next();
         if (previews.size >= 16 && !oldest.done) previews.delete(oldest.value);
         previews.set(previewId, {
+          documentId: document.id,
           actor: context.actorId,
           text,
           version: materials.version,
@@ -101,11 +117,20 @@ export function registerMcpDocumentRoutes(
     });
     registry.bindTransport(save, {
       execute(input, context): Promise<SaveResult> {
-        if (stopped(projectId, ownerId) || typeof input !== "string")
+        if (stopped(projectId, ownerId) || !input || typeof input !== "object")
           throw new Error("MCP_STOPPED");
-        const preview = previewFor(input, context.actorId);
+        const { previewId, documentId } = input as { previewId: string; documentId: string };
+        const preview = previewFor(previewId, context.actorId);
+        const document = findDocument(documentId);
         const materials = projects.getMaterials(projectId, ownerId);
-        if (!preview || preview.saved || !materials || materials.version !== preview.version)
+        if (
+          !document ||
+          !preview ||
+          preview.documentId !== document.id ||
+          preview.saved ||
+          !materials ||
+          materials.version !== preview.version
+        )
           return Promise.resolve({ error: "MCP_MATERIALS_CHANGED" });
         const attachments = [
           ...materials.attachments,
@@ -145,7 +170,11 @@ export function registerMcpDocumentRoutes(
         schema: {
           params: Type.Object({ projectId: Type.String({ minLength: 1, maxLength: 128 }) }),
           body: Type.Object(
-            { request_id: uuid, ...(mode === "save" ? { preview_id: uuid } : {}) },
+            {
+              request_id: uuid,
+              document_id: Type.Optional(Type.String({ pattern: "^[a-f0-9]{32}$" })),
+              ...(mode === "save" ? { preview_id: uuid } : {})
+            },
             {
               additionalProperties: false
             }
@@ -161,7 +190,7 @@ export function registerMcpDocumentRoutes(
         const project = request.params.projectId;
         if (
           !pilot?.readDocument ||
-          !document ||
+          !documents.length ||
           !registry ||
           !projects ||
           !enabled(project, identity.owner_id)
@@ -169,9 +198,14 @@ export function registerMcpDocumentRoutes(
           return reply.code(503).send({ error: { code: "MCP_UNAVAILABLE" } });
         if (stopped(project, identity.owner_id))
           return reply.code(409).send({ error: { code: "MCP_STOPPED" } });
+        const document = findDocument(request.body.document_id);
+        if (!document) return reply.code(404).send({ error: { code: "MCP_DOCUMENT_UNAVAILABLE" } });
         const previewId = request.body.preview_id;
         const source = createHash("sha256").update(document.uri).digest("hex");
-        const result = await registry.invoke<string | null, ReadResult | SaveResult>({
+        const result = await registry.invoke<
+          string | { previewId: string; documentId: string },
+          ReadResult | SaveResult
+        >({
           toolId: mode === "preview" ? read : save,
           projectId: project,
           actorId: identity.actor_id,
@@ -179,7 +213,7 @@ export function registerMcpDocumentRoutes(
             mode === "preview" ? "Preview approved MCP document" : "Import reviewed MCP document",
           objectIds: [project, "mcp:" + source, ...(previewId ? [previewId] : [])],
           idempotencyKey: `mcp:${pilot.revision}:${mode}:${request.body.request_id}`,
-          input: previewId ?? null
+          input: previewId ? { previewId, documentId: document.id } : document.id
         });
         if (stopped(project, identity.owner_id))
           return reply.code(409).send({ error: { code: "MCP_STOPPED" } });
@@ -193,7 +227,7 @@ export function registerMcpDocumentRoutes(
             .send({ error: { code: result.result.error }, operation_id: operation.operation_id });
         if ("preview_id" in result.result) {
           const pending = previewFor(result.result.preview_id, identity.actor_id);
-          if (result.replayed || !pending || pending.saved)
+          if (result.replayed || !pending || pending.documentId !== document.id || pending.saved)
             return reply.code(409).send({ error: { code: "MCP_PREVIEW_EXPIRED" } });
           return {
             ...operation,

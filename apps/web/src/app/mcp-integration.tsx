@@ -5,11 +5,20 @@ import { useEffect, useRef, useState } from "react";
 
 import { McpDocument } from "./mcp-document";
 
-type Availability = { configured: boolean; stopped: boolean; document?: string };
+type Availability = {
+  configured: boolean;
+  stopped: boolean;
+  document?: string;
+  documents?: { id: string; name: string }[];
+};
 type Discovery = { status: string; tools?: string[]; hasMore?: boolean; operation_id?: string };
 
 export function McpIntegration({ project }: { project: string }) {
   const [availability, setAvailability] = useState<Availability | null>(null);
+  const [documentId, setDocumentId] = useState("");
+  const [documentBusy, setDocumentBusy] = useState(false);
+  const selectedDocument =
+    availability?.documents?.find(({ id }) => id === documentId) ?? availability?.documents?.[0];
   const [result, setResult] = useState<Discovery | null>(null);
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
@@ -99,6 +108,31 @@ export function McpIntegration({ project }: { project: string }) {
         >
           {busy ? "Проверяем…" : "Проверить MCP и показать инструменты"}
         </button>
+      )}
+      {availability?.configured && !availability.stopped && selectedDocument && (
+        <>
+          <label>
+            Документ для импорта
+            <select
+              value={selectedDocument.id}
+              disabled={documentBusy}
+              onChange={(event) => setDocumentId(event.target.value)}
+            >
+              {availability.documents?.map(({ id, name }) => (
+                <option value={id} key={id}>
+                  {name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <McpDocument
+            key={selectedDocument.id}
+            project={project}
+            name={selectedDocument.name}
+            documentId={selectedDocument.id}
+            onBusy={setDocumentBusy}
+          />
+        </>
       )}
       {availability?.configured && !availability.stopped && availability.document && (
         <McpDocument project={project} name={availability.document} />

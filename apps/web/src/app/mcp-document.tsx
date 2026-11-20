@@ -11,7 +11,17 @@ type Reply = Partial<Preview> & {
   error?: { code: string };
 };
 
-export function McpDocument({ project, name }: { project: string; name: string }) {
+export function McpDocument({
+  project,
+  name,
+  documentId,
+  onBusy
+}: {
+  project: string;
+  name: string;
+  documentId?: string;
+  onBusy?: (busy: boolean) => void;
+}) {
   const [preview, setPreview] = useState<Preview | null>(null);
   const [busy, setBusy] = useState(false);
   const [waiting, setWaiting] = useState(false);
@@ -26,6 +36,7 @@ export function McpDocument({ project, name }: { project: string; name: string }
     const controller = new AbortController();
     request.current = controller;
     setBusy(true);
+    onBusy?.(true);
     setWaiting(false);
     setMessage("");
     setOperation("");
@@ -43,6 +54,7 @@ export function McpDocument({ project, name }: { project: string; name: string }
           signal: controller.signal,
           body: JSON.stringify({
             request_id: requestId,
+            ...(documentId ? { document_id: documentId } : {}),
             ...(mode === "save" ? { preview_id: preview?.preview_id } : {})
           })
         }
@@ -96,7 +108,10 @@ export function McpDocument({ project, name }: { project: string; name: string }
         setMessage("Ответ потерян. Действие можно проверить повторным нажатием.");
     } finally {
       if (request.current === controller) request.current = null;
-      if (!controller.signal.aborted) setBusy(false);
+      if (!controller.signal.aborted) {
+        setBusy(false);
+        onBusy?.(false);
+      }
     }
   }
 

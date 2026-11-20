@@ -6,12 +6,15 @@ const SUPPORTED = new Set([VERSION, "2025-06-18"]);
 const LIMIT = 64 * 1024;
 const NAME = /^[A-Za-z0-9_.-]{1,128}$/u;
 
+export type McpDocumentSource = { id: string; name: string; uri: string };
+
 export interface McpDiscovery {
   projectId: string;
   ownerId: string;
   revision: string;
   document?: { name: string; uri: string };
-  readDocument?(this: void): Promise<string>;
+  documents?: readonly McpDocumentSource[];
+  readDocument?(this: void, documentId?: string): Promise<string>;
   discover(): Promise<{ tools: string[]; hasMore: boolean }>;
 }
 
@@ -99,21 +102,48 @@ export function configuredMcpDiscovery(
     /^[A-Za-z0-9][A-Za-z0-9-]{0,38}\/[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/u.test(repo)
       ? repo
       : undefined;
-  const validName =
-    name && /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,78}\.(txt|md)$/u.test(name) ? name : undefined;
-  const wikiDocument =
-    wikiRepo && validName
-      ? { uri: "https://deepwiki.com/" + wikiRepo, name: validName }
-      : undefined;
-  const document = repo
-    ? wikiDocument
-    : uri &&
-        validName &&
-        /^[^\s\p{Cc}]{1,512}$/u.test(uri) &&
-        /^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//u.test(uri) &&
-        !/[?@#]/u.test(uri)
-      ? { uri, name: validName }
-      : undefined;
+  const makeDocument = (uri: unknown, name: unknown): McpDocumentSource | undefined => {
+    if (
+      typeof name !== "string" ||
+      !/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,78}\.(txt|md)$/u.test(name) ||
+      typeof uri !== "string" ||
+      !/^[^\s\p{Cc}]{1,512}$/u.test(uri) ||
+      !/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//u.test(uri) ||
+      /[?@#]/u.test(uri)
+    )
+      return;
+    return { id: createHash("sha256").update(uri).digest("hex").slice(0, 32), uri, name };
+  };
+  const list = env.KOSMORA_MCP_DOCUMENTS_JSON;
+  let documents: McpDocumentSource[] = [];
+  if (list !== undefined) {
+    if (list.length <= 8192 && !repo && !uri && !name) {
+      try {
+        const items: unknown = JSON.parse(list);
+        if (Array.isArray(items) && items.length > 0 && items.length <= 8) {
+          const parsed = items.map((item: unknown) => {
+            const entry = record(item);
+            return Object.keys(entry).length === 2
+              ? makeDocument(entry.uri, entry.name)
+              : undefined;
+          });
+          if (
+            parsed.every((item) => item !== undefined) &&
+            new Set(parsed.map((item) => item.id)).size === parsed.length &&
+            new Set(parsed.map((item) => item.name.toLowerCase())).size === parsed.length
+          )
+            documents = parsed;
+        }
+      } catch {
+        // An invalid allowlist disables document access.
+      }
+    }
+  } else {
+    const document = repo
+      ? wikiRepo && makeDocument("https://deepwiki.com/" + wikiRepo, name)
+      : makeDocument(uri, name);
+    if (document) documents = [document];
+  }
 
   async function run<Output>(
     use: (
@@ -208,7 +238,7 @@ export function configuredMcpDiscovery(
           KOSMORA_MCP_PROJECT,
           KOSMORA_MCP_OWNER,
           env.KOSMORA_MCP_REVISION ?? "1",
-          document,
+          documents,
           wikiRepo
         ])
       )
@@ -232,11 +262,20 @@ export function configuredMcpDiscovery(
           hasMore: typeof result.nextCursor === "string" && result.nextCursor.length > 0
         };
       }),
-    ...(document
+    ...(documents.length
       ? {
-          document,
-          readDocument: () =>
-            run(async (capabilities, call) => {
+          ...(documents.length === 1
+            ? { document: { uri: documents[0]!.uri, name: documents[0]!.name } }
+            : {}),
+          documents,
+          readDocument: (documentId) => {
+            const document = documentId
+              ? documents.find(({ id }) => id === documentId)
+              : documents.length === 1
+                ? documents[0]
+                : undefined;
+            if (!document) return Promise.reject(new Error("MCP_DOCUMENT_UNAVAILABLE"));
+            return run(async (capabilities, call) => {
               if (wikiRepo) {
                 record(capabilities.tools);
                 const result = await call("tools/call", {
@@ -273,7 +312,8 @@ export function configuredMcpDiscovery(
               )
                 throw new Error("MCP_INVALID_DOCUMENT");
               return item.text;
-            })
+            });
+          }
         }
       : {})
   };

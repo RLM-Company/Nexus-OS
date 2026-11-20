@@ -15,6 +15,7 @@ import { configuredMcpDiscovery } from "../src/mcp-discovery.js";
 const origin = "https://kosmora.example";
 const owner = "local-owner";
 const documentUri = "fixture://workspace/report";
+const otherDocumentUri = "fixture://workspace/notes";
 const documentText = "Смета: 19 700 ₽\nАртикул 00123. Кроме доставки.\n";
 
 it("lists tools through HTTP, confines the pilot to its project, and journals one discovery across replay", async () => {
@@ -69,13 +70,25 @@ it("lists tools through HTTP, confines the pilot to its project, and journals on
         res.writeHead(400).end();
       } else if (rpc.method === "notifications/initialized") {
         res.writeHead(202).end();
-      } else if (rpc.method === "resources/read" && rpc.params?.uri === documentUri) {
+      } else if (
+        rpc.method === "resources/read" &&
+        (rpc.params?.uri === documentUri || rpc.params?.uri === otherDocumentUri)
+      ) {
         res.writeHead(200, { "content-type": "application/json" });
         res.end(
           JSON.stringify({
             jsonrpc: "2.0",
             id: rpc.id,
-            result: { contents: [{ uri: returnedUri, text: documentText, mimeType: "text/plain" }] }
+            result: {
+              contents: [
+                {
+                  uri: rpc.params?.uri === otherDocumentUri ? otherDocumentUri : returnedUri,
+                  text:
+                    rpc.params?.uri === otherDocumentUri ? "Other fixture notes." : documentText,
+                  mimeType: "text/plain"
+                }
+              ]
+            }
           })
         );
       } else {
@@ -106,8 +119,10 @@ it("lists tools through HTTP, confines the pilot to its project, and journals on
       KOSMORA_MCP_URL: "https://mcp.example.org/catalog",
       KOSMORA_MCP_OWNER: owner,
       KOSMORA_MCP_PROJECT: project.id,
-      KOSMORA_MCP_DOCUMENT_URI: documentUri,
-      KOSMORA_MCP_DOCUMENT_NAME: "report.txt"
+      KOSMORA_MCP_DOCUMENTS_JSON: JSON.stringify([
+        { uri: documentUri, name: "report.txt" },
+        { uri: otherDocumentUri, name: "notes.txt" }
+      ])
     },
     (_url, init) => fetch(`http://127.0.0.1:${address.port}/catalog`, init)
   )!;
@@ -119,6 +134,7 @@ it("lists tools through HTTP, confines the pilot to its project, and journals on
     emergencyStopStore: stop,
     mcpDiscovery: pilot
   });
+  const [primaryId, secondaryId] = pilot.documents!.map(({ id }) => id);
   const path = `/api/v1/projects/${project.id}/integrations/mcp`;
   const discover = (id = randomUUID(), requestOrigin = origin) =>
     app.inject({
@@ -131,7 +147,7 @@ it("lists tools through HTTP, confines the pilot to its project, and journals on
     app.inject({
       method: "POST",
       url: `/api/v1/projects/${projectId}/integrations/mcp/document/${mode}`,
-      payload,
+      payload: { document_id: primaryId, ...payload },
       headers: { origin }
     });
   const requestId = () => ({ request_id: randomUUID() });
@@ -139,7 +155,10 @@ it("lists tools through HTTP, confines the pilot to its project, and journals on
     expect((await app.inject({ url: path })).json()).toEqual({
       configured: true,
       stopped: false,
-      document: "report.txt"
+      documents: [
+        { id: primaryId, name: "report.txt" },
+        { id: secondaryId, name: "notes.txt" }
+      ]
     });
     expect(
       (
@@ -156,6 +175,12 @@ it("lists tools through HTTP, confines the pilot to its project, and journals on
       (await documentAction("preview", requestId())).json<{ status: string }>().status
     ).toMatch(/^(WAITING_CONFIRMATION|DENIED|PAUSED)$/u);
     expect((await documentAction("preview", requestId(), another.id)).statusCode).toBe(503);
+    expect(
+      (await documentAction("preview", { ...requestId(), document_id: "a".repeat(32) })).statusCode
+    ).toBe(404);
+    expect(
+      (await documentAction("preview", { ...requestId(), document_id: undefined })).statusCode
+    ).toBe(404);
     expect(methods).toEqual([]);
 
     policy.updateProfile({
@@ -212,6 +237,24 @@ it("lists tools through HTTP, confines the pilot to its project, and journals on
     );
     expect(entry).toMatchObject({ operation_id: preview.operation_id, status: "SUCCEEDED" });
     expect(JSON.stringify(entry)).not.toContain("00123");
+    const otherPreview = await documentAction("preview", {
+      ...requestId(),
+      document_id: secondaryId
+    });
+    expect(otherPreview.json()).toMatchObject({
+      source: otherDocumentUri,
+      name: "notes.txt",
+      text: "Other fixture notes."
+    });
+    expect(
+      (
+        await documentAction("save", {
+          ...requestId(),
+          document_id: secondaryId,
+          preview_id: preview.preview_id
+        })
+      ).statusCode
+    ).toBe(409);
     const initial = projects.getMaterials(project.id, owner)!;
     expect(initial.attachments).toEqual([]);
     projects.setMaterials(project.id, owner, {
@@ -334,4 +377,25 @@ it.each([
   { KOSMORA_MCP_BEARER: "synthetic-value" }
 ])("keeps DeepWiki imports disabled for incompatible configuration", (changes) => {
   expect(configuredMcpDiscovery({ ...wikiEnv, ...changes })?.readDocument).toBeUndefined();
+});
+
+it.each([
+  [
+    { uri: documentUri, name: "a.txt" },
+    { uri: documentUri, name: "b.txt" }
+  ],
+  [
+    { uri: documentUri, name: "a.txt" },
+    { uri: otherDocumentUri, name: "A.txt" }
+  ],
+  [{ uri: documentUri, name: "a.txt", tool: "arbitrary" }],
+  [{ uri: documentUri, name: "../outside.txt" }]
+])("disables the complete document allowlist when it is ambiguous or malformed", (...entries) => {
+  const pilot = configuredMcpDiscovery({
+    KOSMORA_MCP_URL: "https://mcp.example.org/catalog",
+    KOSMORA_MCP_OWNER: owner,
+    KOSMORA_MCP_PROJECT: "project",
+    KOSMORA_MCP_DOCUMENTS_JSON: JSON.stringify(entries)
+  });
+  expect(pilot?.readDocument).toBeUndefined();
 });

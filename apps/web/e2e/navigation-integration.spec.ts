@@ -142,14 +142,27 @@ test("imports a reviewed MCP document and explains access loss", async ({ page }
   await fixture(page);
   const base = `**/api/v1/projects/${projectId}/integrations/mcp`;
   const id = "ef130001-0001-4000-8000-000000000002";
+  const report = "a".repeat(32),
+    notes = "b".repeat(32);
   const source = "fixture://workspace/report";
   let revoked = false;
   let writes = 0;
   await page.route(base, (route) =>
-    route.fulfill({ json: { configured: true, stopped: false, document: "report.txt" } })
+    route.fulfill({
+      json: {
+        configured: true,
+        stopped: false,
+        documents: [
+          { id: report, name: "report.txt" },
+          { id: notes, name: "notes.txt" }
+        ]
+      }
+    })
   );
-  await page.route(base + "/document/preview", (route) =>
-    route.fulfill(
+  await page.route(base + "/document/preview", (route) => {
+    const selected = (route.request().postDataJSON() as { document_id: string }).document_id;
+    expect([report, notes]).toContain(selected);
+    return route.fulfill(
       revoked
         ? {
             status: 409,
@@ -160,23 +173,35 @@ test("imports a reviewed MCP document and explains access loss", async ({ page }
               status: "EXECUTED",
               preview_id: id,
               operation_id: id,
-              name: "report.txt",
-              source,
-              text: "19 700 ₽, артикул 00123, кроме доставки."
+              name: selected === notes ? "notes.txt" : "report.txt",
+              source: selected === notes ? "fixture://workspace/notes" : source,
+              text:
+                selected === notes
+                  ? "Отдельные заметки."
+                  : "19 700 ₽, артикул 00123, кроме доставки."
             }
           }
-    )
-  );
+    );
+  });
   await page.route(base + "/document/save", (route) => {
     writes++;
     expect(route.request().postDataJSON()).toEqual({
       preview_id: id,
+      document_id: report,
       request_id: expect.any(String)
     });
     return route.fulfill({ json: { status: "EXECUTED", operation_id: id, version: 2 } });
   });
   await page.goto("/?surface=apps");
+  const selector = page.getByLabel("Документ для импорта");
+  await selector.selectOption(notes);
   const document = page.getByRole("region", { name: "Документ MCP", exact: true });
+  await document.getByRole("button", { name: "Предпросмотр документа" }).click();
+  await expect(document).toContainText("Отдельные заметки.");
+  await selector.selectOption(report);
+  await expect(
+    document.getByRole("button", { name: "Подтвердить сохранение в материалы" })
+  ).toHaveCount(0);
   await document.getByRole("button", { name: "Предпросмотр документа" }).click();
   await expect(document).toContainText("19 700 ₽, артикул 00123, кроме доставки.");
   await expect(document).toContainText(source);
