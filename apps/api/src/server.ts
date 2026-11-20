@@ -1,4 +1,5 @@
 import { EnvironmentSecretResolver, loadServerConfig } from "@cosmora/config";
+import { configuredMcpDiscovery } from "./mcp-discovery.js";
 import { WORK_EXECUTION_CONCURRENCY } from "@cosmora/contracts";
 import { RuntimeClock } from "@cosmora/model-gateway";
 import {
@@ -305,6 +306,7 @@ try {
     delegationValidator: validateAgentDelegation
   });
   app = buildApp({
+    mcpDiscovery: configuredMcpDiscovery(process.env),
     scheduledDispatchStore,
     indexedRecall: semanticIndex,
     semanticRanker,

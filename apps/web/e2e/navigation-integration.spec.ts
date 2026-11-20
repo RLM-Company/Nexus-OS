@@ -110,6 +110,34 @@ async function fixture(page: Page, owner = "local-owner") {
   };
 }
 
+test("integrations show the discovered MCP tool catalog and journal operation", async ({
+  page
+}) => {
+  await fixture(page);
+  const operation = "ef130001-0001-4000-8000-000000000001";
+  await page.route(`**/api/v1/projects/${projectId}/integrations/mcp`, (route) =>
+    route.fulfill({ json: { configured: true, stopped: false } })
+  );
+  await page.route(`**/api/v1/projects/${projectId}/integrations/mcp/discover`, (route) => {
+    expect(route.request().method()).toBe("POST");
+    expect(route.request().postDataJSON()).toMatchObject({ request_id: expect.any(String) });
+    return route.fulfill({
+      json: {
+        status: "EXECUTED",
+        tools: ["read_fixture"],
+        hasMore: false,
+        operation_id: operation
+      }
+    });
+  });
+  await page.goto("/?surface=apps");
+  await expect(page.getByLabel("Проект для MCP")).toHaveValue(projectId);
+  const panel = page.getByRole("region", { name: "MCP", exact: true });
+  await panel.getByRole("button", { name: "Проверить MCP и показать инструменты" }).click();
+  await expect(panel.getByText("read_fixture", { exact: true })).toBeVisible();
+  await expect(panel.getByText(operation, { exact: true })).toBeVisible();
+});
+
 test("pins persist per owner, reorder only on pinning and survive ordinary chat reads", async ({
   page
 }) => {
