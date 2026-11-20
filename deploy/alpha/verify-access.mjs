@@ -6,7 +6,13 @@ const requireState = (condition, message) => {
   if (!condition) throw new AccessCheckError(message);
 };
 
-export async function verifyAccess({ origin, password, now = Date.now(), authMode = "basic" }) {
+export async function verifyAccess({
+  origin,
+  password,
+  now = Date.now(),
+  authMode = "basic",
+  closeFormSession = false
+}) {
   const base = new URL(origin);
   requireState(
     base.username === "" &&
@@ -22,6 +28,8 @@ export async function verifyAccess({ origin, password, now = Date.now(), authMod
   let authHeaders = {
     authorization: `Basic ${Buffer.from(`owner:${password}`).toString("base64")}`
   };
+  let formCookie;
+  let verificationError;
   const request = async (path, authenticated, expectedStatus) => {
     let response;
     try {
@@ -50,104 +58,137 @@ export async function verifyAccess({ origin, password, now = Date.now(), authMod
       throw new AccessCheckError("API response was not valid JSON");
     }
   };
-  if (authMode === "form") {
-    const root = await request("/", false, 303);
-    requireState(root.headers.get("location") === "/login", "Login redirect is missing");
-    await root.body?.cancel();
-    await (await request("/login", false, 200)).body?.cancel();
-    await (await request("/api/v1/health", false, 401)).body?.cancel();
-    let login;
-    try {
-      login = await fetch(new URL("/__owner/login", base), {
-        method: "POST",
-        redirect: "manual",
-        headers: { origin: base.origin, "content-type": "application/x-www-form-urlencoded" },
-        body: new URLSearchParams({ username: "owner", password }),
-        signal: AbortSignal.timeout(5_000)
-      });
-    } catch {
-      throw new AccessCheckError("Owner form login failed");
-    }
-    const cookie = login.headers.get("set-cookie");
-    requireState(
-      login.status === 303 &&
-        login.headers.get("location") === "/" &&
-        /^__Host-cosmora-owner=[a-f0-9]{64};/.test(cookie ?? "") &&
-        /; Secure; HttpOnly; SameSite=Strict;/.test(cookie),
-      "Owner form login failed"
-    );
-    await login.body?.cancel();
-    authHeaders = { cookie: cookie.split(";")[0] };
-  } else {
-    requireState(authMode === "basic", "Unknown authentication mode");
-    for (const path of ["/", "/api/v1/health"]) {
-      await (await request(path, false, 401)).body?.cancel();
-    }
-  }
-  const interfaceResponse = await request("/", true, 200);
-  const markup = await interfaceResponse.text();
-  const assets = new Set();
-  for (const match of markup.matchAll(/\b(?:src|href)=["']([^"']+)["']/gu)) {
-    const asset = new URL(match[1], base);
-    if (!asset.pathname.startsWith("/_next/static/")) continue;
-    requireState(
-      asset.origin === base.origin && !asset.username && !asset.password,
-      "Interface assets must use the same protected origin"
-    );
-    if (/\.(?:js|css)$/u.test(asset.pathname)) assets.add(asset.pathname + asset.search);
-  }
-  requireState(
-    assets.size <= 32 &&
-      [...assets].some((path) => path.split("?")[0].endsWith(".js")) &&
-      [...assets].some((path) => path.split("?")[0].endsWith(".css")),
-    "Interface script or stylesheet references are missing"
-  );
-  // Browsers fetch these concurrently. Sequential health checks missed a proxy
-  // race that sent forward_auth checks to the API instead of the login service.
-  await Promise.all([
-    ...[...assets].map(async (path) => {
-      const response = await request(path, true, 200);
-      const type = response.headers.get("content-type")?.split(";")[0].trim();
-      await response.body?.cancel();
+  try {
+    if (authMode === "form") {
+      const root = await request("/", false, 303);
+      requireState(root.headers.get("location") === "/login", "Login redirect is missing");
+      await root.body?.cancel();
+      await (await request("/login", false, 200)).body?.cancel();
+      await (await request("/api/v1/health", false, 401)).body?.cancel();
+      let login;
+      try {
+        login = await fetch(new URL("/__owner/login", base), {
+          method: "POST",
+          redirect: "manual",
+          headers: { origin: base.origin, "content-type": "application/x-www-form-urlencoded" },
+          body: new URLSearchParams({ username: "owner", password }),
+          signal: AbortSignal.timeout(5_000)
+        });
+      } catch {
+        throw new AccessCheckError("Owner form login failed");
+      }
+      const cookie = login.headers.get("set-cookie");
+      formCookie = /^__Host-cosmora-owner=[a-f0-9]{64}(?=;)/.exec(cookie ?? "")?.[0];
+      await login.body?.cancel();
       requireState(
-        path.split("?")[0].endsWith(".css")
-          ? type === "text/css"
-          : ["application/javascript", "text/javascript"].includes(type),
-        "Interface asset content type is invalid"
+        login.status === 303 &&
+          login.headers.get("location") === "/" &&
+          formCookie &&
+          /; Secure; HttpOnly; SameSite=Strict;/.test(cookie),
+        "Owner form login failed"
       );
-    }),
-    request("/", false, authMode === "form" ? 303 : 401).then((response) =>
-      response.body?.cancel()
-    ),
-    request("/api/v1/health", false, 401).then((response) => response.body?.cancel())
-  ]);
-  const health = await json("/api/v1/health");
-  requireState(health?.status === "ok" && health.database === "ok", "SQLite is not healthy");
-  const sessions = await json("/api/v1/identity/sessions");
-  const current = Array.isArray(sessions?.items)
-    ? sessions.items.filter((session) => session?.current === true)
-    : [];
-  requireState(
-    current.length === 1 &&
-      current[0].status === "active" &&
-      current[0].actor_kind === "owner" &&
-      current[0].owner_id === "hosted-alpha-owner" &&
-      current[0].actor_id === "hosted-alpha-owner",
-    "Current hosted owner session is unavailable"
-  );
-  const expiresAt = Date.parse(current[0].expires_at);
-  requireState(Number.isFinite(expiresAt) && expiresAt > now, "Owner session has expired");
-  requireState(expiresAt - now > 24 * 60 * 60 * 1_000, "Rotate the owner session within 24 hours");
-  const operations = await json("/api/v1/operations/status");
-  requireState(
-    operations &&
-      (operations.process_stop === null || typeof operations.process_stop?.active === "boolean"),
-    "Model execution status is unavailable"
-  );
-  return {
-    session_expires_at: new Date(expiresAt).toISOString(),
-    model_requests_paused: operations.process_stop?.active === true
-  };
+      authHeaders = { cookie: formCookie };
+    } else {
+      requireState(authMode === "basic", "Unknown authentication mode");
+      for (const path of ["/", "/api/v1/health"]) {
+        await (await request(path, false, 401)).body?.cancel();
+      }
+    }
+    const interfaceResponse = await request("/", true, 200);
+    const markup = await interfaceResponse.text();
+    const assets = new Set();
+    for (const match of markup.matchAll(/\b(?:src|href)=["']([^"']+)["']/gu)) {
+      const asset = new URL(match[1], base);
+      if (!asset.pathname.startsWith("/_next/static/")) continue;
+      requireState(
+        asset.origin === base.origin && !asset.username && !asset.password,
+        "Interface assets must use the same protected origin"
+      );
+      if (/\.(?:js|css)$/u.test(asset.pathname)) assets.add(asset.pathname + asset.search);
+    }
+    requireState(
+      assets.size <= 32 &&
+        [...assets].some((path) => path.split("?")[0].endsWith(".js")) &&
+        [...assets].some((path) => path.split("?")[0].endsWith(".css")),
+      "Interface script or stylesheet references are missing"
+    );
+    // Browsers fetch these concurrently. Sequential health checks missed a proxy
+    // race that sent forward_auth checks to the API instead of the login service.
+    const assetChecks = await Promise.allSettled([
+      ...[...assets].map(async (path) => {
+        const response = await request(path, true, 200);
+        const type = response.headers.get("content-type")?.split(";")[0].trim();
+        await response.body?.cancel();
+        requireState(
+          path.split("?")[0].endsWith(".css")
+            ? type === "text/css"
+            : ["application/javascript", "text/javascript"].includes(type),
+          "Interface asset content type is invalid"
+        );
+      }),
+      request("/", false, authMode === "form" ? 303 : 401).then((response) =>
+        response.body?.cancel()
+      ),
+      request("/api/v1/health", false, 401).then((response) => response.body?.cancel())
+    ]);
+    const failedAssetCheck = assetChecks.find((check) => check.status === "rejected");
+    if (failedAssetCheck) throw failedAssetCheck.reason;
+    const health = await json("/api/v1/health");
+    requireState(health?.status === "ok" && health.database === "ok", "SQLite is not healthy");
+    const sessions = await json("/api/v1/identity/sessions");
+    const current = Array.isArray(sessions?.items)
+      ? sessions.items.filter((session) => session?.current === true)
+      : [];
+    requireState(
+      current.length === 1 &&
+        current[0].status === "active" &&
+        current[0].actor_kind === "owner" &&
+        current[0].owner_id === "hosted-alpha-owner" &&
+        current[0].actor_id === "hosted-alpha-owner",
+      "Current hosted owner session is unavailable"
+    );
+    const expiresAt = Date.parse(current[0].expires_at);
+    requireState(Number.isFinite(expiresAt) && expiresAt > now, "Owner session has expired");
+    requireState(
+      expiresAt - now > 24 * 60 * 60 * 1_000,
+      "Rotate the owner session within 24 hours"
+    );
+    const operations = await json("/api/v1/operations/status");
+    requireState(
+      operations &&
+        (operations.process_stop === null || typeof operations.process_stop?.active === "boolean"),
+      "Model execution status is unavailable"
+    );
+    return {
+      session_expires_at: new Date(expiresAt).toISOString(),
+      model_requests_paused: operations.process_stop?.active === true
+    };
+  } catch (error) {
+    verificationError = error;
+    throw error;
+  } finally {
+    if (closeFormSession && formCookie) {
+      try {
+        const logout = await fetch(new URL("/__owner/logout", base), {
+          method: "POST",
+          headers: { origin: base.origin, cookie: formCookie },
+          redirect: "manual",
+          signal: AbortSignal.timeout(5_000)
+        });
+        await logout.body?.cancel();
+        requireState(
+          logout.status === 303 && logout.headers.get("location") === "/login",
+          "Owner logout was not confirmed"
+        );
+      } catch (cause) {
+        throw new AccessCheckError(
+          (verificationError instanceof AccessCheckError ? verificationError.message + ". " : "") +
+            "Owner logout was not confirmed; the temporary session may remain active",
+          { cause }
+        );
+      }
+    }
+  }
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

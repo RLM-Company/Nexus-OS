@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-// Read-only live acceptance against the owner's VPS. No model request, no
-// service restart, no writes to the server. Requires an explicit owner password
+// Live acceptance signs in to create an owner session, then reads service state.
+// No model request, deployment, or service restart. Requires an explicit owner password
 // in the environment; the password is never printed or written to disk.
 //
 //   KOSMORA_OWNER_PASSWORD=... node scripts/vps-live-acceptance.mjs
@@ -21,12 +21,17 @@ if (!password) {
 }
 
 try {
-  const result = await verifyAccess({ origin: ORIGIN, password, authMode: "form" });
+  const result = await verifyAccess({
+    origin: ORIGIN,
+    password,
+    authMode: "form",
+    closeFormSession: true
+  });
   process.stdout.write(
     JSON.stringify(
       {
         origin: ORIGIN,
-        scope: "read-only health/session/assets; no model request; no writes",
+        scope: "temporary owner login, health/session/assets checks and logout; no model request",
         ok: true,
         session_expires_at: result.session_expires_at,
         model_requests_paused: result.model_requests_paused
