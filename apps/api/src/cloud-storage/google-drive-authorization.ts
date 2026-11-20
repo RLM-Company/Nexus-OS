@@ -161,6 +161,19 @@ export class GoogleDriveAuthorization {
         })
       });
       if (!response.ok) {
+        if (previous && response.status === 400) {
+          const failure: unknown = JSON.parse(
+            (await readBoundedDriveBody(response, 32_768)).toString("utf8")
+          );
+          if (
+            typeof failure === "object" &&
+            failure !== null &&
+            "error" in failure &&
+            failure.error === "invalid_grant"
+          )
+            throw new DriveStorageError("DRIVE_AUTH_REQUIRED");
+          throw Error();
+        }
         await response.body?.cancel();
         throw Error();
       }
@@ -169,7 +182,8 @@ export class GoogleDriveAuthorization {
       );
       if (!value || typeof value !== "object" || Array.isArray(value)) throw Error();
       data = value as Record<string, unknown>;
-    } catch {
+    } catch (error) {
+      if (error instanceof DriveStorageError && error.code === "DRIVE_AUTH_REQUIRED") throw error;
       throw new DriveStorageError("DRIVE_TOKEN_EXCHANGE_FAILED");
     }
     // Missing scope is allowed only on refresh of a previously validated narrow grant.

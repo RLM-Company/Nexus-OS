@@ -321,6 +321,39 @@ async function prepare(page: Page, navigate = true) {
   );
   await page.screenshot({ path: "../../qa/koswork-code-terminal.png", fullPage: true });
 }
+
+test("starts a task with the chosen GitHub branch and repository files", async ({ page }) => {
+  const state = await scenario(page);
+  await page.route("**/api/v1/github/branches", (route) =>
+    route.fulfill({ json: { items: [{ name: "fixture-branch" }], next_page: null } })
+  );
+  await page.route("**/api/v1/projects/project-1/code-agent", async (route) => {
+    if (route.request().method() === "GET") return route.fallback();
+    expect(route.request().postDataJSON()).toEqual({
+      client_request_id: expect.any(String),
+      task: "Исправь неверный результат",
+      base_branch: "fixture-branch",
+      files: ["src/value.js"]
+    });
+    await route.fulfill({ json: { ...state.snapshot(), base_branch: "fixture-branch" } });
+  });
+  await page.goto("/code-agent");
+  await expect(page.getByLabel("Разрешённый репозиторий")).toHaveValue("RLM-Company/Nexus-OS");
+  await page.getByRole("button", { name: "Загрузить список веток" }).click();
+  await expect(page.locator("#code-agent-branches option")).toHaveAttribute(
+    "value",
+    "fixture-branch"
+  );
+  await page.getByLabel("Базовая ветка").fill("fixture-branch");
+  await page.getByLabel("Файлы для чтения", { exact: false }).fill("src/value.js");
+  await page.getByLabel("Задача", { exact: true }).fill("Исправь неверный результат");
+  await page.getByRole("button", { name: "Предложить исправление" }).click();
+  await expect(page.getByRole("region", { name: "Состояние задачи" })).toContainText(
+    "fixture-branch"
+  );
+  await expect(page).toHaveURL(/run=run-1$/);
+});
+
 test("creates a Code project directly without starting a model task", async ({ page }) => {
   await scenario(page);
   let posts = 0;
@@ -501,7 +534,7 @@ test("same-document Forward can be cancelled with exact edits retained, then exp
   });
   await page.evaluate(() => history.forward());
   await expect.poll(() => dialogs, { timeout: 5000 }).toBe(1);
-  await expect(page).toHaveURL(/\/code-agent$/);
+  await expect(page).toHaveURL(/\/code-agent\?project=project-1&run=run-1$/);
   await expect(page.getByLabel("+ Итоговое содержимое: src/value.js")).toHaveValue(
     "export const value = 4;"
   );
@@ -551,7 +584,7 @@ test("browser Back can be cancelled with edits visible, then explicitly confirme
   });
   await page.goBack({ waitUntil: "commit", timeout: 2000 }).catch(() => null);
   expect(declined).toBe(1);
-  await expect(page).toHaveURL(/\/code-agent$/);
+  await expect(page).toHaveURL(/\/code-agent\?project=project-1&run=run-1$/);
   await expect(editor).toBeVisible();
   await expect(editor).toHaveValue("export const value = 4;");
   await page.unroute("**/api/v1/**");
@@ -694,7 +727,7 @@ test("dirty project changes and new tasks require an explicit discard; cancellin
   expect(state.publications()).toBe(0);
 });
 
-test("dirty history selection can be cancelled; confirmed discard opens only the selected saved task", async ({
+test("confirmed history selection survives reload and refuses another task's response", async ({
   page
 }) => {
   const state = await scenario(page);
@@ -723,6 +756,15 @@ test("dirty history selection can be cancelled; confirmed discard opens only the
   await expect(editor).toHaveValue("export const value = 99;");
   page.once("dialog", (d) => d.accept());
   await page.getByRole("combobox", { name: "Сохранённые задачи" }).selectOption("run-2");
+  await expect(editor).toHaveValue("export const value = 2;");
+  await page.reload();
+  await expect(page.getByRole("heading", { name: "Вторая задача", exact: true })).toBeVisible();
+  await expect(editor).toHaveValue("export const value = 2;");
+  await page.route("**/api/v1/projects/project-1/code-agent/run-2", (route) =>
+    route.fulfill({ json: first })
+  );
+  await page.getByRole("button", { name: "Обновить состояние" }).click();
+  await expect(page.getByRole("alert")).toContainText("Ответ не подтверждает запрошенную задачу");
   await expect(editor).toHaveValue("export const value = 2;");
   expect(state.publications()).toBe(0);
 });
@@ -762,7 +804,7 @@ test("the Code page GitHub link respects a declined discard", async ({ page }) =
   await editor.fill("export const value = 99;");
   page.once("dialog", (d) => d.dismiss());
   await page.getByRole("link", { name: "GitHub", exact: true }).click();
-  await expect(page).toHaveURL(/\/code-agent$/);
+  await expect(page).toHaveURL(/\/code-agent\?project=project-1&run=run-1$/);
   await expect(editor).toHaveValue("export const value = 99;");
 });
 
