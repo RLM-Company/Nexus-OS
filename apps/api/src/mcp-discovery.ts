@@ -10,6 +10,8 @@ export interface McpDiscovery {
   projectId: string;
   ownerId: string;
   revision: string;
+  document?: { name: string; uri: string };
+  readDocument?(): Promise<string>;
   discover(): Promise<{ tools: string[]; hasMore: boolean }>;
 }
 
@@ -86,6 +88,101 @@ export function configuredMcpDiscovery(
   )
     return;
 
+  const uri = env.KOSMORA_MCP_DOCUMENT_URI;
+  const name = env.KOSMORA_MCP_DOCUMENT_NAME;
+  const document =
+    uri &&
+    name &&
+    /^[^\s\p{Cc}]{1,512}$/u.test(uri) &&
+    /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,78}\.(txt|md)$/u.test(name) &&
+    /^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//u.test(uri) &&
+    !/[?@#]/u.test(uri)
+      ? { uri, name }
+      : undefined;
+
+  async function run<Output>(
+    use: (
+      capabilities: Record<string, unknown>,
+      call: (method: string, params?: object) => Promise<Record<string, unknown>>
+    ) => Promise<Output>
+  ): Promise<Output> {
+    const signal = AbortSignal.timeout(10_000);
+    const headers = new Headers({
+      accept: "application/json, text/event-stream",
+      "content-type": "application/json",
+      ...(KOSMORA_MCP_BEARER ? { authorization: `Bearer ${KOSMORA_MCP_BEARER}` } : {})
+    });
+    const send = (method: string, params?: object, id?: string) =>
+      request(endpoint, {
+        method: "POST",
+        redirect: "error",
+        signal,
+        headers,
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          method,
+          ...(id ? { id } : {}),
+          ...(params ? { params } : {})
+        })
+      });
+    const checked = async (response: Response, id: string) => {
+      if (!response.ok || response.redirected) {
+        await response.body?.cancel();
+        throw new Error("MCP_REMOTE_FAILED");
+      }
+      const message = await responseObject(response, id);
+      if (message.jsonrpc !== "2.0" || message.id !== id || "error" in message)
+        throw new Error("MCP_INVALID_RESPONSE");
+      return record(message.result);
+    };
+    try {
+      const id = randomUUID();
+      const initial = await send(
+        "initialize",
+        {
+          protocolVersion: VERSION,
+          capabilities: {},
+          clientInfo: { name: "Kosmora", version: "1" }
+        },
+        id
+      );
+      const handshake = await checked(initial, id);
+      if (
+        typeof handshake.protocolVersion !== "string" ||
+        !SUPPORTED.has(handshake.protocolVersion)
+      )
+        throw new Error("MCP_UNSUPPORTED_VERSION");
+      const capabilities = record(handshake.capabilities);
+      headers.set("MCP-Protocol-Version", handshake.protocolVersion);
+      const session = initial.headers.get("mcp-session-id");
+      if (session !== null) {
+        if (!/^[\x21-\x7e]{1,256}$/u.test(session)) throw new Error("MCP_INVALID_SESSION");
+        headers.set("MCP-Session-Id", session);
+      }
+      const ready = await send("notifications/initialized");
+      await ready.body?.cancel();
+      if (ready.status !== 202 || ready.redirected) throw new Error("MCP_REMOTE_FAILED");
+      return await use(capabilities, async (method, params) => {
+        const callId = randomUUID();
+        return checked(await send(method, params, callId), callId);
+      });
+    } finally {
+      if (headers.has("MCP-Session-Id")) {
+        try {
+          const closing = await request(endpoint, {
+            method: "DELETE",
+            headers,
+            signal,
+            redirect: "error"
+          });
+          await closing.body?.cancel();
+        } catch {
+          // Servers may decline client-initiated session termination.
+        }
+      }
+    }
+  }
+
   return {
     projectId: KOSMORA_MCP_PROJECT,
     ownerId: KOSMORA_MCP_OWNER,
@@ -95,73 +192,17 @@ export function configuredMcpDiscovery(
           endpoint.href,
           KOSMORA_MCP_PROJECT,
           KOSMORA_MCP_OWNER,
-          env.KOSMORA_MCP_REVISION ?? "1"
+          env.KOSMORA_MCP_REVISION ?? "1",
+          document
         ])
       )
       .digest("hex")
       .slice(0, 32),
-    async discover() {
-      const signal = AbortSignal.timeout(10_000);
-      const headers = new Headers({
-        accept: "application/json, text/event-stream",
-        "content-type": "application/json",
-        ...(KOSMORA_MCP_BEARER ? { authorization: `Bearer ${KOSMORA_MCP_BEARER}` } : {})
-      });
-      const send = (method: string, params?: object, id?: string) =>
-        request(endpoint, {
-          method: "POST",
-          redirect: "error",
-          signal,
-          headers,
-          body: JSON.stringify({
-            jsonrpc: "2.0",
-            method,
-            ...(id ? { id } : {}),
-            ...(params ? { params } : {})
-          })
-        });
-      const checked = async (response: Response, id: string) => {
-        if (!response.ok || response.redirected) {
-          await response.body?.cancel();
-          throw new Error("MCP_REMOTE_FAILED");
-        }
-        const message = await responseObject(response, id);
-        if (message.jsonrpc !== "2.0" || message.id !== id || "error" in message)
-          throw new Error("MCP_INVALID_RESPONSE");
-        return record(message.result);
-      };
-      try {
-        const id = randomUUID();
-        const initial = await send(
-          "initialize",
-          {
-            protocolVersion: VERSION,
-            capabilities: {},
-            clientInfo: { name: "Kosmora", version: "1" }
-          },
-          id
-        );
-        const handshake = await checked(initial, id);
-        if (
-          typeof handshake.protocolVersion !== "string" ||
-          !SUPPORTED.has(handshake.protocolVersion)
-        )
-          throw new Error("MCP_UNSUPPORTED_VERSION");
-        const capabilities = record(handshake.capabilities);
-        const canListTools = Object.hasOwn(capabilities, "tools");
-        if (canListTools) record(capabilities.tools);
-        headers.set("MCP-Protocol-Version", handshake.protocolVersion);
-        const session = initial.headers.get("mcp-session-id");
-        if (session !== null) {
-          if (!/^[\x21-\x7e]{1,256}$/u.test(session)) throw new Error("MCP_INVALID_SESSION");
-          headers.set("MCP-Session-Id", session);
-        }
-        const ready = await send("notifications/initialized");
-        await ready.body?.cancel();
-        if (ready.status !== 202 || ready.redirected) throw new Error("MCP_REMOTE_FAILED");
-        if (!canListTools) return { tools: [], hasMore: false };
-        const listId = randomUUID();
-        const result = await checked(await send("tools/list", undefined, listId), listId);
+    discover: () =>
+      run(async (capabilities, call) => {
+        if (!Object.hasOwn(capabilities, "tools")) return { tools: [], hasMore: false };
+        record(capabilities.tools);
+        const result = await call("tools/list");
         if (!Array.isArray(result.tools) || result.tools.length > 100)
           throw new Error("MCP_INVALID_RESPONSE");
         const tools = result.tools.map((item: unknown) => {
@@ -174,21 +215,29 @@ export function configuredMcpDiscovery(
           tools,
           hasMore: typeof result.nextCursor === "string" && result.nextCursor.length > 0
         };
-      } finally {
-        if (headers.has("MCP-Session-Id")) {
-          try {
-            const closing = await request(endpoint, {
-              method: "DELETE",
-              headers,
-              signal,
-              redirect: "error"
-            });
-            await closing.body?.cancel();
-          } catch {
-            // Servers may decline client-initiated session termination.
-          }
+      }),
+    ...(document
+      ? {
+          document,
+          readDocument: () =>
+            run(async (capabilities, call) => {
+              record(capabilities.resources);
+              const result = await call("resources/read", { uri: document.uri });
+              if (!Array.isArray(result.contents) || result.contents.length !== 1)
+                throw new Error("MCP_INVALID_DOCUMENT");
+              const item = record(result.contents[0]);
+              if (
+                item.uri !== document.uri ||
+                "blob" in item ||
+                typeof item.text !== "string" ||
+                (item.mimeType !== undefined &&
+                  item.mimeType !== "text/plain" &&
+                  item.mimeType !== "text/markdown")
+              )
+                throw new Error("MCP_INVALID_DOCUMENT");
+              return item.text;
+            })
         }
-      }
-    }
+      : {})
   };
 }

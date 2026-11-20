@@ -3,7 +3,9 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 
-type Availability = { configured: boolean; stopped: boolean };
+import { McpDocument } from "./mcp-document";
+
+type Availability = { configured: boolean; stopped: boolean; document?: string };
 type Discovery = { status: string; tools?: string[]; hasMore?: boolean; operation_id?: string };
 
 export function McpIntegration({ project }: { project: string }) {
@@ -97,6 +99,9 @@ export function McpIntegration({ project }: { project: string }) {
         >
           {busy ? "Проверяем…" : "Проверить MCP и показать инструменты"}
         </button>
+      )}
+      {availability?.configured && !availability.stopped && availability.document && (
+        <McpDocument project={project} name={availability.document} />
       )}
       {message && <p role="alert">{message}</p>}
       {result?.status === "WAITING_CONFIRMATION" && (

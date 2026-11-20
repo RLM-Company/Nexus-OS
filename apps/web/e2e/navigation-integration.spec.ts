@@ -138,6 +138,61 @@ test("integrations show the discovered MCP tool catalog and journal operation", 
   await expect(panel.getByText(operation, { exact: true })).toBeVisible();
 });
 
+test("imports a reviewed MCP document and explains access loss", async ({ page }) => {
+  await fixture(page);
+  const base = `**/api/v1/projects/${projectId}/integrations/mcp`;
+  const id = "ef130001-0001-4000-8000-000000000002";
+  const source = "fixture://workspace/report";
+  let revoked = false;
+  let writes = 0;
+  await page.route(base, (route) =>
+    route.fulfill({ json: { configured: true, stopped: false, document: "report.txt" } })
+  );
+  await page.route(base + "/document/preview", (route) =>
+    route.fulfill(
+      revoked
+        ? {
+            status: 409,
+            json: { status: "RECOVERY_REQUIRED", operation_id: id }
+          }
+        : {
+            json: {
+              status: "EXECUTED",
+              preview_id: id,
+              operation_id: id,
+              name: "report.txt",
+              source,
+              text: "19 700 ₽, артикул 00123, кроме доставки."
+            }
+          }
+    )
+  );
+  await page.route(base + "/document/save", (route) => {
+    writes++;
+    expect(route.request().postDataJSON()).toEqual({
+      preview_id: id,
+      request_id: expect.any(String)
+    });
+    return route.fulfill({ json: { status: "EXECUTED", operation_id: id, version: 2 } });
+  });
+  await page.goto("/?surface=apps");
+  const document = page.getByRole("region", { name: "Документ MCP", exact: true });
+  await document.getByRole("button", { name: "Предпросмотр документа" }).click();
+  await expect(document).toContainText("19 700 ₽, артикул 00123, кроме доставки.");
+  await expect(document).toContainText(source);
+  expect(writes).toBe(0);
+  await document.getByRole("button", { name: "Подтвердить сохранение в материалы" }).click();
+  await expect(document).toContainText("Документ сохранён. Версия материалов: 2.");
+  expect(writes).toBe(1);
+  revoked = true;
+  await document.getByRole("button", { name: "Предпросмотр документа" }).click();
+  await expect(document).toContainText("Документ недоступен.");
+  await expect(
+    document.getByRole("button", { name: "Подтвердить сохранение в материалы" })
+  ).toHaveCount(0);
+  expect(writes).toBe(1);
+});
+
 test("pins persist per owner, reorder only on pinning and survive ordinary chat reads", async ({
   page
 }) => {

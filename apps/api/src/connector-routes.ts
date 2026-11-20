@@ -30,7 +30,10 @@ export function registerConnectorRoutes(
       reply.header("Cache-Control", "no-store");
       if (registry) {
         const status = registry.status(projectId);
-        return { ...status, connectors: status.connectors.filter(({ id }) => id !== "mcp") };
+        return {
+          ...status,
+          connectors: status.connectors.filter(({ id }) => id !== "mcp" && id !== "mcp-document")
+        };
       }
       const connectors = FIRST_SLICE_CONNECTORS.map((descriptor) => ({
         id: descriptor.id,

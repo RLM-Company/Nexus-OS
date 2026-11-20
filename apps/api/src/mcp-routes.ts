@@ -3,6 +3,7 @@ import { Type } from "typebox";
 import { parseConnectorDescriptor, type IdentityContext } from "@cosmora/contracts";
 import type { EmergencyStopStore, ProjectStore } from "@cosmora/db";
 import { connectorToolId, type ConnectorRegistry } from "@cosmora/tool-runtime";
+import { registerMcpDocumentRoutes } from "./mcp-document-routes.js";
 import type { McpDiscovery } from "./mcp-discovery.js";
 
 const descriptor = parseConnectorDescriptor({
@@ -68,6 +69,17 @@ export function registerMcpRoutes(
   const enabled = (project: string, owner: string) =>
     configured && project === pilot?.projectId && owner === pilot.ownerId;
 
+  registerMcpDocumentRoutes(app, {
+    path,
+    registry,
+    pilot,
+    projects,
+    owned,
+    enabled,
+    stopped,
+    origin
+  });
+
   app.get<{ Params: Params }>(path, { schema: { params } }, (request, reply) => {
     reply.header("Cache-Control", "private, no-store");
     const identity = owned(request);
@@ -75,7 +87,10 @@ export function registerMcpRoutes(
     const project = request.params.projectId;
     return {
       configured: enabled(project, identity.owner_id),
-      stopped: stopped(project, identity.owner_id)
+      stopped: stopped(project, identity.owner_id),
+      ...(pilot?.document && pilot.readDocument && enabled(project, identity.owner_id)
+        ? { document: pilot.document.name }
+        : {})
     };
   });
   app.post<{ Params: Params; Body: { request_id: string } }>(
