@@ -39,6 +39,11 @@ const errors = {
   "no-speech": "Речь не распознана. Попробуйте ещё раз."
 };
 
+const microphoneErrors: Partial<Record<string, string>> = {
+  NotAllowedError: errors["not-allowed"],
+  NotFoundError: errors["audio-capture"]
+};
+
 export function VoiceComposer({
   onInsert,
   disabled = false
@@ -132,9 +137,8 @@ export function VoiceComposer({
       setRecording(false);
       setFailed(true);
       setNotice(
-        error instanceof DOMException && error.name === "NotAllowedError"
-          ? errors["not-allowed"]
-          : "Не удалось запустить диктовку. Проверьте микрофон и повторите."
+        (error instanceof DOMException ? microphoneErrors[error.name] : undefined) ??
+          "Не удалось запустить диктовку. Проверьте микрофон и повторите."
       );
     }
   }
