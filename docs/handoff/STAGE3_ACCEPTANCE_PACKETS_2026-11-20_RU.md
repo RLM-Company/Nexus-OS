@@ -37,12 +37,21 @@
 (явный `invariant`), частичный результат не может выдаваться за полный
 (`complete:false` и `completed_steps < total_steps` проверяются отдельно).
 
+`apps/web/src/app/studio-fixture-import.test.ts` прогоняет оба архива пакета A
+через **реальный** `prepareLibraryUpload` и сверяет с `manifest.json`: простой
+пакет импортируется без пропусков, расширенный даёт ожидаемые имена с разделителем
+`›`, скан/неполный CSV сохраняются, а неподдерживаемые/`__MACOSX`/вложенный
+архив считаются пропусками (2 + 3 базовых теста импортера — 5 passed).
+Это исключает самосогласованный, но не соответствующий продукту пакет.
+
 ## Проверки
 
 ```
 A: generate.mjs      exit 0 (детерминизм подтверждён)
 A: self-check.mjs    self_check passed (4/11 members, 4 citations, 3 pages,
                      3 skipped, 2 incomplete, 2 duplicates)
+A → product          studio-fixture-import.test.ts + library-archive-import.test.ts
+                     5 passed; web typecheck 0, eslint 0
 B: verify.mjs        self-consistency passed
 B: verify.mjs --report reports/deepseek-first-run.json   passed
 prettier · check-secrets   green
