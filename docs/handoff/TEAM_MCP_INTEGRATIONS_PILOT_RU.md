@@ -30,3 +30,16 @@ pnpm --filter @cosmora/web exec playwright test e2e/navigation-integration.spec.
 ```sh
 pnpm --filter @cosmora/web exec playwright test e2e/navigation-integration.spec.ts --grep 'MCP'
 ```
+
+## Живая приёмка с DeepWiki
+
+Оператор может задать публичный репозиторий в `KOSMORA_MCP_DEEPWIKI_REPO` и имя файла в `KOSMORA_MCP_DOCUMENT_NAME` при точном endpoint `https://mcp.deepwiki.com/mcp`. Этот режим использует только `read_wiki_structure` с указанным репозиторием. Передавать bearer, настраивать URI ресурса одновременно или менять репозиторий из браузера в этом режиме нельзя. Результат представляет оглавление вики. Стандартный `resources/read` сохраняется для MCP-серверов, предоставляющих текстовые ресурсы.
+
+Для воспроизведения живого прогона из корня репозитория:
+
+```sh
+COSMORA_MCP_ACCEPT_PUBLIC_READ=1 NODE_USE_ENV_PROXY=1 NODE_USE_SYSTEM_CA=1 \
+pnpm --filter @cosmora/api exec node --import tsx --conditions=development test/mcp-deepwiki.live.ts
+```
+
+В живом прогоне 20 ноября 2026 года сервер вернул 1 594 байта оглавления `modelcontextprotocol/modelcontextprotocol`. SHA-256 совпавшего предпросмотра и сохранённой копии — `5a7a9560417d95edcc4280a54238f72ad11d3ad993693048a697ee33207cf49d`. SQLite работала в памяти. До сохранения вложений было ноль, после него появился один файл версии 1. Повтор вернул 200 без нового внешнего вызова. После остановки тестового проекта новый предпросмотр вернул 409 и сохранённая копия сохранилась. Операции чтения и записи подтверждены журналом. Прогон проверил локальный запрет Kosmora и действующую публичную сеть. У публичного сервера не было OAuth-гранта для отзыва. Отказ самого MCP-сервера проверяется отдельным сценарием на адаптере.

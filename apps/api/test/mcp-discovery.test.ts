@@ -276,3 +276,62 @@ it.each([
     })
   ).toBeUndefined();
 });
+
+const wikiEndpoint = "https://mcp.deepwiki.com/mcp";
+const wikiRepo = "modelcontextprotocol/modelcontextprotocol";
+const wikiEnv = {
+  KOSMORA_MCP_URL: wikiEndpoint,
+  KOSMORA_MCP_OWNER: "owner",
+  KOSMORA_MCP_PROJECT: "project",
+  KOSMORA_MCP_DEEPWIKI_REPO: wikiRepo,
+  KOSMORA_MCP_DOCUMENT_NAME: "outline.txt"
+};
+
+it("reads only the configured public DeepWiki outline and rejects a supplier error or another repository", async () => {
+  const calls: string[] = [];
+  let result: unknown = {
+    content: [{ type: "text", text: "Available pages for " + wikiRepo + ":\n\n- Overview" }]
+  };
+  const pilot = configuredMcpDiscovery(wikiEnv, (url, init) => {
+    if (!(url instanceof URL) || typeof init?.body !== "string")
+      throw new Error("Invalid fixture request");
+    expect(url.href).toBe(wikiEndpoint);
+    expect(init?.redirect).toBe("error");
+    expect(new Headers(init?.headers).has("authorization")).toBe(false);
+    const rpc = JSON.parse(init.body) as { id?: string; method: string; params?: object };
+    calls.push(rpc.method);
+    if (rpc.method === "notifications/initialized")
+      return Promise.resolve(new Response(null, { status: 202 }));
+    if (rpc.method === "tools/call")
+      expect(rpc.params).toEqual({
+        name: "read_wiki_structure",
+        arguments: { repoName: wikiRepo }
+      });
+    return Promise.resolve(
+      Response.json({
+        jsonrpc: "2.0",
+        id: rpc.id,
+        result:
+          rpc.method === "initialize"
+            ? { protocolVersion: "2025-11-25", capabilities: { tools: {} } }
+            : result
+      })
+    );
+  });
+  expect(pilot?.document).toEqual({ name: "outline.txt", uri: "https://deepwiki.com/" + wikiRepo });
+  await expect(pilot?.readDocument?.()).resolves.toContain("Overview");
+  expect(calls).toEqual(["initialize", "notifications/initialized", "tools/call"]);
+  result = { isError: true, content: [{ type: "text", text: "Repository unavailable" }] };
+  await expect(pilot?.readDocument?.()).rejects.toThrow("MCP_INVALID_DOCUMENT");
+  result = { content: [{ type: "text", text: "Available pages for another/repo:\n\n- Overview" }] };
+  await expect(pilot?.readDocument?.()).rejects.toThrow("MCP_INVALID_DOCUMENT");
+});
+
+it.each([
+  { KOSMORA_MCP_URL: "https://example.org/mcp" },
+  { KOSMORA_MCP_DEEPWIKI_REPO: "../repo" },
+  { KOSMORA_MCP_DOCUMENT_URI: "fixture://wrong" },
+  { KOSMORA_MCP_BEARER: "synthetic-value" }
+])("keeps DeepWiki imports disabled for incompatible configuration", (changes) => {
+  expect(configuredMcpDiscovery({ ...wikiEnv, ...changes })?.readDocument).toBeUndefined();
+});

@@ -11,7 +11,7 @@ export interface McpDiscovery {
   ownerId: string;
   revision: string;
   document?: { name: string; uri: string };
-  readDocument?(): Promise<string>;
+  readDocument?(this: void): Promise<string>;
   discover(): Promise<{ tools: string[]; hasMore: boolean }>;
 }
 
@@ -90,14 +90,29 @@ export function configuredMcpDiscovery(
 
   const uri = env.KOSMORA_MCP_DOCUMENT_URI;
   const name = env.KOSMORA_MCP_DOCUMENT_NAME;
-  const document =
-    uri &&
-    name &&
-    /^[^\s\p{Cc}]{1,512}$/u.test(uri) &&
-    /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,78}\.(txt|md)$/u.test(name) &&
-    /^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//u.test(uri) &&
-    !/[?@#]/u.test(uri)
-      ? { uri, name }
+  const repo = env.KOSMORA_MCP_DEEPWIKI_REPO;
+  const wikiRepo =
+    repo &&
+    endpoint.href === "https://mcp.deepwiki.com/mcp" &&
+    !KOSMORA_MCP_BEARER &&
+    !uri &&
+    /^[A-Za-z0-9][A-Za-z0-9-]{0,38}\/[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/u.test(repo)
+      ? repo
+      : undefined;
+  const validName =
+    name && /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,78}\.(txt|md)$/u.test(name) ? name : undefined;
+  const wikiDocument =
+    wikiRepo && validName
+      ? { uri: "https://deepwiki.com/" + wikiRepo, name: validName }
+      : undefined;
+  const document = repo
+    ? wikiDocument
+    : uri &&
+        validName &&
+        /^[^\s\p{Cc}]{1,512}$/u.test(uri) &&
+        /^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//u.test(uri) &&
+        !/[?@#]/u.test(uri)
+      ? { uri, name: validName }
       : undefined;
 
   async function run<Output>(
@@ -193,7 +208,8 @@ export function configuredMcpDiscovery(
           KOSMORA_MCP_PROJECT,
           KOSMORA_MCP_OWNER,
           env.KOSMORA_MCP_REVISION ?? "1",
-          document
+          document,
+          wikiRepo
         ])
       )
       .digest("hex")
@@ -221,6 +237,27 @@ export function configuredMcpDiscovery(
           document,
           readDocument: () =>
             run(async (capabilities, call) => {
+              if (wikiRepo) {
+                record(capabilities.tools);
+                const result = await call("tools/call", {
+                  name: "read_wiki_structure",
+                  arguments: { repoName: wikiRepo }
+                });
+                if (
+                  (result.isError !== undefined && result.isError !== false) ||
+                  !Array.isArray(result.content) ||
+                  result.content.length !== 1
+                )
+                  throw new Error("MCP_INVALID_DOCUMENT");
+                const item = record(result.content[0]);
+                if (
+                  item.type !== "text" ||
+                  typeof item.text !== "string" ||
+                  !item.text.startsWith("Available pages for " + wikiRepo + ":")
+                )
+                  throw new Error("MCP_INVALID_DOCUMENT");
+                return item.text;
+              }
               record(capabilities.resources);
               const result = await call("resources/read", { uri: document.uri });
               if (!Array.isArray(result.contents) || result.contents.length !== 1)
