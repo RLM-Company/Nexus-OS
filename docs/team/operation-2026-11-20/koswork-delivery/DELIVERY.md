@@ -51,11 +51,21 @@
   манифест с partial=true, отказ на неизвестный node). Все 21 старый тест
   прошли без изменений — обратная совместимость сохранена.
 
+## Проход 2 — управление
+
+Сценарный тест `koswork-admission-scenario.test.ts` расширен на **том же
+наборе материалов**: пауза проекта (`setProjectMode("paused")`) переживает
+переоткрытие store; явное продолжение возвращает `"active"`; отмена одного шага
+фиксируется с `blocked_reason`, а зависимый шаг и `depends_on` остаются
+неизменными. Закрытый шаг не перевыполняется — `edit()` в существующем
+`WorkDagCoordinator` запрещает изменять уже начатые шаги (покрыто
+`work-dag.test.ts`). Второй scheduler и фоновый запуск не добавлялись.
+
 ## Проверки (фактические)
 
 ```
 packages/core  work-admission-snapshot.test.ts   4 passed
-apps/api       work-admission-scenario.test.ts   1 passed
+apps/api       koswork-admission-scenario.test.ts 2 passed (pass 1 + pass 2)
 apps/api       work-results-archive.test.ts     22 passed
  typecheck/lint (core, api) · prettier --check . · check-secrets — green
 ```
@@ -71,8 +81,8 @@ apps/api       work-results-archive.test.ts     22 passed
 
 ## Ограничения
 
-- Проходы 2 (управление), 4 (расписание) и 5 (второй сценарий + реальная модель)
-  ещё не сданы в этом PR — работа продолжается в этой же ветке.
+- Проходы 4 (расписание) и 5 (второй сценарий + реальная модель) ещё не сданы
+  в этом PR — работа продолжается в этой же ветке. Проход 2 (управление) сдан.
 - Живой провайдер/VPS/ноутбук владельца не проверялись; прогоны на in-memory
   SQLite и mock-фикстурах. Stage-one по `AGENTS.md` не объявляется принятой.
 - Общие файлы (`contracts` не трогались; `core/index.ts`, `api` coordinator/routes)

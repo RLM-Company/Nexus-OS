@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import {
   ManagerWorkStore,
   ProjectStore,
@@ -41,7 +40,7 @@ describe("pass 1: work admission binds goal, materials and dependencies", () => 
         id: "read",
         title: "Прочитать order.csv",
         goal: "Прочитать order.csv",
-        depends_on: [] as string[]
+        depends_on: []
       },
       {
         id: "compare",
@@ -98,10 +97,43 @@ describe("pass 1: work admission binds goal, materials and dependencies", () => 
       client_request_id: "admission-dag-1",
       title: "Сверка отчёта",
       nodes: plan
-    })!;
+    });
     expect(graph.nodes.filter((node) => node.status === "blocked")).toHaveLength(2);
     expect(graph.nodes[0]!.status).toBe("pending");
     const reopened = new WorkDagStore(db.sqlite);
     expect(reopened.get(graph.id, "owner")!.nodes[2]!.depends_on).toEqual(["compare"]);
+  });
+
+  it("pass 2: pause, reopen, cancel one step and keep the closed step untouched", async () => {
+    const { db, dag, project } = await setup();
+    const graph = dag.create(project, "owner", "owner", {
+      client_request_id: "control-dag-1",
+      title: "Управление сверкой",
+      nodes: [
+        { id: "read", title: "Прочитать", goal: "Прочитать", depends_on: [] },
+        { id: "compare", title: "Сверить", goal: "Сверить", depends_on: ["read"] }
+      ]
+    });
+
+    // Пауза проекта фиксируется и переживает перезагрузку store.
+    dag.setProjectMode(project, "owner", "paused");
+    expect(dag.projectMode(project, "owner")).toBe("paused");
+    expect(new WorkDagStore(db.sqlite).projectMode(project, "owner")).toBe("paused");
+
+    // Явное продолжение возвращает активный режим.
+    dag.setProjectMode(project, "owner", "active");
+    const reopened = new WorkDagStore(db.sqlite);
+    expect(reopened.projectMode(project, "owner")).toBe("active");
+
+    // Закрытый шаг помечается отменённым; остальные зависимости сохраняются.
+    const current = reopened.get(graph.id, "owner")!;
+    expect(current.nodes[0]!.status).toBe("pending");
+    current.nodes[1] = { ...current.nodes[1]!, status: "cancelled", blocked_reason: "OWNER" };
+    const saved = reopened.save(current, "Отменён шаг сверки");
+    const after = new WorkDagStore(db.sqlite).get(graph.id, "owner")!;
+    expect(saved.version).toBe(current.version + 1);
+    expect(after.nodes[1]!.status).toBe("cancelled");
+    expect(after.nodes[0]!.status).toBe("pending");
+    expect(after.nodes[1]!.depends_on).toEqual(["read"]);
   });
 });
