@@ -61,13 +61,42 @@
 `WorkDagCoordinator` запрещает изменять уже начатые шаги (покрыто
 `work-dag.test.ts`). Второй scheduler и фоновый запуск не добавлялись.
 
+## Проход 4 — расписание (в существующем механизме)
+
+В `scheduled-dispatch-api.test.ts` добавлен сценарий: закрытое срабатывание не
+переоткрывается (повторный dispatch → 409), а рестарт и повторная доставка
+создаются **отдельными заданиями** со своими `client_request_id` — три записи,
+три id, исходная остаётся `dispatched`, а `ManagerWorkStore` содержит одну
+закрытую задачу, а не дубли. Повторные даты/один экземпляр на срабатывание уже
+покрыты соседним тестом (`ready`→`dispatch`→`scheduled` на следующий день).
+Нового scheduler/фонового тика нет.
+
+## Проход 5 — второй сценарий и живая модель
+
+`koswork-second-scenario.test.ts`: другая структура входов — таблица
+`kosmora.studio.data` с заголовками и строками + две якорные выдержки, dependency
+fan-in (`parse → anchor-a/anchor-b → total`). Проверены цель+материалы+снимок при
+admission, два `blocked` якоря, сохранение fan-in после reopen.
+
+**Живая модель не запускалась**: в этой сессии нет переданной «согласованной
+среды» с ключом провайдера (env пуст; `MODEL_API_KEY` есть только как GitHub
+secret, который я не извлекаю и не печатаю). Подготовлен guard-скрипт
+`scripts/koswork-owner-live.mjs`: он ничего не отправляет без явного
+`KOSMORA_WORK_LIVE_CONFIRM=RUN_ONE_OWNER_SCENARIO` и локального loopback origin,
+не читает и не печатает секреты. Это **готовность сценария**, а не факт
+пройденной живой приёмки — статус остаётся честно «ожидает согласованной среды».
+
 ## Проверки (фактические)
 
 ```
 packages/core  work-admission-snapshot.test.ts   4 passed
 apps/api       koswork-admission-scenario.test.ts 2 passed (pass 1 + pass 2)
-apps/api       work-results-archive.test.ts     22 passed
+apps/api       koswork-second-scenario.test.ts    1 passed (pass 5)
+apps/api       scheduled-dispatch-api.test.ts     6 passed (pass 4 + past)
+apps/api       work-results-archive.test.ts      22 passed
+apps/api       work-dag.test.ts (execution)       green (pre-existing)
  typecheck/lint (core, api) · prettier --check . · check-secrets — green
+CI PR #611: 4/4 pass (Verify monorepo 7m8s, Browser acceptance 13m58s, sandbox, identity)
 ```
 
 ## Как обновляются существующие данные
@@ -81,8 +110,9 @@ apps/api       work-results-archive.test.ts     22 passed
 
 ## Ограничения
 
-- Проходы 4 (расписание) и 5 (второй сценарий + реальная модель) ещё не сданы
-  в этом PR — работа продолжается в этой же ветке. Проход 2 (управление) сдан.
+- Проходы 1–5 сданы в коде/тестах. Живая модель остаётся ожидающей
+  согласованной среды — это единственный незакрытый пункт задания; код и
+  guard-скрипт готовы, но я не выдаю подготовку за факт прогона.
 - Живой провайдер/VPS/ноутбук владельца не проверялись; прогоны на in-memory
   SQLite и mock-фикстурах. Stage-one по `AGENTS.md` не объявляется принятой.
 - Общие файлы (`contracts` не трогались; `core/index.ts`, `api` coordinator/routes)
