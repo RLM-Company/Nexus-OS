@@ -4,6 +4,8 @@ import { pathToFileURL } from "node:url";
 import { OpenAICompatibleAdapter } from "../packages/model-gateway/dist/index.js";
 
 const prompt = "List exactly three short tips for keeping a project folder organized.";
+const directAnswerInstruction =
+  "For straightforward requests, start with the requested answer immediately. Follow the user's requested format and level of detail.";
 
 export async function measureStream(adapter, now = () => performance.now(), options = {}) {
   const started = now();
@@ -16,7 +18,10 @@ export async function measureStream(adapter, now = () => performance.now(), opti
 
   const stream = adapter.stream(
     {
-      messages: [{ role: "user", content: options.prompt ?? prompt }],
+      messages: [
+        ...(options.directAnswer ? [{ role: "system", content: directAnswerInstruction }] : []),
+        { role: "user", content: options.prompt ?? prompt }
+      ],
       constraints: { max_output_tokens: options.maxOutputTokens ?? 256 }
     },
     options.signal
@@ -90,7 +95,7 @@ function mockFetch() {
   );
 }
 
-export function makeAdapter(live, env, { allowLoopback = false } = {}) {
+export function makeAdapter(live, env, { allowLoopback = false, requestFastTier = false } = {}) {
   const model = live ? env.MODEL_NAME?.trim() : "stream-fixture";
   const apiKey = live ? env.MODEL_API_KEY?.trim() : "fixture";
   const baseUrl = new URL(live ? (env.MODEL_BASE_URL ?? "") : "https://fixture.invalid/v1");
@@ -115,7 +120,14 @@ export function makeAdapter(live, env, { allowLoopback = false } = {}) {
     model,
     apiKey: apiKey || "local",
     fetchImplementation: live
-      ? (url, options) => fetch(url, { ...options, redirect: "error" })
+      ? (url, options) =>
+          fetch(url, {
+            ...options,
+            redirect: "error",
+            ...(requestFastTier
+              ? { body: JSON.stringify({ ...JSON.parse(options.body), service_tier: "fast" }) }
+              : {})
+          })
       : mockFetch
   });
 }

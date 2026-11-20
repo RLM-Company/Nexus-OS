@@ -10,12 +10,12 @@ const origin = `http://127.0.0.1:${port}`;
 const modes = new Map();
 const publicModes = [];
 
-function register(id, label, settings) {
+function register(id, label, settings, { directAnswer = false, requestFastTier = false } = {}) {
   const live = settings !== null;
   let adapter;
   try {
-    adapter = makeAdapter(live, settings ?? {}, { allowLoopback: true });
-    modes.set(id, adapter);
+    adapter = makeAdapter(live, settings ?? {}, { allowLoopback: true, requestFastTier });
+    modes.set(id, { adapter, directAnswer });
   } catch {
     // A missing configuration is visible in the UI and cannot trigger a fallback request.
   }
@@ -24,16 +24,30 @@ function register(id, label, settings) {
 
 register("fixture", "Фикстура", null);
 register("baseline", "Обычный", env);
-register("fast", "Быстрый", {
-  MODEL_NAME: env.SPEED_FAST_MODEL,
-  MODEL_BASE_URL: env.SPEED_FAST_BASE_URL ?? env.MODEL_BASE_URL,
-  MODEL_API_KEY: env.SPEED_FAST_BASE_URL ? env.SPEED_FAST_API_KEY : env.MODEL_API_KEY
-});
-register("accelerated", "Разгон", {
-  MODEL_NAME: env.SPEED_ACCEL_MODEL,
-  MODEL_BASE_URL: env.SPEED_ACCEL_BASE_URL,
-  MODEL_API_KEY: env.SPEED_ACCEL_API_KEY
-});
+const requestFastTier = env.SPEED_FAST_REQUEST_TIER === "1";
+register(
+  "fast",
+  requestFastTier ? "Проба Fast · тариф не подтверждён" : "Быстрый",
+  {
+    MODEL_NAME: env.SPEED_FAST_MODEL ?? (requestFastTier ? env.MODEL_NAME : undefined),
+    MODEL_BASE_URL: env.SPEED_FAST_BASE_URL ?? env.MODEL_BASE_URL,
+    MODEL_API_KEY: env.SPEED_FAST_BASE_URL ? env.SPEED_FAST_API_KEY : env.MODEL_API_KEY
+  },
+  { requestFastTier }
+);
+const directAnswer = env.SPEED_ACCEL_DIRECT_ANSWER === "1";
+register(
+  "accelerated",
+  directAnswer ? "Разгон · прямой ответ" : "Разгон",
+  directAnswer
+    ? env
+    : {
+        MODEL_NAME: env.SPEED_ACCEL_MODEL,
+        MODEL_BASE_URL: env.SPEED_ACCEL_BASE_URL,
+        MODEL_API_KEY: env.SPEED_ACCEL_API_KEY
+      },
+  { directAnswer }
+);
 
 const assets = new Map(
   await Promise.all(
@@ -102,8 +116,8 @@ const server = createServer(async (request, response) => {
     return;
   }
   const input = await readInput(request).catch(() => null);
-  const adapter = input && modes.get(input.mode);
-  if (!adapter) {
+  const mode = input && modes.get(input.mode);
+  if (!mode) {
     response.writeHead(400).end();
     return;
   }
@@ -121,9 +135,10 @@ const server = createServer(async (request, response) => {
     if (!response.destroyed) response.write(`${JSON.stringify(data)}\n`);
   };
   try {
-    const metrics = await measureStream(adapter, undefined, {
+    const metrics = await measureStream(mode.adapter, undefined, {
       prompt: input.prompt,
       maxOutputTokens: input.maxTokens,
+      directAnswer: mode.directAnswer,
       signal: cancellation.signal,
       onText: (text) => emit({ text })
     });
