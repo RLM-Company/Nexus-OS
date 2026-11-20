@@ -8,6 +8,7 @@ type Reply = Partial<Preview> & {
   status?: string;
   operation_id?: string;
   version?: number;
+  already_present?: boolean;
   error?: { code: string };
 };
 
@@ -89,8 +90,12 @@ export function McpDocument({
         typeof outcome.version === "number"
       ) {
         setPreview(null);
-        onImported?.();
-        setMessage(`Документ сохранён. Версия материалов: ${outcome.version}.`);
+        if (outcome.already_present) {
+          setMessage(`Точная копия уже в материалах. Версия: ${outcome.version}.`);
+        } else {
+          onImported?.();
+          setMessage(`Документ сохранён. Версия материалов: ${outcome.version}.`);
+        }
       } else {
         const code = outcome.error?.code;
         if (code === "MCP_STOPPED" || code === "MCP_UNAVAILABLE" || outcome.status === "DENIED")
@@ -98,6 +103,9 @@ export function McpDocument({
         if (code === "MCP_MATERIALS_CHANGED") {
           setPreview(null);
           setMessage("Материалы изменились. Откройте новый предпросмотр.");
+        } else if (code === "MCP_DOCUMENT_NAME_CONFLICT") {
+          setPreview(null);
+          setMessage("Файл с таким именем уже есть и отличается. Существующая копия сохранена.");
         } else if (code === "MCP_MATERIALS_LIMIT") {
           setMessage("Документ не помещается в материалы проекта.");
         } else if (code === "MCP_PREVIEW_EXPIRED") {

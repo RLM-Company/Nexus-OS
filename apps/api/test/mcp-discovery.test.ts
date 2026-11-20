@@ -29,6 +29,7 @@ it("lists tools through HTTP, confines the pilot to its project, and journals on
   const stop = new EmergencyStopStore(database.sqlite);
   const methods: string[] = [];
   let returnedUri = documentUri;
+  let returnedText = documentText;
   let remoteDenied = false;
 
   const upstream = createServer((req, res) => {
@@ -84,7 +85,7 @@ it("lists tools through HTTP, confines the pilot to its project, and journals on
                 {
                   uri: rpc.params?.uri === otherDocumentUri ? otherDocumentUri : returnedUri,
                   text:
-                    rpc.params?.uri === otherDocumentUri ? "Other fixture notes." : documentText,
+                    rpc.params?.uri === otherDocumentUri ? "Other fixture notes." : returnedText,
                   mimeType: "text/plain"
                 }
               ]
@@ -282,6 +283,28 @@ it("lists tools through HTTP, confines the pilot to its project, and journals on
     expect(
       policy.getOperation(project.id, `mcp:${pilot.revision}:save:${saveRequest.request_id}`)
     ).toMatchObject({ status: "SUCCEEDED", result: { version: initial.version + 2 } });
+
+    const again = (await documentAction("preview", requestId())).json<{ preview_id: string }>();
+    const dedupRequest = { ...requestId(), preview_id: again.preview_id };
+    const deduplicated = await documentAction("save", dedupRequest);
+    expect(deduplicated.statusCode, deduplicated.body).toBe(200);
+    expect(deduplicated.json()).toMatchObject({
+      status: "EXECUTED",
+      already_present: true,
+      version: materials!.version
+    });
+    expect((await documentAction("save", dedupRequest)).json()).toEqual(deduplicated.json());
+    expect(projects.getMaterials(project.id, owner)).toEqual(materials);
+
+    returnedText = "Different remote revision.";
+    const revised = (await documentAction("preview", requestId())).json<{ preview_id: string }>();
+    const collision = await documentAction("save", {
+      ...requestId(),
+      preview_id: revised.preview_id
+    });
+    expect(collision.statusCode, collision.body).toBe(409);
+    expect(collision.json()).toMatchObject({ error: { code: "MCP_DOCUMENT_NAME_CONFLICT" } });
+    expect(projects.getMaterials(project.id, owner)).toEqual(materials);
 
     remoteDenied = true;
     expect((await documentAction("preview", requestId())).json()).toMatchObject({

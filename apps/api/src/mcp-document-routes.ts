@@ -25,7 +25,8 @@ type ReadResult = { preview_id: string };
 type ImportDocument = { name: string; source: string; sha256: string };
 type SaveResult =
   | { version: number; imported_document: ImportDocument }
-  | { error: "MCP_MATERIALS_CHANGED" | "MCP_MATERIALS_LIMIT" };
+  | { version: number; already_present: true }
+  | { error: "MCP_MATERIALS_CHANGED" | "MCP_MATERIALS_LIMIT" | "MCP_DOCUMENT_NAME_CONFLICT" };
 const ttl = 5 * 60_000;
 const uuid = Type.String({ pattern: "^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$" });
 
@@ -164,6 +165,15 @@ export function registerMcpDocumentRoutes(
           materials.version !== preview.version
         )
           return Promise.resolve({ error: "MCP_MATERIALS_CHANGED" });
+        const nameKey = document.name.toLowerCase();
+        const sameName = materials.attachments.filter(({ name }) => name.toLowerCase() === nameKey);
+        if (sameName.length > 0) {
+          if (sameName.some(({ content }) => content !== preview.text))
+            return Promise.resolve({ error: "MCP_DOCUMENT_NAME_CONFLICT" });
+          preview.saved = true;
+          preview.text = "";
+          return Promise.resolve({ version: materials.version, already_present: true });
+        }
         const attachments = [
           ...materials.attachments,
           { name: document.name, content: preview.text }
@@ -318,7 +328,11 @@ export function registerMcpDocumentRoutes(
             text: pending.text
           };
         }
-        return { ...operation, version: result.result.version };
+        return {
+          ...operation,
+          version: result.result.version,
+          ...("already_present" in result.result ? { already_present: true } : {})
+        };
       }
     );
   }

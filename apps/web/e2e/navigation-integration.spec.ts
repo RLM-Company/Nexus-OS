@@ -147,6 +147,7 @@ test("imports a reviewed MCP document and explains access loss", async ({ page }
   const source = "fixture://workspace/report";
   let revoked = false;
   let writes = 0;
+  let saves = 0;
   await page.route(base, (route) =>
     route.fulfill({
       json: {
@@ -202,12 +203,22 @@ test("imports a reviewed MCP document and explains access loss", async ({ page }
     })
   );
   await page.route(base + "/document/save", (route) => {
-    writes++;
+    saves++;
     expect(route.request().postDataJSON()).toEqual({
       preview_id: id,
       document_id: report,
       request_id: expect.any(String)
     });
+    if (saves === 2)
+      return route.fulfill({
+        json: { status: "EXECUTED", operation_id: id, version: 2, already_present: true }
+      });
+    if (saves === 3)
+      return route.fulfill({
+        status: 409,
+        json: { error: { code: "MCP_DOCUMENT_NAME_CONFLICT" } }
+      });
+    writes++;
     return route.fulfill({ json: { status: "EXECUTED", operation_id: id, version: 2 } });
   });
   await page.goto("/?surface=apps");
@@ -226,6 +237,13 @@ test("imports a reviewed MCP document and explains access loss", async ({ page }
   expect(writes).toBe(0);
   await document.getByRole("button", { name: "Подтвердить сохранение в материалы" }).click();
   await expect(document).toContainText("Документ сохранён. Версия материалов: 2.");
+  expect(writes).toBe(1);
+  await document.getByRole("button", { name: "Предпросмотр документа" }).click();
+  await document.getByRole("button", { name: "Подтвердить сохранение в материалы" }).click();
+  await expect(document).toContainText("Точная копия уже в материалах.");
+  await document.getByRole("button", { name: "Предпросмотр документа" }).click();
+  await document.getByRole("button", { name: "Подтвердить сохранение в материалы" }).click();
+  await expect(document).toContainText("Существующая копия сохранена.");
   expect(writes).toBe(1);
   revoked = true;
   await document.getByRole("button", { name: "Предпросмотр документа" }).click();
