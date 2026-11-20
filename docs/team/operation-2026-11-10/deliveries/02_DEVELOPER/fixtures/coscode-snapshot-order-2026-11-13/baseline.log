@@ -1,0 +1,124 @@
+[WebServer] (node:48256) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:48268) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+
+Running 4 tests using 1 worker
+
+(node:48287) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✘  1 [chromium] › e2e/code-agent.spec.ts:1160:7 › Code polling never rewinds a newer response: versioned (5.5s)
+(node:48455) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✘  2 [chromium] › e2e/code-agent.spec.ts:1160:7 › Code polling never rewinds a newer response: legacy (4.9s)
+(node:48612) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  3 [chromium] › e2e/code-agent.spec.ts:1160:7 › Code polling never rewinds a newer response: higher durable version (4.7s)
+  ✘  4 [chromium] › e2e/code-agent.spec.ts:1233:5 › Code manual refresh cannot replace a newer durable version with an older snapshot (2.5s)
+
+
+  1) [chromium] › e2e/code-agent.spec.ts:1160:7 › Code polling never rewinds a newer response: versioned
+
+    Error: expect(received).toContain(expected) // indexOf
+
+    Expected value: "Second response already displayed"
+    Received array: ["Чтение репозитория и подготовка изменений", "Основа: main · aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "Delayed first response", "Исходный снимок: ssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss"]
+
+      1223 |       writeFileSync(path, JSON.stringify(result, null, 2) + "\n");
+      1224 |       await info.attach("snapshot-order-readback", { path, contentType: "application/json" });
+    > 1225 |       expect(result.displayed).toContain(expected);
+           |                                ^
+      1226 |       expect(mutations).toEqual([]);
+      1227 |     } finally {
+      1228 |       release();
+        at /workspace/work/Nexus-OS-postmerge-2026-11-13/apps/web/e2e/code-agent.spec.ts:1225:32
+
+    attachment #1: snapshot-order-readback (application/json) ──────────────────────────────────────
+    ../../../../../tmp/nexus-code-order-baseline-results/code-agent-Code-polling-ne-2a2b8--a-newer-response-versioned-chromium/attachments/snapshot-order-readback-8f93292024c7fc89ff45cdc2aa7656032a693685.json
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: ../../../../../tmp/nexus-code-order-baseline-results/code-agent-Code-polling-ne-2a2b8--a-newer-response-versioned-chromium/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    ../../../../../tmp/nexus-code-order-baseline-results/code-agent-Code-polling-ne-2a2b8--a-newer-response-versioned-chromium/trace.zip
+    Usage:
+
+        pnpm exec playwright show-trace ../../../../../tmp/nexus-code-order-baseline-results/code-agent-Code-polling-ne-2a2b8--a-newer-response-versioned-chromium/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  2) [chromium] › e2e/code-agent.spec.ts:1160:7 › Code polling never rewinds a newer response: legacy
+
+    Error: expect(received).toContain(expected) // indexOf
+
+    Expected value: "Second response already displayed"
+    Received array: ["Чтение репозитория и подготовка изменений", "Основа: main · aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "Delayed first response", "Исходный снимок: ssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss"]
+
+      1223 |       writeFileSync(path, JSON.stringify(result, null, 2) + "\n");
+      1224 |       await info.attach("snapshot-order-readback", { path, contentType: "application/json" });
+    > 1225 |       expect(result.displayed).toContain(expected);
+           |                                ^
+      1226 |       expect(mutations).toEqual([]);
+      1227 |     } finally {
+      1228 |       release();
+        at /workspace/work/Nexus-OS-postmerge-2026-11-13/apps/web/e2e/code-agent.spec.ts:1225:32
+
+    attachment #1: snapshot-order-readback (application/json) ──────────────────────────────────────
+    ../../../../../tmp/nexus-code-order-baseline-results/code-agent-Code-polling-ne-78fb9-nds-a-newer-response-legacy-chromium/attachments/snapshot-order-readback-6f282a75a785e0bfd58edecb31096011e7c42b89.json
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: ../../../../../tmp/nexus-code-order-baseline-results/code-agent-Code-polling-ne-78fb9-nds-a-newer-response-legacy-chromium/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    ../../../../../tmp/nexus-code-order-baseline-results/code-agent-Code-polling-ne-78fb9-nds-a-newer-response-legacy-chromium/trace.zip
+    Usage:
+
+        pnpm exec playwright show-trace ../../../../../tmp/nexus-code-order-baseline-results/code-agent-Code-polling-ne-78fb9-nds-a-newer-response-legacy-chromium/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  3) [chromium] › e2e/code-agent.spec.ts:1233:5 › Code manual refresh cannot replace a newer durable version with an older snapshot
+
+    Error: expect(locator).toBeVisible() failed
+
+    Locator: getByText('Durable version 8', { exact: true })
+    Expected: visible
+    Timeout: 1000ms
+    Error: element(s) not found
+
+    Call log:
+      - Expect "toBeVisible" with timeout 1000ms
+      - waiting for getByText('Durable version 8', { exact: true })
+
+
+      1258 |   writeFileSync(path, JSON.stringify(result, null, 2) + "\n");
+      1259 |   await info.attach("manual-refresh-readback", { path, contentType: "application/json" });
+    > 1260 |   await expect(page.getByText(fresh.summary, { exact: true })).toBeVisible({ timeout: 1000 });
+           |                                                                ^
+      1261 |   await expect(page.getByRole("alert")).toContainText("устаревшее состояние");
+      1262 | });
+      1263 |
+        at /workspace/work/Nexus-OS-postmerge-2026-11-13/apps/web/e2e/code-agent.spec.ts:1260:64
+
+    attachment #1: manual-refresh-readback (application/json) ──────────────────────────────────────
+    ../../../../../tmp/nexus-code-order-baseline-results/code-agent-Code-manual-ref-fbbc2-sion-with-an-older-snapshot-chromium/attachments/manual-refresh-readback-35d6712460efa3911bd346dc8c87f85a30b77f61.json
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: ../../../../../tmp/nexus-code-order-baseline-results/code-agent-Code-manual-ref-fbbc2-sion-with-an-older-snapshot-chromium/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    ../../../../../tmp/nexus-code-order-baseline-results/code-agent-Code-manual-ref-fbbc2-sion-with-an-older-snapshot-chromium/trace.zip
+    Usage:
+
+        pnpm exec playwright show-trace ../../../../../tmp/nexus-code-order-baseline-results/code-agent-Code-manual-ref-fbbc2-sion-with-an-older-snapshot-chromium/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  3 failed
+    [chromium] › e2e/code-agent.spec.ts:1160:7 › Code polling never rewinds a newer response: versioned
+    [chromium] › e2e/code-agent.spec.ts:1160:7 › Code polling never rewinds a newer response: legacy
+    [chromium] › e2e/code-agent.spec.ts:1233:5 › Code manual refresh cannot replace a newer durable version with an older snapshot
+  1 passed (25.1s)
+undefined
+/workspace/work/Nexus-OS-postmerge-2026-11-13/apps/web:
+[ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL] Command failed with exit code 1: playwright test -c playwright.code-agent.config.ts --grep 'Code polling never|Code manual refresh' '--output=/tmp/nexus-code-order-baseline-results'

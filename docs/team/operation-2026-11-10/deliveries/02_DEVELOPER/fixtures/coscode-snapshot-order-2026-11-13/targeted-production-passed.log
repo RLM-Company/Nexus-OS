@@ -1,0 +1,27 @@
+[WebServer] (node:53583) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] $ tsc -p tsconfig.build.json
+[WebServer] (node:53610) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] $ node scripts/prepare-pdf-worker.mjs && next build
+[WebServer] (node:53636) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:53636) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:53672) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:53673) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:53699) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+
+Running 4 tests using 1 worker
+
+(node:53713) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  1 [chromium] › e2e/code-agent.spec.ts:1160:7 › Code polling never rewinds a newer response: versioned (4.5s)
+  ✓  2 [chromium] › e2e/code-agent.spec.ts:1160:7 › Code polling never rewinds a newer response: legacy (4.5s)
+  ✓  3 [chromium] › e2e/code-agent.spec.ts:1160:7 › Code polling never rewinds a newer response: higher durable version (4.4s)
+  ✓  4 [chromium] › e2e/code-agent.spec.ts:1237:5 › Code manual refresh cannot replace a newer durable version with an older snapshot (1.4s)
+
+  4 passed (34.3s)

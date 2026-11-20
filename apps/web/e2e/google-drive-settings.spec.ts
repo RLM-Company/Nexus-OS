@@ -4,13 +4,13 @@ const state = "s".repeat(43),
   proof = "p".repeat(43),
   key = "kosmora.drive.connection.v1";
 const endpoint = "/api/v1/storage/drive";
-const view = (connected = false, configured = true) => ({
+const view = (connected = false, configured = true, archiveCount = 0, pendingCount = 0) => ({
   configured,
   state: configured ? (connected ? "connected" : "disconnected") : "unavailable",
   can_disconnect: connected,
   can_retry: false,
-  archive_count: 0,
-  pending_count: 0
+  archive_count: archiveCount,
+  pending_count: pendingCount
 });
 async function fixture(page: Page, configured = true) {
   let connected = false,
@@ -66,6 +66,91 @@ test("Drive consent returns to the same tab, completes once, and disconnects", a
   await panel.getByRole("button", { name: "Отключить Google Drive" }).click();
   await expect(
     panel.getByText("Подключение отключено. Копии на вашем Drive сохранены.")
+  ).toBeVisible();
+});
+
+// Stage-three "Интеграции": one owner journey on one connection —
+// connect -> action -> journal -> revoke. The other Drive specs use
+// archive_count: 0, so the journal line was never asserted anywhere.
+test("connection, copy action, journal and revocation stay consistent", async ({ page }) => {
+  let connected = false;
+  let archived = 0;
+  let pending = 0;
+  await page.addInitScript(() => {
+    try {
+      localStorage.setItem("kosmora:profile-onboarding.v1", "done");
+    } catch {
+      /* Storage may be unavailable; the settings page still renders. */
+    }
+  });
+  await page.route("**/api/v1/storage/drive**", async (route) => {
+    const request = route.request(),
+      path = new URL(request.url()).pathname;
+    let result: object = view(connected, true, archived, pending);
+    if (path.endsWith("/connect"))
+      result = {
+        state,
+        proof,
+        authorization_url: `https://accounts.google.com/o/oauth2/v2/auth?state=${state}`,
+        expires_at: Date.now() + 600000
+      };
+    if (path.endsWith("/finish")) {
+      connected = true;
+      result = { ...view(connected), result: "connected" };
+    }
+    if (path.endsWith("/backups")) {
+      if (request.method() === "POST") {
+        // An explicit owner action creates a pending, then verified journal entry.
+        archived = 1;
+        pending = 1;
+        result = { id: "archive-1", state: "uploading" };
+      } else result = { items: [] };
+    }
+    if (path.endsWith("/sources") || path.endsWith("/restored-files")) result = { items: [] };
+    if (path.endsWith("/backups/archive-1/reconcile")) {
+      pending = 0;
+      result = { id: "archive-1", state: "verified" };
+    }
+    if (path.endsWith("/disconnect")) {
+      connected = false;
+      result = view(false, true, archived, pending);
+    }
+    await route.fulfill({ json: result });
+  });
+  await page.route("https://accounts.google.com/**", (route) =>
+    route.fulfill({ contentType: "text/html", body: "<h1>Google consent fixture</h1>" })
+  );
+
+  // 1. Connect (same-tab consent).
+  await page.goto("/personal-settings#drive-storage");
+  const panel = page.locator("#drive-storage");
+  await panel.getByRole("button", { name: "Подключить Google Drive", exact: true }).click();
+  await page.waitForURL("https://accounts.google.com/**");
+  await page.goto(`/personal-settings#drive_state=${state}&drive_code=fixture-code`);
+  await expect(panel.getByText("Подключён", { exact: true })).toBeVisible();
+  await expect(panel.getByText("Копий в журнале", { exact: false })).toHaveCount(0);
+
+  // 2. Action: save a copy -> the journal appears with the pending count.
+  await panel.getByRole("button", { name: "Сохранить копию на Drive" }).click();
+  await expect(
+    panel.getByText("Копий в журнале: 1. Непроверенных: 1.", { exact: true })
+  ).toBeVisible();
+
+  // 3. Journal stays honest when the archive is reconciled.
+  pending = 0;
+  await page.reload();
+  await expect(
+    panel.getByText("Копий в журнале: 1. Непроверенных: 0.", { exact: true })
+  ).toBeVisible();
+
+  // 4. Revoke: connection is gone, journal metadata is retained.
+  await panel.getByRole("button", { name: "Отключить Google Drive" }).click();
+  await expect(
+    panel.getByText("Подключение отключено. Копии на вашем Drive сохранены.")
+  ).toBeVisible();
+  await expect(panel.getByRole("button", { name: "Отключить Google Drive" })).toHaveCount(0);
+  await expect(
+    panel.getByText("Копий в журнале: 1. Непроверенных: 0.", { exact: true })
   ).toBeVisible();
 });
 

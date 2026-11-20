@@ -3,9 +3,9 @@ import { expect, test } from "@playwright/test";
 const mobileWorkspaces = [
   { button: "Skills", heading: "Skills" },
   { button: "Kosmora Studio", heading: "Kosmora Studio" },
-  { button: "Приложения", heading: "Приложения" },
+  { button: "Интеграции", heading: "Интеграции" },
   { button: "Настройки", heading: "Настройки" },
-  { button: "Coscode", heading: "Новый чат" },
+  { button: "Koscode", heading: "Новый чат" },
   { button: "Koswork", heading: "Новый чат" },
   { button: "Изображения", heading: "Создание изображений" },
   { button: "Видео", heading: "Создание видео" },
@@ -21,7 +21,7 @@ test("keeps every main workspace usable at 390x844", async ({ page }) => {
   await expect(mobileNav).toBeVisible();
 
   for (const workspace of mobileWorkspaces) {
-    const isMode = ["Coscode", "Koswork", "Multi-Agent"].includes(workspace.button);
+    const isMode = ["Koscode", "Koswork", "Multi-Agent"].includes(workspace.button);
     await mobileNav
       .getByRole("button", { name: isMode ? "Режимы" : "Все разделы", exact: true })
       .click();
@@ -31,13 +31,13 @@ test("keeps every main workspace usable at 390x844", async ({ page }) => {
       .getByRole("button", { name: new RegExp(`^${workspace.button}(?:\\s|$)`) })
       .click();
     await expect(menu).not.toBeVisible();
-    const isChat = ["Coscode", "Koswork"].includes(workspace.button);
+    const isChat = ["Koscode", "Koswork"].includes(workspace.button);
     await expect(page.locator(".topbar h1")).toHaveText(isChat ? "Новый чат" : workspace.button);
     if (isChat) {
       await expect(page.getByLabel("Сообщение Kosmora", { exact: true })).toBeEnabled();
       await expect(page.locator(".sidebar")).toHaveAttribute(
         "data-space",
-        workspace.button === "Coscode" ? "coscode" : "kosmora"
+        workspace.button === "Koscode" ? "coscode" : "kosmora"
       );
     } else {
       await expect(

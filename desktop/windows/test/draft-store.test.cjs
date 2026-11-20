@@ -38,6 +38,9 @@ test("draft crash/restart recovery is text-only and strictly owner/origin scoped
     const store = createDraftStore(dir, { codec });
     store.save(OWNER_A, ORIGIN, CHAT, "Черновик для чата");
     store.save(OWNER_A, ORIGIN, PROJECT, "Черновик для проекта");
+    const projectChat = PROJECT.replace("project:", "project-new-chat:");
+    store.save(OWNER_A, ORIGIN, projectChat, "Черновик нового чата проекта");
+    assert.equal(store.load(OWNER_A, ORIGIN, projectChat), "Черновик нового чата проекта");
     assert.equal(createDraftStore(dir, { codec }).load(OWNER_A, ORIGIN, CHAT), "Черновик для чата");
     assert.equal(store.load(OWNER_B, ORIGIN, CHAT), "");
     assert.equal(store.load(OWNER_A, "https://other.example", CHAT), "");

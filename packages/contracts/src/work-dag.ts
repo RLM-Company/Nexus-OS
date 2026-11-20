@@ -129,6 +129,8 @@ export interface WorkDag {
   mode: "active" | "paused" | "cancelled";
   archived_at?: string;
   copied_from?: { graph_id: string; version: number; skills: "source" | "project" };
+  /** Project materials captured when the first step is admitted. */
+  materials_snapshot?: NonNullable<ManagerWork["materials"]>;
   /** Server-captured workflow inputs. Not a permission grant or a portable plan field. */
   workflow_context?: {
     materials: NonNullable<ManagerWork["materials"]>;
@@ -136,7 +138,7 @@ export interface WorkDag {
   };
   execution?: {
     status: "running" | "waiting" | "paused" | "stopped" | "completed" | "failed";
-    max_model_requests: number;
+    max_model_requests: number | null;
     reason: string | null;
     started_at: string;
   };

@@ -91,7 +91,8 @@ export function ChatAttachmentPicker({
   disabled,
   onAdd,
   onRemove,
-  textOnly = false
+  textOnly = false,
+  onOpenTool
 }: {
   files: ChatAttachment[];
   reading: boolean;
@@ -100,11 +101,31 @@ export function ChatAttachmentPicker({
   onAdd: (files: File[]) => void;
   onRemove: (index: number) => void;
   textOnly?: boolean;
+  onOpenTool?: (tool: "research" | "images" | "video") => void;
 }) {
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const [open, setOpen] = useState(false);
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const documents = [...CHAT_TEXT_EXTENSIONS, "pdf", "docx"].map((ext) => "." + ext).join(",");
+  const canAttach = !disabled && !reading && files.length < CHAT_ATTACHMENT_LIMITS.files;
+
+  function pick(accept: string) {
+    if (!canAttach || !inputRef.current) return;
+    inputRef.current.accept = accept;
+    inputRef.current.click();
+    setOpen(false);
+  }
   return (
     <div
       className="chat-attachment-picker"
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false);
+      }}
+      onKeyDown={(event) => {
+        if (event.key !== "Escape" || !open) return;
+        setOpen(false);
+        triggerRef.current?.focus();
+      }}
       onDragOver={(event) => {
         if (!Array.from(event.dataTransfer.types).includes("Files")) return;
         event.preventDefault(); // Never treat dropped file URLs as navigation.
@@ -124,14 +145,7 @@ export function ChatAttachmentPicker({
         multiple
         hidden
         aria-label="Текстовые файлы и код"
-        accept={[
-          ...CHAT_TEXT_EXTENSIONS,
-          "pdf",
-          "docx",
-          ...(textOnly ? [] : ["png", "jpg", "jpeg"])
-        ]
-          .map((extension) => `.${extension}`)
-          .join(",")}
+        accept={documents}
         disabled={disabled || reading}
         onChange={(event) => {
           const selected = Array.from(event.currentTarget.files ?? []);
@@ -141,15 +155,48 @@ export function ChatAttachmentPicker({
       />
       <button
         type="button"
+        ref={triggerRef}
         className="attachment-clip"
-        aria-label="Прикрепить файл"
+        aria-label="Добавить в чат"
+        aria-expanded={open}
         title={textOnly ? "Прикрепить файл" : "Прикрепить файл или фото"}
         aria-busy={reading}
-        disabled={disabled || reading || files.length >= CHAT_ATTACHMENT_LIMITS.files}
-        onClick={() => inputRef.current?.click()}
+        disabled={disabled || reading}
+        onClick={() => setOpen(!open)}
       >
-        <WorkspaceIcon name="paperclip" />
+        <WorkspaceIcon name="plus" />
       </button>
+      {open && (
+        <div className="attachment-actions">
+          <button type="button" disabled={!canAttach} onClick={() => pick(documents)}>
+            Прикрепить файл
+          </button>
+          {!textOnly && (
+            <button type="button" disabled={!canAttach} onClick={() => pick(".png,.jpg,.jpeg")}>
+              Прикрепить фото
+            </button>
+          )}
+          {onOpenTool &&
+            (
+              [
+                ["research", "Deep Research"],
+                ["images", "Создать изображение"],
+                ["video", "Создать видео"]
+              ] as const
+            ).map(([tool, label]) => (
+              <button
+                key={tool}
+                type="button"
+                onClick={() => {
+                  setOpen(false);
+                  onOpenTool(tool);
+                }}
+              >
+                {label}
+              </button>
+            ))}
+        </div>
+      )}
       {reading && (
         <span role="status" aria-live="polite">
           Читаю файлы…

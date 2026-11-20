@@ -111,7 +111,7 @@ function readPendingWork(key: string): CreateManagerWork | null {
     const draft = JSON.parse(raw) as Partial<CreateManagerWork> | null;
     if (
       !draft ||
-      Object.keys(draft).length !== 7 ||
+      ![4, 7].includes(Object.keys(draft).length) ||
       typeof draft.client_request_id !== "string" ||
       !/^[a-f0-9-]{36}$/.test(draft.client_request_id) ||
       typeof draft.goal !== "string" ||
@@ -119,15 +119,16 @@ function readPendingWork(key: string): CreateManagerWork | null {
       draft.goal.length > 8000 ||
       (draft.worker_role !== "analyst" && draft.worker_role !== "architect") ||
       typeof draft.require_critic !== "boolean" ||
-      draft.max_model_requests !== 3 ||
-      typeof draft.max_input_tokens !== "number" ||
-      !Number.isInteger(draft.max_input_tokens) ||
-      draft.max_input_tokens < 1000 ||
-      draft.max_input_tokens > 3_000_000 ||
-      typeof draft.max_output_tokens !== "number" ||
-      !Number.isInteger(draft.max_output_tokens) ||
-      draft.max_output_tokens < 256 ||
-      draft.max_output_tokens > 300_000
+      (Object.keys(draft).length === 7 &&
+        (draft.max_model_requests !== 3 ||
+          typeof draft.max_input_tokens !== "number" ||
+          !Number.isInteger(draft.max_input_tokens) ||
+          draft.max_input_tokens < 1000 ||
+          draft.max_input_tokens > 3_000_000 ||
+          typeof draft.max_output_tokens !== "number" ||
+          !Number.isInteger(draft.max_output_tokens) ||
+          draft.max_output_tokens < 256 ||
+          draft.max_output_tokens > 300_000))
     )
       return null;
     return draft as CreateManagerWork;
@@ -201,16 +202,6 @@ export function ManagerWorkPanel({
     Boolean(draft.require_critic) === critic
       ? draft
       : null;
-  const taskInputBudget =
-    pendingRequest?.max_input_tokens ??
-    (runtime?.context_window_tokens
-      ? Math.min(3_000_000, runtime.context_window_tokens * 3)
-      : 32000);
-  const taskOutputBudget =
-    pendingRequest?.max_output_tokens ??
-    (runtime?.max_output_tokens
-      ? Math.max(256, Math.min(300_000, runtime.max_output_tokens * 3))
-      : 6000);
   useEffect(() => {
     let active = true;
     queueMicrotask(() => {
@@ -317,10 +308,7 @@ export function ManagerWorkPanel({
             client_request_id: crypto.randomUUID(),
             goal,
             worker_role: role,
-            require_critic: critic,
-            max_model_requests: 3,
-            max_input_tokens: taskInputBudget,
-            max_output_tokens: taskOutputBudget
+            require_critic: critic
           };
         body = pendingRequest ?? pending.current;
         savePendingWork(pendingKey, pending.current);
@@ -479,12 +467,6 @@ export function ManagerWorkPanel({
           <option value="architect">Архитектор</option>
         </select>
       </label>
-      <p className="manager-work-limits">
-        Бюджет всех этапов задачи: до 3 обращений к модели,{" "}
-        {taskInputBudget.toLocaleString("ru-RU")} входных и{" "}
-        {taskOutputBudget.toLocaleString("ru-RU")} выходных токенов. Автоматических платных повторов
-        нет. Автономность наследуется от проекта.
-      </p>
       <label className="manager-work-field">
         <input
           type="checkbox"

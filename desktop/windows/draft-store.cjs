@@ -11,7 +11,7 @@ const MAX_FILE_BYTES = 5_300_000;
 const MAX_AGE_MS = 30 * 86400_000;
 // Owner identifiers follow the server EntityId contract, not the narrower chat UUID format.
 const OWNER_ID = /^[^\s\u0000-\u001f\u007f]{1,128}$/u;
-const SCOPE = /^(?:new-chat|(?:chat|project):[a-f0-9-]{8,64})$/i;
+const SCOPE = /^(?:new-chat|(?:chat|project|project-new-chat):[a-f0-9-]{8,64})$/i;
 const SENSITIVE =
   /(?:\bBearer\s+\S+|(?:\b(?:password|passwd|api[_-]?key|access[_-]?token|secret)|пароль)\s*[:=]\s*\S+|(?:ghp_|gho_|ghu_|ghs_|ghr_|github_pat_|sk-[a-z0-9_-]{12,})\S*|-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----)/i;
 

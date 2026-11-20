@@ -162,7 +162,7 @@ test("opens the image workspace and keeps generation local until a model is conn
   const modeTrigger = page.getByLabel("Режимы Kosmora", { exact: true });
   const modeMenu = page.locator(".workspace-mode-menu");
   await modeTrigger.click();
-  for (const name of ["Koswork", "Coscode", "Multi-Agent"]) {
+  for (const name of ["Koswork", "Koscode", "Multi-Agent"]) {
     await expect(modeMenu.getByRole("button", { name, exact: true })).toBeVisible();
     await expect(tools.getByRole("button", { name, exact: true })).toHaveCount(0);
   }
@@ -170,12 +170,12 @@ test("opens the image workspace and keeps generation local until a model is conn
   await expect(modeMenu).not.toHaveAttribute("open");
 
   await expect(tools.getByRole("button", { name: "Skills", exact: true })).toHaveCount(0);
-  await expect(tools.getByRole("button", { name: "Приложения", exact: true })).toBeVisible();
+  await expect(tools.getByRole("button", { name: "Интеграции", exact: true })).toBeVisible();
   const studio = tools.getByRole("button", { name: /Kosmora Studio/ });
   await expect(studio).toHaveAttribute("aria-expanded", "false");
   await studio.click();
   await expect(studio).toHaveAttribute("aria-expanded", "true");
-  for (const name of ["Обзор Studio", "Изображения", "Видео", "Sound"]) {
+  for (const name of ["Изображения", "Видео", "Sound"]) {
     await expect(tools.getByRole("button", { name, exact: true })).toBeVisible();
   }
   await page.getByRole("button", { name: "Изображения", exact: true }).click();

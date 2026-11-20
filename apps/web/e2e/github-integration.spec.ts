@@ -1,5 +1,17 @@
 import { expect, test, type Page } from "@playwright/test";
 
+// First-run profile onboarding has its own spec; its modal would intercept
+// clicks here. Mark it done locally without changing product behaviour.
+test.beforeEach(async ({ page }) => {
+  await page.addInitScript(() => {
+    try {
+      localStorage.setItem("kosmora:profile-onboarding.v1", "done");
+    } catch {
+      /* Storage may be unavailable; the tests still exercise the surface. */
+    }
+  });
+});
+
 test("requires review approval before publishing the exact prepared GitHub draft", async ({
   page
 }) => {

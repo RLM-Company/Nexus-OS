@@ -8,6 +8,7 @@ import { registerHistoryCompactionRoutes } from "./history-compaction-routes.js"
 import { ComputerControlService } from "./computer-control/service.js";
 import { registerComputerControlRoutes } from "./computer-control/routes.js";
 import { registerApexRoutes } from "./apex-routes.js";
+import { registerConnectorRoutes } from "./connector-routes.js";
 import { registerProjectKnowledgeRoutes } from "./project-knowledge-routes.js";
 import { registerProjectAutomationRoutes } from "./project-automation-routes.js";
 import { ProjectAutomation } from "./project-automation.js";
@@ -163,6 +164,7 @@ import {
   type StoredRun,
   type UsageStore
 } from "@cosmora/db";
+import type { ScheduledDispatchStore } from "@cosmora/db";
 import {
   GatewayRunError,
   type ModelGateway,
@@ -210,6 +212,7 @@ import { registerChatHistorySearchRoutes } from "./chat-history-search-routes.js
 import { registerPresentationWorkRoutes } from "./presentation-work-routes.js";
 import { registerPresentationRoutes } from "./presentation-routes.js";
 import { registerNotificationRoutes } from "./notification-routes.js";
+import { registerScheduledDispatchRoutes } from "./scheduled-dispatch-routes.js";
 import { registerOwnerSkillRoutes } from "./owner-skill-routes.js";
 import { registerRegistrationRoutes, type RegistrationOptions } from "./registration-routes.js";
 import { registerGoogleDriveRoutes, safeDriveLogUrl } from "./cloud-storage/google-drive-routes.js";
@@ -254,6 +257,7 @@ export interface AppDependencies {
   researchCoordinatorCreated?: (coordinator: ResearchCoordinator) => void;
   accountModel?: { provider: string; model: string; capabilities: Record<string, boolean> };
   database: DatabaseHealth;
+  scheduledDispatchStore?: ScheduledDispatchStore;
   identityStore?: IdentityStore;
   registration?: RegistrationOptions;
   generalChatStore?: GeneralChatStore;
@@ -855,6 +859,7 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
     identityFor
   );
   registerRuntimeClockRoutes(app, dependencies.runtimeClock ?? new RuntimeClock());
+  registerConnectorRoutes(app, dependencies.policyStore, "owner");
   if (dependencies.projectStore) registerApexRoutes(app, dependencies.projectStore, identityFor);
   if (dependencies.payStore)
     registerPayRoutes(app, {
@@ -949,6 +954,18 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
     registerNotificationRoutes(app, dependencies.notificationStore, identityFor);
   if (dependencies.ownerSkillStore)
     registerOwnerSkillRoutes(app, dependencies.ownerSkillStore, identityFor);
+  if (
+    dependencies.generalChatStore &&
+    dependencies.projectStore &&
+    dependencies.scheduledDispatchStore
+  )
+    registerScheduledDispatchRoutes({
+      app,
+      store: dependencies.scheduledDispatchStore,
+      chats: dependencies.generalChatStore,
+      projects: dependencies.projectStore,
+      identityFor
+    });
   registerWebSearchRoutes(app, dependencies.webSearch ?? new WebSearch());
   if (dependencies.researchStore && dependencies.projectStore && dependencies.policyStore) {
     const coordinator = registerResearchRoutes({
@@ -1520,6 +1537,10 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
       modelGateway: dependencies.modelGateway,
       chat: dependencies.chat,
       ...(dependencies.accountStore ? { accountStore: dependencies.accountStore } : {}),
+      ...(dependencies.projectStore ? { projectStore: dependencies.projectStore } : {}),
+      ...(dependencies.managerWorkStore
+        ? { projectMemory: dependencies.managerWorkStore.memory }
+        : {}),
       search: dependencies.webSearch ?? new WebSearch(),
       runtimeMetrics,
       activeRuns,

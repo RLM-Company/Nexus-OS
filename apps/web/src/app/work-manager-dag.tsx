@@ -155,7 +155,6 @@ export function WorkManagerDag({ projectId }: { projectId: string }) {
   } | null>(null);
   const [acknowledged, setAcknowledged] = useState(false);
   const [autoConfirmed, setAutoConfirmed] = useState(false);
-  const [requestLimit, setRequestLimit] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [readError, setReadError] = useState("");
@@ -189,6 +188,11 @@ export function WorkManagerDag({ projectId }: { projectId: string }) {
     return () => window.clearInterval(timer);
   }, [projectId, graph?.id]);
   const visibleSteps = graph ? filterWorkSteps(graph.nodes, stepStatus, stepDue, scheduleNow) : [];
+  const completedSteps = graph?.nodes.filter((node) => node.status === "completed").length ?? 0;
+  const hasFiles = graph?.nodes.some(
+    (node) => node.status === "completed" && node.artifacts.length > 0
+  );
+  const partialResults = graph && completedSteps < graph.nodes.length;
   const overdueCount =
     graph?.nodes.filter((node) => workDeadlineState(node, scheduleNow) === "overdue").length ?? 0;
   const browsingLocked =
@@ -200,24 +204,11 @@ export function WorkManagerDag({ projectId }: { projectId: string }) {
     Boolean(cancellation) ||
     readingImport;
   const automatic = graph?.execution && ["running", "waiting"].includes(graph.execution.status);
-  const totalLimit =
-    requestLimit ??
-    Math.min(
-      96,
-      Math.max(
-        (graph?.nodes.length ?? 1) * 3,
-        (graph?.usage?.model_requests ?? 0) +
-          (graph?.nodes.filter((node) => !["completed", "cancelled"].includes(node.status))
-            .length ?? 1) *
-            3
-      )
-    );
   useEffect(() => {
     setRetry(null);
     setCancellation(null);
     setAcknowledged(false);
     setAutoConfirmed(false);
-    setRequestLimit(null);
   }, [graph?.id]);
   async function request<T>(url: string, init?: RequestInit): Promise<T> {
     const response = await fetch(url, {
@@ -274,7 +265,6 @@ export function WorkManagerDag({ projectId }: { projectId: string }) {
     setRetry(null);
     setAcknowledged(false);
     setAutoConfirmed(false);
-    setRequestLimit(null);
   }
   useEffect(() => {
     let linkedPlan = new URLSearchParams(window.location.search).get("plan");
@@ -441,7 +431,7 @@ export function WorkManagerDag({ projectId }: { projectId: string }) {
           const latest = await request<WorkDag>(url.slice(0, -"/control".length));
           if (
             latest.version > (control.version ?? 0) &&
-            latest.execution?.max_model_requests === control.max_model_requests
+            (latest.execution?.max_model_requests ?? undefined) === control.max_model_requests
           ) {
             setGraphs((current) => [latest, ...current.filter((g) => g.id !== latest.id)]);
             setSelected(latest.id);
@@ -496,7 +486,7 @@ export function WorkManagerDag({ projectId }: { projectId: string }) {
       action,
       ...(nodeId ? { node_id: nodeId } : {}),
       ...(action === "retry" ? { acknowledge_cost: true } : {}),
-      ...(action === "run_plan" ? { acknowledge_cost: true, max_model_requests: totalLimit } : {})
+      ...(action === "run_plan" ? { acknowledge_cost: true } : {})
     });
   }
   function update(index: number, change: Partial<WorkDagNodeInput>) {
@@ -582,7 +572,6 @@ export function WorkManagerDag({ projectId }: { projectId: string }) {
                 setSelected(null);
                 setRetry(null);
                 setAutoConfirmed(false);
-                setRequestLimit(null);
               }}
             >
               <option value="active">
@@ -602,7 +591,6 @@ export function WorkManagerDag({ projectId }: { projectId: string }) {
                 setSearch(e.target.value);
                 setRetry(null);
                 setAutoConfirmed(false);
-                setRequestLimit(null);
               }}
             />
           </label>
@@ -619,7 +607,6 @@ export function WorkManagerDag({ projectId }: { projectId: string }) {
                   setRetry(null);
                   setAcknowledged(false);
                   setAutoConfirmed(false);
-                  setRequestLimit(null);
                 }}
               >
                 {visibleGraphs.map((g) => (
@@ -1048,9 +1035,15 @@ export function WorkManagerDag({ projectId }: { projectId: string }) {
           </a>
           <p>
             <a href={base + "/" + encodeURIComponent(graph.id) + "/results.zip"}>
-              Скачать отчёт и файлы (ZIP)
+              {!hasFiles
+                ? "Скачать отчёт (ZIP)"
+                : partialResults
+                  ? "Скачать готовые файлы и отчёт (ZIP)"
+                  : "Скачать отчёт и файлы (ZIP)"}
             </a>{" "}
-            — опубликованные результаты, версии и источники. Незавершённые шаги отмечены в отчёте.
+            {partialResults
+              ? "Отчёт показывает, какие шаги завершены и какие ещё остались."
+              : "В отчёте указаны версии файлов и источники."}
           </p>
           {graph.copied_from && (
             <p>
@@ -1072,14 +1065,9 @@ export function WorkManagerDag({ projectId }: { projectId: string }) {
               : graph.mode === "paused"
                 ? "Проект на паузе"
                 : "Проект отменён"}{" "}
-            · версия {graph.version} · завершено{" "}
-            {graph.nodes.filter((n) => n.status === "completed").length} из {graph.nodes.length}
+            · версия {graph.version} · завершено {completedSteps} из {graph.nodes.length}
           </p>
-          <progress
-            aria-label="Прогресс плана"
-            value={graph.nodes.filter((n) => n.status === "completed").length}
-            max={graph.nodes.length}
-          />
+          <progress aria-label="Прогресс плана" value={completedSteps} max={graph.nodes.length} />
           <div className={styles.scheduleFields} role="group" aria-label="Фильтры шагов">
             <label>
               Состояние шага
@@ -1132,8 +1120,10 @@ export function WorkManagerDag({ projectId }: { projectId: string }) {
             )}
             <p>
               Запросов модели: {graph.usage?.model_requests ?? 0}
-              {graph.execution ? " из " + graph.execution.max_model_requests : ""}. Считаются и
-              предыдущие попытки.
+              {graph.execution?.max_model_requests
+                ? " из " + graph.execution.max_model_requests
+                : ""}
+              . Считаются и предыдущие попытки.
             </p>
             {!automatic &&
               !graph.archived_at &&
@@ -1141,35 +1131,19 @@ export function WorkManagerDag({ projectId }: { projectId: string }) {
               graph.nodes.some((node) => !["completed", "cancelled"].includes(node.status)) && (
                 <>
                   <label>
-                    Общий лимит запросов плана
-                    <input
-                      type="number"
-                      min={3}
-                      max={96}
-                      value={totalLimit}
-                      disabled={browsingLocked}
-                      onChange={(e) => {
-                        setRequestLimit(Number(e.target.value));
-                        setAutoConfirmed(false);
-                      }}
-                    />
-                  </label>
-                  <label>
                     <input
                       type="checkbox"
                       checked={autoConfirmed}
                       disabled={browsingLocked}
                       onChange={(e) => setAutoConfirmed(e.target.checked)}
                     />
-                    Разрешаю выполнение оставшихся шагов в этом лимите с расходом токенов
+                    Разрешаю выполнение оставшихся шагов с расходом токенов
                   </label>
                   <button
                     disabled={
                       browsingLocked ||
                       gate !== "clear" ||
                       !autoConfirmed ||
-                      totalLimit < 3 ||
-                      totalLimit > 96 ||
                       graph.nodes.some((node) => ["failed", "cancelled"].includes(node.status))
                     }
                     onClick={() => act("run_plan")}
@@ -1183,9 +1157,13 @@ export function WorkManagerDag({ projectId }: { projectId: string }) {
                 Остановить автозапуск
               </button>
             )}
-            {graph.nodes.some((node) => node.artifacts.length) && (
+            {hasFiles && (
               <p>
-                <a href={base + "/" + graph.id + "/results"}>Скачать все результаты плана</a>
+                <a href={base + "/" + encodeURIComponent(graph.id) + "/results"}>
+                  {partialResults
+                    ? "Скачать готовые результаты (JSON)"
+                    : "Скачать результаты (JSON)"}
+                </a>
               </p>
             )}
             {!!graph.execution_waves?.length && (

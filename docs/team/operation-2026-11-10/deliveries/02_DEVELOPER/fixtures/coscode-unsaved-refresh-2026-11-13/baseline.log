@@ -1,0 +1,180 @@
+[WebServer] (node:66684) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] $ tsc -p tsconfig.build.json
+[WebServer] (node:66711) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] $ node scripts/prepare-pdf-worker.mjs && next build
+[WebServer] (node:66737) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:66737) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:66774) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:66773) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:66800) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+
+Running 4 tests using 1 worker
+
+(node:66814) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✘  1 [chromium] › e2e/code-agent.spec.ts:1343:7 › Code refresh preserves unsaved file until explicit saved-edit reload (5.3s)
+(node:66971) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✘  2 [chromium] › e2e/code-agent.spec.ts:1343:7 › Code refresh preserves unsaved raw diff until explicit saved-edit reload (4.2s)
+(node:67114) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✘  3 [chromium] › e2e/code-agent.spec.ts:1343:7 › Code refresh preserves unsaved poll until explicit saved-edit reload (6.7s)
+(node:67272) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  4 [chromium] › e2e/code-agent.spec.ts:1441:5 › Code refresh accepts a new proposal when the editor has no unsaved changes (2.7s)
+
+
+  1) [chromium] › e2e/code-agent.spec.ts:1343:7 › Code refresh preserves unsaved file until explicit saved-edit reload
+
+    Error: expect(locator).toHaveValue(expected) failed
+
+    Locator: getByLabel('+ Итоговое содержимое: src/value.js')
+    Timeout: 1000ms
+    - Expected  - 2
+    + Received  + 1
+
+    - // 19 700 · 00123 · 2026-11-13 · кроме доставки
+    - export const value = 77;
+    + export const value = 44;
+
+    Call log:
+      - Expect "toHaveValue" with timeout 1000ms
+      - waiting for getByLabel('+ Итоговое содержимое: src/value.js')
+        10 × locator resolved to <textarea rows="4" spellcheck="false">export const value = 44;</textarea>
+           - unexpected value "export const value = 44;"
+
+
+      1413 |     writeFileSync(path, JSON.stringify(result, null, 2) + "\n");
+      1414 |     await info.attach("unsaved-refresh-readback", { path, contentType: "application/json" });
+    > 1415 |     await expect(editor).toHaveValue(local, { timeout: 1000 });
+           |                          ^
+      1416 |     await expect(
+      1417 |       page.getByRole("alert").filter({ hasText: "Предложение на сервере изменилось" })
+      1418 |     ).toBeVisible();
+        at /workspace/work/Nexus-OS-postmerge-2026-11-13/apps/web/e2e/code-agent.spec.ts:1415:26
+
+    attachment #1: unsaved-refresh-readback (application/json) ─────────────────────────────────────
+    ../../../../../tmp/nexus-unsaved-baseline-results/code-agent-Code-refresh-pr-4b8f6--explicit-saved-edit-reload-chromium/attachments/unsaved-refresh-readback-4a103578caa8bc87a10be08523f3f3f2cc6f5277.json
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: ../../../../../tmp/nexus-unsaved-baseline-results/code-agent-Code-refresh-pr-4b8f6--explicit-saved-edit-reload-chromium/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    ../../../../../tmp/nexus-unsaved-baseline-results/code-agent-Code-refresh-pr-4b8f6--explicit-saved-edit-reload-chromium/trace.zip
+    Usage:
+
+        pnpm exec playwright show-trace ../../../../../tmp/nexus-unsaved-baseline-results/code-agent-Code-refresh-pr-4b8f6--explicit-saved-edit-reload-chromium/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  2) [chromium] › e2e/code-agent.spec.ts:1343:7 › Code refresh preserves unsaved raw diff until explicit saved-edit reload
+
+    Error: expect(locator).toHaveValue(expected) failed
+
+    Locator: getByLabel('Редактируемый unified diff', { exact: true })
+    Timeout: 1000ms
+    - Expected  - 2
+    + Received  + 6
+
+    - // 19 700 · 00123 · 2026-11-13 · кроме доставки
+    - export const value = 77;
+    + --- a/src/value.js
+    + +++ b/src/value.js
+    + @@ -1 +1 @@
+    + -export const value = 1;
+    + +export const value = 44;
+    +
+
+    Call log:
+      - Expect "toHaveValue" with timeout 1000ms
+      - waiting for getByLabel('Редактируемый unified diff', { exact: true })
+        11 × locator resolved to <textarea rows="10" spellcheck="false" aria-label="Редактируемый unified diff">--- a/src/value.js↵+++ b/src/value.js↵@@ -1 +1 @@…</textarea>
+           - unexpected value "--- a/src/value.js
+    +++ b/src/value.js
+    @@ -1 +1 @@
+    -export const value = 1;
+    +export const value = 44;
+    "
+
+
+      1413 |     writeFileSync(path, JSON.stringify(result, null, 2) + "\n");
+      1414 |     await info.attach("unsaved-refresh-readback", { path, contentType: "application/json" });
+    > 1415 |     await expect(editor).toHaveValue(local, { timeout: 1000 });
+           |                          ^
+      1416 |     await expect(
+      1417 |       page.getByRole("alert").filter({ hasText: "Предложение на сервере изменилось" })
+      1418 |     ).toBeVisible();
+        at /workspace/work/Nexus-OS-postmerge-2026-11-13/apps/web/e2e/code-agent.spec.ts:1415:26
+
+    attachment #1: unsaved-refresh-readback (application/json) ─────────────────────────────────────
+    ../../../../../tmp/nexus-unsaved-baseline-results/code-agent-Code-refresh-pr-efd2a--explicit-saved-edit-reload-chromium/attachments/unsaved-refresh-readback-8cb95e101501659db3121406618bdf2f1be316e1.json
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: ../../../../../tmp/nexus-unsaved-baseline-results/code-agent-Code-refresh-pr-efd2a--explicit-saved-edit-reload-chromium/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    ../../../../../tmp/nexus-unsaved-baseline-results/code-agent-Code-refresh-pr-efd2a--explicit-saved-edit-reload-chromium/trace.zip
+    Usage:
+
+        pnpm exec playwright show-trace ../../../../../tmp/nexus-unsaved-baseline-results/code-agent-Code-refresh-pr-efd2a--explicit-saved-edit-reload-chromium/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  3) [chromium] › e2e/code-agent.spec.ts:1343:7 › Code refresh preserves unsaved poll until explicit saved-edit reload
+
+    Error: expect(locator).toHaveValue(expected) failed
+
+    Locator: getByLabel('+ Итоговое содержимое: src/value.js')
+    Timeout: 1000ms
+    - Expected  - 2
+    + Received  + 1
+
+    - // 19 700 · 00123 · 2026-11-13 · кроме доставки
+    - export const value = 77;
+    + export const value = 44;
+
+    Call log:
+      - Expect "toHaveValue" with timeout 1000ms
+      - waiting for getByLabel('+ Итоговое содержимое: src/value.js')
+        11 × locator resolved to <textarea rows="4" spellcheck="false">export const value = 44;</textarea>
+           - unexpected value "export const value = 44;"
+
+
+      1413 |     writeFileSync(path, JSON.stringify(result, null, 2) + "\n");
+      1414 |     await info.attach("unsaved-refresh-readback", { path, contentType: "application/json" });
+    > 1415 |     await expect(editor).toHaveValue(local, { timeout: 1000 });
+           |                          ^
+      1416 |     await expect(
+      1417 |       page.getByRole("alert").filter({ hasText: "Предложение на сервере изменилось" })
+      1418 |     ).toBeVisible();
+        at /workspace/work/Nexus-OS-postmerge-2026-11-13/apps/web/e2e/code-agent.spec.ts:1415:26
+
+    attachment #1: unsaved-refresh-readback (application/json) ─────────────────────────────────────
+    ../../../../../tmp/nexus-unsaved-baseline-results/code-agent-Code-refresh-pr-28cbe--explicit-saved-edit-reload-chromium/attachments/unsaved-refresh-readback-170d71910f5b2dfec3ff94046373f962ab45f59a.json
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: ../../../../../tmp/nexus-unsaved-baseline-results/code-agent-Code-refresh-pr-28cbe--explicit-saved-edit-reload-chromium/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    ../../../../../tmp/nexus-unsaved-baseline-results/code-agent-Code-refresh-pr-28cbe--explicit-saved-edit-reload-chromium/trace.zip
+    Usage:
+
+        pnpm exec playwright show-trace ../../../../../tmp/nexus-unsaved-baseline-results/code-agent-Code-refresh-pr-28cbe--explicit-saved-edit-reload-chromium/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  3 failed
+    [chromium] › e2e/code-agent.spec.ts:1343:7 › Code refresh preserves unsaved file until explicit saved-edit reload
+    [chromium] › e2e/code-agent.spec.ts:1343:7 › Code refresh preserves unsaved raw diff until explicit saved-edit reload
+    [chromium] › e2e/code-agent.spec.ts:1343:7 › Code refresh preserves unsaved poll until explicit saved-edit reload
+  1 passed (46.8s)
+undefined
+/workspace/work/Nexus-OS-postmerge-2026-11-13/apps/web:
+[ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL] Command failed with exit code 1: playwright test -c playwright.code-agent.config.ts --grep 'Code refresh' '--output=/tmp/nexus-unsaved-baseline-results'

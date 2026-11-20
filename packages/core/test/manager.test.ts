@@ -108,7 +108,7 @@ describe("ManagerService", () => {
           preferredProvider: "mock",
           preferredModelAlias: "manager",
           fallbackAllowed: false,
-          timeoutMs: 0
+          timeoutMs: -1
         })
     ).toThrow("Invalid model request option: timeoutMs");
 

@@ -246,10 +246,7 @@ function SiteProject({
             : game
               ? { kind: "game", genre }
               : { kind: "website" },
-          require_critic: false,
-          max_model_requests: 3,
-          max_input_tokens: 32000,
-          max_output_tokens: 8000
+          require_critic: false
         };
       try {
         const work = await api<ManagerWork>(base, signal, pending.current);

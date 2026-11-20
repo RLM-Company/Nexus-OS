@@ -1,0 +1,6 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": { "incremental": false, "noEmit": true },
+  "include": ["src/**/*.d.ts", "e2e/code-agent.spec.ts", "playwright.code-agent.config.ts"],
+  "exclude": ["node_modules"]
+}

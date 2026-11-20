@@ -50,7 +50,7 @@ export const normalizeCommonModelServiceOptions = <T extends CommonModelServiceO
     throw invalidOption("optimizeFor");
   }
   if (!isNonEmptyPrompt(options.systemPrompt)) throw invalidOption("systemPrompt");
-  if (!isBoundedPositiveSafeInteger(options.timeoutMs, MAX_TIMEOUT_MS)) {
+  if (options.timeoutMs !== 0 && !isBoundedPositiveSafeInteger(options.timeoutMs, MAX_TIMEOUT_MS)) {
     throw invalidOption("timeoutMs");
   }
   if (!isBoundedPositiveSafeInteger(options.maxOutputTokens, MAX_OUTPUT_TOKENS)) {

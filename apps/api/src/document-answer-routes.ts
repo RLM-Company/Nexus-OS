@@ -24,7 +24,15 @@ export function registerDocumentAnswerRoutes(
       return reply.code(503).send({ error: { code: "MODEL_OR_OWNER_BUDGET_UNAVAILABLE" } });
     if (cause instanceof DocumentAnswerError)
       return reply
-        .code(cause.code === "NOT_FOUND" ? 404 : cause.code === "QUIESCED" ? 423 : 422)
+        .code(
+          cause.code === "NOT_FOUND"
+            ? 404
+            : cause.code === "QUIESCED"
+              ? 423
+              : cause.code === "CONFLICT"
+                ? 409
+                : 422
+        )
         .send({ error: { code: cause.code } });
     throw cause;
   };
@@ -38,17 +46,21 @@ export function registerDocumentAnswerRoutes(
       return err(reply, cause);
     }
   });
-  app.post<{ Params: { projectId: string }; Body: { question: string; file_ids: string[] } }>(
+  app.post<{
+    Params: { projectId: string };
+    Body: { question: string; file_ids: string[]; mode?: "search" | "deep" };
+  }>(
     base,
     {
       schema: {
         params: scope,
         body: Type.Object(
           {
+            mode: Type.Optional(Type.Union([Type.Literal("search"), Type.Literal("deep")])),
             question: Type.String({ minLength: 2, maxLength: 500 }),
             file_ids: Type.Array(Type.String({ minLength: 1, maxLength: 120 }), {
               minItems: 1,
-              maxItems: 20
+              maxItems: 100
             })
           },
           { additionalProperties: false }
@@ -61,7 +73,8 @@ export function registerDocumentAnswerRoutes(
           req.params.projectId,
           identityFor(req).owner_id,
           req.body.question,
-          req.body.file_ids
+          req.body.file_ids,
+          req.body.mode
         );
         return reply.code(202).send(answer);
       } catch (cause) {

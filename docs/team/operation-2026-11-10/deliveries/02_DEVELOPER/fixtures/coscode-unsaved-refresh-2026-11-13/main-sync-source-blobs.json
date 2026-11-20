@@ -1,0 +1,37 @@
+[
+  {
+    "path": "apps/web/src/app/code-agent/page.tsx",
+    "sha": "4d2e317434265e2c76e4330502b18749c9490d7f",
+    "unchanged": true
+  },
+  {
+    "path": "apps/web/e2e/code-agent.spec.ts",
+    "sha": "324fc669c3bc9fcdaf8e1ba76f2c9ea64a8dcdb1",
+    "unchanged": true
+  },
+  {
+    "path": "apps/web/src/app/code-agent/snapshot-order.ts",
+    "sha": "f0d9fbfb6b324a38d27525ffc21003a31a7a9dd4",
+    "unchanged": true
+  },
+  {
+    "path": "apps/web/src/app/code-agent/snapshot-order.test.ts",
+    "sha": "998deaa5aeb7fb93ef9e83fff90d2568f80e98dd",
+    "unchanged": true
+  },
+  {
+    "path": "apps/web/package.json",
+    "sha": "3950061649788130e77362ee139caae3be1b2571",
+    "unchanged": true
+  },
+  {
+    "path": "apps/web/tsconfig.code-agent-e2e.json",
+    "sha": "ed3794b66fd7567d3771f2ddf5e2a4187689e54f",
+    "unchanged": true
+  },
+  {
+    "path": "apps/web/playwright.code-agent.config.ts",
+    "sha": "5126307095bf9f86587c38a08a2caf5efb8a1d5f",
+    "unchanged": true
+  }
+]

@@ -167,4 +167,5 @@ export * from "./chat-workspace-store.js";
 export * from "./chat-skill-store.js";
 export * from "./work-skill-store.js";
 export * from "./project-automation-store.js";
+export * from "./scheduled-dispatch-store.js";
 export * from "./pay-store.js";

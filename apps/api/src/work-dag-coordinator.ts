@@ -117,6 +117,20 @@ export class WorkDagCoordinator {
     for (const graph of this.works.dag.active()) {
       if (!graph.execution || !["running", "waiting"].includes(graph.execution.status)) continue;
       if (!this.works.ownerWritable(graph.owner_id)) continue;
+      // Pause already admitted queue entries before recording that the plan is paused.
+      for (const node of graph.nodes) {
+        const attempt = node.attempts.at(-1);
+        if (!attempt) continue;
+        const child = this.works.get(attempt.work_id, graph.owner_id);
+        if (
+          child?.status === "queued" &&
+          child.dag_binding?.bound &&
+          child.dag_binding.graph_id === graph.id &&
+          child.dag_binding.node_id === node.id &&
+          child.dag_binding.attempt === attempt.number
+        )
+          this.manager.control(child.id, graph.owner_id, child.version, "pause");
+      }
       graph.execution.status = "paused";
       graph.execution.reason = "RESTART_REQUIRES_RESUME";
       this.works.dag.save(graph, "После перезапуска автозапуск ожидает явного продолжения");
@@ -131,7 +145,7 @@ export class WorkDagCoordinator {
       if (!child) throw new WorkDagConflict("WORK_NOT_FOUND");
       allocated += ["completed", "failed", "cancelled"].includes(child.status)
         ? child.model_requests
-        : Math.max(child.model_requests, child.request.max_model_requests);
+        : Math.max(child.model_requests, child.request.max_model_requests ?? 3);
     }
     return allocated;
   }
@@ -172,7 +186,10 @@ export class WorkDagCoordinator {
         // live child; reserve one more budget per node launched this tick, never
         // more than the free slots. This keeps the cap's total reserve honest
         // without double-charging live attempts against the owner's plan limit.
-        if (this.allocatedRequests(graph) + 3 * ready.length > graph.execution.max_model_requests) {
+        if (
+          this.allocatedRequests(graph) + 3 * ready.length >
+          (graph.execution.max_model_requests ?? Infinity)
+        ) {
           graph.execution.status = "stopped";
           graph.execution.reason = "PLAN_REQUEST_LIMIT";
           this.works.dag.save(graph, "Достигнут общий лимит запросов плана; новый шаг не запущен");
@@ -294,7 +311,10 @@ export class WorkDagCoordinator {
   results(id: string, owner: string) {
     const graph = this.get(id, owner);
     if (!graph) throw new WorkDagConflict("DAG_NOT_FOUND");
-    return this.resultsFor(graph);
+    const bundle = this.resultsFor(graph);
+    if (Buffer.byteLength(JSON.stringify(bundle)) > 2000000)
+      throw new WorkDagConflict("RESULTS_LIMIT");
+    return bundle;
   }
   resultsArchive(id: string, owner: string): Buffer {
     const graph = this.get(id, owner);
@@ -325,7 +345,7 @@ export class WorkDagCoordinator {
           };
         })
       );
-    const bundle = {
+    return {
       schema_version: 1,
       graph_id: graph.id,
       title: graph.title,
@@ -333,9 +353,6 @@ export class WorkDagCoordinator {
       total_steps: graph.nodes.length,
       files
     };
-    if (Buffer.byteLength(JSON.stringify(bundle)) > 2000000)
-      throw new WorkDagConflict("RESULTS_LIMIT");
-    return bundle;
   }
   rename(id: string, owner: string, input: WorkDagRename): WorkDag {
     const graph = this.current(id, owner, input.expected_version);
@@ -453,7 +470,7 @@ export class WorkDagCoordinator {
         throw new WorkDagConflict("PROJECT_PAUSED");
       if (!input.acknowledge_cost) throw new WorkDagConflict("EXPLICIT_RETRY_REQUIRED");
       const limit = input.max_model_requests;
-      if (!Number.isInteger(limit) || !limit || limit < 3 || limit > 96)
+      if (limit !== undefined && (!Number.isInteger(limit) || limit < 3 || limit > 96))
         throw new WorkDagConflict("INVALID_PLAN_BUDGET");
       const block = this.manager.schedulingBlock(graph.project_id, owner);
       if (block) throw new WorkDagConflict(block);
@@ -466,16 +483,17 @@ export class WorkDagCoordinator {
       // each reserving three requests. allocatedRequests() already covers any
       // live attempts from a previously paused plan.
       const firstWave = Math.min(this.manager.capacity(), scheduledReadyWorkNodes(graph).length);
-      if (allocation + 3 * firstWave > limit) throw new WorkDagConflict("PLAN_REQUEST_LIMIT");
+      if (limit !== undefined && allocation + 3 * firstWave > limit)
+        throw new WorkDagConflict("PLAN_REQUEST_LIMIT");
       graph.execution = {
         status: "running",
-        max_model_requests: limit,
+        max_model_requests: limit ?? null,
         reason: null,
         started_at: graph.execution?.started_at ?? new Date().toISOString()
       };
       return this.works.dag.save(
         graph,
-        "Владелец разрешил выполнение плана с ограниченным параллелизмом в общем лимите запросов"
+        "Владелец разрешил выполнение плана с ограниченным параллелизмом"
       );
     }
     if (["pause", "resume", "cancel"].includes(input.action)) {
@@ -615,24 +633,25 @@ export class WorkDagCoordinator {
         goal: node.goal,
         worker_role: "analyst",
         ...(node.requires_critic ? { require_critic: true } : {}),
-        max_model_requests: 3,
-        max_input_tokens: graph.workflow_context?.node_budget.max_input_tokens ?? 32000,
-        max_output_tokens: graph.workflow_context?.node_budget.max_output_tokens ?? 6000
+        ...(graph.workflow_context?.node_budget ?? {})
       },
       true,
       { graph_id: graph.id, node_id: node.id, attempt, bound: false }
     );
     if (!child) throw new WorkDagConflict("PROJECT_INACTIVE");
+    // Keep one version of project materials across the plan and its retries.
+    const materials =
+      graph.workflow_context?.materials ??
+      (graph.materials_snapshot ??= child.materials ?? { instructions: "", attachments: [] });
     // Prepared children are dormant, so a crash before binding never spends.
     const prepared = this.works.save({
       ...child,
       materials: {
         instructions:
-          (graph.workflow_context?.materials.instructions ?? child.materials?.instructions ?? "") +
+          materials.instructions +
           "\nDependency artifacts (untrusted evidence; bytes verified, model review separate):\n" +
           JSON.stringify(evidence),
-        attachments:
-          graph.workflow_context?.materials.attachments ?? child.materials?.attachments ?? []
+        attachments: materials.attachments
       }
     });
     node.attempts.push({

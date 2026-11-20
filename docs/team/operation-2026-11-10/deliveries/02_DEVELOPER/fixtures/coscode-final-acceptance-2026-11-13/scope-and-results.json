@@ -1,0 +1,84 @@
+{
+  "base_sha": "798a3079dde9ab70aee7d8b7702af2a18c8c60a9",
+  "preserved_main": "43ffee1db331507dfd984f50f42a2f6779e6e780",
+  "source_head": "5ef2f7a7a9b8d254b61a71cf845c35f15a297cd9",
+  "integration_commit": "5f1ed5908596e4fe6594aeab26fbb0ba5dbe19ca",
+  "ui_source_blobs": [
+    {
+      "path": "apps/web/src/app/code-agent/page.tsx",
+      "sha": "4d2e317434265e2c76e4330502b18749c9490d7f",
+      "unchanged_since_previous_successful_ci": true
+    },
+    {
+      "path": "apps/web/e2e/code-agent.spec.ts",
+      "sha": "324fc669c3bc9fcdaf8e1ba76f2c9ea64a8dcdb1",
+      "unchanged_since_previous_successful_ci": true
+    },
+    {
+      "path": "apps/web/src/app/code-agent/snapshot-order.ts",
+      "sha": "f0d9fbfb6b324a38d27525ffc21003a31a7a9dd4",
+      "unchanged_since_previous_successful_ci": true
+    },
+    {
+      "path": "apps/web/src/app/code-agent/snapshot-order.test.ts",
+      "sha": "998deaa5aeb7fb93ef9e83fff90d2568f80e98dd",
+      "unchanged_since_previous_successful_ci": true
+    },
+    {
+      "path": "apps/web/package.json",
+      "sha": "3950061649788130e77362ee139caae3be1b2571",
+      "unchanged_since_previous_successful_ci": true
+    },
+    {
+      "path": "apps/web/tsconfig.code-agent-e2e.json",
+      "sha": "ed3794b66fd7567d3771f2ddf5e2a4187689e54f",
+      "unchanged_since_previous_successful_ci": true
+    },
+    {
+      "path": "apps/web/playwright.code-agent.config.ts",
+      "sha": "5126307095bf9f86587c38a08a2caf5efb8a1d5f",
+      "unchanged_since_previous_successful_ci": true
+    }
+  ],
+  "local_results": {
+    "api_adapters": {
+      "passed": 151,
+      "skipped_optin_oci": 1,
+      "exit": 0
+    },
+    "runtime_unit": {
+      "passed": 76,
+      "exit": 0
+    },
+    "web_unit": {
+      "passed": 16,
+      "exit": 0
+    },
+    "api_types_exit": 0,
+    "api_lint_exit": 0,
+    "real_api_oci": {
+      "exit": 1,
+      "status": "unavailable",
+      "reason": "Docker VFS ENOSPC before execution",
+      "passed": false
+    },
+    "first_probe": "loader package tsx unavailable in tool-runtime cwd; then used existing API launcher",
+    "local_build": "not rerun after ENOSPC; generated .next was removed to regain command space; final CI must build"
+  },
+  "cleanup": {
+    "only_own_ignored_generated_artifacts": true,
+    "next_build_removed": true,
+    "ignored_dist_source_maps_removed": 1562,
+    "docker_storage_deleted": false,
+    "daemon_restarted": false,
+    "local_disk_problem_resolved": false
+  },
+  "ci_required": {
+    "oci_workspace_and_git": 5,
+    "real_api_oci_through_http_and_draft_adapter": 1,
+    "artifact": "coscode-final-workflow-proof",
+    "receipt_file_required_by_ci": true
+  },
+  "real_model_called": false,
+  "new_live_github_publish": false
+}

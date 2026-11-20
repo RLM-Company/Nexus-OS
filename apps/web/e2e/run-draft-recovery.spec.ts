@@ -194,7 +194,7 @@ for (const kind of ["chat", "project"] as const) {
       mimeType: "text/plain",
       buffer: Buffer.from("Новый ожидающий файл 00123")
     });
-    const clip = page.getByRole("button", { name: "Прикрепить файл", exact: true });
+    const clip = page.getByRole("button", { name: "Добавить в чат", exact: true });
     await expect(clip).toHaveAttribute("aria-busy", "true");
     const restore = page.getByRole("button", { name: restoreLabel });
     // If the old unsafe control is exposed, exercise the actual user action.

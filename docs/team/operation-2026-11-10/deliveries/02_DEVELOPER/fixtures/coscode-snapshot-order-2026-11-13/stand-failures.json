@@ -1,0 +1,14 @@
+{
+  "dev_raw_sha256": "f051e78be1e2de32a89fbec31cec0a376becfbf2a9d7afcfa2d28888e52fbcca",
+  "dev_exit_code": 130,
+  "dev_results": "partial; interrupted on unresolved contracts .js imports, not PASS",
+  "production_3412_exit_code": 1,
+  "production_3412_reason": "orphaned dev listener; no assertions ran",
+  "second_3412_exit_code": 130,
+  "second_3412_reason": "cancelled before assertions while readiness probe remained blocked",
+  "orphan_3412_cleanup": "unverified; fuser exposed no PID in this command namespace; no escalation used",
+  "production_3414": "33PASS+1test-locatorFAIL; then corrected targeted4PASS",
+  "model": "fixture only; no real model call",
+  "final_production_3414": "5PASS targeted, then 35PASS full, retries0; original failures retained",
+  "root_navigation_api_3413": "not started by scoped fixture runner; ECONNREFUSED messages retained; not live API acceptance"
+}

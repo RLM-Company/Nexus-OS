@@ -22,6 +22,7 @@ import {
   openDatabase,
   PolicyStore,
   PatternLibraryStore,
+  ScheduledDispatchStore,
   runMigrations,
   StepUpProofStore,
   UsageStore
@@ -132,6 +133,7 @@ process.once("SIGTERM", () => void shutdown("SIGTERM"));
 try {
   await runMigrations(database);
   const accountStore = new AccountStore(database.sqlite);
+  const scheduledDispatchStore = new ScheduledDispatchStore(database.sqlite);
   const recoveredAccountHolds = accountStore.reconcileKnownCanonicalHolds();
   const modelRuntime = await buildModelRuntime(config, {
     clock: new RuntimeClock({ timeZone: process.env.KOSMORA_TIME_ZONE ?? "Europe/Moscow" }),
@@ -203,7 +205,9 @@ try {
   managerWorkStore.contextMemory.indexedRecall = semanticIndex;
   const policyStore = new PolicyStore(database.sqlite);
   managerWorkCoordinator = new ManagerWorkCoordinator({
+    ...(config.managerTimeoutMs === 0 ? { operationTimeoutMs: 0 } : {}),
     ownerBudget: accountStore,
+    accountStore,
     maxConcurrentWork: WORK_EXECUTION_CONCURRENCY,
     store: managerWorkStore,
     projects: projectStore,
@@ -301,6 +305,7 @@ try {
     delegationValidator: validateAgentDelegation
   });
   app = buildApp({
+    scheduledDispatchStore,
     indexedRecall: semanticIndex,
     semanticRanker,
     googleDrive,

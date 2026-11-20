@@ -88,7 +88,19 @@ export async function runLibraryUploadQueue(
       update(index, { state: "indexing", detail: "Сохраняем поисковый индекс…" });
       await adapter.index(staged, pages, signal);
       signal.throwIfAborted();
-      update(index, { state: "ready", detail: "Оригинал и поисковый индекс сохранены." });
+      const textPages =
+        pages[0]?.page != null ? pages.filter((page) => page.text.trim()).length : null;
+      update(index, {
+        state: "ready",
+        detail:
+          textPages === null
+            ? "Оригинал и поисковый индекс сохранены."
+            : "Поисковый индекс сохранён. Страниц с текстом: " +
+              textPages +
+              " из " +
+              pages.length +
+              "."
+      });
     } catch (cause) {
       if (staged) {
         const actual = await adapter.settle(staged, signal.aborted).catch(() => null);

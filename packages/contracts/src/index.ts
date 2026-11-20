@@ -51,6 +51,7 @@ export * from "./chat-branches.js";
 
 export * from "./work-skills.js";
 export * from "./work-plan-package.js";
+export * from "./integrations.js";
 
 export * from "./intelligence-graph-package.js";
 export type { IntelligenceGraphEvidenceAudit } from "./intelligence-graph-audit.js";
@@ -70,3 +71,5 @@ export {
   OfficeVersionSchema
 } from "./office-workspace.js";
 export type { OfficeOperation, OfficeCursor } from "./office-workspace.js";
+
+export { DOCUMENT_LIBRARY_PDF_MAX_PAGES } from "./document-library.js";

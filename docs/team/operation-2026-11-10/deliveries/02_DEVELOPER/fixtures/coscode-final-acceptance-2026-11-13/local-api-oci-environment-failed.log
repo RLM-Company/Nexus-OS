@@ -1,0 +1,41 @@
+
+ RUN  v4.1.11 /workspace/work/Nexus-OS-postmerge-2026-11-13/apps/api
+
+ ❯ test/code-agent.test.ts (106 tests | 1 failed | 105 skipped) 6612ms
+   × real OCI API repair: failed check, one fixture model edit, passed recheck, exact Git diff and untouched file 6611ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  test/code-agent.test.ts > real OCI API repair: failed check, one fixture model edit, passed recheck, exact Git diff and untouched file
+AssertionError: expected { status: 'unavailable', …(9) } to match object { status: 'failed', exitCode: 1, …(1) }
+(7 matching properties omitted from actual)
+
+- Expected
++ Received
+
+  {
+    "cleanupVerified": true,
+    "exitCode": 1,
+-   "status": "failed",
++   "status": "unavailable",
+  }
+
+ ❯ test/code-agent.test.ts:3692:26
+    3690|     const { id, ...payload } = await failedRepair(f);
+    3691|     const before = f.get(id);
+    3692|     expect(before.check).toMatchObject({ status: "failed", exitCode: 1…
+       |                          ^
+    3693|     const accepted = await f.app.inject({
+    3694|       method: "POST",
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 105 skipped (106)
+   Start at  17:22:56
+   Duration  10.40s (transform 2.17s, setup 0ms, import 3.50s, tests 6.61s, environment 0ms)
+
+undefined
+/workspace/work/Nexus-OS-postmerge-2026-11-13/apps/api:
+[ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL] Command failed with exit code 1: vitest run test/code-agent.test.ts -t 'real OCI API repair' '--maxWorkers=1'

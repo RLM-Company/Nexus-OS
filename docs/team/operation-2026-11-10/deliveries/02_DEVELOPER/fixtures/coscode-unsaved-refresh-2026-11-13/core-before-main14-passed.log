@@ -1,0 +1,50 @@
+Command pnpm check:core; exit0 before main14a merge. Raw SHA256 425c203efabea8f52ffd6d9e2e1aea641c7f177ba02e16b64776a9bf1c8e4315
+Turbo cached tasks are explicitly replayed results.
+$ pnpm format:check && pnpm check:secrets && pnpm lint && pnpm typecheck && pnpm test && pnpm test:deploy && pnpm test:connection && pnpm test:live-acceptance-guards && pnpm test:coscode-acceptance-guards && pnpm test:vps-acceptance-guard && pnpm test:secrets && pnpm test:vector-scale && pnpm test:media-acceptance && pnpm build && pnpm test:privacy && pnpm test:profile
+$ prettier --check .
+Checking formatting...
+All matched files use Prettier code style!
+$ node scripts/check-secrets.mjs
+All matched files use Prettier code style!
+Secret scan passed.
+ Tasks:    9 successful, 9 total
+ Tasks:    9 successful, 9 total
+@cosmora/contracts:test:  Test Files  32 passed (32)
+@cosmora/contracts:test:       Tests  206 passed (206)
+@cosmora/config:test:  Test Files  2 passed (2)
+@cosmora/config:test:       Tests  17 passed (17)
+@cosmora/policy-engine:test:  Test Files  4 passed (4)
+@cosmora/policy-engine:test:       Tests  43 passed (43)
+@cosmora/core:test:  Test Files  40 passed (40)
+@cosmora/core:test:       Tests  425 passed (425)
+@cosmora/model-gateway:test:  Test Files  11 passed (11)
+@cosmora/model-gateway:test:       Tests  151 passed (151)
+@cosmora/db:test:  Test Files  41 passed (41)
+@cosmora/db:test:       Tests  236 passed (236)
+@cosmora/tool-runtime:test:  Test Files  6 passed | 2 skipped (8)
+@cosmora/tool-runtime:test:       Tests  86 passed | 5 skipped (91)
+@cosmora/api:test:  Test Files  108 passed (108)
+@cosmora/api:test:       Tests  1086 passed | 1 skipped (1087)
+@cosmora/web:test:  Test Files  69 passed (69)
+@cosmora/web:test:       Tests  389 passed (389)
+ Tasks:    16 successful, 16 total
+✔ VPS live acceptance wrapper fails closed without the owner password (36.223964ms)
+ Tasks:    9 successful, 9 total
+✔ partial error never returns deleted:true, leaves owner fenced, other owners unaffected (39.865651ms)
+✔ concurrent delayed quiesce fences inserts and does not race destructive cleanup (38.990457ms)
+✔ a reserved unknown canonical amount survives project deletion with upper bound (38.55852ms)
+✔ stored image original is named and hashed, not silently embedded or omitted from export (41.649023ms)
+ℹ tests 10
+ℹ suites 0
+ℹ pass 10
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 511.464674
+PASS root library FTS, original bytes and cross-owner isolation
+PASS archive rejects changed binary metadata; non-destructive fence released
+PASS complete ZIP export with original and manifest under quiesce
+PASS confirmed owner deletion (retained usage without duplicate hold, auth/ledger/other owner intact, late writes denied)
+$ node scripts/manager-compatible-fixture-smoke.mjs
+CheapVibeCode profile fixture PASS: production auth, project chat plus 3 streamed work stages, Critic and download; output cap 1200; local fixture evidence only; no external request.

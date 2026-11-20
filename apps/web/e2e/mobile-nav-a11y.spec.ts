@@ -9,7 +9,7 @@ test("exposes the active mobile navigation destination", async ({ page }) => {
   const modes = nav.getByRole("button", { name: "Режимы", exact: true });
   const drawer = page.getByRole("dialog", { name: "Ваше пространство" });
   const modeRows = drawer.locator(".drawer-modes");
-  const code = modeRows.getByRole("button", { name: "Coscode", exact: true });
+  const code = modeRows.getByRole("button", { name: "Koscode", exact: true });
   const work = modeRows.getByRole("button", { name: "Koswork", exact: true });
 
   await expect(newChat).toHaveAttribute("aria-current", "page");

@@ -1,0 +1,8 @@
+{
+  "kind": "stale reload",
+  "expected": "// 19 700 · 00123 · 2026-11-13 · кроме доставки\nexport const value = 77;",
+  "displayed": "// 19 700 · 00123 · 2026-11-13 · кроме доставки\nexport const value = 77;",
+  "reads": 1,
+  "writes": [],
+  "real_model_called": false
+}
