@@ -1,0 +1,26 @@
+[
+  {
+    "file": "chat-cancelled-readback.json",
+    "raw_sha256": "edcdd0d9a0d757d15f36f545fbe120018131009905291d7183373411064393c5"
+  },
+  {
+    "file": "chat-failed-readback.json",
+    "raw_sha256": "0d365095546cac959fcfb895c02d04d466eb63b651aec26ffc69b45e3073c261"
+  },
+  {
+    "file": "chat-pending-file-readback.json",
+    "raw_sha256": "6e99971c15ba95b50153dc39807302067bb4e535d790a3571ca30b694de0dd38"
+  },
+  {
+    "file": "project-cancelled-readback.json",
+    "raw_sha256": "cfd7af815fb856066a9570b88cba18854bd144074ab16d5e0c41a33531eda8ce"
+  },
+  {
+    "file": "project-failed-readback.json",
+    "raw_sha256": "80437ea645e41a8b0cb18115317509be00b90af9c96d9ba18128608746a7b243"
+  },
+  {
+    "file": "project-pending-file-readback.json",
+    "raw_sha256": "3e103d58577d2e59fc361733a1cdda1f05f504ec95baf2a1decd9369a40aabe6"
+  }
+]

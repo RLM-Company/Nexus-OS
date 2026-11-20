@@ -1,0 +1,12 @@
+{
+  "tested_local_source": "bd044059d285e8305ab6da24351aa86f99f2ae89",
+  "base_main": "b47e5cc9d3631f2dc3d7f30bd084a628350294fe",
+  "exit_code": 0,
+  "api_passed": 1080,
+  "api_skipped": 1,
+  "web_passed": 394,
+  "db_passed": 230,
+  "core_passed": 425,
+  "raw_log_sha256": "86eda7070d483d437ef60e01a8e6d0601704336214b1c4b56a628543d66393e0",
+  "scope": "This is the first combined source, before external integration of PR565/566; final main281 gate is separate."
+}

@@ -4,7 +4,7 @@ test("attaches code, removes a file, persists history and downloads the source",
   page
 }, testInfo) => {
   await page.goto("/");
-  await expect(page.getByRole("button", { name: "Прикрепить файл", exact: true })).toBeEnabled();
+  await expect(page.getByRole("button", { name: "Добавить в чат", exact: true })).toBeEnabled();
   const input = page.getByLabel("Текстовые файлы и код");
   await input.setInputFiles([
     {
@@ -64,7 +64,7 @@ test("rejects unsupported/binary files and drops attachments when opening a new 
   page
 }) => {
   await page.goto("/");
-  await expect(page.getByRole("button", { name: "Прикрепить файл", exact: true })).toBeEnabled();
+  await expect(page.getByRole("button", { name: "Добавить в чат", exact: true })).toBeEnabled();
   const input = page.getByLabel("Текстовые файлы и код");
   await input.setInputFiles({
     name: "document.pdf",
@@ -97,7 +97,7 @@ test("keeps files in the draft after a rejected send and fits a mobile screen", 
 }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/");
-  await expect(page.getByRole("button", { name: "Прикрепить файл", exact: true })).toBeEnabled();
+  await expect(page.getByRole("button", { name: "Добавить в чат", exact: true })).toBeEnabled();
   await page.getByLabel("Текстовые файлы и код").setInputFiles({
     name: "long-name-".repeat(10) + ".ts",
     mimeType: "text/plain",
@@ -137,7 +137,7 @@ test("does not attach a file to another chat when decoding finishes after naviga
     };
   });
   await page.goto("/");
-  await expect(page.getByRole("button", { name: "Прикрепить файл", exact: true })).toBeEnabled();
+  await expect(page.getByRole("button", { name: "Добавить в чат", exact: true })).toBeEnabled();
   await page.getByLabel("Текстовые файлы и код").setInputFiles({
     name: "slow.txt",
     mimeType: "text/plain",

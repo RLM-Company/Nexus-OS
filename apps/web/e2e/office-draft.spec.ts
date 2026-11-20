@@ -281,9 +281,19 @@ test("stale tabs cannot overwrite, restore or delete a newer draft; explicit ref
   await draft(first)
     .getByRole("button", { name: "Проверить сохранённый черновик", exact: true })
     .click();
-  await draft(first)
-    .getByRole("button", { name: "Восстановить черновик плана", exact: true })
-    .click();
+  const restore = draft(first).getByRole("button", {
+    name: "Восстановить черновик плана",
+    exact: true
+  });
+  const declined = page.waitForEvent("dialog").then(async (dialog) => {
+    expect(dialog.message()).toBe("Заменить текущий план сохранённым черновиком?");
+    await dialog.dismiss();
+  });
+  await Promise.all([declined, restore.click()]);
+  await expect(first.getByRole("list", { name: "План правок" })).toContainText("Компания В");
+  expect(await record(page)).toBe(newer);
+  const accepted = page.waitForEvent("dialog").then((dialog) => dialog.accept());
+  await Promise.all([accepted, restore.click()]);
   await expect(first.getByRole("list", { name: "План правок" })).toContainText("Компания Б");
   await otherPage.close();
 });

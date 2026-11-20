@@ -3,13 +3,16 @@ import {
   AgentBlueprintStore,
   AgentInstanceStore,
   AgentStudioMutationStore,
+  AgentTeamRunStore,
   AgentTeamStore,
   IdentityStore,
   openDatabase,
   PatternLibraryStore,
   ProjectStore,
   runMigrations,
-  type DatabaseHandle
+  type AgentTeamRunGraphPort,
+  type DatabaseHandle,
+  type TeamGraphNode
 } from "@cosmora/db";
 import { validateAgentDelegation } from "@cosmora/policy-engine";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -74,6 +77,35 @@ interface PlannedTeam {
   confirmation_required: boolean;
 }
 
+// Lightweight graph port for route/mutation tests: createOrGet is idempotent
+// per composition, nodesOf returns the configured node statuses. The real
+// WorkDagCoordinator-backed adapter is wired in server.ts.
+class FakeTeamGraph implements AgentTeamRunGraphPort {
+  private readonly graphs = new Map<string, TeamGraphNode[]>();
+  private seq = 0;
+
+  createOrGet(input: {
+    ownerId: string;
+    actorId: string;
+    projectId: string;
+    compositionId: string;
+    parts: Array<{ instanceId: string; nodeId: string; title: string; goal: string }>;
+  }): { graphId: string; nodes: TeamGraphNode[] } {
+    const graphId = `team-graph-${++this.seq}`;
+    const nodes = input.parts.map((part) => ({
+      id: part.nodeId,
+      status: "pending",
+      workId: null
+    }));
+    this.graphs.set(graphId, nodes);
+    return { graphId, nodes };
+  }
+
+  nodesOf(graphId: string): TeamGraphNode[] {
+    return this.graphs.get(graphId) ?? [];
+  }
+}
+
 describe("Agent Studio team API", () => {
   const config = loadServerConfig({ NODE_ENV: "test", MOCK_PROVIDER_MODE: "success" });
   let database: DatabaseHandle;
@@ -124,6 +156,12 @@ describe("Agent Studio team API", () => {
         instances
       }),
       agentStudioMutationStore: new AgentStudioMutationStore(database.sqlite, { now: () => NOW }),
+      agentTeamRunStore: new AgentTeamRunStore(database.sqlite, {
+        now: () => NOW,
+        instances,
+        graph: new FakeTeamGraph(),
+        runtime: { artifacts: () => [] }
+      }),
       identityResolver: new BearerSessionIdentityResolver(identityStore)
     });
   });
@@ -251,6 +289,62 @@ describe("Agent Studio team API", () => {
       .items.map((event) => `${event.object_type}:${event.operation}`);
     expect(operations).toContain("team:team.plan");
     expect(operations).toContain("team:team.confirm");
+
+    const activated = await app.inject({
+      method: "POST",
+      url: `${base}/teams/activate`,
+      headers: { ...headers, "idempotency-key": "team-activate-1" },
+      payload: { composition_id: planned.composition_id }
+    });
+    expect(activated.statusCode).toBe(201);
+    expect(activated.headers["idempotency-replayed"]).toBe("false");
+    const activation = activated.json<{
+      composition_id: string;
+      graph_id: string;
+      parts: Array<{
+        instance_id: string;
+        node_id: string;
+        status: string;
+        artifact_count: number;
+      }>;
+      execution_status: string;
+    }>();
+    expect(activation.composition_id).toBe(planned.composition_id);
+    expect(activation.execution_status).toBe("awaiting_owner_run");
+    expect(activation.parts).toHaveLength(1);
+    expect(activation.parts[0]?.status).toBe("active");
+    expect(activation.parts[0]?.artifact_count).toBe(0);
+
+    const activateReplay = await app.inject({
+      method: "POST",
+      url: `${base}/teams/activate`,
+      headers: { ...headers, "idempotency-key": "team-activate-1" },
+      payload: { composition_id: planned.composition_id }
+    });
+    expect(activateReplay.statusCode).toBe(200);
+    expect(activateReplay.headers["idempotency-replayed"]).toBe("true");
+    expect(activateReplay.json<{ graph_id: string }>().graph_id).toBe(activation.graph_id);
+
+    const parts = await app.inject({
+      method: "GET",
+      url: `${base}/teams/${planned.composition_id}/parts`,
+      headers
+    });
+    expect(parts.statusCode).toBe(200);
+    expect(parts.json<{ parts: Array<{ node_id: string }> }>().parts.map((p) => p.node_id)).toEqual(
+      activation.parts.map((p) => p.node_id)
+    );
+
+    const eventsAfter = await app.inject({
+      method: "GET",
+      url: `${base}/decision-events?limit=50`,
+      headers
+    });
+    expect(eventsAfter.statusCode).toBe(200);
+    const operationsAfter = eventsAfter
+      .json<{ items: Array<{ operation: string; object_type: string }> }>()
+      .items.map((event) => `${event.object_type}:${event.operation}`);
+    expect(operationsAfter).toContain("team:team.activate");
   });
 
   it("rejects confirming unknown proposals, empty rosters and foreign projects", async () => {
@@ -284,5 +378,52 @@ describe("Agent Studio team API", () => {
     });
     expect(foreignProject.statusCode).toBe(404);
     expect(foreignProject.json<{ error: { code: string } }>().error.code).toBe("PROJECT_NOT_FOUND");
+  });
+
+  it("maps activation errors and keeps parts empty for unknown compositions", async () => {
+    const headers = { authorization: `Bearer ${ownerOneToken}` };
+    const base = `/api/v1/projects/${PROJECT_ONE}/agent-studio`;
+
+    const unknown = "a".repeat(64);
+    const unconfirmed = await app.inject({
+      method: "POST",
+      url: `${base}/teams/activate`,
+      headers: { ...headers, "idempotency-key": "team-activate-unknown" },
+      payload: { composition_id: unknown }
+    });
+    expect(unconfirmed.statusCode).toBe(404);
+    expect(unconfirmed.json<{ error: { code: string } }>().error.code).toBe(
+      "AGENT_STUDIO_OBJECT_NOT_FOUND"
+    );
+
+    const malformed = await app.inject({
+      method: "POST",
+      url: `${base}/teams/activate`,
+      headers: { ...headers, "idempotency-key": "team-activate-malformed" },
+      payload: { composition_id: "not-a-hash" }
+    });
+    expect(malformed.statusCode).toBe(400);
+
+    const emptyParts = await app.inject({
+      method: "GET",
+      url: `${base}/teams/${unknown}/parts`,
+      headers
+    });
+    expect(emptyParts.statusCode).toBe(200);
+    expect(emptyParts.json<{ parts: unknown[] }>().parts).toEqual([]);
+
+    const foreignActivate = await app.inject({
+      method: "POST",
+      url: `${base}/teams/activate`,
+      headers: {
+        authorization: `Bearer ${ownerTwoToken}`,
+        "idempotency-key": "team-activate-foreign"
+      },
+      payload: { composition_id: unknown }
+    });
+    expect(foreignActivate.statusCode).toBe(404);
+    expect(foreignActivate.json<{ error: { code: string } }>().error.code).toBe(
+      "PROJECT_NOT_FOUND"
+    );
   });
 });

@@ -1,0 +1,46 @@
+{
+  "control_base": "9d972e8ba447f681fbfb49253b73d9f02dd1d325",
+  "control_base_is_ancestor": true,
+  "preserved_main": "4477dd53e5767a4bb4990c3109c874683a892b63",
+  "checked_root_exit": 0,
+  "root_raw_sha256": "6f8b9a58e2ec08160b7d5f1f2e3160a4921368b3f7afb18ce2058c11ee4bc89c",
+  "source_blob_checks": [
+    {
+      "path": "apps/web/src/app/code-agent/page.tsx",
+      "sha": "5681460aa873b7fa77e76e29e463efe6ca94ee0b",
+      "unchanged": true
+    },
+    {
+      "path": "apps/web/src/app/code-agent/snapshot-order.ts",
+      "sha": "f0d9fbfb6b324a38d27525ffc21003a31a7a9dd4",
+      "unchanged": true
+    },
+    {
+      "path": "apps/web/src/app/code-agent/snapshot-order.test.ts",
+      "sha": "998deaa5aeb7fb93ef9e83fff90d2568f80e98dd",
+      "unchanged": true
+    },
+    {
+      "path": "apps/web/e2e/code-agent.spec.ts",
+      "sha": "ba8229fd66d01b14cab3cd1a42d1e7f4c13791c0",
+      "unchanged": true
+    },
+    {
+      "path": "apps/web/package.json",
+      "sha": "3950061649788130e77362ee139caae3be1b2571",
+      "unchanged": true
+    },
+    {
+      "path": "apps/web/playwright.code-agent.config.ts",
+      "sha": "5126307095bf9f86587c38a08a2caf5efb8a1d5f",
+      "unchanged": true
+    },
+    {
+      "path": "apps/web/tsconfig.code-agent-e2e.json",
+      "sha": "ed3794b66fd7567d3771f2ddf5e2a4187689e54f",
+      "unchanged": true
+    }
+  ],
+  "live_vps_called": false,
+  "real_model_called": false
+}

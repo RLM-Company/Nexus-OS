@@ -483,6 +483,19 @@ describe("ModelGateway", () => {
     ).rejects.toMatchObject({ code: "PROVIDER_TIMEOUT", retryable: true });
   });
 
+  it("allows a slow stream without an application deadline", async () => {
+    const adapter = new MockProviderAdapter("slow_stream");
+    const gateway = new ModelGateway([adapter], router([entry()]));
+    const events = await collectGateway(
+      gateway.stream(
+        request({
+          constraints: { timeout_ms: 0, max_output_tokens: 500 }
+        })
+      )
+    );
+    expect(events.some((event) => event.type === "response.completed")).toBe(true);
+  });
+
   it("opens a route circuit and permits one successful probe after cooldown", async () => {
     let calls = 0;
     let currentTime = 0;

@@ -113,6 +113,7 @@ describe("loadServerConfig", () => {
   });
 
   it("rejects unsafe manager limits", () => {
+    expect(loadServerConfig({ MANAGER_TIMEOUT_MS: "0" }).managerTimeoutMs).toBe(0);
     expect(() => loadServerConfig({ MANAGER_TIMEOUT_MS: "20" })).toThrow(
       "Invalid server configuration: /MANAGER_TIMEOUT_MS"
     );

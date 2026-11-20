@@ -51,8 +51,10 @@ function readMarkers(storage: Storage): RetryMarker[] {
 export function readChatSendRetry(key: RetryKey): string | undefined {
   try {
     const storage = window.sessionStorage;
-    const existing = readMarkers(storage).find((entry) => entry.scope === key.scope);
-    if (existing) return existing.fingerprint === key.fingerprint ? existing.id : undefined;
+    const existing = readMarkers(storage).find(
+      (entry) => entry.scope === key.scope && entry.fingerprint === key.fingerprint
+    );
+    if (existing) return existing.id;
     const raw = storage.getItem(LEGACY_KEY);
     const legacy: unknown = raw && raw.length <= 512 ? JSON.parse(raw) : null;
     if (
@@ -73,7 +75,9 @@ export function readChatSendRetry(key: RetryKey): string | undefined {
 export function saveChatSendRetry(key: RetryKey, id: string): void {
   try {
     const storage = window.sessionStorage;
-    const markers = readMarkers(storage).filter((entry) => entry.scope !== key.scope);
+    const markers = readMarkers(storage).filter(
+      (entry) => entry.scope !== key.scope || entry.fingerprint !== key.fingerprint
+    );
     storage.setItem(STORAGE_KEY, JSON.stringify([...markers, { ...key, id }].slice(-MAX_PENDING)));
     storage.removeItem(LEGACY_KEY);
   } catch {

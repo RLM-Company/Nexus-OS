@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { settleRouteAction } from "../src/app/browser-route-teardown";
 
 // Optional diagnostic stress; never retries a failed case.
 if (process.env.DRAFT_STRESS_CPU === "1") {
@@ -89,22 +90,26 @@ test("restores text and files after closing the tab, isolates chats, removes and
   context,
   request
 }, testInfo) => {
+  // This case needs an idle chat, not successful seed generation. Use the held
+  // fixture and confirm owner cancellation before exercising draft persistence.
   const response = await request.post("/api/v1/chats", {
-    data: { initial_message: "Чат для черновика", client_message_id: crypto.randomUUID() }
+    data: {
+      initial_message: "Останови этот тестовый запуск",
+      client_message_id: crypto.randomUUID()
+    }
   });
-  const { chat } = (await response.json()) as { chat: { id: string } };
-  await expect
-    .poll(async () => {
-      const detail = await request.get(`/api/v1/chats/${chat.id}`);
-      if (!detail.ok()) return false;
-      const { messages } = (await detail.json()) as {
-        messages: { role: string; status: string }[];
-      };
-      return messages.some(
-        (message) => message.role === "assistant" && message.status === "completed"
-      );
-    })
-    .toBe(true);
+  expect(response.status()).toBe(201);
+  const { chat, run_id } = (await response.json()) as { chat: { id: string }; run_id: string };
+  const cancelled = await request.post(`/api/v1/chat-runs/${run_id}/cancel`);
+  expect(cancelled.status()).toBe(200);
+  expect(await cancelled.json()).toEqual({ run_id, status: "cancelled" });
+  const seed = await request.get(`/api/v1/chats/${chat.id}`);
+  expect(seed.ok()).toBe(true);
+  expect((await seed.json()).messages).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ role: "assistant", run_id, status: "cancelled" })
+    ])
+  );
   await page.goto(`/?chat=${chat.id}`);
   const editor = page.getByRole("textbox", { name: "Сообщение Kosmora" });
   await editor.fill("Несохранённый текст");
@@ -172,7 +177,21 @@ test("restores text and files after closing the tab, isolates chats, removes and
           contentType: "application/json"
         });
       })
-      .catch(() => undefined);
+      // The assertion below still fails the test; this only records why the
+      // best-effort diagnostic snapshot could not be attached, instead of
+      // silently swallowing that diagnostic failure.
+      .catch(async (diagnosticError: unknown) => {
+        const detail =
+          diagnosticError instanceof Error
+            ? diagnosticError.message
+            : typeof diagnosticError === "string"
+              ? diagnosticError
+              : "unknown diagnostic error";
+        await testInfo.attach("draft-chat-diagnostic-unavailable", {
+          body: detail,
+          contentType: "text/plain"
+        });
+      });
     throw error;
   }
   await reopened.reload();
@@ -292,7 +311,7 @@ test("keeps attachment controls keyboard reachable with clear names and thumbnai
   page
 }) => {
   await page.goto("/");
-  const clip = page.getByRole("button", { name: "Прикрепить файл" });
+  const clip = page.getByRole("button", { name: "Добавить в чат" });
   await expect(clip).toBeEnabled();
   await clip.focus();
   await expect(clip).toBeFocused();
@@ -320,7 +339,7 @@ test("announces rejected attachment type and keeps the draft editor usable", asy
   });
   await expect(page.locator(".composer").getByRole("alert")).toContainText("Поддерживаются");
   await expect(page.getByLabel("Сообщение Kosmora")).toHaveValue("Оставь этот текст");
-  await expect(page.getByRole("button", { name: "Прикрепить файл" })).toBeEnabled();
+  await expect(page.getByRole("button", { name: "Добавить в чат" })).toBeEnabled();
 });
 
 test("restored attachment drafts expose the image name to assistive technology", async ({
@@ -483,6 +502,55 @@ test("two uncertain sends remain independently retryable after navigation and re
     await expect(page.locator(".message.user").filter({ hasText: chat.content })).toHaveCount(1);
   }
   expect(await markers()).toBeNull();
+});
+
+test("a later send in the same chat cannot erase the retry of an accepted message", async ({
+  page,
+  request
+}) => {
+  const created = await request.post("/api/v1/chats", {
+    data: { initial_message: "Чат для проверки", client_message_id: crypto.randomUUID() }
+  });
+  expect(created.status()).toBe(201);
+  const { chat } = (await created.json()) as { chat: { id: string } };
+  const first = "Первое сообщение без подтверждения";
+  const second = "Другой запрос в том же чате";
+  const posts: unknown[] = [];
+  const statuses: number[] = [];
+  let acceptedStream = "";
+  await page.route(`**/api/v1/chats/${chat.id}/messages`, async (route) => {
+    if (route.request().method() !== "POST") return route.continue();
+    posts.push(route.request().postDataJSON());
+    const accepted = await route.fetch();
+    statuses.push(accepted.status());
+    if (posts.length === 1) {
+      acceptedStream = ((await accepted.json()) as { stream_url: string }).stream_url;
+      await route.abort("connectionreset");
+    } else await route.fulfill({ response: accepted });
+  });
+
+  await page.goto(`/?chat=${chat.id}`);
+  const editor = page.getByLabel("Сообщение Kosmora");
+  const send = page.getByRole("button", { name: "Отправить", exact: true });
+  await editor.fill(first);
+  await send.click();
+  await expect(page.locator(".composer").getByText(/результат запроса неизвестен/)).toBeVisible();
+  expect(acceptedStream).toBeTruthy();
+  const stream = await request.get(acceptedStream);
+  expect(await stream.text()).toContain("event: run.completed");
+  await editor.fill(second);
+  await send.click();
+  await expect(page.getByRole("status")).toHaveText(/Ответ получен/);
+
+  await page.reload();
+  await expect(page.locator(".message.user").filter({ hasText: first })).toHaveCount(1);
+  await editor.fill(first);
+  await send.click();
+  await expect.poll(() => statuses).toEqual([202, 202, 200]);
+  expect(posts[2]).toEqual(posts[0]);
+  await expect(editor).toHaveValue("");
+  for (const content of [first, second])
+    await expect(page.locator(".message.user").filter({ hasText: content })).toHaveCount(1);
 });
 
 test("composer actions belong to their own chat and stay out of another chat request", async ({
@@ -742,4 +810,54 @@ test("a lost acknowledgement reload restores the exact text action before retryi
   await expect(
     page.locator(".message.user").filter({ hasText: "Объясни тестовый пример 00123" })
   ).toHaveCount(1);
+});
+
+test("a spoken request survives reload before the server acknowledgement", async ({ page }) => {
+  const transcript = "Проверка сохранения голосовой фразы";
+  await page.addInitScript((text) => {
+    class FixtureSpeechRecognition {
+      onresult?: (event: { results: { transcript: string }[][] }) => void;
+      start() {
+        queueMicrotask(() => this.onresult?.({ results: [[{ transcript: text }]] }));
+      }
+      stop() {}
+      abort() {}
+    }
+    Object.defineProperty(window, "SpeechRecognition", { value: FixtureSpeechRecognition });
+  }, transcript);
+  const posts: unknown[] = [];
+  const statuses: number[] = [];
+  let releaseFirst!: () => void;
+  const firstResponse = new Promise<void>((resolve) => {
+    releaseFirst = resolve;
+  });
+  await page.route("**/api/v1/chats", async (route) => {
+    if (route.request().method() !== "POST") return route.continue();
+    posts.push(route.request().postDataJSON());
+    const response = await route.fetch();
+    statuses.push(response.status());
+    if (posts.length === 1) {
+      await firstResponse;
+      // The reload tears down the held request. Tolerate only that specific
+      // Playwright teardown; any other failure of abort() must fail the test.
+      await settleRouteAction(route.abort("connectionreset"), () => page.isClosed());
+    } else await route.fulfill({ response });
+  });
+  try {
+    await page.goto("/");
+    await page.getByRole("button", { name: "Открыть голосового помощника", exact: true }).click();
+    await page.getByRole("button", { name: "Говорить", exact: true }).click();
+    await expect.poll(() => statuses).toEqual([201]);
+    await page.reload();
+  } finally {
+    releaseFirst();
+  }
+  const editor = page.getByLabel("Сообщение Kosmora", { exact: true });
+  await expect(editor).toHaveValue(transcript);
+  await page.getByRole("button", { name: "Отправить", exact: true }).click();
+  await expect(page.getByRole("status")).toHaveText(/Ответ получен/);
+  expect(statuses).toEqual([201, 200]);
+  expect(posts[1]).toEqual(posts[0]);
+  await expect(page.locator(".message.user").filter({ hasText: transcript })).toHaveCount(1);
+  await expect(editor).toHaveValue("");
 });

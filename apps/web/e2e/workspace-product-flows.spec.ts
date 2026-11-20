@@ -62,7 +62,7 @@ test("opens the Studio overview directly from a shared preview link", async ({ p
   await expect(page.getByRole("heading", { name: "Изображения" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Видео" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Sound" })).toBeVisible();
-  await expect(page.locator(".studio-section")).toContainText("Обзор Studio");
+  await expect(page.locator(".studio-section")).not.toContainText("Обзор Studio");
 });
 
 test("shows a searchable plan with real entry points and honest future requirements", async ({
@@ -89,20 +89,17 @@ test("shows a searchable plan with real entry points and honest future requireme
   await expect(page).toHaveURL(/surface=studio/);
 });
 
-test("opens Studio from its sidebar folder and keeps a shareable surface URL", async ({ page }) => {
+test("opens Games from the Studio sidebar and keeps a shareable surface URL", async ({ page }) => {
   await page.goto("/?surface=work");
   await page
     .locator(".sidebar-tools")
     .getByRole("button", { name: /Kosmora Studio/ })
     .click();
-  await expect(
-    page.locator(".capability-workspace").getByRole("heading", { name: "Kosmora Studio" })
-  ).toBeVisible();
-  await expect(page).toHaveURL(/surface=studio/);
+  await page.locator(".studio-section").getByRole("button", { name: "Games", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Games", level: 1 })).toBeVisible();
+  await expect(page).toHaveURL(/surface=games/);
   await page.reload();
-  await expect(
-    page.locator(".capability-workspace").getByRole("heading", { name: "Kosmora Studio" })
-  ).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Games", level: 1 })).toBeVisible();
 });
 
 test("restores separate media settings without automatic generation", async ({ page }) => {
@@ -142,7 +139,7 @@ test("restores separate media settings without automatic generation", async ({ p
   expect(writes).toEqual([]);
 });
 
-test("Coscode keeps a development brief as an unsent draft across mode changes", async ({
+test("Koscode keeps a development brief as an unsent draft across mode changes", async ({
   page
 }) => {
   const writes: string[] = [];
@@ -154,7 +151,7 @@ test("Coscode keeps a development brief as an unsent draft across mode changes",
   const modeTrigger = page.getByLabel("Режимы Kosmora", { exact: true });
   const modeMenu = page.locator(".workspace-mode-menu");
   await modeTrigger.click();
-  await modeMenu.getByRole("button", { name: "Coscode", exact: true }).click();
+  await modeMenu.getByRole("button", { name: "Koscode", exact: true }).click();
   const composer = page.getByLabel("Сообщение Kosmora", { exact: true });
   await composer.fill(
     "Добавить поиск по названиям проектов\nКритерии готовности: поиск не зависит от регистра"
@@ -162,7 +159,7 @@ test("Coscode keeps a development brief as an unsent draft across mode changes",
   await modeTrigger.click();
   await modeMenu.getByRole("button", { name: "Koswork", exact: true }).click();
   await modeTrigger.click();
-  await modeMenu.getByRole("button", { name: "Coscode", exact: true }).click();
+  await modeMenu.getByRole("button", { name: "Koscode", exact: true }).click();
   await expect(page.locator('.sidebar[data-space="coscode"]')).toBeVisible();
   await expect(composer).toHaveValue(/Добавить поиск по названиям проектов/);
   await expect(composer).toHaveValue(/поиск не зависит от регистра/);

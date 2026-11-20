@@ -36,7 +36,7 @@ test("keeps the persisted workspace usable at 390x844", async ({ page }) => {
   await page
     .getByRole("dialog", { name: "Ваше пространство" })
     .locator(".drawer-modes")
-    .getByRole("button", { name: "Coscode", exact: true })
+    .getByRole("button", { name: "Koscode", exact: true })
     .click();
   await expect(page.locator(".sidebar")).toHaveAttribute("data-space", "coscode");
 

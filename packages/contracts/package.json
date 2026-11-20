@@ -54,6 +54,11 @@
       "types": "./src/work-plan-package.ts",
       "default": "./dist/work-plan-package.js"
     },
+    "./integrations": {
+      "development": "./src/integrations.ts",
+      "types": "./src/integrations.ts",
+      "default": "./dist/integrations.js"
+    },
     "./artifact-context": {
       "development": "./src/artifact-context.ts",
       "types": "./src/artifact-context.ts",

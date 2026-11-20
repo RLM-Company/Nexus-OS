@@ -1,6 +1,18 @@
 import { expect, test, type Page } from "@playwright/test";
 import { isWorkspaceWrite } from "./fixtures/navigation-writes";
 
+// First-run profile onboarding has its own spec; its modal would intercept
+// clicks here. Mark it done locally without changing product behaviour.
+test.beforeEach(async ({ page }) => {
+  await page.addInitScript(() => {
+    try {
+      localStorage.setItem("kosmora:profile-onboarding.v1", "done");
+    } catch {
+      /* Storage may be unavailable; the tests still exercise the surface. */
+    }
+  });
+});
+
 const ids = ["ee120001-0001-4000-8000-000000000001", "ee120001-0001-4000-8000-000000000002"];
 const projectId = "ee120001-0001-4000-8000-000000000003";
 const at = "2026-10-12T10:00:00.000Z";

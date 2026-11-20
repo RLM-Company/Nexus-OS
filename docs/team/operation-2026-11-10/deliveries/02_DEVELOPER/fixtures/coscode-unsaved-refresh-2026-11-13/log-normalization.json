@@ -1,0 +1,14 @@
+{
+  "baseline.log": {
+    "raw_sha256": "0867b2b604c9780ad0a5bc9d2184eba8b9ebee8c2ad71ccae834a836f1e07bf4",
+    "normalized_sha256": "8e7ddc6e345096d9a99c8dbf431462f63a987dfd2960d726d64377af64f2e340"
+  },
+  "targeted5-passed.log": {
+    "raw_sha256": "4fdd3e8feb12de80cf16d941370166e4c2d07857f34599c733118f0507ef47f7",
+    "normalized_sha256": "4fdd3e8feb12de80cf16d941370166e4c2d07857f34599c733118f0507ef47f7"
+  },
+  "full41-passed.log": {
+    "raw_sha256": "2f0f806e19514c0e2951318b422147453ff7376581550eef2df122539693795b",
+    "normalized_sha256": "2f0f806e19514c0e2951318b422147453ff7376581550eef2df122539693795b"
+  }
+}

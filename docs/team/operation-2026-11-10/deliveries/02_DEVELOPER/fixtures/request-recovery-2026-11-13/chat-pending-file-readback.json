@@ -1,0 +1,11 @@
+{
+  "kind": "chat",
+  "text": "",
+  "files": [
+    {
+      "name": "pending.txt",
+      "content": "Новый ожидающий файл 00123"
+    }
+  ],
+  "real_model_called": false
+}

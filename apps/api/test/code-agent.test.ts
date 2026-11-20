@@ -3671,13 +3671,24 @@ it.skipIf(!process.env.CODE_AGENT_TEST_IMAGE)(
     const blobShas = Object.fromEntries(
       Object.keys(originals).map((path) => [path, git("rev-parse", `HEAD:${path}`).trim()])
     );
-    const runner = createCodeAgentWorkspaceRunner({
+    const ociRunner = createCodeAgentWorkspaceRunner({
       runtime: "docker",
       image: process.env.CODE_AGENT_TEST_IMAGE!,
       ...(process.env.CODE_AGENT_TEST_EXECUTABLE
         ? { executable: process.env.CODE_AGENT_TEST_EXECUTABLE }
         : {}),
       limits: { timeoutMs: 30000 }
+    });
+    const executorToken = randomUUID().replaceAll("-", "");
+    const sidecar = createCodeAgentExecutorServer({ token: executorToken, runner: ociRunner });
+    await new Promise<void>((resolve) => sidecar.server.listen(0, "127.0.0.1", resolve));
+    const address = sidecar.server.address();
+    if (!address || typeof address === "string") throw new Error("NO_ADDRESS");
+    resources.push(() => sidecar.stop());
+    const runner = createCodeAgentHttpExecutor({
+      url: `http://127.0.0.1:${address.port}`,
+      token: executorToken,
+      pollMs: 20
     });
     const f = await fixture({
       responses: repairResponses(),
@@ -3721,6 +3732,46 @@ it.skipIf(!process.env.CODE_AGENT_TEST_IMAGE)(
       review_hash: fresh.draft!.plan.review_hash
     });
     expect(fresh.publication_token).toBeTruthy();
+    const publication = {
+      review_hash: fresh.draft!.plan.review_hash,
+      publication_token: fresh.publication_token!,
+      approve: true
+    };
+    const published = await f.app.inject({
+      method: "POST",
+      url: `${f.base}/${id}/publish`,
+      payload: publication
+    });
+    expect(published.statusCode).toBe(200);
+    const publishedView = published.json<{
+      status: string;
+      version: number;
+      draft: { status: string; pr_url: string };
+    }>();
+    expect(publishedView).toMatchObject({
+      status: "published",
+      draft: { status: "published", pr_url: "https://github.com/RLM-Company/Nexus-OS/pull/1000" }
+    });
+    expect(publishedView.version).toBeGreaterThan(fresh.version);
+    const writes = f.githubCalls.filter((call) => call.method === "POST");
+    expect(writes.map((call) => call.path)).toEqual([
+      "/git/trees",
+      "/git/commits",
+      "/git/refs",
+      "/pulls"
+    ]);
+    expect(writes[0]!.body).toMatchObject({ base_tree: baseTree });
+    expect(writes.at(-1)!.body).toMatchObject({ draft: true, base: "main" });
+    expect(
+      (await f.app.inject({ method: "POST", url: `${f.base}/${id}/publish`, payload: publication }))
+        .statusCode
+    ).toBe(409);
+    expect(f.githubCalls.filter((call) => call.method === "POST")).toHaveLength(writes.length);
+    expect(f.get(id).status).toBe("published");
+    expect(git("rev-parse", "HEAD").trim()).toBe(baseSha);
+    expect(await readFile(join(directory, "README.md"), "utf8")).toBe(
+      "Keep owner file 00123 untouched.\n"
+    );
     if (process.env.CODE_AGENT_REPAIR_REPORT_DIR) {
       const out = process.env.CODE_AGENT_REPAIR_REPORT_DIR;
       await mkdir(out, { recursive: true });
@@ -3736,6 +3787,17 @@ it.skipIf(!process.env.CODE_AGENT_TEST_IMAGE)(
               after: after.proposal_check,
               model_calls: 4,
               repair_calls: 1,
+              executor_transport: "authenticated_loopback_http",
+              checkpoint_status: f.get(id).status,
+              publication: {
+                adapter_fixture: true,
+                status: publishedView.status,
+                draft_pr_url: publishedView.draft.pr_url,
+                post_paths: writes.map((call) => call.path),
+                duplicate_status: 409,
+                duplicate_added_writes: 0
+              },
+              original_git_head_preserved: git("rev-parse", "HEAD").trim() === baseSha,
               real_model_called: false,
               github_published: false,
               readme_preserved: true

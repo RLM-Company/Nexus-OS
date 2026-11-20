@@ -8,6 +8,7 @@ import {
   type ExecutionPreferences
 } from "./execution-profile.js";
 
+export type Gender = "masculine" | "feminine" | "neutral";
 export type OptimizeFor = "balanced" | "quality" | "latency" | "cost";
 export type AccountPreferences = {
   version: number;
@@ -18,10 +19,23 @@ export type AccountPreferences = {
   preferred_model: string | null;
   chat_style: "standard" | "concise" | "detailed";
   max_total_tokens: number | null;
+  /** Имя пользователя для приветствия и обращения; пустое = не задано. */
+  display_name: string;
+  /** В каком роде обращаться к пользователю. */
+  user_gender: Gender;
+  /** В каком роде говорит ассистент; neutral — отдельный вариант. */
+  assistant_gender: Gender;
   updated_at: string | null;
 };
-export type PreferenceUpdate = Omit<AccountPreferences, "version" | "updated_at"> & {
+export type PreferenceUpdate = Omit<
+  AccountPreferences,
+  "version" | "updated_at" | "display_name" | "user_gender" | "assistant_gender"
+> & {
   expected_version: number;
+  /** Необязательны для обратной совместимости со старыми клиентами/тестами. */
+  display_name?: string;
+  user_gender?: Gender;
+  assistant_gender?: Gender;
 };
 type RecordRow = Record<string, unknown>;
 const now = () => new Date().toISOString();
@@ -34,6 +48,9 @@ const defaults: AccountPreferences = {
   preferred_model: null,
   chat_style: "standard",
   max_total_tokens: null,
+  display_name: "",
+  user_gender: "masculine",
+  assistant_gender: "neutral",
   updated_at: null
 };
 export class PreferenceConflictError extends Error {}
@@ -77,6 +94,27 @@ export class AccountStore {
     this.sqlite.exec(
       "CREATE TABLE IF NOT EXISTS kosmora_reasoning_preferences (owner_id TEXT PRIMARY KEY, effort TEXT CHECK (effort IN ('low','medium','high')));"
     );
+    // Аддитивная миграция профиля: существующие аккаунты получают значения
+    // по умолчанию (мужской род обращения, нейтральный род ассистента).
+    const columns = new Set(
+      (
+        this.sqlite.prepare("PRAGMA table_info(kosmora_account_preferences)").all() as Array<{
+          name: string;
+        }>
+      ).map((row) => row.name)
+    );
+    if (!columns.has("display_name"))
+      this.sqlite.exec(
+        "ALTER TABLE kosmora_account_preferences ADD COLUMN display_name TEXT NOT NULL DEFAULT '';"
+      );
+    if (!columns.has("user_gender"))
+      this.sqlite.exec(
+        "ALTER TABLE kosmora_account_preferences ADD COLUMN user_gender TEXT NOT NULL DEFAULT 'masculine' CHECK (user_gender IN ('masculine','feminine','neutral'));"
+      );
+    if (!columns.has("assistant_gender"))
+      this.sqlite.exec(
+        "ALTER TABLE kosmora_account_preferences ADD COLUMN assistant_gender TEXT NOT NULL DEFAULT 'neutral' CHECK (assistant_gender IN ('masculine','feminine','neutral'));"
+      );
   }
   getReasoning(owner: string): "low" | "medium" | "high" | null {
     const row = this.sqlite
@@ -152,17 +190,27 @@ export class AccountStore {
           preferred_model: row.preferred_model as string | null,
           chat_style: row.chat_style as AccountPreferences["chat_style"],
           max_total_tokens: row.max_total_tokens as number | null,
+          display_name: typeof row.display_name === "string" ? row.display_name : "",
+          user_gender: (row.user_gender as Gender) ?? "masculine",
+          assistant_gender: (row.assistant_gender as Gender) ?? "neutral",
           updated_at: row.updated_at as string
         }
       : { ...defaults };
   }
   update(owner: string, next: PreferenceUpdate): AccountPreferences {
     boundedLimit(next.max_total_tokens);
+    const genders: Gender[] = ["masculine", "feminine", "neutral"];
     if (
       !["ru", "en"].includes(next.response_language) ||
       !["balanced", "quality", "latency", "cost"].includes(next.optimize_for) ||
       !["standard", "concise", "detailed"].includes(next.chat_style) ||
       typeof next.relay_enabled !== "boolean" ||
+      (next.display_name !== undefined &&
+        (typeof next.display_name !== "string" ||
+          next.display_name.length > 80 ||
+          /[\r\n\t]/.test(next.display_name))) ||
+      (next.user_gender !== undefined && !genders.includes(next.user_gender)) ||
+      (next.assistant_gender !== undefined && !genders.includes(next.assistant_gender)) ||
       !Number.isSafeInteger(next.expected_version)
     )
       throw new Error("Invalid preferences");
@@ -171,9 +219,12 @@ export class AccountStore {
       const current = this.get(owner);
       if (current.version !== next.expected_version)
         throw new PreferenceConflictError("Settings were changed elsewhere");
+      const displayName = next.display_name?.trim() ?? current.display_name;
+      const userGender = next.user_gender ?? current.user_gender;
+      const assistantGender = next.assistant_gender ?? current.assistant_gender;
       const insert = this.sqlite
-        .prepare(`INSERT INTO kosmora_account_preferences (owner_id,version,relay_enabled,response_language,optimize_for,preferred_provider,preferred_model,chat_style,max_total_tokens,updated_at)
-      VALUES(?,?,?,?,?,?,?,?,?,?) ON CONFLICT(owner_id) DO UPDATE SET version=excluded.version,relay_enabled=excluded.relay_enabled,response_language=excluded.response_language,optimize_for=excluded.optimize_for,preferred_provider=excluded.preferred_provider,preferred_model=excluded.preferred_model,chat_style=excluded.chat_style,max_total_tokens=excluded.max_total_tokens,updated_at=excluded.updated_at`);
+        .prepare(`INSERT INTO kosmora_account_preferences (owner_id,version,relay_enabled,response_language,optimize_for,preferred_provider,preferred_model,chat_style,max_total_tokens,display_name,user_gender,assistant_gender,updated_at)
+      VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(owner_id) DO UPDATE SET version=excluded.version,relay_enabled=excluded.relay_enabled,response_language=excluded.response_language,optimize_for=excluded.optimize_for,preferred_provider=excluded.preferred_provider,preferred_model=excluded.preferred_model,chat_style=excluded.chat_style,max_total_tokens=excluded.max_total_tokens,display_name=excluded.display_name,user_gender=excluded.user_gender,assistant_gender=excluded.assistant_gender,updated_at=excluded.updated_at`);
       insert.run(
         owner,
         current.version + 1,
@@ -184,6 +235,9 @@ export class AccountStore {
         next.preferred_model,
         next.chat_style,
         next.max_total_tokens,
+        displayName,
+        userGender,
+        assistantGender,
         now()
       );
       this.sqlite.exec("COMMIT");

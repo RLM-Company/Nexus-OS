@@ -110,7 +110,7 @@ test("reaches every primary workspace from the phone navigation", async ({ page 
 
   for (const label of [
     "Skills",
-    "Coscode",
+    "Koscode",
     "Koswork",
     "Изображения",
     "Видео",
@@ -123,7 +123,7 @@ test("reaches every primary workspace from the phone navigation", async ({ page 
       .getByRole("button", { name: new RegExp(`^${label}(?:\\s|$)`) })
       .click();
     await expect(page.locator(".topbar h1")).toHaveText(
-      ["Coscode", "Koswork"].includes(label) ? "Новый чат" : label
+      ["Koscode", "Koswork"].includes(label) ? "Новый чат" : label
     );
   }
 
@@ -235,7 +235,7 @@ test("keeps sidebar focus on keyboard-operated controls", async ({ page }) => {
   const modeTrigger = sidebar.getByLabel("Режимы Kosmora", { exact: true });
   const modeMenu = sidebar.locator(".workspace-mode-menu");
 
-  for (const name of ["Koswork", "Coscode"]) {
+  for (const name of ["Koswork", "Koscode"]) {
     await expect(
       sidebar.locator(".sidebar-tools").getByRole("button", { name, exact: true })
     ).toHaveCount(0);
@@ -243,7 +243,7 @@ test("keeps sidebar focus on keyboard-operated controls", async ({ page }) => {
     await page.keyboard.press("Enter");
     await expect(modeMenu).toHaveAttribute("open", "");
     const destinations =
-      name === "Koswork" ? ["Kosmora", "Koswork"] : ["Kosmora", "Koswork", "Coscode"];
+      name === "Koswork" ? ["Kosmora", "Koswork"] : ["Kosmora", "Koswork", "Koscode"];
     for (const destination of destinations) {
       await page.keyboard.press("Tab");
       await expect(modeMenu.getByRole("button", { name: destination, exact: true })).toBeFocused();
@@ -253,7 +253,7 @@ test("keeps sidebar focus on keyboard-operated controls", async ({ page }) => {
     await expect(modeTrigger).toBeFocused();
     await expect(page.locator(".topbar h1")).toHaveText("Новый чат");
   }
-  // Return from the separate Coscode workspace before testing shared navigation.
+  // Return from the separate Koscode workspace before testing shared navigation.
   await modeTrigger.click();
   await modeMenu.getByRole("button", { name: "Kosmora", exact: true }).click();
 

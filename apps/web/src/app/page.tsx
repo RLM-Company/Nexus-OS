@@ -25,6 +25,7 @@ import { ChatBranches, ChatBranchButton } from "./chat-branches";
 import { useChatNavigation, ChatContextPanel, ChatToCanvas } from "./chat-workspace";
 import { ChatItemMenu } from "./chat-item-menu";
 import { CreateProjectDialog } from "./create-project-dialog";
+import { ProfileOnboarding } from "./profile-onboarding";
 import { ChatSearchTrigger } from "./chat-search-trigger";
 import { ProjectTitleEditor } from "./project-title-editor";
 import { QuickSwitcher } from "./quick-switcher";
@@ -37,6 +38,7 @@ import {
   readComposerDraft
 } from "./composer-draft-storage";
 import { restoredRunState, type TerminalRunObservation } from "./restored-run-state";
+import { recoverableRunDraft } from "./recoverable-run-draft";
 import { useLiveComposerText } from "./use-live-composer-text";
 import {
   chatSendRetryKey,
@@ -146,6 +148,8 @@ type LocalChatSession = {
   created_at: string;
   updated_at: string;
   last_message_preview?: string | null;
+  project_id?: string | null;
+  confidential?: boolean;
 };
 
 type GeneralChatAcceptedResponse = {
@@ -197,13 +201,13 @@ const SURFACE_TITLE: Record<WorkspaceSurface, string> = {
   studio: "Kosmora Studio",
   files: "Анализ файлов",
   skills: "Skills",
-  code: "Coscode",
+  code: "Koscode",
   work: "Koswork",
   images: "Изображения",
   video: "Видео",
   sound: "Sound",
   "multi-agent": "Multi-Agent",
-  apps: "Приложения",
+  apps: "Интеграции",
   features: "Возможности",
   settings: "Настройки"
 };
@@ -462,23 +466,6 @@ const displayedGeneralContent = (message: LocalChatMessage): string | null => {
   return message.content || null;
 };
 
-const recoverableUserMessage = (messages: Message[]): Message | null => {
-  const latestRunMessage = [...messages].reverse().find((message) => message.run_id !== null);
-  if (!latestRunMessage?.run_id) return null;
-  const runId = latestRunMessage.run_id;
-  const terminalAssistant = [...messages]
-    .reverse()
-    .find((message) => message.run_id === runId && message.role === "assistant");
-  if (terminalAssistant?.status !== "failed" && terminalAssistant?.status !== "cancelled") {
-    return null;
-  }
-  return (
-    [...messages]
-      .reverse()
-      .find((message) => message.run_id === runId && message.role === "user") ?? null
-  );
-};
-
 const latestDemoSource = (messages: Message[]): Message | null =>
   [...messages].reverse().find((message) => message.role === "user" && message.run_id !== null) ??
   null;
@@ -549,6 +536,10 @@ export default function Home() {
   const [, setLastCompletedRoute] = useState<CompletedRoute | null>(null);
   const [runPhase, setRunPhase] = useState<RunPhase>("idle");
   const [projectView, setProjectView] = useState<ProjectView>("chat");
+  /** Новый чат, который ещё не создан, но должен родиться в папке проекта. */
+  const [pendingProjectId, setPendingProjectId] = useState<string | null>(null);
+  /** Развёрнутая папка проекта в навигации, независимо от активного экрана. */
+  const [openProjectFolderId, setOpenProjectFolderId] = useState<string | null>(null);
   const [contextPreview, setContextPreview] = useState(false);
   useEffect(() => {
     setContextPreview(new URLSearchParams(window.location.search).get("context_preview") === "1");
@@ -560,6 +551,7 @@ export default function Home() {
   const [codeSpace, setCodeSpace] = useState(false);
   const [createProjectOpen, setCreateProjectOpen] = useState(false);
   const [greeting, setGreeting] = useState("Чем могу помочь?");
+  const [displayName, setDisplayName] = useState("");
   const [localChats, setLocalChats] = useState<LocalChatSession[]>([]);
   const chatNavigation = useChatNavigation();
   const pins = chatNavigation.navigation;
@@ -627,10 +619,9 @@ export default function Home() {
   );
   const localChatMessages = activeLocalChat?.messages ?? EMPTY_LOCAL_CHAT_MESSAGES;
   const projectProposal = activeLocalChat?.projectProposal ?? null;
-  const composerDraftKey = composerDraftStorageKey(
-    activeProject?.id ?? selectedProjectRef.current,
-    activeLocalChatId
-  );
+  const composerDraftKey = pendingProjectId
+    ? `${COMPOSER_DRAFT_STORAGE_PREFIX}project-new-chat:${pendingProjectId}`
+    : composerDraftStorageKey(activeProject?.id ?? selectedProjectRef.current, activeLocalChatId);
   const composerActions = draftActions.get(composerDraftKey) ?? DEFAULT_COMPOSER_ACTIONS;
   const updateDraftActions = (
     key: string,
@@ -923,7 +914,10 @@ export default function Home() {
   const loadGeneralChats = useCallback(async () => {
     const data = await api<{
       items: Array<
-        Pick<LocalChatSession, "id" | "title" | "created_at" | "updated_at" | "mode"> & {
+        Pick<
+          LocalChatSession,
+          "id" | "title" | "created_at" | "updated_at" | "mode" | "project_id" | "confidential"
+        > & {
           last_message_preview: string | null;
         }
       >;
@@ -948,7 +942,10 @@ export default function Home() {
       await Promise.all([
         loadProjects(),
         loadGeneralChats(),
-        api<ModelRuntimeStatus>("/api/v1/model-runtime").then(setRuntime)
+        api<ModelRuntimeStatus>("/api/v1/model-runtime").then(setRuntime),
+        api<{ settings?: { display_name?: string } }>("/api/v1/personal-settings")
+          .then((data) => setDisplayName(data.settings?.display_name ?? ""))
+          .catch(() => undefined)
       ]);
     } catch {
       setError("API Kosmora пока недоступен. Проверьте локальное подключение и повторите попытку.");
@@ -1255,6 +1252,7 @@ export default function Home() {
       restoredSurface: WorkspaceSurface = "manager"
     ): Promise<void> => {
       const epoch = ++viewEpochRef.current;
+      setPendingProjectId(null);
       setSurface(restoredSurface);
       selectedProjectRef.current = projectId;
       replaceConsoleRoute(projectId, view);
@@ -1774,16 +1772,19 @@ export default function Home() {
     });
   };
 
-  const failedChatReply = localChatMessages.findLast((message) => message.role === "assistant");
-  const recoverableChatMessage =
-    failedChatReply && ["failed", "cancelled"].includes(failedChatReply.status)
-      ? localChatMessages.find(
-          (message) => message.role === "user" && message.run_id === failedChatReply.run_id
-        )
-      : undefined;
   const recoverableMessage = activeProject
-    ? recoverableUserMessage(messages)
-    : recoverableChatMessage;
+    ? recoverableRunDraft(messages, terminalRunRef.current)
+    : recoverableRunDraft(localChatMessages, terminalRunRef.current);
+  const canRestoreRunDraft = Boolean(
+    recoverableMessage &&
+    !draft.length &&
+    !chatAttachments.files.length &&
+    !chatAttachments.reading &&
+    !sending &&
+    !loading &&
+    initialRouteReady &&
+    draftStorageReadyKey === attachmentScope
+  );
   const demoSource = latestDemoSource(messages);
   const latestDemoRun = demoRuns[0] ?? null;
 
@@ -1865,7 +1866,16 @@ export default function Home() {
   };
 
   const restoreRunDraft = (): void => {
-    if (!recoverableMessage) return;
+    if (
+      !canRestoreRunDraft ||
+      !recoverableMessage ||
+      viewEpochRef.current !== draftEpoch ||
+      submitPendingRef.current ||
+      latestDraftRef.current.text.length ||
+      chatAttachments.snapshotFiles().length ||
+      chatAttachments.snapshotReading()
+    )
+      return;
     setDraft(recoverableMessage.content);
     chatAttachments.replace(recoverableMessage.attachments ?? []);
     setError(null);
@@ -1874,8 +1884,7 @@ export default function Home() {
 
   const submit = async (event?: FormEvent, voiceContent?: string): Promise<void> => {
     event?.preventDefault();
-    const submitted = { ...latestDraftRef.current, files: chatAttachments.snapshotFiles() };
-    const recoverableDraft = voiceContent ?? submitted.text;
+    const recoverableDraft = voiceContent ?? latestDraftRef.current.text;
     const content = recoverableDraft.trim();
     if (
       !content ||
@@ -1888,9 +1897,18 @@ export default function Home() {
       executionGate !== "clear"
     )
       return;
+    if (voiceContent !== undefined) {
+      if (latestDraftRef.current.text.trim() || chatAttachments.snapshotFiles().length) return;
+      setDraft(recoverableDraft);
+    }
+    const submitted = { ...latestDraftRef.current, files: chatAttachments.snapshotFiles() };
     submitPendingRef.current = true;
     const submittedEpoch = viewEpochRef.current;
     saveBrowserDraft();
+    const nativeDraft = desktopDraftBridge(window);
+    const nativeScope = nativeDraftScope(composerDraftKey);
+    if (voiceContent !== undefined && nativeDraft && nativeScope)
+      void nativeDraft.save(nativeScope, recoverableDraft).catch(() => undefined);
     let stored: ReturnType<typeof captureComposerDraft> | null = null;
     try {
       if (!desktopDraftBridge(window))
@@ -1967,6 +1985,7 @@ export default function Home() {
           const body = {
             ...(activeLocalChatId ? { content } : { initial_message: content, mode: chatMode }),
             attachments: submitted.files,
+            ...(!activeLocalChatId && pendingProjectId ? { project_id: pendingProjectId } : {}),
             ...(composerActions.web_search ? { web_search: true } : {}),
             ...(composerActions.text_action ? { text_action: composerActions.text_action } : {})
           };
@@ -1978,6 +1997,7 @@ export default function Home() {
             void loadGeneralChats().catch(() => undefined);
             return;
           }
+          if (!activeLocalChatId && pendingProjectId) setPendingProjectId(null);
           if (clearedDraft) {
             chatAttachments.replace([]);
             setDraft("");
@@ -2177,6 +2197,7 @@ export default function Home() {
   };
 
   const resetToLocalChat = (chatId: string | null, rotate = false): void => {
+    setPendingProjectId(null);
     pendingComposeRef.current = null;
     if (chatId === null) {
       if (pendingChatSendRef.current?.path === "/api/v1/chats") pendingChatSendRef.current = null;
@@ -2213,7 +2234,7 @@ export default function Home() {
   const newChat = (): void => {
     // Explicitly starting afresh from the unnamed composer discards that draft.
     // Named chats/projects retain their own draft when navigating away.
-    if (!activeProject && !selectedProjectRef.current && !activeLocalChatId) {
+    if (!pendingProjectId && !activeProject && !selectedProjectRef.current && !activeLocalChatId) {
       const scope = nativeDraftScope(composerDraftKey);
       if (scope)
         void desktopDraftBridge(window)
@@ -2305,10 +2326,6 @@ export default function Home() {
       window.history.replaceState(window.history.state, "", route.pathname + route.search);
       return;
     }
-    if (nextSurface === "research" || nextSurface === "presentations") {
-      window.location.assign(nextSurface === "research" ? "/research-workspace" : "/presentations");
-      return;
-    }
     setSurface(nextSurface);
     if (nextSurface === "manager") {
       replaceConsoleRoute(
@@ -2318,7 +2335,7 @@ export default function Home() {
       );
       return;
     }
-    if (["studio", "files", "images", "video", "sound"].includes(nextSurface))
+    if (["studio", ...STUDIO_ITEMS.map((item) => item.id)].some((id) => id === nextSurface))
       setStudioExpanded(true);
     const route = new URL(window.location.href);
     route.searchParams.delete("mode");
@@ -2382,7 +2399,7 @@ export default function Home() {
               <WorkspaceIcon name="projects" /> GitHub
             </Link>
             <Link href={controlCenterHref}>
-              <WorkspaceIcon name="settings" /> Настройки Coscode
+              <WorkspaceIcon name="settings" /> Настройки Koscode
             </Link>
           </div>
         )}
@@ -2467,11 +2484,20 @@ export default function Home() {
                       title={chat.title}
                       pinned={pins.chats.includes(chat.id)}
                       disabled={!pinsHydrated || (sending && activeLocalChatId === chat.id)}
+                      projectId={chat.project_id ?? null}
+                      projects={projects}
                       onPin={() => changePin("chats", chat.id)}
                       onOpen={() => void openLocalChat(chat.id)}
                       onRename={(title) =>
                         setLocalChats((current) =>
                           current.map((item) => (item.id === chat.id ? { ...item, title } : item))
+                        )
+                      }
+                      onMove={(projectId) =>
+                        setLocalChats((current) =>
+                          current.map((item) =>
+                            item.id === chat.id ? { ...item, project_id: projectId } : item
+                          )
                         )
                       }
                       onDelete={() => {
@@ -2529,7 +2555,12 @@ export default function Home() {
                           ? "project-item active"
                           : "project-item"
                       }
-                      onClick={() => void openProject(project.id)}
+                      onClick={() => {
+                        setOpenProjectFolderId((current) =>
+                          current === project.id ? null : project.id
+                        );
+                        void openProject(project.id);
+                      }}
                     >
                       <span className="project-glyph">
                         {project.title.slice(0, 1).toUpperCase()}
@@ -2550,6 +2581,40 @@ export default function Home() {
                     >
                       <PinIcon />
                     </button>
+                    {openProjectFolderId === project.id && (
+                      <div
+                        className="project-chat-folder"
+                        aria-label={`Чаты проекта ${project.title}`}
+                      >
+                        {localChats
+                          .filter((chat) => chat.project_id === project.id)
+                          .map((chat) => (
+                            <button
+                              key={chat.id}
+                              type="button"
+                              className={
+                                activeLocalChatId === chat.id
+                                  ? "project-chat-item active"
+                                  : "project-chat-item"
+                              }
+                              onClick={() => void openLocalChat(chat.id)}
+                            >
+                              <span>{chat.title}</span>
+                            </button>
+                          ))}
+                        <button
+                          type="button"
+                          className="project-chat-item new"
+                          onClick={() => {
+                            if (codeSpace) setChatMode("coscode");
+                            resetToLocalChat(null, true);
+                            setPendingProjectId(project.id);
+                          }}
+                        >
+                          + Новый чат в проекте
+                        </button>
+                      </div>
+                    )}
                   </div>
                 ))}
                 {navigationSearch && matchingProjects.length === 0 && (
@@ -2601,10 +2666,7 @@ export default function Home() {
                   className="projects-heading sidebar-section-toggle studio-toggle"
                   aria-expanded={studioExpanded}
                   aria-controls="studio-tools"
-                  onClick={() => {
-                    if (!studioExpanded) selectSurface("studio");
-                    else setStudioExpanded(false);
-                  }}
+                  onClick={() => setStudioExpanded((expanded) => !expanded)}
                 >
                   <ToolIcon kind="studio" />
                   <span>Kosmora Studio</span>
@@ -2614,15 +2676,6 @@ export default function Home() {
                 </button>
                 {studioExpanded && (
                   <div className="studio-tools" id="studio-tools">
-                    <button
-                      type="button"
-                      className={surface === "studio" ? "sidebar-tool active" : "sidebar-tool"}
-                      aria-current={surface === "studio" ? "page" : undefined}
-                      onClick={() => selectSurface("studio")}
-                    >
-                      <ToolIcon kind="studio" />
-                      <span>Обзор Studio</span>
-                    </button>
                     {STUDIO_ITEMS.map((item) => (
                       <button
                         key={item.id}
@@ -2646,7 +2699,7 @@ export default function Home() {
               onClick={() => selectSurface("apps")}
             >
               <ToolIcon kind="apps" />
-              <span>Приложения</span>
+              <span>Интеграции</span>
             </button>
             <button
               type="button"
@@ -3387,7 +3440,10 @@ export default function Home() {
           <>
             <section className="hero">
               <h2>{greeting}</h2>
+              {displayName && <p className="hero-greeting-name">{displayName}, рад вас видеть.</p>}
             </section>
+            {/* Вне .hero: чужие e2e проверяют единственный h2 и отсутствие p в hero. */}
+            <ProfileOnboarding onSaved={(name) => setDisplayName(name)} />
           </>
         ) : null}
 
@@ -3468,6 +3524,7 @@ export default function Home() {
                     !initialRouteReady ||
                     draftStorageReadyKey !== attachmentScope
                   }
+                  onOpenTool={selectSurface}
                   onAdd={(files) => void chatAttachments.add(files)}
                   onRemove={(index) =>
                     chatAttachments.replace(
@@ -3489,6 +3546,7 @@ export default function Home() {
             </div>
             <div className="composer-footer">
               <VoiceComposer
+                key={composerDraftKey}
                 disabled={sending || loading || !initialRouteReady}
                 onInsert={(text) => setDraft((current) => (current ? `${current} ${text}` : text))}
               />
@@ -3519,7 +3577,7 @@ export default function Home() {
                       ↻ Повторить
                     </button>
                   )}
-                  {recoverableMessage && !draft.trim() && (
+                  {canRestoreRunDraft && (
                     <button type="button" className="restore-run" onClick={restoreRunDraft}>
                       ↻ Вернуть запрос в редактор
                     </button>

@@ -9,6 +9,7 @@ export type IconName =
   | "games"
   | "files"
   | "paperclip"
+  | "plus"
   | "chats"
   | "new-chat"
   | "projects"
@@ -49,6 +50,7 @@ export type IconName =
 // Shared action icons keep identical geometry across chat and composer.
 
 const paths: Record<Exclude<IconName, "cosmora">, React.ReactNode> = {
+  plus: <path d="M12 5v14M5 12h14" />,
   repeat: (
     <>
       <path d="M20 7v5h-5M4 17v-5h5" />

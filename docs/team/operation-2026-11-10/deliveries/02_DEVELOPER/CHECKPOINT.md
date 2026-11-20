@@ -1,3 +1,94 @@
+# Итоговая программная приёмка Coscode, 13 ноября 2026
+
+Статус: в работе, свежий real API/OCI в CI обязателен перед закрытием программного блока.
+BASE_SHA `798a3079dde9ab70aee7d8b7702af2a18c8c60a9`; сохранён актуальный main `43ffee1db331507dfd984f50f42a2f6779e6e780`.
+Ветка `ops/developer-coscode-snapshot-order-2026-11-13`, [Draft PR581](https://github.com/RLM-Company/Nexus-OS/pull/581).
+[Матрица всего ТЗ и результаты](COSCODE_FINAL_ACCEPTANCE_RU.md).
+Свежие локальные: API/adapters151PASS+1OCI SKIP; runtime76PASS; web16PASS; types/lint0.
+Предыдущий exact HEAD CI43459723060 success относится к BASE_SHA; семь UI blobs прежние.
+Полный API/HTTP/OCI сценарий расширен до Draft PR adapter и защищённого повторного publish.
+Отдельная CI integration включает этот opt-in и выдаёт input/output/diff/receipt artifact.
+Локальный OCI не пройден из-за Docker VFS ENOSPC; это не PASS. Независимый CI ожидается.
+Исторический live GitHub/HTTP/OCI от12 ноября найден и отделён от свежей приёмки;
+настоящая модель не вызывалась. Новых внешних публикаций/merge в main/deploy нет.
+Далее: exact HEAD CI и проверка настоящего artifact, затем программная передача интегратору.
+
+История ниже.
+
+---
+
+# Coscode: несохранённые правки при обновлении, 13 ноября 2026
+
+Статус: **готово к интеграции** по локальным проверкам; exact HEAD CI ожидается.
+BASE_SHA `1d72d9ddfb90111edc6bade44ec928fef1aecc19`, main `4477dd53e5767a4bb4990c3109c874683a892b63` сохранён.
+Перед передачей также сохранён main14a5f48 (PR582/583); оба префикса4 отчётов сохранены, source blobs прежние.
+Ветка `ops/developer-coscode-snapshot-order-2026-11-13`, [Draft PR581](https://github.com/RLM-Company/Nexus-OS/pull/581).
+SOURCE_HEAD_SHA `2b8b895edcb743bf510246e9c52da10924f053eb`, source tree `e8a54ac6ae8e1223ce64b438d36614d0cc941463`.
+[Поставка и доказательства](COSCODE_UNSAVED_REFRESH_DELIVERY_RU.md).
+Baseline3FAIL+1PASS; targeted5PASS; полный production41PASS, retries0.
+Текст/raw diff остаются в существующем редакторе при новом proposal_hash;
+конфликт блокирует save и останавливает polling; explicit reload требует согласия,
+нижняя наблюдавшаяся version и403 не уничтожают локальные правки. Чистый editor обновляется.
+Root gates до и после main14a: exit0; API1086PASS+1SKIP, web399PASS, DB236PASS.
+Первый CI43455694958: verify/OCI success, Browser529PASS+1flaky в seed предусловии chat draft test.
+Trace и10 CI CodeAgent readbacks сохранены. Отдельный test integration23bbcde
+использует held seed и явный owner cancel; все исходные draft assertions остаются.
+Repeated5PASS, workers2/retries0; web types/lint0. Production chat lifecycle не менялся.
+Следующий шаг: опубликовать отдельную test integration и receipt в Draft PR581;
+проверить CI точного HEAD и передать интегратору без merge/deploy.
+Предыдущий CI43447416997 success относится к BASE_SHA, а не к новым изменениям.
+Модель/live foreign publish не вызывались; новых API/DB/runtime/grants/дизайна нет.
+
+История ниже.
+
+---
+
+# Coscode: порядок снимков задачи, 13 ноября 2026
+
+Статус: **готово к интеграции** по локальным gates; exact HEAD CI ожидается.
+Ветка `ops/developer-coscode-snapshot-order-2026-11-13`; [Draft PR по ветке](https://github.com/RLM-Company/Nexus-OS/pulls?q=is%3Apr+head%3Aops%2Fdeveloper-coscode-snapshot-order-2026-11-13).
+[Поставка, команды и ограничения](COSCODE_SNAPSHOT_ORDER_DELIVERY_RU.md).
+Начальная база501d403; сохранены main1b73e497 и затем main4477dd53.
+Draft PR [#581](https://github.com/RLM-Company/Nexus-OS/pull/581); семь source blobs прежние.
+Source HEAD404c3ddb3cf69ed473b72d3ad304555942ab783a,
+дерево69766e22c7ca813d5c59ee10bb74b7cd33bd0d52.
+Baseline3FAIL+1PASS; unit4PASS; final production5PASS.
+В существующем accept добавлены version-first и request-order для legacy;
+старый ответ не сбрасывает редактор/approval/publication uncertainty.
+Late403 остаётся видимым. Новых runtime/store/прав нет.
+Финальные check:core до и после main4477: exit0; полный scoped production35PASS, retries0.
+API1086PASS+1SKIP, web389PASS, DB236PASS; Turbo cache отмечен в логе.
+Следующий шаг: опубликовать отдельный Draft PR, проверить exact HEAD CI,
+передать интегратору без самостоятельного merge/deploy.
+PR574 остаётся отдельной открытой поставкой; его ветка не менялась.
+
+Исторические точки ниже.
+
+---
+
+Перед публикацией сохранён новый main501d403 (PR573) без изменения своих7 source
+paths; общие contracts прочитаны. Final merge HEAD требует отдельного CI;
+локальный core receipt относится к281. Новая миграция0067 — inherited main, не наша.
+
+# Готово к интеграции: безопасное восстановление запроса, 13 ноября 2026
+
+BASE_SHA281604b726e25118f3edb80e6b2108dc44368339. Branch
+`ops/developer-request-recovery-2026-11-13`, [Draft PR](https://github.com/RLM-Company/Nexus-OS/pulls?q=is%3Apr+head%3Aops%2Fdeveloper-request-recovery-2026-11-13).
+[Отчёт и команды](REQUEST_RECOVERY_2026_11_13_RU.md). Source44eb6f1/tree4867702f;
+final HEAD — в PR/history. GitHub/local source bytes совпали. PR566 интегрирован
+другим участником; закрытая ветка/PR не обновлялись, новая ветка начата от actual main.
+Early failed/cancelled → восстановление текста/вложений → browser draft → reload;
+новые files/whitespace/pending reads защищены. Нового runtime/store/прав нет.
+Baseline8FAIL+2PASS и pending2FAIL сохранены. Первый combined85PASS+4test-counterFAIL,
+затем targeted12PASS. Финальный main281: coreexit0/API1085PASS+1SKIP/web394/DB230,
+production12PASS через штатный config с6readbacks, final types/lint passed.
+Новый HEAD CI проверяется отдельно, затем ревью интегратора. Live ИИ/foreign publish/
+owner-PC/VPS отложены; собственные merge/deploy не выполнялись.
+
+Исторические поставки ниже.
+
+---
+
 # Текущий срез: terminal run recovery, 13 ноября 2026
 
 BASE main7c2abad; ветка ops/developer-postmerge-acceptance-2026-11-13.

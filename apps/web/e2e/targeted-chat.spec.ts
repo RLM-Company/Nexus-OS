@@ -47,7 +47,7 @@ test("voice defaults to empty composer, text transforms it and search replaces s
   }
 });
 
-test("Kosmora and Work share navigation; Coscode isolates its chats and includes Work", async ({
+test("Kosmora and Work share navigation; Koscode isolates its chats and includes Work", async ({
   page,
   request
 }) => {
@@ -70,7 +70,7 @@ test("Kosmora and Work share navigation; Coscode isolates its chats and includes
   await expect(page.getByLabel("Сообщение Kosmora", { exact: true })).toHaveValue(
     "Сохранить черновик при смене режима"
   );
-  await mode(page, "Coscode");
+  await mode(page, "Koscode");
   await expect(sidebar).toHaveAttribute("data-space", "coscode");
   await expect(sidebar.locator(".chat-item").filter({ hasText: `Код ${tag}` })).toBeVisible();
   await expect(sidebar.locator(".chat-item").filter({ hasText: `Обычный ${tag}` })).toHaveCount(0);

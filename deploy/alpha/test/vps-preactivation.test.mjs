@@ -16,7 +16,7 @@ import { openDatabase, runMigrations } from "../../../packages/db/dist/index.js"
 import { createBackup } from "../sqlite-backup.mjs";
 import { verifyVpsPreactivation } from "../../../scripts/vps-preactivation-check.mjs";
 
-async function fixture(t, previous = false) {
+async function fixture(t, previous = false, legacyCrlf = false) {
   const root = mkdtempSync(join(tmpdir(), "kosmora-preactivation-test-"));
   t.after(() => {
     assert.equal(dirname(resolve(root)), resolve(tmpdir()));
@@ -28,12 +28,16 @@ async function fixture(t, previous = false) {
   if (previous) {
     const migrations = resolve(import.meta.dirname, "../../../packages/db/migrations");
     const journal = JSON.parse(readFileSync(join(migrations, "meta/_journal.json"), "utf8"));
-    journal.entries = journal.entries.slice(0, -3);
+    journal.entries = journal.entries.slice(0, legacyCrlf ? -4 : -3);
     const folder = join(root, "previous-migrations");
     mkdirSync(join(folder, "meta"), { recursive: true });
     writeFileSync(join(folder, "meta/_journal.json"), JSON.stringify(journal));
     for (const entry of journal.entries)
       copyFileSync(join(migrations, `${entry.tag}.sql`), join(folder, `${entry.tag}.sql`));
+    if (legacyCrlf) {
+      const sql = join(folder, "0063_semantic_history_index.sql");
+      writeFileSync(sql, readFileSync(sql, "utf8").replace(/\r?\n/g, "\r\n"));
+    }
     await runMigrations(handle, folder);
   } else await runMigrations(handle);
   handle.close();
@@ -103,4 +107,16 @@ test("preactivation refuses a changed copy, live sidecars, backup aliases and ta
     verifyVpsPreactivation({ database: copy, backupManifest: changed.manifestPath }),
     /MIGRATION_HISTORY_MISMATCH/
   );
+});
+
+test("preactivation accepts the exact deployed CRLF migration 0063 without rewriting history", async (t) => {
+  const f = await fixture(t, true, true);
+  const before = readFileSync(f.file);
+  const report = await verifyVpsPreactivation({
+    database: f.file,
+    backupManifest: f.backupManifest
+  });
+  assert.equal(report.migrations_applied_to_disposable_copy, 4);
+  assert.deepEqual(readFileSync(f.file), before);
+  assert.deepEqual(readFileSync(join(f.root, "backups", f.backup.file)), before);
 });

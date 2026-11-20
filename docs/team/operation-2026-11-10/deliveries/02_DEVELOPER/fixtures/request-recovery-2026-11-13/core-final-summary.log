@@ -1,0 +1,80 @@
+All matched files use Prettier code style!
+@cosmora/contracts:lint: cache miss, executing 72ebaef2c7194ee3
+@cosmora/config:lint: cache hit, replaying logs 333363d9765f3394
+@cosmora/web:lint: cache miss, executing 13d20c202a021858
+@cosmora/policy-engine:lint: cache miss, executing 20aa9aa57effd7b7
+@cosmora/model-gateway:lint: cache miss, executing f3138205e1286a96
+@cosmora/core:lint: cache miss, executing 2334a7395e969ba6
+@cosmora/db:lint: cache miss, executing ece8b85d205e2015
+@cosmora/tool-runtime:lint: cache miss, executing d802a4521c0f3506
+@cosmora/api:lint: cache miss, executing bab2620db55625f5
+ Tasks:    9 successful, 9 total
+@cosmora/contracts:typecheck: cache miss, executing b0bbfc30b89d2ab8
+@cosmora/config:typecheck: cache hit, replaying logs 9006139866ebcb1c
+@cosmora/policy-engine:typecheck: cache miss, executing 66a2995408a26046
+@cosmora/model-gateway:typecheck: cache miss, executing 6152e6a687970649
+@cosmora/core:typecheck: cache miss, executing df967728cc1de780
+@cosmora/web:typecheck: cache miss, executing 2cbd033457f59e05
+@cosmora/db:typecheck: cache miss, executing 6862a5f146e0bb5a
+@cosmora/tool-runtime:typecheck: cache miss, executing 15c2df07313f9b40
+@cosmora/api:typecheck: cache miss, executing 47b982da87c0a0eb
+ Tasks:    9 successful, 9 total
+@cosmora/contracts:test: cache miss, executing 45c0a0c5479bc9ca
+@cosmora/contracts:build: cache miss, executing d9abb74e33f3c2a4
+@cosmora/config:test: cache hit, replaying logs e63c97e588ec8ff8
+@cosmora/config:test:  Test Files  2 passed (2)
+@cosmora/config:test:       Tests  17 passed (17)
+@cosmora/config:build: cache hit, replaying logs 36f23f50e096a6e0
+@cosmora/policy-engine:build: cache miss, executing 3db9e2c4037d6fc7
+@cosmora/model-gateway:test: cache miss, executing 073e5fb09e6a5ff6
+@cosmora/web:test: cache miss, executing 2a8443920898601f
+@cosmora/policy-engine:test: cache miss, executing a66eb02ef661d547
+@cosmora/core:build: cache miss, executing 97aa6ca00170c4ee
+@cosmora/model-gateway:build: cache miss, executing a6ada404d3586f7f
+@cosmora/core:test: cache miss, executing 2e110ecc0116727b
+@cosmora/db:test: cache miss, executing 07dd2b5625704c1c
+@cosmora/db:build: cache miss, executing 8350390ef068952c
+@cosmora/policy-engine:test:  Test Files  4 passed (4)
+@cosmora/policy-engine:test:       Tests  43 passed (43)
+@cosmora/model-gateway:test:  Test Files  11 passed (11)
+@cosmora/model-gateway:test:       Tests  151 passed (151)
+@cosmora/tool-runtime:build: cache miss, executing d81c91a0cc9e8ba8
+@cosmora/tool-runtime:test: cache miss, executing df24016d0e66d4eb
+@cosmora/contracts:test:  Test Files  32 passed (32)
+@cosmora/contracts:test:       Tests  206 passed (206)
+@cosmora/api:test: cache miss, executing 66350dc9b793791a
+@cosmora/tool-runtime:test:  Test Files  6 passed | 2 skipped (8)
+@cosmora/tool-runtime:test:       Tests  86 passed | 5 skipped (91)
+@cosmora/web:test:  Test Files  69 passed (69)
+@cosmora/web:test:       Tests  394 passed (394)
+@cosmora/core:test:  Test Files  40 passed (40)
+@cosmora/core:test:       Tests  425 passed (425)
+@cosmora/web:test: PASS 1: strict Russian decimals, ID preserve, duplicates and quoted CRLF
+@cosmora/web:test: PASS 2: large 80,000x10 CSV (800K cells), cross-quoted fields, no silent row trim
+@cosmora/web:test: PASS 3: hard UTF-8 byte/rows/columns/cells, malformed quotes
+@cosmora/web:test: PASS 4: workspace rejects invalid schema/types/columns/row shape, exact dup headers
+@cosmora/web:test: PASS 5: scatter numeric axes, missing/invalid counts, stable X sort and SVG extreme finite
+@cosmora/web:test: PASS 6: CSV spreadsheet injection including invisible prefixes; JSON duplicate headers
+@cosmora/web:test: PASS 7: large JSON export overflow aborts explicitly, CSV full export and bounded attachment rows
+@cosmora/web:test: PASS 8: export/workspace cancellation mid-batch
+@cosmora/web:test: PASS 9: REAL worker parse, filter, numeric scatter response
+@cosmora/web:test: PASS 10: REAL worker termination during 80k-row parse (no late loaded message)
+@cosmora/db:test:  Test Files  40 passed (40)
+@cosmora/db:test:       Tests  230 passed (230)
+@cosmora/api:test:  Test Files  108 passed (108)
+@cosmora/api:test:       Tests  1085 passed | 1 skipped (1086)
+ Tasks:    16 successful, 16 total
+@cosmora/config:build: cache hit, replaying logs 36f23f50e096a6e0
+@cosmora/contracts:build: cache hit, replaying logs d9abb74e33f3c2a4
+@cosmora/policy-engine:build: cache hit, replaying logs 3db9e2c4037d6fc7
+@cosmora/model-gateway:build: cache hit, replaying logs a6ada404d3586f7f
+@cosmora/db:build: cache hit, replaying logs 8350390ef068952c
+@cosmora/web:build: cache miss, executing c57dbc618e8f6984
+@cosmora/tool-runtime:build: cache hit, replaying logs d81c91a0cc9e8ba8
+@cosmora/core:build: cache hit, replaying logs 97aa6ca00170c4ee
+@cosmora/api:build: cache miss, executing 3a611fbcf4de0f4b
+ Tasks:    9 successful, 9 total
+PASS root library FTS, original bytes and cross-owner isolation
+PASS archive rejects changed binary metadata; non-destructive fence released
+PASS complete ZIP export with original and manifest under quiesce
+PASS confirmed owner deletion (retained usage without duplicate hold, auth/ledger/other owner intact, late writes denied)

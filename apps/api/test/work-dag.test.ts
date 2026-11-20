@@ -48,11 +48,13 @@ const nodes: WorkDagNodeInput[] = [
 async function fixture(
   options: {
     path?: string;
+    maxConcurrentWork?: number;
     ownerBudget?: WorkOwnerBudget;
     onCall?: (request: ModelRequest, signal: AbortSignal) => Promise<void>;
     output?: (request: ModelRequest) => unknown;
   } = {}
 ) {
+  const cap = options.maxConcurrentWork ?? 1;
   const db = openDatabase(options.path ?? ":memory:");
   let closed = false;
   const close = () => {
@@ -65,7 +67,7 @@ async function fixture(
   await runMigrations(db);
   const accountStore = new AccountStore(db.sqlite);
   accountStore.migrate();
-  const store = new ManagerWorkStore(db.sqlite),
+  const store = new ManagerWorkStore(db.sqlite, { maxConcurrentWork: cap }),
     projects = new ProjectStore(db.sqlite),
     policy = new PolicyStore(db.sqlite),
     emergency = new EmergencyStopStore(db.sqlite);
@@ -135,7 +137,8 @@ async function fixture(
     emergency,
     gateway,
     manager: runtime.manager,
-    ownerBudget: options.ownerBudget ?? accountStore
+    ownerBudget: options.ownerBudget ?? accountStore,
+    maxConcurrentWork: cap
   };
   const coordinator = new ManagerWorkCoordinator(deps),
     dag = coordinator.dag;
@@ -942,10 +945,20 @@ describe("executable durable Work DAG", () => {
     });
     try {
       const base = "/api/v1/projects/" + f.project.id + "/work-dags/" + graph.id;
+      const materials = f.projects.setMaterials(f.project.id, owner, {
+        version: 0,
+        instructions: "Original project brief",
+        attachments: [{ name: "source.txt", content: "Original source evidence" }]
+      })!;
       await app.inject({ url: base });
       expect(f.calls).toHaveLength(0); // GET is not a paid dispatcher.
       graph = await autoTick(f, graph.id);
       expect(graph.nodes.map((node) => node.status)).toEqual(["completed", "pending"]);
+      f.projects.setMaterials(f.project.id, owner, {
+        version: materials.version,
+        instructions: "Revised project brief",
+        attachments: [{ name: "source.txt", content: "Revised source evidence" }]
+      });
       expect(() => f.dag.edit(graph.id, owner, graph.version, nodes.slice(0, 2))).toThrow(
         "AUTO_PLAN_ACTIVE"
       );
@@ -965,6 +978,13 @@ describe("executable durable Work DAG", () => {
         graph.nodes[0]!.artifacts[0]!.id
       ]);
       expect(f.calls[3]!.messages[1]!.content).toContain("Dependency evidence in a real file");
+      for (const call of f.calls) {
+        const input = call.messages[1]!.content;
+        expect(input).toContain("Original project brief");
+        expect(input).toContain("Original source evidence");
+        expect(input).not.toContain("Revised project brief");
+        expect(input).not.toContain("Revised source evidence");
+      }
       const response = await app.inject({ url: base + "/results" });
       expect(response.statusCode).toBe(200);
       expect(response.headers["cache-control"]).toBe("private, no-store");
@@ -1034,6 +1054,34 @@ describe("executable durable Work DAG", () => {
       await app.close();
     }
   });
+  it("exports a ZIP above the JSON limit with every completed file intact", async () => {
+    const content = "界".repeat(63_000);
+    const f = await fixture({
+      output: (request) =>
+        request.task_type === "manager_work_draft"
+          ? { files: [{ name: "result.md", content }] }
+          : undefined
+    });
+    let graph = f.dag.create(f.project.id, owner, owner, {
+      client_request_id: "large-zip",
+      title: "Large result bundle",
+      nodes: Array.from({ length: 11 }, (_, i) => ({
+        id: "file-" + i,
+        title: "File " + i,
+        goal: "Create a report",
+        depends_on: []
+      }))
+    });
+    for (const node of graph.nodes) graph = await f.execute(graph, node.id);
+    expect(graph.nodes.every((node) => node.status === "completed")).toBe(true);
+    expect(() => f.dag.results(graph.id, owner)).toThrow("RESULTS_LIMIT");
+    const zip = f.dag.resultsArchive(graph.id, owner);
+    expect(zip.readUInt32LE(0)).toBe(0x04034b50);
+    expect(zip.includes(Buffer.from('"complete": true'))).toBe(true);
+    expect(zip.includes(Buffer.from("steps/11/011-result.md"))).toBe(true);
+    expect(zip.length).toBeGreaterThan(Buffer.byteLength(content) * 11);
+  });
+
   it("stops before a new child exceeds the total budget and counts earlier attempts after explicit continuation", async () => {
     const f = await fixture();
     let graph = arm(f, f.create(), 3);
@@ -1153,6 +1201,209 @@ describe("executable durable Work DAG", () => {
     expect(f.calls).toHaveLength(4);
     expect(restarted.dag.get(graph.id, owner)!.nodes[0]!.attempts[0]!.work_id).toBe(completed);
   });
+  it("pauses an admitted step on restart and resumes the same attempt explicitly", async () => {
+    const f = await fixture();
+    const materials = f.projects.setMaterials(f.project.id, owner, {
+      version: 0,
+      instructions: "",
+      attachments: [{ name: "terms.txt", content: "Original terms: 12 months" }]
+    })!;
+    let graph = await autoTick(f, arm(f, f.create()).id);
+    f.projects.setMaterials(f.project.id, owner, {
+      version: materials.version,
+      instructions: "",
+      attachments: [{ name: "terms.txt", content: "Updated terms: 24 months" }]
+    });
+    const previous = graph.nodes[0]!.artifacts[0]!;
+    f.dag.advance();
+    const queued = f.store.pending()[0]!;
+    expect(queued.dag_binding?.node_id).toBe("document");
+
+    const restarted = new ManagerWorkCoordinator(f.deps);
+    restarted.dag.recoverAutomation();
+    restarted.dag.advance();
+    graph = restarted.dag.get(graph.id, owner)!;
+    expect(graph.execution?.reason).toBe("RESTART_REQUIRES_RESUME");
+    expect(graph.nodes[1]).toMatchObject({ status: "blocked", blocked_reason: "PAUSED" });
+    expect(f.store.pending()).toEqual([]);
+    await restarted.execute(queued.id, owner);
+    expect(f.calls).toHaveLength(2);
+    expect(restarted.dag.results(graph.id, owner).files.map((file) => file.id)).toEqual([
+      previous.id
+    ]);
+
+    graph = restarted.dag.control(graph.id, owner, {
+      version: graph.version,
+      action: "resume_step",
+      node_id: "document"
+    });
+    await restarted.execute(queued.id, owner);
+    graph = restarted.dag.get(graph.id, owner)!;
+    expect(graph.nodes[1]!.status).toBe("completed");
+    expect(graph.nodes[1]!.attempts.map((attempt) => attempt.work_id)).toEqual([queued.id]);
+    expect(graph.nodes[0]!.artifacts[0]!.sha256).toBe(previous.sha256);
+    expect(f.calls[2]!.messages[1]!.content).toContain("Original terms: 12 months");
+    expect(f.calls[2]!.messages[1]!.content).not.toContain("Updated terms: 24 months");
+    expect(f.calls[2]!.messages[1]!.content).toContain("Dependency evidence in a real file");
+    const archive = restarted.dag.resultsArchive(graph.id, owner);
+    expect(archive.includes(Buffer.from("steps/01/001-result.md"))).toBe(true);
+    expect(archive.includes(Buffer.from("steps/02/002-result.md"))).toBe(true);
+    expect(f.calls).toHaveLength(4);
+  });
+
+  // Stage-three instruction, item 2: one dataset, one coherent journey through
+  // normal launch, pause, restart, explicit retry and honest partial export.
+  // Cancellation is terminal and retry needs a failed step, so those two are a
+  // short separate branch on the same fixture (below), not a forced fake state.
+  it("walks one material set through launch, pause, restart, explicit retry and an honest partial archive", async () => {
+    const f = await fixture();
+    const materials = f.projects.setMaterials(f.project.id, owner, {
+      version: 0,
+      instructions: "Original project brief",
+      attachments: [{ name: "source.txt", content: "Original source evidence" }]
+    })!;
+    let graph = f.dag.create(f.project.id, owner, owner, {
+      client_request_id: "stage3-one-dataset",
+      title: "Stage-three coherent plan",
+      nodes: nodes.slice(0, 2).map((node) => ({ ...node, requires_critic: true }))
+    });
+    // Owner must explicitly accept the cost before any dispatcher runs.
+    expect(() =>
+      f.dag.control(graph.id, owner, {
+        version: graph.version,
+        action: "run_plan",
+        max_model_requests: 9
+      })
+    ).toThrow("EXPLICIT_RETRY_REQUIRED");
+    graph = arm(f, graph, 9);
+
+    // Normal launch: the first wave completes the brief and admits the dependent
+    // document child into the queue, but does not run it yet (cap = 1).
+    graph = await autoTick(f, graph.id);
+    expect(graph.nodes.map((node) => node.status)).toEqual(["completed", "pending"]);
+    const briefArtifact = graph.nodes[0]!.artifacts[0]!;
+    for (const call of f.calls) {
+      expect(call.messages[1]!.content).toContain("Original project brief");
+      expect(call.messages[1]!.content).toContain("Original source evidence");
+    }
+
+    // Honest partial export BEFORE the plan finishes: only the completed brief,
+    // with complete:false and an accurate completed_steps counter.
+    const partial = f.dag.resultsArchive(graph.id, owner);
+    expect(partial.readUInt32LE(0)).toBe(0x04034b50);
+    expect(partial.includes(Buffer.from('"complete": false'))).toBe(true);
+    expect(partial.includes(Buffer.from('"completed_steps": 1'))).toBe(true);
+    expect(partial.includes(Buffer.from("steps/01/001-result.md"))).toBe(true);
+    expect(partial.includes(Buffer.from("steps/02/002-result.md"))).toBe(false);
+    const partialJson = await (async () => {
+      const app = buildApp({
+        config: f.config,
+        database: f.db,
+        projectStore: f.projects,
+        managerWorkStore: f.store,
+        managerWorkCoordinator: f.coordinator
+      });
+      try {
+        const base = "/api/v1/projects/" + f.project.id + "/work-dags/" + graph.id;
+        const response = await app.inject({ url: base + "/results" });
+        expect(response.statusCode).toBe(200);
+        return response.json<{ files: { content: string; sha256: string }[] }>();
+      } finally {
+        await app.close();
+      }
+    })();
+    expect(partialJson.files).toHaveLength(1);
+    for (const file of partialJson.files)
+      expect(createHash("sha256").update(file.content).digest("hex")).toBe(file.sha256);
+
+    // Pause is a real project-mode transition; the admitted dependent child is
+    // held, no new model call is made while paused.
+    const callsBeforePause = f.calls.length;
+    graph = f.dag.control(graph.id, owner, { version: graph.version, action: "pause" });
+    expect(graph.mode).toBe("paused");
+    expect(f.calls).toHaveLength(callsBeforePause);
+    graph = f.dag.control(graph.id, owner, { version: graph.version, action: "resume" });
+    expect(graph.mode).toBe("active");
+
+    // Restart: a fresh coordinator reads the durable checkpoint, refuses to
+    // auto-resume and preserves the already completed brief (no replay).
+    f.dag.advance();
+    const queued = f.store.pending()[0]!;
+    expect(queued.dag_binding?.node_id).toBe("document");
+    const restarted = new ManagerWorkCoordinator(f.deps);
+    restarted.dag.recoverAutomation();
+    restarted.dag.advance();
+    graph = restarted.dag.get(graph.id, owner)!;
+    expect(graph.execution).toMatchObject({ status: "paused", reason: "RESTART_REQUIRES_RESUME" });
+    expect(graph.nodes[1]).toMatchObject({ status: "blocked", blocked_reason: "PAUSED" });
+    const callsBeforeResume = f.calls.length;
+    await restarted.execute(queued.id, owner);
+    expect(f.calls).toHaveLength(callsBeforeResume); // no generation without explicit consent
+    expect(restarted.dag.results(graph.id, owner).files.map((file) => file.id)).toEqual([
+      briefArtifact.id
+    ]);
+
+    // Explicit retry/continuation of the dependent step: same attempt, original
+    // materials, real dependency file content, no regenerated brief.
+    graph = restarted.dag.control(graph.id, owner, {
+      version: graph.version,
+      action: "resume_step",
+      node_id: "document"
+    });
+    await restarted.execute(queued.id, owner);
+    graph = restarted.dag.get(graph.id, owner)!;
+    expect(graph.nodes[1]!.status).toBe("completed");
+    expect(graph.nodes[1]!.attempts.map((attempt) => attempt.work_id)).toEqual([queued.id]);
+    expect(graph.nodes[0]!.artifacts[0]!.sha256).toBe(briefArtifact.sha256);
+    expect(f.calls.at(-1)!.messages[1]!.content).toContain("Dependency evidence in a real file");
+    expect(f.calls.at(-1)!.messages[1]!.content).toContain("Original source evidence");
+    expect(f.calls.at(-1)!.messages[1]!.content).not.toContain("Revised project brief");
+    const full = restarted.dag.resultsArchive(graph.id, owner);
+    expect(full.includes(Buffer.from('"complete": true'))).toBe(true);
+    expect(full.includes(Buffer.from('"completed_steps": 2'))).toBe(true);
+    expect(full.includes(Buffer.from("steps/02/002-result.md"))).toBe(true);
+
+    // Materials were edited mid-flight; the dependent step still used the
+    // original snapshot pinned to the plan, never the revised text.
+    f.projects.setMaterials(f.project.id, owner, {
+      version: materials.version,
+      instructions: "Revised project brief",
+      attachments: [{ name: "source.txt", content: "Revised source evidence" }]
+    });
+    for (const call of f.calls) {
+      expect(call.messages[1]!.content).not.toContain("Revised project brief");
+      expect(call.messages[1]!.content).not.toContain("Revised source evidence");
+    }
+  });
+
+  // Cancellation is a terminal branch of the same dataset: it must not invoke a
+  // paid dispatcher, must keep the completed sibling result and must refuse an
+  // implicit retry (EXPLICIT_RETRY_REQUIRED).
+  it("keeps the one-dataset journey honest for the cancellation branch", async () => {
+    const f = await fixture();
+    let graph = await f.execute(f.create(), "independent");
+    const preserved = structuredClone(graph.nodes[2]);
+    graph = arm(f, graph);
+    const calls = f.calls.length;
+    graph = f.dag.control(graph.id, owner, {
+      version: graph.version,
+      action: "cancel_step",
+      node_id: "brief"
+    });
+    expect(graph.execution).toMatchObject({ status: "stopped", reason: "STEP_CANCELLED_BY_OWNER" });
+    expect(graph.nodes.map((node) => node.status)).toEqual(["cancelled", "blocked", "completed"]);
+    expect(graph.nodes[2]).toEqual(preserved);
+    expect(f.calls).toHaveLength(calls);
+    expect(() =>
+      f.dag.control(graph.id, owner, {
+        version: graph.version,
+        action: "retry",
+        node_id: "brief",
+        acknowledge_cost: true
+      })
+    ).toThrow("EXPLICIT_RETRY_REQUIRED");
+  });
+
   it("invalidates autostart consent when an unstarted goal is edited while paused", async () => {
     const f = await fixture();
     let graph = arm(f, f.create());
@@ -1792,5 +2043,113 @@ describe("executable durable Work DAG", () => {
     expect(g.nodes[0]!.attempts[0]!.work_id).not.toBe(orphan.id);
     expect(f.store.get(orphan.id, owner)!.status).toBe("paused");
     expect(f.calls).toHaveLength(2);
+  });
+
+  describe("bounded concurrency (cap=2)", () => {
+    const directRequest = (id: string) => ({
+      client_request_id: id,
+      goal: "Create " + id,
+      worker_role: "analyst" as const,
+      max_model_requests: 3,
+      max_input_tokens: 32000,
+      max_output_tokens: 6000
+    });
+
+    it("launches two independent nodes in one wave, re-reading graph.version between CAS writes", async () => {
+      const f = await fixture({ maxConcurrentWork: 2 });
+      let graph = f.dag.create(f.project.id, owner, owner, {
+        client_request_id: "concurrent-wave",
+        title: "Concurrent wave",
+        nodes: [nodes[0]!, nodes[2]!]
+      });
+      graph = arm(f, graph, 9);
+      const versionBefore = graph.version;
+      f.dag.advance();
+      const launched = f.dag.get(graph.id, owner)!;
+      expect(launched.nodes.filter((node) => node.attempts.length)).toHaveLength(2);
+      expect(launched.version).toBeGreaterThan(versionBefore);
+      expect(launched.execution_waves).toEqual([["brief", "independent"]]);
+      // Both children were prepared and bound without a STALE_DAG conflict.
+      for (const node of launched.nodes)
+        expect(f.store.get(node.attempts[0]!.work_id, owner)?.dag_binding?.bound).toBe(true);
+      await Promise.all(f.store.pending().map((child) => f.coordinator.execute(child.id, owner)));
+      expect(f.dag.get(graph.id, owner)!.nodes.every((node) => node.status === "completed")).toBe(
+        true
+      );
+    });
+
+    it("admits exactly the shared cap, then runs a fenced third Work after release", async () => {
+      const f = await fixture({ maxConcurrentWork: 2 });
+      const works = ["first", "second", "third"].map((id) =>
+        f.store.create(f.project.id, owner, owner, directRequest(id))!
+      );
+      await Promise.all(works.slice(0, 2).map((w) => f.coordinator.execute(w.id, owner)));
+      expect(works.slice(0, 2).every((w) => f.store.get(w.id, owner)?.status === "completed")).toBe(
+        true
+      );
+      expect(f.store.get(works[2]!.id, owner)?.status).toBe("queued");
+      await f.coordinator.execute(works[2]!.id, owner);
+      expect(f.store.get(works[2]!.id, owner)?.status).toBe("completed");
+    });
+
+    it("reserves one budget per first-wave node (up to cap) without double-charging", async () => {
+      const f = await fixture({ maxConcurrentWork: 2 });
+      const wide = f.dag.create(f.project.id, owner, owner, {
+        client_request_id: "budget-cap",
+        title: "Budget cap",
+        nodes: [nodes[0]!, nodes[2]!]
+      });
+      // Two independent ready nodes: the first wave reserves 3 * 2 = 6.
+      expect(() => arm(f, wide, 5)).toThrow("PLAN_REQUEST_LIMIT");
+      expect(() => arm(f, wide, 6)).not.toThrow();
+      const chained = f.dag.create(f.project.id, owner, owner, {
+        client_request_id: "budget-chained",
+        title: "Chained budget",
+        nodes: [nodes[0]!, nodes[1]!]
+      });
+      // A dependency plan has only one ready node in the first wave: reserve 3,
+      // not 3 * cap, so the UI's nodes*3 limit (6) still admits the whole plan.
+      expect(() => arm(f, chained, 6)).not.toThrow();
+      const g = await autoTick(f, chained.id);
+      expect(g.nodes[0]!.status).toBe("completed");
+      expect(g.execution?.status).not.toBe("stopped");
+    });
+
+    it("never exceeds the cap while a first part is still executing", async () => {
+      let begin!: () => void, finish!: () => void;
+      const began = new Promise<void>((resolve) => {
+        begin = resolve;
+      });
+      const late = new Promise<void>((resolve) => {
+        finish = resolve;
+      });
+      let first = true;
+      const f = await fixture({
+        maxConcurrentWork: 2,
+        onCall: async () => {
+          if (first) {
+            first = false;
+            begin();
+            await late;
+          }
+        }
+      });
+      const graph = arm(f, f.create(), 9);
+      f.dag.advance();
+      const children = f.store.pending().map((w) => w.id);
+      expect(children).toHaveLength(2);
+      const runs = children.map((id) => f.coordinator.execute(id, owner));
+      await began;
+      // A third direct launch is still fenced by the shared in-memory cap.
+      const extra = f.store.create(f.project.id, owner, owner, directRequest("extra"))!;
+      await f.coordinator.execute(extra.id, owner);
+      expect(f.store.get(extra.id, owner)?.status).toBe("queued");
+      expect(f.coordinator.capacity()).toBe(2);
+      finish();
+      await Promise.all(runs);
+      expect(children.every((id) => f.store.get(id, owner)?.status === "completed")).toBe(true);
+      // The dependent step is still pending until the next wave reconciles it.
+      expect(f.dag.get(graph.id, owner)!.nodes[1]!.attempts).toHaveLength(0);
+    });
   });
 });

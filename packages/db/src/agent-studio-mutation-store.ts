@@ -22,6 +22,7 @@ export type AgentStudioCreateOperation = Extract<
   | "proposal.delegated"
   | "team.plan"
   | "team.confirm"
+  | "team.activate"
 >;
 
 export interface AgentStudioMutationStoreOptions {

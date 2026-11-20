@@ -1,4 +1,5 @@
 import { EnvironmentSecretResolver, loadServerConfig } from "@cosmora/config";
+import { WORK_EXECUTION_CONCURRENCY } from "@cosmora/contracts";
 import { RuntimeClock } from "@cosmora/model-gateway";
 import {
   AgentBlueprintStore,
@@ -13,6 +14,7 @@ import {
   AgentInstanceStore,
   AgentStudioMutationStore,
   AgentTeamStore,
+  AgentTeamRunStore,
   DemoManagerStore,
   ManagerWorkStore,
   EmergencyStopStore,
@@ -20,12 +22,14 @@ import {
   openDatabase,
   PolicyStore,
   PatternLibraryStore,
+  ScheduledDispatchStore,
   runMigrations,
   StepUpProofStore,
   UsageStore
 } from "@cosmora/db";
 import { validateAgentDelegation } from "@cosmora/policy-engine";
 import { buildApp } from "./app.js";
+import { TeamGraphAdapter } from "./team-graph-adapter.js";
 import {
   BearerSessionIdentityResolver,
   LOCAL_DEVELOPMENT_IDENTITY,
@@ -129,6 +133,7 @@ process.once("SIGTERM", () => void shutdown("SIGTERM"));
 try {
   await runMigrations(database);
   const accountStore = new AccountStore(database.sqlite);
+  const scheduledDispatchStore = new ScheduledDispatchStore(database.sqlite);
   const recoveredAccountHolds = accountStore.reconcileKnownCanonicalHolds();
   const modelRuntime = await buildModelRuntime(config, {
     clock: new RuntimeClock({ timeZone: process.env.KOSMORA_TIME_ZONE ?? "Europe/Moscow" }),
@@ -193,12 +198,17 @@ try {
   }
   const recoveredRuns = projectStore.recoverInterruptedRuns();
   const recoveredChatRuns = generalChatStore.recoverInterruptedRuns();
-  const managerWorkStore = new ManagerWorkStore(database.sqlite);
+  const managerWorkStore = new ManagerWorkStore(database.sqlite, {
+    maxConcurrentWork: WORK_EXECUTION_CONCURRENCY
+  });
   managerWorkStore.contextMemory.semanticRanker = semanticRanker;
   managerWorkStore.contextMemory.indexedRecall = semanticIndex;
   const policyStore = new PolicyStore(database.sqlite);
   managerWorkCoordinator = new ManagerWorkCoordinator({
+    ...(config.managerTimeoutMs === 0 ? { operationTimeoutMs: 0 } : {}),
     ownerBudget: accountStore,
+    accountStore,
+    maxConcurrentWork: WORK_EXECUTION_CONCURRENCY,
     store: managerWorkStore,
     projects: projectStore,
     policy: policyStore,
@@ -295,6 +305,7 @@ try {
     delegationValidator: validateAgentDelegation
   });
   app = buildApp({
+    scheduledDispatchStore,
     indexedRecall: semanticIndex,
     semanticRanker,
     googleDrive,
@@ -396,6 +407,10 @@ try {
     agentTeamStore: new AgentTeamStore(database.sqlite, {
       blueprints: agentBlueprintStore,
       instances: agentInstanceStore
+    }),
+    agentTeamRunStore: new AgentTeamRunStore(database.sqlite, {
+      instances: agentInstanceStore,
+      graph: new TeamGraphAdapter(managerWorkCoordinator.dag, managerWorkStore)
     }),
     agentStudioMutationStore: new AgentStudioMutationStore(database.sqlite),
     modelGateway: modelRuntime.gateway,

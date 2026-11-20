@@ -1,0 +1,48 @@
+$ playwright test -c playwright.composer.config.ts --list
+Listing tests:
+  [chromium] › chat-reliability.spec.ts:47:5 › new chat during a delayed initial read stays usable and ignores the late response
+  [chromium] › chat-reliability.spec.ts:87:5 › restores text and files after closing the tab, isolates chats, removes and clears accepted drafts
+  [chromium] › chat-reliability.spec.ts:184:5 › retains project materials across reload without leaking into the new-chat draft
+  [chromium] › chat-reliability.spec.ts:205:5 › recovers text with invalid saved materials and retains a draft on rejected submission
+  [chromium] › chat-reliability.spec.ts:237:5 › prepares a phone-sized JPEG, restores thumbnail and rejects unsafe dimensions
+  [chromium] › chat-reliability.spec.ts:291:5 › keeps attachment controls keyboard reachable with clear names and thumbnail text
+  [chromium] › chat-reliability.spec.ts:313:5 › announces rejected attachment type and keeps the draft editor usable
+  [chromium] › chat-reliability.spec.ts:326:5 › restored attachment drafts expose the image name to assistive technology
+  [chromium] › chat-reliability.spec.ts:358:7 › retries an accepted personal chat message with its original attachment after a lost response
+  [chromium] › chat-reliability.spec.ts:358:7 › retries an accepted project chat message with its original attachment after a lost response
+  [chromium] › chat-reliability.spec.ts:419:5 › two uncertain sends remain independently retryable after navigation and reload
+  [chromium] › chat-reliability.spec.ts:488:5 › composer actions belong to their own chat and stay out of another chat request
+  [chromium] › chat-reliability.spec.ts:545:5 › reload and lost network recover the same run without duplicate POSTs or messages
+  [chromium] › chat-reliability.spec.ts:578:5 › late history and stream cannot affect the newly selected chat
+  [chromium] › chat-reliability.spec.ts:611:5 › long Markdown retains the complete answer in copy and chat export
+  [chromium] › chat-reliability.spec.ts:643:5 › ordinary-chat cancellation after reload restores a request without sending it
+  [chromium] › chat-reliability.spec.ts:668:5 › a pre-completion history snapshot cannot reopen a completed run
+  [chromium] › chat-reliability.spec.ts:703:5 › a lost acknowledgement reload restores the exact text action before retrying one request
+  [chromium] › composer-draft-races.spec.ts:21:5 › pagehide persists the last input before React commits its passive effects
+  [chromium] › composer-draft-races.spec.ts:46:5 › pagehide persists removal of a file without resurrecting the old attachment
+  [chromium] › composer-draft-races.spec.ts:69:5 › native text-only pagehide flush uses the latest input rather than an older render
+  [chromium] › composer-draft-races.spec.ts:107:7 › chat rejection preserves exact whitespace and file bytes across reload
+  [chromium] › composer-draft-races.spec.ts:107:7 › project rejection preserves exact whitespace and file bytes across reload
+  [chromium] › composer-draft-races.spec.ts:182:5 › closing an unchanged tab does not overwrite another tab's newer draft
+  [chromium] › composer-draft-races.spec.ts:198:5 › a file finishing after chat navigation cannot leak or replace the next chat's draft
+  [chromium] › composer-draft-races.spec.ts:246:5 › a follow-up inserted just before pagehide survives without an automatic send
+  [chromium] › composer-draft-races.spec.ts:280:5 › an input notification already tracked before React change survives attaching a file
+  [chromium] › composer-draft-races.spec.ts:332:7 › a late acceptance cannot erase a newer prepared follow-up
+  [chromium] › composer-draft-races.spec.ts:332:7 › a late rejection cannot erase a newer prepared follow-up
+  [chromium] › composer-draft-races.spec.ts:384:5 › an acceptance cannot clear another tab's newer stored draft
+  [chromium] › run-draft-recovery.spec.ts:77:9 › chat: restores a failed request before any assistant, persists exact materials and sends nothing
+  [chromium] › run-draft-recovery.spec.ts:77:9 › chat: restores a cancelled request before any assistant, persists exact materials and sends nothing
+  [chromium] › run-draft-recovery.spec.ts:121:9 › chat: an existing file draft is protected from request recovery
+  [chromium] › run-draft-recovery.spec.ts:121:9 › chat: an existing whitespace draft is protected from request recovery
+  [chromium] › run-draft-recovery.spec.ts:152:7 › chat: a stale recovery click cannot replace newer input in the same browser turn
+  [chromium] › run-draft-recovery.spec.ts:175:7 › chat: recovery cannot discard a file that is still being read
+  [chromium] › run-draft-recovery.spec.ts:77:9 › project: restores a failed request before any assistant, persists exact materials and sends nothing
+  [chromium] › run-draft-recovery.spec.ts:77:9 › project: restores a cancelled request before any assistant, persists exact materials and sends nothing
+  [chromium] › run-draft-recovery.spec.ts:121:9 › project: an existing file draft is protected from request recovery
+  [chromium] › run-draft-recovery.spec.ts:121:9 › project: an existing whitespace draft is protected from request recovery
+  [chromium] › run-draft-recovery.spec.ts:152:7 › project: a stale recovery click cannot replace newer input in the same browser turn
+  [chromium] › run-draft-recovery.spec.ts:175:7 › project: recovery cannot discard a file that is still being read
+  [chromium] › terminal-run-recovery.spec.ts:4:7 › a cancelled run without an assistant does not reopen from stale history
+  [chromium] › terminal-run-recovery.spec.ts:4:7 › a failed run without an assistant does not reopen from stale history
+  [chromium] › terminal-run-recovery.spec.ts:4:7 › a completed run without an assistant does not reopen from stale history
+Total: 45 tests in 4 files

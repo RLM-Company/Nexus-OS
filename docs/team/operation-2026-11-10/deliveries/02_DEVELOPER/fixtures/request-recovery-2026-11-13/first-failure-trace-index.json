@@ -1,0 +1,25 @@
+{
+  "reason": "Test counter incorrectly included existing pin import POST; source behavior already restored and persisted request. Retained traces remain local to avoid publishing unnecessary source snapshots.",
+  "traces": [
+    {
+      "name": "run-draft-recovery-chat-re-cf6f0-materials-and-sends-nothing-chromium.zip",
+      "sha256": "2ef21774abaadfd2e6bf692b078a759cf5d47f43a3db8f91e698f0994d67dadf",
+      "bytes": 1319867
+    },
+    {
+      "name": "run-draft-recovery-chat-re-ef663-materials-and-sends-nothing-chromium.zip",
+      "sha256": "086d63016a39f2f4470075b37ba69224e53e8ba7af4019322235868f5d5973ad",
+      "bytes": 1641634
+    },
+    {
+      "name": "run-draft-recovery-project-07438-materials-and-sends-nothing-chromium.zip",
+      "sha256": "a7b903c19f7da33eefc4f1f9cc3a5dee561243f5bb0a93a5e6259e60fa4b74fe",
+      "bytes": 1635454
+    },
+    {
+      "name": "run-draft-recovery-project-7f1ab-materials-and-sends-nothing-chromium.zip",
+      "sha256": "728e7b1372f548289ae8d63225ea153e9e5f7e427a6a29f2d0d93261017bffd0",
+      "bytes": 1645144
+    }
+  ]
+}

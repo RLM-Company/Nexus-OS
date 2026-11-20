@@ -28,7 +28,7 @@ test("extracts real PDF and DOCX locally, sends their text and restores it from 
   page
 }) => {
   await page.goto("/");
-  await expect(page.getByRole("button", { name: "Прикрепить файл", exact: true })).toBeEnabled();
+  await expect(page.getByRole("button", { name: "Добавить в чат", exact: true })).toBeEnabled();
   const docx = zipSync({
     "word/document.xml": strToU8(
       '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>Требования Kosmora &amp; код</w:t></w:r></w:p></w:body></w:document>'
@@ -77,7 +77,7 @@ test("extracts real PDF and DOCX locally, sends their text and restores it from 
 
 test("bounds DOCX decompression and rejects corrupt images before sending", async ({ page }) => {
   await page.goto("/");
-  await expect(page.getByRole("button", { name: "Прикрепить файл", exact: true })).toBeEnabled();
+  await expect(page.getByRole("button", { name: "Добавить в чат", exact: true })).toBeEnabled();
   const zip = zipSync({ "word/document.xml": strToU8("x".repeat(600_000)) });
   const input = page.getByLabel("Текстовые файлы и код");
   await input.setInputFiles({
@@ -99,7 +99,7 @@ test("stores a real PNG with a multimodal payload, preserving the image when the
   page
 }) => {
   await page.goto("/");
-  await expect(page.getByRole("button", { name: "Прикрепить файл", exact: true })).toBeEnabled();
+  await expect(page.getByRole("button", { name: "Добавить в чат", exact: true })).toBeEnabled();
   const data = await page.evaluate(() => {
     const canvas = document.createElement("canvas");
     canvas.width = 10;

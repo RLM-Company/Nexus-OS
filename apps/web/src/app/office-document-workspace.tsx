@@ -126,13 +126,15 @@ export function OfficeDocumentWorkspace() {
     setBusy(false);
     setError("");
   };
-  const reset = () => {
-    cancel();
+  const clearPlan = useCallback(() => {
     setPreview(null);
     setOperations([]);
     setEditingIndex(null);
     setResult(null);
-    setError("");
+  }, []);
+  const reset = () => {
+    cancel();
+    clearPlan();
   };
   useEffect(() => () => abort.current?.abort(), []);
   const resultUrl = result?.url;
@@ -174,12 +176,14 @@ export function OfficeDocumentWorkspace() {
         signal
       );
       if (current()) {
+        clearPlan();
+        setPageHistory([]);
         setSource(selected);
         setView(opened);
         setTarget(opened.targets[0]?.id ?? "");
       }
     },
-    []
+    [clearPlan]
   );
   useEffect(() => {
     const id = new URLSearchParams(window.location.search).get("officeRestore");
@@ -311,13 +315,10 @@ export function OfficeDocumentWorkspace() {
           onChange={(e) => {
             const file = e.currentTarget.files?.[0];
             e.currentTarget.value = "";
-            reset();
-            setView(null);
-            setSource(null);
-            setPageHistory([]);
+
             if (!file) return;
             void run(async (signal, current) => {
-              if (file.size > 2 * 1024 * 1024) throw Error("Максимум 2 МиБ");
+              if (file.size > DRIVE_OFFICE_FILE_MAX_BYTES) throw Error("Максимум 2 МиБ");
               const bytes = new Uint8Array(await file.arrayBuffer());
               let binary = "";
               for (let i = 0; i < bytes.length; i += 8192)

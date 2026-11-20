@@ -1,0 +1,16 @@
+{
+  "base_sha": "281604b726e25118f3edb80e6b2108dc44368339",
+  "source_commits": [
+    "9c25062af690aed3d86a6b7850b9e6197ee58e69",
+    "6d3fd5a8c46660062a5a4771c34a8aebdec28e7d",
+    "44eb6f1c45ae80842006c57638eee39c0ea0669c"
+  ],
+  "source_tree": "4867702f895c341c2a0d9d87cbb53cc787ab2e3d",
+  "github_local_tree_match": true,
+  "closed_pr_566_updated": false,
+  "main_ref_written_by_this_session": false,
+  "force_push": false,
+  "new_branch": "ops/developer-request-recovery-2026-11-13",
+  "main_synced_before_publication": "501d403f8e95c2ced82f88be13b04b18789baa40",
+  "local_core_base_is_281_not_501": true
+}

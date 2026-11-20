@@ -1,0 +1,323 @@
+[WebServer] (node:26278) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:26292) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:26292) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:26313) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] $ tsc -p tsconfig.build.json
+[WebServer] (node:26340) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] $ node scripts/prepare-pdf-worker.mjs && next build
+[WebServer] (node:26366) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:26366) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:26402) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:26403) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:26429) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] $ next start -H 127.0.0.1
+[WebServer] (node:26444) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+
+Running 10 tests using 1 worker
+
+(node:26463) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✘   1 [chromium] › e2e/run-draft-recovery.spec.ts:63:9 › chat: restores a failed request before any assistant, persists exact materials and sends nothing (30.1s)
+(node:26624) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✘   2 [chromium] › e2e/run-draft-recovery.spec.ts:63:9 › chat: restores a cancelled request before any assistant, persists exact materials and sends nothing (30.1s)
+(node:26896) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✘   3 [chromium] › e2e/run-draft-recovery.spec.ts:90:9 › chat: an existing file draft is protected from request recovery (16.4s)
+(node:27056) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✘   4 [chromium] › e2e/run-draft-recovery.spec.ts:90:9 › chat: an existing whitespace draft is protected from request recovery (16.5s)
+(node:27214) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓   5 [chromium] › e2e/run-draft-recovery.spec.ts:110:7 › chat: a stale recovery click cannot replace newer input in the same browser turn (1.5s)
+  ✘   6 [chromium] › e2e/run-draft-recovery.spec.ts:63:9 › project: restores a failed request before any assistant, persists exact materials and sends nothing (30.1s)
+(node:27480) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✘   7 [chromium] › e2e/run-draft-recovery.spec.ts:63:9 › project: restores a cancelled request before any assistant, persists exact materials and sends nothing (30.1s)
+(node:27636) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✘   8 [chromium] › e2e/run-draft-recovery.spec.ts:90:9 › project: an existing file draft is protected from request recovery (16.9s)
+(node:27858) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✘   9 [chromium] › e2e/run-draft-recovery.spec.ts:90:9 › project: an existing whitespace draft is protected from request recovery (18.1s)
+(node:28044) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  10 [chromium] › e2e/run-draft-recovery.spec.ts:110:7 › project: a stale recovery click cannot replace newer input in the same browser turn (1.6s)
+
+
+  1) [chromium] › e2e/run-draft-recovery.spec.ts:63:9 › chat: restores a failed request before any assistant, persists exact materials and sends nothing
+
+    Test timeout of 30000ms exceeded.
+
+    Error: locator.click: Test timeout of 30000ms exceeded.
+    Call log:
+      - waiting for getByRole('button', { name: 'Вернуть запрос в редактор' })
+
+
+      70 |         if (request.method() === "POST") posts.push(new URL(request.url()).pathname);
+      71 |       });
+    > 72 |       await page.getByRole("button", { name: restoreLabel }).click();
+         |                                                              ^
+      73 |       await expect(editor).toHaveValue(source);
+      74 |       await expect(page.getByRole("list", { name: "Прикреплённые файлы" })).toContainText(sourceFile.name);
+      75 |       const materialKey = `cosmora:composer-materials:${kind}:${id}`;
+        at /workspace/work/Nexus-OS-postmerge-2026-11-13/apps/web/e2e/run-draft-recovery.spec.ts:72:62
+
+    Error Context: ../../../../../tmp/nexus-postmerge-browser-results/run-draft-recovery-chat-re-ef663-materials-and-sends-nothing-chromium/error-context.md
+
+    attachment #2: trace (application/zip) ─────────────────────────────────────────────────────────
+    ../../../../../tmp/nexus-postmerge-browser-results/run-draft-recovery-chat-re-ef663-materials-and-sends-nothing-chromium/trace.zip
+    Usage:
+
+        pnpm exec playwright show-trace ../../../../../tmp/nexus-postmerge-browser-results/run-draft-recovery-chat-re-ef663-materials-and-sends-nothing-chromium/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  2) [chromium] › e2e/run-draft-recovery.spec.ts:63:9 › chat: restores a cancelled request before any assistant, persists exact materials and sends nothing
+
+    Test timeout of 30000ms exceeded.
+
+    Error: locator.click: Test timeout of 30000ms exceeded.
+    Call log:
+      - waiting for getByRole('button', { name: 'Вернуть запрос в редактор' })
+
+
+      70 |       page,
+      71 |       request
+    > 72 |     }, info) => {
+         |                  ^
+      73 |       const { editor, id } = await fixture(page, request, kind, phase);
+      74 |       const posts: string[] = [];
+      75 |       page.on("request", (request) => {
+        at /workspace/work/Nexus-OS-postmerge-2026-11-13/apps/web/e2e/run-draft-recovery.spec.ts:72:62
+
+    Error Context: ../../../../../tmp/nexus-postmerge-browser-results/run-draft-recovery-chat-re-cf6f0-materials-and-sends-nothing-chromium/error-context.md
+
+    attachment #2: trace (application/zip) ─────────────────────────────────────────────────────────
+    ../../../../../tmp/nexus-postmerge-browser-results/run-draft-recovery-chat-re-cf6f0-materials-and-sends-nothing-chromium/trace.zip
+    Usage:
+
+        pnpm exec playwright show-trace ../../../../../tmp/nexus-postmerge-browser-results/run-draft-recovery-chat-re-cf6f0-materials-and-sends-nothing-chromium/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  3) [chromium] › e2e/run-draft-recovery.spec.ts:90:9 › chat: an existing file draft is protected from request recovery
+
+    Error: expect(locator).toHaveCount(expected) failed
+
+    Locator:  getByRole('button', { name: 'Вернуть запрос в редактор' })
+    Expected: 0
+    Received: 1
+    Timeout:  15000ms
+
+    Call log:
+      - Expect "toHaveCount" with timeout 15000ms
+      - waiting for getByRole('button', { name: 'Вернуть запрос в редактор' })
+        34 × locator resolved to 1 element
+           - unexpected value "1"
+
+
+       99 |         contentType: "application/json",
+      100 |         body: JSON.stringify({
+    > 101 |           kind,
+          |                ^
+      102 |           phase,
+      103 |           text: await editor.inputValue(),
+      104 |           files: saved.files,
+        at /workspace/work/Nexus-OS-postmerge-2026-11-13/apps/web/e2e/run-draft-recovery.spec.ts:101:70
+
+    Error Context: ../../../../../tmp/nexus-postmerge-browser-results/run-draft-recovery-chat-an-b8ab0-ected-from-request-recovery-chromium/error-context.md
+
+    attachment #2: trace (application/zip) ─────────────────────────────────────────────────────────
+    ../../../../../tmp/nexus-postmerge-browser-results/run-draft-recovery-chat-an-b8ab0-ected-from-request-recovery-chromium/trace.zip
+    Usage:
+
+        pnpm exec playwright show-trace ../../../../../tmp/nexus-postmerge-browser-results/run-draft-recovery-chat-an-b8ab0-ected-from-request-recovery-chromium/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  4) [chromium] › e2e/run-draft-recovery.spec.ts:90:9 › chat: an existing whitespace draft is protected from request recovery
+
+    Error: expect(locator).toHaveCount(expected) failed
+
+    Locator:  getByRole('button', { name: 'Вернуть запрос в редактор' })
+    Expected: 0
+    Received: 1
+    Timeout:  15000ms
+
+    Call log:
+      - Expect "toHaveCount" with timeout 15000ms
+      - waiting for getByRole('button', { name: 'Вернуть запрос в редактор' })
+        34 × locator resolved to 1 element
+           - unexpected value "1"
+
+
+       99 |         contentType: "application/json",
+      100 |         body: JSON.stringify({
+    > 101 |           kind,
+          |                ^
+      102 |           phase,
+      103 |           text: await editor.inputValue(),
+      104 |           files: saved.files,
+        at /workspace/work/Nexus-OS-postmerge-2026-11-13/apps/web/e2e/run-draft-recovery.spec.ts:101:70
+
+    Error Context: ../../../../../tmp/nexus-postmerge-browser-results/run-draft-recovery-chat-an-cb9c7-ected-from-request-recovery-chromium/error-context.md
+
+    attachment #2: trace (application/zip) ─────────────────────────────────────────────────────────
+    ../../../../../tmp/nexus-postmerge-browser-results/run-draft-recovery-chat-an-cb9c7-ected-from-request-recovery-chromium/trace.zip
+    Usage:
+
+        pnpm exec playwright show-trace ../../../../../tmp/nexus-postmerge-browser-results/run-draft-recovery-chat-an-cb9c7-ected-from-request-recovery-chromium/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  5) [chromium] › e2e/run-draft-recovery.spec.ts:63:9 › project: restores a failed request before any assistant, persists exact materials and sends nothing
+
+    Test timeout of 30000ms exceeded.
+
+    Error: locator.click: Test timeout of 30000ms exceeded.
+    Call log:
+      - waiting for getByRole('button', { name: 'Вернуть запрос в редактор' })
+
+
+      70 |       page,
+      71 |       request
+    > 72 |     }, info) => {
+         |                  ^
+      73 |       const { editor, id } = await fixture(page, request, kind, phase);
+      74 |       const posts: string[] = [];
+      75 |       page.on("request", (request) => {
+        at /workspace/work/Nexus-OS-postmerge-2026-11-13/apps/web/e2e/run-draft-recovery.spec.ts:72:62
+
+    Error Context: ../../../../../tmp/nexus-postmerge-browser-results/run-draft-recovery-project-7f1ab-materials-and-sends-nothing-chromium/error-context.md
+
+    attachment #2: trace (application/zip) ─────────────────────────────────────────────────────────
+    ../../../../../tmp/nexus-postmerge-browser-results/run-draft-recovery-project-7f1ab-materials-and-sends-nothing-chromium/trace.zip
+    Usage:
+
+        pnpm exec playwright show-trace ../../../../../tmp/nexus-postmerge-browser-results/run-draft-recovery-project-7f1ab-materials-and-sends-nothing-chromium/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  6) [chromium] › e2e/run-draft-recovery.spec.ts:63:9 › project: restores a cancelled request before any assistant, persists exact materials and sends nothing
+
+    Test timeout of 30000ms exceeded.
+
+    Error: locator.click: Test timeout of 30000ms exceeded.
+    Call log:
+      - waiting for getByRole('button', { name: 'Вернуть запрос в редактор' })
+
+
+      70 |       page,
+      71 |       request
+    > 72 |     }, info) => {
+         |                  ^
+      73 |       const { editor, id } = await fixture(page, request, kind, phase);
+      74 |       const posts: string[] = [];
+      75 |       page.on("request", (request) => {
+        at /workspace/work/Nexus-OS-postmerge-2026-11-13/apps/web/e2e/run-draft-recovery.spec.ts:72:62
+
+    Error Context: ../../../../../tmp/nexus-postmerge-browser-results/run-draft-recovery-project-07438-materials-and-sends-nothing-chromium/error-context.md
+
+    attachment #2: trace (application/zip) ─────────────────────────────────────────────────────────
+    ../../../../../tmp/nexus-postmerge-browser-results/run-draft-recovery-project-07438-materials-and-sends-nothing-chromium/trace.zip
+    Usage:
+
+        pnpm exec playwright show-trace ../../../../../tmp/nexus-postmerge-browser-results/run-draft-recovery-project-07438-materials-and-sends-nothing-chromium/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  7) [chromium] › e2e/run-draft-recovery.spec.ts:90:9 › project: an existing file draft is protected from request recovery
+
+    Error: expect(locator).toHaveCount(expected) failed
+
+    Locator:  getByRole('button', { name: 'Вернуть запрос в редактор' })
+    Expected: 0
+    Received: 1
+    Timeout:  15000ms
+
+    Call log:
+      - Expect "toHaveCount" with timeout 15000ms
+      - waiting for getByRole('button', { name: 'Вернуть запрос в редактор' })
+        33 × locator resolved to 1 element
+           - unexpected value "1"
+
+
+       99 |         contentType: "application/json",
+      100 |         body: JSON.stringify({
+    > 101 |           kind,
+          |                ^
+      102 |           phase,
+      103 |           text: await editor.inputValue(),
+      104 |           files: saved.files,
+        at /workspace/work/Nexus-OS-postmerge-2026-11-13/apps/web/e2e/run-draft-recovery.spec.ts:101:70
+
+    Error Context: ../../../../../tmp/nexus-postmerge-browser-results/run-draft-recovery-project-92074-ected-from-request-recovery-chromium/error-context.md
+
+    attachment #2: trace (application/zip) ─────────────────────────────────────────────────────────
+    ../../../../../tmp/nexus-postmerge-browser-results/run-draft-recovery-project-92074-ected-from-request-recovery-chromium/trace.zip
+    Usage:
+
+        pnpm exec playwright show-trace ../../../../../tmp/nexus-postmerge-browser-results/run-draft-recovery-project-92074-ected-from-request-recovery-chromium/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  8) [chromium] › e2e/run-draft-recovery.spec.ts:90:9 › project: an existing whitespace draft is protected from request recovery
+
+    Error: expect(locator).toHaveCount(expected) failed
+
+    Locator:  getByRole('button', { name: 'Вернуть запрос в редактор' })
+    Expected: 0
+    Received: 1
+    Timeout:  15000ms
+
+    Call log:
+      - Expect "toHaveCount" with timeout 15000ms
+      - waiting for getByRole('button', { name: 'Вернуть запрос в редактор' })
+        33 × locator resolved to 1 element
+           - unexpected value "1"
+
+
+       99 |         contentType: "application/json",
+      100 |         body: JSON.stringify({
+    > 101 |           kind,
+          |                ^
+      102 |           phase,
+      103 |           text: await editor.inputValue(),
+      104 |           files: saved.files,
+        at /workspace/work/Nexus-OS-postmerge-2026-11-13/apps/web/e2e/run-draft-recovery.spec.ts:101:70
+
+    Error Context: ../../../../../tmp/nexus-postmerge-browser-results/run-draft-recovery-project-0c9ce-ected-from-request-recovery-chromium/error-context.md
+
+    attachment #2: trace (application/zip) ─────────────────────────────────────────────────────────
+    ../../../../../tmp/nexus-postmerge-browser-results/run-draft-recovery-project-0c9ce-ected-from-request-recovery-chromium/trace.zip
+    Usage:
+
+        pnpm exec playwright show-trace ../../../../../tmp/nexus-postmerge-browser-results/run-draft-recovery-project-0c9ce-ected-from-request-recovery-chromium/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  8 failed
+    [chromium] › e2e/run-draft-recovery.spec.ts:63:9 › chat: restores a failed request before any assistant, persists exact materials and sends nothing
+    [chromium] › e2e/run-draft-recovery.spec.ts:63:9 › chat: restores a cancelled request before any assistant, persists exact materials and sends nothing
+    [chromium] › e2e/run-draft-recovery.spec.ts:90:9 › chat: an existing file draft is protected from request recovery
+    [chromium] › e2e/run-draft-recovery.spec.ts:90:9 › chat: an existing whitespace draft is protected from request recovery
+    [chromium] › e2e/run-draft-recovery.spec.ts:63:9 › project: restores a failed request before any assistant, persists exact materials and sends nothing
+    [chromium] › e2e/run-draft-recovery.spec.ts:63:9 › project: restores a cancelled request before any assistant, persists exact materials and sends nothing
+    [chromium] › e2e/run-draft-recovery.spec.ts:90:9 › project: an existing file draft is protected from request recovery
+    [chromium] › e2e/run-draft-recovery.spec.ts:90:9 › project: an existing whitespace draft is protected from request recovery
+  2 passed (3.8m)
+undefined
+/workspace/work/Nexus-OS-postmerge-2026-11-13/apps/web:
+[ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL] Command failed with exit code 1: playwright test '--config=/tmp/nexus-postmerge-browser.config.ts' run-draft-recovery.spec.ts '--workers=1'

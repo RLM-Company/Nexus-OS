@@ -1,5 +1,12 @@
 import type { WorkDag, WorkDagNode, WorkDagNodeInput } from "./work-dag.js";
 
+/**
+ * Process- and project-wide cap for concurrently executing Work parts.
+ * One shared value keeps the in-memory coordinator and the SQLite claim/pending
+ * admission in sync; every reservable model-request budget scales with it.
+ */
+export const WORK_EXECUTION_CONCURRENCY = 2;
+
 export type WorkPriority = "low" | "normal" | "high" | "urgent";
 const priorityRank: Record<WorkPriority, number> = { low: 0, normal: 1, high: 2, urgent: 3 };
 

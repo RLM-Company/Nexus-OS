@@ -49,6 +49,8 @@ export interface ManagerRunContext {
   projectId: string;
   runId: string;
   messages: Message[];
+  /** Сохранённые настройки владельца: имя, род обращения, род ассистента. */
+  identityPrompt?: string;
   materials?: {
     instructions: string;
     attachments: ChatTextAttachment[];
@@ -112,7 +114,12 @@ export class ManagerService {
 
     const messages = conversationWindow(
       [
-        { role: "system", content: this.#options.systemPrompt },
+        {
+          role: "system",
+          content:
+            this.#options.systemPrompt +
+            (context.identityPrompt ? `\n${context.identityPrompt}` : "")
+        },
         ...(context.materials &&
         (context.materials.instructions || context.materials.attachments.length)
           ? [

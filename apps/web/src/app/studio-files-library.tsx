@@ -1,5 +1,6 @@
 "use client";
 
+import { prepareLibraryUpload } from "./library-archive-import";
 import { useDeferredValue, useEffect, useRef, useState } from "react";
 import type { ChatAttachment } from "@cosmora/contracts/chat-attachments";
 import {
@@ -14,6 +15,7 @@ import {
   createPdfReport,
   downloadReport,
   reportLines,
+  answerCoverageLines,
   answerReportLines,
   createAnswerCsvReport,
   type AnswerReport
@@ -151,7 +153,7 @@ export function StudioDocumentLibrary({ projectId, onCompose, onProjectCreated }
           timer = setTimeout(() => void poll(), 1200);
         else setActiveAnswerId(null);
       } catch {
-        if (!controller.signal.aborted) setActiveAnswerId(null);
+        if (!controller.signal.aborted) timer = setTimeout(() => void poll(), 3000);
       }
     };
     void poll();
@@ -271,8 +273,16 @@ export function StudioDocumentLibrary({ projectId, onCompose, onProjectCreated }
     setUploadQueue([]);
     setError("");
     try {
-      const result = await runLibraryUploadQueue(
+      setStatus("");
+      const { files: documents, skipped } = await prepareLibraryUpload(
         selectedFiles,
+        controller.signal,
+        (name) => {
+          if (alive.current) setStatus("Распаковываем: " + name);
+        }
+      );
+      const result = await runLibraryUploadQueue(
+        documents,
         uploadAdapter(),
         controller.signal,
         (items) => {
@@ -281,7 +291,7 @@ export function StudioDocumentLibrary({ projectId, onCompose, onProjectCreated }
       );
       if (alive.current)
         setStatus(
-          `Готово: ${result.filter((item) => item.state === "ready").length} из ${result.length}. Подробности — в результатах загрузки.`
+          `Готово: ${result.filter((item) => item.state === "ready").length} из ${result.length}. ${skipped ? "Пропущено файлов в ZIP: " + skipped + ". " : ""}Подробности — в результатах загрузки.`
         );
     } catch (cause) {
       if (alive.current && !controller.signal.aborted)
@@ -424,13 +434,14 @@ export function StudioDocumentLibrary({ projectId, onCompose, onProjectCreated }
     }
   };
 
-  const askModel = async () => {
+  const askModel = async (mode: "search" | "deep" = "search") => {
     if (
       !base ||
       !answerAvailable ||
       busy ||
+      !!activeAnswerId ||
       !chosen.length ||
-      chosen.length > 20 ||
+      chosen.length > (mode === "deep" ? 100 : 20) ||
       question.trim().length < 2
     )
       return;
@@ -440,11 +451,13 @@ export function StudioDocumentLibrary({ projectId, onCompose, onProjectCreated }
       const result = await libraryFetch<AnswerReport>(`${base}/answers`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ question: question.trim(), file_ids: chosen })
+        body: JSON.stringify({ question: question.trim(), file_ids: chosen, mode })
       });
       setAnswers((old) => [result, ...old.filter((entry) => entry.id !== result.id)]);
       setActiveAnswerId(result.id);
-      setStatus("Запрос модели поставлен в очередь с учётом бюджета. Ссылки будут проверены.");
+      setStatus(
+        mode === "deep" ? "Подробный анализ запущен." : "Запрос модели поставлен в очередь."
+      );
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Не удалось начать ответ модели");
     } finally {
@@ -576,7 +589,7 @@ export function StudioDocumentLibrary({ projectId, onCompose, onProjectCreated }
               type="file"
               multiple
               hidden
-              accept=".pdf,.docx,.txt,.csv"
+              accept=".pdf,.docx,.txt,.csv,.zip"
               onChange={(event) => {
                 const files = Array.from(event.currentTarget.files ?? []);
                 event.currentTarget.value = "";
@@ -610,7 +623,7 @@ export function StudioDocumentLibrary({ projectId, onCompose, onProjectCreated }
                   Отменить загрузку
                 </button>
               )}
-            <small>Перетащите PDF, DOCX, TXT или CSV сюда · до 20 МБ на файл</small>
+            <small>PDF, DOCX, TXT, CSV до 20 МБ · ZIP с документами до 24 МБ</small>
           </div>
           {status && <p role="status">{busy ? <ShiningText>{status}</ShiningText> : status}</p>}
           {error && <SystemMessage>{error}</SystemMessage>}
@@ -787,6 +800,7 @@ export function StudioDocumentLibrary({ projectId, onCompose, onProjectCreated }
                 disabled={
                   busy ||
                   !answerAvailable ||
+                  !!activeAnswerId ||
                   !chosen.length ||
                   chosen.length > 20 ||
                   question.trim().length < 2
@@ -795,9 +809,22 @@ export function StudioDocumentLibrary({ projectId, onCompose, onProjectCreated }
               >
                 Ответ модели по выбранным документам
               </button>
+              <button
+                type="button"
+                disabled={
+                  busy ||
+                  !answerAvailable ||
+                  !!activeAnswerId ||
+                  !chosen.length ||
+                  question.trim().length < 2
+                }
+                onClick={() => void askModel("deep")}
+              >
+                Подробный анализ
+              </button>
               <small>
                 {chosen.length > 20
-                  ? "Для одного ответа модели выберите не более 20 файлов"
+                  ? "Для быстрого ответа выберите до 20 файлов. Подробный анализ охватывает всю подборку."
                   : chosen.length
                     ? `По выбранным файлам: ${chosen.length}`
                     : "Для ответа модели выберите файлы выше"}
@@ -818,6 +845,7 @@ export function StudioDocumentLibrary({ projectId, onCompose, onProjectCreated }
                 <select
                   id="saved-answer"
                   value={saved?.id ?? ""}
+                  disabled={!!activeAnswerId}
                   onChange={(event) => {
                     const id = event.target.value;
                     setAnswers((old) => {
@@ -840,13 +868,18 @@ export function StudioDocumentLibrary({ projectId, onCompose, onProjectCreated }
                   {saved.status === "done"
                     ? "Ответ сохранён"
                     : saved.status === "running"
-                      ? "Модель анализирует источники…"
+                      ? saved.coverage?.phase === "synthesis"
+                        ? "Собираем отчёт…"
+                        : "Модель анализирует источники…"
                       : saved.status === "queued"
                         ? "Ожидание запуска"
                         : saved.status === "cancelled"
                           ? "Запрос отменён"
                           : `Ошибка: ${saved.error_code ?? "неизвестно"}`}
                 </p>
+                {saved.coverage && saved.status !== "done" && (
+                  <p>{answerCoverageLines(saved.coverage)[0]}</p>
+                )}
                 {saved.status === "done" && (
                   <pre className={styles.preview}>{answerReportLines(saved).join("\n")}</pre>
                 )}
@@ -997,7 +1030,7 @@ export function StudioDocumentLibrary({ projectId, onCompose, onProjectCreated }
               )}
               <p className={styles.disclaimer}>
                 Поиск возвращает фрагменты, не полный документ. DOCX/CSV содержат текст; PDF —
-                растровый, его текст не выделяется. OCR сканов отсутствует.
+                растровый, текст распознаётся в браузере. Проверяйте цитаты по оригиналу.
               </p>
             </>
           )}

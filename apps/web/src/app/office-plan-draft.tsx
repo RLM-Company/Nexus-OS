@@ -111,6 +111,12 @@ export function OfficePlanDraft({
         onClick={() =>
           void action(() => {
             const restored = restoreOfficeDraft(window.localStorage, source, snapshot!.raw!);
+            if (
+              operations.length &&
+              JSON.stringify(operations) !== JSON.stringify(restored) &&
+              !window.confirm("Заменить текущий план сохранённым черновиком?")
+            )
+              return;
             onRestore(restored);
             setNotice(
               "План восстановлен. Проверьте его и запросите новый preview перед подтверждением."

@@ -1,5 +1,7 @@
 "use client";
 
+import { ResearchWorkspaceContent } from "./research-workspace/workspace-content";
+import { PresentationsPageContent } from "./presentations/workspace-content";
 import Link from "next/link";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { WorkspaceIcon as Icon, type IconName } from "./workspace-icons";
@@ -31,7 +33,7 @@ export type ToolSurface =
   | "settings";
 export const TOOL_ITEMS: { id: ToolSurface; label: string; description: string }[] = [
   { id: "work", label: "Koswork", description: "Проекты и результаты" },
-  { id: "code", label: "Coscode", description: "Задачи разработки" },
+  { id: "code", label: "Koscode", description: "Задачи разработки" },
   { id: "multi-agent", label: "Multi-Agent", description: "Команда и роли" },
   { id: "skills", label: "Skills", description: "Навыки и специализации" },
   { id: "studio", label: "Kosmora Studio", description: "Изображения, видео и звук" },
@@ -43,7 +45,7 @@ export const TOOL_ITEMS: { id: ToolSurface; label: string; description: string }
   { id: "presentations", label: "Презентации", description: "Слайды и PPTX" },
   { id: "sites", label: "Сайты", description: "Идея, структура и реализация" },
   { id: "games", label: "Games", description: "Разработка игр" },
-  { id: "apps", label: "Приложения", description: "Внешние сервисы" },
+  { id: "apps", label: "Интеграции", description: "Внешние сервисы" },
   { id: "features", label: "Возможности", description: "Что уже работает и что появится" },
   { id: "settings", label: "Настройки", description: "Ваше пространство" }
 ];
@@ -868,7 +870,7 @@ function Apps({ onNavigate, activeProjectId }: Props) {
   );
   return (
     <>
-      <Header icon="apps" eyebrow="Kosmora и ваши инструменты" title="Приложения">
+      <Header icon="apps" eyebrow="Kosmora и ваши инструменты" title="Интеграции">
         Подключения, их возможности и статус — в одном месте.
       </Header>
       <div className={styles.toolbar}>
@@ -964,7 +966,7 @@ function Features({ onNavigate }: Props) {
   );
   const current = [
     { id: "work", label: "Koswork", detail: "Проекты и ход работы", icon: "work" },
-    { id: "code", label: "Coscode", detail: "Черновик задачи разработки", icon: "code" },
+    { id: "code", label: "Koscode", detail: "Черновик задачи разработки", icon: "code" },
     { id: "studio", label: "Studio", detail: "Файлы и медиа-инструменты", icon: "studio" }
   ] as const;
   return (
@@ -1324,24 +1326,10 @@ export function WorkspaceSections(props: Props) {
       );
       break;
     case "research":
+      content = <ResearchWorkspaceContent embedded />;
+      break;
     case "presentations":
-      content = (
-        <Header
-          icon={props.surface}
-          eyebrow="Kosmora Studio"
-          title={props.surface === "research" ? "Deep Research" : "Презентации"}
-          action={
-            <ActionLink
-              primary
-              href={props.surface === "research" ? "/research-workspace" : "/presentations"}
-            >
-              Открыть
-            </ActionLink>
-          }
-        >
-          Рабочий инструмент Studio.
-        </Header>
-      );
+      content = <PresentationsPageContent embedded />;
       break;
     case "sites":
       content = (

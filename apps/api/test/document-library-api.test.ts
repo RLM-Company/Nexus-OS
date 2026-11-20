@@ -77,7 +77,7 @@ describe("document library API, owner-only document flow", () => {
     ).toBe(404);
   });
 
-  it("indexes PDFs with blank pages while preserving the original citation page", async () => {
+  it("indexes a 3,000-page PDF including blank pages and preserves the last citation", async () => {
     const staged = await app.inject({
       method: "POST",
       url: path,
@@ -90,11 +90,10 @@ describe("document library API, owner-only document flow", () => {
       method: "PUT",
       url: `${path}/${file.id}/index`,
       payload: {
-        pages: [
-          { page: 1, text: "" },
-          { page: 2, text: "" },
-          { page: 3, text: "Факт: бюджет 2027" }
-        ]
+        pages: Array.from({ length: 3_000 }, (_, index) => ({
+          page: index + 1,
+          text: index === 2_999 ? "Факт: бюджет 2027" : ""
+        }))
       }
     });
     expect(indexed.statusCode, indexed.body).toBe(200);
@@ -104,7 +103,7 @@ describe("document library API, owner-only document flow", () => {
       payload: { question: "бюджет", file_ids: [] }
     });
     expect(found.json<{ hits: Array<{ citation: string }> }>().hits[0]?.citation).toContain(
-      "report.pdf, стр. 3"
+      "report.pdf, стр. 3000"
     );
   });
 });

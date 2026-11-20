@@ -624,7 +624,7 @@ describe("durable Manager work", () => {
     expect(f.calls).toHaveLength(1);
   });
 
-  it("times out a stalled Work, preserves its checkpoint and retains the active slot until transport settles", async () => {
+  it("times out a stalled Work, preserves its checkpoint and retains active slots until transport settles", async () => {
     let release!: () => void;
     const gate = new Promise<void>((done) => {
       release = done;
@@ -634,23 +634,29 @@ describe("durable Manager work", () => {
       chunks: ['{"summary":"unfinished'],
       afterChunk: () => gate
     });
+    const second = f.store.create(f.project.id, "local-owner", "local-owner", {
+      ...request,
+      client_request_id: "second-slot"
+    })!;
     const running = f.coordinator.execute(f.work.id, "local-owner");
+    const secondRun = f.coordinator.execute(second.id, "local-owner");
     try {
       await vi.waitFor(() =>
         expect(f.get()).toMatchObject({ status: "failed", error_code: "TASK_TIME_BUDGET" })
       );
       expect(f.coordinator.hasActiveExecution(f.work.id)).toBe(true);
+      expect(f.coordinator.hasActiveExecution(second.id)).toBe(true);
       expect(f.get().output_checkpoint?.text).toBe('{"summary":"unfinished');
-      const other = f.store.create(f.project.id, "local-owner", "local-owner", {
+      const third = f.store.create(f.project.id, "local-owner", "local-owner", {
         ...request,
         client_request_id: "next-task"
       })!;
-      await f.coordinator.execute(other.id, "local-owner");
-      expect(f.store.get(other.id, "local-owner")?.status).toBe("queued");
-      expect(f.calls).toHaveLength(1);
+      await f.coordinator.execute(third.id, "local-owner");
+      expect(f.store.get(third.id, "local-owner")?.status).toBe("queued");
+      expect(f.calls).toHaveLength(2);
     } finally {
       release();
-      await running;
+      await Promise.allSettled([running, secondRun]);
     }
     expect(f.get()).toMatchObject({ status: "failed", error_code: "TASK_TIME_BUDGET" });
     expect(f.coordinator.hasActiveExecution(f.work.id)).toBe(false);
@@ -691,7 +697,7 @@ describe("durable Manager work", () => {
 
   it("rejects invalid operation deadlines before accepting execution", async () => {
     const f = await fixture();
-    for (const operationTimeoutMs of [0, -1, 1.5, Infinity, 1800001])
+    for (const operationTimeoutMs of [-1, 1.5, Infinity, 1800001])
       expect(() => new ManagerWorkCoordinator({ ...f.dependencies, operationTimeoutMs })).toThrow(
         /time budget/
       );
@@ -853,6 +859,35 @@ describe("durable Manager work", () => {
       await app.close();
       await f.coordinator.stop();
     }
+  });
+  it("runs every site generation stage when a new task has no cumulative budget", async () => {
+    const stages: string[] = [];
+    const f = await fixture({
+      request: {
+        client_request_id: "website-no-task-budget",
+        goal: "Create a landing page",
+        worker_role: "analyst",
+        output_contract: { kind: "website" }
+      },
+      plan: { ...defaultPlan, needs_critic: true },
+      draft: {
+        files: [
+          {
+            name: "index.html",
+            content:
+              "<!doctype html><html><head><title>Moon</title></head><body><h1>Moon</h1></body></html>"
+          }
+        ]
+      },
+      onCall: (r) => {
+        stages.push(r.task_type);
+        return Promise.resolve();
+      }
+    });
+    await f.coordinator.execute(f.work.id, "local-owner");
+    expect(f.get()).toMatchObject({ status: "completed", model_requests: 3 });
+    expect(stages).toEqual(["manager_work_plan", "manager_work_draft", "manager_work_review"]);
+    await f.coordinator.stop();
   });
   it("retains output budget for a required game source review", async () => {
     const limits: number[] = [];
@@ -1881,7 +1916,7 @@ describe("durable Manager work", () => {
 });
 
 describe("Work admission startup", () => {
-  it("reserves the single slot before a graph callback can reenter another project", async () => {
+  it("admits two concurrent slots and fences a third until a slot is released", async () => {
     let secondRun: Promise<void> | undefined;
     const probe = admissionProbe(() => {
       secondRun = f.coordinator.execute(second.id, "local-owner");
@@ -1904,18 +1939,23 @@ describe("Work admission startup", () => {
       client_request_id: "admission-second",
       goal: admissionBrief.goal
     })!;
+    const third = f.store.create(project.id, "local-owner", "local-owner", {
+      ...request,
+      client_request_id: "admission-third",
+      goal: admissionBrief.goal
+    })!;
     const running = f.coordinator.execute(f.work.id, "local-owner");
     try {
-      expect(probe.stats()).toEqual({ reads: 1, active: 1, peak: 1 });
+      expect(probe.stats()).toEqual({ reads: 2, active: 2, peak: 2 });
       expect(f.coordinator.hasActiveExecution(f.work.id)).toBe(true);
-      expect(f.coordinator.hasActiveExecution(second.id)).toBe(false);
-      expect(f.store.get(second.id, "local-owner")?.status).toBe("queued");
+      expect(f.coordinator.hasActiveExecution(second.id)).toBe(true);
+      expect(f.store.get(third.id, "local-owner")?.status).toBe("queued");
       expect(f.calls).toHaveLength(0);
     } finally {
       probe.release();
       await Promise.allSettled([running, secondRun]);
     }
-    await f.coordinator.execute(second.id, "local-owner");
+    await f.coordinator.execute(third.id, "local-owner");
     const app = buildApp({
       config: f.config,
       database: f.database,
@@ -1927,7 +1967,8 @@ describe("Work admission startup", () => {
       const artifacts = [];
       for (const [projectId, id] of [
         [f.project.id, f.work.id],
-        [project.id, second.id]
+        [project.id, second.id],
+        [project.id, third.id]
       ] as const) {
         expect(f.store.get(id, "local-owner")?.status).toBe("completed");
         const result = await app.inject({
@@ -1943,8 +1984,8 @@ describe("Work admission startup", () => {
           version: metadata.version
         });
       }
-      expect(probe.stats().peak).toBe(1);
-      expect(f.calls).toHaveLength(4);
+      expect(probe.stats().peak).toBe(2);
+      expect(f.calls).toHaveLength(6);
       const directory = process.env.KOSWORK_ADMISSION_REPORT_DIR;
       if (directory) {
         mkdirSync(directory, { recursive: true });

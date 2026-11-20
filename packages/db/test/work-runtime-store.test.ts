@@ -145,7 +145,7 @@ describe("project memory and durable work records", () => {
       }
     }
   );
-  it("preserves the 50-item bound, queue order and one running work per project", async () => {
+  it("preserves the 50-item bound, queue order and the bounded running slots per project", async () => {
     const f = await setup();
     try {
       for (const project of [f.a, f.b]) {
@@ -162,6 +162,10 @@ describe("project memory and durable work records", () => {
         Array.from({ length: 50 }, (_, i) => `${f.a.id}-${i}`)
       );
       expect(f.store.claim(first[0]!)?.status).toBe("running");
+      const second = f.store.pending();
+      expect(second).toHaveLength(50);
+      expect(second[0]!.project_id).toBe(f.a.id);
+      expect(f.store.claim(second[0]!)?.status).toBe("running");
       const next = f.store.pending();
       expect(next).toHaveLength(50);
       expect(next.every((w) => w.project_id === f.b.id)).toBe(true);
@@ -383,7 +387,7 @@ describe("project memory and durable work records", () => {
       f.db.close();
     }
   });
-  it("claims only one work per project across two SQLite connections; another project can run", async () => {
+  it("claims up to the bounded slots per project across two SQLite connections; another project can run", async () => {
     const directory = mkdtempSync(join(tmpdir(), "kosmora-claim-"));
     const f = await setup(join(directory, "state.db")),
       other = openDatabase(join(directory, "state.db"));
@@ -394,10 +398,15 @@ describe("project memory and durable work records", () => {
         ...request,
         client_request_id: "second"
       })!;
+      const third = competitor.create(f.a.id, "owner-a", "owner-a", {
+        ...request,
+        client_request_id: "third"
+      })!;
       const independent = competitor.create(f.b.id, "owner-a", "owner-a", request)!;
       expect(f.store.claim(first)?.status).toBe("running");
       expect(competitor.claim(first)).toBeNull();
-      expect(competitor.claim(second)).toBeNull();
+      expect(competitor.claim(second)?.status).toBe("running");
+      expect(competitor.claim(third)).toBeNull();
       expect(competitor.claim(independent)?.status).toBe("running");
       expect(competitor.pending().some((w) => w.project_id === f.a.id)).toBe(false);
     } finally {

@@ -1,0 +1,30 @@
+[WebServer] (node:33290) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:33304) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:33304) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:33318) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] $ next start -H 127.0.0.1
+[WebServer] (node:33333) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+
+Running 12 tests using 1 worker
+
+(node:33352) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓   1 [chromium] › e2e/run-draft-recovery.spec.ts:77:9 › chat: restores a failed request before any assistant, persists exact materials and sends nothing (2.4s)
+  ✓   2 [chromium] › e2e/run-draft-recovery.spec.ts:77:9 › chat: restores a cancelled request before any assistant, persists exact materials and sends nothing (1.8s)
+  ✓   3 [chromium] › e2e/run-draft-recovery.spec.ts:121:9 › chat: an existing file draft is protected from request recovery (1.8s)
+  ✓   4 [chromium] › e2e/run-draft-recovery.spec.ts:121:9 › chat: an existing whitespace draft is protected from request recovery (1.6s)
+  ✓   5 [chromium] › e2e/run-draft-recovery.spec.ts:152:7 › chat: a stale recovery click cannot replace newer input in the same browser turn (1.2s)
+  ✓   6 [chromium] › e2e/run-draft-recovery.spec.ts:175:7 › chat: recovery cannot discard a file that is still being read (1.2s)
+  ✓   7 [chromium] › e2e/run-draft-recovery.spec.ts:77:9 › project: restores a failed request before any assistant, persists exact materials and sends nothing (2.0s)
+  ✓   8 [chromium] › e2e/run-draft-recovery.spec.ts:77:9 › project: restores a cancelled request before any assistant, persists exact materials and sends nothing (1.9s)
+  ✓   9 [chromium] › e2e/run-draft-recovery.spec.ts:121:9 › project: an existing file draft is protected from request recovery (1.8s)
+  ✓  10 [chromium] › e2e/run-draft-recovery.spec.ts:121:9 › project: an existing whitespace draft is protected from request recovery (1.9s)
+  ✓  11 [chromium] › e2e/run-draft-recovery.spec.ts:152:7 › project: a stale recovery click cannot replace newer input in the same browser turn (1.1s)
+  ✓  12 [chromium] › e2e/run-draft-recovery.spec.ts:175:7 › project: recovery cannot discard a file that is still being read (1.2s)
+
+  12 passed (27.3s)
