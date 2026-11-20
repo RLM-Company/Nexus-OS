@@ -1,0 +1,8 @@
+{
+  "first_staged_diff_check": {
+    "exit": 2,
+    "diagnostic": "unit-passed.log:9: new blank line at EOF"
+  },
+  "correction": "log-only EOF whitespace normalized; source/assertions unchanged",
+  "final_check": "recorded by command exit before delivery"
+}

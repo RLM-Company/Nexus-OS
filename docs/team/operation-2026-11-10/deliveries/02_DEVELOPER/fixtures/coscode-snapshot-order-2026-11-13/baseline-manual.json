@@ -1,0 +1,10 @@
+{
+  "expected": "Durable version 8",
+  "displayed": [
+    "Изменения предложены",
+    "Основа: main · aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "Stale version 7",
+    "Исходный снимок: ssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss"
+  ],
+  "real_model_called": false
+}

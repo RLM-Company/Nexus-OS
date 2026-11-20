@@ -1,3 +1,95 @@
+# Финальная OCI/API приёмка, 13 ноября 2026
+
+Отдельный integration commit `5f1ed5908596e4fe6594aeab26fbb0ba5dbe19ca` меняет только
+`.github/workflows/ci.yml`:20 строк. Существующий OCI job сохраняет реальный Git receipt,
+запускает прежний opt-in API test через pinned image, требует API receipt и выгружает
+input/output/diff в artifact coscode-final-workflow-proof. Retry/timeout/failOnFlakyTests,
+изоляция, network-none и права контейнера не менялись.
+Owned API test расширен в85183fa и5ef2f7a: тот же service/routes → существующий
+HTTP client/server → тот же OCI runner → fresh review → Draft PR adapter → repeat409/0writes.
+Production runtime, routes/contracts/DB/provider/grants не менялись.
+Main `43ffee1db331507dfd984f50f42a2f6779e6e780` сохранён отдельным merge5e63264;10 входящих файлов Work/runtime/DB
+принадлежат main, не этой реализации. Новая общая константа concurrency просмотрена.
+Локальные OCI failures вызваны ENOSPC; source maps/.next своего checkout очищены,
+Docker storage/чужие данные не затрагивались. Итоговый CI должен подтвердить real API case.
+Откат: revert test acceptance commits и CI integration отдельно с сохранением
+предыдущих продуктовых hardening commits и чужих изменений main. Миграций/новых dependencies нет.
+[Полная матрица и границы](COSCODE_FINAL_ACCEPTANCE_RU.md).
+
+История ниже.
+
+---
+
+# Дополнительная CI-интеграция, 13 ноября 2026
+
+Commit `23bbcde7a23c10f6d55d38e28defd718db80fe9e`; единственный общий файл
+`apps/web/e2e/chat-reliability.spec.ts`,18 добавлений/14 удалений.
+Предусловие draft test теперь создаёт существующий held mock run и явно отменяет
+его через owner API; проверяет HTTP200, cancelled и реальную persisted row.
+Это не смена production lifecycle: исходный INTERRUPTED seed из CI43455694958
+сохранён для отдельного исследования владельцем chat runtime. UI assertions,
+финальный successful answer, failOnFlakyTests, retries и timeout CI не ослаблены.
+Проверено5 повторов при workers2/retries0, exit0; строгие web types/lint0.
+Все продуктовые изменения Coscode2b8b895 остаются без правок.
+Откат этой адаптации — отдельный revert integration commit; запускать точный HEAD CI.
+[Разбор и исходный failure](COSCODE_UNSAVED_REFRESH_DELIVERY_RU.md).
+
+История ниже.
+
+---
+
+# Coscode unsaved refresh, 13 ноября 2026
+
+Новых общих изменений нет: только `apps/web/src/app/code-agent/page.tsx`
+и `apps/web/e2e/code-agent.spec.ts`, плюс собственные отчёты/fixtures.
+Новых contracts/API/DB/migrations/routes/dependencies/registration нет.
+Используется уже добавленный предыдущим commit404c3ddb strict E2E typecheck и scoped production runner.
+Этот slice стоит после предыдущего snapshot-order slice в том же собственном PR581,
+BASE1d72d9d. Не переносить source commit2b8b895 отдельно без предшествующего acceptance fence.
+Для отката нового поведения revert только product commit2b8b895, сохранить прежнюю
+защиту порядка ответов. Данные/миграции не меняются. Последующие изменения сохранять вручную.
+[Подробная поставка](COSCODE_UNSAVED_REFRESH_DELIVERY_RU.md).
+
+Перед передачей сохранён main14a5f48 (PR582/583):58 входящих файлов,
+аддитивная константа Manager contract просмотрена, семь CodeAgent source blobs прежние.
+Четыре конфликта префиксов02_DEVELOPER объединены с сохранением обоих полных
+префиксов и единого неизменного исторического suffix. Чужие исходники/отчёты
+не переписывались собственными версиями. После объединения root gate повторён, exit0; собственных изменений общих файлов нет.
+
+История ниже.
+
+---
+
+# Coscode snapshot order: отдельная интеграция, 13 ноября 2026
+
+Product commit3ad583333bedb590799d7c984d974edf4e2073d3.
+Integration commit404c3ddb3cf69ed473b72d3ad304555942ab783a.
+BASE main1b73e49761a61ef34e25a3ae7958de9cf40cf7f9.
+
+Общие изменения ограничены регистрацией проверки и scoped runner:
+
+- `apps/web/package.json`: одна строка typecheck, добавлен strict CodeAgent E2E config.
+- `apps/web/tsconfig.code-agent-e2e.json`: отдельная конфигурация проверки E2E и runner.
+- `apps/web/playwright.code-agent.config.ts`: optional Chromium path, production build/start,
+  проверяемый непривилегированный loopback port; retries0 и запрет reuse сохранены.
+
+Новых contracts, API, gateway, DB, auth, migrations, routes и зависимостей нет.
+Runtime, ограничения сети и grants прежние. Не переносить dev-stand проблему
+разрешения `.js` TypeScript exports в общий Next config в рамках этого среза.
+Для отката отменить integration commit и product commit в обратном порядке
+с сохранением последующих правок интегратора; данных для миграции нет.
+[Подробная поставка](COSCODE_SNAPSHOT_ORDER_DELIVERY_RU.md).
+
+Перед финальным HEAD сохранён новый main4477dd53 (PR572), пять независимых файлов:
+root package.json, scripts/vps-live-acceptance.mjs, scripts/test/vps-live-acceptance.test.mjs,
+два отчёта05_GEMINI. Это входящая реализация, не собственное изменение этих файлов.
+Контракты/API/CodeAgent не менялись, семь source blobs сверены. Guard test удаляет
+пароль и останавливает wrapper до network; живой VPS не запускался.
+
+Исторические интеграции ниже.
+
+---
+
 Перед публикацией сохранён новый main501d403 (PR573) без изменения своих7 source
 paths; общие contracts прочитаны. Final merge HEAD требует отдельного CI;
 локальный core receipt относится к281. Новая миграция0067 — inherited main, не наша.

@@ -1,0 +1,41 @@
+CI43455694958 HEAD93082c4; Browser failure; raw SHA256 4fd8e43cbb006eba8a69edcc6db190b847171d6cfdff98d77ad1f36d13952bb4
+2026-11-13T15:47:08.8714710Z ##[error]  1) [chromium] › e2e/chat-reliability.spec.ts:87:5 › restores text and files after closing the tab, isolates chats, removes and clears accepted drafts
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: true
+    Received: false
+
+    Call Log:
+    - Timeout 15000ms exceeded while waiting on the predicate
+
+      105 |       );
+      106 |     })
+    > 107 |     .toBe(true);
+          |      ^
+      108 |   await page.goto(`/?chat=${chat.id}`);
+      109 |   const editor = page.getByRole("textbox", { name: "Сообщение Kosmora" });
+      110 |   await editor.fill("Несохранённый текст");
+        at /home/runner/work/Nexus-OS/Nexus-OS/apps/web/e2e/chat-reliability.spec.ts:107:6
+2026-11-13T15:47:22.0260298Z ·············
+2026-11-13T15:48:34.4340107Z ················································································
+2026-11-13T15:48:39.2940125Z ·······[WebServer] {"level":50,"time":1794584919292,"pid":3311,"hostname":"runnervmccnms","scope":"project","projectId":"4a795ede-ae35-40e7-a6e4-0a94c2f5a7aa","interruptedRuns":0,"activatedBy":"local-owner","msg":"Emergency stop activated"}
+2026-11-13T15:49:43.3311113Z ·········································································
+2026-11-13T15:50:44.5043485Z ················································································
+2026-11-13T15:53:45.4691925Z   1 flaky
+2026-11-13T15:53:45.4695308Z     [chromium] › e2e/chat-reliability.spec.ts:87:5 › restores text and files after closing the tab, isolates chats, removes and clears accepted drafts
+2026-11-13T15:53:45.4695796Z   529 passed (8.3m)
+2026-11-13T15:53:45.4702003Z ##[notice]  1 flaky
+    [chromium] › e2e/chat-reliability.spec.ts:87:5 › restores text and files after closing the tab, isolates chats, removes and clears accepted drafts
+  529 passed (8.3m)
+2026-11-13T15:53:45.5109941Z [ELIFECYCLE] Command failed with exit code 1.
+2026-11-13T15:53:45.5450611Z /home/runner/work/Nexus-OS/Nexus-OS/apps/web:
+2026-11-13T15:53:45.5451624Z [ERR_PNPM_RECURSIVE_RUN_FIRST_FAIL] @cosmora/web@0.1.0 test:e2e: `pnpm test:e2e:main && pnpm test:e2e:issues && pnpm test:e2e:compaction && pnpm test:e2e:memory`
+2026-11-13T15:53:45.5465706Z Exit status 1
+2026-11-13T15:53:45.5785621Z [ELIFECYCLE] Command failed with exit code 1.
+2026-11-13T15:53:45.6022447Z ##[error]Process completed with exit code 1.
+2026-11-13T15:53:45.6091440Z ##[group]Run actions/upload-artifact@v4
+2026-11-13T15:53:45.6091611Z with:
+2026-11-13T15:53:45.6091740Z   name: memory-receipt-preview
+2026-11-13T15:53:45.6091912Z   path: apps/web/test-results/**/memory-usage.png
+2026-11-13T15:53:45.6092084Z   if-no-files-found: warn
+2026-11-13T15:53:45.6092222Z   retention-days: 7
