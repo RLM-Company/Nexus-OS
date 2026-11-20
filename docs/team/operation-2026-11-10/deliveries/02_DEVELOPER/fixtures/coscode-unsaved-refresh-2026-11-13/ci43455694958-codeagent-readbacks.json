@@ -1,0 +1,92 @@
+{
+  "poll recovery": {
+    "kind": "poll",
+    "restored": true,
+    "displayed": "export const value = 44;",
+    "cancelled_reload_sent_read": false,
+    "access_refusal_visible": false,
+    "reads": 3,
+    "writes": [],
+    "real_model_called": false
+  },
+  "poll preservation": {
+    "kind": "poll",
+    "expected": "// 19 700 · 00123 · 2026-11-13 · кроме доставки\nexport const value = 77;",
+    "displayed": "// 19 700 · 00123 · 2026-11-13 · кроме доставки\nexport const value = 77;",
+    "reads": 2,
+    "writes": [],
+    "real_model_called": false
+  },
+  "stale reload recovery": {
+    "kind": "stale reload",
+    "restored": true,
+    "displayed": "export const value = 44;",
+    "cancelled_reload_sent_read": false,
+    "access_refusal_visible": false,
+    "reads": 3,
+    "writes": [],
+    "real_model_called": false
+  },
+  "stale reload preservation": {
+    "kind": "stale reload",
+    "expected": "// 19 700 · 00123 · 2026-11-13 · кроме доставки\nexport const value = 77;",
+    "displayed": "// 19 700 · 00123 · 2026-11-13 · кроме доставки\nexport const value = 77;",
+    "reads": 1,
+    "writes": [],
+    "real_model_called": false
+  },
+  "file recovery": {
+    "kind": "file",
+    "restored": true,
+    "displayed": "export const value = 44;",
+    "cancelled_reload_sent_read": false,
+    "access_refusal_visible": false,
+    "reads": 2,
+    "writes": [],
+    "real_model_called": false
+  },
+  "file preservation": {
+    "kind": "file",
+    "expected": "// 19 700 · 00123 · 2026-11-13 · кроме доставки\nexport const value = 77;",
+    "displayed": "// 19 700 · 00123 · 2026-11-13 · кроме доставки\nexport const value = 77;",
+    "reads": 1,
+    "writes": [],
+    "real_model_called": false
+  },
+  "revoked reload recovery": {
+    "kind": "revoked reload",
+    "restored": false,
+    "displayed": "// 19 700 · 00123 · 2026-11-13 · кроме доставки\nexport const value = 77;",
+    "cancelled_reload_sent_read": false,
+    "access_refusal_visible": true,
+    "reads": 2,
+    "writes": [],
+    "real_model_called": false
+  },
+  "revoked reload preservation": {
+    "kind": "revoked reload",
+    "expected": "// 19 700 · 00123 · 2026-11-13 · кроме доставки\nexport const value = 77;",
+    "displayed": "// 19 700 · 00123 · 2026-11-13 · кроме доставки\nexport const value = 77;",
+    "reads": 1,
+    "writes": [],
+    "real_model_called": false
+  },
+  "raw diff preservation": {
+    "kind": "raw diff",
+    "expected": "// 19 700 · 00123 · 2026-11-13 · кроме доставки\nexport const value = 77;",
+    "displayed": "// 19 700 · 00123 · 2026-11-13 · кроме доставки\nexport const value = 77;",
+    "reads": 1,
+    "writes": [],
+    "real_model_called": false
+  },
+  "raw diff recovery": {
+    "kind": "raw diff",
+    "restored": true,
+    "displayed": "export const value = 44;",
+    "cancelled_reload_sent_read": false,
+    "access_refusal_visible": false,
+    "reads": 2,
+    "writes": [],
+    "real_model_called": false
+  }
+}

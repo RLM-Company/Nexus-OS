@@ -1,0 +1,10 @@
+{
+  "kind": "raw diff",
+  "restored": true,
+  "displayed": "export const value = 44;",
+  "cancelled_reload_sent_read": false,
+  "access_refusal_visible": false,
+  "reads": 2,
+  "writes": [],
+  "real_model_called": false
+}

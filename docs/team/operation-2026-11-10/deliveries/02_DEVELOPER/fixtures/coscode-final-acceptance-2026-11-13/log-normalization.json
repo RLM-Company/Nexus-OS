@@ -1,0 +1,42 @@
+{
+  "api-adapters-passed.log": {
+    "raw_sha256": "144f3a3c0b35abe0b886d71a9040e45f2ad2bc183bded6a3da4cc6d38acbe29a",
+    "normalized_sha256": "420f345935c821a49bf4ee90f065ae26083fe01da6f9ef2305db677e50d6735e"
+  },
+  "runtime-unit-passed.log": {
+    "raw_sha256": "93b00ec2e2effb9b662df4058b6c9342c9454cfd6819bfa96bbd61a03e70cb66",
+    "normalized_sha256": "9b6bd604f3c5bc497149fb98111c7979e7deb8f3114630352d678601dc1e700b"
+  },
+  "web-unit-passed.log": {
+    "raw_sha256": "03cf9c49d1f3c98e9fc0ff5316945a69bea687ba536ff1e666cf4d0e743ea391",
+    "normalized_sha256": "6413396625ca6a4e13b27bfb4a0c7054c09539ceddcdee82dce9bc7043d66db6"
+  },
+  "api-types-passed.log": {
+    "raw_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "normalized_sha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+  },
+  "api-lint-passed.log": {
+    "raw_sha256": "dd2f8b13f95897cba80165837cfd1d41c856d3574e86608251f7be20c3597065",
+    "normalized_sha256": "dd2f8b13f95897cba80165837cfd1d41c856d3574e86608251f7be20c3597065"
+  },
+  "local-api-oci-environment-failed.log": {
+    "raw_sha256": "79e11a4a9836891e7ef2818000c15357868f0f63ca92f39e787f7ca336982515",
+    "normalized_sha256": "79e11a4a9836891e7ef2818000c15357868f0f63ca92f39e787f7ca336982515"
+  },
+  "first-probe-loader-failed.log": {
+    "raw_sha256": "dbebe020ec281e201dad2d5a21262ab1b322df268c7b059ac2fbe6bde1760931",
+    "normalized_sha256": "dbebe020ec281e201dad2d5a21262ab1b322df268c7b059ac2fbe6bde1760931"
+  },
+  "runner-before-clean-enospc.log": {
+    "raw_sha256": "9ba7897c618bdc127f3c19ce91754fb5534c600c3be8cb792b28f69079e33aed",
+    "normalized_sha256": "9ba7897c618bdc127f3c19ce91754fb5534c600c3be8cb792b28f69079e33aed"
+  },
+  "runner-after-clean-enospc.log": {
+    "raw_sha256": "614d6f2b7df535ebd5f3e58f826a6e4d088028f5728c8225a5c9e3561e9d0a2a",
+    "normalized_sha256": "614d6f2b7df535ebd5f3e58f826a6e4d088028f5728c8225a5c9e3561e9d0a2a"
+  },
+  "local-warmup-passed.log": {
+    "raw_sha256": "c5018617f387e3c581b623c4ec939af2d5acf4d59bf1c86e3998fa7cc55d6b7f",
+    "normalized_sha256": "c5018617f387e3c581b623c4ec939af2d5acf4d59bf1c86e3998fa7cc55d6b7f"
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "passed-access.json": {
+    "sha256": "cae556efb42c7a8403633328b54aff470cee63da32f1d690588d32b02bad3af6",
+    "matches_final_five": true
+  },
+  "passed-manual.json": {
+    "sha256": "ab4a202cfcba3220fba30bfc219f2b31a9b8187f44d61e077d05511f9a9f3e22",
+    "matches_final_five": true
+  },
+  "passed-legacy.json": {
+    "sha256": "bf3978d7a1e323ea4da63b3fd1e52d7e2f1deae6afc44d9fb8aefe95740364fc",
+    "matches_final_five": true
+  },
+  "passed-higher-durable-version.json": {
+    "sha256": "32aebc136583e2049295abb50f744955317ff6be1f69a99269e376e67e25f9b4",
+    "matches_final_five": true
+  },
+  "passed-versioned.json": {
+    "sha256": "fc211b00efcb691b5790abe7a83819ae3045ddfa86f9982fa2847f93d76c0496",
+    "matches_final_five": true
+  }
+}

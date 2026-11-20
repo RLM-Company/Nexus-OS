@@ -28,3 +28,30 @@ test("restores an unsent project draft after reload", async ({ page, request }) 
     "Несохранённое уточнение проекта"
   );
 });
+
+test("keeps new project chat drafts separate across project folders", async ({ page, request }) => {
+  for (const title of ["Черновик Альфа", "Черновик Бета"]) {
+    const response = await request.post("/api/v1/projects/empty", {
+      data: { title, client_project_id: crypto.randomUUID() }
+    });
+    expect(response.status()).toBe(201);
+  }
+  await page.goto("/");
+  const sidebar = page.locator("#sidebar-project-list");
+  const composer = page.getByLabel("Сообщение Kosmora");
+  const openNewProjectChat = async (title: string) => {
+    await sidebar.getByRole("button", { name: new RegExp(title) }).click();
+    await sidebar.getByRole("button", { name: "+ Новый чат в проекте", exact: true }).click();
+    await expect(composer).toBeEnabled();
+  };
+
+  await openNewProjectChat("Черновик Альфа");
+  await composer.fill("Материалы только для проекта Альфа");
+  await openNewProjectChat("Черновик Бета");
+  await expect(composer).toHaveValue("");
+  await composer.fill("Материалы только для проекта Бета");
+  await openNewProjectChat("Черновик Альфа");
+  await expect(composer).toHaveValue("Материалы только для проекта Альфа");
+  await openNewProjectChat("Черновик Бета");
+  await expect(composer).toHaveValue("Материалы только для проекта Бета");
+});
