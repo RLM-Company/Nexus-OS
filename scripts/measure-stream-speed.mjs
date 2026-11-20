@@ -5,7 +5,7 @@ import { OpenAICompatibleAdapter } from "../packages/model-gateway/dist/index.js
 
 const prompt = "List exactly three short tips for keeping a project folder organized.";
 
-export async function measureStream(adapter, now = () => performance.now()) {
+export async function measureStream(adapter, now = () => performance.now(), options = {}) {
   const started = now();
   let firstText = null;
   let lastText = null;
@@ -15,8 +15,13 @@ export async function measureStream(adapter, now = () => performance.now()) {
   let completion;
 
   const stream = adapter.stream(
-    { messages: [{ role: "user", content: prompt }], constraints: { max_output_tokens: 256 } },
-    AbortSignal.timeout(30_000)
+    {
+      messages: [{ role: "user", content: options.prompt ?? prompt }],
+      constraints: { max_output_tokens: options.maxOutputTokens ?? 256 }
+    },
+    options.signal
+      ? AbortSignal.any([options.signal, AbortSignal.timeout(30_000)])
+      : AbortSignal.timeout(30_000)
   );
 
   for await (const event of stream) {
@@ -29,6 +34,7 @@ export async function measureStream(adapter, now = () => performance.now()) {
       lastText = received;
       visibleCharacters += characters;
       chunks++;
+      options.onText?.(event.delta);
     }
     if (event.type === "response.completed") completion = event;
   }
@@ -65,18 +71,37 @@ function mockFetch() {
     { choices: [{ delta: {}, finish_reason: "stop" }] },
     { choices: [], usage: { prompt_tokens: 14, completion_tokens: 5 } }
   ];
-  const wire = packets.map((packet) => `data: ${JSON.stringify(packet)}\n\n`).join("");
-  return Promise.resolve(new Response(`${wire}data: [DONE]\n\n`));
+  const encoder = new TextEncoder();
+  const frames = [...packets.map((packet) => JSON.stringify(packet)), "[DONE]"].values();
+  return Promise.resolve(
+    new Response(
+      new ReadableStream({
+        async pull(controller) {
+          const frame = frames.next();
+          if (frame.done) {
+            controller.close();
+            return;
+          }
+          await new Promise((resolve) => setTimeout(resolve, 40));
+          controller.enqueue(encoder.encode(`data: ${frame.value}\n\n`));
+        }
+      })
+    )
+  );
 }
 
-function makeAdapter(live, env) {
+export function makeAdapter(live, env, { allowLoopback = false } = {}) {
   const model = live ? env.MODEL_NAME?.trim() : "stream-fixture";
   const apiKey = live ? env.MODEL_API_KEY?.trim() : "fixture";
   const baseUrl = new URL(live ? (env.MODEL_BASE_URL ?? "") : "https://fixture.invalid/v1");
+  const localHttp =
+    allowLoopback &&
+    baseUrl.protocol === "http:" &&
+    ["127.0.0.1", "localhost", "[::1]"].includes(baseUrl.hostname);
   if (
     !model ||
     !apiKey ||
-    baseUrl.protocol !== "https:" ||
+    (baseUrl.protocol !== "https:" && !localHttp) ||
     baseUrl.username ||
     baseUrl.password ||
     baseUrl.search ||
@@ -105,16 +130,15 @@ async function main() {
   if (result.finish !== "stop") process.exitCode = 1;
 }
 
+export function streamDiagnostic(error) {
+  const safe =
+    /^(?:Provider returned HTTP [1-5]\d\d|Provider stream did not finish a non-empty text response|Invalid provider stream event|Provider returned invalid streaming JSON|No completed visible answer\.)$/u;
+  return safe.test(error?.message) ? error.message : "Stream measurement failed.";
+}
+
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   await main().catch((error) => {
-    const diagnostic = error?.message;
-    const safe =
-      /^(?:Provider returned HTTP [1-5]\d\d|Provider stream did not finish a non-empty text response|Invalid provider stream event|Provider returned invalid streaming JSON|No completed visible answer\.)$/u;
-    console.error(
-      safe.test(diagnostic)
-        ? diagnostic
-        : "Stream measurement failed. Check the model configuration and provider status."
-    );
+    console.error(streamDiagnostic(error));
     process.exitCode = 1;
   });
 }

@@ -1,0 +1,140 @@
+:root {
+  color-scheme: dark;
+  background: #101110;
+  color: #f0f0ee;
+  font:
+    15px/1.5 system-ui,
+    sans-serif;
+}
+* {
+  box-sizing: border-box;
+}
+main {
+  max-width: 1040px;
+  margin: 0 auto;
+  padding: 44px 24px;
+}
+h1,
+h2 {
+  margin: 0 0 8px;
+  letter-spacing: -0.03em;
+}
+h1 {
+  font-size: clamp(30px, 5vw, 44px);
+}
+p {
+  margin: 0 0 18px;
+  color: #aaaead;
+}
+form,
+article {
+  padding: 20px;
+  background: #191a19;
+  border: 1px solid #363836;
+  border-radius: 12px;
+}
+label,
+legend {
+  font-weight: 600;
+}
+textarea,
+input[type="number"] {
+  padding: 10px;
+  background: #101110;
+  border: 1px solid #464946;
+  border-radius: 7px;
+  color: inherit;
+  font: inherit;
+}
+textarea {
+  display: block;
+  width: 100%;
+  margin: 8px 0 18px;
+  resize: vertical;
+}
+fieldset {
+  margin: 0 0 16px;
+  padding: 8px 0 0;
+  border: 0;
+}
+#modes,
+.controls {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+#modes label {
+  padding: 6px 10px;
+  border: 1px solid #3c3e3c;
+  border-radius: 7px;
+}
+#modes label:has(:disabled) {
+  color: #969a96;
+}
+input[type="number"] {
+  width: 92px;
+}
+button {
+  padding: 9px 13px;
+  color: #161716;
+  background: #efefec;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+button[type="button"] {
+  background: #272927;
+  color: #f0f0ee;
+  border-color: #414441;
+}
+button:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+#status {
+  margin: 14px 0;
+  min-height: 23px;
+}
+.table-wrap {
+  overflow-x: auto;
+}
+table {
+  width: 100%;
+  border-collapse: collapse;
+  white-space: nowrap;
+}
+th,
+td {
+  padding: 9px 12px;
+  text-align: left;
+  border-bottom: 1px solid #343634;
+}
+th {
+  color: #bfc3bf;
+  font-size: 0.88rem;
+}
+td {
+  font-variant-numeric: tabular-nums;
+}
+.note {
+  margin-top: 10px;
+  font-size: 0.85rem;
+}
+#answers {
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+  grid-template-columns: repeat(auto-fit, minmax(min(280px, 100%), 1fr));
+}
+h3 {
+  margin: 0 0 6px;
+}
+pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font: inherit;
+  margin: 0;
+}

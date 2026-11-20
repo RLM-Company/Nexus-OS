@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Kosmora Stream Lab</title>
+    <link rel="stylesheet" href="/panel.css" />
+    <script src="/panel.js" type="module"></script>
+  </head>
+  <body>
+    <main>
+      <header>
+        <h1>Stream Lab</h1>
+        <p>Один запрос, несколько маршрутов. Режимы запускаются по очереди.</p>
+      </header>
+      <form id="experiment">
+        <label for="prompt">Запрос</label>
+        <textarea id="prompt" required maxlength="3000" rows="4">
+Дай три коротких совета по организации папки проекта.</textarea>
+        <fieldset>
+          <legend>Режимы</legend>
+          <div id="modes"></div>
+        </fieldset>
+        <div class="controls">
+          <label for="max-tokens">Максимум выходных токенов</label>
+          <input id="max-tokens" type="number" value="256" min="8" max="2048" required />
+          <button id="run" type="submit" disabled>Запустить сравнение</button>
+          <button id="stop" type="button" disabled>Остановить</button>
+        </div>
+      </form>
+      <p id="status" role="status">Загружаются режимы…</p>
+      <h2>Результаты</h2>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Режим</th>
+              <th>Первый текст</th>
+              <th>Полный ответ</th>
+              <th>Симв./с в потоке</th>
+              <th>Токены провайдера</th>
+              <th>Ток./с за весь запрос</th>
+            </tr>
+          </thead>
+          <tbody id="metrics"></tbody>
+        </table>
+      </div>
+      <p class="note">
+        Токены провайдера могут включать скрытое рассуждение. Фикстура подходит для проверки панели.
+      </p>
+      <section id="answers" aria-label="Ответы моделей"></section>
+    </main>
+  </body>
+</html>
