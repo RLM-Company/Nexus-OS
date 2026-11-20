@@ -91,7 +91,48 @@ composerDraftKey + epoch` (`page.tsx:656`), effect гидрации (`:700-761`)
 зелёным CI базы `815b8f95`. Новые правки не вносились: найденные расхождения
 являются непокрытыми сценариями, а не дефектами кода.
 
-## Проходы 3–5 — открытые
+## Проход 3 — профиль и диктовка: карта покрытия, пробелы зафиксированы
+
+**Профиль — покрыто:** хранилище `account-store.ts:11-55` (имя, род обращения,
+род ассистента; defaults masculine/neutral), миграция `:97-118`, CAS `:200-249`;
+GET/PUT `account-settings/routes.ts:13-41,113-148`; промпт идентичности
+`owner-identity.ts:14-30` (имя «в приветствии и обращении»); стартовый экран
+`page.tsx:3442-3446`, онбординг `profile-onboarding.tsx:12-149`, настройки
+`personal-settings/page.tsx:130-183`. Тесты: `profile-chat-path.test.ts:76-215`
+(defaults, сохранение + reload через новый store, имя/род в системном промпте
+обычного чата и Koswork), `owner-identity.test.ts:20-50`,
+`profile-onboarding-core.test.ts:24-57`, e2e `profile-onboarding.spec.ts:63-124`
+(save → приветствие → reload; Skip → defaults).
+
+**Диктовка — покрыто:** `voice-composer.tsx` — явный запрос разрешения `:124`,
+дедуп `:83-98`, onerror/onend `:100-122`, отказ `NotAllowedError` `:135-137`,
+нет микрофона/API `:68-72,137`, стоп `:142-154`, cleanup `abort()` `:56-63`.
+**Гонка с уходящим черновиком проверена и опровергнута**: `onresult/onerror/onend`
+имеют guard `if (recognition.current !== instance) return` (`:85,101,110`), а
+remount по `key={composerDraftKey}` (`page.tsx:3549`) вызывает cleanup с обнулением
+`recognition.current` — queued callback не пишет в старый черновик. E2e
+`composer-controls.spec.ts:169-186` (разрешение + вставка), `:188-256`
+(no-speech → повтор), `:258-280` (явный стоп), `:145-167` (позднее распознавание).
+Интеграция в scoped draft — `page.tsx:3548-3552`, ключ #599 `:622-624`.
+
+**Согласованные входы Studio через меню — покрыто частично:** `chat-attachments.tsx:87-209`
+— «+» меню с Deep Research / Создать изображение / Создать видео (`:179-197`),
+подключено через `onOpenTool={selectSurface}` (`page.tsx:3527`, `selectSurface`
+`:2313-2349`); e2e Deep Research `composer-controls.spec.ts:282-291`.
+
+**Реальные пробелы (покрытие, не дефекты):**
+
+1. Нет unit/e2e на `NotAllowedError` → «Разрешите доступ…» и на отсутствие
+   `navigator.mediaDevices` / `audio-capture` — поведение в коде есть, проверки нет.
+2. Диктовка в chat/project/`project-new-chat` (#599) не покрыта e2e (только новый чат).
+3. Studio-входы «изображения/видео» и меню в project-context не покрыты e2e;
+   «Презентации» есть в сайдбаре (`workspace-sections.tsx:45`), но не в меню «+».
+4. Нет сквозного браузерного «logout → login → имя/род сохранены» (есть reload с
+   mock + серверный new-store тест).
+   Все найденные расхождения — непокрытые сценарии, а не дефекты кода; новые UI,
+   права и входы не вводятся (UI_RULES).
+
+## Проходы 4–5 — открытые
 
 - **Проход 2 (проекты):** создание, перенос чата туда/обратно, история/ссылки/файлы,
   отдельные черновики, источники общей памяти и границы. Следующий шаг — сверить
