@@ -61,6 +61,11 @@ export type ModelGatewayStreamEvent =
       usage: ProviderUsage;
       route: ModelRouteAttempt;
       calculatedCost: { amount: number; currency: Currency } | null;
+      /**
+       * Wall-clock measurement from route start to first output and completion.
+       * Optional so existing event builders remain valid; the gateway populates it.
+       */
+      timing?: { first_token_ms: number; total_ms: number };
     };
 
 export type GatewayErrorCode =

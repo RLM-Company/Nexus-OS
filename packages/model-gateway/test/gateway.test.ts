@@ -245,6 +245,24 @@ describe("ModelGateway", () => {
     });
   });
 
+  it("reports first-token and total timing from the gateway clock", async () => {
+    // The gateway is the right place to measure: it sees every delta and can
+    // use its injected clock, so no live provider or adapter change is needed.
+    const clock = [100, 160, 250];
+    const gateway = new ModelGateway([new MockProviderAdapter()], router([entry()]), [], {
+      now: () => clock.shift() ?? 250
+    });
+    const events = await collectGateway(gateway.stream(request()));
+    const completion = events.at(-1);
+    expect(completion).toMatchObject({
+      type: "response.completed",
+      timing: { first_token_ms: 60, total_ms: 150 }
+    });
+    if (completion?.type !== "response.completed" || !completion.timing)
+      throw new Error("Expected a timed completion event");
+    expect(completion.timing.first_token_ms).toBeLessThanOrEqual(completion.timing.total_ms);
+  });
+
   it("falls back through another registry-approved route before the first delta", async () => {
     const failing: ModelProviderAdapter = {
       id: "primary",

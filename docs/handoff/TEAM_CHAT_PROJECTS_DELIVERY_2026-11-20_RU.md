@@ -1,0 +1,181 @@
+# Вертикаль чата и проектов: карта проходов (этап 3)
+
+Раздел и зона названы владельцем 20 ноября 2026: ветка `team/chat-projects-delivery`,
+обычный веб-чат, композер, проекты, профиль, диктовка и пользовательское поведение
+Turbo. Локальное хранилище Windows ведёт Claude, исполнение DAG — DeepSeek; эти
+зоны неChangingются. База черновиков — PR #599 (слит в main `96a40c4c`).
+
+Формат — по `STAGE_TWO_WORKFLOW_RU.md`. Границы интерфейса — `apps/web/UI_RULES.md`
+и `apps/web/AGENTS.md`; сайдбар, стартовый экран чата, логотип и стили не меняются
+без точечного запроса. Next.js 16.3.1: перед правками UI прочитан гайд
+`node_modules/next/dist/docs/01-app/01-getting-started/05-server-and-client-components.md`.
+
+## База
+
+- `main` = `815b8f95`, ветка `team/chat-projects-delivery` создана от неё.
+- Post-merge CI `44762053115` на `815b8f95`: `success` (Browser acceptance,
+  Verify monorepo, Code sandbox, identity-tests).
+- PR #599: все проверки зелёные, включая `Browser acceptance` (10m3s) и
+  `Live server acceptance smoke` (42s).
+- Чужие локальные правки `STAGE_TWO_*` doc-файлов и `tmp/` сохранены через stash
+  при обновлении ветки и возвращены без потерь; в коммиты не включаются.
+
+## Проход 1 — цикл сообщения: ПОДТВЕРЖДЁН (без изменения кода)
+
+Владелец выбрал форму «только подтвердить сценарий». Изучены актуальные реализации
+и тесты; три гипотетических разрыва проверены и **опровергнуты чтением кода**:
+
+1. «Утечка retry-маркера при смене эпохи» — `postChatMessage` (`page.tsx:1954-1972`)
+   очищает маркер `clearChatSendRetry` сразу после 2xx (`:1970`), до проверки эпохи
+   вызывающим кодом (`:1996`, `:2066`). Утечки нет.
+2. «Гидрация черновика при смене pendingProjectId» — `attachmentScope =
+composerDraftKey + epoch` (`page.tsx:656`), effect гидрации (`:700-761`) зависит
+   от `attachmentScope`; ключ #599 `project-new-chat:<id>` (`:622-624`) меняет scope.
+   Перезагрузка черновика происходит.
+3. «Ошибочный повтор в другом чате» — `chatSendRetryKey` (`chat-send-retry.ts:16-26`)
+   включает в fingerprint path + payload (content, вложения, project_id); два
+   независимых маркера разведены тестом `chat-reliability.spec.ts:438-501`.
+
+Карта покрытия (факт, проверки зелёные):
+
+| Сценарий прохода 1                           | Где проверено                                                                                           |
+| -------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| новый/существующий чат, вложения, поток      | `chat-reliability.spec.ts:48-219`, `chat-text-attachments.spec.ts`, `chat-document-attachments.spec.ts` |
+| потерянный ответ и повтор с вложением        | `chat-reliability.spec.ts:372-436` (personal + project)                                                 |
+| два независимых retry после навигации/reload | `chat-reliability.spec.ts:438-501`                                                                      |
+| reload/lossless net — один POST, без дублей  | `chat-reliability.spec.ts:613-644`                                                                      |
+| late history/stream не влияет на другой чат  | `chat-reliability.spec.ts:646-677`                                                                      |
+| стоп/отмена и возврат запроса в редактор     | `chat-reliability.spec.ts:711-734`                                                                      |
+| изоляция черновиков по проектам (#599)       | `composer-draft-restart.spec.ts`, `desktop/windows/test/draft-store.test.cjs`                           |
+| API: идемпотентность, busy, cancel, SSE      | `general-chat-api.test.ts`, `general-chat-background-run-coordinator.test.ts`                           |
+
+Локально запущено (fixture, без платных вызовов): веб-юниты
+`chat-send-retry` + `composer-draft-storage` + `recoverable-run-draft` — 3 файла /
+**32 теста** ✅; API `general-chat-api` + `general-chat-background-run-coordinator`
+— 2 файла / **25 тестов** ✅. E2E локально не запускается: `playwright.config.ts`
+использует `pnpm` в `webServer`, которого нет в PATH этой Windows-среды; пробел
+закрыт зелёным CI (PR #599 Browser acceptance, post-merge `44762053115`).
+
+## Проход 2 — проекты: карта покрытия, пробелы зафиксированы
+
+Изучены реализации и тесты. **Подтверждено покрытым**:
+
+- Пустое создание проекта без вызова модели — `projects.test.ts:46-90` (spy на
+  отсутствие dispatch), идемпотентность `:52-69`; web-диалог `owner-ui-media.spec.ts:31-40`.
+- Двухсторонний перенос чата: web `chat-item-menu.tsx:151-170` → `PATCH /chats/:id`
+  с `project_id` (`general-chat-routes.ts:418-462`, ошибки 404/409), menu-пункт
+  «Вернуть в общий список» (`:268`); DB `general-chat-project.test.ts:15-46`
+  (в проект / между проектами / обратно, история, вложения, та же ссылка),
+  `:48-60` reload, `:62-79` чужой/неизвестный проект и владелец, `:81-94` busy.
+- История/ссылки/файлы проекта — `project-materials.test.ts`, `project-attachments.test.ts`,
+  `project-folder-scenario.test.ts:57-139`.
+- Отдельные черновики двух проектов (#599) — `composer-draft-restart.spec.ts:32-57`,
+  `desktop/windows/test/draft-store.test.cjs:36-58`.
+- Источники общей памяти и границы — `project-chat-context.test.ts:31-111`
+  (сосед по проекту с источником, себя исключаем, другой проект, конфиденциальный
+  чат в обе стороны), `project-folder-scenario.test.ts:140-174`; снимок памяти
+  `project-memory-store.ts:209-232` (забытое не воскресает), `validateSource:233-243`
+  (только опубликованные артефакты завершённых шагов); поиск
+  `project-knowledge.test.ts:152` изолирует проекты/владельцев. Инъекция в запрос
+  модели `packages/core/src/chat.ts:131-145` с явным `[scope]`.
+
+**Реальные пробелы (не баги, а непокрытые сценарии из требований владельца):**
+
+1. Нет браузерного e2e на двухсторонний перенос чата через меню — только DB/API.
+2. Нет сквозного e2e «повторный вход → изоляция черновиков» — только проверки
+   нативного хранилища по owner и `purgeUnscopedLegacyDrafts`.
+3. Нет UI-переключателя `confidential` (только `PATCH /chats/:id`), поэтому
+   границу памяти нельзя проверить из браузера.
+
+Проверки прохода 2 локально не запускались (e2e блокирован pnpm); пробел закрыт
+зелёным CI базы `815b8f95`. Новые правки не вносились: найденные расхождения
+являются непокрытыми сценариями, а не дефектами кода.
+
+## Проход 3 — профиль и диктовка: карта покрытия, пробелы зафиксированы
+
+**Профиль — покрыто:** хранилище `account-store.ts:11-55` (имя, род обращения,
+род ассистента; defaults masculine/neutral), миграция `:97-118`, CAS `:200-249`;
+GET/PUT `account-settings/routes.ts:13-41,113-148`; промпт идентичности
+`owner-identity.ts:14-30` (имя «в приветствии и обращении»); стартовый экран
+`page.tsx:3442-3446`, онбординг `profile-onboarding.tsx:12-149`, настройки
+`personal-settings/page.tsx:130-183`. Тесты: `profile-chat-path.test.ts:76-215`
+(defaults, сохранение + reload через новый store, имя/род в системном промпте
+обычного чата и Koswork), `owner-identity.test.ts:20-50`,
+`profile-onboarding-core.test.ts:24-57`, e2e `profile-onboarding.spec.ts:63-124`
+(save → приветствие → reload; Skip → defaults).
+
+**Диктовка — покрыто:** `voice-composer.tsx` — явный запрос разрешения `:124`,
+дедуп `:83-98`, onerror/onend `:100-122`, отказ `NotAllowedError` `:135-137`,
+нет микрофона/API `:68-72,137`, стоп `:142-154`, cleanup `abort()` `:56-63`.
+**Гонка с уходящим черновиком проверена и опровергнута**: `onresult/onerror/onend`
+имеют guard `if (recognition.current !== instance) return` (`:85,101,110`), а
+remount по `key={composerDraftKey}` (`page.tsx:3549`) вызывает cleanup с обнулением
+`recognition.current` — queued callback не пишет в старый черновик. E2e
+`composer-controls.spec.ts:169-186` (разрешение + вставка), `:188-256`
+(no-speech → повтор), `:258-280` (явный стоп), `:145-167` (позднее распознавание).
+Интеграция в scoped draft — `page.tsx:3548-3552`, ключ #599 `:622-624`.
+
+**Согласованные входы Studio через меню — покрыто частично:** `chat-attachments.tsx:87-209`
+— «+» меню с Deep Research / Создать изображение / Создать видео (`:179-197`),
+подключено через `onOpenTool={selectSurface}` (`page.tsx:3527`, `selectSurface`
+`:2313-2349`); e2e Deep Research `composer-controls.spec.ts:282-291`.
+
+**Реальные пробелы (покрытие, не дефекты):**
+
+1. Нет unit/e2e на `NotAllowedError` → «Разрешите доступ…» и на отсутствие
+   `navigator.mediaDevices` / `audio-capture` — поведение в коде есть, проверки нет.
+2. Диктовка в chat/project/`project-new-chat` (#599) не покрыта e2e (только новый чат).
+3. Studio-входы «изображения/видео» и меню в project-context не покрыты e2e;
+   «Презентации» есть в сайдбаре (`workspace-sections.tsx:45`), но не в меню «+».
+4. Нет сквозного браузерного «logout → login → имя/род сохранены» (есть reload с
+   mock + серверный new-store тест).
+   Все найденные расхождения — непокрытые сценарии, а не дефекты кода; новые UI,
+   права и входы не вводятся (UI_RULES).
+
+## Проход 4 — Turbo: timing подключён, живые замеры открыты
+
+Turbo сам по себе **реализован и покрыт**: флаг/CAS `account-store.ts:125-171`,
+UI `model-picker.tsx:228-238` (+ принудительный low-effort `:172-179`), request-shaping
+`relay-execution.ts:133-176` (`optimize_for:"latency"`, low reasoning, Relay bypass,
+сохранение output-бюджета), scoring `router.ts:56-65`, e2e персистентности
+`chat-polish-20261025.spec.ts:2-32`, unit `execution-profile.test.ts:68-130`.
+
+**Сделано (техническая правка, измеримый результат, без ключей):**
+
+- Timing подключён на уровне **gateway** (не адаптеров): `types.ts` — опциональное
+  `timing: { first_token_ms, total_ms }` в `response.completed`; `gateway.ts:170-175,181,194,259-268`
+  — замер через инъектированный `#now()`: `streamStart` до потока, `firstTokenAt` на
+  первом `text.delta`/`tool.call`, `completedAt` на completion. Gateway — правильное
+  место: он видит все дельты и учитывает retry, чего нет в адаптере.
+- Детерминированный тест `gateway.test.ts` с `now`-очередью `[100,160,250]`:
+  `first_token_ms:60`, `total_ms:150`, `first <= total`.
+- Проверки: model-gateway 11 файлов / **153 теста** ✅, eslint/tsc ✅, Prettier ✅;
+  API consumer-тесты 3 файла / 21 тест ✅; API typecheck ✅.
+
+**Почему не в адаптерах:** владелец выбрал «подключить timing в адаптерах», но по
+факту измерить TTFT можно только там, где известны начало потока и все дельты —
+в gateway. Адаптеры не имеют `#now()` и не учитывают retry; правка в gateway покрывает
+и их, и харнесс. Это техническая деталь внутри согласованного объёма.
+
+**Остаётся открытым (требует отдельного разрешения/определения):**
+
+- Живые замеры TTFT/полной задержки и качества на одинаковом входе — платные вызовы.
+- Grok-провайдер и «набор Grok» в репозитории отсутствуют; в конфиге/адаптерах
+  Grok не зарегистрирован. Нужны ключ, провайдер и согласованный входной набор.
+- Скрипт `measure-profile-latency.mjs` — CPU-only route-shape проверка timeout
+  (`timeoutMs=0`), не TTFT; импортирует из `dist`, который без сборки отсутствует.
+
+## Проход 5 — открытый
+
+Повторить вертикаль чата и проектов на релизном кандидате, передать Codex запись
+прогона, обнаруженные риски и подтверждённые улучшения. Выкладка/VPS — отдельное
+поручение владельца; живая приёмка этапа 1 не выполнялась и не объявляется
+завершённой.
+
+## Следующий открытый шаг
+
+Проход 5 — по отдельной команде владельца и с доступом к релизному кандидату:
+передать Codex карту покрытия проходов 1–4 (`docs/handoff/TEAM_CHAT_PROJECTS_DELIVERY_2026-11-20_RU.md`),
+риски (нет Grok-провайдера/набора, живые TTFT и качество не мерились, e2e закрыты
+только CI) и подтверждённые улучшения (timing в gateway). Живые/plated вызовы,
+снятие запретов и следующий раздел этапа 3 — только по решению владельца.
