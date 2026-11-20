@@ -1,14 +1,16 @@
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { TypeBoxValidatorCompiler, type TypeBoxTypeProvider } from "@fastify/type-provider-typebox";
 import { Type } from "typebox";
-import type { IdentityContext } from "@cosmora/contracts";
+import type { IdentityContext, CreateManagerWork } from "@cosmora/contracts";
 import {
   ScheduledDispatchError,
+  ManagerWorkConflict,
   type ScheduledDispatchStore,
   type GeneralChatStore,
-  type ProjectStore
+  type ProjectStore,
+  type ManagerWorkStore
 } from "@cosmora/db";
-import { tickScheduledDispatches } from "@cosmora/core";
+import { nextDispatchAt, tickScheduledDispatches } from "@cosmora/core";
 
 const body = Type.Object(
   {
@@ -41,6 +43,7 @@ export function registerScheduledDispatchRoutes(options: {
   store: ScheduledDispatchStore;
   chats: GeneralChatStore;
   projects: ProjectStore;
+  works?: ManagerWorkStore;
   identityFor(request: FastifyRequest): IdentityContext;
 }): void {
   const typed = options.app.withTypeProvider<TypeBoxTypeProvider>();
@@ -103,10 +106,9 @@ export function registerScheduledDispatchRoutes(options: {
       const ownerId = owner(request);
       const now = new Date().toISOString();
       const due = options.store.due(ownerId, now);
-      const { readyIds, rescheduled } = tickScheduledDispatches(due, now);
+      const { readyIds } = tickScheduledDispatches(due, now);
       options.store.markReady(readyIds, ownerId);
-      for (const item of rescheduled) options.store.reschedule(item.id, ownerId, item.next_due_at);
-      return { checked: due.length, ready: readyIds.length, rescheduled: rescheduled.length };
+      return { checked: due.length, ready: readyIds.length, rescheduled: 0 };
     }
   );
 
@@ -120,23 +122,47 @@ export function registerScheduledDispatchRoutes(options: {
       }
     },
     (request, reply) => {
-      const ownerId = owner(request);
+      const { owner_id: ownerId, actor_id: actorId } = options.identityFor(request);
       const item = options.store.get(request.params.id, ownerId);
       if (!item) return reply.code(404).send(errorBody("NOT_FOUND", "Запись не найдена."));
       if (item.status !== "ready")
         return reply.code(409).send(errorBody("NOT_READY", "Запись ещё не готова к отправке."));
+      const occurrenceKey =
+        item.mode === "once" ? `scheduled:${item.id}` : `scheduled:${item.id}:${item.due_at}`;
       if (item.kind === "message") {
-        // Идемпотентно: client_message_id = id записи, повтор не создаст дубль.
         const accepted = options.chats.createMessage(
           item.chat_id!,
           item.payload.text,
-          `scheduled:${item.id}`,
+          occurrenceKey,
           ownerId
         );
         if (!accepted)
           return reply.code(409).send(errorBody("CHAT_BUSY", "Чат недоступен для отправки."));
+      } else {
+        if (!options.works)
+          return reply.code(503).send(errorBody("WORK_UNAVAILABLE", "Koswork недоступен."));
+        const goal =
+          item.kind === "team_task"
+            ? `[team] ${item.payload.text}`.slice(0, 8000)
+            : item.payload.text.slice(0, 8000);
+        const request: CreateManagerWork = {
+          client_request_id: occurrenceKey,
+          goal,
+          worker_role: "analyst"
+        };
+        try {
+          const work = options.works.create(item.project_id!, ownerId, actorId, request, true);
+          if (!work)
+            return reply.code(409).send(errorBody("PROJECT_INACTIVE", "Проект недоступен."));
+        } catch (cause) {
+          if (cause instanceof ManagerWorkConflict)
+            return reply.code(409).send(errorBody("WORK_CONFLICT", cause.message));
+          throw cause;
+        }
       }
-      options.store.markDispatched(item.id, ownerId);
+      const nextDueAt = nextDispatchAt(item.mode, item.due_at, new Date().toISOString());
+      if (nextDueAt) options.store.reschedule(item.id, ownerId, nextDueAt, item.due_at);
+      else options.store.markDispatched(item.id, ownerId);
       return { dispatched: true, id: item.id, kind: item.kind };
     }
   );

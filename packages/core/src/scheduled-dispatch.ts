@@ -24,9 +24,8 @@ export const nextDispatchAt = (
   const now = Date.parse(nowIso);
   const start = Date.parse(dueAt);
   if (!Number.isFinite(now) || !Number.isFinite(start)) return null;
-  let next = start;
-  // Ограничиваем число шагов, чтобы очень старое расписание не крутило цикл вечно.
-  for (let guard = 0; guard < 10_000 && next <= now; guard++) next += stepMs;
+  const elapsedSteps = Math.max(0, Math.floor((now - start) / stepMs) + 1);
+  let next = start + elapsedSteps * stepMs;
   if (mode !== "weekdays") return new Date(next).toISOString();
   // weekdays: переносим на ближайший будний день (пн–пт) в той же зоне.
   const weekday = (iso: string) =>
