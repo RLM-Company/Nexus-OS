@@ -42,6 +42,9 @@
 пакет импортируется без пропусков, расширенный даёт ожидаемые имена с разделителем
 `›`, скан/неполный CSV сохраняются, а неподдерживаемые/`__MACOSX`/вложенный
 архив считаются пропусками (2 + 3 базовых теста импортера — 5 passed).
+`apps/api/test/studio-fixture-deep-analysis.test.ts` прогоняет цитаты пакета через
+**реальный** `DocumentAnswerService` в deep-режиме (mock provider) и сверяет
+`coverage` (1 passed); скан без текстового слоя честно остаётся `incomplete`.
 Это исключает самосогласованный, но не соответствующий продукту пакет.
 
 ## Проверки
@@ -52,6 +55,8 @@ A: self-check.mjs    self_check passed (4/11 members, 4 citations, 3 pages,
                      3 skipped, 2 incomplete, 2 duplicates)
 A → product          studio-fixture-import.test.ts + library-archive-import.test.ts
                      5 passed; web typecheck 0, eslint 0
+A → deep analysis    studio-fixture-deep-analysis.test.ts  1 passed (mock provider,
+                     in-memory SQLite; coverage analyzed+failed=total)
 B: verify.mjs        self-consistency passed
 B: verify.mjs --report reports/deepseek-first-run.json   passed
 prettier · check-secrets   green
