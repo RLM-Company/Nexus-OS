@@ -185,6 +185,71 @@ test("dictation requests microphone access and inserts a deduplicated draft", as
   await expect(page.getByLabel("Сообщение Kosmora")).toHaveValue("Помоги составить план на завтра");
 });
 
+test("project dictation recovers from microphone errors and stays in its project draft", async ({
+  page,
+  request
+}) => {
+  const response = await request.post("/api/v1/projects", {
+    data: {
+      initial_message: "Проект для диктовки",
+      client_message_id: crypto.randomUUID()
+    }
+  });
+  expect(response.status()).toBe(201);
+  const { project } = (await response.json()) as { project: { id: string; title: string } };
+  await speechFixture(page);
+  await page.addInitScript(() => {
+    let attempts = 0;
+    Object.defineProperty(navigator, "mediaDevices", {
+      configurable: true,
+      value: {
+        getUserMedia: async ({ audio }: MediaStreamConstraints) => {
+          if (!audio) throw new Error("Microphone permission not requested");
+          attempts++;
+          if (attempts === 1) throw new DOMException("Permission denied", "NotAllowedError");
+          if (attempts === 2) throw new DOMException("No microphone", "NotFoundError");
+          return new MediaStream();
+        }
+      }
+    });
+  });
+
+  await page.goto("/");
+  const sidebar = page.locator(".sidebar");
+  const openProjectChat = async () => {
+    await sidebar
+      .getByRole("button")
+      .filter({ has: page.locator(`[id="pin-project-${project.id}"]`) })
+      .click();
+    await sidebar
+      .getByLabel(`Чаты проекта ${project.title}`)
+      .getByRole("button", { name: /Новый чат в проекте/ })
+      .click();
+  };
+  await openProjectChat();
+  const editor = page.getByLabel("Сообщение Kosmora");
+  const draft = "Черновик проекта.";
+  await editor.fill(draft);
+  await page.getByLabel("Голосовой ввод", { exact: true }).click();
+  await page.getByRole("button", { name: "Диктовать в браузере" }).click();
+  await expect(page.getByRole("status")).toContainText("Разрешите доступ к микрофону");
+  await expect(editor).toHaveValue(draft);
+  const retry = page.getByRole("button", { name: "Повторить диктовку" });
+  await retry.click();
+  await expect(page.getByRole("status")).toContainText("Микрофон недоступен");
+  await expect(editor).toHaveValue(draft);
+  expect(await page.evaluate(() => Reflect.get(window, "voiceStarted"))).toBe(0);
+  await retry.click();
+  const dictated = `${draft} Помоги составить план на завтра`;
+  await expect(editor).toHaveValue(dictated);
+  await expect(page.getByRole("status")).toContainText("Текст добавлен в черновик");
+
+  await page.reload();
+  await expect(editor).toHaveValue("");
+  await openProjectChat();
+  await expect(editor).toHaveValue(dictated);
+});
+
 test("dictation stops explicitly and retries after a recognition error", async ({ page }) => {
   await page.addInitScript(() => {
     const state = window as unknown as { dictationAttempts: number };
