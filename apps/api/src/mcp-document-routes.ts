@@ -46,7 +46,7 @@ export function registerMcpDocumentRoutes(
   const read = connectorToolId("mcp-document", "preview");
   const save = connectorToolId("mcp-document", "save");
   if (pilot?.readDocument && document && registry && projects) {
-    const readDocument = pilot.readDocument.bind(pilot);
+    const readDocument = pilot.readDocument;
     const { ownerId, projectId } = pilot;
     registry.register([
       parseConnectorDescriptor({
