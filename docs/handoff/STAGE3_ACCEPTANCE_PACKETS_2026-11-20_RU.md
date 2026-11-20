@@ -59,16 +59,21 @@ A → deep analysis    studio-fixture-deep-analysis.test.ts  1 passed (mock prov
                      in-memory SQLite; coverage analyzed+failed=total)
 B: verify.mjs        self-consistency passed
 B: verify.mjs --report reports/deepseek-first-run.json   passed
+A: first-gemini-run.mjs    local-simulation-NOT-live-Gemini; both checks passed,
+                     first-gemini-run/result.json + diff.md (расхождений нет)
+B: first-deepseek-run.mjs  local-simulation-NOT-live-DeepSeek; verifier passed,
+                     first-deepseek-run/result.json + diff.md
 prettier · check-secrets   green
 ```
 
 ## Ограничения
 
 Реальных первых прогонов Gemini и отчёта DeepSeek в репозитории нет: адаптация
-подготовлена как точка входа (README + формат отчёта + верификатор), а найденные
-расхождения исправлены на этапе самопроверки. Как только будут получены
-фактические отчёты, их нужно положить в `first-gemini-run/` / заменить
-`reports/deepseek-first-run.json` и повторить проверки — без подмены реальных
+замкнута локально симуляторами, которые честно помечают источник как
+`local-simulation-NOT-live-*`. Найденные расхождения исправлены на этапе
+самопроверки. Как только будут получены фактические отчёты, их нужно положить в
+`first-gemini-run/` / `first-deepseek-run/` (или заменить
+`reports/deepseek-first-run.json`) и повторить проверки — без подмены реальных
 результатов фикстурами. Живые провайдеры, внешние вызовы и деплой не
 использовались; платные/внешние операции остаются за отдельным поручением.
 
