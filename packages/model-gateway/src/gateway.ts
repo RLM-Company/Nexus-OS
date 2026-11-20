@@ -171,6 +171,8 @@ export class ModelGateway {
         const toolIds = new Set<string>();
         let completed = false;
         let circuitRecorded = false;
+        const streamStart = this.#now();
+        let firstTokenAt: number | null = null;
         try {
           for await (const event of this.#streamWithTimeout(
             adapter,
@@ -187,6 +189,7 @@ export class ModelGateway {
                   false
                 );
               }
+              if (firstTokenAt === null) firstTokenAt = this.#now();
               emittedOutput = true;
               yield event;
               continue;
@@ -210,6 +213,7 @@ export class ModelGateway {
                   { cause }
                 );
               }
+              if (firstTokenAt === null) firstTokenAt = this.#now();
               toolIds.add(event.id);
               emittedOutput = true;
               yield event;
@@ -256,10 +260,15 @@ export class ModelGateway {
             }
             completed = true;
             emittedOutput = true;
+            const completedAt = this.#now();
             yield {
               ...event,
               route,
-              calculatedCost: calculateCost(modelRoute, event.usage)
+              calculatedCost: calculateCost(modelRoute, event.usage),
+              timing: {
+                first_token_ms: Math.max(0, (firstTokenAt ?? completedAt) - streamStart),
+                total_ms: Math.max(0, completedAt - streamStart)
+              }
             };
           }
           if (!completed) {
