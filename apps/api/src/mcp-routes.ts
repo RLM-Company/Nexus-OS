@@ -1,7 +1,7 @@
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { Type } from "typebox";
 import { parseConnectorDescriptor, type IdentityContext } from "@cosmora/contracts";
-import type { EmergencyStopStore, ProjectStore } from "@cosmora/db";
+import type { EmergencyStopStore, PolicyStore, ProjectStore } from "@cosmora/db";
 import { connectorToolId, type ConnectorRegistry } from "@cosmora/tool-runtime";
 import { registerMcpDocumentRoutes } from "./mcp-document-routes.js";
 import type { McpDiscovery } from "./mcp-discovery.js";
@@ -27,6 +27,7 @@ const descriptor = parseConnectorDescriptor({
 export interface McpRouteDependencies {
   pilot?: McpDiscovery | undefined;
   projects?: ProjectStore | undefined;
+  policy?: PolicyStore | undefined;
   stop?: EmergencyStopStore | undefined;
   origin: string;
   ownerActive: (ownerId: string) => boolean;
@@ -77,7 +78,9 @@ export function registerMcpRoutes(
     owned,
     enabled,
     stopped,
-    origin
+    origin,
+    ownerActive: dependencies.ownerActive,
+    policy: dependencies.policy
   });
 
   app.get<{ Params: Params }>(path, { schema: { params } }, (request, reply) => {

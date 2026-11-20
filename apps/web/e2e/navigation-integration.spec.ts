@@ -183,6 +183,24 @@ test("imports a reviewed MCP document and explains access loss", async ({ page }
           }
     );
   });
+  await page.route(base + "/document/imports", (route) =>
+    route.fulfill({
+      json: {
+        items: writes
+          ? [
+              {
+                operation_id: id,
+                name: "report.txt",
+                source,
+                sha256: "c".repeat(64),
+                version: 2,
+                copy: "matched"
+              }
+            ]
+          : []
+      }
+    })
+  );
   await page.route(base + "/document/save", (route) => {
     writes++;
     expect(route.request().postDataJSON()).toEqual({
@@ -215,6 +233,12 @@ test("imports a reviewed MCP document and explains access loss", async ({ page }
   await expect(
     document.getByRole("button", { name: "Подтвердить сохранение в материалы" })
   ).toHaveCount(0);
+  await page.reload();
+  const history = page.getByRole("region", { name: "История импорта MCP", exact: true });
+  await history.getByRole("button", { name: "История импорта MCP" }).click();
+  await expect(history).toContainText(source);
+  await expect(history).toContainText("Версия материалов: 2. В материалах есть точная копия.");
+  await expect(history).toContainText("c".repeat(64));
   expect(writes).toBe(1);
 });
 

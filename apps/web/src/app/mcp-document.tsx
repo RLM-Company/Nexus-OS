@@ -15,12 +15,14 @@ export function McpDocument({
   project,
   name,
   documentId,
-  onBusy
+  onBusy,
+  onImported
 }: {
   project: string;
   name: string;
   documentId?: string;
   onBusy?: (busy: boolean) => void;
+  onImported?: () => void;
 }) {
   const [preview, setPreview] = useState<Preview | null>(null);
   const [busy, setBusy] = useState(false);
@@ -87,6 +89,7 @@ export function McpDocument({
         typeof outcome.version === "number"
       ) {
         setPreview(null);
+        onImported?.();
         setMessage(`Документ сохранён. Версия материалов: ${outcome.version}.`);
       } else {
         const code = outcome.error?.code;

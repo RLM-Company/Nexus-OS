@@ -123,7 +123,14 @@ async function main() {
       assert.equal(unknown.statusCode, 404);
       assert.deepEqual(methods, []);
     }
-    const receipts: object[] = [];
+    const receipts: {
+      source: string;
+      bytes: number;
+      sha256: string;
+      preview_operation: string;
+      save_operation: string;
+      material_version: number;
+    }[] = [];
     const savedAttachments: { name: string; content: string }[] = [];
     for (const [index, item] of documents.entries()) {
       const selector = selectors[index];
@@ -185,6 +192,35 @@ async function main() {
       readRepositories,
       documents.map(({ repo }) => repo)
     );
+    const imports = await client.inject({ url: path + "/imports" });
+    assert.equal(imports.statusCode, 200);
+    const history = imports.json<{
+      items: {
+        operation_id: string;
+        source: string;
+        sha256: string;
+        version: number;
+        copy: string;
+      }[];
+    }>().items;
+    assert.deepEqual(
+      history.map(({ operation_id, source, sha256, version, copy }) => ({
+        operation_id,
+        source,
+        sha256,
+        version,
+        copy
+      })),
+      [...receipts].reverse().map((receipt) => ({
+        operation_id: receipt.save_operation,
+        source: receipt.source,
+        sha256: receipt.sha256,
+        version: receipt.material_version,
+        copy: "matched"
+      }))
+    );
+    for (const { content } of savedAttachments) assert(!imports.body.includes(content));
+    assert.equal(methods.length, beforeStop);
     console.log(
       JSON.stringify(
         {
@@ -192,6 +228,7 @@ async function main() {
           outbound: methods,
           repositories_read: readRepositories,
           saved_copies_match: true,
+          verified_import_receipts: history.length,
           after_project_stop: denied.statusCode
         },
         null,

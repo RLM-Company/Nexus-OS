@@ -7,7 +7,7 @@ import {
   parseConnectorDescriptor,
   type IdentityContext
 } from "@cosmora/contracts";
-import { IdempotencyConflictError, type ProjectStore } from "@cosmora/db";
+import { IdempotencyConflictError, type PolicyStore, type ProjectStore } from "@cosmora/db";
 import { connectorToolId, type ConnectorRegistry } from "@cosmora/tool-runtime";
 import type { McpDiscovery } from "./mcp-discovery.js";
 
@@ -22,9 +22,39 @@ type Preview = {
   saved: boolean;
 };
 type ReadResult = { preview_id: string };
-type SaveResult = { version: number } | { error: "MCP_MATERIALS_CHANGED" | "MCP_MATERIALS_LIMIT" };
+type ImportDocument = { name: string; source: string; sha256: string };
+type SaveResult =
+  | { version: number; imported_document: ImportDocument }
+  | { error: "MCP_MATERIALS_CHANGED" | "MCP_MATERIALS_LIMIT" };
 const ttl = 5 * 60_000;
 const uuid = Type.String({ pattern: "^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$" });
+
+function parseImportReceipt(
+  value: unknown
+): { version: number; imported_document: ImportDocument } | null {
+  if (!value || typeof value !== "object") return null;
+  const { version, imported_document } = value as Record<string, unknown>;
+  if (
+    typeof version !== "number" ||
+    !Number.isSafeInteger(version) ||
+    version < 1 ||
+    !imported_document ||
+    typeof imported_document !== "object"
+  )
+    return null;
+  const { name, source, sha256 } = imported_document as Record<string, unknown>;
+  if (
+    typeof name !== "string" ||
+    !name ||
+    name.length > 100 ||
+    typeof source !== "string" ||
+    source.length > 512 ||
+    typeof sha256 !== "string" ||
+    !/^[a-f0-9]{64}$/u.test(sha256)
+  )
+    return null;
+  return { version, imported_document: { name, source, sha256 } };
+}
 
 export function registerMcpDocumentRoutes(
   app: FastifyInstance,
@@ -34,6 +64,8 @@ export function registerMcpDocumentRoutes(
     registry: ConnectorRegistry | undefined;
     pilot: McpDiscovery | undefined;
     projects: ProjectStore | undefined;
+    policy: PolicyStore | undefined;
+    ownerActive: (owner: string) => boolean;
     owned: (request: FastifyRequest<{ Params: Params }>) => IdentityContext | null;
     enabled: (project: string, owner: string) => boolean;
     stopped: (project: string, owner: string) => boolean;
@@ -150,9 +182,14 @@ export function registerMcpDocumentRoutes(
             attachments
           });
           if (!saved) return Promise.resolve({ error: "MCP_MATERIALS_CHANGED" });
+          const imported_document = {
+            name: document.name,
+            source: document.uri,
+            sha256: createHash("sha256").update(preview.text, "utf8").digest("hex")
+          };
           preview.saved = true;
           preview.text = "";
-          return Promise.resolve({ version: saved.version });
+          return Promise.resolve({ version: saved.version, imported_document });
         } catch (error) {
           if (error instanceof IdempotencyConflictError)
             return Promise.resolve({ error: "MCP_MATERIALS_CHANGED" });
@@ -161,6 +198,50 @@ export function registerMcpDocumentRoutes(
       }
     });
   }
+
+  app.get<{ Params: Params }>(
+    options.path + "/document/imports",
+    {
+      schema: { params: Type.Object({ projectId: Type.String({ minLength: 1, maxLength: 128 }) }) }
+    },
+    (request, reply) => {
+      reply.header("Cache-Control", "private, no-store");
+      const identity = owned(request);
+      if (!identity) return reply.code(404).send({ error: { code: "PROJECT_NOT_FOUND" } });
+      if (!options.ownerActive(identity.owner_id))
+        return reply.code(409).send({ error: { code: "OWNER_DATA_FENCED" } });
+      const project = request.params.projectId;
+      const materials = projects?.getMaterials(project, identity.owner_id);
+      if (!materials || !options.policy)
+        return reply.code(503).send({ error: { code: "MCP_IMPORT_HISTORY_UNAVAILABLE" } });
+      const hashes = materials.attachments.map(({ name, content }) => ({
+        name,
+        digest: createHash("sha256").update(content, "utf8").digest("hex")
+      }));
+      const operations = options.policy.listMcpImportOperations(project);
+      return {
+        items: operations.flatMap(({ operation_id, updated_at, result }) => {
+          const entry = parseImportReceipt(result);
+          if (!entry) return [];
+          const sameName = hashes.filter(({ name }) => name === entry.imported_document.name);
+          const copy = sameName.some(({ digest }) => digest === entry.imported_document.sha256)
+            ? "matched"
+            : sameName.length
+              ? "changed"
+              : "missing";
+          return [
+            {
+              operation_id,
+              imported_at: updated_at,
+              version: entry.version,
+              copy,
+              ...entry.imported_document
+            }
+          ];
+        })
+      };
+    }
+  );
 
   for (const mode of ["preview", "save"] as const) {
     app.post<{ Params: Params; Body: Body }>(

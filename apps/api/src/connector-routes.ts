@@ -18,7 +18,7 @@ export function registerConnectorRoutes(
   const runtime = policyStore ? new GuardedToolRuntime(policyStore) : undefined;
   const registry = runtime ? new ConnectorRegistry(runtime) : undefined;
   registry?.register(FIRST_SLICE_CONNECTORS);
-  registerMcpRoutes(app, registry, mcp);
+  registerMcpRoutes(app, registry, { ...mcp, policy: policyStore });
   registry?.bindToRuntime();
 
   app.get(

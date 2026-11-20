@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { createServer } from "node:http";
 import { loadServerConfig } from "@cosmora/config";
 import {
@@ -126,14 +126,14 @@ it("lists tools through HTTP, confines the pilot to its project, and journals on
     },
     (_url, init) => fetch(`http://127.0.0.1:${address.port}/catalog`, init)
   )!;
-  const app = buildApp({
+  const appDependencies = {
     config: loadServerConfig({ NODE_ENV: "test", WEB_ORIGIN: origin }),
     database,
     projectStore: projects,
     policyStore: policy,
-    emergencyStopStore: stop,
-    mcpDiscovery: pilot
-  });
+    emergencyStopStore: stop
+  };
+  const app = buildApp({ ...appDependencies, mcpDiscovery: pilot });
   const [primaryId, secondaryId] = pilot.documents!.map(({ id }) => id);
   const path = `/api/v1/projects/${project.id}/integrations/mcp`;
   const discover = (id = randomUUID(), requestOrigin = origin) =>
@@ -298,6 +298,55 @@ it("lists tools through HTTP, confines the pilot to its project, and journals on
     expect((await discover(id)).json()).toMatchObject({ error: { code: "MCP_STOPPED" } });
     expect(methods).toHaveLength(beforeStop);
     expect(projects.getMaterials(project.id, owner)).toEqual(materials);
+
+    const historyPath = path + "/document/imports";
+    const latest = await app.inject({ url: historyPath });
+    expect(latest.statusCode, latest.body).toBe(200);
+    const savedOperation = saved.json<{ operation_id: string }>().operation_id;
+    const importedAt = latest.json<{ items: { imported_at: string }[] }>().items[0]?.imported_at;
+    expect(importedAt).toMatch(/^\d{4}-/u);
+    expect(latest.json()).toEqual({
+      items: [
+        {
+          operation_id: savedOperation,
+          imported_at: importedAt,
+          version: initial.version + 2,
+          name: "report.txt",
+          source: documentUri,
+          sha256: createHash("sha256").update(documentText).digest("hex"),
+          copy: "matched"
+        }
+      ]
+    });
+    expect(latest.body).not.toContain("00123");
+    const restarted = buildApp(appDependencies);
+    try {
+      const restored = await restarted.inject({ url: historyPath });
+      expect(restored.json()).toEqual(latest.json());
+    } finally {
+      await restarted.close();
+    }
+    const empty = await app.inject({
+      url: `/api/v1/projects/${another.id}/integrations/mcp/document/imports`
+    });
+    expect(empty.json()).toEqual({ items: [] });
+    projects.setMaterials(project.id, owner, {
+      version: materials!.version,
+      instructions: materials!.instructions,
+      attachments: [{ name: "report.txt", content: "Changed local copy." }]
+    });
+    expect((await app.inject({ url: historyPath })).json()).toMatchObject({
+      items: [{ copy: "changed" }]
+    });
+    projects.setMaterials(project.id, owner, {
+      version: materials!.version + 1,
+      instructions: materials!.instructions,
+      attachments: []
+    });
+    expect((await app.inject({ url: historyPath })).json()).toMatchObject({
+      items: [{ copy: "missing" }]
+    });
+    expect(methods).toHaveLength(beforeStop);
   } finally {
     await app.close();
     await new Promise<void>((resolve) => upstream.close(() => resolve()));

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 
+import { McpImportHistory } from "./mcp-import-history";
 import { McpDocument } from "./mcp-document";
 
 type Availability = {
@@ -15,6 +16,8 @@ type Discovery = { status: string; tools?: string[]; hasMore?: boolean; operatio
 
 export function McpIntegration({ project }: { project: string }) {
   const [availability, setAvailability] = useState<Availability | null>(null);
+  const [importsRefresh, refreshImports] = useState(0);
+  const onImported = () => refreshImports((value) => value + 1);
   const [documentId, setDocumentId] = useState("");
   const [documentBusy, setDocumentBusy] = useState(false);
   const selectedDocument =
@@ -131,12 +134,14 @@ export function McpIntegration({ project }: { project: string }) {
             name={selectedDocument.name}
             documentId={selectedDocument.id}
             onBusy={setDocumentBusy}
+            onImported={onImported}
           />
         </>
       )}
       {availability?.configured && !availability.stopped && availability.document && (
-        <McpDocument project={project} name={availability.document} />
+        <McpDocument project={project} name={availability.document} onImported={onImported} />
       )}
+      <McpImportHistory path={path} refresh={importsRefresh} />
       {message && <p role="alert">{message}</p>}
       {result?.status === "WAITING_CONFIRMATION" && (
         <p role="status">
