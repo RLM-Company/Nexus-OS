@@ -152,7 +152,7 @@ describe("separate Drive authorization", () => {
       refreshToken: "previous",
       scope: DRIVE_FILE_SCOPE,
       expiresAt: 1
-    };
+    } as const;
     await expect(auth.refresh(grant)).rejects.toMatchObject({ code: "DRIVE_AUTH_REQUIRED" });
     await expect(auth.refresh(grant)).rejects.toMatchObject({
       code: "DRIVE_TOKEN_EXCHANGE_FAILED"
