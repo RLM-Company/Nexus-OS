@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { randomUUID } from "node:crypto";
 import { createRequire } from "node:module";
-import { GeneralChatStore, openDatabase, runMigrations } from "@cosmora/db";
+import { GeneralChatStore, ProjectStore, openDatabase, runMigrations } from "@cosmora/db";
 import { loadServerConfig } from "@cosmora/config";
 import { buildApp } from "../src/app.js";
 import { configuredGoogleDrive } from "../src/cloud-storage/google-drive-runtime.js";
@@ -119,6 +119,7 @@ describe("complete Drive snapshots and restore", () => {
     buildApp({
       config: loadServerConfig({ NODE_ENV: "test", WEB_ORIGIN: origin }),
       database: db,
+      projectStore: new ProjectStore(db.sqlite),
       googleDrive: runtime
     });
   beforeEach(async () => {
@@ -475,7 +476,7 @@ describe("complete Drive snapshots and restore", () => {
     expect(google.uploads).toBe(0);
   });
 
-  it("keeps stored legacy hashes and treats explicit file selections as a distinct operation identity", async () => {
+  it("restores only the selected file, saves its contents in project materials and fences Drive after disconnect", async () => {
     insertLegacy();
     expect(selectionHash({ include_results: true, chat_ids: ["b", "a"] })).toBe(
       selectionHash({ include_results: true, chat_ids: ["a", "b"] })
@@ -499,7 +500,43 @@ describe("complete Drive snapshots and restore", () => {
     expect(r.statusCode, r.body).toBe(200);
     const result = r.json<{ files: { id: string; name: string }[] }>();
     expect(result.files.map((f) => f.name)).toEqual(["legacy.txt"]);
-    expect((await get(`/restored-files/${result.files[0]!.id}`)).body).toBe("legacy result");
+    const download = await get(`/restored-files/${result.files[0]!.id}`);
+    expect(download.body).toBe("legacy result");
+
+    const materialsUrl = "/api/v1/projects/source-project/materials";
+    const initial = await app.inject({ url: materialsUrl });
+    expect(initial.statusCode).toBe(200);
+    const material = { name: result.files[0]!.name, content: download.body };
+    const saved = await app.inject({
+      method: "PUT",
+      url: materialsUrl,
+      payload: {
+        version: initial.json<{ version: number }>().version,
+        instructions: "",
+        attachments: [material]
+      }
+    });
+    expect(saved.statusCode, saved.body).toBe(200);
+    expect((await app.inject({ url: materialsUrl })).json()).toMatchObject({
+      attachments: [material]
+    });
+
+    expect((await get("/backups")).json()).toMatchObject({
+      items: [expect.objectContaining({ id: selected.id, state: "verified" })]
+    });
+    const disconnected = await post("/disconnect");
+    expect(disconnected.json()).toMatchObject({ state: "disconnected", archive_count: 1 });
+    const writes = google.uploads;
+    const refused = await post("/backups", {
+      operation_id: randomUUID(),
+      include_results: false,
+      file_ids: [legacy.id]
+    });
+    expect(refused.json()).toEqual({ error: { code: "DRIVE_AUTH_REQUIRED" } });
+    expect(google.uploads).toBe(writes);
+    expect((await app.inject({ url: materialsUrl })).json()).toMatchObject({
+      attachments: [material]
+    });
   });
 
   it("succeeds chat-only backup when an EXCLUDED artifact has an invalid stored checksum", async () => {

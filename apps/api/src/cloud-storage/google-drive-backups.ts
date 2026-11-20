@@ -84,8 +84,19 @@ export class GoogleDriveBackups {
   }
   private folder(ownerId: string, explicitRetry: boolean): Promise<void> {
     return this.exclusive(ownerId, async (context) => {
-      const state = this.store.status(ownerId)!.folder_state;
-      if (state === "ready") return;
+      const folder = this.store.status(ownerId)!;
+      const state = folder.folder_state;
+      if (state === "ready") {
+        if (
+          !folder.folder_id ||
+          (await this.transport(context).inspectFolder(folder.folder_id)) !== "verified_metadata"
+        )
+          throw new DriveStorageError("DRIVE_FOLDER_UNAVAILABLE");
+        const current = this.store.context(ownerId);
+        if (current.connectionId !== context.connectionId || current.epoch !== context.epoch)
+          throw new DriveStorageError("DRIVE_CONNECTION_CHANGED");
+        return;
+      }
       if (explicitRetry && state !== "uncertain") throw new DriveStorageError("DRIVE_FOLDER_BUSY");
       const transport = this.transport(context);
       const claimed =
