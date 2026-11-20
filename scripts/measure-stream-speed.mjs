@@ -100,20 +100,20 @@ export function makeAdapter(live, env, { allowLoopback = false } = {}) {
     ["127.0.0.1", "localhost", "[::1]"].includes(baseUrl.hostname);
   if (
     !model ||
-    !apiKey ||
+    (!apiKey && !localHttp) ||
     (baseUrl.protocol !== "https:" && !localHttp) ||
     baseUrl.username ||
     baseUrl.password ||
     baseUrl.search ||
     baseUrl.hash
   ) {
-    throw new Error("Invalid HTTPS provider configuration.");
+    throw new Error("Invalid provider configuration.");
   }
   return new OpenAICompatibleAdapter({
     id: "stream-benchmark",
     baseUrl: baseUrl.href,
     model,
-    apiKey,
+    apiKey: apiKey || "local",
     fetchImplementation: live
       ? (url, options) => fetch(url, { ...options, redirect: "error" })
       : mockFetch

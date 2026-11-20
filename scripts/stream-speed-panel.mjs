@@ -10,11 +10,11 @@ const origin = `http://127.0.0.1:${port}`;
 const modes = new Map();
 const publicModes = [];
 
-function register(id, label, settings, allowLoopback = false) {
+function register(id, label, settings) {
   const live = settings !== null;
   let adapter;
   try {
-    adapter = makeAdapter(live, settings ?? {}, { allowLoopback });
+    adapter = makeAdapter(live, settings ?? {}, { allowLoopback: true });
     modes.set(id, adapter);
   } catch {
     // A missing configuration is visible in the UI and cannot trigger a fallback request.
@@ -29,22 +29,11 @@ register("fast", "Быстрый", {
   MODEL_BASE_URL: env.SPEED_FAST_BASE_URL ?? env.MODEL_BASE_URL,
   MODEL_API_KEY: env.SPEED_FAST_BASE_URL ? env.SPEED_FAST_API_KEY : env.MODEL_API_KEY
 });
-register(
-  "accelerated",
-  "Разгон",
-  {
-    MODEL_NAME: env.SPEED_ACCEL_MODEL,
-    MODEL_BASE_URL: env.SPEED_ACCEL_BASE_URL,
-    MODEL_API_KEY:
-      env.SPEED_ACCEL_API_KEY ??
-      (/^http:\/\/(?:127\.0\.0\.1|localhost|\[::1\])(?::\d+)?\//u.test(
-        env.SPEED_ACCEL_BASE_URL ?? ""
-      )
-        ? "local"
-        : undefined)
-  },
-  true
-);
+register("accelerated", "Разгон", {
+  MODEL_NAME: env.SPEED_ACCEL_MODEL,
+  MODEL_BASE_URL: env.SPEED_ACCEL_BASE_URL,
+  MODEL_API_KEY: env.SPEED_ACCEL_API_KEY
+});
 
 const assets = new Map(
   await Promise.all(
