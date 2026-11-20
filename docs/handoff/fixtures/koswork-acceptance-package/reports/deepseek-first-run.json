@@ -1,0 +1,39 @@
+{
+  "format": "kosmora.koswork-acceptance-report.v1",
+  "source": "fixture-expected",
+  "note": "Замените фактическим отчётом первого прогона DeepSeek и запустите verify.mjs --report <file>.",
+  "scenarios": {
+    "normal": {
+      "status": "completed",
+      "model_requests": 6,
+      "final_document": "budget-report.docx",
+      "content_checks": {
+        "24 000": true,
+        "00123": true,
+        "00456": true,
+        "SELENE-047": true
+      }
+    },
+    "paused_resumed": {
+      "pause_visible": true,
+      "resumed_explicitly": true,
+      "replayed_completed_steps": false,
+      "model_requests": 6
+    },
+    "restarted": {
+      "completed_steps_kept": ["read_source_a", "read_source_b", "calculate_dependency"],
+      "explicit_continuation_required": true
+    },
+    "partial": {
+      "complete": false,
+      "completed_steps": 1,
+      "total_steps": 4
+    },
+    "retry_new_date": {
+      "new_date": "2026-11-15",
+      "total_amount": 24000,
+      "articles": ["00123", "00456"],
+      "explicit_retry": true
+    }
+  }
+}
