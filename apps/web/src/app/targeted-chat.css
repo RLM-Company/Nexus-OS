@@ -414,6 +414,40 @@
 .coscode-space-tools a:hover {
   background: var(--surface);
 }
+.coscode-sessions {
+  padding: 0 4px 12px;
+}
+.coscode-sessions-heading,
+.coscode-session-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 8px;
+  color: var(--muted, #9a9a9a);
+  font-size: 12px;
+  font-weight: 550;
+}
+.coscode-session-group {
+  margin-bottom: 8px;
+}
+.coscode-session-title strong {
+  color: var(--text);
+  font-weight: 550;
+}
+.coscode-session-link {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  color: var(--accent-strong, #8ab4f8);
+  font-size: 11px;
+  text-decoration: none;
+}
+.product-shell .sidebar .coscode-sessions svg {
+  width: 14px;
+  height: 14px;
+}
 .product-shell .chat-search-trigger {
   display: grid;
   place-items: center;

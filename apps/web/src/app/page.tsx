@@ -619,6 +619,13 @@ export default function Home() {
     ),
     pins.chats
   );
+  // Koscode sidebar: group sessions by project and expose active task counts.
+  const codeSessionsByProject = projects
+    .map((project) => ({
+      project,
+      sessions: spaceChats.filter((chat) => chat.project_id === project.id)
+    }))
+    .filter((group) => group.sessions.length > 0);
   const matchingProjects = pinsFirst(
     navigationSearch
       ? projects.filter((project) =>
@@ -2436,6 +2443,46 @@ export default function Home() {
               <WorkspaceIcon name="settings" /> Настройки Koscode
             </Link>
           </div>
+        )}
+        {codeSpace && (
+          <section className="sidebar-section coscode-sessions" aria-label="Сессии Koscode">
+            <div className="coscode-sessions-heading">
+              <span>Активные задачи</span>
+              <small>{spaceChats.length}</small>
+            </div>
+            {codeSessionsByProject.length === 0 ? (
+              <p className="empty-projects">Нет сессий с проектом.</p>
+            ) : (
+              codeSessionsByProject.map(({ project, sessions }) => (
+                <div className="coscode-session-group" key={project.id}>
+                  <div className="coscode-session-title">
+                    <strong>{project.title}</strong>
+                    <small>{sessions.length}</small>
+                  </div>
+                  {sessions.slice(0, 4).map((chat) => (
+                    <button
+                      type="button"
+                      key={chat.id}
+                      className={
+                        activeLocalChatId === chat.id
+                          ? "project-chat-item active"
+                          : "project-chat-item"
+                      }
+                      onClick={() => void openLocalChat(chat.id)}
+                    >
+                      <span>{chat.title}</span>
+                    </button>
+                  ))}
+                  <Link
+                    className="coscode-session-link"
+                    href={`/code-agent?project=${encodeURIComponent(project.id)}`}
+                  >
+                    Задачи и проверки <WorkspaceIcon name="arrow" />
+                  </Link>
+                </div>
+              ))
+            )}
+          </section>
         )}
 
         <button className="new-project" onClick={newChat}>
