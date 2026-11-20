@@ -137,12 +137,12 @@ export class ScheduledDispatchStore {
     for (const id of ids) stmt.run(at, id, ownerId);
   }
 
-  reschedule(id: string, ownerId: string, nextDueAt: string): void {
+  reschedule(id: string, ownerId: string, nextDueAt: string, completedDueAt: string): void {
     this.sql
       .prepare(
-        "UPDATE scheduled_dispatches SET due_at=?, status='scheduled', updated_at=? WHERE id=? AND owner_id=? AND status='ready'"
+        "UPDATE scheduled_dispatches SET due_at=?, status='scheduled', updated_at=? WHERE id=? AND owner_id=? AND status='ready' AND due_at=?"
       )
-      .run(nextDueAt, this.now(), id, ownerId);
+      .run(nextDueAt, this.now(), id, ownerId, completedDueAt);
   }
 
   markDispatched(id: string, ownerId: string): boolean {
