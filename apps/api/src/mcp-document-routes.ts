@@ -20,13 +20,16 @@ type Preview = {
   version: number;
   expires: number;
   saved: boolean;
+  copyName?: string;
 };
 type ReadResult = { preview_id: string };
 type ImportDocument = { name: string; source: string; sha256: string };
 type SaveResult =
   | { version: number; imported_document: ImportDocument }
   | { version: number; already_present: true }
-  | { error: "MCP_MATERIALS_CHANGED" | "MCP_MATERIALS_LIMIT" | "MCP_DOCUMENT_NAME_CONFLICT" };
+  | { error: "MCP_DOCUMENT_NAME_CONFLICT"; copy_name: string }
+  | { error: "MCP_MATERIALS_CHANGED" | "MCP_MATERIALS_LIMIT" | "MCP_COPY_NOT_OFFERED" };
+type SaveInput = { previewId: string; documentId: string; asCopy: boolean };
 const ttl = 5 * 60_000;
 const uuid = Type.String({ pattern: "^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$" });
 
@@ -152,7 +155,7 @@ export function registerMcpDocumentRoutes(
       execute(input, context): Promise<SaveResult> {
         if (stopped(projectId, ownerId) || !input || typeof input !== "object")
           throw new Error("MCP_STOPPED");
-        const { previewId, documentId } = input as { previewId: string; documentId: string };
+        const { previewId, documentId, asCopy } = input as SaveInput;
         const preview = previewFor(previewId, context.actorId);
         const document = findDocument(documentId);
         const materials = projects.getMaterials(projectId, ownerId);
@@ -165,19 +168,30 @@ export function registerMcpDocumentRoutes(
           materials.version !== preview.version
         )
           return Promise.resolve({ error: "MCP_MATERIALS_CHANGED" });
-        const nameKey = document.name.toLowerCase();
-        const sameName = materials.attachments.filter(({ name }) => name.toLowerCase() === nameKey);
-        if (sameName.length > 0) {
-          if (sameName.some(({ content }) => content !== preview.text))
-            return Promise.resolve({ error: "MCP_DOCUMENT_NAME_CONFLICT" });
+        const name = asCopy ? preview.copyName : document.name;
+        if (!name) return Promise.resolve({ error: "MCP_COPY_NOT_OFFERED" });
+        const nameKey = name.toLowerCase();
+        const sameName = materials.attachments.filter(
+          (attachment) => attachment.name.toLowerCase() === nameKey
+        );
+        if (!asCopy && sameName.length > 0) {
+          if (sameName.some(({ content }) => content !== preview.text)) {
+            const extensionAt = name.lastIndexOf(".");
+            const occupied = new Set(materials.attachments.map((file) => file.name.toLowerCase()));
+            let index = 1;
+            let candidate: string;
+            do {
+              candidate = `${name.slice(0, extensionAt)}-mcp-${index++}${name.slice(extensionAt)}`;
+            } while (occupied.has(candidate.toLowerCase()));
+            preview.copyName = candidate;
+            return Promise.resolve({ error: "MCP_DOCUMENT_NAME_CONFLICT", copy_name: candidate });
+          }
           preview.saved = true;
           preview.text = "";
           return Promise.resolve({ version: materials.version, already_present: true });
         }
-        const attachments = [
-          ...materials.attachments,
-          { name: document.name, content: preview.text }
-        ];
+        if (sameName.length > 0) return Promise.resolve({ error: "MCP_MATERIALS_CHANGED" });
+        const attachments = [...materials.attachments, { name, content: preview.text }];
         if (
           !isValidChatAttachments(attachments) ||
           new TextEncoder().encode(materials.instructions).length +
@@ -193,7 +207,7 @@ export function registerMcpDocumentRoutes(
           });
           if (!saved) return Promise.resolve({ error: "MCP_MATERIALS_CHANGED" });
           const imported_document = {
-            name: document.name,
+            name,
             source: document.uri,
             sha256: createHash("sha256").update(preview.text, "utf8").digest("hex")
           };
@@ -253,7 +267,9 @@ export function registerMcpDocumentRoutes(
     }
   );
 
-  for (const mode of ["preview", "save"] as const) {
+  for (const mode of ["preview", "save", "save-copy"] as const) {
+    const isPreview = mode === "preview";
+    const asCopy = mode === "save-copy";
     app.post<{ Params: Params; Body: Body }>(
       options.path + "/document/" + mode,
       {
@@ -264,7 +280,7 @@ export function registerMcpDocumentRoutes(
             {
               request_id: uuid,
               document_id: Type.Optional(Type.String({ pattern: "^[a-f0-9]{32}$" })),
-              ...(mode === "save" ? { preview_id: uuid } : {})
+              ...(!isPreview ? { preview_id: uuid } : {})
             },
             {
               additionalProperties: false
@@ -293,18 +309,18 @@ export function registerMcpDocumentRoutes(
         if (!document) return reply.code(404).send({ error: { code: "MCP_DOCUMENT_UNAVAILABLE" } });
         const previewId = request.body.preview_id;
         const source = createHash("sha256").update(document.uri).digest("hex");
-        const result = await registry.invoke<
-          string | { previewId: string; documentId: string },
-          ReadResult | SaveResult
-        >({
-          toolId: mode === "preview" ? read : save,
+        const result = await registry.invoke<string | SaveInput, ReadResult | SaveResult>({
+          toolId: isPreview ? read : save,
           projectId: project,
           actorId: identity.actor_id,
-          purpose:
-            mode === "preview" ? "Preview approved MCP document" : "Import reviewed MCP document",
+          purpose: isPreview
+            ? "Preview approved MCP document"
+            : asCopy
+              ? "Import reviewed MCP document as a separate copy"
+              : "Import reviewed MCP document",
           objectIds: [project, "mcp:" + source, ...(previewId ? [previewId] : [])],
-          idempotencyKey: `mcp:${pilot.revision}:${mode}:${request.body.request_id}`,
-          input: previewId ? { previewId, documentId: document.id } : document.id
+          idempotencyKey: `mcp:${pilot.revision}:${isPreview ? "preview" : "save"}:${request.body.request_id}`,
+          input: previewId ? { previewId, documentId: document.id, asCopy } : document.id
         });
         if (stopped(project, identity.owner_id))
           return reply.code(409).send({ error: { code: "MCP_STOPPED" } });
@@ -313,9 +329,11 @@ export function registerMcpDocumentRoutes(
         if (result.status !== "EXECUTED")
           return reply.code(result.status === "DENIED" ? 403 : 409).send(operation);
         if ("error" in result.result)
-          return reply
-            .code(409)
-            .send({ error: { code: result.result.error }, operation_id: operation.operation_id });
+          return reply.code(409).send({
+            error: { code: result.result.error },
+            operation_id: operation.operation_id,
+            ...("copy_name" in result.result ? { copy_name: result.result.copy_name } : {})
+          });
         if ("preview_id" in result.result) {
           const pending = previewFor(result.result.preview_id, identity.actor_id);
           if (result.replayed || !pending || pending.documentId !== document.id || pending.saved)
@@ -331,7 +349,10 @@ export function registerMcpDocumentRoutes(
         return {
           ...operation,
           version: result.result.version,
-          ...("already_present" in result.result ? { already_present: true } : {})
+          ...("already_present" in result.result ? { already_present: true } : {}),
+          ...(asCopy && "imported_document" in result.result
+            ? { copy_name: result.result.imported_document.name }
+            : {})
         };
       }
     );

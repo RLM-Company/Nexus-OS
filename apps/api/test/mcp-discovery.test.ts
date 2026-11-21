@@ -144,7 +144,11 @@ it("lists tools through HTTP, confines the pilot to its project, and journals on
       payload: { request_id: id },
       headers: { origin: requestOrigin }
     });
-  const documentAction = (mode: "preview" | "save", payload: object, projectId = project.id) =>
+  const documentAction = (
+    mode: "preview" | "save" | "save-copy",
+    payload: object,
+    projectId = project.id
+  ) =>
     app.inject({
       method: "POST",
       url: `/api/v1/projects/${projectId}/integrations/mcp/document/${mode}`,
@@ -298,13 +302,59 @@ it("lists tools through HTTP, confines the pilot to its project, and journals on
 
     returnedText = "Different remote revision.";
     const revised = (await documentAction("preview", requestId())).json<{ preview_id: string }>();
+    expect(
+      (await documentAction("save-copy", { ...requestId(), preview_id: revised.preview_id })).json()
+    ).toMatchObject({ error: { code: "MCP_COPY_NOT_OFFERED" } });
     const collision = await documentAction("save", {
       ...requestId(),
       preview_id: revised.preview_id
     });
     expect(collision.statusCode, collision.body).toBe(409);
-    expect(collision.json()).toMatchObject({ error: { code: "MCP_DOCUMENT_NAME_CONFLICT" } });
+    expect(collision.json()).toMatchObject({
+      error: { code: "MCP_DOCUMENT_NAME_CONFLICT" },
+      copy_name: "report-mcp-1.txt"
+    });
     expect(projects.getMaterials(project.id, owner)).toEqual(materials);
+
+    const stalePreview = (await documentAction("preview", requestId())).json<{
+      preview_id: string;
+    }>();
+    expect(
+      (await documentAction("save", { ...requestId(), preview_id: stalePreview.preview_id }))
+        .statusCode
+    ).toBe(409);
+    const copyRequest = { ...requestId(), preview_id: revised.preview_id };
+    const copyCalls = methods.length;
+    const copied = await documentAction("save-copy", copyRequest);
+    expect(copied.statusCode, copied.body).toBe(200);
+    expect(copied.json()).toMatchObject({
+      status: "EXECUTED",
+      version: materials!.version + 1,
+      copy_name: "report-mcp-1.txt"
+    });
+    expect((await documentAction("save-copy", copyRequest)).json()).toEqual(copied.json());
+    expect(
+      (
+        await documentAction("save-copy", { ...requestId(), preview_id: stalePreview.preview_id })
+      ).json()
+    ).toMatchObject({ error: { code: "MCP_MATERIALS_CHANGED" } });
+    expect(methods).toHaveLength(copyCalls);
+    const copiedMaterials = projects.getMaterials(project.id, owner);
+    expect(copiedMaterials).toMatchObject({
+      instructions: materials!.instructions,
+      version: materials!.version + 1,
+      attachments: [
+        { name: "report.txt", content: documentText },
+        { name: "report-mcp-1.txt", content: returnedText }
+      ]
+    });
+    const afterCopy = (await documentAction("preview", requestId())).json<{ preview_id: string }>();
+    expect(
+      (await documentAction("save", { ...requestId(), preview_id: afterCopy.preview_id })).json()
+    ).toMatchObject({
+      error: { code: "MCP_DOCUMENT_NAME_CONFLICT" },
+      copy_name: "report-mcp-2.txt"
+    });
 
     remoteDenied = true;
     expect((await documentAction("preview", requestId())).json()).toMatchObject({
@@ -319,17 +369,35 @@ it("lists tools through HTTP, confines the pilot to its project, and journals on
       error: { code: "MCP_STOPPED" }
     });
     expect((await discover(id)).json()).toMatchObject({ error: { code: "MCP_STOPPED" } });
+    expect(
+      (
+        await documentAction("save-copy", { ...requestId(), preview_id: afterCopy.preview_id })
+      ).json()
+    ).toMatchObject({ error: { code: "MCP_STOPPED" } });
     expect(methods).toHaveLength(beforeStop);
-    expect(projects.getMaterials(project.id, owner)).toEqual(materials);
+    expect(projects.getMaterials(project.id, owner)).toEqual(copiedMaterials);
 
     const historyPath = path + "/document/imports";
     const latest = await app.inject({ url: historyPath });
     expect(latest.statusCode, latest.body).toBe(200);
     const savedOperation = saved.json<{ operation_id: string }>().operation_id;
-    const importedAt = latest.json<{ items: { imported_at: string }[] }>().items[0]?.imported_at;
+    const copyOperation = copied.json<{ operation_id: string }>().operation_id;
+    const [copiedAt, importedAt] = latest
+      .json<{ items: { imported_at: string }[] }>()
+      .items.map((item) => item.imported_at);
     expect(importedAt).toMatch(/^\d{4}-/u);
+    expect(copiedAt).toMatch(/^\d{4}-/u);
     expect(latest.json()).toEqual({
       items: [
+        {
+          operation_id: copyOperation,
+          imported_at: copiedAt,
+          version: initial.version + 3,
+          name: "report-mcp-1.txt",
+          source: documentUri,
+          sha256: createHash("sha256").update(returnedText).digest("hex"),
+          copy: "matched"
+        },
         {
           operation_id: savedOperation,
           imported_at: importedAt,
@@ -354,20 +422,20 @@ it("lists tools through HTTP, confines the pilot to its project, and journals on
     });
     expect(empty.json()).toEqual({ items: [] });
     projects.setMaterials(project.id, owner, {
-      version: materials!.version,
+      version: copiedMaterials!.version,
       instructions: materials!.instructions,
       attachments: [{ name: "report.txt", content: "Changed local copy." }]
     });
     expect((await app.inject({ url: historyPath })).json()).toMatchObject({
-      items: [{ copy: "changed" }]
+      items: [{ copy: "missing" }, { copy: "changed" }]
     });
     projects.setMaterials(project.id, owner, {
-      version: materials!.version + 1,
+      version: copiedMaterials!.version + 1,
       instructions: materials!.instructions,
       attachments: []
     });
     expect((await app.inject({ url: historyPath })).json()).toMatchObject({
-      items: [{ copy: "missing" }]
+      items: [{ copy: "missing" }, { copy: "missing" }]
     });
     expect(methods).toHaveLength(beforeStop);
   } finally {

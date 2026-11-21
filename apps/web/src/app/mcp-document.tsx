@@ -4,11 +4,13 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 
 type Preview = { preview_id: string; name: string; source: string; text: string };
+type Mode = "preview" | "save" | "save-copy";
 type Reply = Partial<Preview> & {
   status?: string;
   operation_id?: string;
   version?: number;
   already_present?: boolean;
+  copy_name?: string;
   error?: { code: string };
 };
 
@@ -26,16 +28,17 @@ export function McpDocument({
   onImported?: () => void;
 }) {
   const [preview, setPreview] = useState<Preview | null>(null);
+  const [copyName, setCopyName] = useState("");
   const [busy, setBusy] = useState(false);
   const [waiting, setWaiting] = useState(false);
   const [message, setMessage] = useState("");
   const [operation, setOperation] = useState("");
-  const pending = useRef<Partial<Record<"preview" | "save", string>>>({});
+  const pending = useRef<Partial<Record<Mode, string>>>({});
   const request = useRef<AbortController | null>(null);
   useEffect(() => () => request.current?.abort(), []);
 
-  async function submit(mode: "preview" | "save") {
-    if (request.current || (mode === "save" && !preview)) return;
+  async function submit(mode: Mode) {
+    if (request.current || (mode !== "preview" && !preview)) return;
     const controller = new AbortController();
     request.current = controller;
     setBusy(true);
@@ -45,7 +48,9 @@ export function McpDocument({
     setOperation("");
     if (mode === "preview") {
       setPreview(null);
+      setCopyName("");
       delete pending.current.save;
+      delete pending.current["save-copy"];
     }
     const requestId = (pending.current[mode] ??= crypto.randomUUID());
     try {
@@ -58,7 +63,7 @@ export function McpDocument({
           body: JSON.stringify({
             request_id: requestId,
             ...(documentId ? { document_id: documentId } : {}),
-            ...(mode === "save" ? { preview_id: preview?.preview_id } : {})
+            ...(mode !== "preview" ? { preview_id: preview?.preview_id } : {})
           })
         }
       );
@@ -90,25 +95,38 @@ export function McpDocument({
         typeof outcome.version === "number"
       ) {
         setPreview(null);
+        setCopyName("");
         if (outcome.already_present) {
           setMessage(`Точная копия уже в материалах. Версия: ${outcome.version}.`);
         } else {
           onImported?.();
-          setMessage(`Документ сохранён. Версия материалов: ${outcome.version}.`);
+          const saved = outcome.copy_name
+            ? `Документ сохранён как ${outcome.copy_name}.`
+            : "Документ сохранён.";
+          setMessage(`${saved} Версия материалов: ${outcome.version}.`);
         }
       } else {
         const code = outcome.error?.code;
-        if (code === "MCP_STOPPED" || code === "MCP_UNAVAILABLE" || outcome.status === "DENIED")
+        if (
+          code === "MCP_STOPPED" ||
+          code === "MCP_UNAVAILABLE" ||
+          code === "MCP_MATERIALS_CHANGED" ||
+          code === "MCP_COPY_NOT_OFFERED" ||
+          code === "MCP_PREVIEW_EXPIRED" ||
+          outcome.status === "DENIED"
+        ) {
           setPreview(null);
+          setCopyName("");
+        }
         if (code === "MCP_MATERIALS_CHANGED") {
-          setPreview(null);
           setMessage("Материалы изменились. Откройте новый предпросмотр.");
         } else if (code === "MCP_DOCUMENT_NAME_CONFLICT") {
-          setPreview(null);
+          setCopyName(outcome.copy_name ?? "");
+          if (!outcome.copy_name) setPreview(null);
           setMessage("Файл с таким именем уже есть и отличается. Существующая копия сохранена.");
         } else if (code === "MCP_MATERIALS_LIMIT") {
           setMessage("Документ не помещается в материалы проекта.");
-        } else if (code === "MCP_PREVIEW_EXPIRED") {
+        } else if (code === "MCP_PREVIEW_EXPIRED" || code === "MCP_COPY_NOT_OFFERED") {
           setMessage("Предпросмотр устарел. Запросите его снова.");
         } else {
           setMessage("Документ недоступен. Проверьте разрешения проекта и подключение MCP.");
@@ -138,8 +156,12 @@ export function McpDocument({
             Источник: <code>{preview.source}</code>
           </p>
           <pre style={{ whiteSpace: "pre-wrap" }}>{preview.text}</pre>
-          <button type="button" disabled={busy} onClick={() => void submit("save")}>
-            Подтвердить сохранение в материалы
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => void submit(copyName ? "save-copy" : "save")}
+          >
+            {copyName ? `Сохранить как ${copyName}` : "Подтвердить сохранение в материалы"}
           </button>
         </>
       )}

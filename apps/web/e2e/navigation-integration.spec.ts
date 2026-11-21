@@ -148,6 +148,7 @@ test("imports a reviewed MCP document and explains access loss", async ({ page }
   let revoked = false;
   let writes = 0;
   let saves = 0;
+  let copyRequest = "";
   await page.route(base, (route) =>
     route.fulfill({
       json: {
@@ -216,10 +217,26 @@ test("imports a reviewed MCP document and explains access loss", async ({ page }
     if (saves === 3)
       return route.fulfill({
         status: 409,
-        json: { error: { code: "MCP_DOCUMENT_NAME_CONFLICT" } }
+        json: { error: { code: "MCP_DOCUMENT_NAME_CONFLICT" }, copy_name: "report-mcp-1.txt" }
       });
     writes++;
     return route.fulfill({ json: { status: "EXECUTED", operation_id: id, version: 2 } });
+  });
+  await page.route(base + "/document/save-copy", (route) => {
+    const payload = route.request().postDataJSON() as { request_id: string };
+    expect(payload).toEqual({
+      preview_id: id,
+      document_id: report,
+      request_id: expect.any(String)
+    });
+    if (!copyRequest) {
+      copyRequest = payload.request_id;
+      return route.abort();
+    }
+    expect(payload.request_id).toBe(copyRequest);
+    return route.fulfill({
+      json: { status: "EXECUTED", operation_id: id, version: 3, copy_name: "report-mcp-1.txt" }
+    });
   });
   await page.goto("/?surface=apps");
   const selector = page.getByLabel("Документ для импорта");
@@ -245,6 +262,15 @@ test("imports a reviewed MCP document and explains access loss", async ({ page }
   await document.getByRole("button", { name: "Подтвердить сохранение в материалы" }).click();
   await expect(document).toContainText("Существующая копия сохранена.");
   expect(writes).toBe(1);
+  expect(copyRequest).toBe("");
+  await expect(document).toContainText("19 700 ₽, артикул 00123, кроме доставки.");
+  const saveCopy = document.getByRole("button", { name: "Сохранить как report-mcp-1.txt" });
+  await saveCopy.click();
+  await expect(document).toContainText("Ответ потерян.");
+  await saveCopy.click();
+  await expect(document).toContainText(
+    "Документ сохранён как report-mcp-1.txt. Версия материалов: 3."
+  );
   revoked = true;
   await document.getByRole("button", { name: "Предпросмотр документа" }).click();
   await expect(document).toContainText("Документ недоступен.");
