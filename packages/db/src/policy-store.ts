@@ -397,6 +397,21 @@ export class PolicyStore {
     return row ? asOperation(row) : null;
   }
 
+  listMcpImportOperations(projectId: string): StoredPolicyOperation[] {
+    const rows = this.#sqlite
+      .prepare(
+        `SELECT operation_id, project_id, actor_id, idempotency_key, status, intent_json,
+          verdict_json, confirmation_id, result_json, error_code, created_at, updated_at
+         FROM policy_operations
+         WHERE project_id = ? AND status = 'SUCCEEDED'
+           AND idempotency_key GLOB 'mcp:*:save:*'
+           AND json_type(result_json, '$.imported_document') = 'object'
+         ORDER BY updated_at DESC, rowid DESC LIMIT 20`
+      )
+      .all(projectId) as unknown as SqlRow[];
+    return rows.map(asOperation);
+  }
+
   listDecisionTrace(projectId: string, limit = 50): PolicyDecisionTraceEvent[] {
     if (!Number.isInteger(limit) || limit < 1 || limit > 100) {
       throw new RangeError("Policy Decision Trace limit must be an integer between 1 and 100");
