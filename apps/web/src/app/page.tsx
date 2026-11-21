@@ -26,6 +26,7 @@ import { useChatNavigation, ChatContextPanel, ChatToCanvas } from "./chat-worksp
 import { ChatItemMenu } from "./chat-item-menu";
 import { CreateProjectDialog } from "./create-project-dialog";
 import { ProfileOnboarding } from "./profile-onboarding";
+import { greetingByAssistantGender, type GreetingProfile } from "./profile-onboarding-core";
 import { ChatSearchTrigger } from "./chat-search-trigger";
 import { ProjectTitleEditor } from "./project-title-editor";
 import { QuickSwitcher } from "./quick-switcher";
@@ -551,7 +552,7 @@ export default function Home() {
   const [codeSpace, setCodeSpace] = useState(false);
   const [createProjectOpen, setCreateProjectOpen] = useState(false);
   const [greeting, setGreeting] = useState("Чем могу помочь?");
-  const [displayName, setDisplayName] = useState("");
+  const [greetingProfile, setGreetingProfile] = useState<GreetingProfile | null>(null);
   const [localChats, setLocalChats] = useState<LocalChatSession[]>([]);
   const chatNavigation = useChatNavigation();
   const pins = chatNavigation.navigation;
@@ -943,8 +944,8 @@ export default function Home() {
         loadProjects(),
         loadGeneralChats(),
         api<ModelRuntimeStatus>("/api/v1/model-runtime").then(setRuntime),
-        api<{ settings?: { display_name?: string } }>("/api/v1/personal-settings")
-          .then((data) => setDisplayName(data.settings?.display_name ?? ""))
+        api<{ settings?: GreetingProfile }>("/api/v1/personal-settings")
+          .then((data) => setGreetingProfile(data.settings ?? null))
           .catch(() => undefined)
       ]);
     } catch {
@@ -3440,10 +3441,15 @@ export default function Home() {
           <>
             <section className="hero">
               <h2>{greeting}</h2>
-              {displayName && <p className="hero-greeting-name">{displayName}, рад вас видеть.</p>}
+              {greetingProfile?.display_name && (
+                <p className="hero-greeting-name">
+                  {greetingProfile.display_name},{" "}
+                  {greetingByAssistantGender[greetingProfile.assistant_gender ?? "neutral"]}
+                </p>
+              )}
             </section>
             {/* Вне .hero: чужие e2e проверяют единственный h2 и отсутствие p в hero. */}
-            <ProfileOnboarding onSaved={(name) => setDisplayName(name)} />
+            <ProfileOnboarding onSaved={setGreetingProfile} />
           </>
         ) : null}
 
