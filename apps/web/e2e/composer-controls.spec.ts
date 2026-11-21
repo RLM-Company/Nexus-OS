@@ -354,3 +354,62 @@ test("composer opens Deep Research inside the workspace", async ({ page }) => {
   await expect(page).toHaveURL(/\?surface=research/);
   await expect(page.getByRole("heading", { name: "Глубокий поиск" })).toBeVisible();
 });
+
+for (const { surface, action, field } of [
+  { surface: "images", action: "Создать изображение", field: "Описание изображения" },
+  { surface: "video", action: "Создать видео", field: "Описание сцены" }
+]) {
+  test(`composer opens ${surface} in Studio and preserves the chat draft`, async ({
+    page,
+    request
+  }) => {
+    const created = await request.post("/api/v1/chats", {
+      data: {
+        initial_message: `Черновик для Studio (${surface})`,
+        client_message_id: crypto.randomUUID()
+      }
+    });
+    expect(created.status()).toBe(201);
+    const { chat, run_id } = (await created.json()) as {
+      chat: { id: string; title: string };
+      run_id: string;
+    };
+    expect((await request.post(`/api/v1/chat-runs/${run_id}/cancel`)).ok()).toBe(true);
+
+    const mediaWrites: string[] = [];
+    await page.route("**/api/v1/media/**", (route) => {
+      const outgoing = route.request();
+      if (outgoing.method() !== "POST") return route.continue();
+      mediaWrites.push(new URL(outgoing.url()).pathname);
+      return route.abort();
+    });
+    await page.goto(`/?chat=${chat.id}`);
+    const editor = page.getByLabel("Сообщение Kosmora");
+    const draft = "Сохранить этот черновик до возвращения.";
+    await editor.fill(draft);
+    await page.getByLabel("Текстовые файлы и код").setInputFiles({
+      name: "studio-note.txt",
+      mimeType: "text/plain",
+      buffer: Buffer.from("Материалы для чата")
+    });
+    const attachments = page.getByRole("list", { name: "Прикреплённые файлы" });
+    await expect(attachments).toContainText("studio-note.txt");
+
+    await page.getByRole("button", { name: "Добавить в чат" }).click();
+    await page.locator(".attachment-actions").getByRole("button", { name: action }).click();
+    await expect(page).toHaveURL(new RegExp(`[?&]surface=${surface}(?:&|$)`));
+    await expect(page.getByLabel(field, { exact: true })).toBeVisible();
+    const sidebar = page.locator(".sidebar");
+    await expect(sidebar).toBeVisible();
+    await sidebar
+      .getByRole("button")
+      .filter({ has: page.locator(`[id="pin-chat-${chat.id}"]`) })
+      .click();
+
+    await expect(page).toHaveURL(new RegExp(`[?&]chat=${chat.id}(?:&|$)`));
+    await expect(page).not.toHaveURL(/[?&]surface=/);
+    await expect(editor).toHaveValue(draft);
+    await expect(attachments).toContainText("studio-note.txt");
+    expect(mediaWrites).toEqual([]);
+  });
+}
