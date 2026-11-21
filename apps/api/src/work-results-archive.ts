@@ -72,16 +72,26 @@ const assertOptionalVerification = (verification: File["verification"]) => {
     throw new WorkDagConflict("DEPENDENCY_ARTIFACT_MISSING");
 };
 
-/** Deterministic, inert ZIP download from one reconciled graph; no model or filesystem writes. */
-export function buildWorkResultsArchive(graph: WorkDag, files: File[]): Buffer {
+/** Deterministic, inert ZIP download from one reconciled graph; no model or filesystem writes.
+ * `nodeIds` selects a partial delivery; integrity checks still apply to every
+ * included artifact, and the manifest explicitly reports the partial scope. */
+export function buildWorkResultsArchive(
+  graph: WorkDag,
+  files: File[],
+  nodeIds?: readonly string[]
+): Buffer {
+  const selected = nodeIds ? new Set(nodeIds) : null;
+  const scopedFiles = selected ? files.filter((file) => selected.has(file.node_id)) : files;
+  if (selected && selected.size === 0) throw new WorkDagConflict("RESULTS_INVALID_ARTIFACT");
   const declaredIds = graph.nodes
-    .filter((node) => node.status === "completed")
+    .filter((node) => node.status === "completed" && (!selected || selected.has(node.id)))
     .flatMap((node) => node.artifacts.map((artifact) => artifact.id));
-  if (files.length !== declaredIds.length || new Set(declaredIds).size !== declaredIds.length)
+  if (selected && !declaredIds.length) throw new WorkDagConflict("RESULTS_INVALID_ARTIFACT");
+  if (scopedFiles.length !== declaredIds.length || new Set(declaredIds).size !== declaredIds.length)
     throw new WorkDagConflict("DEPENDENCY_ARTIFACT_MISSING");
   const emitted = new Set<string>();
   const entries: { path: string; bytes: Buffer }[] = [];
-  const manifestFiles = files.map((file, index) => {
+  const manifestFiles = scopedFiles.map((file, index) => {
     if (emitted.has(file.id)) throw new WorkDagConflict("DEPENDENCY_ARTIFACT_MISSING");
     emitted.add(file.id);
     const nodeIndex = graph.nodes.findIndex((node) => node.id === file.node_id);
@@ -159,7 +169,9 @@ export function buildWorkResultsArchive(graph: WorkDag, files: File[]): Buffer {
     title: graph.title,
     updated_at: graph.updated_at,
     archived: Boolean(graph.archived_at),
-    complete: completed === graph.nodes.length,
+    complete: !selected && completed === graph.nodes.length,
+    partial: selected ? true : false,
+    selected_node_ids: selected ? [...selected].sort() : null,
     completed_steps: completed,
     total_steps: graph.nodes.length,
     verification_legend: {
