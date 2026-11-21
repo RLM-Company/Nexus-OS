@@ -10,6 +10,7 @@ type Reply = Partial<Preview> & {
   operation_id?: string;
   version?: number;
   already_present?: boolean;
+  existing_name?: string;
   copy_name?: string;
   error?: { code: string };
 };
@@ -69,6 +70,13 @@ export function McpDocument({
       );
       const outcome = (await response.json()) as Reply;
       if (controller.signal.aborted) return;
+      if (
+        response.status === 408 ||
+        (response.status >= 500 && outcome.error?.code !== "MCP_UNAVAILABLE")
+      ) {
+        setMessage("Результат запроса неизвестен. Повторите действие для проверки.");
+        return;
+      }
       setOperation(outcome.operation_id ?? "");
       if (outcome.status === "WAITING_CONFIRMATION") {
         setWaiting(true);
@@ -97,7 +105,8 @@ export function McpDocument({
         setPreview(null);
         setCopyName("");
         if (outcome.already_present) {
-          setMessage(`Точная копия уже в материалах. Версия: ${outcome.version}.`);
+          const file = outcome.existing_name ? ` (${outcome.existing_name})` : "";
+          setMessage(`Точная копия уже в материалах${file}. Версия: ${outcome.version}.`);
         } else {
           onImported?.();
           const saved = outcome.copy_name

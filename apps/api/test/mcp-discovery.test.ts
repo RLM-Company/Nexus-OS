@@ -300,7 +300,8 @@ it("lists tools through HTTP, confines the pilot to its project, and journals on
     expect((await documentAction("save", dedupRequest)).json()).toEqual(deduplicated.json());
     expect(projects.getMaterials(project.id, owner)).toEqual(materials);
 
-    returnedText = "Different remote revision.";
+    const copiedText = "Different remote revision.";
+    returnedText = copiedText;
     const revised = (await documentAction("preview", requestId())).json<{ preview_id: string }>();
     expect(
       (await documentAction("save-copy", { ...requestId(), preview_id: revised.preview_id })).json()
@@ -348,6 +349,24 @@ it("lists tools through HTTP, confines the pilot to its project, and journals on
         { name: "report-mcp-1.txt", content: returnedText }
       ]
     });
+    const repeatRevision = (await documentAction("preview", requestId())).json<{
+      preview_id: string;
+    }>();
+    const repeatRevisionRequest = { ...requestId(), preview_id: repeatRevision.preview_id };
+    const sameRevision = await documentAction("save", repeatRevisionRequest);
+    expect(sameRevision.statusCode, sameRevision.body).toBe(200);
+    expect(sameRevision.json()).toMatchObject({
+      status: "EXECUTED",
+      already_present: true,
+      existing_name: "report-mcp-1.txt",
+      version: copiedMaterials!.version
+    });
+    expect((await documentAction("save", repeatRevisionRequest)).json()).toEqual(
+      sameRevision.json()
+    );
+    expect(projects.getMaterials(project.id, owner)).toEqual(copiedMaterials);
+
+    returnedText = "Another remote revision.";
     const afterCopy = (await documentAction("preview", requestId())).json<{ preview_id: string }>();
     expect(
       (await documentAction("save", { ...requestId(), preview_id: afterCopy.preview_id })).json()
@@ -395,7 +414,7 @@ it("lists tools through HTTP, confines the pilot to its project, and journals on
           version: initial.version + 3,
           name: "report-mcp-1.txt",
           source: documentUri,
-          sha256: createHash("sha256").update(returnedText).digest("hex"),
+          sha256: createHash("sha256").update(copiedText).digest("hex"),
           copy: "matched"
         },
         {

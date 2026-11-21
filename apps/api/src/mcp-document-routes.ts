@@ -26,7 +26,7 @@ type ReadResult = { preview_id: string };
 type ImportDocument = { name: string; source: string; sha256: string };
 type SaveResult =
   | { version: number; imported_document: ImportDocument }
-  | { version: number; already_present: true }
+  | { version: number; already_present: true; existing_name?: string }
   | { error: "MCP_DOCUMENT_NAME_CONFLICT"; copy_name: string }
   | { error: "MCP_MATERIALS_CHANGED" | "MCP_MATERIALS_LIMIT" | "MCP_COPY_NOT_OFFERED" };
 type SaveInput = { previewId: string; documentId: string; asCopy: boolean };
@@ -174,21 +174,44 @@ export function registerMcpDocumentRoutes(
         const sameName = materials.attachments.filter(
           (attachment) => attachment.name.toLowerCase() === nameKey
         );
-        if (!asCopy && sameName.length > 0) {
-          if (sameName.some(({ content }) => content !== preview.text)) {
-            const extensionAt = name.lastIndexOf(".");
+        if (!asCopy) {
+          const extensionAt = name.lastIndexOf(".");
+          const copyPrefix = name.slice(0, extensionAt) + "-mcp-";
+          const extension = name.slice(extensionAt);
+          const copyKeyPrefix = copyPrefix.toLowerCase();
+          const extensionKey = extension.toLowerCase();
+          const originalMatches =
+            sameName.length > 0 && sameName.every(({ content }) => content === preview.text);
+          const existingCopy = originalMatches
+            ? undefined
+            : materials.attachments.find((file) => {
+                if (file.content !== preview.text) return false;
+                const key = file.name.toLowerCase();
+                return (
+                  key.startsWith(copyKeyPrefix) &&
+                  key.endsWith(extensionKey) &&
+                  /^[1-9][0-9]*$/u.test(key.slice(copyPrefix.length, -extension.length))
+                );
+              });
+          if (originalMatches || existingCopy) {
+            preview.saved = true;
+            preview.text = "";
+            return Promise.resolve({
+              version: materials.version,
+              already_present: true,
+              ...(existingCopy ? { existing_name: existingCopy.name } : {})
+            });
+          }
+          if (sameName.length > 0) {
             const occupied = new Set(materials.attachments.map((file) => file.name.toLowerCase()));
             let index = 1;
             let candidate: string;
             do {
-              candidate = `${name.slice(0, extensionAt)}-mcp-${index++}${name.slice(extensionAt)}`;
+              candidate = `${copyPrefix}${index++}${extension}`;
             } while (occupied.has(candidate.toLowerCase()));
             preview.copyName = candidate;
             return Promise.resolve({ error: "MCP_DOCUMENT_NAME_CONFLICT", copy_name: candidate });
           }
-          preview.saved = true;
-          preview.text = "";
-          return Promise.resolve({ version: materials.version, already_present: true });
         }
         if (sameName.length > 0) return Promise.resolve({ error: "MCP_MATERIALS_CHANGED" });
         const attachments = [...materials.attachments, { name, content: preview.text }];
@@ -349,7 +372,9 @@ export function registerMcpDocumentRoutes(
         return {
           ...operation,
           version: result.result.version,
-          ...("already_present" in result.result ? { already_present: true } : {}),
+          ...("already_present" in result.result
+            ? { already_present: true, existing_name: result.result.existing_name }
+            : {}),
           ...(asCopy && "imported_document" in result.result
             ? { copy_name: result.result.imported_document.name }
             : {})
