@@ -9,6 +9,7 @@ import {
   runMigrations
 } from "@cosmora/db";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { AccountStore } from "../src/account-settings/account-store.js";
 import { buildApp } from "../src/app.js";
 import { BearerSessionIdentityResolver } from "../src/identity.js";
 import { buildModelRuntime } from "../src/model-runtime.js";
@@ -60,10 +61,14 @@ describe("API identity boundary", () => {
     }).token;
     const runtime = await buildModelRuntime(config);
     policyStore = new PolicyStore(database.sqlite);
+    const accountStore = new AccountStore(database.sqlite);
+    accountStore.migrate();
     app = buildApp({
       config,
       database,
       identityStore,
+      accountStore,
+      accountModel: { provider: "mock", model: "manager", capabilities: { streaming: true } },
       projectStore: new ProjectStore(database.sqlite),
       emergencyStopStore: new EmergencyStopStore(database.sqlite),
       policyStore,
@@ -235,6 +240,70 @@ describe("API identity boundary", () => {
     expect(revoked.json()).toMatchObject({ current: true, status: "revoked" });
     expect(revoked.body).not.toContain(ownerOneToken);
     expect(afterRevoke.statusCode).toBe(401);
+  });
+
+  it("restores the same owner's profile in a new session and isolates other owners", async () => {
+    const url = "/api/v1/personal-settings";
+    const profile = {
+      display_name: "Анна",
+      user_gender: "feminine",
+      assistant_gender: "masculine"
+    };
+    const auth = (token: string) => ({ authorization: `Bearer ${token}` });
+    const saved = await app.inject({
+      method: "PUT",
+      url,
+      headers: auth(ownerOneToken),
+      payload: {
+        expected_version: 0,
+        relay_enabled: false,
+        response_language: "ru",
+        optimize_for: "balanced",
+        preferred_provider: null,
+        preferred_model: null,
+        chat_style: "standard",
+        max_total_tokens: null,
+        ...profile
+      }
+    });
+    expect(saved.statusCode).toBe(200);
+    expect(saved.json()).toMatchObject({ settings: { ...profile, version: 1 } });
+
+    const sessions = await app.inject({
+      method: "GET",
+      url: "/api/v1/identity/sessions",
+      headers: auth(ownerOneToken)
+    });
+    expect(sessions.statusCode).toBe(200);
+    const current = sessions
+      .json<{ items: Array<{ session_id: string; current: boolean }> }>()
+      .items.find((session) => session.current);
+    expect(current).toBeDefined();
+    const revoked = await app.inject({
+      method: "POST",
+      url: `/api/v1/identity/sessions/${current!.session_id}/revoke`,
+      headers: auth(ownerOneToken),
+      payload: { reason: "Owner logout" }
+    });
+    expect(revoked.statusCode).toBe(200);
+
+    const readProfile = (token: string) => app.inject({ method: "GET", url, headers: auth(token) });
+    expect((await readProfile(ownerOneToken)).statusCode).toBe(401);
+    const renewed = identityStore.issueSession({
+      ownerId: "owner-1",
+      actorId: "owner-actor-1",
+      assurance: "single_factor",
+      ttlMs: 60_000
+    });
+    const restored = await readProfile(renewed.token);
+    expect(restored.statusCode).toBe(200);
+    expect(restored.json()).toMatchObject({ settings: { ...profile, version: 1 } });
+
+    const otherOwner = await readProfile(ownerTwoToken);
+    expect(otherOwner.statusCode).toBe(200);
+    expect(otherOwner.json()).toMatchObject({
+      settings: { display_name: "", user_gender: "masculine", assistant_gender: "neutral" }
+    });
   });
 
   it("propagates owner and actor identity without leaking session tokens", async () => {
