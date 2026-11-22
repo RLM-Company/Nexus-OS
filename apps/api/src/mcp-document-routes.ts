@@ -78,7 +78,7 @@ export function registerMcpDocumentRoutes(
     stopped: (project: string, owner: string) => boolean;
   }
 ) {
-  const { pilot, registry, projects, owned, enabled, stopped, origin } = options;
+  const { pilot, registry, projects, policy, owned, enabled, stopped, origin } = options;
   const documents = pilot?.documents ?? [];
   const findDocument = (id: unknown) =>
     typeof id === "string"
@@ -97,7 +97,7 @@ export function registerMcpDocumentRoutes(
   }
   const read = connectorToolId("mcp-document", "preview");
   const save = connectorToolId("mcp-document", "save");
-  if (pilot?.readDocument && documents.length && registry && projects) {
+  if (pilot?.readDocument && documents.length && registry && projects && policy) {
     const readDocument = pilot.readDocument;
     const { ownerId, projectId } = pilot;
     registry.register([
@@ -155,6 +155,7 @@ export function registerMcpDocumentRoutes(
       }
     });
     registry.bindTransport(save, {
+      mayCompleteInTransaction: true,
       execute(input, context): Promise<SaveResult> {
         if (stopped(projectId, ownerId) || !input || typeof input !== "object")
           throw new Error("MCP_STOPPED");
@@ -226,17 +227,22 @@ export function registerMcpDocumentRoutes(
         )
           return Promise.resolve({ error: "MCP_MATERIALS_LIMIT" });
         try {
-          const saved = projects.setMaterials(projectId, ownerId, {
-            version: preview.version,
-            instructions: materials.instructions,
-            attachments
-          });
-          if (!saved) return Promise.resolve({ error: "MCP_MATERIALS_CHANGED" });
           const imported_document = {
             name,
             source: document.uri,
             sha256: createHash("sha256").update(preview.text, "utf8").digest("hex")
           };
+          const saved = projects.setMaterials(
+            projectId,
+            ownerId,
+            { version: preview.version, instructions: materials.instructions, attachments },
+            {
+              policy,
+              operationId: context.operationId,
+              resultForVersion: (version) => ({ version, imported_document })
+            }
+          );
+          if (!saved) return Promise.resolve({ error: "MCP_MATERIALS_CHANGED" });
           preview.saved = true;
           preview.text = "";
           return Promise.resolve({ version: saved.version, imported_document });

@@ -272,6 +272,28 @@ it("lists tools through HTTP, confines the pilot to its project, and journals on
     ).toMatchObject({ error: { code: "MCP_MATERIALS_CHANGED" } });
 
     const fresh = (await documentAction("preview", requestId())).json<{ preview_id: string }>();
+    const beforeFailedSave = projects.getMaterials(project.id, owner);
+    const failedSaveRequest = { ...requestId(), preview_id: fresh.preview_id };
+    // Fail after the attachment update and before the receipt can be committed.
+    database.sqlite.exec(`
+      CREATE TEMP TRIGGER fail_mcp_receipt
+      BEFORE UPDATE OF result_json ON policy_operations
+      WHEN json_type(NEW.result_json, '$.imported_document') = 'object'
+      BEGIN SELECT RAISE(ABORT, 'fixture receipt failure'); END;
+    `);
+    try {
+      expect((await documentAction("save", failedSaveRequest)).json()).toMatchObject({
+        status: "RECOVERY_REQUIRED"
+      });
+      expect(projects.getMaterials(project.id, owner)).toEqual(beforeFailedSave);
+      expect(policy.listMcpImportOperations(project.id)).toEqual([]);
+    } finally {
+      database.sqlite.exec("DROP TRIGGER fail_mcp_receipt");
+    }
+    expect((await documentAction("save", failedSaveRequest)).json()).toMatchObject({
+      status: "RECOVERY_REQUIRED"
+    });
+    expect(projects.getMaterials(project.id, owner)).toEqual(beforeFailedSave);
     const saveRequest = { ...requestId(), preview_id: fresh.preview_id };
     const calls = methods.length;
     const saved = await documentAction("save", saveRequest);
