@@ -127,4 +127,38 @@ describe("portable chat exports", () => {
       createChatExport({ ...source, messages: [source.messages[1]!] }, "json", at)
     ).toThrow(/нет сообщений/);
   });
+
+  it("writes plain text with verbatim content and metadata-only attachments", () => {
+    const file = createChatExport(source, "text", at);
+    expect(file.filename).toMatch(/\.txt$/);
+    expect(file.mimeType).toBe("text/plain;charset=utf-8");
+    expect(file.content).toContain(source.messages[0]!.content);
+    expect(file.content).toContain(source.messages[2]!.content);
+    expect(file.content).toContain("отчёт.pdf (pdf)");
+    expect(file.content).not.toMatch(/private extracted|private-image|internal execution/);
+  });
+
+  it("escapes HTML so message content and attachment names cannot inject markup", () => {
+    const file = createChatExport(
+      {
+        ...source,
+        messages: [
+          {
+            ...source.messages[0]!,
+            content: "<script>alert(1)</script>\n```ts\nconst value = '<tag>';\n```",
+            attachments: [{ name: "<img src=x>", content: "hidden" }]
+          }
+        ]
+      },
+      "html",
+      at
+    );
+    expect(file.filename).toMatch(/\.html$/);
+    expect(file.mimeType).toBe("text/html;charset=utf-8");
+    expect(file.content).toContain("&lt;script&gt;alert(1)&lt;/script&gt;");
+    expect(file.content).toContain("&lt;img src=x&gt;");
+    expect(file.content).not.toContain("<script>");
+    expect(file.content).not.toContain("<img src=x>");
+    expect(file.content).not.toMatch(/private extracted|private-image|internal execution/);
+  });
 });

@@ -221,6 +221,70 @@ test("retains project materials across reload without leaking into the new-chat 
   await expect(page.getByRole("list", { name: "Прикреплённые файлы" })).toHaveCount(0);
 });
 
+test("moves a chat into a project and back without losing its link, history or attachment", async ({
+  page,
+  request
+}) => {
+  const projectResponse = await request.post("/api/v1/projects", {
+    data: { initial_message: "Проект для переноса", client_message_id: crypto.randomUUID() }
+  });
+  expect(projectResponse.status()).toBe(201);
+  const { project } = (await projectResponse.json()) as { project: { id: string; title: string } };
+  const message = "Перенос чата с вложением";
+  const attachment = { name: "transfer-note.txt", content: "Материалы останутся в чате." };
+  const chatResponse = await request.post("/api/v1/chats", {
+    data: {
+      initial_message: message,
+      client_message_id: crypto.randomUUID(),
+      attachments: [attachment]
+    }
+  });
+  expect(chatResponse.status()).toBe(201);
+  const { chat, run_id } = (await chatResponse.json()) as {
+    chat: { id: string; title: string };
+    run_id: string;
+  };
+  const chatApi = `/api/v1/chats/${chat.id}`;
+  expect((await request.post(`/api/v1/chat-runs/${run_id}/cancel`)).ok()).toBe(true);
+
+  const link = `/?chat=${chat.id}`;
+  await page.goto(link);
+  await expect(page.locator(".message.user")).toContainText(message);
+  const sidebar = page.locator(".sidebar");
+  const menuTrigger = sidebar.getByLabel(`Действия с чатом «${chat.title}»`);
+  const menu = page.getByRole("dialog", { name: `Меню чата «${chat.title}»` });
+  await menuTrigger.click();
+  await menu.getByRole("button", { name: "В проект / переместить" }).click();
+  await menu.getByRole("combobox", { name: "Проект", exact: true }).selectOption(project.id);
+  await expect(menu.getByText("Чат перенесён в проект.")).toBeVisible();
+
+  await page.goto(link);
+  await expect(page.locator(".message.user")).toContainText(message);
+  await sidebar
+    .getByRole("button")
+    .filter({ has: page.locator(`[id="pin-project-${project.id}"]`) })
+    .click();
+  const projectFolder = sidebar.getByLabel(`Чаты проекта ${project.title}`);
+  await projectFolder.getByRole("button", { name: chat.title, exact: true }).click();
+  await expect(page).toHaveURL(new RegExp(`[?&]chat=${chat.id}(?:&|$)`));
+  await expect(page.locator(".message.user")).toContainText(message);
+
+  await menuTrigger.click();
+  await menu.getByRole("button", { name: "Вернуть в общий список" }).click();
+  await expect(menu.getByText("Чат возвращён в общий список.")).toBeVisible();
+  await expect(projectFolder.getByRole("button", { name: chat.title, exact: true })).toHaveCount(0);
+  await page.goto(link);
+  await expect(page.locator(".message.user")).toContainText(message);
+  const detail = await request.get(chatApi);
+  expect(detail.ok()).toBe(true);
+  expect(await detail.json()).toMatchObject({
+    chat: { id: chat.id, project_id: null },
+    messages: expect.arrayContaining([
+      expect.objectContaining({ role: "user", attachments: [expect.objectContaining(attachment)] })
+    ])
+  });
+});
+
 test("recovers text with invalid saved materials and retains a draft on rejected submission", async ({
   page
 }) => {

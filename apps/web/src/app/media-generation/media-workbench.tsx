@@ -9,7 +9,7 @@ import { SpeechStudio } from "../voice/voice-playback";
 import styles from "./media-workbench.module.css";
 
 type Reference = ChatImageAttachment & { id: string; url: string };
-export function MediaWorkbench({ surface }: { surface: "images" | "video" | "sound" }) {
+export function MediaWorkbench({ surface }: { surface: "images" | "video" | "sound" | "music" }) {
   const video = surface === "video";
   const [prompt, setPrompt] = useState("");
   const [ratio, setRatio] = useState("1:1");
@@ -129,6 +129,30 @@ export function MediaWorkbench({ surface }: { surface: "images" | "video" | "sou
       });
     return () => controller.abort();
   }, [surface, capabilities?.image_editing?.ready, read]);
+  if (surface === "music")
+    return (
+      <section className={styles.workbench}>
+        <header className={styles.header}>
+          <span>
+            <WorkspaceIcon name="sound" />
+            Kosmora Studio
+          </span>
+          <h2>Music</h2>
+          <p>Музыка и атмосфера. Генерация появится после подключения провайдера.</p>
+        </header>
+        <div className={styles.empty} role="status">
+          <WorkspaceIcon name="sound" />
+          <h3>Генерация музыки не подключена</h3>
+          <p>
+            Сервер пока поддерживает озвучивание текста и изображения. Здесь можно сохранить
+            описание будущей композиции без платного вызова модели.
+          </p>
+          <button type="button" disabled>
+            Сгенерировать музыку
+          </button>
+        </div>
+      </section>
+    );
   if (surface === "sound")
     return (
       <section className={styles.workbench}>

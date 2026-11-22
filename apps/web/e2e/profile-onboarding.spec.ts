@@ -67,7 +67,7 @@ test("first run: onboarding saves the profile and greets the first dialog", asyn
   await expect(dialog).toBeVisible();
 
   await dialog.getByLabel("Ваше имя").fill("Анна");
-  await dialog.getByLabel("Род обращения к вам").selectOption("feminine");
+  await dialog.getByLabel("Род обращения к вам").selectOption("masculine");
   await dialog.getByLabel("Род ассистента").selectOption("feminine");
   await dialog.getByRole("button", { name: "Сохранить и начать" }).click();
   await expect(dialog).not.toBeVisible();
@@ -76,21 +76,21 @@ test("first run: onboarding saves the profile and greets the first dialog", asyn
   expect(fixture.writes).toHaveLength(1);
   expect(fixture.writes[0]).toMatchObject({
     display_name: "Анна",
-    user_gender: "feminine",
+    user_gender: "masculine",
     assistant_gender: "feminine",
     expected_version: 0
   });
 
   // Имя сразу появляется в приветствии на первом экране.
-  await expect(page.getByText("Анна, рад вас видеть.")).toBeVisible();
+  await expect(page.getByText("Анна, рада вас видеть.")).toBeVisible();
 
   // После перезагрузки онбординг не повторяется, имя берётся с сервера.
   await page.reload();
   await expect(page.getByRole("region", { name: "Давайте познакомимся" })).toHaveCount(0);
-  await expect(page.getByText("Анна, рад вас видеть.")).toBeVisible();
+  await expect(page.getByText("Анна, рада вас видеть.")).toBeVisible();
   expect(fixture.read()).toMatchObject({
     display_name: "Анна",
-    user_gender: "feminine",
+    user_gender: "masculine",
     assistant_gender: "feminine"
   });
 

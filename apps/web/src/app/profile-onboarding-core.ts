@@ -15,6 +15,14 @@ export type OnboardingSettings = {
 };
 export const ONBOARDING_DONE_KEY = "kosmora:profile-onboarding.v1";
 
+export type GreetingProfile = Pick<OnboardingSettings, "display_name" | "assistant_gender">;
+
+export const greetingByAssistantGender: Record<Gender, string> = {
+  masculine: "рад вас видеть.",
+  feminine: "рада вас видеть.",
+  neutral: "добро пожаловать."
+};
+
 /** Показывать онбординг только если имя ещё не задано и метка «пройдено» не стоит.
  * Версию настроек намеренно не проверяем: другие настройки могли поднять её раньше. */
 export const shouldShowOnboarding = (

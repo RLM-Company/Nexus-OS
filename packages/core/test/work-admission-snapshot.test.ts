@@ -30,18 +30,15 @@ describe("work admission snapshot (pass 1)", () => {
     expect(snapshot.materials.attachments.map((a) => a.name)).toEqual(["notes.txt", "order.csv"]);
     expect(snapshot.dependencies).toEqual(["Прочитать order.csv", "Сверить с notes.txt"]);
     expect(snapshot.plan).toHaveLength(3);
-    expect(snapshot.digest).toMatch(/^[a-f0-9]{8}$/);
+    expect(snapshot.digest).toMatch(/^[a-f0-9]{64}$/);
   });
 
   it("is stable on repeated request and order-insensitive within materials", () => {
-    const first = buildWorkAdmissionSnapshot(dataset());
-    const second = buildWorkAdmissionSnapshot({
-      ...dataset(),
-      materials: {
-        ...dataset().materials,
-        attachments: [...dataset().materials.attachments].reverse()
-      }
-    });
+    const input = dataset();
+    input.materials.attachments.push({ name: "notes.txt", content: "Уточнение." });
+    const first = buildWorkAdmissionSnapshot(input);
+    input.materials.attachments.reverse();
+    const second = buildWorkAdmissionSnapshot(input);
     expect(sameAdmissionSnapshot(first, second)).toBe(true);
   });
 

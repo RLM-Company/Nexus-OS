@@ -130,6 +130,7 @@ class ApiFailure extends Error {
 }
 async function api<T>(url: string, body?: unknown): Promise<T> {
   const response = await fetch(url, {
+    cache: "no-store",
     method: body === undefined ? "GET" : "POST",
     ...(body === undefined
       ? {}
@@ -153,6 +154,20 @@ async function api<T>(url: string, body?: unknown): Promise<T> {
     );
   }
   return data as T;
+}
+async function readRun(root: string, id: string): Promise<Run> {
+  const value = await api<Run>(`${root}/${encodeURIComponent(id)}`);
+  if (value.id !== id)
+    throw new Error("Ответ не подтверждает запрошенную задачу. Другая задача не открыта.");
+  return value;
+}
+function rememberRun(project: string, run?: string) {
+  const url = new URL(window.location.href);
+  if (project) url.searchParams.set("project", project);
+  else url.searchParams.delete("project");
+  if (run) url.searchParams.set("run", run);
+  else url.searchParams.delete("run");
+  if (url.href !== window.location.href) window.history.replaceState(null, "", url.href);
 }
 function publicationKey(project: string, run: string) {
   return `kosmora-code-publish:${project}:${run}`;
@@ -191,6 +206,8 @@ export default function CodeAgentPage() {
   } | null>(null);
   const [project, setProject] = useState("");
   const [branch, setBranch] = useState("");
+  const [branches, setBranches] = useState<string[] | null>(null);
+  const [branchNotice, setBranchNotice] = useState("");
   const [task, setTask] = useState("");
   const [issueDraft, setIssueDraft] = useState<{
     project: string;
@@ -346,7 +363,6 @@ export default function CodeAgentPage() {
     setRun(null);
     setRuns([]);
     setEdits([]);
-    setError(null);
     setUnknownPublish(false);
     setCheckApproved(false);
     setPublishApproved(false);
@@ -358,7 +374,7 @@ export default function CodeAgentPage() {
         setRuns(list.items);
         const wanted = linkedRun.current;
         let desired = wanted ? list.items.find((item) => item.id === wanted) : list.items[0];
-        if (wanted && !desired) desired = await api<Run>(`${root}/${encodeURIComponent(wanted)}`);
+        if (wanted && !desired) desired = await readRun(root, wanted);
         if (epoch.current !== requestEpoch) return;
         if (wanted && (!desired || desired.id !== wanted))
           throw new Error("Ответ не подтверждает запрошенную задачу. Другая задача не открыта.");
@@ -379,13 +395,14 @@ export default function CodeAgentPage() {
     const timer = setInterval(() => {
       if (requestBusy.current) return;
       const sequence = ++snapshotSequence.current;
-      void api<Run>(`${root}/${encodeURIComponent(id)}`)
+      void readRun(root, id)
         .then((value) => {
           if (alive && epoch.current === requestEpoch && activeRun.current === id)
             accept(value, false, sequence);
         })
         .catch((reason: unknown) => {
-          if (alive) setError(failureMessage(reason));
+          if (alive && epoch.current === requestEpoch && activeRun.current === id)
+            setError(failureMessage(reason));
         });
     }, 1500);
     return () => {
@@ -416,6 +433,7 @@ export default function CodeAgentPage() {
         result.project
       ]);
       setProject(result.project.id);
+      rememberRun(result.project.id);
       projectAttempt.current = null;
     } catch (reason) {
       setError(failureMessage(reason));
@@ -443,6 +461,7 @@ export default function CodeAgentPage() {
         setError("Получено устаревшее состояние задачи. Показана последняя принятая версия.");
         return;
       }
+      if (replacesEditor) rememberRun(project, value.id);
       if (reconcile && !["uncertain", "publishing"].includes(value.status)) {
         markPublication(project, value.id, false);
         setUnknownPublish(false);
@@ -573,6 +592,8 @@ export default function CodeAgentPage() {
                 epoch.current++;
                 linkedRun.current = null;
                 setIssueDraft(null);
+                setError(null);
+                rememberRun(event.target.value);
                 setProject(event.target.value);
               }}
             >
@@ -590,8 +611,42 @@ export default function CodeAgentPage() {
           </label>
           <label>
             Базовая ветка
-            <input value={branch} onChange={(event) => setBranch(event.target.value)} />
+            <input
+              value={branch}
+              list="code-agent-branches"
+              onChange={(event) => setBranch(event.target.value)}
+            />
+            <datalist id="code-agent-branches">
+              {branches?.map((name) => (
+                <option key={name} value={name} />
+              ))}
+            </datalist>
           </label>
+          <button
+            type="button"
+            disabled={busy || !connection?.configured}
+            onClick={() => {
+              setBranchNotice("");
+              void api<{ items: Array<{ name: string }>; next_page: number | null }>(
+                "/api/v1/github/branches"
+              )
+                .then((result) => {
+                  setBranches(result.items.map(({ name }) => name));
+                  setBranchNotice(
+                    result.next_page
+                      ? "Показаны первые 100 веток. Остальные можно ввести вручную."
+                      : `Веток в списке: ${result.items.length}.`
+                  );
+                })
+                .catch(() => {
+                  setBranches(null);
+                  setBranchNotice("Не удалось загрузить ветки. Имя ветки можно ввести вручную.");
+                });
+            }}
+          >
+            Загрузить список веток
+          </button>
+          {branchNotice && <p role="status">{branchNotice}</p>}
         </div>
         <button disabled={busy || !connection?.configured} onClick={() => void createProject()}>
           Новый Code-проект
@@ -752,6 +807,7 @@ export default function CodeAgentPage() {
                 linkedRun.current = null;
                 setError(null);
                 accept(value, true);
+                rememberRun(project, value.id);
               }
             }}
           >
@@ -772,17 +828,12 @@ export default function CodeAgentPage() {
                 <h2>{run.task}</h2>
                 <p role="status">{labels[run.status] ?? run.status}</p>
               </div>
-              <button
-                disabled={busy}
-                onClick={() => void action(() => api<Run>(`${root}/${encodeURIComponent(run.id)}`))}
-              >
+              <button disabled={busy} onClick={() => void action(() => readRun(root, run.id))}>
                 Обновить состояние
               </button>
               <button
                 disabled={busy || unknownPublish || !run.proposal || (!editable && !editorConflict)}
-                onClick={() =>
-                  void action(() => api<Run>(`${root}/${encodeURIComponent(run.id)}`), false, true)
-                }
+                onClick={() => void action(() => readRun(root, run.id), false, true)}
               >
                 Загрузить сохранённые правки
               </button>

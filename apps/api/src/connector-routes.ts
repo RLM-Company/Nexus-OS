@@ -6,26 +6,20 @@ import {
   FIRST_SLICE_CONNECTORS,
   GuardedToolRuntime
 } from "@cosmora/tool-runtime";
+import { registerMcpRoutes, type McpRouteDependencies } from "./mcp-routes.js";
 
-/**
- * Honest connector status for the owner boundary.
- *
- * The first slice ships descriptor-only adapters: no transport is wired, no
- * grant is connected, no credentials are stored or returned. A real runtime is
- * built when a PolicyStore exists so the registry is a genuine
- * GuardedToolRuntime-backed object, but nothing is invoked from this route.
- */
+/** The general catalog lists descriptors. MCP uses its own project-scoped route. */
 export function registerConnectorRoutes(
   app: FastifyInstance,
   policyStore: PolicyStore | undefined,
-  projectId: string
+  projectId: string,
+  mcp: McpRouteDependencies
 ) {
   const runtime = policyStore ? new GuardedToolRuntime(policyStore) : undefined;
   const registry = runtime ? new ConnectorRegistry(runtime) : undefined;
-  if (registry) {
-    registry.register(FIRST_SLICE_CONNECTORS);
-    registry.bindToRuntime();
-  }
+  registry?.register(FIRST_SLICE_CONNECTORS);
+  registerMcpRoutes(app, registry, { ...mcp, policy: policyStore });
+  registry?.bindToRuntime();
 
   app.get(
     "/api/v1/integrations/status",
@@ -34,7 +28,13 @@ export function registerConnectorRoutes(
     },
     (_request, reply) => {
       reply.header("Cache-Control", "no-store");
-      if (registry) return registry.status(projectId);
+      if (registry) {
+        const status = registry.status(projectId);
+        return {
+          ...status,
+          connectors: status.connectors.filter(({ id }) => id !== "mcp" && id !== "mcp-document")
+        };
+      }
       const connectors = FIRST_SLICE_CONNECTORS.map((descriptor) => ({
         id: descriptor.id,
         app: descriptor.app,

@@ -289,11 +289,11 @@ export async function main(argv = process.argv.slice(2)) {
   };
   const api = `http://127.0.0.1:${config.apiPort}`,
     web = `http://127.0.0.1:${config.webPort}`;
-  const response = async (origin, path, method = "GET", body) =>
+  const response = async (origin, path, method = "GET", body, timeoutMs = 15_000) =>
     fetch(new URL(path, origin), {
       method,
       redirect: "error",
-      signal: AbortSignal.timeout(15000),
+      signal: AbortSignal.timeout(timeoutMs),
       ...(body === undefined
         ? {}
         : { headers: { "content-type": "application/json" }, body: JSON.stringify(body) })
@@ -428,6 +428,22 @@ export async function main(argv = process.argv.slice(2)) {
         graph.nodes.length === 7 && graph.edges.length === 6,
         "Fresh demo graph content differs"
       );
+    if (config.check) {
+      let home;
+      try {
+        home = await response(web, "/", "GET", undefined, 60_000);
+      } catch (cause) {
+        throw new Error(
+          `Main page request failed in ${config.production ? "production" : "dev"} mode; inspect web.log`,
+          { cause }
+        );
+      }
+      await home.body?.cancel();
+      check(
+        home.status === 200 && (home.headers.get("content-type") ?? "").includes("text/html"),
+        `Main page did not render HTML (HTTP ${home.status})`
+      );
+    }
     const page = await response(
       web,
       `/graph-workspace?projectId=${encodeURIComponent(state.projectId)}`

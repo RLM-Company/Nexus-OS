@@ -1,0 +1,17 @@
+{
+  "format": "kosmora.koswork-acceptance.first-run.v1",
+  "source": "local-simulation-NOT-live-DeepSeek",
+  "note": "Симулятор первого прогона: реальный локальный верификатор пакета, без живой модели.",
+  "expected_sha256": "b332671483b60c8daf57527bce763872a2ed28b711f044aff3df82524d0893a9",
+  "report_sha256": "d7ca12cb10ca7b8efcfdbf5c3289d1d8fe2996defef057cc6009ddabfa1b138d",
+  "scenarios": ["normal", "paused_resumed", "restarted", "partial", "retry_new_date"],
+  "derived_total": 24000,
+  "verifier_ok": true,
+  "verifier_output": {
+    "verify": "passed",
+    "package": "report compared with expectations",
+    "scenarios": ["normal", "paused_resumed", "restarted", "partial", "retry_new_date"],
+    "model_requests": 6,
+    "derived_total": 24000
+  }
+}

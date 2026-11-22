@@ -35,6 +35,8 @@ export function ChatExportControls({
         }}
       >
         <option value="markdown">Markdown (.md)</option>
+        <option value="text">Текст (.txt)</option>
+        <option value="html">HTML (.html)</option>
         <option value="json">JSON (.json)</option>
         <option value="zip">Архив с вложениями (.zip)</option>
       </select>

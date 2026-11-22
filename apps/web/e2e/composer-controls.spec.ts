@@ -185,6 +185,71 @@ test("dictation requests microphone access and inserts a deduplicated draft", as
   await expect(page.getByLabel("Сообщение Kosmora")).toHaveValue("Помоги составить план на завтра");
 });
 
+test("project dictation recovers from microphone errors and stays in its project draft", async ({
+  page,
+  request
+}) => {
+  const response = await request.post("/api/v1/projects", {
+    data: {
+      initial_message: "Проект для диктовки",
+      client_message_id: crypto.randomUUID()
+    }
+  });
+  expect(response.status()).toBe(201);
+  const { project } = (await response.json()) as { project: { id: string; title: string } };
+  await speechFixture(page);
+  await page.addInitScript(() => {
+    let attempts = 0;
+    Object.defineProperty(navigator, "mediaDevices", {
+      configurable: true,
+      value: {
+        getUserMedia: async ({ audio }: MediaStreamConstraints) => {
+          if (!audio) throw new Error("Microphone permission not requested");
+          attempts++;
+          if (attempts === 1) throw new DOMException("Permission denied", "NotAllowedError");
+          if (attempts === 2) throw new DOMException("No microphone", "NotFoundError");
+          return new MediaStream();
+        }
+      }
+    });
+  });
+
+  await page.goto("/");
+  const sidebar = page.locator(".sidebar");
+  const openProjectChat = async () => {
+    await sidebar
+      .getByRole("button")
+      .filter({ has: page.locator(`[id="pin-project-${project.id}"]`) })
+      .click();
+    await sidebar
+      .getByLabel(`Чаты проекта ${project.title}`)
+      .getByRole("button", { name: /Новый чат в проекте/ })
+      .click();
+  };
+  await openProjectChat();
+  const editor = page.getByLabel("Сообщение Kosmora");
+  const draft = "Черновик проекта.";
+  await editor.fill(draft);
+  await page.getByLabel("Голосовой ввод", { exact: true }).click();
+  await page.getByRole("button", { name: "Диктовать в браузере" }).click();
+  await expect(page.getByRole("status")).toContainText("Разрешите доступ к микрофону");
+  await expect(editor).toHaveValue(draft);
+  const retry = page.getByRole("button", { name: "Повторить диктовку" });
+  await retry.click();
+  await expect(page.getByRole("status")).toContainText("Микрофон недоступен");
+  await expect(editor).toHaveValue(draft);
+  expect(await page.evaluate(() => Reflect.get(window, "voiceStarted"))).toBe(0);
+  await retry.click();
+  const dictated = `${draft} Помоги составить план на завтра`;
+  await expect(editor).toHaveValue(dictated);
+  await expect(page.getByRole("status")).toContainText("Текст добавлен в черновик");
+
+  await page.reload();
+  await expect(editor).toHaveValue("");
+  await openProjectChat();
+  await expect(editor).toHaveValue(dictated);
+});
+
 test("dictation stops explicitly and retries after a recognition error", async ({ page }) => {
   await page.addInitScript(() => {
     const state = window as unknown as { dictationAttempts: number };
@@ -289,3 +354,62 @@ test("composer opens Deep Research inside the workspace", async ({ page }) => {
   await expect(page).toHaveURL(/\?surface=research/);
   await expect(page.getByRole("heading", { name: "Глубокий поиск" })).toBeVisible();
 });
+
+for (const { surface, action, field } of [
+  { surface: "images", action: "Создать изображение", field: "Описание изображения" },
+  { surface: "video", action: "Создать видео", field: "Описание сцены" }
+]) {
+  test(`composer opens ${surface} in Studio and preserves the chat draft`, async ({
+    page,
+    request
+  }) => {
+    const created = await request.post("/api/v1/chats", {
+      data: {
+        initial_message: `Черновик для Studio (${surface})`,
+        client_message_id: crypto.randomUUID()
+      }
+    });
+    expect(created.status()).toBe(201);
+    const { chat, run_id } = (await created.json()) as {
+      chat: { id: string; title: string };
+      run_id: string;
+    };
+    expect((await request.post(`/api/v1/chat-runs/${run_id}/cancel`)).ok()).toBe(true);
+
+    const mediaWrites: string[] = [];
+    await page.route("**/api/v1/media/**", (route) => {
+      const outgoing = route.request();
+      if (outgoing.method() !== "POST") return route.continue();
+      mediaWrites.push(new URL(outgoing.url()).pathname);
+      return route.abort();
+    });
+    await page.goto(`/?chat=${chat.id}`);
+    const editor = page.getByLabel("Сообщение Kosmora");
+    const draft = "Сохранить этот черновик до возвращения.";
+    await editor.fill(draft);
+    await page.getByLabel("Текстовые файлы и код").setInputFiles({
+      name: "studio-note.txt",
+      mimeType: "text/plain",
+      buffer: Buffer.from("Материалы для чата")
+    });
+    const attachments = page.getByRole("list", { name: "Прикреплённые файлы" });
+    await expect(attachments).toContainText("studio-note.txt");
+
+    await page.getByRole("button", { name: "Добавить в чат" }).click();
+    await page.locator(".attachment-actions").getByRole("button", { name: action }).click();
+    await expect(page).toHaveURL(new RegExp(`[?&]surface=${surface}(?:&|$)`));
+    await expect(page.getByLabel(field, { exact: true })).toBeVisible();
+    const sidebar = page.locator(".sidebar");
+    await expect(sidebar).toBeVisible();
+    await sidebar
+      .getByRole("button")
+      .filter({ has: page.locator(`[id="pin-chat-${chat.id}"]`) })
+      .click();
+
+    await expect(page).toHaveURL(new RegExp(`[?&]chat=${chat.id}(?:&|$)`));
+    await expect(page).not.toHaveURL(/[?&]surface=/);
+    await expect(editor).toHaveValue(draft);
+    await expect(attachments).toContainText("studio-note.txt");
+    expect(mediaWrites).toEqual([]);
+  });
+}

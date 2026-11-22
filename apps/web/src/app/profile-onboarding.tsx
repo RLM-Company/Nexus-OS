@@ -6,13 +6,14 @@ import {
   onboardingPayload,
   shouldShowOnboarding,
   type Gender,
+  type GreetingProfile,
   type OnboardingSettings as Settings
 } from "./profile-onboarding-core";
 
 /** First-run onboarding: name + address gender + assistant gender.
  * Appears once for a fresh account; "Пропустить" keeps server defaults
  * (masculine address, neutral assistant) and never shows again. */
-export function ProfileOnboarding({ onSaved }: { onSaved: (name: string) => void }) {
+export function ProfileOnboarding({ onSaved }: { onSaved: (profile: GreetingProfile) => void }) {
   const [open, setOpen] = useState(false);
   const [settings, setSettings] = useState<Settings | null>(null);
   const [name, setName] = useState("");
@@ -76,7 +77,8 @@ export function ProfileOnboarding({ onSaved }: { onSaved: (name: string) => void
         )
       });
       if (!response.ok) throw new Error("Не удалось сохранить профиль.");
-      onSaved(name.trim());
+      const data = (await response.json()) as { settings: Settings };
+      onSaved(data.settings);
       markDone();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Не удалось сохранить профиль.");

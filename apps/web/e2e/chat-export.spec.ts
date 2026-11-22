@@ -119,7 +119,7 @@ async function fixture(page: Page, project = false) {
   return writes;
 }
 
-test("downloads both formats locally with code, dates, metadata and no drafts or writes", async ({
+test("downloads chat in four text formats with metadata and without drafts or writes", async ({
   page
 }) => {
   const writes = await fixture(page);
@@ -145,6 +145,21 @@ test("downloads both formats locally with code, dates, metadata and no drafts or
     kind: "document",
     source_type: "text"
   });
+  for (const [format, extension] of [
+    ["text", ".txt"],
+    ["html", ".html"]
+  ] as const) {
+    await page.getByLabel("Формат файла", { exact: true }).selectOption(format);
+    const downloadFile = page.waitForEvent("download");
+    await page.getByRole("button", { name: "Скачать переписку", exact: true }).click();
+    const file = await downloadFile;
+    expect(file.suggestedFilename().endsWith(extension)).toBe(true);
+    const content = await readFile((await file.path())!, "utf8");
+    expect(content).toContain(code);
+    expect(content).toContain(at);
+    expect(content).toContain("план.txt");
+    expect(content).not.toMatch(/attachment body|Неотправленный черновик/);
+  }
   await page.keyboard.press("Escape");
   await expect(page.getByLabel("Сообщение Kosmora", { exact: true })).toHaveValue(
     "Неотправленный черновик"

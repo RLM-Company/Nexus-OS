@@ -1,0 +1,55 @@
+{
+  "format": "kosmora.studio-document-package.first-run.v1",
+  "source": "local-simulation-NOT-live-Gemini",
+  "note": "РЎРёРјСѓР»СЏС‚РѕСЂ РїРµСЂРІРѕРіРѕ РїСЂРѕРіРѕРЅР°: СЂРµР°Р»СЊРЅС‹Рµ Р»РѕРєР°Р»СЊРЅС‹Рµ РїСЂРѕРІРµСЂРєРё РїР°РєРµС‚Р°, Р±РµР· Р¶РёРІРѕР№ РјРѕРґРµР»Рё Рё РІРЅРµС€РЅРёС… РІС‹Р·РѕРІРѕРІ.",
+  "manifest_sha256": "87f5174432e332546ac80d83fa1c92be2a79f90446d2cbbd84683f6587a091ce",
+  "archives": {
+    "simple": {
+      "file": "simple.zip",
+      "sha256": "8d07ce139f9aa28198c27ace2077401fc3adc516816413a5f709fe77f94cb622",
+      "expected_members": 4,
+      "expected_document_names": ["brief.txt", "budget.csv", "report.pdf", "memo.docx"],
+      "skipped": 0,
+      "incomplete": 0,
+      "duplicates": 0
+    },
+    "extended": {
+      "file": "extended.zip",
+      "sha256": "31878f3d79c5b821c18b674ddfae906b30df0da4d465b4b35ffbd5f3867ec021",
+      "expected_members": 11,
+      "expected_document_names": [
+        "brief.txt",
+        "budget.csv",
+        "report.pdf",
+        "memo.docx",
+        "appendix › long.pdf",
+        "scans › scan.pdf",
+        "partial › truncated.csv",
+        "nested.zip › nested › brief.txt",
+        "nested.zip › nested › extra.csv",
+        "duplicates › BRIEF.TXT"
+      ],
+      "skipped": 2,
+      "incomplete": 2,
+      "duplicates": 2
+    }
+  },
+  "checks": [
+    {
+      "name": "self-check",
+      "ok": true,
+      "output": "RUN  v4.1.11 C:/Users/Александр/Documents/deepseek-harness/default-workspace/pr617-integration/apps/web\n\n ✓ src/app/studio-fixture-import.test.ts (2 tests) 204ms\n\n Test Files  1 passed (1)\n      Tests  2 passed (2)\n   Start at  13:45:07\n   Duration  454ms (transform 33ms, setup 0ms, import 54ms, tests 204ms, environment 0ms)"
+    },
+    {
+      "name": "deep-analysis",
+      "ok": true,
+      "output": "RUN  v4.1.11 C:/Users/Александр/Documents/deepseek-harness/default-workspace/pr617-integration/apps/api\n\n ✓ test/studio-fixture-deep-analysis.test.ts (1 test) 321ms\n     ✓ analyzes packaged documents and reports honest coverage  318ms\n\n Test Files  1 passed (1)\n      Tests  1 passed (1)\n   Start at  13:45:11\n   Duration  3.95s (transform 1.38s, setup 0ms, import 3.46s, tests 321ms, environment 0ms)"
+    }
+  ],
+  "all_checks_passed": true,
+  "observed_vs_expected": {
+    "citations": 4,
+    "pages": 3,
+    "question": "РљР°РєРѕР№ РёС‚РѕРіРѕРІС‹Р№ Р±СЋРґР¶РµС‚ Рё СЃСЂРѕРє СЃРґР°С‡Рё РїРѕ Р»СѓРЅРЅРѕР№ СЃС‚Р°РЅС†РёРё?"
+  }
+}

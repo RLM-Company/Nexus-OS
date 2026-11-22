@@ -1249,6 +1249,18 @@ export function WorkManagerDag({ projectId }: { projectId: string }) {
                   </p>
                 )}
                 <div className={styles.actions}>
+                  {node.status === "completed" && node.artifacts.length > 0 && (
+                    <a
+                      aria-label={`Скачать файлы шага «${node.title}» (ZIP)`}
+                      href={`${base}/${encodeURIComponent(graph.id)}/results.zip?${new URLSearchParams(
+                        {
+                          node_id: node.id
+                        }
+                      )}`}
+                    >
+                      Скачать файлы шага (ZIP)
+                    </a>
+                  )}
                   {!graph.archived_at &&
                     ["pending", "blocked", "running"].includes(node.status) && (
                       <button

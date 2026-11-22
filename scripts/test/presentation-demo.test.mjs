@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { URL } from "node:url";
+import { join } from "node:path";
 import {
   childEnvironment,
   options,
@@ -45,7 +46,10 @@ test("the launcher discards inherited paid routes, credentials and executable pr
   assert.equal(env.KOSMORA_MEDIA_PAID_ENABLED, "false");
   assert.equal(env.API_HOST, "127.0.0.1");
   assert.equal(env.API_PORT, "3310");
-  assert.equal(env.DATABASE_URL, "file:/isolated-demo/demo.db");
+  // Build the expected path with the same platform separator as the launcher.
+  // A hardcoded POSIX path made this assertion fail on Windows even though the
+  // isolated DATABASE_URL was correct (bug BUG-05, 20.11.2026).
+  assert.equal(env.DATABASE_URL, `file:${join("/isolated-demo", "demo.db")}`);
   assert.equal(input.MODEL_PROVIDER, "openai-compatible");
 });
 

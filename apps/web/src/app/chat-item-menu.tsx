@@ -268,6 +268,8 @@ export function ChatItemMenu({
                 {projectId && item("Вернуть в общий список", "chats", () => void moveTo(null))}
                 <hr />
                 {item("Скачать Markdown", "download", () => void exportChat("markdown"))}
+                {item("Скачать текст", "download", () => void exportChat("text"))}
+                {item("Скачать HTML", "download", () => void exportChat("html"))}
                 {item("Скачать JSON", "files", () => void exportChat("json"))}
                 <hr />
                 {item("В архив", "archive", () => void save("archive"))}

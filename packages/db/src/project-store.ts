@@ -9,6 +9,7 @@ import {
   type Currency,
   type ProjectHistoryExcerpt
 } from "@cosmora/contracts";
+import type { PolicyStore } from "./policy-store.js";
 
 export const LOCAL_OWNER_ID = "local-owner";
 
@@ -278,7 +279,12 @@ export class ProjectStore {
   setMaterials(
     projectId: string,
     ownerId: string,
-    input: { version: number; instructions: string; attachments: ChatTextAttachment[] }
+    input: { version: number; instructions: string; attachments: ChatTextAttachment[] },
+    completion?: {
+      policy: PolicyStore;
+      operationId: string;
+      resultForVersion: (version: number) => unknown;
+    }
   ): ProjectMaterials | null {
     if (
       input.instructions.length > 4000 ||
@@ -312,8 +318,15 @@ export class ProjectStore {
           JSON.stringify(input.attachments),
           now()
         );
+      const saved = this.getMaterials(projectId, ownerId);
+      if (!saved) throw new Error("Saved project materials are unavailable");
+      completion?.policy.completeOperationInTransaction(
+        this.#sqlite,
+        completion.operationId,
+        completion.resultForVersion(saved.version)
+      );
       this.#sqlite.exec("COMMIT");
-      return this.getMaterials(projectId, ownerId);
+      return saved;
     } catch (error) {
       this.#sqlite.exec("ROLLBACK");
       throw error;
