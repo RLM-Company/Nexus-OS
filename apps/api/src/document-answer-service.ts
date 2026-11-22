@@ -189,6 +189,45 @@ export class DocumentAnswerService {
     void this.execute(run); // Durable status; client polls; no re-dispatch on reload.
     return this.store.get(projectId, ownerId, run.id)!;
   }
+  /**
+   * Explicitly retry a terminal deep run. Creates a NEW run with the same
+   * question/files and a fresh reading-phase coverage; the old run stays as
+   * history and keeps any uncertain cost hold (never silently re-dispatch).
+   */
+  // The async API captures synchronous validation errors before callers await the queued durable run.
+  // eslint-disable-next-line @typescript-eslint/require-await
+  async retry(projectId: string, ownerId: string, id: string): Promise<DocumentAnswer> {
+    this.assertAvailable();
+    if (this.quiesced.has(ownerId)) throw new DocumentAnswerError("QUIESCED");
+    const previous = this.store.get(projectId, ownerId, id);
+    if (!previous) throw new DocumentAnswerError("NOT_FOUND");
+    if (!previous.coverage || !["cancelled", "failed"].includes(previous.status))
+      throw new DocumentAnswerError("INVALID_SOURCES");
+    if ([...this.active.values()].some((job) => job.ownerId === ownerId && job.deep))
+      throw new DocumentAnswerError("CONFLICT");
+    const coverage: DocumentAnalysisCoverage = {
+      ...previous.coverage,
+      analyzed_chunks: 0,
+      failed_chunks: 0,
+      phase: "reading",
+      files: previous.coverage.files.map((file) => ({
+        ...file,
+        analyzed_chunks: 0,
+        failed_chunks: 0
+      }))
+    };
+    const run = this.store.create(
+      projectId,
+      ownerId,
+      previous.question,
+      previous.selected_file_ids,
+      [],
+      coverage
+    );
+    void this.execute(run);
+    return this.store.get(projectId, ownerId, run.id)!;
+  }
+
   private async execute(run: DocumentAnswer): Promise<void> {
     if (!this.store.transition(run.project_id, run.owner_id, run.id, "queued", "running")) return;
     const controller = new AbortController();
