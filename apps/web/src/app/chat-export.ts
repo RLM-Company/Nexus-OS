@@ -11,7 +11,7 @@ export type ChatExportSource = {
   title: string;
   messages: readonly ExportableChatMessage[];
 };
-export type ChatExportFormat = "markdown" | "json";
+export type ChatExportFormat = "markdown" | "json" | "text" | "html";
 
 const statusLabels: Record<ExportableChatMessage["status"], string> = {
   pending: "Ожидает ответа",
@@ -29,6 +29,17 @@ function literal(value: string): string {
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/[\\`*_{}[\]()#+.!|~-]/g, "\\$&");
+}
+
+// HTML is an escaped, readable transcript, not a Markdown renderer. Message
+// content stays verbatim inside <pre> so model output cannot inject markup.
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
 }
 
 export function createChatExport(
@@ -71,7 +82,51 @@ export function createChatExport(
     .slice(0, 72)
     .join("")
     .replace(/^-+|-+$/g, "");
-  const filename = `kosmora-${title || "chat"}-${exportedAt.replace(/[^0-9]/g, "")}.${format === "json" ? "json" : "md"}`;
+  const extension =
+    format === "json" ? "json" : format === "text" ? "txt" : format === "html" ? "html" : "md";
+  const filename = `kosmora-${title || "chat"}-${exportedAt.replace(/[^0-9]/g, "")}.${extension}`;
+  if (format === "text") {
+    const content = [
+      `${source.title} — экспортировано из Kosmora: ${exportedAt}`,
+      source.projectId ? "Переписка проекта" : "Обычный чат",
+      "Вложения: только названия и типы; содержимое файлов и фотографии не включены.",
+      ...messages.map((message) => {
+        const attachments = message.attachments.length
+          ? `\nВложения:\n${message.attachments
+              .map(
+                (attachment) =>
+                  `- ${attachment.name} (${attachment.kind === "image" ? "изображение" : (attachment.source_type ?? "text")})`
+              )
+              .join("\n")}`
+          : "";
+        return `---\n${message.role === "user" ? "Вы" : "Kosmora"} · ${message.created_at} · ${statusLabels[message.status]}\n\n${message.content}${attachments}`;
+      })
+    ].join("\n\n");
+    return { content: `${content}\n`, filename, mimeType: "text/plain;charset=utf-8" };
+  }
+  if (format === "html") {
+    const content = [
+      "<!doctype html>",
+      '<html lang="ru"><head><meta charset="utf-8"><title>',
+      `${escapeHtml(source.title)}</title></head><body>`,
+      `<h1>${escapeHtml(source.title)}</h1>`,
+      `<p>Экспортировано из Kosmora: ${escapeHtml(exportedAt)}. ${source.projectId ? "Переписка проекта" : "Обычный чат"}.</p>`,
+      "<p>Вложения: только названия и типы; содержимое файлов и фотографии не включены.</p>",
+      ...messages.map((message) => {
+        const attachments = message.attachments.length
+          ? `<ul>${message.attachments
+              .map(
+                (attachment) =>
+                  `<li>${escapeHtml(attachment.name)} (${attachment.kind === "image" ? "изображение" : escapeHtml(attachment.source_type ?? "text")})</li>`
+              )
+              .join("")}</ul>`
+          : "";
+        return `<section><h2>${message.role === "user" ? "Вы" : "Kosmora"}</h2><p>${escapeHtml(message.created_at)} · ${escapeHtml(statusLabels[message.status])}</p><pre>${escapeHtml(message.content)}</pre>${attachments}</section>`;
+      }),
+      "</body></html>"
+    ].join("\n");
+    return { content: `${content}\n`, filename, mimeType: "text/html;charset=utf-8" };
+  }
   if (format === "json") {
     return {
       content: `${JSON.stringify(document, null, 2)}\n`,
