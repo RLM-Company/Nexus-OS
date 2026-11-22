@@ -158,10 +158,14 @@ test("imports a reviewed MCP document and explains access loss", async ({ page }
       json: {
         configured: true,
         stopped,
-        documents: [
-          { id: report, name: "report.txt" },
-          { id: notes, name: "notes.txt" }
-        ]
+        ...(stopped
+          ? { document: "report.txt", document_id: report }
+          : {
+              documents: [
+                { id: report, name: "report.txt" },
+                { id: notes, name: "notes.txt" }
+              ]
+            })
       }
     })
   );
@@ -334,6 +338,7 @@ test("imports a reviewed MCP document and explains access loss", async ({ page }
   await expect(document).not.toContainText("Обновлённый отчёт.");
   const receipt = document.getByRole("button", { name: "Проверить результат сохранения" });
   await receipt.click();
+  await expect(selector).toHaveCount(0);
   await expect(document.getByRole("button", { name: "Предпросмотр документа" })).toHaveCount(0);
   await expect(document).toContainText("Журнал пока не подтверждает исход сохранения.");
   await receipt.click();

@@ -92,7 +92,7 @@ export function registerMcpRoutes(
       configured: enabled(project, identity.owner_id),
       stopped: stopped(project, identity.owner_id),
       ...(pilot?.document && pilot.readDocument && enabled(project, identity.owner_id)
-        ? { document: pilot.document.name }
+        ? { document: pilot.document.name, document_id: pilot.documents?.[0]?.id }
         : {}),
       ...(pilot?.documents && pilot.documents.length > 1 && enabled(project, identity.owner_id)
         ? { documents: pilot.documents.map(({ id, name }) => ({ id, name })) }

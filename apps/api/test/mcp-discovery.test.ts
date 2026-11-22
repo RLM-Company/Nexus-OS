@@ -115,17 +115,19 @@ it("lists tools through HTTP, confines the pilot to its project, and journals on
   });
   const address = upstream.address();
   if (!address || typeof address === "string") throw Error("Test MCP address unavailable");
-  const makePilot = (revision: string) =>
+  const makePilot = (revision: string, single = false) =>
     configuredMcpDiscovery(
       {
         KOSMORA_MCP_URL: "https://mcp.example.org/catalog",
         KOSMORA_MCP_OWNER: owner,
         KOSMORA_MCP_PROJECT: project.id,
         KOSMORA_MCP_REVISION: revision,
-        KOSMORA_MCP_DOCUMENTS_JSON: JSON.stringify([
-          { uri: documentUri, name: "report.txt" },
-          { uri: otherDocumentUri, name: "notes.txt" }
-        ])
+        KOSMORA_MCP_DOCUMENTS_JSON: JSON.stringify(
+          [
+            { uri: documentUri, name: "report.txt" },
+            { uri: otherDocumentUri, name: "notes.txt" }
+          ].slice(0, single ? 1 : 2)
+        )
       },
       (_url, init) => fetch(`http://127.0.0.1:${address.port}/catalog`, init)
     )!;
@@ -426,11 +428,16 @@ it("lists tools through HTTP, confines the pilot to its project, and journals on
       copy_name: "report-mcp-2.txt"
     });
 
-    const rotatedPilot = makePilot("fixture-v2");
+    const rotatedPilot = makePilot("fixture-v2", true);
     expect(rotatedPilot.revision).not.toBe(pilot.revision);
     const restartedWithPilot = buildApp({ ...appDependencies, mcpDiscovery: rotatedPilot });
     const beforeRotationChecks = methods.length;
     try {
+      expect((await restartedWithPilot.inject({ url: path })).json()).toMatchObject({
+        configured: true,
+        document: "report.txt",
+        document_id: primaryId
+      });
       const replayAfterRotation = await restartedWithPilot.inject({
         method: "POST",
         url: path + "/document/save-copy",

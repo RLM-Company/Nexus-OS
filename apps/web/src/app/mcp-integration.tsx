@@ -10,6 +10,7 @@ type Availability = {
   configured: boolean;
   stopped: boolean;
   document?: string;
+  document_id?: string;
   documents?: { id: string; name: string }[];
 };
 type Discovery = { status: string; tools?: string[]; hasMore?: boolean; operation_id?: string };
@@ -20,8 +21,12 @@ export function McpIntegration({ project }: { project: string }) {
   const onImported = () => refreshImports((value) => value + 1);
   const [documentId, setDocumentId] = useState("");
   const [documentBusy, setDocumentBusy] = useState(false);
-  const selectedDocument =
-    availability?.documents?.find(({ id }) => id === documentId) ?? availability?.documents?.[0];
+  const documents =
+    availability?.documents ??
+    (availability?.document
+      ? [{ id: availability.document_id ?? "", name: availability.document }]
+      : []);
+  const selectedDocument = documents.find(({ id }) => id === documentId) ?? documents[0];
   const [result, setResult] = useState<Discovery | null>(null);
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
@@ -114,38 +119,32 @@ export function McpIntegration({ project }: { project: string }) {
       )}
       {availability?.configured && selectedDocument && (
         <>
-          <label>
-            Документ для импорта
-            <select
-              value={selectedDocument.id}
-              disabled={documentBusy}
-              onChange={(event) => setDocumentId(event.target.value)}
-            >
-              {availability.documents?.map(({ id, name }) => (
-                <option value={id} key={id}>
-                  {name}
-                </option>
-              ))}
-            </select>
-          </label>
+          {documents.length > 1 && (
+            <label>
+              Документ для импорта
+              <select
+                value={selectedDocument.id}
+                disabled={documentBusy}
+                onChange={(event) => setDocumentId(event.target.value)}
+              >
+                {documents.map(({ id, name }) => (
+                  <option value={id} key={id}>
+                    {name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
           <McpDocument
             key={selectedDocument.id}
             project={project}
             name={selectedDocument.name}
-            documentId={selectedDocument.id}
+            {...(selectedDocument.id ? { documentId: selectedDocument.id } : {})}
             stopped={availability.stopped}
             onBusy={setDocumentBusy}
             onImported={onImported}
           />
         </>
-      )}
-      {availability?.configured && availability.document && (
-        <McpDocument
-          project={project}
-          name={availability.document}
-          stopped={availability.stopped}
-          onImported={onImported}
-        />
       )}
       <McpImportHistory path={path} refresh={importsRefresh} />
       {message && <p role="alert">{message}</p>}
