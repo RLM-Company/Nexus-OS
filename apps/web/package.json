@@ -22,6 +22,7 @@
   },
   "dependencies": {
     "@cosmora/contracts": "workspace:*",
+    "@cosmora/core": "workspace:*",
     "@tesseract.js-data/eng": "1.0.0",
     "@tesseract.js-data/rus": "1.0.0",
     "fflate": "0.8.3",
