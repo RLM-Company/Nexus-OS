@@ -419,19 +419,29 @@ export class PolicyStore {
     return rows[0] ? asOperation(rows[0]) : null;
   }
 
-  listMcpImportOperations(projectId: string): StoredPolicyOperation[] {
+  listMcpImportOperations(
+    projectId: string,
+    before?: string
+  ): { operations: StoredPolicyOperation[]; nextCursor?: string } {
+    const receipt = `status = 'SUCCEEDED' AND idempotency_key GLOB 'mcp:*:save:*'
+      AND json_type(result_json, '$.imported_document') = 'object'`;
     const rows = this.#sqlite
       .prepare(
         `SELECT operation_id, project_id, actor_id, idempotency_key, status, intent_json,
           verdict_json, confirmation_id, result_json, error_code, created_at, updated_at
          FROM policy_operations
-         WHERE project_id = ? AND status = 'SUCCEEDED'
-           AND idempotency_key GLOB 'mcp:*:save:*'
-           AND json_type(result_json, '$.imported_document') = 'object'
-         ORDER BY updated_at DESC, rowid DESC LIMIT 20`
+         WHERE project_id = ? AND ${receipt}
+           AND (? IS NULL OR (updated_at, rowid) < (
+             SELECT updated_at, rowid FROM policy_operations
+             WHERE project_id = ? AND operation_id = ? AND ${receipt}
+           ))
+         ORDER BY updated_at DESC, rowid DESC LIMIT 21`
       )
-      .all(projectId) as unknown as SqlRow[];
-    return rows.map(asOperation);
+      .all(projectId, before ?? null, projectId, before ?? null) as unknown as SqlRow[];
+    const operations = rows.slice(0, 20).map(asOperation);
+    const nextCursor =
+      rows.length > operations.length ? operations.at(-1)?.operation_id : undefined;
+    return { operations, ...(nextCursor ? { nextCursor } : {}) };
   }
 
   listDecisionTrace(projectId: string, limit = 50): PolicyDecisionTraceEvent[] {
