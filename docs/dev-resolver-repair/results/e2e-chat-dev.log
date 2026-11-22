@@ -1,0 +1,73 @@
+[WebServer] (node:27332) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.
+[WebServer] (Use `node --trace-deprecation ...` to show where the warning was created)
+[WebServer] $ node scripts/prepare-pdf-worker.mjs && next dev --webpack -H 127.0.0.1
+
+Running 48 tests using 1 worker
+
+  ok  1 [chromium] › e2e\chat-reliability.spec.ts:48:5 › new chat during a delayed initial read stays usable and ignores the late response (21.7s)
+  x   2 [chromium] › e2e\chat-reliability.spec.ts:88:5 › restores text and files after closing the tab, isolates chats, removes and clears accepted drafts (35.3s)
+  ok  3 [chromium] › e2e\chat-reliability.spec.ts:203:5 › retains project materials across reload without leaking into the new-chat draft (21.8s)
+  ok  4 [chromium] › e2e\chat-reliability.spec.ts:224:5 › moves a chat into a project and back without losing its link, history or attachment (25.0s)
+  ok  5 [chromium] › e2e\chat-reliability.spec.ts:288:5 › recovers text with invalid saved materials and retains a draft on rejected submission (18.6s)
+  ok  6 [chromium] › e2e\chat-reliability.spec.ts:320:5 › prepares a phone-sized JPEG, restores thumbnail and rejects unsafe dimensions (15.6s)
+  ok  7 [chromium] › e2e\chat-reliability.spec.ts:374:5 › keeps attachment controls keyboard reachable with clear names and thumbnail text (3.7s)
+  ok  8 [chromium] › e2e\chat-reliability.spec.ts:396:5 › announces rejected attachment type and keeps the draft editor usable (3.0s)
+  ok  9 [chromium] › e2e\chat-reliability.spec.ts:409:5 › restored attachment drafts expose the image name to assistive technology (6.8s)
+  ok 10 [chromium] › e2e\chat-reliability.spec.ts:441:7 › retries an accepted personal chat message with its original attachment after a lost response (14.4s)
+  ok 11 [chromium] › e2e\chat-reliability.spec.ts:441:7 › retries an accepted project chat message with its original attachment after a lost response (11.8s)
+  ok 12 [chromium] › e2e\chat-reliability.spec.ts:502:5 › two uncertain sends remain independently retryable after navigation and reload (14.5s)
+  ok 13 [chromium] › e2e\chat-reliability.spec.ts:571:5 › a later send in the same chat cannot erase the retry of an accepted message (16.2s)
+  ok 14 [chromium] › e2e\chat-reliability.spec.ts:620:5 › composer actions belong to their own chat and stay out of another chat request (5.6s)
+  ok 15 [chromium] › e2e\chat-reliability.spec.ts:677:5 › reload and lost network recover the same run without duplicate POSTs or messages (13.1s)
+  ok 16 [chromium] › e2e\chat-reliability.spec.ts:710:5 › late history and stream cannot affect the newly selected chat (9.1s)
+  ok 17 [chromium] › e2e\chat-reliability.spec.ts:743:5 › long Markdown retains the complete answer in copy and chat export (9.8s)
+  ok 18 [chromium] › e2e\chat-reliability.spec.ts:775:5 › ordinary-chat cancellation after reload restores a request without sending it (15.7s)
+  ok 19 [chromium] › e2e\chat-reliability.spec.ts:800:5 › a pre-completion history snapshot cannot reopen a completed run (16.6s)
+  ok 20 [chromium] › e2e\chat-reliability.spec.ts:835:5 › a lost acknowledgement reload restores the exact text action before retrying one request (17.1s)
+  ok 21 [chromium] › e2e\chat-reliability.spec.ts:879:5 › a spoken request survives reload before the server acknowledgement (11.3s)
+  ok 22 [chromium] › e2e\composer-draft-races.spec.ts:21:5 › pagehide persists the last input before React commits its passive effects (7.4s)
+  ok 23 [chromium] › e2e\composer-draft-races.spec.ts:46:5 › pagehide persists removal of a file without resurrecting the old attachment (7.6s)
+  ok 24 [chromium] › e2e\composer-draft-races.spec.ts:69:5 › native text-only pagehide flush uses the latest input rather than an older render (3.9s)
+  ok 25 [chromium] › e2e\composer-draft-races.spec.ts:107:7 › chat rejection preserves exact whitespace and file bytes across reload (9.1s)
+  ok 26 [chromium] › e2e\composer-draft-races.spec.ts:107:7 › project rejection preserves exact whitespace and file bytes across reload (12.9s)
+  ok 27 [chromium] › e2e\composer-draft-races.spec.ts:182:5 › closing an unchanged tab does not overwrite another tab's newer draft (12.2s)
+  ok 28 [chromium] › e2e\composer-draft-races.spec.ts:198:5 › a file finishing after chat navigation cannot leak or replace the next chat's draft (18.8s)
+  ok 29 [chromium] › e2e\composer-draft-races.spec.ts:246:5 › a follow-up inserted just before pagehide survives without an automatic send (11.7s)
+  ok 30 [chromium] › e2e\composer-draft-races.spec.ts:280:5 › an input notification already tracked before React change survives attaching a file (17.7s)
+  ok 31 [chromium] › e2e\composer-draft-races.spec.ts:332:7 › a late acceptance cannot erase a newer prepared follow-up (12.8s)
+  ok 32 [chromium] › e2e\composer-draft-races.spec.ts:332:7 › a late rejection cannot erase a newer prepared follow-up (12.7s)
+  ok 33 [chromium] › e2e\composer-draft-races.spec.ts:384:5 › an acceptance cannot clear another tab's newer stored draft (12.6s)
+  ok 34 [chromium] › e2e\run-draft-recovery.spec.ts:77:9 › chat: restores a failed request before any assistant, persists exact materials and sends nothing (13.6s)
+  ok 35 [chromium] › e2e\run-draft-recovery.spec.ts:77:9 › chat: restores a cancelled request before any assistant, persists exact materials and sends nothing (9.9s)
+  ok 36 [chromium] › e2e\run-draft-recovery.spec.ts:121:9 › chat: an existing file draft is protected from request recovery (9.3s)
+  ok 37 [chromium] › e2e\run-draft-recovery.spec.ts:121:9 › chat: an existing whitespace draft is protected from request recovery (11.1s)
+  ok 38 [chromium] › e2e\run-draft-recovery.spec.ts:152:7 › chat: a stale recovery click cannot replace newer input in the same browser turn (4.2s)
+  ok 39 [chromium] › e2e\run-draft-recovery.spec.ts:175:7 › chat: recovery cannot discard a file that is still being read (5.0s)
+  ok 40 [chromium] › e2e\run-draft-recovery.spec.ts:77:9 › project: restores a failed request before any assistant, persists exact materials and sends nothing (11.7s)
+  ok 41 [chromium] › e2e\run-draft-recovery.spec.ts:77:9 › project: restores a cancelled request before any assistant, persists exact materials and sends nothing (10.2s)
+  ok 42 [chromium] › e2e\run-draft-recovery.spec.ts:121:9 › project: an existing file draft is protected from request recovery (10.1s)
+  ok 43 [chromium] › e2e\run-draft-recovery.spec.ts:121:9 › project: an existing whitespace draft is protected from request recovery (11.4s)
+  ok 44 [chromium] › e2e\run-draft-recovery.spec.ts:152:7 › project: a stale recovery click cannot replace newer input in the same browser turn (4.5s)
+  ok 45 [chromium] › e2e\run-draft-recovery.spec.ts:175:7 › project: recovery cannot discard a file that is still being read (4.9s)
+  ok 46 [chromium] › e2e\terminal-run-recovery.spec.ts:4:7 › a cancelled run without an assistant does not reopen from stale history (13.9s)
+  ok 47 [chromium] › e2e\terminal-run-recovery.spec.ts:4:7 › a failed run without an assistant does not reopen from stale history (12.3s)
+  ok 48 [chromium] › e2e\terminal-run-recovery.spec.ts:4:7 › a completed run without an assistant does not reopen from stale history (10.7s)
+
+
+  1) [chromium] › e2e\chat-reliability.spec.ts:88:5 › restores text and files after closing the tab, isolates chats, removes and clears accepted drafts 
+
+    Test timeout of 30000ms exceeded.
+
+    Error Context: test-results\chat-reliability-restores--9aeb3--and-clears-accepted-drafts-chromium\error-context.md
+
+    attachment #2: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results\chat-reliability-restores--9aeb3--and-clears-accepted-drafts-chromium\trace.zip
+    Usage:
+
+        npx playwright show-trace test-results\chat-reliability-restores--9aeb3--and-clears-accepted-drafts-chromium\trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  1 failed
+    [chromium] › e2e\chat-reliability.spec.ts:88:5 › restores text and files after closing the tab, isolates chats, removes and clears accepted drafts 
+  47 passed (11.5m)

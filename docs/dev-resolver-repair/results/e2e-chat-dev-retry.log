@@ -1,0 +1,7 @@
+[WebServer] (node:25612) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.
+[WebServer] (Use `node --trace-deprecation ...` to show where the warning was created)
+[WebServer] $ node scripts/prepare-pdf-worker.mjs && next dev --webpack -H 127.0.0.1
+Error: No tests found.
+Make sure that arguments are regular expressions matching test files.
+You may need to escape symbols like "$" or "*" and quote the arguments.
+

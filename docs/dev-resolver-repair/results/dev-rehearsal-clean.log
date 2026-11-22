@@ -1,0 +1,3 @@
+Запуск локальной репетиции Kosmora. Модель: mock; внешние вызовы отключены.
+HTTP rehearsal PASS: mock runtime, web proxy, graph import/HTML, preview/hash, save, API restart, stale detection, CAS, replace/remove and retained files.
+Это HTTP-проверка; клики и визуальная браузерная приёмка не проверялись.

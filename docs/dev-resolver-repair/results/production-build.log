@@ -1,0 +1,279 @@
+$ node scripts/prepare-pdf-worker.mjs && next build --webpack
+▲ Next.js 16.3.1 (webpack)
+✓ Running next.config.ts took 262ms
+
+  Creating an optimized production build ...
+⚠ Compiled with warnings in 3.1min
+
+./src/app/presentations/pptx.ts
+Attempted import error: 'slideOverflow' is not exported from './model' (imported as 'slideOverflow').
+
+Import trace for requested module:
+./src/app/presentations/pptx.ts
+./src/app/presentations/workspace-content.tsx
+
+./src/app/presentations/presentation-import.tsx
+Attempted import error: 'PRESENTATION_IMPORT_BYTES' is not exported from './package' (imported as 'PRESENTATION_IMPORT_BYTES').
+
+Import trace for requested module:
+./src/app/presentations/presentation-import.tsx
+./src/app/presentations/workspace-content.tsx
+
+./src/app/presentations/presentation-import.tsx
+Attempted import error: 'parsePresentationPackage' is not exported from './package' (imported as 'parsePresentationPackage').
+
+Import trace for requested module:
+./src/app/presentations/presentation-import.tsx
+./src/app/presentations/workspace-content.tsx
+
+./src/app/presentations/workspace-content.tsx
+Attempted import error: 'slideOverflow' is not exported from './model' (imported as 'slideOverflow').
+
+Import trace for requested module:
+./src/app/presentations/workspace-content.tsx
+
+./src/app/presentations/workspace-content.tsx
+Attempted import error: 'slideOverflow' is not exported from './model' (imported as 'slideOverflow').
+
+Import trace for requested module:
+./src/app/presentations/workspace-content.tsx
+
+./src/app/studio-data-edit.ts
+Attempted import error: 'DATA_LIMITS' is not exported from './studio-data-core' (imported as 'DATA_LIMITS').
+
+Import trace for requested module:
+./src/app/studio-data-edit.ts
+./src/app/studio-data-workbench.tsx
+./src/app/workspace-sections.tsx
+./src/app/page.tsx
+
+./src/app/studio-data-export.ts
+Attempted import error: 'DATA_LIMITS' is not exported from './studio-data-core' (imported as 'DATA_LIMITS').
+
+Import trace for requested module:
+./src/app/studio-data-export.ts
+./src/app/studio-data-workbench.tsx
+./src/app/workspace-sections.tsx
+./src/app/page.tsx
+
+./src/app/studio-data-export.ts
+Attempted import error: 'DATA_LIMITS' is not exported from './studio-data-core' (imported as 'DATA_LIMITS').
+
+Import trace for requested module:
+./src/app/studio-data-export.ts
+./src/app/studio-data-workbench.tsx
+./src/app/workspace-sections.tsx
+./src/app/page.tsx
+
+./src/app/studio-data-export.ts
+Attempted import error: 'validateDataSettings' is not exported from './studio-data-core' (imported as 'validateDataSettings').
+
+Import trace for requested module:
+./src/app/studio-data-export.ts
+./src/app/studio-data-workbench.tsx
+./src/app/workspace-sections.tsx
+./src/app/page.tsx
+
+./src/app/studio-data-export.ts
+Attempted import error: 'DATA_LIMITS' is not exported from './studio-data-core' (imported as 'DATA_LIMITS').
+
+Import trace for requested module:
+./src/app/studio-data-export.ts
+./src/app/studio-data-workbench.tsx
+./src/app/workspace-sections.tsx
+./src/app/page.tsx
+
+./src/app/studio-data-export.ts
+Attempted import error: 'validateDataTable' is not exported from './studio-data-core' (imported as 'validateDataTable').
+
+Import trace for requested module:
+./src/app/studio-data-export.ts
+./src/app/studio-data-workbench.tsx
+./src/app/workspace-sections.tsx
+./src/app/page.tsx
+
+./src/app/studio-data-export.ts
+Attempted import error: 'validateDataSettings' is not exported from './studio-data-core' (imported as 'validateDataSettings').
+
+Import trace for requested module:
+./src/app/studio-data-export.ts
+./src/app/studio-data-workbench.tsx
+./src/app/workspace-sections.tsx
+./src/app/page.tsx
+
+./src/app/studio-data-export.ts
+Attempted import error: 'DATA_LIMITS' is not exported from './studio-data-core' (imported as 'DATA_LIMITS').
+
+Import trace for requested module:
+./src/app/studio-data-export.ts
+./src/app/studio-data-workbench.tsx
+./src/app/workspace-sections.tsx
+./src/app/page.tsx
+
+./src/app/studio-data-export.ts
+Attempted import error: 'validateDataTable' is not exported from './studio-data-core' (imported as 'validateDataTable').
+
+Import trace for requested module:
+./src/app/studio-data-export.ts
+./src/app/studio-data-workbench.tsx
+./src/app/workspace-sections.tsx
+./src/app/page.tsx
+
+./src/app/studio-data-export.ts
+Attempted import error: 'validateDataSettings' is not exported from './studio-data-core' (imported as 'validateDataSettings').
+
+Import trace for requested module:
+./src/app/studio-data-export.ts
+./src/app/studio-data-workbench.tsx
+./src/app/workspace-sections.tsx
+./src/app/page.tsx
+
+./src/app/studio-data-export.ts
+Attempted import error: 'DATA_LIMITS' is not exported from './studio-data-core' (imported as 'DATA_LIMITS').
+
+Import trace for requested module:
+./src/app/studio-data-export.ts
+./src/app/studio-data-workbench.tsx
+./src/app/workspace-sections.tsx
+./src/app/page.tsx
+
+./src/app/studio-data-workbench.tsx
+Attempted import error: 'DATA_LIMITS' is not exported from './studio-data-core' (imported as 'DATA_LIMITS').
+
+Import trace for requested module:
+./src/app/studio-data-workbench.tsx
+./src/app/workspace-sections.tsx
+./src/app/page.tsx
+
+./src/app/studio-data-workbench.tsx
+Attempted import error: 'DATA_LIMITS' is not exported from './studio-data-core' (imported as 'DATA_LIMITS').
+
+Import trace for requested module:
+./src/app/studio-data-workbench.tsx
+./src/app/workspace-sections.tsx
+./src/app/page.tsx
+
+./src/app/studio-data-workbench.tsx
+Attempted import error: 'DATA_LIMITS' is not exported from './studio-data-core' (imported as 'DATA_LIMITS').
+
+Import trace for requested module:
+./src/app/studio-data-workbench.tsx
+./src/app/workspace-sections.tsx
+./src/app/page.tsx
+
+./src/app/studio-data-worker.ts
+Attempted import error: 'validateDataTable' is not exported from './studio-data-core' (imported as 'validateDataTable').
+
+Import trace for requested module:
+./src/app/studio-data-worker.ts
+./src/app/studio-data-workbench.tsx
+./src/app/workspace-sections.tsx
+./src/app/page.tsx
+
+./src/app/studio-data-worker.ts
+Attempted import error: 'DATA_LIMITS' is not exported from './studio-data-core' (imported as 'DATA_LIMITS').
+
+Import trace for requested module:
+./src/app/studio-data-worker.ts
+./src/app/studio-data-workbench.tsx
+./src/app/workspace-sections.tsx
+./src/app/page.tsx
+
+./src/app/studio-data-worker.ts
+Attempted import error: 'DATA_LIMITS' is not exported from './studio-data-core' (imported as 'DATA_LIMITS').
+
+Import trace for requested module:
+./src/app/studio-data-worker.ts
+./src/app/studio-data-workbench.tsx
+./src/app/workspace-sections.tsx
+./src/app/page.tsx
+
+./src/app/studio-data-worker.ts
+Attempted import error: 'parseDataWorkspace' is not exported from './studio-data-core' (imported as 'parseDataWorkspace').
+
+Import trace for requested module:
+./src/app/studio-data-worker.ts
+./src/app/studio-data-workbench.tsx
+./src/app/workspace-sections.tsx
+./src/app/page.tsx
+
+./src/app/studio-data-worker.ts
+Attempted import error: 'validateDataTable' is not exported from './studio-data-core' (imported as 'validateDataTable').
+
+Import trace for requested module:
+./src/app/studio-data-worker.ts
+./src/app/studio-data-workbench.tsx
+./src/app/workspace-sections.tsx
+./src/app/page.tsx
+
+./src/app/studio-data-xlsx.ts
+Attempted import error: 'validateDataTable' is not exported from './studio-data-core' (imported as 'validateDataTable').
+
+Import trace for requested module:
+./src/app/studio-data-xlsx.ts
+./src/app/studio-data-workbench.tsx
+./src/app/workspace-sections.tsx
+./src/app/page.tsx
+
+./src/app/studio-data-xlsx.ts
+Attempted import error: 'validateDataSettings' is not exported from './studio-data-core' (imported as 'validateDataSettings').
+
+Import trace for requested module:
+./src/app/studio-data-xlsx.ts
+./src/app/studio-data-workbench.tsx
+./src/app/workspace-sections.tsx
+./src/app/page.tsx
+
+./src/app/studio-data-xlsx.ts
+Attempted import error: 'DATA_LIMITS' is not exported from './studio-data-core' (imported as 'DATA_LIMITS').
+
+Import trace for requested module:
+./src/app/studio-data-xlsx.ts
+./src/app/studio-data-workbench.tsx
+./src/app/workspace-sections.tsx
+./src/app/page.tsx
+
+./src/app/studio-data-xlsx.ts
+Attempted import error: 'DATA_LIMITS' is not exported from './studio-data-core' (imported as 'DATA_LIMITS').
+
+Import trace for requested module:
+./src/app/studio-data-xlsx.ts
+./src/app/studio-data-workbench.tsx
+./src/app/workspace-sections.tsx
+./src/app/page.tsx
+
+  Running TypeScript ...
+  Finished TypeScript in 2.5min ...
+  Collecting page data using 11 workers ...
+  Generating static pages using 11 workers (0/20) ...
+  Generating static pages using 11 workers (5/20) 
+  Generating static pages using 11 workers (10/20) 
+  Generating static pages using 11 workers (15/20) 
+✓ Generating static pages using 11 workers (20/20) in 37.2s
+  Finalizing page optimization ...
+  Collecting build traces ...
+
+Route (app)
+┌ ○ /
+├ ○ /_not-found
+├ ○ /agent-studio
+├ ○ /apple-icon
+├ ○ /code-agent
+├ ○ /control-center
+├ ○ /github
+├ ○ /github/preview
+├ ○ /graph-workspace
+├ ○ /icon
+├ ○ /interface-kit
+├ ○ /manifest.webmanifest
+├ ○ /model-status
+├ ○ /notifications
+├ ○ /personal-settings
+├ ○ /presentations
+├ ○ /research-workspace
+├ ○ /search
+└ ○ /skills
+
+
+○  (Static)  prerendered as static content
+

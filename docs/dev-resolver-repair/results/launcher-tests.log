@@ -1,0 +1,13 @@
+✔ the launcher discards inherited paid routes, credentials and executable preload settings (3.218ms)
+✔ ports are explicit, distinct and never accept URLs or wildcard hosts (2.6782ms)
+✔ source-backed demo graph carries exact excerpts and hashes without fabricating verification (15.3185ms)
+✔ a changed or missing source excerpt stops seeding instead of manufacturing a citation (0.4071ms)
+✔ a production build must route to this API before any processes or data are started (0.5386ms)
+ℹ tests 5
+ℹ suites 0
+ℹ pass 5
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 881.1342
