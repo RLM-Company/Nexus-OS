@@ -153,6 +153,7 @@ test("imports a reviewed MCP document and explains access loss", async ({ page }
   let copyRequest = "";
   let interruptedRequest = "";
   let receiptChecks = 0;
+  let olderLoads = 0;
   await page.route(base, (route) =>
     route.fulfill({
       json: {
@@ -209,10 +210,31 @@ test("imports a reviewed MCP document and explains access loss", async ({ page }
                 copy: "matched"
               }
             ]
-          : []
+          : [],
+        ...(writes ? { next_cursor: id } : {})
       }
     })
   );
+  await page.route(base + "/document/imports?*", (route) => {
+    const request = route.request();
+    expect(request.method()).toBe("GET");
+    expect(new URL(request.url()).searchParams.get("before")).toBe(id);
+    if (++olderLoads === 1) return route.fulfill({ status: 503, json: {} });
+    return route.fulfill({
+      json: {
+        items: [
+          {
+            operation_id: "ef130001-0001-4000-8000-000000000001",
+            name: "older-report.txt",
+            source,
+            sha256: "d".repeat(64),
+            version: 1,
+            copy: "changed"
+          }
+        ]
+      }
+    });
+  });
   await page.route(base + "/document/save", (route) => {
     saves++;
     expect(route.request().postDataJSON()).toEqual({
@@ -360,6 +382,16 @@ test("imports a reviewed MCP document and explains access loss", async ({ page }
   await expect(history).toContainText(source);
   await expect(history).toContainText("Версия материалов: 2. В материалах есть точная копия.");
   await expect(history).toContainText("c".repeat(64));
+  const more = history.getByRole("button", { name: "Показать более ранние импорты" });
+  await more.click();
+  await expect(history).toContainText("Более ранние записи недоступны.");
+  await expect(history).toContainText("Версия материалов: 2. В материалах есть точная копия.");
+  await history.getByRole("button", { name: "Повторить загрузку" }).click();
+  await expect(history).toContainText("older-report.txt");
+  await expect(history).toContainText("Версия материалов: 1. Файл с этим именем изменён.");
+  await expect(history.getByRole("listitem")).toHaveCount(2);
+  await expect(more).toHaveCount(0);
+  expect(olderLoads).toBe(2);
   expect(writes).toBe(1);
 });
 

@@ -8,6 +8,7 @@ import {
   openDatabase,
   runMigrations
 } from "@cosmora/db";
+import { GuardedToolRuntime } from "@cosmora/tool-runtime";
 import { expect, it } from "vitest";
 import { buildApp } from "../src/app.js";
 import { configuredMcpDiscovery } from "../src/mcp-discovery.js";
@@ -17,6 +18,100 @@ const owner = "local-owner";
 const documentUri = "fixture://workspace/report";
 const otherDocumentUri = "fixture://workspace/notes";
 const documentText = "Смета: 19 700 ₽\nАртикул 00123. Кроме доставки.\n";
+
+it("pages disconnected MCP history without gaps or cross-project cursors", async () => {
+  const database = openDatabase(":memory:");
+  await runMigrations(database);
+  const projects = new ProjectStore(database.sqlite);
+  const policy = new PolicyStore(database.sqlite);
+  const { project } = projects.createProject("History fixture", randomUUID());
+  const { project: other } = projects.createProject("Separate history", randomUUID());
+  const time = "2026-11-22T00:00:00.000Z";
+  const runtime = new GuardedToolRuntime(policy, { now: () => time });
+  runtime.register({
+    id: "mcp-history-fixture",
+    resolveCapabilities: () => ["workspace.write"],
+    execute: (input) => Promise.resolve(input)
+  });
+  for (const { id } of [project, other]) {
+    const profile = policy.ensureProfile(id, time)!;
+    policy.updateProfile({
+      projectId: id,
+      expectedVersion: profile.version,
+      baseLevel: "A5",
+      overrides: [],
+      issuedAt: time
+    });
+  }
+  async function addReceipt(projectId: string, version: number, content = documentText) {
+    const operationId = randomUUID();
+    const outcome = await runtime.invoke({
+      toolId: "mcp-history-fixture",
+      operationId,
+      projectId,
+      actorId: owner,
+      objectIds: [projectId],
+      purpose: "Save MCP history fixture",
+      idempotencyKey: "mcp:fixture:save:" + randomUUID(),
+      input: {
+        version,
+        imported_document: {
+          name: "report.txt",
+          source: documentUri,
+          sha256: createHash("sha256").update(content).digest("hex")
+        }
+      }
+    });
+    expect(outcome.status).toBe("EXECUTED");
+    database.sqlite
+      .prepare("UPDATE policy_operations SET updated_at = ? WHERE operation_id = ?")
+      .run(time, operationId);
+    return operationId;
+  }
+
+  const app = buildApp({
+    config: loadServerConfig({ NODE_ENV: "test", WEB_ORIGIN: origin }),
+    database,
+    projectStore: projects,
+    policyStore: policy
+  });
+  const path = (id: string) => `/api/v1/projects/${id}/integrations/mcp/document/imports`;
+  type Page = { items: { operation_id: string; copy: string }[]; next_cursor?: string };
+  try {
+    const ids = [];
+    for (let version = 1; version <= 22; version++)
+      ids.unshift(
+        await addReceipt(project.id, version, version === 2 ? "Old revision" : documentText)
+      );
+    const foreignCursor = await addReceipt(other.id, 1);
+    const first = (await app.inject({ url: path(project.id) })).json<Page>();
+    expect(first.items.map((item) => item.operation_id)).toEqual(ids.slice(0, 20));
+    expect(first.next_cursor).toBe(ids[19]);
+    const newest = await addReceipt(project.id, 23);
+    projects.setMaterials(project.id, owner, {
+      version: 0,
+      instructions: "",
+      attachments: [{ name: "report.txt", content: documentText }]
+    });
+    const second = (
+      await app.inject({ url: path(project.id) + "?before=" + first.next_cursor })
+    ).json<Page>();
+    expect(second.items.map((item) => [item.operation_id, item.copy])).toEqual([
+      [ids[20], "changed"],
+      [ids[21], "matched"]
+    ]);
+    expect(second.next_cursor).toBeUndefined();
+    expect(
+      (await app.inject({ url: path(project.id) + "?before=" + foreignCursor })).json()
+    ).toEqual({ items: [] });
+    expect((await app.inject({ url: path(project.id) })).json<Page>().items[0]?.operation_id).toBe(
+      newest
+    );
+  } finally {
+    await app.close();
+    database.close();
+  }
+});
 
 it("lists tools through HTTP, confines the pilot to its project, and journals one discovery across replay", async () => {
   const database = openDatabase(":memory:");
@@ -291,7 +386,7 @@ it("lists tools through HTTP, confines the pilot to its project, and journals on
         status: "RECOVERY_REQUIRED"
       });
       expect(projects.getMaterials(project.id, owner)).toEqual(beforeFailedSave);
-      expect(policy.listMcpImportOperations(project.id)).toEqual([]);
+      expect(policy.listMcpImportOperations(project.id).operations).toEqual([]);
     } finally {
       database.sqlite.exec("DROP TRIGGER fail_mcp_receipt");
     }

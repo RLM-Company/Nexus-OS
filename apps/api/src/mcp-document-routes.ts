@@ -255,10 +255,13 @@ export function registerMcpDocumentRoutes(
     });
   }
 
-  app.get<{ Params: Params }>(
+  app.get<{ Params: Params; Querystring: { before?: string } }>(
     options.path + "/document/imports",
     {
-      schema: { params: Type.Object({ projectId: Type.String({ minLength: 1, maxLength: 128 }) }) }
+      schema: {
+        params: Type.Object({ projectId: Type.String({ minLength: 1, maxLength: 128 }) }),
+        querystring: Type.Object({ before: Type.Optional(uuid) })
+      }
     },
     (request, reply) => {
       reply.header("Cache-Control", "private, no-store");
@@ -274,8 +277,12 @@ export function registerMcpDocumentRoutes(
         name,
         digest: createHash("sha256").update(content, "utf8").digest("hex")
       }));
-      const operations = options.policy.listMcpImportOperations(project);
+      const { operations, nextCursor } = options.policy.listMcpImportOperations(
+        project,
+        request.query.before
+      );
       return {
+        ...(nextCursor ? { next_cursor: nextCursor } : {}),
         items: operations.flatMap(({ operation_id, updated_at, result }) => {
           const entry = parseImportReceipt(result);
           if (!entry) return [];
