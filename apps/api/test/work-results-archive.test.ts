@@ -219,4 +219,32 @@ describe("Work results ZIP", () => {
     const huge = fixture("x".repeat(2_000_000));
     expect(() => buildWorkResultsArchive(huge.graph, huge.files)).toThrow("RESULTS_LIMIT");
   });
+
+  it("delivers a partial ZIP for selected node ids with an honest manifest", () => {
+    const { graph, files } = fixture();
+    const full = unzip(buildWorkResultsArchive(graph, files));
+    expect([...full.keys()].filter((path) => path.endsWith("result.md"))).toHaveLength(2);
+
+    const partialBuffer = buildWorkResultsArchive(graph, files, ["node-1"]);
+    const partial = unzip(partialBuffer);
+    expect([...partial.keys()].filter((path) => path.endsWith("result.md"))).toHaveLength(1);
+    expect([...partial.keys()].some((path) => path.includes("/02/"))).toBe(true);
+    const manifest = JSON.parse(partial.get("manifest.json")?.toString("utf8") ?? "{}") as Record<
+      string,
+      unknown
+    >;
+    expect(manifest).toMatchObject({
+      format: "kosmora.work-results.v1",
+      complete: false,
+      partial: true,
+      selected_node_ids: ["node-1"],
+      completed_steps: 2,
+      total_steps: 2
+    });
+
+    // Неизвестный узел не расширяет выдачу молча.
+    expect(() => buildWorkResultsArchive(graph, files, ["missing-node"])).toThrow(
+      "RESULTS_INVALID_ARTIFACT"
+    );
+  });
 });

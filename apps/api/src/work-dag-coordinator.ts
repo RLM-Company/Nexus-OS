@@ -316,10 +316,10 @@ export class WorkDagCoordinator {
       throw new WorkDagConflict("RESULTS_LIMIT");
     return bundle;
   }
-  resultsArchive(id: string, owner: string): Buffer {
+  resultsArchive(id: string, owner: string, nodeIds?: readonly string[]): Buffer {
     const graph = this.get(id, owner);
     if (!graph) throw new WorkDagConflict("DAG_NOT_FOUND");
-    return buildWorkResultsArchive(graph, this.resultsFor(graph).files);
+    return buildWorkResultsArchive(graph, this.resultsFor(graph).files, nodeIds);
   }
   private resultsFor(graph: WorkDag) {
     const files = graph.nodes

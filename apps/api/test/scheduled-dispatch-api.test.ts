@@ -155,6 +155,46 @@ describe("scheduled dispatch HTTP scenario", () => {
     expect(new Set(tasks.map((task) => task.request.client_request_id)).size).toBe(2);
   });
 
+  it("pass 4: restart and redelivery use separate request ids and never replay a closed occurrence", async () => {
+    vi.setSystemTime(new Date("2026-11-21T09:00:00.000Z"));
+    const { app, projects, works, store } = await fixture("a", true);
+    const project = projects.createProject("Проект", "p4", "a").project.id;
+    const make = (clientRequestId: string) =>
+      call(app, "POST", "/api/v1/scheduled-dispatches", {
+        client_request_id: clientRequestId,
+        kind: "work_task",
+        mode: "once",
+        due_at: new Date(Date.now() - 60_000).toISOString(),
+        text: "Ежедневная сверка заказа 00123",
+        title: "Сверка",
+        project_id: project
+      });
+    // Оригинальное задание оплачено и закрыто.
+    const first = await make("occurrence-1");
+    const firstId = first.json<{ id: string }>().id;
+    await call(app, "POST", "/api/v1/scheduled-dispatches/tick", {});
+    expect(
+      (await call(app, "POST", `/api/v1/scheduled-dispatches/${firstId}/dispatch`, {})).statusCode
+    ).toBe(200);
+    expect(
+      (await call(app, "POST", `/api/v1/scheduled-dispatches/${firstId}/dispatch`, {})).statusCode
+    ).toBe(409);
+
+    // Рестарт после сбоя — отдельное задание со своим client_request_id.
+    const restart = await make("occurrence-1-restart");
+    expect(restart.statusCode).toBe(201);
+    expect(restart.json<{ id: string }>().id).not.toBe(firstId);
+    // Повторная доставка — третье задание; исходное не переоткрывается.
+    const redelivery = await make("occurrence-1-redelivery");
+    expect(redelivery.statusCode).toBe(201);
+    expect(
+      new Set([firstId, restart.json<{ id: string }>().id, redelivery.json<{ id: string }>().id])
+        .size
+    ).toBe(3);
+    expect(store.get(firstId, "a")!.status).toBe("dispatched");
+    expect(works!.list(project, "a")).toHaveLength(1); // закрытое задание не дублируется
+  });
+
   it("cancel, owner isolation and foreign chat/project are rejected", async () => {
     const { app, projects } = await fixture("a");
     const foreign = await fixture("b");
