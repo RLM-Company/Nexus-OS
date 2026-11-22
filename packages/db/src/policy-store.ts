@@ -397,6 +397,28 @@ export class PolicyStore {
     return row ? asOperation(row) : null;
   }
 
+  getMcpSaveOperation(
+    projectId: string,
+    actorId: string,
+    requestId: string
+  ): StoredPolicyOperation | "AMBIGUOUS" | null {
+    const suffix = ":save:" + requestId;
+    const rows = this.#sqlite
+      .prepare(
+        `SELECT operation_id, project_id, actor_id, idempotency_key, status, intent_json,
+          verdict_json, confirmation_id, result_json, error_code, created_at, updated_at
+         FROM policy_operations
+         WHERE project_id = ? AND actor_id = ?
+           AND idempotency_key GLOB 'mcp:*:save:*'
+           AND substr(idempotency_key, -length(?)) = ?
+         LIMIT 2`
+      )
+      .all(projectId, actorId, suffix, suffix) as unknown as SqlRow[];
+    // A request ID reused across configuration revisions does not identify one receipt.
+    if (rows.length > 1) return "AMBIGUOUS";
+    return rows[0] ? asOperation(rows[0]) : null;
+  }
+
   listMcpImportOperations(projectId: string): StoredPolicyOperation[] {
     const rows = this.#sqlite
       .prepare(
