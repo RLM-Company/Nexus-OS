@@ -71,7 +71,7 @@ async function open(page: Page, path: string, answers: () => unknown[]) {
   await page.route(`**${path}/answers`, (route) =>
     route.fulfill({ json: { answers: answers(), available: true } })
   );
-  await page.goto(`/?project=${path.split("/")[3]}&surface=files`);
+  await page.goto(`/?project=${path.split("/")[4]}&surface=files`);
   return page.getByRole("region", { name: regionName, exact: true });
 }
 
