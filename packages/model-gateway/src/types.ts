@@ -115,6 +115,8 @@ export class GatewayRunError extends Error {
       "Provider stream read failed": "STREAM_READ_FAILED",
       "Invalid text delta": "INVALID_TEXT_DELTA",
       "Text after finish reason": "TEXT_AFTER_FINISH",
+      "Provider reached the output token limit": "OUTPUT_TOKEN_LIMIT",
+      "Provider completed without visible text": "EMPTY_TEXT_RESPONSE",
       "Provider stream did not finish a non-empty text response": "INCOMPLETE_TEXT_RESPONSE",
       "Provider stream ended without completion": "MISSING_COMPLETION"
     };

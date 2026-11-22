@@ -434,6 +434,13 @@ describe("durable Manager work", () => {
   });
   it("validates a relay-wrapped plan without granting its requested external actions", async () => {
     const f = await fixture({
+      onCall: async (modelRequest) => {
+        const system = modelRequest.messages.find((message) => message.role === "system")?.content;
+        expect(system).toContain(
+          "Calculating from supplied data and returning a downloadable result file are supported project actions."
+        );
+        expect(system).toContain("Mark requires_external_actions=true");
+      },
       chunks: [
         `<escape>${JSON.stringify({ ...defaultPlan, requires_external_actions: true })}</escape>`
       ]
@@ -790,6 +797,8 @@ describe("durable Manager work", () => {
 
   it.each([
     { message: "Provider returned HTTP 503", diagnostic: "HTTP_503" },
+    { message: "Provider reached the output token limit", diagnostic: "OUTPUT_TOKEN_LIMIT" },
+    { message: "Provider completed without visible text", diagnostic: "EMPTY_TEXT_RESPONSE" },
     { message: "untrusted upstream body with SECRET_SENTINEL", diagnostic: undefined }
   ])(
     "records only allowlisted provider diagnostics without retries",
