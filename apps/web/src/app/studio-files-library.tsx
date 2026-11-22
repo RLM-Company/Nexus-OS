@@ -1,6 +1,7 @@
 "use client";
 
 import { prepareLibraryUpload } from "./library-archive-import";
+import { clearAnswerRetry, readAnswerRetry, saveAnswerRetry } from "./answer-retry";
 import { useDeferredValue, useEffect, useRef, useState } from "react";
 import type { ChatAttachment } from "@cosmora/contracts/chat-attachments";
 import {
@@ -68,6 +69,8 @@ export function StudioDocumentLibrary({ projectId, onCompose, onProjectCreated }
   const [preview, setPreview] = useState(false);
   const [answers, setAnswers] = useState<AnswerReport[]>([]);
   const [activeAnswerId, setActiveAnswerId] = useState<string | null>(null);
+  const [retryPending, setRetryPending] = useState<string | null>(null);
+  const [uncertainRetry, setUncertainRetry] = useState<string | null>(null);
   const [answerAvailable, setAnswerAvailable] = useState(false);
   const [uploadQueue, setUploadQueue] = useState<LibraryUploadItem[]>([]);
   const [uploadActive, setUploadActive] = useState(false);
@@ -475,6 +478,72 @@ export function StudioDocumentLibrary({ projectId, onCompose, onProjectCreated }
       setError(cause instanceof Error ? cause.message : "Не удалось отменить");
     }
   };
+
+  /**
+   * Retry a terminal deep run. Both the double-click window and a lost server
+   * response are guarded by a session marker: after a network failure we first
+   * reconcile the answer history and only dispatch a new model request on a
+   * fresh explicit click. The original run keeps its diagnostic in history.
+   */
+  const retryAnswer = async (sourceId: string) => {
+    if (!base || !projectId || busy || !!activeAnswerId || !!retryPending || !answerAvailable)
+      return;
+    const source = answers.find((item) => item.id === sourceId);
+    if (!source?.coverage || (source.status !== "failed" && source.status !== "cancelled")) return;
+    setBusy(true);
+    setError("");
+    try {
+      const pending = readAnswerRetry(projectId, sourceId);
+      if (pending) {
+        // A previous retry may have been accepted by the server. Reconcile
+        // before dispatching anything else — never blind re-POST a paid retry.
+        const history = await libraryFetch<{ answers: AnswerReport[] }>(`${base}/answers`);
+        setAnswers(history.answers);
+        const sourceIndex = history.answers.findIndex((item) => item.id === sourceId);
+        const newer = history.answers
+          .slice(0, Math.max(0, sourceIndex))
+          .find((item) => item.question === source.question);
+        if (newer) {
+          clearAnswerRetry(projectId, sourceId);
+          setUncertainRetry(null);
+          setActiveAnswerId(
+            newer.status === "running" || newer.status === "queued" ? newer.id : null
+          );
+          setStatus("Ранее запущенный повтор найден в истории и подключён.");
+          return;
+        }
+        setUncertainRetry(sourceId);
+        setError(
+          "Исход запроса неизвестен: сервер не подтвердил приём повтора. " +
+            "Проверьте историю ещё раз или нажмите «Повторить анализ» снова — " +
+            "новый запрос к модели уйдёт только после этого явного действия."
+        );
+        return;
+      }
+      const requestId = crypto.randomUUID();
+      saveAnswerRetry(projectId, sourceId, requestId);
+      setRetryPending(sourceId);
+      const created = await libraryFetch<AnswerReport>(
+        `${base}/answers/${encodeURIComponent(sourceId)}/retry`,
+        { method: "POST", headers: { "x-kosmora-retry-id": requestId } }
+      );
+      clearAnswerRetry(projectId, sourceId);
+      setUncertainRetry(null);
+      setAnswers((old) => [created, ...old.filter((entry) => entry.id !== created.id)]);
+      setActiveAnswerId(created.id);
+      setStatus("Повтор deep-анализа запущен.");
+    } catch (cause) {
+      // Keep the marker: the POST may have reached the server despite the error.
+      setUncertainRetry(sourceId);
+      setError(
+        `${cause instanceof Error ? cause.message : "Не удалось повторить анализ"}. ` +
+          "Исход запроса неизвестен — сначала сверьте историю, затем повторите явным действием."
+      );
+    } finally {
+      setRetryPending(null);
+      setBusy(false);
+    }
+  };
   const saved = answers.find((item) => item.id === activeAnswerId) ?? answers[0];
   const exportAnswer = async (kind: "docx" | "pdf" | "csv") => {
     if (!saved || saved.status !== "done") return;
@@ -878,7 +947,31 @@ export function StudioDocumentLibrary({ projectId, onCompose, onProjectCreated }
                           : `Ошибка: ${saved.error_code ?? "неизвестно"}`}
                 </p>
                 {saved.coverage && saved.status !== "done" && (
-                  <p>{answerCoverageLines(saved.coverage)[0]}</p>
+                  <div aria-label="Покрытие анализа">
+                    {answerCoverageLines(saved.coverage).map((line, index) => (
+                      <p key={index}>{line}</p>
+                    ))}
+                    {saved.error_code === "INCOMPLETE_COVERAGE" && (
+                      <p>
+                        Обработка прервана: не все фрагменты получили проверенный результат.
+                        Пропущенные файлы и страницы перечислены выше; исходная попытка сохранена в
+                        истории с этой диагностикой.
+                      </p>
+                    )}
+                  </div>
+                )}
+                {saved.coverage && (saved.status === "failed" || saved.status === "cancelled") && (
+                  <button
+                    type="button"
+                    disabled={!!activeAnswerId || !!retryPending || busy || !answerAvailable}
+                    onClick={() => void retryAnswer(saved.id)}
+                  >
+                    {uncertainRetry === saved.id
+                      ? "Сверить и повторить анализ"
+                      : retryPending === saved.id
+                        ? "Запуск повтора…"
+                        : "Повторить анализ"}
+                  </button>
                 )}
                 {saved.status === "done" && (
                   <pre className={styles.preview}>{answerReportLines(saved).join("\n")}</pre>

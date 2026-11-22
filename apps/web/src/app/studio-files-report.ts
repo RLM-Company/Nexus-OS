@@ -30,6 +30,7 @@ export type AnswerReport = {
   answer: string | null;
   status: string;
   error_code: string | null;
+  created_at?: string;
   coverage?: {
     total_chunks: number;
     analyzed_chunks: number;
