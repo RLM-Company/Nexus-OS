@@ -201,4 +201,121 @@ describe("real authenticated HTTP document answer flow (fixture transport, zero 
       db.close();
     }
   });
+
+  it("retries a failed deep run into a new run with fresh coverage", async () => {
+    const db = openDatabase(":memory:");
+    let app: ReturnType<typeof buildApp> | undefined;
+    try {
+      await runMigrations(db);
+      const projectStore = new ProjectStore(db.sqlite);
+      const project = projectStore.createProject("Retry deep", "retry-deep").project.id;
+      const library = new DocumentLibraryStore(db.sqlite);
+      const answers = new DocumentAnswerStore(db.sqlite);
+      let calls = 0;
+      const gateway = {
+        assertRoute: () => undefined,
+        async *stream() {
+          yield { type: "route.selected" as const, route };
+          if (calls++ === 0) throw new Error("fixture failure before answer");
+          yield {
+            type: "text.delta" as const,
+            delta: "Документ говорит: «Конец договора в октябре 2027» [S1]"
+          };
+          yield {
+            type: "response.completed" as const,
+            provider: "fixture",
+            model: "fixture",
+            finishReason: "stop",
+            usage: { inputTokens: 210, outputTokens: 20 },
+            route,
+            calculatedCost: null
+          };
+        }
+      } as DocumentAnswerTransport;
+      const budget: DocumentAnswerOwnerBudget = {
+        reserve: () => true,
+        reconcile: () => undefined,
+        uncertain: () => undefined
+      };
+      const service = new DocumentAnswerService(
+        library,
+        answers,
+        gateway,
+        new ChatService({
+          preferredProvider: "fixture",
+          preferredModelAlias: "fixture",
+          fallbackAllowed: false
+        }),
+        budget
+      );
+      app = buildApp({
+        config: loadServerConfig({ NODE_ENV: "test", MOCK_PROVIDER_MODE: "success" }),
+        database: db,
+        projectStore,
+        documentLibrary: library,
+        documentAnswerService: service
+      });
+      const url = `/api/v1/projects/${project}/document-library`;
+      const raw = Buffer.from("Конец договора в октябре 2027");
+      const staged = await app.inject({
+        method: "POST",
+        url,
+        headers: {
+          "content-type": "application/octet-stream",
+          "x-kosmora-file-name": "contract.txt"
+        },
+        payload: raw
+      });
+      const fileId = staged.json<{ id: string }>().id;
+      await app.inject({
+        method: "PUT",
+        url: `${url}/${fileId}/index`,
+        payload: { pages: [{ page: null, text: raw.toString() }] }
+      });
+      const created = await app.inject({
+        method: "POST",
+        url: `${url}/answers`,
+        payload: { mode: "deep", question: "Когда конец договора?", file_ids: [fileId] }
+      });
+      const originalId = created.json<{ id: string }>().id;
+      await expect
+        .poll(() => answers.get(project, "local-owner", originalId)?.status)
+        .toBe("failed");
+
+      const retried = await app.inject({
+        method: "POST",
+        url: `${url}/answers/${originalId}/retry`
+      });
+      expect(retried.statusCode).toBe(202);
+      const newId = retried.json<{ id: string }>().id;
+      expect(newId).not.toBe(originalId);
+      const fresh = answers.get(project, "local-owner", newId)!;
+      expect(fresh.question).toBe("Когда конец договора?");
+      expect(fresh.selected_file_ids).toEqual([fileId]);
+      await expect.poll(() => answers.get(project, "local-owner", newId)?.status).toBe("done");
+      const completed = answers.get(project, "local-owner", newId)!;
+      expect(completed.coverage).toMatchObject({
+        phase: "complete",
+        analyzed_chunks: 1,
+        failed_chunks: 0
+      });
+      expect(answers.get(project, "local-owner", originalId)?.status).toBe("failed");
+
+      // A search run is not retryable; neither is a still-active deep run.
+      const search = await app.inject({
+        method: "POST",
+        url: `${url}/answers`,
+        payload: { question: "Когда конец договора?", file_ids: [fileId] }
+      });
+      const searchId = search.json<{ id: string }>().id;
+      const rejected = await app.inject({
+        method: "POST",
+        url: `${url}/answers/${searchId}/retry`
+      });
+      expect(rejected.statusCode).toBe(422);
+    } finally {
+      await app?.close();
+      db.close();
+    }
+  });
 });

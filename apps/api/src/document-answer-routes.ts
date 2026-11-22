@@ -95,6 +95,22 @@ export function registerDocumentAnswerRoutes(
     }
   );
   app.post<{ Params: { projectId: string; id: string } }>(
+    `${base}/:id/retry`,
+    { schema: { params: item } },
+    async (req, reply) => {
+      try {
+        const answer = await service.retry(
+          req.params.projectId,
+          identityFor(req).owner_id,
+          req.params.id
+        );
+        return reply.code(202).send(answer);
+      } catch (cause) {
+        return err(reply, cause);
+      }
+    }
+  );
+  app.post<{ Params: { projectId: string; id: string } }>(
     `${base}/:id/cancel`,
     { schema: { params: item } },
     async (req, reply) => {
