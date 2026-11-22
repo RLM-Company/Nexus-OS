@@ -94,27 +94,35 @@ export class AccountStore {
     this.sqlite.exec(
       "CREATE TABLE IF NOT EXISTS kosmora_reasoning_preferences (owner_id TEXT PRIMARY KEY, effort TEXT CHECK (effort IN ('low','medium','high')));"
     );
-    // Аддитивная миграция профиля: существующие аккаунты получают значения
-    // по умолчанию (мужской род обращения, нейтральный род ассистента).
-    const columns = new Set(
-      (
-        this.sqlite.prepare("PRAGMA table_info(kosmora_account_preferences)").all() as Array<{
-          name: string;
-        }>
-      ).map((row) => row.name)
-    );
-    if (!columns.has("display_name"))
-      this.sqlite.exec(
-        "ALTER TABLE kosmora_account_preferences ADD COLUMN display_name TEXT NOT NULL DEFAULT '';"
+    this.upgradeProfileColumns();
+  }
+  /** Databases that ran the original 0027 migration need these additive columns. */
+  upgradeProfileColumns(): void {
+    this.sqlite.exec("BEGIN IMMEDIATE");
+    try {
+      const columns = new Set(
+        this.sqlite
+          .prepare("PRAGMA table_info(kosmora_account_preferences)")
+          .all()
+          .map((row) => row.name)
       );
-    if (!columns.has("user_gender"))
-      this.sqlite.exec(
-        "ALTER TABLE kosmora_account_preferences ADD COLUMN user_gender TEXT NOT NULL DEFAULT 'masculine' CHECK (user_gender IN ('masculine','feminine','neutral'));"
-      );
-    if (!columns.has("assistant_gender"))
-      this.sqlite.exec(
-        "ALTER TABLE kosmora_account_preferences ADD COLUMN assistant_gender TEXT NOT NULL DEFAULT 'neutral' CHECK (assistant_gender IN ('masculine','feminine','neutral'));"
-      );
+      if (!columns.has("display_name"))
+        this.sqlite.exec(
+          "ALTER TABLE kosmora_account_preferences ADD COLUMN display_name TEXT NOT NULL DEFAULT '';"
+        );
+      if (!columns.has("user_gender"))
+        this.sqlite.exec(
+          "ALTER TABLE kosmora_account_preferences ADD COLUMN user_gender TEXT NOT NULL DEFAULT 'masculine' CHECK (user_gender IN ('masculine','feminine','neutral'));"
+        );
+      if (!columns.has("assistant_gender"))
+        this.sqlite.exec(
+          "ALTER TABLE kosmora_account_preferences ADD COLUMN assistant_gender TEXT NOT NULL DEFAULT 'neutral' CHECK (assistant_gender IN ('masculine','feminine','neutral'));"
+        );
+      this.sqlite.exec("COMMIT");
+    } catch (error) {
+      this.sqlite.exec("ROLLBACK");
+      throw error;
+    }
   }
   getReasoning(owner: string): "low" | "medium" | "high" | null {
     const row = this.sqlite

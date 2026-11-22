@@ -134,6 +134,7 @@ process.once("SIGTERM", () => void shutdown("SIGTERM"));
 try {
   await runMigrations(database);
   const accountStore = new AccountStore(database.sqlite);
+  accountStore.upgradeProfileColumns();
   const scheduledDispatchStore = new ScheduledDispatchStore(database.sqlite);
   const recoveredAccountHolds = accountStore.reconcileKnownCanonicalHolds();
   const modelRuntime = await buildModelRuntime(config, {

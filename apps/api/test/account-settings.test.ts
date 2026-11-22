@@ -53,6 +53,39 @@ const routeFixture = async () => {
   return { app, store };
 };
 describe("owner account settings", () => {
+  it("upgrades the deployed profile schema twice without changing existing preferences", async () => {
+    const store = await fixture();
+    store.update("owner", { ...preferenceUpdate, chat_style: "detailed" });
+    store.sqlite.exec(`
+      ALTER TABLE kosmora_account_preferences DROP COLUMN display_name;
+      ALTER TABLE kosmora_account_preferences DROP COLUMN user_gender;
+      ALTER TABLE kosmora_account_preferences DROP COLUMN assistant_gender;
+    `);
+
+    store.upgradeProfileColumns();
+    store.upgradeProfileColumns();
+
+    expect(store.get("owner")).toMatchObject({
+      version: 1,
+      chat_style: "detailed",
+      display_name: "",
+      user_gender: "masculine",
+      assistant_gender: "neutral"
+    });
+    const updated = store.update("owner", {
+      ...preferenceUpdate,
+      expected_version: 1,
+      display_name: "Александр",
+      user_gender: "masculine",
+      assistant_gender: "feminine"
+    });
+    expect(updated).toMatchObject({
+      version: 2,
+      display_name: "Александр",
+      assistant_gender: "feminine"
+    });
+  });
+
   it("saves supported native reasoning independently of Relay and isolates owners", async () => {
     const store = await fixture();
     const app = Fastify();
