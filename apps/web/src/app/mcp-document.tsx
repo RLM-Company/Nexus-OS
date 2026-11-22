@@ -19,12 +19,14 @@ export function McpDocument({
   project,
   name,
   documentId,
+  stopped = false,
   onBusy,
   onImported
 }: {
   project: string;
   name: string;
   documentId?: string;
+  stopped?: boolean;
   onBusy?: (busy: boolean) => void;
   onImported?: () => void;
 }) {
@@ -34,12 +36,36 @@ export function McpDocument({
   const [waiting, setWaiting] = useState(false);
   const [message, setMessage] = useState("");
   const [operation, setOperation] = useState("");
+  const [receiptRequest, setReceiptRequest] = useState("");
   const pending = useRef<Partial<Record<Mode, string>>>({});
   const request = useRef<AbortController | null>(null);
-  useEffect(() => () => request.current?.abort(), []);
+  const path = `/api/v1/projects/${encodeURIComponent(project)}/integrations/mcp/document`;
+  const storageKey = `kosmora:mcp-save:${encodeURIComponent(project)}:${documentId ?? "single"}`;
+  useEffect(() => {
+    try {
+      setReceiptRequest(sessionStorage.getItem(storageKey) ?? "");
+    } catch {
+      setReceiptRequest("");
+    }
+    return () => request.current?.abort();
+  }, [storageKey]);
 
-  async function submit(mode: Mode) {
-    if (request.current || (mode !== "preview" && !preview)) return;
+  function rememberReceipt(value: string) {
+    setReceiptRequest(value);
+    try {
+      if (value) sessionStorage.setItem(storageKey, value);
+      else sessionStorage.removeItem(storageKey);
+    } catch {
+      // The current view can still check the operation it holds in memory.
+    }
+  }
+
+  async function submit(mode: Mode | "status") {
+    if (
+      request.current ||
+      (mode === "status" ? !receiptRequest : stopped || (mode !== "preview" && !preview))
+    )
+      return;
     const controller = new AbortController();
     request.current = controller;
     setBusy(true);
@@ -53,21 +79,29 @@ export function McpDocument({
       delete pending.current.save;
       delete pending.current["save-copy"];
     }
-    const requestId = (pending.current[mode] ??= crypto.randomUUID());
+    const requestId =
+      mode === "status" ? receiptRequest : (pending.current[mode] ??= crypto.randomUUID());
+    if (mode !== "preview" && mode !== "status") rememberReceipt(requestId);
+    const reference = {
+      request_id: requestId,
+      ...(documentId ? { document_id: documentId } : {})
+    };
     try {
-      const response = await fetch(
-        `/api/v1/projects/${encodeURIComponent(project)}/integrations/mcp/document/${mode}`,
-        {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          signal: controller.signal,
-          body: JSON.stringify({
-            request_id: requestId,
-            ...(documentId ? { document_id: documentId } : {}),
-            ...(mode !== "preview" ? { preview_id: preview?.preview_id } : {})
-          })
-        }
-      );
+      const response =
+        mode === "status"
+          ? await fetch(`${path}/status?${new URLSearchParams(reference).toString()}`, {
+              cache: "no-store",
+              signal: controller.signal
+            })
+          : await fetch(path + "/" + mode, {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              signal: controller.signal,
+              body: JSON.stringify({
+                ...reference,
+                ...(mode !== "preview" ? { preview_id: preview?.preview_id } : {})
+              })
+            });
       const outcome = (await response.json()) as Reply;
       if (controller.signal.aborted) return;
       if (
@@ -78,11 +112,41 @@ export function McpDocument({
         return;
       }
       setOperation(outcome.operation_id ?? "");
+      if (mode === "status") {
+        if (!response.ok || outcome.status === "UNKNOWN" || outcome.status === "UNCONFIRMED") {
+          setMessage("Журнал пока не подтверждает исход сохранения.");
+          return;
+        }
+        if (outcome.status === "NOT_SAVED") {
+          delete pending.current.save;
+          delete pending.current["save-copy"];
+          rememberReceipt("");
+          setMessage(
+            "Журнал подтвердил, что документ не был сохранён. Откройте свежий предпросмотр."
+          );
+          setPreview(null);
+          setCopyName("");
+          return;
+        }
+      }
       if (outcome.status === "WAITING_CONFIRMATION") {
         setWaiting(true);
         return;
       }
-      delete pending.current[mode];
+      const code = outcome.error?.code;
+      if (mode === "preview") delete pending.current.preview;
+      else if (
+        mode !== "status" &&
+        (outcome.status === "EXECUTED" ||
+          outcome.status === "DENIED" ||
+          code === "MCP_MATERIALS_CHANGED" ||
+          code === "MCP_MATERIALS_LIMIT" ||
+          code === "MCP_DOCUMENT_NAME_CONFLICT" ||
+          code === "MCP_COPY_NOT_OFFERED")
+      ) {
+        delete pending.current[mode];
+        rememberReceipt("");
+      }
       if (
         response.ok &&
         outcome.status === "EXECUTED" &&
@@ -102,6 +166,11 @@ export function McpDocument({
         outcome.status === "EXECUTED" &&
         typeof outcome.version === "number"
       ) {
+        if (mode === "status") {
+          delete pending.current.save;
+          delete pending.current["save-copy"];
+          rememberReceipt("");
+        }
         setPreview(null);
         setCopyName("");
         if (outcome.already_present) {
@@ -115,7 +184,6 @@ export function McpDocument({
           setMessage(`${saved} Версия материалов: ${outcome.version}.`);
         }
       } else {
-        const code = outcome.error?.code;
         if (
           code === "MCP_STOPPED" ||
           code === "MCP_UNAVAILABLE" ||
@@ -153,13 +221,21 @@ export function McpDocument({
     }
   }
 
+  if (stopped && !receiptRequest && !message) return null;
   return (
     <section aria-label="Документ MCP">
       <h4>{name}</h4>
-      <button type="button" disabled={busy} onClick={() => void submit("preview")}>
-        Предпросмотр документа
-      </button>
-      {preview && (
+      {!stopped && (
+        <button type="button" disabled={busy} onClick={() => void submit("preview")}>
+          Предпросмотр документа
+        </button>
+      )}
+      {receiptRequest && (
+        <button type="button" disabled={busy} onClick={() => void submit("status")}>
+          Проверить результат сохранения
+        </button>
+      )}
+      {!stopped && preview && (
         <>
           <p>
             Источник: <code>{preview.source}</code>

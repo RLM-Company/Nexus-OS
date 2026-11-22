@@ -112,7 +112,7 @@ export function McpIntegration({ project }: { project: string }) {
           {busy ? "Проверяем…" : "Проверить MCP и показать инструменты"}
         </button>
       )}
-      {availability?.configured && !availability.stopped && selectedDocument && (
+      {availability?.configured && selectedDocument && (
         <>
           <label>
             Документ для импорта
@@ -133,13 +133,19 @@ export function McpIntegration({ project }: { project: string }) {
             project={project}
             name={selectedDocument.name}
             documentId={selectedDocument.id}
+            stopped={availability.stopped}
             onBusy={setDocumentBusy}
             onImported={onImported}
           />
         </>
       )}
-      {availability?.configured && !availability.stopped && availability.document && (
-        <McpDocument project={project} name={availability.document} onImported={onImported} />
+      {availability?.configured && availability.document && (
+        <McpDocument
+          project={project}
+          name={availability.document}
+          stopped={availability.stopped}
+          onImported={onImported}
+        />
       )}
       <McpImportHistory path={path} refresh={importsRefresh} />
       {message && <p role="alert">{message}</p>}

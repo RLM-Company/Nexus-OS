@@ -306,10 +306,11 @@ it("lists tools through HTTP, confines the pilot to its project, and journals on
     expect(
       (await documentAction("save-copy", { ...requestId(), preview_id: revised.preview_id })).json()
     ).toMatchObject({ error: { code: "MCP_COPY_NOT_OFFERED" } });
-    const collision = await documentAction("save", {
+    const collisionRequest = {
       ...requestId(),
       preview_id: revised.preview_id
-    });
+    };
+    const collision = await documentAction("save", collisionRequest);
     expect(collision.statusCode, collision.body).toBe(409);
     expect(collision.json()).toMatchObject({
       error: { code: "MCP_DOCUMENT_NAME_CONFLICT" },
@@ -334,6 +335,25 @@ it("lists tools through HTTP, confines the pilot to its project, and journals on
       copy_name: "report-mcp-1.txt"
     });
     expect((await documentAction("save-copy", copyRequest)).json()).toEqual(copied.json());
+    const statusPath = (id: string, document = primaryId, projectId = project.id) =>
+      `/api/v1/projects/${projectId}/integrations/mcp/document/status?request_id=${id}&document_id=${document}`;
+    const copiedStatusPath = statusPath(copyRequest.request_id);
+    const copiedStatus = await app.inject({ url: copiedStatusPath });
+    expect(copiedStatus.headers["cache-control"]).toBe("private, no-store");
+    expect(copiedStatus.json()).toEqual(copied.json());
+    expect(
+      (await app.inject({ url: statusPath(collisionRequest.request_id) })).json()
+    ).toMatchObject({
+      status: "NOT_SAVED"
+    });
+    for (const url of [
+      statusPath(randomUUID()),
+      statusPath(copyRequest.request_id, secondaryId),
+      statusPath(copyRequest.request_id, primaryId, another.id),
+      statusPath(previewRequest.request_id)
+    ]) {
+      expect((await app.inject({ url })).json()).toEqual({ status: "UNKNOWN" });
+    }
     expect(
       (
         await documentAction("save-copy", { ...requestId(), preview_id: stalePreview.preview_id })
@@ -364,6 +384,9 @@ it("lists tools through HTTP, confines the pilot to its project, and journals on
     expect((await documentAction("save", repeatRevisionRequest)).json()).toEqual(
       sameRevision.json()
     );
+    expect(
+      (await app.inject({ url: statusPath(repeatRevisionRequest.request_id) })).json()
+    ).toEqual(sameRevision.json());
     expect(projects.getMaterials(project.id, owner)).toEqual(copiedMaterials);
 
     returnedText = "Another remote revision.";
@@ -388,6 +411,7 @@ it("lists tools through HTTP, confines the pilot to its project, and journals on
       error: { code: "MCP_STOPPED" }
     });
     expect((await discover(id)).json()).toMatchObject({ error: { code: "MCP_STOPPED" } });
+    expect((await app.inject({ url: copiedStatusPath })).json()).toEqual(copiedStatus.json());
     expect(
       (
         await documentAction("save-copy", { ...requestId(), preview_id: afterCopy.preview_id })
@@ -435,6 +459,14 @@ it("lists tools through HTTP, confines the pilot to its project, and journals on
       expect(restored.json()).toEqual(latest.json());
     } finally {
       await restarted.close();
+    }
+    const restartedWithPilot = buildApp({ ...appDependencies, mcpDiscovery: pilot });
+    try {
+      expect((await restartedWithPilot.inject({ url: copiedStatusPath })).json()).toEqual(
+        copiedStatus.json()
+      );
+    } finally {
+      await restartedWithPilot.close();
     }
     const empty = await app.inject({
       url: `/api/v1/projects/${another.id}/integrations/mcp/document/imports`

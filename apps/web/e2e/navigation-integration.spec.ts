@@ -146,15 +146,18 @@ test("imports a reviewed MCP document and explains access loss", async ({ page }
     notes = "b".repeat(32);
   const source = "fixture://workspace/report";
   let revoked = false;
+  let stopped = false;
   let writes = 0;
   let saves = 0;
   let copyAttempts = 0;
   let copyRequest = "";
+  let interruptedRequest = "";
+  let receiptChecks = 0;
   await page.route(base, (route) =>
     route.fulfill({
       json: {
         configured: true,
-        stopped: false,
+        stopped,
         documents: [
           { id: report, name: "report.txt" },
           { id: notes, name: "notes.txt" }
@@ -232,8 +235,23 @@ test("imports a reviewed MCP document and explains access loss", async ({ page }
           existing_name: "report-mcp-1.txt"
         }
       });
+    if (saves === 5) {
+      interruptedRequest = (route.request().postDataJSON() as { request_id: string }).request_id;
+      return route.abort();
+    }
     writes++;
     return route.fulfill({ json: { status: "EXECUTED", operation_id: id, version: 2 } });
+  });
+  await page.route(base + "/document/status?*", (route) => {
+    receiptChecks++;
+    expect(route.request().method()).toBe("GET");
+    const query = new URL(route.request().url()).searchParams;
+    expect(query.get("request_id")).toBe(interruptedRequest);
+    expect(query.get("document_id")).toBe(report);
+    if (receiptChecks === 1) return route.fulfill({ json: { status: "UNKNOWN" } });
+    return route.fulfill({
+      json: { status: "EXECUTED", operation_id: id, version: 4, copy_name: "report.txt" }
+    });
   });
   await page.route(base + "/document/save-copy", (route) => {
     copyAttempts++;
@@ -294,7 +312,24 @@ test("imports a reviewed MCP document and explains access loss", async ({ page }
   await document.getByRole("button", { name: "Подтвердить сохранение в материалы" }).click();
   await expect(document).toContainText("Точная копия уже в материалах (report-mcp-1.txt).");
   await expect(saveCopy).toHaveCount(0);
+  await document.getByRole("button", { name: "Предпросмотр документа" }).click();
+  await document.getByRole("button", { name: "Подтвердить сохранение в материалы" }).click();
+  await expect(document).toContainText("Ответ потерян.");
+  stopped = true;
+  await page.reload();
+  await expect(document).not.toContainText("Обновлённый отчёт.");
+  const receipt = document.getByRole("button", { name: "Проверить результат сохранения" });
+  await receipt.click();
+  await expect(document.getByRole("button", { name: "Предпросмотр документа" })).toHaveCount(0);
+  await expect(document).toContainText("Журнал пока не подтверждает исход сохранения.");
+  await receipt.click();
+  await expect(document).toContainText("Документ сохранён как report.txt. Версия материалов: 4.");
+  await expect(receipt).toHaveCount(0);
+  expect(saves).toBe(5);
+  expect(receiptChecks).toBe(2);
+  stopped = false;
   revoked = true;
+  await page.reload();
   await document.getByRole("button", { name: "Предпросмотр документа" }).click();
   await expect(document).toContainText("Документ недоступен.");
   await expect(

@@ -12,7 +12,8 @@ import { connectorToolId, type ConnectorRegistry } from "@cosmora/tool-runtime";
 import type { McpDiscovery } from "./mcp-discovery.js";
 
 type Params = { projectId: string };
-type Body = { request_id: string; preview_id?: string; document_id?: string };
+type RequestReference = { request_id: string; document_id?: string };
+type Body = RequestReference & { preview_id?: string };
 type Preview = {
   documentId: string;
   actor: string;
@@ -32,6 +33,8 @@ type SaveResult =
 type SaveInput = { previewId: string; documentId: string; asCopy: boolean };
 const ttl = 5 * 60_000;
 const uuid = Type.String({ pattern: "^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$" });
+const documentIdSchema = Type.Optional(Type.String({ pattern: "^[a-f0-9]{32}$" }));
+const documentSourceKey = (uri: string) => "mcp:" + createHash("sha256").update(uri).digest("hex");
 
 function parseImportReceipt(
   value: unknown
@@ -290,6 +293,66 @@ export function registerMcpDocumentRoutes(
     }
   );
 
+  app.get<{ Params: Params; Querystring: RequestReference }>(
+    options.path + "/document/status",
+    {
+      schema: {
+        params: Type.Object({ projectId: Type.String({ minLength: 1, maxLength: 128 }) }),
+        querystring: Type.Object({ request_id: uuid, document_id: documentIdSchema })
+      }
+    },
+    (request, reply) => {
+      reply.header("Cache-Control", "private, no-store");
+      const identity = owned(request);
+      if (!identity) return reply.code(404).send({ error: { code: "PROJECT_NOT_FOUND" } });
+      if (!options.ownerActive(identity.owner_id))
+        return reply.code(409).send({ error: { code: "OWNER_DATA_FENCED" } });
+      const project = request.params.projectId;
+      const document = findDocument(request.query.document_id);
+      if (!pilot || !options.policy || !enabled(project, identity.owner_id) || !document)
+        return { status: "UNKNOWN" };
+      const stored = options.policy.getOperation(
+        project,
+        `mcp:${pilot.revision}:save:${request.query.request_id}`
+      );
+      if (
+        !stored ||
+        stored.actor_id !== identity.actor_id ||
+        !stored.intent.object_ids.includes(documentSourceKey(document.uri))
+      )
+        return { status: "UNKNOWN" };
+
+      const operation_id = stored.operation_id;
+      if (stored.status === "DENIED" || stored.status === "PAUSED")
+        return { status: "NOT_SAVED", operation_id };
+      if (stored.status !== "SUCCEEDED") return { status: "UNCONFIRMED", operation_id };
+
+      const receipt = parseImportReceipt(stored.result);
+      if (receipt)
+        return {
+          status: "EXECUTED",
+          operation_id,
+          version: receipt.version,
+          copy_name: receipt.imported_document.name
+        };
+      const result = stored.result as Partial<{
+        already_present: boolean;
+        version: number;
+        existing_name: string;
+        error: string;
+      }> | null;
+      if (result?.already_present === true && Number.isSafeInteger(result.version))
+        return {
+          status: "EXECUTED",
+          operation_id,
+          version: result.version,
+          already_present: true,
+          existing_name: result.existing_name
+        };
+      return { status: result?.error ? "NOT_SAVED" : "UNCONFIRMED", operation_id };
+    }
+  );
+
   for (const mode of ["preview", "save", "save-copy"] as const) {
     const isPreview = mode === "preview";
     const asCopy = mode === "save-copy";
@@ -302,7 +365,7 @@ export function registerMcpDocumentRoutes(
           body: Type.Object(
             {
               request_id: uuid,
-              document_id: Type.Optional(Type.String({ pattern: "^[a-f0-9]{32}$" })),
+              document_id: documentIdSchema,
               ...(!isPreview ? { preview_id: uuid } : {})
             },
             {
@@ -331,7 +394,6 @@ export function registerMcpDocumentRoutes(
         const document = findDocument(request.body.document_id);
         if (!document) return reply.code(404).send({ error: { code: "MCP_DOCUMENT_UNAVAILABLE" } });
         const previewId = request.body.preview_id;
-        const source = createHash("sha256").update(document.uri).digest("hex");
         const result = await registry.invoke<string | SaveInput, ReadResult | SaveResult>({
           toolId: isPreview ? read : save,
           projectId: project,
@@ -341,7 +403,7 @@ export function registerMcpDocumentRoutes(
             : asCopy
               ? "Import reviewed MCP document as a separate copy"
               : "Import reviewed MCP document",
-          objectIds: [project, "mcp:" + source, ...(previewId ? [previewId] : [])],
+          objectIds: [project, documentSourceKey(document.uri), ...(previewId ? [previewId] : [])],
           idempotencyKey: `mcp:${pilot.revision}:${isPreview ? "preview" : "save"}:${request.body.request_id}`,
           input: previewId ? { previewId, documentId: document.id, asCopy } : document.id
         });
