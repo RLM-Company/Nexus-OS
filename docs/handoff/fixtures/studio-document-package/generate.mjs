@@ -230,14 +230,14 @@ function pdfEscape(s) {
 
 /* ------------------------------------------------------------- content ---- */
 // Deterministic source facts. Quotes/pages in the manifest must match these.
-const BRIEF = "Лунная станция SELENE-047";
+const BRIEF = "Р›СѓРЅРЅР°СЏ СЃС‚Р°РЅС†РёСЏ SELENE-047";
 const FACTS = [
   {
     file: "brief.txt",
     page: null,
     line: 1,
-    quote: "Код станции: SELENE-047",
-    text: `Код станции: SELENE-047\nОбъект: ${BRIEF}\nБюджет: 19 700 ₽`
+    quote: "РљРѕРґ СЃС‚Р°РЅС†РёРё: SELENE-047",
+    text: `РљРѕРґ СЃС‚Р°РЅС†РёРё: SELENE-047\nРћР±СЉРµРєС‚: ${BRIEF}\nР‘СЋРґР¶РµС‚: 19 700 в‚Ѕ`
   },
   {
     file: "budget.csv",
@@ -250,33 +250,40 @@ const FACTS = [
     file: "report.pdf",
     page: 1,
     line: 3,
-    quote: "Итог: 24 000 ₽",
-    text: "Отчёт по бюджету\nИтог: 24 000 ₽\nИсточники: сметы 19 700 и 4 300"
+    quote: "РС‚РѕРі: 24 000 в‚Ѕ",
+    text: "РћС‚С‡С‘С‚ РїРѕ Р±СЋРґР¶РµС‚Сѓ\nРС‚РѕРі: 24 000 в‚Ѕ\nРСЃС‚РѕС‡РЅРёРєРё: СЃРјРµС‚С‹ 19 700 Рё 4 300"
   },
   {
     file: "memo.docx",
     page: null,
     line: 1,
-    quote: "Срок сдачи: 12 октября 2027",
-    text: `Срок сдачи: 12 октября 2027\n${BRIEF}: финальная проверка`
+    quote: "РЎСЂРѕРє СЃРґР°С‡Рё: 12 РѕРєС‚СЏР±СЂСЏ 2027",
+    text: `РЎСЂРѕРє СЃРґР°С‡Рё: 12 РѕРєС‚СЏР±СЂСЏ 2027\n${BRIEF}: С„РёРЅР°Р»СЊРЅР°СЏ РїСЂРѕРІРµСЂРєР°`
   }
 ];
 
 const files = {
   "brief.txt": utf8(FACTS[0].text),
   "budget.csv": utf8(FACTS[1].text),
-  "report.pdf": pdf(["Отчёт по бюджету", "Итог: 24 000 ₽", "Источники: сметы 19 700 и 4 300"]),
+  "report.pdf": pdf([
+    "РћС‚С‡С‘С‚ РїРѕ Р±СЋРґР¶РµС‚Сѓ",
+    "РС‚РѕРі: 24 000 в‚Ѕ",
+    "РСЃС‚РѕС‡РЅРёРєРё: СЃРјРµС‚С‹ 19 700 Рё 4 300"
+  ]),
   "memo.docx": docx(FACTS[3].text)
 };
 // Multi-page PDF for page/skip coverage (blank page 2 -> one indexed page).
-const longPdf = pdf(["Приложение А", "Страница 1: 19 700", "Страница 3: 4 300"], 3);
+const longPdf = pdf(
+  ["РџСЂРёР»РѕР¶РµРЅРёРµ Рђ", "РЎС‚СЂР°РЅРёС†Р° 1: 19 700", "РЎС‚СЂР°РЅРёС†Р° 3: 4 300"],
+  3
+);
 // Scanned PDF: image-only page; text extraction must be marked as missing.
 const scannedPdf = pdf(["(image-only scan)"], 1);
 // Incomplete material: truncated CSV (header only, no data rows).
 const incompleteCsv = utf8("article;amount;date\n");
 // Duplicate materials: same basename in nested archive and different case.
 const duplicateTxt = utf8(FACTS[0].text);
-const duplicateCaseTxt = utf8("Дубль: те же реквизиты, другое имя.\n");
+const duplicateCaseTxt = utf8("Р”СѓР±Р»СЊ: С‚Рµ Р¶Рµ СЂРµРєРІРёР·РёС‚С‹, РґСЂСѓРіРѕРµ РёРјСЏ.\n");
 
 const nested = zip([
   { name: "nested/brief.txt", data: duplicateTxt },
@@ -292,7 +299,7 @@ const extendedEntries = [
   { name: "nested.zip", data: nested },
   { name: "duplicates/BRIEF.TXT", data: duplicateCaseTxt },
   { name: "__MACOSX/._brief.txt", data: utf8("mac resource fork") },
-  { name: "notes.md", data: utf8("# Неподдерживаемый формат\n") }
+  { name: "notes.md", data: utf8("# РќРµРїРѕРґРґРµСЂР¶РёРІР°РµРјС‹Р№ С„РѕСЂРјР°С‚\n") }
 ];
 
 const simpleZip = zip(simpleEntries);
@@ -309,15 +316,24 @@ const member = (name, data, extra = {}) => ({
 });
 const expectedNames = (entries) =>
   entries
-    .filter((e) => /\.(pdf|docx|csv|txt)$/i.test(e.name) && !e.name.startsWith("__MACOSX/"))
-    .map((e) => e.name.replaceAll("/", " › "));
+    .filter(
+      (e) =>
+        (/\.(pdf|docx|csv|txt)$/i.test(e.name) || e.name === "nested.zip") &&
+        !e.name.startsWith("__MACOSX/")
+    )
+    .flatMap((e) =>
+      e.name === "nested.zip"
+        ? ["nested.zip › nested › brief.txt", "nested.zip › nested › extra.csv"]
+        : [e.name.replaceAll("/", " › ")]
+    );
 
 const manifest = {
   format: "kosmora.studio-document-package.v1",
   version: 1,
   generated_by: "generate.mjs",
   deterministic: true,
-  question: "Какой итоговый бюджет и срок сдачи по лунной станции?",
+  question:
+    "РљР°РєРѕР№ РёС‚РѕРіРѕРІС‹Р№ Р±СЋРґР¶РµС‚ Рё СЃСЂРѕРє СЃРґР°С‡Рё РїРѕ Р»СѓРЅРЅРѕР№ СЃС‚Р°РЅС†РёРё?",
   archives: {
     simple: {
       file: "simple.zip",
@@ -327,7 +343,7 @@ const manifest = {
       expected_document_names: expectedNames(simpleEntries),
       skipped: [],
       duplicate_names: [],
-      note: "Базовый пакет: PDF, DOCX, TXT, CSV без вложенностей и пропусков."
+      note: "Р‘Р°Р·РѕРІС‹Р№ РїР°РєРµС‚: PDF, DOCX, TXT, CSV Р±РµР· РІР»РѕР¶РµРЅРЅРѕСЃС‚РµР№ Рё РїСЂРѕРїСѓСЃРєРѕРІ."
     },
     extended: {
       file: "extended.zip",
@@ -336,29 +352,28 @@ const manifest = {
       members: extendedEntries.map((e) => member(e.name, e.data)),
       expected_document_names: expectedNames(extendedEntries),
       // Honest gaps: what the importer must report, never silently absorb.
+      // PR #617 expands one nested archive level with a breadcrumb prefix.
       skipped: [
         { name: "__MACOSX/._brief.txt", reason: "macos_resource_fork" },
-        { name: "notes.md", reason: "unsupported_extension" },
-        { name: "nested.zip", reason: "nested_archive_not_expanded" }
+        { name: "notes.md", reason: "unsupported_extension" }
       ],
       incomplete: [
         { name: "partial/truncated.csv", reason: "header_only_no_data_rows" },
         { name: "scans/scan.pdf", reason: "image_only_page_no_text_layer" }
       ],
-      duplicates: [
+      nested_expanded: [
         {
           name: "nested.zip",
           inner_name: "nested/brief.txt",
-          reason: "nested_archive_member_not_flattened",
-          colliding_with: "brief.txt"
+          imported_as: "nested.zip вЂє nested вЂє brief.txt"
         },
         {
-          name: "duplicates/BRIEF.TXT",
-          reason: "case_insensitive_name_collision",
-          colliding_with: "brief.txt"
+          name: "nested.zip",
+          inner_name: "nested/extra.csv",
+          imported_as: "nested.zip вЂє nested вЂє extra.csv"
         }
       ],
-      note: "Расширенный пакет: вложенный архив, скан, неполный CSV, повторяющиеся материалы."
+      note: "Р Р°СЃС€РёСЂРµРЅРЅС‹Р№ РїР°РєРµС‚: РІР»РѕР¶РµРЅРЅС‹Р№ Р°СЂС…РёРІ СЂР°Р·РІРѕСЂР°С‡РёРІР°РµС‚СЃСЏ РІ РѕРґРёРЅ СѓСЂРѕРІРµРЅСЊ, СЃРєР°РЅ, РЅРµРїРѕР»РЅС‹Р№ CSV Рё РјР°С‚РµСЂРёР°Р»С‹ СЃ РїРѕС…РѕР¶РёРјРё РёРјРµРЅР°РјРё СЃРѕС…СЂР°РЅСЏСЋС‚СЃСЏ РїРѕРґ СЂР°Р·РЅС‹РјРё РїСѓС‚СЏРјРё."
     }
   },
   pages: [
@@ -373,10 +388,10 @@ const manifest = {
     quote: f.quote,
     expected_in_answer: true
   })),
-  expected_answer_contains: ["24 000", "19 700", "4 300", "12 октября 2027", "SELENE-047"],
+  expected_answer_contains: ["24 000", "19 700", "4 300", "12 РѕРєС‚СЏР±СЂСЏ 2027", "SELENE-047"],
   coverage_rules: {
     supported_extensions: ["pdf", "docx", "csv", "txt"],
-    name_flattening: "path.replaceAll('/', ' › ')",
+    name_flattening: "path.replaceAll('/', ' вЂє ')",
     case_insensitive_names: true,
     nested_archives_expanded: false,
     blank_or_image_only_pages: "counted but not indexed"
@@ -406,7 +421,7 @@ console.log(
       members_extended: extendedEntries.length,
       skipped: manifest.archives.extended.skipped.length,
       incomplete: manifest.archives.extended.incomplete.length,
-      duplicates: manifest.archives.extended.duplicates.length
+      duplicates: manifest.archives.extended.nested_expanded.length
     },
     null,
     2

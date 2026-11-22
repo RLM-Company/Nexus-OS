@@ -140,8 +140,9 @@ describe("synthetic Studio package through real deep analysis", () => {
         ])
       );
       expect(manifest.archives.extended.skipped).toEqual(
-        expect.arrayContaining([expect.objectContaining({ reason: "nested_archive_not_expanded" })])
+        expect.arrayContaining([expect.objectContaining({ reason: "unsupported_extension" })])
       );
+      expect(manifest.archives.extended.nested_expanded).toHaveLength(2);
       expect(
         readFileSync(join(fixtureDir, manifest.archives.extended.file)).length
       ).toBeGreaterThan(0);

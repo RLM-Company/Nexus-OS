@@ -3,17 +3,17 @@
   "version": 1,
   "generated_by": "generate.mjs",
   "deterministic": true,
-  "question": "Какой итоговый бюджет и срок сдачи по лунной станции?",
+  "question": "РљР°РєРѕР№ РёС‚РѕРіРѕРІС‹Р№ Р±СЋРґР¶РµС‚ Рё СЃСЂРѕРє СЃРґР°С‡Рё РїРѕ Р»СѓРЅРЅРѕР№ СЃС‚Р°РЅС†РёРё?",
   "archives": {
     "simple": {
       "file": "simple.zip",
-      "bytes": 3332,
-      "sha256": "1b2c1d1c17901a2283a3bf8fb567744599a7e095a17409017e9d2bbbb60f9e1c",
+      "bytes": 3592,
+      "sha256": "8d07ce139f9aa28198c27ace2077401fc3adc516816413a5f709fe77f94cb622",
       "members": [
         {
           "name": "brief.txt",
-          "bytes": 111,
-          "sha256": "17c80f400c694fa75f3f565754a3159c394a1f05bc6eecd71c4cbb6da2848299"
+          "bytes": 193,
+          "sha256": "12e174960930cbcba9e6af7f054b730029c6e62ea9077e7a4c80b51f7236bc5a"
         },
         {
           "name": "budget.csv",
@@ -22,29 +22,29 @@
         },
         {
           "name": "report.pdf",
-          "bytes": 1365,
-          "sha256": "e414b2c0efe4ce6a247331c64724eb61151635d20a224d8a10151a96361ba1e3"
+          "bytes": 1445,
+          "sha256": "5450ff6c218d7f1a7952510e7208c235f72093542e3c058a30ee4f21c0382c96"
         },
         {
           "name": "memo.docx",
-          "bytes": 1390,
-          "sha256": "e62e518f3443945df931b4c19c042aed422b452864cb51fbbd69bacb0a6de3d3"
+          "bytes": 1488,
+          "sha256": "e69a4158c374a92fddfd287dcffb0c7338589c3adb49c55b5237b30921cbd79a"
         }
       ],
       "expected_document_names": ["brief.txt", "budget.csv", "report.pdf", "memo.docx"],
       "skipped": [],
       "duplicate_names": [],
-      "note": "Базовый пакет: PDF, DOCX, TXT, CSV без вложенностей и пропусков."
+      "note": "Р‘Р°Р·РѕРІС‹Р№ РїР°РєРµС‚: PDF, DOCX, TXT, CSV Р±РµР· РІР»РѕР¶РµРЅРЅРѕСЃС‚РµР№ Рё РїСЂРѕРїСѓСЃРєРѕРІ."
     },
     "extended": {
       "file": "extended.zip",
-      "bytes": 8030,
-      "sha256": "6837948c241accc104457df2c9105de0b2b4a2f0106b951ab2c7cf425981e6ab",
+      "bytes": 8652,
+      "sha256": "31878f3d79c5b821c18b674ddfae906b30df0da4d465b4b35ffbd5f3867ec021",
       "members": [
         {
           "name": "brief.txt",
-          "bytes": 111,
-          "sha256": "17c80f400c694fa75f3f565754a3159c394a1f05bc6eecd71c4cbb6da2848299"
+          "bytes": 193,
+          "sha256": "12e174960930cbcba9e6af7f054b730029c6e62ea9077e7a4c80b51f7236bc5a"
         },
         {
           "name": "budget.csv",
@@ -53,18 +53,18 @@
         },
         {
           "name": "report.pdf",
-          "bytes": 1365,
-          "sha256": "e414b2c0efe4ce6a247331c64724eb61151635d20a224d8a10151a96361ba1e3"
+          "bytes": 1445,
+          "sha256": "5450ff6c218d7f1a7952510e7208c235f72093542e3c058a30ee4f21c0382c96"
         },
         {
           "name": "memo.docx",
-          "bytes": 1390,
-          "sha256": "e62e518f3443945df931b4c19c042aed422b452864cb51fbbd69bacb0a6de3d3"
+          "bytes": 1488,
+          "sha256": "e69a4158c374a92fddfd287dcffb0c7338589c3adb49c55b5237b30921cbd79a"
         },
         {
           "name": "appendix/long.pdf",
-          "bytes": 2185,
-          "sha256": "403a2b6535daeee7f22a58ddfeeb980146e729f4de5be363959793202946f85d"
+          "bytes": 2359,
+          "sha256": "7ac23537f1fa56ee3330e8039cd7ff1dd759700cbfaea855d46afd35667b94e0"
         },
         {
           "name": "scans/scan.pdf",
@@ -78,13 +78,13 @@
         },
         {
           "name": "nested.zip",
-          "bytes": 390,
-          "sha256": "d821129b241cecff59d504b07f765af21e754748e26957670b1daf48c5adcc77"
+          "bytes": 472,
+          "sha256": "538d6865e3622c063e7c9c9362a28f67a8e430660b047ef44bdf83b03a1a23ba"
         },
         {
           "name": "duplicates/BRIEF.TXT",
-          "bytes": 63,
-          "sha256": "8db794f01e3a674689b0bce83f453aba89847967d934b58e43d712ab671f9552"
+          "bytes": 121,
+          "sha256": "5f7b61d051f30a45775154b93d7fb45196033ab3e06bf9c160503f9ce9f6b7fc"
         },
         {
           "name": "__MACOSX/._brief.txt",
@@ -93,8 +93,8 @@
         },
         {
           "name": "notes.md",
-          "bytes": 48,
-          "sha256": "6916e186f127c61d4eb2e4da5e185ef495f4a1887269cf76b2376e71adf60fa3"
+          "bytes": 96,
+          "sha256": "7dc9830337353d60b3dea970e93864d4bb923ee293727fabe1fb2bfd849373c1"
         }
       ],
       "expected_document_names": [
@@ -105,6 +105,8 @@
         "appendix › long.pdf",
         "scans › scan.pdf",
         "partial › truncated.csv",
+        "nested.zip › nested › brief.txt",
+        "nested.zip › nested › extra.csv",
         "duplicates › BRIEF.TXT"
       ],
       "skipped": [
@@ -115,10 +117,6 @@
         {
           "name": "notes.md",
           "reason": "unsupported_extension"
-        },
-        {
-          "name": "nested.zip",
-          "reason": "nested_archive_not_expanded"
         }
       ],
       "incomplete": [
@@ -131,20 +129,19 @@
           "reason": "image_only_page_no_text_layer"
         }
       ],
-      "duplicates": [
+      "nested_expanded": [
         {
           "name": "nested.zip",
           "inner_name": "nested/brief.txt",
-          "reason": "nested_archive_member_not_flattened",
-          "colliding_with": "brief.txt"
+          "imported_as": "nested.zip вЂє nested вЂє brief.txt"
         },
         {
-          "name": "duplicates/BRIEF.TXT",
-          "reason": "case_insensitive_name_collision",
-          "colliding_with": "brief.txt"
+          "name": "nested.zip",
+          "inner_name": "nested/extra.csv",
+          "imported_as": "nested.zip вЂє nested вЂє extra.csv"
         }
       ],
-      "note": "Расширенный пакет: вложенный архив, скан, неполный CSV, повторяющиеся материалы."
+      "note": "Р Р°СЃС€РёСЂРµРЅРЅС‹Р№ РїР°РєРµС‚: РІР»РѕР¶РµРЅРЅС‹Р№ Р°СЂС…РёРІ СЂР°Р·РІРѕСЂР°С‡РёРІР°РµС‚СЃСЏ РІ РѕРґРёРЅ СѓСЂРѕРІРµРЅСЊ, СЃРєР°РЅ, РЅРµРїРѕР»РЅС‹Р№ CSV Рё РјР°С‚РµСЂРёР°Р»С‹ СЃ РїРѕС…РѕР¶РёРјРё РёРјРµРЅР°РјРё СЃРѕС…СЂР°РЅСЏСЋС‚СЃСЏ РїРѕРґ СЂР°Р·РЅС‹РјРё РїСѓС‚СЏРјРё."
     }
   },
   "pages": [
@@ -172,7 +169,7 @@
       "file": "brief.txt",
       "page": null,
       "line": 1,
-      "quote": "Код станции: SELENE-047",
+      "quote": "РљРѕРґ СЃС‚Р°РЅС†РёРё: SELENE-047",
       "expected_in_answer": true
     },
     {
@@ -186,21 +183,21 @@
       "file": "report.pdf",
       "page": 1,
       "line": 3,
-      "quote": "Итог: 24 000 ₽",
+      "quote": "РС‚РѕРі: 24 000 в‚Ѕ",
       "expected_in_answer": true
     },
     {
       "file": "memo.docx",
       "page": null,
       "line": 1,
-      "quote": "Срок сдачи: 12 октября 2027",
+      "quote": "РЎСЂРѕРє СЃРґР°С‡Рё: 12 РѕРєС‚СЏР±СЂСЏ 2027",
       "expected_in_answer": true
     }
   ],
-  "expected_answer_contains": ["24 000", "19 700", "4 300", "12 октября 2027", "SELENE-047"],
+  "expected_answer_contains": ["24 000", "19 700", "4 300", "12 РѕРєС‚СЏР±СЂСЏ 2027", "SELENE-047"],
   "coverage_rules": {
     "supported_extensions": ["pdf", "docx", "csv", "txt"],
-    "name_flattening": "path.replaceAll('/', ' › ')",
+    "name_flattening": "path.replaceAll('/', ' вЂє ')",
     "case_insensitive_names": true,
     "nested_archives_expanded": false,
     "blank_or_image_only_pages": "counted but not indexed"

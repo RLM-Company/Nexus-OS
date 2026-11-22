@@ -106,11 +106,17 @@ for (const key of ["simple", "extended"]) {
   const expectedNames = [...members.keys()]
     .filter(
       (name) =>
-        manifest.coverage_rules.supported_extensions.some((ext) =>
+        (manifest.coverage_rules.supported_extensions.some((ext) =>
           name.toLowerCase().endsWith(`.${ext}`)
-        ) && !name.startsWith("__MACOSX/")
+        ) ||
+          name === "nested.zip") &&
+        !name.startsWith("__MACOSX/")
     )
-    .map((name) => name.replaceAll("/", " › "));
+    .flatMap((name) =>
+      name === "nested.zip"
+        ? ["nested.zip › nested › brief.txt", "nested.zip › nested › extra.csv"]
+        : [name.replaceAll("/", " › ")]
+    );
   check(
     JSON.stringify(expectedNames.sort()) ===
       JSON.stringify([...desc.expected_document_names].sort()),
@@ -120,8 +126,8 @@ for (const key of ["simple", "extended"]) {
     check(members.has(skip.name), `${key}: skipped member missing ${skip.name}`);
   for (const inc of desc.incomplete ?? [])
     check(members.has(inc.name), `${key}: incomplete member missing ${inc.name}`);
-  for (const dup of desc.duplicates ?? [])
-    check(members.has(dup.name), `${key}: duplicate member missing ${dup.name}`);
+  for (const nested of desc.nested_expanded ?? [])
+    check(members.has(nested.name), `${key}: nested archive member missing ${nested.name}`);
 }
 
 // Text citations must appear verbatim in extracted TXT/CSV members.
@@ -159,7 +165,7 @@ console.log(
       pages: manifest.pages.length,
       skipped: manifest.archives.extended.skipped.length,
       incomplete: manifest.archives.extended.incomplete.length,
-      duplicates: manifest.archives.extended.duplicates.length
+      duplicates: manifest.archives.extended.nested_expanded.length
     },
     null,
     2

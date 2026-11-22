@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+﻿#!/usr/bin/env node
 /**
  * Deterministic LOCAL simulation of the first Gemini run for package A.
  *
@@ -23,7 +23,7 @@ const dir = resolve(
 const root = resolve(dir, "..", "..", "..", "..");
 const node = process.execPath;
 const bundledPnpm =
-  "C:\\Users\\Александр\\.dsh\\dsh-runtimes\\dsh-primary-runtime\\dependencies\\pnpm\\bin\\pnpm.mjs";
+  "C:\\Users\\РђР»РµРєСЃР°РЅРґСЂ\\.dsh\\dsh-runtimes\\dsh-primary-runtime\\dependencies\\pnpm\\bin\\pnpm.mjs";
 const pnpmMjs =
   process.env.PNPM_PATH ??
   (existsSync(bundledPnpm) ? bundledPnpm : join(root, "node_modules", "pnpm", "bin", "pnpm.mjs"));
@@ -78,7 +78,7 @@ const checks = [
 const result = {
   format: "kosmora.studio-document-package.first-run.v1",
   source: "local-simulation-NOT-live-Gemini",
-  note: "Симулятор первого прогона: реальные локальные проверки пакета, без живой модели и внешних вызовов.",
+  note: "РЎРёРјСѓР»СЏС‚РѕСЂ РїРµСЂРІРѕРіРѕ РїСЂРѕРіРѕРЅР°: СЂРµР°Р»СЊРЅС‹Рµ Р»РѕРєР°Р»СЊРЅС‹Рµ РїСЂРѕРІРµСЂРєРё РїР°РєРµС‚Р°, Р±РµР· Р¶РёРІРѕР№ РјРѕРґРµР»Рё Рё РІРЅРµС€РЅРёС… РІС‹Р·РѕРІРѕРІ.",
   manifest_sha256: sha256(readFileSync(join(dir, "manifest.json"))),
   archives: Object.fromEntries(
     Object.entries(manifest.archives).map(([key, desc]) => [
@@ -90,7 +90,7 @@ const result = {
         expected_document_names: desc.expected_document_names,
         skipped: desc.skipped?.length ?? 0,
         incomplete: desc.incomplete?.length ?? 0,
-        duplicates: desc.duplicates?.length ?? 0
+        duplicates: desc.nested_expanded?.length ?? 0
       }
     ])
   ),
@@ -110,17 +110,17 @@ writeFileSync(join(outDir, "result.json"), JSON.stringify(result, null, 2) + "\n
 const diffs = [];
 for (const check of checks) if (!check.ok) diffs.push(`- ${check.name}: ${check.output}`);
 const diff = [
-  `# Локальный первый прогон (НЕ живой Gemini)`,
+  `# Р›РѕРєР°Р»СЊРЅС‹Р№ РїРµСЂРІС‹Р№ РїСЂРѕРіРѕРЅ (РќР• Р¶РёРІРѕР№ Gemini)`,
   ``,
-  `Источник: \`local-simulation-NOT-live-Gemini\`. Живая модель не вызывалась;`,
-  `результат получен из реальных локальных проверок пакета.`,
+  `РСЃС‚РѕС‡РЅРёРє: \`local-simulation-NOT-live-Gemini\`. Р–РёРІР°СЏ РјРѕРґРµР»СЊ РЅРµ РІС‹Р·С‹РІР°Р»Р°СЃСЊ;`,
+  `СЂРµР·СѓР»СЊС‚Р°С‚ РїРѕР»СѓС‡РµРЅ РёР· СЂРµР°Р»СЊРЅС‹С… Р»РѕРєР°Р»СЊРЅС‹С… РїСЂРѕРІРµСЂРѕРє РїР°РєРµС‚Р°.`,
   ``,
-  `- self-check/импортер: ${checks[0]?.ok ? "passed" : "FAILED"}`,
-  `- deep-анализ: ${checks[1]?.ok ? "passed" : "FAILED"}`,
-  `- расхождения с manifest: ${diffs.length ? diffs.join("\n") : "не обнаружены"}`,
+  `- self-check/РёРјРїРѕСЂС‚РµСЂ: ${checks[0]?.ok ? "passed" : "FAILED"}`,
+  `- deep-Р°РЅР°Р»РёР·: ${checks[1]?.ok ? "passed" : "FAILED"}`,
+  `- СЂР°СЃС…РѕР¶РґРµРЅРёСЏ СЃ manifest: ${diffs.length ? diffs.join("\n") : "РЅРµ РѕР±РЅР°СЂСѓР¶РµРЅС‹"}`,
   ``,
-  `Для живого прогона замените этот каталог фактическим отчётом Gemini и`,
-  `повторите сверку по manifest.json. Не выдавайте симулятор за живой результат.`,
+  `Р”Р»СЏ Р¶РёРІРѕРіРѕ РїСЂРѕРіРѕРЅР° Р·Р°РјРµРЅРёС‚Рµ СЌС‚РѕС‚ РєР°С‚Р°Р»РѕРі С„Р°РєС‚РёС‡РµСЃРєРёРј РѕС‚С‡С‘С‚РѕРј Gemini Рё`,
+  `РїРѕРІС‚РѕСЂРёС‚Рµ СЃРІРµСЂРєСѓ РїРѕ manifest.json. РќРµ РІС‹РґР°РІР°Р№С‚Рµ СЃРёРјСѓР»СЏС‚РѕСЂ Р·Р° Р¶РёРІРѕР№ СЂРµР·СѓР»СЊС‚Р°С‚.`,
   ``
 ].join("\n");
 writeFileSync(join(outDir, "diff.md"), diff, "utf8");

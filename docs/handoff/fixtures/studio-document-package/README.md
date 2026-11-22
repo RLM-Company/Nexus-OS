@@ -40,12 +40,13 @@ node self-check.mjs --dir DIR
 
 1. **Простой пакет**: 4 документа, все поддерживаемые расширения, без пропусков.
 2. **Расширенный пакет**:
-   - пропуски: `__MACOSX/._brief.txt`, `notes.md`, `nested.zip` (вложенный
-     архив не разворачивается текущим импортером);
+   - пропуски: `__MACOSX/._brief.txt`, `notes.md`;
+   - вложенный архив разворачивается в один уровень с breadcrumb
+     (`nested.zip › nested › brief.txt`, `nested.zip › nested › extra.csv`);
    - неполные: `partial/truncated.csv` (только заголовок), `scans/scan.pdf`
      (изображение без текстового слоя);
-   - дубли: вложенный `nested/brief.txt` и `duplicates/BRIEF.TXT`
-     (коллизия без учёта регистра с `brief.txt`);
+   - похожие имена: `duplicates/BRIEF.TXT` и вложенные копии сохраняются под
+     разными путями, коллизии не сливаются;
    - страницы: `appendix/long.pdf` — 3, `scans/scan.pdf` — 1 (0 с текстом).
 3. Имена в библиотеке плоские: `a/b.txt` → `a › b.txt` (см.
    `apps/web/src/app/library-archive-import.ts`).

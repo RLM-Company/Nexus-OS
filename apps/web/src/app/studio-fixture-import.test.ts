@@ -38,10 +38,9 @@ it("reports the extended Studio fixture gaps through the real importer", async (
     vi.fn()
   );
   const expected = new Set(manifest.archives.extended.expected_document_names);
-  // Current importer skips unsupported extensions and __MACOSX, does not expand
-  // nested archives; that is exactly what the manifest declares.
-  expect(result.files.every((file) => expected.has(file.name))).toBe(true);
-  expect(result.skipped).toBeGreaterThanOrEqual(manifest.archives.extended.skipped.length);
-  expect(result.files.map((file) => file.name)).toContain("scans › scan.pdf");
-  expect(result.files.map((file) => file.name)).toContain("partial › truncated.csv");
+  // The PR #617 importer expands one nested level and reports a breadcrumb;
+  // unsupported extensions and __MACOSX are counted as honest skips.
+  expect(result.files.map((f) => f.name).sort()).toEqual([...expected].sort());
+  expect(result.skipped).toBe(manifest.archives.extended.skipped.length);
+  expect(result.files.map((file) => file.name)).toContain("nested.zip › nested › brief.txt");
 });
