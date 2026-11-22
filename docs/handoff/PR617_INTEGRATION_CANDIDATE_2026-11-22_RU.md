@@ -1,11 +1,13 @@
 # Объединённый кандидат поверх PR #617 — 22 ноября 2026
 
+**Draft PR:** https://github.com/RLM-Company/Nexus-OS/pull/622 (OPEN, draft, base = `stage3/chat-koswork-acceptance` = head PR #617).
+
 ## Точные SHA
 
 - Исходная ветка владельца: `stage3/scheduling-clean` @ `d2ea5f1a`.
 - Актуальный head PR #617: `172bba88c202b5992abd5305c8876fd2cd0bc789`.
 - Merge-base на момент начала: `d860baf3cad3b16251a9bfda5f09e7da5f31f0a1`.
-- Кандидат: `integration/pr617-candidate` @ **`4d7a5218e6c9b607c83f6d72279f02c7387c289f`**.
+- Кандидат: `integration/pr617-candidate` @ **`e3cff43f8087c4a9fcf8a212554696ed7c26be1a`** (head PR #622; интеграция — `4d7a5218`, отчёт — `e3cff43f`).
 - Отдельный worktree: `C:\Users\Александр\Documents\deepseek-harness\default-workspace\pr617-integration`.
 - Исходная ветка и worktree `scheduling-wt` других агентов не изменялись.
 
