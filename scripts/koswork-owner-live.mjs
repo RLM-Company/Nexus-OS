@@ -16,6 +16,7 @@ import { pathToFileURL } from "node:url";
 
 const CONFIRM = "RUN_ONE_OWNER_SCENARIO";
 const LOOPBACK = new Set(["127.0.0.1", "localhost", "[::1]"]);
+const expectedResult = ["Q1=200", "Q2=200", "TOTAL=400"].join("\n");
 const assert = (condition, code) => {
   if (!condition) throw new Error(code);
 };
@@ -75,8 +76,11 @@ export async function runOwnerScenario(env, onAdmitted = () => {}) {
     {
       client_request_id: clientRequestId,
       goal:
-        "Сохрани в result.md итог по двум строкам. Q1: 120 и 80, Q2: 110 и 90. " +
-        "Покажи суммы кварталов и общий итог. Используй только эти исходные числа.",
+        "Вычисли суммы по этим данным: Q1 — 120 и 80, Q2 — 110 и 90. " +
+        "Создай скачиваемый текстовый файл result.md внутри проекта Kosmora. " +
+        "В файле должны быть ровно три строки с вычисленными значениями в формате " +
+        "Q1=<сумма>, Q2=<сумма>, TOTAL=<общий итог>, по одной паре на строку. " +
+        "Используй только эти данные и встроенную публикацию текстового файла.",
       worker_role: "analyst",
       require_critic: true,
       max_model_requests: 3,
@@ -99,16 +103,25 @@ export async function runOwnerScenario(env, onAdmitted = () => {}) {
   const result = {
     status: work.status,
     elapsed_ms: Math.round(performance.now() - started),
-    model_requests: work.model_requests
+    model_requests: work.model_requests,
+    ...(typeof work.error_code === "string" && /^[A-Z0-9_]{1,80}$/u.test(work.error_code)
+      ? { error_code: work.error_code }
+      : {})
   };
   if (work.status !== "completed") return result;
   assert(work.review?.verdict === "PASS", "WORK_REVIEW_NOT_PASSED");
   const file = await request(`${detail}/files/result.md`, undefined, "WORK_DOWNLOAD_FAILED");
   const bytes = Buffer.from(await file.arrayBuffer());
-  assert(bytes.toString("utf8").trim().length > 0, "EMPTY_WORK_RESULT");
+  const normalized = bytes
+    .toString("utf8")
+    .trim()
+    .split(/\r?\n/u)
+    .map((line) => line.trim().replace(/[\t ]*=[\t ]*/gu, "="))
+    .join("\n");
   return {
     ...result,
     review: "PASS",
+    artifact_check: normalized === expectedResult ? "passed" : "failed",
     file: {
       name: "result.md",
       bytes: bytes.length,
@@ -123,7 +136,8 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
       console.log(JSON.stringify({ admitted }))
     );
     console.log(JSON.stringify(result, null, 2));
-    if (!result.skipped && result.status !== "completed") process.exitCode = 1;
+    if (!result.skipped && (result.status !== "completed" || result.artifact_check !== "passed"))
+      process.exitCode = 1;
   } catch (error) {
     console.error(error instanceof Error ? error.message : "WORK_ACCEPTANCE_FAILED");
     process.exitCode = 1;

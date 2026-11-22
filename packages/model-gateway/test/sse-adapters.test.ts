@@ -58,6 +58,50 @@ const collect = async (
   for await (const event of adapter.stream(request, signal)) result.push(event);
   return result;
 };
+
+it.each([
+  {
+    finishReason: "length",
+    delta: { content: "partial answer" },
+    diagnostic: "OUTPUT_TOKEN_LIMIT"
+  },
+  {
+    finishReason: "length",
+    delta: { reasoning_content: "hidden" },
+    diagnostic: "OUTPUT_TOKEN_LIMIT"
+  },
+  { finishReason: "stop", delta: { content: " " }, diagnostic: "EMPTY_TEXT_RESPONSE" }
+])(
+  "reports $diagnostic without completing or retrying a $finishReason response",
+  async ({ finishReason, delta, diagnostic }) => {
+    const adapter = new OpenAICompatibleAdapter({
+      id: "test",
+      model: "test",
+      baseUrl: "https://unused.invalid",
+      apiKey: "fixture",
+      fetchImplementation: () =>
+        Promise.resolve(
+          new Response(
+            serialize([
+              { choices: [{ delta }] },
+              { choices: [{ delta: {}, finish_reason: finishReason }] },
+              "[DONE]"
+            ])
+          )
+        )
+    });
+    const seen: ProviderStreamEvent[] = [];
+    await expect(
+      (async () => {
+        for await (const event of adapter.stream(request, new AbortController().signal)) {
+          seen.push(event);
+        }
+      })()
+    ).rejects.toMatchObject({ code: "PROVIDER_ERROR", diagnostic, retryable: false });
+    expect(seen.some((event) => event.type === "response.completed")).toBe(false);
+  }
+);
+
 describe.each(bodies)("$name shared stream integration", ({ Adapter, events }) => {
   it("does not cap the complete answer at the individual-event bound", async () => {
     const delta = "x".repeat(4096);

@@ -254,10 +254,23 @@ export class OpenAICompatibleAdapter implements ModelProviderAdapter {
       }
     }
 
-    if (
-      !ended ||
-      (calls.size ? finishReason !== "tool_calls" : finishReason !== "stop" || !hasText)
-    ) {
+    if (ended && finishReason === "length") {
+      throw new GatewayRunError(
+        "PROVIDER_ERROR",
+        this.id,
+        "Provider reached the output token limit",
+        false
+      );
+    }
+    if (ended && finishReason === "stop" && !calls.size && !hasText) {
+      throw new GatewayRunError(
+        "PROVIDER_ERROR",
+        this.id,
+        "Provider completed without visible text",
+        false
+      );
+    }
+    if (!ended || finishReason !== (calls.size ? "tool_calls" : "stop")) {
       throw new GatewayRunError(
         "PROVIDER_ERROR",
         this.id,
