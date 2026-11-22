@@ -16,7 +16,7 @@ import { openDatabase, runMigrations } from "../../../packages/db/dist/index.js"
 import { createBackup } from "../sqlite-backup.mjs";
 import { verifyVpsPreactivation } from "../../../scripts/vps-preactivation-check.mjs";
 
-async function fixture(t, previous = false, legacyCrlf = false) {
+async function fixture(t, { pending = 0, crlf = [], legacyProfile = false } = {}) {
   const root = mkdtempSync(join(tmpdir(), "kosmora-preactivation-test-"));
   t.after(() => {
     assert.equal(dirname(resolve(root)), resolve(tmpdir()));
@@ -25,18 +25,26 @@ async function fixture(t, previous = false, legacyCrlf = false) {
   });
   const source = join(root, "source.sqlite");
   const handle = openDatabase(source);
-  if (previous) {
+  if (pending) {
     const migrations = resolve(import.meta.dirname, "../../../packages/db/migrations");
     const journal = JSON.parse(readFileSync(join(migrations, "meta/_journal.json"), "utf8"));
-    journal.entries = journal.entries.slice(0, legacyCrlf ? -4 : -3);
+    journal.entries = journal.entries.slice(0, -pending);
     const folder = join(root, "previous-migrations");
     mkdirSync(join(folder, "meta"), { recursive: true });
     writeFileSync(join(folder, "meta/_journal.json"), JSON.stringify(journal));
     for (const entry of journal.entries)
       copyFileSync(join(migrations, `${entry.tag}.sql`), join(folder, `${entry.tag}.sql`));
-    if (legacyCrlf) {
-      const sql = join(folder, "0063_semantic_history_index.sql");
+    for (const tag of crlf) {
+      const sql = join(folder, `${tag}.sql`);
       writeFileSync(sql, readFileSync(sql, "utf8").replace(/\r?\n/g, "\r\n"));
+    }
+    if (legacyProfile) {
+      const profile = join(folder, "0027_personal_settings.sql");
+      const oldProfile = readFileSync(profile, "utf8").replace(
+        /^ (display_name|user_gender|assistant_gender) TEXT.*\n/gm,
+        ""
+      );
+      writeFileSync(profile, oldProfile);
     }
     await runMigrations(handle, folder);
   } else await runMigrations(handle);
@@ -61,7 +69,7 @@ test("preactivation runs the real migration engine on a disposable copy without 
   assert.deepEqual(readFileSync(join(f.root, "backups", f.backup.file)), original);
 });
 test("preactivation actually upgrades the previous schema and preserves the older input and backup", async (t) => {
-  const f = await fixture(t, true);
+  const f = await fixture(t, { pending: 3 });
   const before = readFileSync(f.file);
   const report = await verifyVpsPreactivation({
     database: f.file,
@@ -110,13 +118,39 @@ test("preactivation refuses a changed copy, live sidecars, backup aliases and ta
 });
 
 test("preactivation accepts the exact deployed CRLF migration 0063 without rewriting history", async (t) => {
-  const f = await fixture(t, true, true);
+  const f = await fixture(t, { pending: 4, crlf: ["0063_semantic_history_index"] });
   const before = readFileSync(f.file);
   const report = await verifyVpsPreactivation({
     database: f.file,
     backupManifest: f.backupManifest
   });
   assert.equal(report.migrations_applied_to_disposable_copy, 4);
+  assert.deepEqual(readFileSync(f.file), before);
+  assert.deepEqual(readFileSync(join(f.root, "backups", f.backup.file)), before);
+});
+
+test("preactivation recognizes recorded VPS history and reports the profile startup upgrade", async (t) => {
+  const f = await fixture(t, {
+    pending: 2,
+    crlf: ["0063_semantic_history_index", "0068_document_package_analysis"],
+    legacyProfile: true
+  });
+  const before = readFileSync(f.file);
+  const report = await verifyVpsPreactivation({
+    database: f.file,
+    backupManifest: f.backupManifest
+  });
+  assert.equal(report.migrations_applied_to_disposable_copy, 2);
+  assert.deepEqual(report.recorded_legacy_migrations, [
+    "0027_personal_settings",
+    "0063_semantic_history_index",
+    "0068_document_package_analysis"
+  ]);
+  assert.deepEqual(report.profile_columns_requiring_api_startup_upgrade, [
+    "display_name",
+    "user_gender",
+    "assistant_gender"
+  ]);
   assert.deepEqual(readFileSync(f.file), before);
   assert.deepEqual(readFileSync(join(f.root, "backups", f.backup.file)), before);
 });

@@ -19,13 +19,34 @@ import process from "node:process";
 import { verifyBackup } from "../deploy/alpha/sqlite-backup.mjs";
 
 const root = resolve(import.meta.dirname, "..");
-// The deployed Windows archive recorded migration 0063 with CRLF. Accept only
-// the verified pair of byte digests; all other history checks remain exact.
-const semanticHistory0063 = {
-  timestamp: 1793620800001,
-  lf: "7f2ed59b1034cd0f4baf84f377866d01a0686945bb729d6fcb9f0d3cd37c1a8c",
-  crlf: "83ced5ed2188ee97326e01955d154fe9c657b36d7c3f14e3304d45a219a8ab99"
-};
+// Exact source and applied digests from the deployed journal. The profile
+// version predates the guarded AccountStore startup upgrade; the others are CRLF.
+const recordedHistory = new Map([
+  [
+    "0027_personal_settings",
+    {
+      when: 1791580800002,
+      source: "4379b1df69db45d7c12b706cd745f3d4518404f79f4cad22b667bcd024607ad7",
+      deployed: "6bef6d70ac69b895973ccb5fb07dec151e4a83d32e3db8003a444ebf213f5d75"
+    }
+  ],
+  [
+    "0063_semantic_history_index",
+    {
+      when: 1793620800001,
+      source: "7f2ed59b1034cd0f4baf84f377866d01a0686945bb729d6fcb9f0d3cd37c1a8c",
+      deployed: "83ced5ed2188ee97326e01955d154fe9c657b36d7c3f14e3304d45a219a8ab99"
+    }
+  ],
+  [
+    "0068_document_package_analysis",
+    {
+      when: 1795262400002,
+      source: "7b9089b7c07bf2bad7b455cdfb0aea460de5d3f6df9948180b4fc6417c424e14",
+      deployed: "49a00988ab4ea8ac328762a2f868cd273d27391c8ce8ad2e1e0f80e2476005bf"
+    }
+  ]
+]);
 const digest = async (file) => {
   const hash = createHash("sha256");
   for await (const bytes of createReadStream(file)) hash.update(bytes);
@@ -49,21 +70,24 @@ const migrationHistory = (sqlite, entries) => {
     .prepare("SELECT hash,created_at FROM __drizzle_migrations ORDER BY created_at")
     .all();
   const seen = new Set();
+  const recorded = [];
   for (const row of rows) {
     const entry = entries.find((candidate) => candidate.when === row.created_at);
-    const deployedCrlf =
-      entry?.tag === "0063_semantic_history_index" &&
-      row.created_at === semanticHistory0063.timestamp &&
-      entry.sha256 === semanticHistory0063.lf &&
-      row.hash === semanticHistory0063.crlf;
-    if (!entry || seen.has(row.created_at) || (row.hash !== entry.sha256 && !deployedCrlf))
+    const known = entry && recordedHistory.get(entry.tag);
+    const deployed =
+      known &&
+      row.created_at === known.when &&
+      entry.sha256 === known.source &&
+      row.hash === known.deployed;
+    if (!entry || seen.has(row.created_at) || (row.hash !== entry.sha256 && !deployed))
       throw Error("PREACTIVATION_MIGRATION_HISTORY_MISMATCH");
+    if (deployed) recorded.push(entry.tag);
     seen.add(row.created_at);
   }
   const last = rows.at(-1)?.created_at ?? -1;
   if (entries.some((entry) => entry.when <= last && !seen.has(entry.when)))
     throw Error("PREACTIVATION_MIGRATION_HISTORY_GAP: legacy bridge history needs explicit review");
-  return rows.length;
+  return { count: rows.length, recorded };
 };
 
 export async function verifyVpsPreactivation({ database, backupManifest }) {
@@ -124,8 +148,17 @@ export async function verifyVpsPreactivation({ database, backupManifest }) {
     await runMigrations(handle);
     integrity(handle.sqlite);
     const appliedAfter = migrationHistory(handle.sqlite, entries);
-    if (appliedAfter !== entries.length)
+    if (appliedAfter.count !== entries.length)
       throw Error("PREACTIVATION_INCOMPLETE_MIGRATION_REHEARSAL");
+    const profileColumns = new Set(
+      handle.sqlite
+        .prepare("PRAGMA table_info(kosmora_account_preferences)")
+        .all()
+        .map(({ name }) => name)
+    );
+    const missingProfileColumns = ["display_name", "user_gender", "assistant_gender"].filter(
+      (name) => !profileColumns.has(name)
+    );
     handle.close();
     handle = undefined;
     if ((await digest(copy)) !== originalSha || (await digest(backup)) !== verified.sha256)
@@ -134,9 +167,11 @@ export async function verifyVpsPreactivation({ database, backupManifest }) {
       format: "kosmora-offline-preactivation-v1",
       status: "OFFLINE_REHEARSAL_PASSED",
       backup_sha256: verified.sha256,
-      applied_before: appliedBefore,
-      applied_after: appliedAfter,
-      migrations_applied_to_disposable_copy: appliedAfter - appliedBefore,
+      applied_before: appliedBefore.count,
+      applied_after: appliedAfter.count,
+      migrations_applied_to_disposable_copy: appliedAfter.count - appliedBefore.count,
+      recorded_legacy_migrations: appliedBefore.recorded,
+      profile_columns_requiring_api_startup_upgrade: missingProfileColumns,
       migrations: entries.map(({ idx, tag, sha256 }) => ({ idx, tag, sha256 })),
       production_deployed: false,
       live_provider_tested: false
