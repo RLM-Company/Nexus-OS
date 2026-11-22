@@ -1,10 +1,15 @@
 import { randomUUID } from "node:crypto";
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
 
+const apiOrigin = "http://127.0.0.1:3100";
 const regionName = "Библиотека проекта";
 
-function project() {
-  const id = randomUUID();
+async function project(request: APIRequestContext) {
+  const response = await request.post(apiOrigin + "/api/v1/projects/empty", {
+    data: { title: "Повтор анализа", client_project_id: randomUUID() }
+  });
+  expect(response.ok()).toBe(true);
+  const id = ((await response.json()) as { project: { id: string } }).project.id;
   return { id, path: `/api/v1/projects/${id}/document-library` };
 }
 
@@ -67,23 +72,24 @@ const doneAnswer = (id: string) => ({
 });
 
 /** Routes must be installed BEFORE navigation so the initial answers GET is stubbed. */
-async function open(page: Page, path: string, answers: () => unknown[]) {
+async function open(page: Page, id: string, path: string, answers: () => unknown[]) {
   await page.route(`**${path}/answers`, (route) =>
     route.fulfill({ json: { answers: answers(), available: true } })
   );
-  await page.goto(`/?project=${path.split("/")[4]}&surface=files`);
+  await page.goto(`/?project=${id}&surface=files`);
   return page.getByRole("region", { name: regionName, exact: true });
 }
 
 test("incomplete coverage -> retry -> fresh run -> report, with double-click guard", async ({
-  page
+  page,
+  request
 }) => {
-  const { id, path } = project();
+  const { id, path } = await project(request);
   const sourceId = randomUUID();
   const newId = randomUUID();
   let answers: unknown[] = [failedAnswer(sourceId)];
   let retryPosts = 0;
-  const library = await open(page, path, () => answers);
+  const library = await open(page, id, path, () => answers);
   await page.route(`**${path}/answers/${sourceId}/retry`, async (route) => {
     retryPosts++;
     await new Promise((resolve) => setTimeout(resolve, 40));
@@ -109,14 +115,15 @@ test("incomplete coverage -> retry -> fresh run -> report, with double-click gua
 });
 
 test("lost retry response reconciles history instead of re-dispatching after reload", async ({
-  page
+  page,
+  request
 }) => {
-  const { path } = project();
+  const { id, path } = await project(request);
   const sourceId = randomUUID();
   const newId = randomUUID();
   let answers: unknown[] = [failedAnswer(sourceId)];
   let retryPosts = 0;
-  const library = await open(page, path, () => answers);
+  const library = await open(page, id, path, () => answers);
   await page.route(`**${path}/answers/${sourceId}/retry`, async (route) => {
     retryPosts++;
     answers = [failedAnswer(sourceId), doneAnswer(newId)];
@@ -133,14 +140,14 @@ test("lost retry response reconciles history instead of re-dispatching after rel
   expect(retryPosts).toBe(1);
 });
 
-test("cancelled deep run can be retried explicitly", async ({ page }) => {
-  const { path } = project();
+test("cancelled deep run can be retried explicitly", async ({ page, request }) => {
+  const { id, path } = await project(request);
   const sourceId = randomUUID();
   const newId = randomUUID();
   let answers: unknown[] = [
     { ...failedAnswer(sourceId), status: "cancelled", error_code: "CANCELLED" }
   ];
-  const library = await open(page, path, () => answers);
+  const library = await open(page, id, path, () => answers);
   await page.route(`**${path}/answers/${sourceId}/retry`, async (route) => {
     answers = [{ ...failedAnswer(sourceId), status: "cancelled" }, doneAnswer(newId)];
     await route.fulfill({ status: 202, json: doneAnswer(newId) });
