@@ -132,6 +132,7 @@ async function main() {
       material_version: number;
     }[] = [];
     const savedAttachments: { name: string; content: string }[] = [];
+    const recoveryQueries: URLSearchParams[] = [];
     for (const [index, item] of documents.entries()) {
       const selector = selectors[index];
       const readId = randomUUID();
@@ -172,6 +173,7 @@ async function main() {
       );
       const replay = await post("save", payload);
       assert.deepEqual(replay.json(), saved.json());
+      recoveryQueries.push(new URLSearchParams({ request_id: saveId, ...selector }));
       receipts.push({
         source: preview.source,
         bytes: Buffer.byteLength(preview.text),
@@ -187,6 +189,18 @@ async function main() {
     assert.equal(denied.statusCode, 409);
     assert.deepEqual(denied.json(), { error: { code: "MCP_STOPPED" } });
     assert.equal(methods.length, beforeStop);
+    assert.deepEqual(projects.getMaterials(project.id, owner)?.attachments, savedAttachments);
+    for (const [index, query] of recoveryQueries.entries()) {
+      const recovered = await client.inject({ url: `${path}/status?${query.toString()}` });
+      const receipt = receipts[index]!;
+      assert.equal(recovered.statusCode, 200);
+      assert.deepEqual(recovered.json(), {
+        status: "EXECUTED",
+        operation_id: receipt.save_operation,
+        version: receipt.material_version,
+        copy_name: documents[index]!.name
+      });
+    }
     assert.deepEqual(projects.getMaterials(project.id, owner)?.attachments, savedAttachments);
     assert.deepEqual(
       readRepositories,
@@ -229,6 +243,7 @@ async function main() {
           repositories_read: readRepositories,
           saved_copies_match: true,
           verified_import_receipts: history.length,
+          recovered_after_project_stop: recoveryQueries.length,
           after_project_stop: denied.statusCode
         },
         null,
