@@ -303,7 +303,7 @@ export class OpenAICompatibleAdapter implements ModelProviderAdapter {
       type: "response.completed",
       provider: this.id,
       model: resolvedModel,
-      finishReason: finishReason!,
+      finishReason,
       usage
     };
   }
