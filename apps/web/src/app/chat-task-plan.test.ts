@@ -1,5 +1,6 @@
-﻿import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import {
+  blockActiveStep,
   chatTaskPlanKey,
   clearChatTaskPlan,
   completeStep,
@@ -14,7 +15,8 @@ import {
   resumeActiveStep,
   saveChatTaskPlan,
   startStep,
-  toggleCollapsed
+  toggleCollapsed,
+  unblockActiveStep
 } from "./chat-task-plan";
 
 class MemoryStorage {
@@ -137,17 +139,90 @@ describe("chat task plan", () => {
     expect(formatDuration(0)).toBe("—");
   });
 
-  it("collapses and manages pause/resume/failure without losing progress", () => {
+  it("keeps an owner pause distinct from an error or a permission gate (REG-1)", () => {
+    const storage = new MemoryStorage();
     let plan = startStep(createChatTaskPlan(input), "a", 1000);
-    plan = toggleCollapsed(plan);
-    expect(plan.collapsed).toBe(true);
     plan = pauseActiveStep(plan);
-    expect(plan.steps[0]!.status).toBe("blocked");
-    plan = resumeActiveStep(plan);
+    expect(plan.steps[0]!.status).toBe("paused");
+    expect(plan.steps[0]!.block_reason).toBe("owner_pause");
+    expect(plan.active_step_id).toBe("a");
+    saveChatTaskPlan(storage, plan);
+    const restored = readChatTaskPlan(storage, "chat-a")!;
+    expect(restored.steps[0]!.status).toBe("paused");
+    expect(planSummary(restored).paused).toBe(1);
+    // Resume reverses only an explicit pause.
+    plan = resumeActiveStep(restored);
     expect(plan.steps[0]!.status).toBe("running");
-    plan = failStep(plan, "a", 1500);
-    expect(plan.active_step_id).toBeNull();
-    expect(plan.steps[0]!.status).toBe("blocked");
-    expect(planSummary(plan).blocked).toBeGreaterThan(0);
+    expect(plan.steps[0]!.block_reason).toBeNull();
+
+    // A permission gate is not cleared by a pause/resume.
+    let gated = blockActiveStep(
+      startStep(createChatTaskPlan(input), "a", 1000),
+      "awaiting_permission"
+    );
+    expect(gated.steps[0]!.status).toBe("blocked");
+    expect(gated.steps[0]!.block_reason).toBe("awaiting_permission");
+    expect(resumeActiveStep(gated).steps[0]!.status).toBe("blocked");
+    expect(unblockActiveStep(gated).steps[0]!.status).toBe("running");
+  });
+
+  it("starts a promoted step at the completion timestamp (REG-3)", () => {
+    let plan = startStep(createChatTaskPlan(input), "a", 1000);
+    plan = completeStep(plan, "a", 1500);
+    const next = plan.steps.find((s) => s.id === "b")!;
+    expect(next.status).toBe("running");
+    expect(next.started_at).toBe(1500);
+    expect(next.block_reason).toBeNull();
+    expect(planSummary(plan).running).toBe(1);
+    // A repeated run.started cannot re-admit the same step.
+    expect(startStep(plan, "b", 1600)).toBe(plan);
+  });
+
+  it("does not mutate the previous snapshot when promoting the next step (REG-3)", () => {
+    const started = startStep(createChatTaskPlan(input), "a", 1000);
+    const completed = completeStep(started, "a", 1500);
+    // The original snapshot must still show the first step running and the
+    // second pending; mutating a shared object would corrupt saved/replayed state.
+    expect(started.steps[0]!.status).toBe("running");
+    expect(started.steps[1]!.status).toBe("pending");
+    expect(started.active_step_id).toBe("a");
+    expect(completed.steps[0]!.status).toBe("completed");
+    expect(completed.steps[1]!.status).toBe("running");
+  });
+
+  it("takes one dependency-free step at a time (REG-2)", () => {
+    const branched = createChatTaskPlan({
+      ...input,
+      steps: [
+        { id: "a", title: "A" },
+        { id: "b", title: "B", depends_on: ["a"] },
+        { id: "c", title: "C", depends_on: ["a"] },
+        { id: "d", title: "D", depends_on: ["b", "c"] }
+      ]
+    });
+    let plan = startStep(branched, "a", 1000);
+    plan = completeStep(plan, "a", 1200);
+    expect(plan.active_step_id).toBe("b");
+    expect(plan.steps.filter((s) => s.status === "running")).toHaveLength(1);
+    plan = completeStep(plan, "b", 1400);
+    expect(plan.active_step_id).toBe("c");
+    expect(plan.steps.filter((s) => s.status === "running")).toHaveLength(1);
+    plan = completeStep(plan, "c", 1600);
+    expect(plan.active_step_id).toBe("d");
+    expect(planSummary(plan).completed).toBe(3);
+  });
+
+  it("survives a reload with a permission gate and its measured wait time", () => {
+    const storage = new MemoryStorage();
+    let plan = startStep(createChatTaskPlan(input), "a", 1000);
+    plan = recordInterval(plan, "await_owner", 1000, 1250);
+    plan = blockActiveStep(plan, "awaiting_permission");
+    saveChatTaskPlan(storage, plan);
+    const restored = readChatTaskPlan(storage, "chat-a")!;
+    expect(restored.steps[0]!.block_reason).toBe("awaiting_permission");
+    expect(planSummary(restored).timing.await_owner).toBe(250);
+    // A gate cannot be resumed by a plain resume; only an explicit approval.
+    expect(resumeActiveStep(restored).steps[0]!.status).toBe("blocked");
+    expect(unblockActiveStep(restored).active_step_id).toBe("a");
   });
 });

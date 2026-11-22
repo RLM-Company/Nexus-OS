@@ -1,14 +1,18 @@
-﻿"use client";
+"use client";
 import { useEffect, useRef, useState } from "react";
 import {
+  blockActiveStep,
   clearChatTaskPlan,
   completeStep,
   createChatTaskPlan,
   failStep,
+  pauseActiveStep,
   readChatTaskPlan,
   recordInterval,
+  resumeActiveStep,
   saveChatTaskPlan,
   startStep,
+  unblockActiveStep,
   type ChatTaskPlan,
   type TimingKind
 } from "./chat-task-plan";
@@ -36,8 +40,12 @@ export type ChatTaskEvent =
   | { type: "run.completed" }
   | { type: "run.failed" }
   | { type: "run.cancelled" }
+  | { type: "queue" }
   | { type: "pause" }
+  | { type: "resume" }
   | { type: "await_owner" }
+  | { type: "permission" }
+  | { type: "approval" }
   | { type: "tool" };
 
 export function emitChatTaskEvent(scope: string, event: ChatTaskEvent): void {
@@ -108,22 +116,27 @@ export function useChatTaskPlan(scope: string) {
       if (!current) return;
       const now = Date.now();
 
-      // Close the previous measured interval on a new phase.
+      // Close the previous measured interval before changing phase. A pause, a
+      // permission gate and a queue are distinct kinds and never merge into
+      // "model" time merely because the step stays active.
       if (interval.current) {
         commit(recordInterval(current, interval.current.kind, interval.current.from, now));
         interval.current = null;
       }
-      const active = planRef.current;
+      let active = planRef.current!;
 
       if (detail.type === "run.started") {
-        const ready = active?.steps.find(
+        // Only a pending, dependency-free step can be admitted. An active step
+        // (including paused/blocked) is never restarted or duplicated.
+        if (active.active_step_id) return;
+        const ready = active.steps.find(
           (step) =>
             step.status === "pending" &&
             step.depends_on.every(
               (dep) => active.steps.find((s) => s.id === dep)?.status === "completed"
             )
         );
-        if (active && ready) {
+        if (ready) {
           commit(startStep(active, ready.id, now));
           interval.current = { kind: "model", from: now };
         }
@@ -134,27 +147,75 @@ export function useChatTaskPlan(scope: string) {
         return;
       }
       if (detail.type === "tool") {
+        // Emitted from tool.call when available. With no event the timer stays "—".
         interval.current = { kind: "tool", from: now };
         return;
       }
+      if (detail.type === "queue") {
+        interval.current = { kind: "queue", from: now };
+        return;
+      }
       if (detail.type === "pause") {
+        active = pauseActiveStep(active);
+        commit(active);
         interval.current = { kind: "pause", from: now };
+        return;
+      }
+      if (detail.type === "resume") {
+        active = resumeActiveStep(active);
+        commit(active);
+        interval.current = { kind: "model", from: now };
         return;
       }
       if (detail.type === "await_owner") {
         interval.current = { kind: "await_owner", from: now };
         return;
       }
-      if (!active?.active_step_id) return;
-      if (detail.type === "run.completed") commit(completeStep(active, active.active_step_id, now));
-      else if (detail.type === "run.failed" || detail.type === "run.cancelled")
-        commit(failStep(active, active.active_step_id, now));
+      if (detail.type === "permission") {
+        active = blockActiveStep(active, "awaiting_permission");
+        commit(active);
+        interval.current = { kind: "await_owner", from: now };
+        return;
+      }
+      if (detail.type === "approval") {
+        active = unblockActiveStep(active);
+        commit(active);
+        interval.current = { kind: "model", from: now };
+        return;
+      }
+      if (!active.active_step_id) return;
+      if (detail.type === "run.completed") {
+        commit(completeStep(active, active.active_step_id, now));
+        // The promoted step starts now; timing for it begins on the next
+        // model/tool event, not on an invented interval.
+        interval.current = null;
+      } else if (detail.type === "run.failed")
+        commit(failStep(active, active.active_step_id, now, "failed"));
+      else if (detail.type === "run.cancelled")
+        commit(failStep(active, active.active_step_id, now, "cancelled"));
+    };
+    const onClarification = (event: Event) => {
+      // A required clarification is an owner gate: open the wait timer as soon
+      // as the question is announced, so the elapsed decision time is measured
+      // rather than inferred when the answer finally arrives.
+      const detail = (event as CustomEvent<{ projectId?: string; required?: boolean }>).detail;
+      if (detail?.projectId !== scope || !detail.required) return;
+      if (!planRef.current?.active_step_id) return;
+      if (interval.current) {
+        commit(
+          recordInterval(planRef.current, interval.current.kind, interval.current.from, Date.now())
+        );
+        interval.current = null;
+      }
+      interval.current = { kind: "await_owner", from: Date.now() };
     };
     window.addEventListener(CHAT_TASK_PLAN_EVENT, onPlan);
     window.addEventListener(CHAT_TASK_EVENT, onEvent);
+    window.addEventListener("kosmora:clarification", onClarification);
     return () => {
       window.removeEventListener(CHAT_TASK_PLAN_EVENT, onPlan);
       window.removeEventListener(CHAT_TASK_EVENT, onEvent);
+      window.removeEventListener("kosmora:clarification", onClarification);
     };
   }, [scope]);
 

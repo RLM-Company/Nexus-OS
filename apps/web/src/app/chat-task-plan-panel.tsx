@@ -11,8 +11,15 @@ import styles from "./chat-task-plan.module.css";
 const STATUS_LABEL: Record<string, string> = {
   pending: "ожидает",
   running: "выполняется",
+  paused: "на паузе",
   completed: "завершён",
   blocked: "заблокирован"
+};
+const REASON_LABEL: Record<string, string> = {
+  owner_pause: "пауза владельца",
+  awaiting_permission: "ожидает разрешения",
+  failed: "ошибка",
+  cancelled: "отменён"
 };
 const TIMING_LABEL: Record<TimingKind, string> = {
   model: "модель",
@@ -51,7 +58,7 @@ export function ChatTaskPlanPanel({
         </button>
       </div>
       <p className={styles.summary} role="status">
-        {`Шагов: ${summary.total} · завершено ${summary.completed} · выполняется ${summary.running} · ожидает ${summary.pending} · заблокировано ${summary.blocked}`}
+        {`Шагов: ${summary.total} · завершено ${summary.completed} · выполняется ${summary.running} · на паузе ${summary.paused} · ожидает ${summary.pending} · заблокировано ${summary.blocked}`}
         {active ? ` · активный: ${active.title}` : ""}
       </p>
       {!plan.collapsed && (
@@ -59,7 +66,10 @@ export function ChatTaskPlanPanel({
           <ol className={styles.steps}>
             {plan.steps.map((step) => (
               <li key={step.id} className={styles.step} data-status={step.status}>
-                <span className={styles.status}>{STATUS_LABEL[step.status]}</span>
+                <span className={styles.status}>
+                  {STATUS_LABEL[step.status]}
+                  {step.block_reason ? ` (${REASON_LABEL[step.block_reason]})` : ""}
+                </span>
                 <span className={styles.title}>{step.title}</span>
                 {step.started_at !== null && (
                   <span className={styles.time}>

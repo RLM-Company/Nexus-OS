@@ -3545,6 +3545,11 @@ export default function Home() {
               saveBrowserDraft();
               composerRef.current?.focus();
             }}
+            onResolved={() => {
+              // The wait timer opened when the question was announced; approval
+              // closes it and lets the next model event resume the plan.
+              emitChatTaskEvent(taskPlanScopeRef.current, { type: "approval" });
+            }}
           />
         )}
 
