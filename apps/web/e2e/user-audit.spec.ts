@@ -227,6 +227,7 @@ test("shows a readable API failure and preserves the unsent message", async ({ p
 test("keeps sidebar focus on keyboard-operated controls", async ({ page }) => {
   await installShellFixture(page);
   await page.goto("/");
+  await expect(page.getByLabel("Сообщение Kosmora", { exact: true })).toBeEnabled();
 
   const sidebar = page.locator(".sidebar");
   const newChat = sidebar.getByRole("button", { name: "Новый чат" });
