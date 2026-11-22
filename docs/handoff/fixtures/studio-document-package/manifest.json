@@ -1,0 +1,208 @@
+{
+  "format": "kosmora.studio-document-package.v1",
+  "version": 1,
+  "generated_by": "generate.mjs",
+  "deterministic": true,
+  "question": "Какой итоговый бюджет и срок сдачи по лунной станции?",
+  "archives": {
+    "simple": {
+      "file": "simple.zip",
+      "bytes": 3332,
+      "sha256": "1b2c1d1c17901a2283a3bf8fb567744599a7e095a17409017e9d2bbbb60f9e1c",
+      "members": [
+        {
+          "name": "brief.txt",
+          "bytes": 111,
+          "sha256": "17c80f400c694fa75f3f565754a3159c394a1f05bc6eecd71c4cbb6da2848299"
+        },
+        {
+          "name": "budget.csv",
+          "bytes": 64,
+          "sha256": "dfbe54fddaaacad426bdadd334967927b0b0841011e63ac1a04c45f07474f691"
+        },
+        {
+          "name": "report.pdf",
+          "bytes": 1365,
+          "sha256": "e414b2c0efe4ce6a247331c64724eb61151635d20a224d8a10151a96361ba1e3"
+        },
+        {
+          "name": "memo.docx",
+          "bytes": 1390,
+          "sha256": "e62e518f3443945df931b4c19c042aed422b452864cb51fbbd69bacb0a6de3d3"
+        }
+      ],
+      "expected_document_names": ["brief.txt", "budget.csv", "report.pdf", "memo.docx"],
+      "skipped": [],
+      "duplicate_names": [],
+      "note": "Базовый пакет: PDF, DOCX, TXT, CSV без вложенностей и пропусков."
+    },
+    "extended": {
+      "file": "extended.zip",
+      "bytes": 8030,
+      "sha256": "6837948c241accc104457df2c9105de0b2b4a2f0106b951ab2c7cf425981e6ab",
+      "members": [
+        {
+          "name": "brief.txt",
+          "bytes": 111,
+          "sha256": "17c80f400c694fa75f3f565754a3159c394a1f05bc6eecd71c4cbb6da2848299"
+        },
+        {
+          "name": "budget.csv",
+          "bytes": 64,
+          "sha256": "dfbe54fddaaacad426bdadd334967927b0b0841011e63ac1a04c45f07474f691"
+        },
+        {
+          "name": "report.pdf",
+          "bytes": 1365,
+          "sha256": "e414b2c0efe4ce6a247331c64724eb61151635d20a224d8a10151a96361ba1e3"
+        },
+        {
+          "name": "memo.docx",
+          "bytes": 1390,
+          "sha256": "e62e518f3443945df931b4c19c042aed422b452864cb51fbbd69bacb0a6de3d3"
+        },
+        {
+          "name": "appendix/long.pdf",
+          "bytes": 2185,
+          "sha256": "403a2b6535daeee7f22a58ddfeeb980146e729f4de5be363959793202946f85d"
+        },
+        {
+          "name": "scans/scan.pdf",
+          "bytes": 1223,
+          "sha256": "40cd98a3843286bf35d79bfccb6c0251ea642acc8e70f3129da196b1d3cd14f8"
+        },
+        {
+          "name": "partial/truncated.csv",
+          "bytes": 20,
+          "sha256": "97d53cc4f7d90e0f10a2a38e1904ca14f6b96401924b0a6244a4e9ddf23cfa18"
+        },
+        {
+          "name": "nested.zip",
+          "bytes": 390,
+          "sha256": "d821129b241cecff59d504b07f765af21e754748e26957670b1daf48c5adcc77"
+        },
+        {
+          "name": "duplicates/BRIEF.TXT",
+          "bytes": 63,
+          "sha256": "8db794f01e3a674689b0bce83f453aba89847967d934b58e43d712ab671f9552"
+        },
+        {
+          "name": "__MACOSX/._brief.txt",
+          "bytes": 17,
+          "sha256": "99aa22c6e6de948b03b5ec2f01e914be4e4e21cb48620f7289103088d11fcdfb"
+        },
+        {
+          "name": "notes.md",
+          "bytes": 48,
+          "sha256": "6916e186f127c61d4eb2e4da5e185ef495f4a1887269cf76b2376e71adf60fa3"
+        }
+      ],
+      "expected_document_names": [
+        "brief.txt",
+        "budget.csv",
+        "report.pdf",
+        "memo.docx",
+        "appendix › long.pdf",
+        "scans › scan.pdf",
+        "partial › truncated.csv",
+        "duplicates › BRIEF.TXT"
+      ],
+      "skipped": [
+        {
+          "name": "__MACOSX/._brief.txt",
+          "reason": "macos_resource_fork"
+        },
+        {
+          "name": "notes.md",
+          "reason": "unsupported_extension"
+        },
+        {
+          "name": "nested.zip",
+          "reason": "nested_archive_not_expanded"
+        }
+      ],
+      "incomplete": [
+        {
+          "name": "partial/truncated.csv",
+          "reason": "header_only_no_data_rows"
+        },
+        {
+          "name": "scans/scan.pdf",
+          "reason": "image_only_page_no_text_layer"
+        }
+      ],
+      "duplicates": [
+        {
+          "name": "nested.zip",
+          "inner_name": "nested/brief.txt",
+          "reason": "nested_archive_member_not_flattened",
+          "colliding_with": "brief.txt"
+        },
+        {
+          "name": "duplicates/BRIEF.TXT",
+          "reason": "case_insensitive_name_collision",
+          "colliding_with": "brief.txt"
+        }
+      ],
+      "note": "Расширенный пакет: вложенный архив, скан, неполный CSV, повторяющиеся материалы."
+    }
+  },
+  "pages": [
+    {
+      "file": "report.pdf",
+      "total_pages": 1,
+      "indexed_pages": 1,
+      "blank_pages": []
+    },
+    {
+      "file": "appendix/long.pdf",
+      "total_pages": 3,
+      "indexed_pages": 3,
+      "blank_pages": []
+    },
+    {
+      "file": "scans/scan.pdf",
+      "total_pages": 1,
+      "indexed_pages": 0,
+      "blank_pages": [1]
+    }
+  ],
+  "citations": [
+    {
+      "file": "brief.txt",
+      "page": null,
+      "line": 1,
+      "quote": "Код станции: SELENE-047",
+      "expected_in_answer": true
+    },
+    {
+      "file": "budget.csv",
+      "page": null,
+      "line": 2,
+      "quote": "00123;19700;07.11.2026",
+      "expected_in_answer": true
+    },
+    {
+      "file": "report.pdf",
+      "page": 1,
+      "line": 3,
+      "quote": "Итог: 24 000 ₽",
+      "expected_in_answer": true
+    },
+    {
+      "file": "memo.docx",
+      "page": null,
+      "line": 1,
+      "quote": "Срок сдачи: 12 октября 2027",
+      "expected_in_answer": true
+    }
+  ],
+  "expected_answer_contains": ["24 000", "19 700", "4 300", "12 октября 2027", "SELENE-047"],
+  "coverage_rules": {
+    "supported_extensions": ["pdf", "docx", "csv", "txt"],
+    "name_flattening": "path.replaceAll('/', ' › ')",
+    "case_insensitive_names": true,
+    "nested_archives_expanded": false,
+    "blank_or_image_only_pages": "counted but not indexed"
+  }
+}
