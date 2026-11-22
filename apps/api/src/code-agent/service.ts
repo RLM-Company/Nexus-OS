@@ -1694,10 +1694,31 @@ export class CodeAgentService {
     id: string,
     owner: string,
     input: { review_hash: string; publication_token: string; approve: true }
-  ) {
-    return this.externalOperation(this.current(id, owner), () =>
-      this.publishAccepted(id, owner, input)
-    );
+  ): Promise<ReturnType<CodeAgentService["view"]>> {
+    const run = this.current(id, owner);
+    if (["publishing", "uncertain", "published"].includes(run.status)) {
+      this.live(run);
+      this.assertSafeContext(run);
+      const draft = run.draft_id ? this.deps.drafts.get(run.draft_id, owner) : null;
+      if (
+        !draft ||
+        draft.plan.review_hash !== input.review_hash ||
+        run.publication_token !== input.publication_token
+      )
+        throw new CodeAgentError("STALE_REVIEW");
+      for (const file of draft.plan.files) assertCodeContextContentSafe(file.content);
+      if (run.status === "published") {
+        if (draft.status !== "published" || !draft.pr_url) throw new CodeAgentError("STALE_REVIEW");
+        return this.view(run);
+      }
+      const inFlight = this.external.get(run.id);
+      if (inFlight) {
+        await inFlight.done;
+        return this.publish(id, owner, input);
+      }
+      return this.reconcile(id, owner);
+    }
+    return this.externalOperation(run, () => this.publishAccepted(id, owner, input));
   }
   private async publishAccepted(
     id: string,

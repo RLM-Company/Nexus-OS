@@ -15,7 +15,7 @@ test.beforeEach(async ({ page }) => {
 
 async function scenario(
   page: Page,
-  lostPublish: false | "after-start" | "before-start" = false,
+  lostPublish: false | "after-start" | "after-commit" | "before-start" = false,
   proof: {
     exitCode?: number | null;
     cleanupVerified?: boolean;
@@ -218,7 +218,7 @@ async function scenario(
         publication_token: run.publication_token,
         approve: true
       });
-      if (lostPublish && publications === 1) {
+      if (lostPublish && lostPublish !== "after-commit" && publications === 1) {
         if (lostPublish === "after-start") run = { ...run, status: "uncertain" };
         await route.abort("failed");
         return;
@@ -232,6 +232,10 @@ async function scenario(
           pr_url: "https://github.com/RLM-Company/Nexus-OS/pull/1000"
         }
       };
+      if (lostPublish === "after-commit" && publications === 1) {
+        await route.abort("failed");
+        return;
+      }
       data = run;
     } else if (url.pathname.endsWith("/reconcile")) {
       if (lostPublish === "before-start") {
@@ -614,6 +618,50 @@ test("does not retry lost publication and reconciles it explicitly", async ({ pa
   await expect(page.getByRole("button", { name: "Создать черновик PR в GitHub" })).toBeDisabled();
   await page.getByRole("button", { name: "Сверить результат с GitHub" }).click();
   await expect(page.getByRole("link", { name: "Открыть созданный PR" })).toBeVisible();
+  expect(state.publications()).toBe(1);
+});
+
+test("checks the model proposal, restores it after reload and shows an already created Draft PR after a lost response", async ({
+  page
+}) => {
+  const state = await scenario(page, "after-commit", {}, () => "export const value = 2;");
+  let generations = 0;
+  page.on("request", (request) => {
+    if (request.method() === "POST" && new URL(request.url()).pathname.endsWith("/code-agent"))
+      generations++;
+  });
+  await page.goto("/code-agent?project=project-1");
+  await expect(page.getByRole("combobox", { name: "Проект", exact: true })).toHaveValue(
+    "project-1"
+  );
+  await page.getByLabel("Базовая ветка").fill("main");
+  await page.getByLabel("Задача", { exact: true }).fill("Исправь неверный результат");
+  await page.getByRole("button", { name: "Предложить исправление" }).click();
+  await expect(page.getByLabel("Просмотр изменений")).toContainText("+export const value = 2;");
+  await page.getByRole("checkbox", { name: "src/unrelated.js", exact: true }).uncheck();
+  await page.getByRole("button", { name: "Сохранить выбранные изменения" }).click();
+  await page
+    .getByRole("checkbox", { name: "Разрешаю запуск выбранной проверки для этих изменений" })
+    .check();
+  await page.getByRole("button", { name: "Запустить проверку", exact: true }).click();
+  await expect(page.getByLabel("Результат проверки")).toContainText("syntax checked");
+  await page.reload();
+  await expect(page).toHaveURL(/project=project-1&run=run-1$/);
+  await expect(page.getByLabel("Просмотр изменений")).toContainText("+export const value = 2;");
+  await expect(page.getByLabel("Результат проверки")).toContainText("syntax checked");
+  const publish = page.getByRole("button", { name: "Создать черновик PR в GitHub" });
+  await expect(publish).toBeDisabled();
+  await page
+    .getByRole("checkbox", { name: "Подтверждаю создание этой ветки", exact: false })
+    .check();
+  await publish.click({ clickCount: 2 });
+  const link = page.getByRole("link", { name: "Открыть созданный PR" });
+  await expect(link).toHaveAttribute("href", "https://github.com/RLM-Company/Nexus-OS/pull/1000");
+  await page.reload();
+  await expect(link).toHaveAttribute("href", "https://github.com/RLM-Company/Nexus-OS/pull/1000");
+  await expect(publish).toBeDisabled();
+  expect(generations).toBe(1);
+  expect(state.checks()).toBe(1);
   expect(state.publications()).toBe(1);
 });
 

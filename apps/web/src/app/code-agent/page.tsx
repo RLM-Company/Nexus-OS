@@ -1250,10 +1250,15 @@ export default function CodeAgentPage() {
                       review_hash: review.review_hash,
                       publication_token: run.publication_token,
                       approve: true
-                    }).catch((reason: unknown) => {
+                    }).catch(async (reason: unknown) => {
                       if (reason instanceof ApiFailure && reason.code === "UNAUTHORIZED") {
                         markPublication(project, run.id, false);
                         setUnknownPublish(false);
+                      } else {
+                        const saved = await api<Run>(`${root}/${encodeURIComponent(run.id)}`).catch(
+                          () => null
+                        );
+                        if (saved?.id === run.id && saved.status === "published") return saved;
                       }
                       throw reason;
                     })

@@ -1965,26 +1965,73 @@ describe("Code agent real gateway/GitHub/policy vertical", () => {
       hash = review.draft!.plan.review_hash;
     await f.check(id, hash);
     f.losePrResponse();
-    expect(
-      (
-        await f.service.publish(id, owner, {
-          review_hash: hash,
-          publication_token: f.get(id).publication_token ?? randomUUID(),
-          approve: true
-        })
-      ).status
-    ).toBe("uncertain");
+    const approval = {
+      review_hash: hash,
+      publication_token: f.get(id).publication_token!,
+      approve: true as const
+    };
+    expect((await f.service.publish(id, owner, approval)).status).toBe("uncertain");
     const writes = f.githubCalls.filter((c) => c.method === "POST").length;
     await expect(
       f.service.publish(id, owner, {
         review_hash: hash,
-        publication_token: f.get(id).publication_token ?? randomUUID(),
+        publication_token: randomUUID(),
         approve: true
       })
     ).rejects.toThrow("STALE_REVIEW");
-    expect((await f.service.reconcile(id, owner)).status).toBe("published");
+    const recovered = await f.service.publish(id, owner, approval);
+    expect(recovered).toMatchObject({
+      status: "published",
+      draft: { status: "published", pr_url: "https://github.com/RLM-Company/Nexus-OS/pull/1000" }
+    });
     expect(f.githubCalls.filter((c) => c.method === "POST")).toHaveLength(writes);
     expect(f.githubCalls.at(-1)).toMatchObject({ path: "/pulls", method: "GET" });
+    const calls = f.githubCalls.length;
+    expect(await f.service.publish(id, owner, approval)).toEqual(recovered);
+    expect(await f.service.reconcile(id, owner)).toEqual(recovered);
+    expect(f.githubCalls).toHaveLength(calls);
+  });
+
+  it("joins a publication already in progress for the same approval", async () => {
+    let release = () => {};
+    let entered = false;
+    const barrier = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const f = await fixture({
+      githubBarrier: (path, method) => {
+        if (path === "/pulls" && method === "POST") {
+          entered = true;
+          return barrier;
+        }
+        return Promise.resolve();
+      }
+    });
+    const id = await f.start();
+    const review = await f.review(id);
+    const hash = review.draft!.plan.review_hash;
+    const checked = await f.check(id, hash);
+    const payload = {
+      review_hash: hash,
+      publication_token: checked.publication_token!,
+      approve: true as const
+    };
+    const publish = () => f.service.publish(id, owner, payload);
+    const original = publish();
+    try {
+      await expect.poll(() => entered).toBe(true);
+      const repeat = publish();
+      release();
+      const [first, second] = await Promise.all([original, repeat]);
+      expect(first.status).toBe("published");
+      expect(second).toEqual(first);
+      expect(
+        f.githubCalls.filter((call) => call.method === "POST" && call.path === "/pulls")
+      ).toHaveLength(1);
+    } finally {
+      release();
+      await original;
+    }
   });
 
   it("uses strict text JSON fallback through actual gateway when registry forbids tool calling", async () => {
@@ -3762,10 +3809,13 @@ it.skipIf(!process.env.CODE_AGENT_TEST_IMAGE)(
     ]);
     expect(writes[0]!.body).toMatchObject({ base_tree: baseTree });
     expect(writes.at(-1)!.body).toMatchObject({ draft: true, base: "main" });
-    expect(
-      (await f.app.inject({ method: "POST", url: `${f.base}/${id}/publish`, payload: publication }))
-        .statusCode
-    ).toBe(409);
+    const repeated = await f.app.inject({
+      method: "POST",
+      url: `${f.base}/${id}/publish`,
+      payload: publication
+    });
+    expect(repeated.statusCode).toBe(200);
+    expect(repeated.json()).toEqual(publishedView);
     expect(f.githubCalls.filter((call) => call.method === "POST")).toHaveLength(writes.length);
     expect(f.get(id).status).toBe("published");
     expect(git("rev-parse", "HEAD").trim()).toBe(baseSha);
@@ -3794,7 +3844,7 @@ it.skipIf(!process.env.CODE_AGENT_TEST_IMAGE)(
                 status: publishedView.status,
                 draft_pr_url: publishedView.draft.pr_url,
                 post_paths: writes.map((call) => call.path),
-                duplicate_status: 409,
+                duplicate_status: repeated.statusCode,
                 duplicate_added_writes: 0
               },
               original_git_head_preserved: git("rev-parse", "HEAD").trim() === baseSha,
