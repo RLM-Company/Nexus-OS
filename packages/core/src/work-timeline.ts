@@ -60,11 +60,22 @@ const stepKind = (message: string): WorkTimelineStep["kind"] => {
   return "control";
 };
 const progressOf = (work: WorkTimelineSource): WorkTimeline["progress"] => {
-  if (["completed", "failed", "cancelled"].includes(work.status)) return "closed";
-  if (work.status === "awaiting_approval" || work.status === "paused") return "awaiting_owner";
-  if (["draft", "review", "publishing"].includes(work.stage)) return "delivering";
-  if (work.stage === "plan") return "planning";
-  return "queued";
+  switch (work.status) {
+    case "completed":
+    case "failed":
+    case "cancelled":
+      return "closed";
+    case "awaiting_approval":
+    case "blocked":
+    case "paused":
+      return "awaiting_owner";
+    case "queued":
+      return "queued";
+    default:
+      if (work.stage === "plan") return "planning";
+      if (["draft", "review", "publish", "publishing"].includes(work.stage)) return "delivering";
+      return "queued";
+  }
 };
 const titleOf = (work: WorkTimelineSource): string => {
   const ready = work.plan as { summary?: string } | null | undefined;
