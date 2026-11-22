@@ -1,4 +1,6 @@
-/** Снимок admissible-контекста задачи: цель + материалы + зависимости.
+import { createHash } from "node:crypto";
+
+/** Снимок входных данных задачи, включая цель, материалы и зависимости.
  * Чистая функция: без БД, без модели, без записи. Позволяет зафиксировать
  * входные данные один раз и проверять их при повторном запросе/рестарте. */
 export type AdmissionAttachment = { name: string; content: string };
@@ -13,16 +15,8 @@ export type WorkAdmissionSnapshot = {
   digest: string;
 };
 
-/** Стабильный SHA-256 через WebCrypto-независимый FNV-1a (детерминизм важнее
- * криптостойкости: снимок не является подписью и не доказывает происхождение). */
-const digestOf = (value: string): string => {
-  let hash = 0x811c9dc5;
-  for (let index = 0; index < value.length; index++) {
-    hash ^= value.charCodeAt(index);
-    hash = Math.imul(hash, 0x01000193) >>> 0;
-  }
-  return hash.toString(16).padStart(8, "0");
-};
+const compare = (left: string, right: string): number =>
+  left === right ? 0 : left < right ? -1 : 1;
 
 export const buildWorkAdmissionSnapshot = (input: {
   goal: string;
@@ -40,7 +34,7 @@ export const buildWorkAdmissionSnapshot = (input: {
       instructions: input.materials.instructions.trim(),
       attachments: [...input.materials.attachments]
         .map((item) => ({ name: item.name.trim(), content: item.content }))
-        .sort((a, b) => a.name.localeCompare(b.name))
+        .sort((a, b) => compare(a.name, b.name) || compare(a.content, b.content))
     },
     dependencies,
     plan: input.plan.map((node) => ({
@@ -50,7 +44,9 @@ export const buildWorkAdmissionSnapshot = (input: {
   };
   return {
     ...normalized,
-    digest: digestOf(JSON.stringify({ ...normalized, sourceRunId: input.sourceRunId ?? "" }))
+    digest: createHash("sha256")
+      .update(JSON.stringify({ ...normalized, sourceRunId: input.sourceRunId ?? "" }))
+      .digest("hex")
   };
 };
 

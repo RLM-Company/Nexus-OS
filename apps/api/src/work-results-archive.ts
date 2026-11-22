@@ -81,8 +81,12 @@ export function buildWorkResultsArchive(
   nodeIds?: readonly string[]
 ): Buffer {
   const selected = nodeIds ? new Set(nodeIds) : null;
+  if (selected) {
+    const knownNodeIds = new Set(graph.nodes.map((node) => node.id));
+    if (!selected.size || [...selected].some((id) => !knownNodeIds.has(id)))
+      throw new WorkDagConflict("RESULTS_INVALID_ARTIFACT");
+  }
   const scopedFiles = selected ? files.filter((file) => selected.has(file.node_id)) : files;
-  if (selected && selected.size === 0) throw new WorkDagConflict("RESULTS_INVALID_ARTIFACT");
   const declaredIds = graph.nodes
     .filter((node) => node.status === "completed" && (!selected || selected.has(node.id)))
     .flatMap((node) => node.artifacts.map((artifact) => artifact.id));

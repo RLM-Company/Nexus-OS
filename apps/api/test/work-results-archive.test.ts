@@ -246,5 +246,8 @@ describe("Work results ZIP", () => {
     expect(() => buildWorkResultsArchive(graph, files, ["missing-node"])).toThrow(
       "RESULTS_INVALID_ARTIFACT"
     );
+    expect(() => buildWorkResultsArchive(graph, files, ["node-1", "missing-node"])).toThrow(
+      "RESULTS_INVALID_ARTIFACT"
+    );
   });
 });

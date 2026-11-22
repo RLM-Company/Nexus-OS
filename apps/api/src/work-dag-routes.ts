@@ -199,13 +199,16 @@ export function registerWorkDagRoutes(options: {
         .send(result);
     }, reply)
   );
-  app.get<{ Params: Params; Querystring: { node_ids?: string } }>(
+  app.get<{ Params: Params; Querystring: { node_id?: string; node_ids?: string } }>(
     base + "/:id/results.zip",
     {
       schema: {
         params,
         querystring: Type.Object(
-          { node_ids: Type.Optional(Type.String({ minLength: 1, maxLength: 2000 })) },
+          {
+            node_id: Type.Optional(Type.String({ minLength: 1, maxLength: 128 })),
+            node_ids: Type.Optional(Type.String({ minLength: 1, maxLength: 2000 }))
+          },
           { additionalProperties: false }
         )
       }
@@ -216,17 +219,20 @@ export function registerWorkDagRoutes(options: {
         const owner = identityFor(r).owner_id;
         if (!coordinator.owns(r.params.id, owner, r.params.projectId))
           return reply.code(404).send({ error: "DAG_NOT_FOUND" });
-        const raw = r.query.node_ids;
-        const nodeIds = raw
-          ? [
-              ...new Set(
-                raw
-                  .split(",")
-                  .map((id) => id.trim())
-                  .filter(Boolean)
-              )
-            ]
-          : undefined;
+        const { node_id, node_ids } = r.query;
+        if (node_id && node_ids) return reply.code(400).send({ error: "INVALID_NODE_IDS" });
+        const nodeIds = node_id
+          ? [node_id]
+          : node_ids
+            ? [
+                ...new Set(
+                  node_ids
+                    .split(",")
+                    .map((id) => id.trim())
+                    .filter(Boolean)
+                )
+              ]
+            : undefined;
         if (nodeIds && (!nodeIds.length || nodeIds.length > 32))
           return reply.code(400).send({ error: "INVALID_NODE_IDS" });
         const archive = coordinator.resultsArchive(r.params.id, owner, nodeIds);

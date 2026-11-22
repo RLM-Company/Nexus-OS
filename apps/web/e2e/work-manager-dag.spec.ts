@@ -147,6 +147,17 @@ test("owner creates, edits and executes a dependency plan with durable versioned
   expect(list.items[0]!.nodes.map((n) => n.status)).toEqual(["completed", "completed"]);
   expect(list.items[0]!.nodes.map((n) => n.attempts.length)).toEqual([1, 1]);
   expect(list.items[0]!.nodes[1]!.attempts[0]!.source_artifact_ids).toHaveLength(1);
+  const firstStepArchive = panel.getByRole("link", {
+    name: "Скачать файлы шага «Бриф» (ZIP)",
+    exact: true
+  });
+  const selectedArchive = await request.get((await firstStepArchive.getAttribute("href"))!);
+  expect(selectedArchive.status()).toBe(200);
+  expect(selectedArchive.headers()["content-disposition"]).toContain("work-results-partial.zip");
+  const selectedZip = await selectedArchive.body();
+  expect(selectedZip.includes(Buffer.from('"partial": true'))).toBe(true);
+  expect(selectedZip.includes(Buffer.from("steps/01/001-result.md"))).toBe(true);
+  expect(selectedZip.includes(Buffer.from("steps/02/001-result.md"))).toBe(false);
   await panel.getByRole("button", { name: "Отменить работы проекта", exact: true }).click();
   await expect(panel.getByRole("button", { name: "Продолжить проект", exact: true })).toHaveCount(
     0
