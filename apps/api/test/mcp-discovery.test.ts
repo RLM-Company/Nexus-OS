@@ -115,18 +115,21 @@ it("lists tools through HTTP, confines the pilot to its project, and journals on
   });
   const address = upstream.address();
   if (!address || typeof address === "string") throw Error("Test MCP address unavailable");
-  const pilot = configuredMcpDiscovery(
-    {
-      KOSMORA_MCP_URL: "https://mcp.example.org/catalog",
-      KOSMORA_MCP_OWNER: owner,
-      KOSMORA_MCP_PROJECT: project.id,
-      KOSMORA_MCP_DOCUMENTS_JSON: JSON.stringify([
-        { uri: documentUri, name: "report.txt" },
-        { uri: otherDocumentUri, name: "notes.txt" }
-      ])
-    },
-    (_url, init) => fetch(`http://127.0.0.1:${address.port}/catalog`, init)
-  )!;
+  const makePilot = (revision: string) =>
+    configuredMcpDiscovery(
+      {
+        KOSMORA_MCP_URL: "https://mcp.example.org/catalog",
+        KOSMORA_MCP_OWNER: owner,
+        KOSMORA_MCP_PROJECT: project.id,
+        KOSMORA_MCP_REVISION: revision,
+        KOSMORA_MCP_DOCUMENTS_JSON: JSON.stringify([
+          { uri: documentUri, name: "report.txt" },
+          { uri: otherDocumentUri, name: "notes.txt" }
+        ])
+      },
+      (_url, init) => fetch(`http://127.0.0.1:${address.port}/catalog`, init)
+    )!;
+  const pilot = makePilot("fixture-v1");
   const appDependencies = {
     config: loadServerConfig({ NODE_ENV: "test", WEB_ORIGIN: origin }),
     database,
@@ -364,6 +367,9 @@ it("lists tools through HTTP, confines the pilot to its project, and journals on
     expect(copiedStatus.headers["cache-control"]).toBe("private, no-store");
     expect(copiedStatus.json()).toEqual(copied.json());
     expect(
+      policy.getMcpSaveOperation(project.id, "foreign-actor", copyRequest.request_id)
+    ).toBeNull();
+    expect(
       (await app.inject({ url: statusPath(collisionRequest.request_id) })).json()
     ).toMatchObject({
       status: "NOT_SAVED"
@@ -419,6 +425,35 @@ it("lists tools through HTTP, confines the pilot to its project, and journals on
       error: { code: "MCP_DOCUMENT_NAME_CONFLICT" },
       copy_name: "report-mcp-2.txt"
     });
+
+    const rotatedPilot = makePilot("fixture-v2");
+    expect(rotatedPilot.revision).not.toBe(pilot.revision);
+    const restartedWithPilot = buildApp({ ...appDependencies, mcpDiscovery: rotatedPilot });
+    const beforeRotationChecks = methods.length;
+    try {
+      const replayAfterRotation = await restartedWithPilot.inject({
+        method: "POST",
+        url: path + "/document/save-copy",
+        payload: { document_id: primaryId, ...copyRequest },
+        headers: { origin }
+      });
+      expect(replayAfterRotation.statusCode).toBe(409);
+      expect(replayAfterRotation.json()).toEqual({
+        error: { code: "MCP_SAVE_CONFIGURATION_CHANGED" }
+      });
+      expect((await restartedWithPilot.inject({ url: copiedStatusPath })).json()).toEqual(
+        copiedStatus.json()
+      );
+      expect(
+        (
+          await restartedWithPilot.inject({ url: statusPath(copyRequest.request_id, secondaryId) })
+        ).json()
+      ).toEqual({ status: "UNKNOWN" });
+      expect(projects.getMaterials(project.id, owner)).toEqual(copiedMaterials);
+      expect(methods).toHaveLength(beforeRotationChecks);
+    } finally {
+      await restartedWithPilot.close();
+    }
 
     remoteDenied = true;
     expect((await documentAction("preview", requestId())).json()).toMatchObject({
@@ -481,14 +516,6 @@ it("lists tools through HTTP, confines the pilot to its project, and journals on
       expect(restored.json()).toEqual(latest.json());
     } finally {
       await restarted.close();
-    }
-    const restartedWithPilot = buildApp({ ...appDependencies, mcpDiscovery: pilot });
-    try {
-      expect((await restartedWithPilot.inject({ url: copiedStatusPath })).json()).toEqual(
-        copiedStatus.json()
-      );
-    } finally {
-      await restartedWithPilot.close();
     }
     const empty = await app.inject({
       url: `/api/v1/projects/${another.id}/integrations/mcp/document/imports`

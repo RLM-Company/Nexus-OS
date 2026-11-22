@@ -317,13 +317,14 @@ export function registerMcpDocumentRoutes(
       const document = findDocument(request.query.document_id);
       if (!pilot || !options.policy || !enabled(project, identity.owner_id) || !document)
         return { status: "UNKNOWN" };
-      const stored = options.policy.getOperation(
+      const stored = options.policy.getMcpSaveOperation(
         project,
-        `mcp:${pilot.revision}:save:${request.query.request_id}`
+        identity.actor_id,
+        request.query.request_id
       );
       if (
         !stored ||
-        stored.actor_id !== identity.actor_id ||
+        stored === "AMBIGUOUS" ||
         !stored.intent.object_ids.includes(documentSourceKey(document.uri))
       )
         return { status: "UNKNOWN" };
@@ -400,6 +401,16 @@ export function registerMcpDocumentRoutes(
         const document = findDocument(request.body.document_id);
         if (!document) return reply.code(404).send({ error: { code: "MCP_DOCUMENT_UNAVAILABLE" } });
         const previewId = request.body.preview_id;
+        const idempotencyKey = `mcp:${pilot.revision}:${isPreview ? "preview" : "save"}:${request.body.request_id}`;
+        if (!isPreview) {
+          const earlier = policy?.getMcpSaveOperation(
+            project,
+            identity.actor_id,
+            request.body.request_id
+          );
+          if (earlier && (earlier === "AMBIGUOUS" || earlier.idempotency_key !== idempotencyKey))
+            return reply.code(409).send({ error: { code: "MCP_SAVE_CONFIGURATION_CHANGED" } });
+        }
         const result = await registry.invoke<string | SaveInput, ReadResult | SaveResult>({
           toolId: isPreview ? read : save,
           projectId: project,
@@ -410,7 +421,7 @@ export function registerMcpDocumentRoutes(
               ? "Import reviewed MCP document as a separate copy"
               : "Import reviewed MCP document",
           objectIds: [project, documentSourceKey(document.uri), ...(previewId ? [previewId] : [])],
-          idempotencyKey: `mcp:${pilot.revision}:${isPreview ? "preview" : "save"}:${request.body.request_id}`,
+          idempotencyKey,
           input: previewId ? { previewId, documentId: document.id, asCopy } : document.id
         });
         if (stopped(project, identity.owner_id))

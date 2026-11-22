@@ -239,6 +239,15 @@ test("imports a reviewed MCP document and explains access loss", async ({ page }
       interruptedRequest = (route.request().postDataJSON() as { request_id: string }).request_id;
       return route.abort();
     }
+    if (saves === 6) {
+      expect((route.request().postDataJSON() as { request_id: string }).request_id).toBe(
+        interruptedRequest
+      );
+      return route.fulfill({
+        status: 409,
+        json: { error: { code: "MCP_SAVE_CONFIGURATION_CHANGED" } }
+      });
+    }
     writes++;
     return route.fulfill({ json: { status: "EXECUTED", operation_id: id, version: 2 } });
   });
@@ -315,6 +324,11 @@ test("imports a reviewed MCP document and explains access loss", async ({ page }
   await document.getByRole("button", { name: "Предпросмотр документа" }).click();
   await document.getByRole("button", { name: "Подтвердить сохранение в материалы" }).click();
   await expect(document).toContainText("Ответ потерян.");
+  await document.getByRole("button", { name: "Подтвердить сохранение в материалы" }).click();
+  await expect(document).toContainText("Настройки MCP изменились.");
+  await expect(
+    document.getByRole("button", { name: "Проверить результат сохранения" })
+  ).toBeVisible();
   stopped = true;
   await page.reload();
   await expect(document).not.toContainText("Обновлённый отчёт.");
@@ -325,7 +339,7 @@ test("imports a reviewed MCP document and explains access loss", async ({ page }
   await receipt.click();
   await expect(document).toContainText("Документ сохранён как report.txt. Версия материалов: 4.");
   await expect(receipt).toHaveCount(0);
-  expect(saves).toBe(5);
+  expect(saves).toBe(6);
   expect(receiptChecks).toBe(2);
   stopped = false;
   revoked = true;

@@ -188,6 +188,7 @@ export function McpDocument({
           code === "MCP_STOPPED" ||
           code === "MCP_UNAVAILABLE" ||
           code === "MCP_MATERIALS_CHANGED" ||
+          code === "MCP_SAVE_CONFIGURATION_CHANGED" ||
           code === "MCP_COPY_NOT_OFFERED" ||
           code === "MCP_PREVIEW_EXPIRED" ||
           outcome.status === "DENIED"
@@ -197,6 +198,8 @@ export function McpDocument({
         }
         if (code === "MCP_MATERIALS_CHANGED") {
           setMessage("Материалы изменились. Откройте новый предпросмотр.");
+        } else if (code === "MCP_SAVE_CONFIGURATION_CHANGED") {
+          setMessage("Настройки MCP изменились. Проверьте результат прежнего сохранения.");
         } else if (code === "MCP_DOCUMENT_NAME_CONFLICT") {
           setCopyName(outcome.copy_name ?? "");
           if (!outcome.copy_name) setPreview(null);
