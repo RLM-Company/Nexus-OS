@@ -3,14 +3,9 @@ import { expect, test, type Page } from "@playwright/test";
 
 const regionName = "Библиотека проекта";
 
-async function project(page: Page) {
+function project() {
   const id = randomUUID();
-  await page.goto(`/?project=${id}&surface=files`);
-  return {
-    id,
-    path: `/api/v1/projects/${id}/document-library`,
-    library: page.getByRole("region", { name: regionName, exact: true })
-  };
+  return { id, path: `/api/v1/projects/${id}/document-library` };
 }
 
 const coverage = {
@@ -71,17 +66,24 @@ const doneAnswer = (id: string) => ({
   ]
 });
 
+/** Routes must be installed BEFORE navigation so the initial answers GET is stubbed. */
+async function open(page: Page, path: string, answers: () => unknown[]) {
+  await page.route(`**${path}/answers`, (route) =>
+    route.fulfill({ json: { answers: answers(), available: true } })
+  );
+  await page.goto(`/?project=${path.split("/")[3]}&surface=files`);
+  return page.getByRole("region", { name: regionName, exact: true });
+}
+
 test("incomplete coverage -> retry -> fresh run -> report, with double-click guard", async ({
   page
 }) => {
-  const { id, path, library } = await project(page);
+  const { id, path } = project();
   const sourceId = randomUUID();
   const newId = randomUUID();
   let answers: unknown[] = [failedAnswer(sourceId)];
   let retryPosts = 0;
-  await page.route(`**${path}/answers`, (route) =>
-    route.fulfill({ json: { answers, available: true } })
-  );
+  const library = await open(page, path, () => answers);
   await page.route(`**${path}/answers/${sourceId}/retry`, async (route) => {
     retryPosts++;
     await new Promise((resolve) => setTimeout(resolve, 40));
@@ -99,8 +101,6 @@ test("incomplete coverage -> retry -> fresh run -> report, with double-click gua
   );
   const retry = library.getByRole("button", { name: "Повторить анализ", exact: true });
   await expect(retry).toBeEnabled();
-
-  // Two rapid clicks must produce exactly one POST: the in-flight marker guards it.
   await retry.click();
   await retry.click({ force: true });
   await expect.poll(() => retryPosts).toBe(1);
@@ -111,17 +111,14 @@ test("incomplete coverage -> retry -> fresh run -> report, with double-click gua
 test("lost retry response reconciles history instead of re-dispatching after reload", async ({
   page
 }) => {
-  const { id, path, library } = await project(page);
+  const { path } = project();
   const sourceId = randomUUID();
   const newId = randomUUID();
   let answers: unknown[] = [failedAnswer(sourceId)];
   let retryPosts = 0;
-  await page.route(`**${path}/answers`, (route) =>
-    route.fulfill({ json: { answers, available: true } })
-  );
+  const library = await open(page, path, () => answers);
   await page.route(`**${path}/answers/${sourceId}/retry`, async (route) => {
     retryPosts++;
-    // The server committed, but the browser never receives the acknowledgement.
     answers = [failedAnswer(sourceId), doneAnswer(newId)];
     await route.abort("failed");
   });
@@ -130,23 +127,20 @@ test("lost retry response reconciles history instead of re-dispatching after rel
   );
 
   await library.getByRole("button", { name: "Повторить анализ", exact: true }).click();
-  await expect(library.getByRole("status")).toContainText("Ответ сохранён");
-  // Reload keeps the new run visible; the marker no longer triggers a re-POST.
+  await expect(library.getByRole("status")).toHaveText("Ответ сохранён");
   await page.reload();
   await expect(library.getByRole("status")).toHaveText("Ответ сохранён");
   expect(retryPosts).toBe(1);
 });
 
 test("cancelled deep run can be retried explicitly", async ({ page }) => {
-  const { path, library } = await project(page);
+  const { path } = project();
   const sourceId = randomUUID();
   const newId = randomUUID();
   let answers: unknown[] = [
     { ...failedAnswer(sourceId), status: "cancelled", error_code: "CANCELLED" }
   ];
-  await page.route(`**${path}/answers`, (route) =>
-    route.fulfill({ json: { answers, available: true } })
-  );
+  const library = await open(page, path, () => answers);
   await page.route(`**${path}/answers/${sourceId}/retry`, async (route) => {
     answers = [{ ...failedAnswer(sourceId), status: "cancelled" }, doneAnswer(newId)];
     await route.fulfill({ status: 202, json: doneAnswer(newId) });
