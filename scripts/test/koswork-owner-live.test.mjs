@@ -12,13 +12,17 @@ test("requires explicit opt-in before validating or contacting the configured AP
   });
 });
 
-for (const status of ["completed", "awaiting_approval"]) {
-  test(`admits once and observes ${status} without issuing further writes`, async (t) => {
+for (const { status, total, expectedCheck } of [
+  { status: "completed", total: 400, expectedCheck: "passed" },
+  { status: "completed", total: 399, expectedCheck: "failed" },
+  { status: "awaiting_approval" }
+]) {
+  test(`admits once and observes ${status} with artifact check ${expectedCheck ?? "unavailable"}`, async (t) => {
     const project = "fixture-project";
     const work = { id: "fixture-work", project_id: project };
     const base = `/api/v1/projects/${project}/work`;
     const detail = `${base}/${work.id}`;
-    const artifact = "# Итог\nQ1: 200, Q2: 200, всего: 400.\n";
+    const artifact = `Q1=200\r\nQ2 = 200\r\nTOTAL=${total}\r\n`;
     const calls = [];
     const admissions = [];
     const server = createServer(async (request, response) => {
@@ -70,6 +74,7 @@ for (const status of ["completed", "awaiting_approval"]) {
     ]);
     assert.equal(result.status, status);
     assert.equal(result.model_requests, 3);
+    assert.equal(result.artifact_check, expectedCheck);
     if (status === "completed") {
       assert.equal(result.review, "PASS");
       assert.deepEqual(result.file, {
