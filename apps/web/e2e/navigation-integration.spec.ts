@@ -110,6 +110,291 @@ async function fixture(page: Page, owner = "local-owner") {
   };
 }
 
+test("integrations show the discovered MCP tool catalog and journal operation", async ({
+  page
+}) => {
+  await fixture(page);
+  const operation = "ef130001-0001-4000-8000-000000000001";
+  await page.route(`**/api/v1/projects/${projectId}/integrations/mcp`, (route) =>
+    route.fulfill({ json: { configured: true, stopped: false } })
+  );
+  await page.route(`**/api/v1/projects/${projectId}/integrations/mcp/discover`, (route) => {
+    expect(route.request().method()).toBe("POST");
+    expect(route.request().postDataJSON()).toMatchObject({ request_id: expect.any(String) });
+    return route.fulfill({
+      json: {
+        status: "EXECUTED",
+        tools: ["read_fixture"],
+        hasMore: false,
+        operation_id: operation
+      }
+    });
+  });
+  await page.goto("/?surface=apps");
+  await expect(page.getByLabel("Проект для MCP")).toHaveValue(projectId);
+  const panel = page.getByRole("region", { name: "MCP", exact: true });
+  await panel.getByRole("button", { name: "Проверить MCP и показать инструменты" }).click();
+  await expect(panel.getByText("read_fixture", { exact: true })).toBeVisible();
+  await expect(panel.getByText(operation, { exact: true })).toBeVisible();
+});
+
+test("imports a reviewed MCP document and explains access loss", async ({ page }) => {
+  await fixture(page);
+  const base = `**/api/v1/projects/${projectId}/integrations/mcp`;
+  const id = "ef130001-0001-4000-8000-000000000002";
+  const report = "a".repeat(32),
+    notes = "b".repeat(32);
+  const source = "fixture://workspace/report";
+  let revoked = false;
+  let stopped = false;
+  let writes = 0;
+  let saves = 0;
+  let copyAttempts = 0;
+  let copyRequest = "";
+  let interruptedRequest = "";
+  let receiptChecks = 0;
+  let olderLoads = 0;
+  await page.route(base, (route) =>
+    route.fulfill({
+      json: {
+        configured: true,
+        stopped,
+        ...(stopped
+          ? { document: "report.txt", document_id: report }
+          : {
+              documents: [
+                { id: report, name: "report.txt" },
+                { id: notes, name: "notes.txt" }
+              ]
+            })
+      }
+    })
+  );
+  await page.route(base + "/document/preview", (route) => {
+    const selected = (route.request().postDataJSON() as { document_id: string }).document_id;
+    expect([report, notes]).toContain(selected);
+    return route.fulfill(
+      revoked
+        ? {
+            status: 409,
+            json: { status: "RECOVERY_REQUIRED", operation_id: id }
+          }
+        : {
+            json: {
+              status: "EXECUTED",
+              preview_id: id,
+              operation_id: id,
+              name: selected === notes ? "notes.txt" : "report.txt",
+              source: selected === notes ? "fixture://workspace/notes" : source,
+              text:
+                selected === notes
+                  ? "Отдельные заметки."
+                  : saves >= 2
+                    ? "Обновлённый отчёт."
+                    : "19 700 ₽, артикул 00123, кроме доставки."
+            }
+          }
+    );
+  });
+  await page.route(base + "/document/imports", (route) =>
+    route.fulfill({
+      json: {
+        items: writes
+          ? [
+              {
+                operation_id: id,
+                name: "report.txt",
+                source,
+                sha256: "c".repeat(64),
+                version: 2,
+                copy: "matched"
+              }
+            ]
+          : [],
+        ...(writes ? { next_cursor: id } : {})
+      }
+    })
+  );
+  await page.route(base + "/document/imports?*", (route) => {
+    const request = route.request();
+    expect(request.method()).toBe("GET");
+    expect(new URL(request.url()).searchParams.get("before")).toBe(id);
+    if (++olderLoads === 1) return route.fulfill({ status: 503, json: {} });
+    return route.fulfill({
+      json: {
+        items: [
+          {
+            operation_id: "ef130001-0001-4000-8000-000000000001",
+            name: "older-report.txt",
+            source,
+            sha256: "d".repeat(64),
+            version: 1,
+            copy: "changed"
+          }
+        ]
+      }
+    });
+  });
+  await page.route(base + "/document/save", (route) => {
+    saves++;
+    expect(route.request().postDataJSON()).toEqual({
+      preview_id: id,
+      document_id: report,
+      request_id: expect.any(String)
+    });
+    if (saves === 2)
+      return route.fulfill({
+        json: { status: "EXECUTED", operation_id: id, version: 2, already_present: true }
+      });
+    if (saves === 3)
+      return route.fulfill({
+        status: 409,
+        json: { error: { code: "MCP_DOCUMENT_NAME_CONFLICT" }, copy_name: "report-mcp-1.txt" }
+      });
+    if (saves === 4)
+      return route.fulfill({
+        json: {
+          status: "EXECUTED",
+          operation_id: id,
+          version: 3,
+          already_present: true,
+          existing_name: "report-mcp-1.txt"
+        }
+      });
+    if (saves === 5) {
+      interruptedRequest = (route.request().postDataJSON() as { request_id: string }).request_id;
+      return route.abort();
+    }
+    if (saves === 6) {
+      expect((route.request().postDataJSON() as { request_id: string }).request_id).toBe(
+        interruptedRequest
+      );
+      return route.fulfill({
+        status: 409,
+        json: { error: { code: "MCP_SAVE_CONFIGURATION_CHANGED" } }
+      });
+    }
+    writes++;
+    return route.fulfill({ json: { status: "EXECUTED", operation_id: id, version: 2 } });
+  });
+  await page.route(base + "/document/status?*", (route) => {
+    receiptChecks++;
+    expect(route.request().method()).toBe("GET");
+    const query = new URL(route.request().url()).searchParams;
+    expect(query.get("request_id")).toBe(interruptedRequest);
+    expect(query.get("document_id")).toBe(report);
+    if (receiptChecks === 1) return route.fulfill({ json: { status: "UNKNOWN" } });
+    return route.fulfill({
+      json: { status: "EXECUTED", operation_id: id, version: 4, copy_name: "report.txt" }
+    });
+  });
+  await page.route(base + "/document/save-copy", (route) => {
+    copyAttempts++;
+    const payload = route.request().postDataJSON() as { request_id: string };
+    expect(payload).toEqual({
+      preview_id: id,
+      document_id: report,
+      request_id: expect.any(String)
+    });
+    if (!copyRequest) {
+      copyRequest = payload.request_id;
+      return route.abort();
+    }
+    expect(payload.request_id).toBe(copyRequest);
+    if (copyAttempts === 2)
+      return route.fulfill({ status: 504, json: { message: "Gateway timeout" } });
+    return route.fulfill({
+      json: { status: "EXECUTED", operation_id: id, version: 3, copy_name: "report-mcp-1.txt" }
+    });
+  });
+  await page.goto("/?surface=apps");
+  const selector = page.getByLabel("Документ для импорта");
+  await selector.selectOption(notes);
+  const document = page.getByRole("region", { name: "Документ MCP", exact: true });
+  await document.getByRole("button", { name: "Предпросмотр документа" }).click();
+  await expect(document).toContainText("Отдельные заметки.");
+  await selector.selectOption(report);
+  await expect(
+    document.getByRole("button", { name: "Подтвердить сохранение в материалы" })
+  ).toHaveCount(0);
+  await document.getByRole("button", { name: "Предпросмотр документа" }).click();
+  await expect(document).toContainText("19 700 ₽, артикул 00123, кроме доставки.");
+  await expect(document).toContainText(source);
+  expect(writes).toBe(0);
+  await document.getByRole("button", { name: "Подтвердить сохранение в материалы" }).click();
+  await expect(document).toContainText("Документ сохранён. Версия материалов: 2.");
+  expect(writes).toBe(1);
+  await document.getByRole("button", { name: "Предпросмотр документа" }).click();
+  await document.getByRole("button", { name: "Подтвердить сохранение в материалы" }).click();
+  await expect(document).toContainText("Точная копия уже в материалах.");
+  await document.getByRole("button", { name: "Предпросмотр документа" }).click();
+  await document.getByRole("button", { name: "Подтвердить сохранение в материалы" }).click();
+  await expect(document).toContainText("Существующая копия сохранена.");
+  expect(writes).toBe(1);
+  expect(copyRequest).toBe("");
+  await expect(document).toContainText("Обновлённый отчёт.");
+  const saveCopy = document.getByRole("button", { name: "Сохранить как report-mcp-1.txt" });
+  await saveCopy.click();
+  await expect(document).toContainText("Ответ потерян.");
+  await saveCopy.click();
+  await expect(document).toContainText("Результат запроса неизвестен.");
+  await saveCopy.click();
+  await expect(document).toContainText(
+    "Документ сохранён как report-mcp-1.txt. Версия материалов: 3."
+  );
+  expect(copyAttempts).toBe(3);
+  await document.getByRole("button", { name: "Предпросмотр документа" }).click();
+  await document.getByRole("button", { name: "Подтвердить сохранение в материалы" }).click();
+  await expect(document).toContainText("Точная копия уже в материалах (report-mcp-1.txt).");
+  await expect(saveCopy).toHaveCount(0);
+  await document.getByRole("button", { name: "Предпросмотр документа" }).click();
+  await document.getByRole("button", { name: "Подтвердить сохранение в материалы" }).click();
+  await expect(document).toContainText("Ответ потерян.");
+  await document.getByRole("button", { name: "Подтвердить сохранение в материалы" }).click();
+  await expect(document).toContainText("Настройки MCP изменились.");
+  await expect(
+    document.getByRole("button", { name: "Проверить результат сохранения" })
+  ).toBeVisible();
+  stopped = true;
+  await page.reload();
+  await expect(document).not.toContainText("Обновлённый отчёт.");
+  const receipt = document.getByRole("button", { name: "Проверить результат сохранения" });
+  await receipt.click();
+  await expect(selector).toHaveCount(0);
+  await expect(document.getByRole("button", { name: "Предпросмотр документа" })).toHaveCount(0);
+  await expect(document).toContainText("Журнал пока не подтверждает исход сохранения.");
+  await receipt.click();
+  await expect(document).toContainText("Документ сохранён как report.txt. Версия материалов: 4.");
+  await expect(receipt).toHaveCount(0);
+  expect(saves).toBe(6);
+  expect(receiptChecks).toBe(2);
+  stopped = false;
+  revoked = true;
+  await page.reload();
+  await document.getByRole("button", { name: "Предпросмотр документа" }).click();
+  await expect(document).toContainText("Документ недоступен.");
+  await expect(
+    document.getByRole("button", { name: "Подтвердить сохранение в материалы" })
+  ).toHaveCount(0);
+  await page.reload();
+  const history = page.getByRole("region", { name: "История импорта MCP", exact: true });
+  await history.getByRole("button", { name: "История импорта MCP" }).click();
+  await expect(history).toContainText(source);
+  await expect(history).toContainText("Версия материалов: 2. В материалах есть точная копия.");
+  await expect(history).toContainText("c".repeat(64));
+  const more = history.getByRole("button", { name: "Показать более ранние импорты" });
+  await more.click();
+  await expect(history).toContainText("Более ранние записи недоступны.");
+  await expect(history).toContainText("Версия материалов: 2. В материалах есть точная копия.");
+  await history.getByRole("button", { name: "Повторить загрузку" }).click();
+  await expect(history).toContainText("older-report.txt");
+  await expect(history).toContainText("Версия материалов: 1. Файл с этим именем изменён.");
+  await expect(history.getByRole("listitem")).toHaveCount(2);
+  await expect(more).toHaveCount(0);
+  expect(olderLoads).toBe(2);
+  expect(writes).toBe(1);
+});
+
 test("pins persist per owner, reorder only on pinning and survive ordinary chat reads", async ({
   page
 }) => {

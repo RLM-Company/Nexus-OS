@@ -30,6 +30,7 @@ type Manifest = {
       file: string;
       incomplete: Array<{ name: string; reason: string }>;
       skipped: Array<{ name: string; reason: string }>;
+      nested_expanded: Array<{ name: string; inner_name: string; imported_as: string }>;
     };
   };
 };

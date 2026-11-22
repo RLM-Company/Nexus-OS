@@ -8,12 +8,7 @@
       "file": "simple.zip",
       "sha256": "8d07ce139f9aa28198c27ace2077401fc3adc516816413a5f709fe77f94cb622",
       "expected_members": 4,
-      "expected_document_names": [
-        "brief.txt",
-        "budget.csv",
-        "report.pdf",
-        "memo.docx"
-      ],
+      "expected_document_names": ["brief.txt", "budget.csv", "report.pdf", "memo.docx"],
       "skipped": 0,
       "incomplete": 0,
       "duplicates": 0

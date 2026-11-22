@@ -11,6 +11,7 @@ import { StudioDataSurface } from "./studio-data-workbench";
 import { MediaWorkbench } from "./media-generation/media-workbench";
 import { SitesWorkbench } from "./sites/sites-workbench";
 import { GamesWorkbench } from "./games/games-workbench";
+import { McpIntegration } from "./mcp-integration";
 
 import type { ChatAttachment } from "@cosmora/contracts/chat-attachments";
 
@@ -763,9 +764,12 @@ type ConnectorState = {
   transport_wired: boolean;
   operations: number;
 };
-function Apps({ onNavigate, activeProjectId }: Props) {
+function Apps({ onNavigate, activeProjectId, projects }: Props) {
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState("all");
+  const [mcpProject, setMcpProject] = useState("");
+  const selectedMcpProject =
+    projects.find(({ id }) => id === (mcpProject || activeProjectId)) ?? projects[0];
   const [connectors, setConnectors] = useState<ConnectorState[] | null>(null);
   useEffect(() => {
     const controller = new AbortController();
@@ -906,6 +910,24 @@ function Apps({ onNavigate, activeProjectId }: Props) {
         <Empty icon="search" title="Приложение не найдено">
           Измените запрос или фильтр.
         </Empty>
+      )}
+      {selectedMcpProject && (
+        <div className={styles.note}>
+          <label>
+            Проект для MCP
+            <select
+              value={selectedMcpProject.id}
+              onChange={(event) => setMcpProject(event.target.value)}
+            >
+              {projects.map(({ id, title }) => (
+                <option value={id} key={id}>
+                  {title}
+                </option>
+              ))}
+            </select>
+          </label>
+          <McpIntegration key={selectedMcpProject.id} project={selectedMcpProject.id} />
+        </div>
       )}
       <div className={styles.note}>
         <Icon name="shield" />

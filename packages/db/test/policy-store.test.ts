@@ -37,6 +37,33 @@ describe("PolicyStore", () => {
 
   afterEach(() => database.close());
 
+  it("finds one MCP save across revisions and refuses an ambiguous request ID", () => {
+    store.ensureProfile(projectId, NOW);
+    const requestId = "f3a54248-eb35-4417-9cef-2cb9af1da46d";
+    const keep = (operationId: string, key: string) => {
+      const intent: PolicyIntent = {
+        operation_id: operationId,
+        project_id: projectId,
+        actor_id: "local-owner",
+        capability_ids: ["workspace.write"],
+        object_ids: [projectId],
+        purpose: "Save fixture materials",
+        idempotency_key: key
+      };
+      store.createConfirmation(intent, confirmationVerdict(intent, "workspace.write"), NOW);
+    };
+    keep("preview", "mcp:v1:preview:" + requestId);
+    keep("partial", "mcp:v1:save:prefix-" + requestId);
+    expect(store.getMcpSaveOperation(projectId, "local-owner", requestId)).toBeNull();
+    keep("first-save", "mcp:v1:save:" + requestId);
+    expect(store.getMcpSaveOperation(projectId, "local-owner", requestId)).toMatchObject({
+      operation_id: "first-save"
+    });
+    expect(store.getMcpSaveOperation(projectId, "other-owner", requestId)).toBeNull();
+    keep("second-save", "mcp:v2:save:" + requestId);
+    expect(store.getMcpSaveOperation(projectId, "local-owner", requestId)).toBe("AMBIGUOUS");
+  });
+
   it("creates an A0 profile and updates it with compare-and-swap versioning", () => {
     const initial = store.ensureProfile(projectId, NOW);
     expect(initial).toMatchObject({ project_id: projectId, base_level: "A0", version: 1 });
