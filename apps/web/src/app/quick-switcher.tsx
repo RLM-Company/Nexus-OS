@@ -77,7 +77,8 @@ export function QuickSwitcher({
     },
     { key: "work", label: "Work", group: "Разделы", run: () => onNavigate("work") },
     { key: "code", label: "Code", group: "Разделы", run: () => onNavigate("code") },
-    { key: "studio", label: "Kosmora Studio", group: "Разделы", run: () => onNavigate("studio") }
+    { key: "sound", label: "Sound", group: "Разделы", run: () => onNavigate("sound") },
+    { key: "music", label: "Music", group: "Разделы", run: () => onNavigate("music") }
   ];
   const options: Result[] = [
     ...actions,

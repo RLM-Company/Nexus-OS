@@ -203,7 +203,7 @@ export function MobileNavigation({
     close();
     onNavigate(id);
   };
-  const studioActive = ["studio", "files", "images", "video", "sound"].includes(surface);
+  const studioActive = ["files", "images", "video", "sound", "music"].includes(surface);
   return (
     <>
       <nav className="mobile-nav" aria-label="Мобильная навигация">
@@ -228,8 +228,8 @@ export function MobileNavigation({
           <Icon name={surface === "code" ? "code" : "work"} />
           <span>Режимы</span>
         </button>
-        {(["studio"] as const).map((id) => {
-          const active = id === "studio" ? studioActive : surface === id;
+        {(["files"] as const).map((id) => {
+          const active = studioActive;
           return (
             <button
               type="button"
@@ -239,7 +239,7 @@ export function MobileNavigation({
               onClick={() => onNavigate(id)}
             >
               <Icon name={id} />
-              <span>Studio</span>
+              <span>Студия</span>
             </button>
           );
         })}

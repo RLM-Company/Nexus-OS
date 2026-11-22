@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test";
 
 const mobileWorkspaces = [
   { button: "Skills", heading: "Skills" },
-  { button: "Kosmora Studio", heading: "Kosmora Studio" },
+  { button: "Music", heading: "Music" },
   { button: "Интеграции", heading: "Интеграции" },
   { button: "Настройки", heading: "Настройки" },
   { button: "Koscode", heading: "Новый чат" },

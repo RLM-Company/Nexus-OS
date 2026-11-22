@@ -1,0 +1,205 @@
+{
+  "format": "kosmora.studio-document-package.v1",
+  "version": 1,
+  "generated_by": "generate.mjs",
+  "deterministic": true,
+  "question": "РљР°РєРѕР№ РёС‚РѕРіРѕРІС‹Р№ Р±СЋРґР¶РµС‚ Рё СЃСЂРѕРє СЃРґР°С‡Рё РїРѕ Р»СѓРЅРЅРѕР№ СЃС‚Р°РЅС†РёРё?",
+  "archives": {
+    "simple": {
+      "file": "simple.zip",
+      "bytes": 3592,
+      "sha256": "8d07ce139f9aa28198c27ace2077401fc3adc516816413a5f709fe77f94cb622",
+      "members": [
+        {
+          "name": "brief.txt",
+          "bytes": 193,
+          "sha256": "12e174960930cbcba9e6af7f054b730029c6e62ea9077e7a4c80b51f7236bc5a"
+        },
+        {
+          "name": "budget.csv",
+          "bytes": 64,
+          "sha256": "dfbe54fddaaacad426bdadd334967927b0b0841011e63ac1a04c45f07474f691"
+        },
+        {
+          "name": "report.pdf",
+          "bytes": 1445,
+          "sha256": "5450ff6c218d7f1a7952510e7208c235f72093542e3c058a30ee4f21c0382c96"
+        },
+        {
+          "name": "memo.docx",
+          "bytes": 1488,
+          "sha256": "e69a4158c374a92fddfd287dcffb0c7338589c3adb49c55b5237b30921cbd79a"
+        }
+      ],
+      "expected_document_names": ["brief.txt", "budget.csv", "report.pdf", "memo.docx"],
+      "skipped": [],
+      "duplicate_names": [],
+      "note": "Р‘Р°Р·РѕРІС‹Р№ РїР°РєРµС‚: PDF, DOCX, TXT, CSV Р±РµР· РІР»РѕР¶РµРЅРЅРѕСЃС‚РµР№ Рё РїСЂРѕРїСѓСЃРєРѕРІ."
+    },
+    "extended": {
+      "file": "extended.zip",
+      "bytes": 8652,
+      "sha256": "31878f3d79c5b821c18b674ddfae906b30df0da4d465b4b35ffbd5f3867ec021",
+      "members": [
+        {
+          "name": "brief.txt",
+          "bytes": 193,
+          "sha256": "12e174960930cbcba9e6af7f054b730029c6e62ea9077e7a4c80b51f7236bc5a"
+        },
+        {
+          "name": "budget.csv",
+          "bytes": 64,
+          "sha256": "dfbe54fddaaacad426bdadd334967927b0b0841011e63ac1a04c45f07474f691"
+        },
+        {
+          "name": "report.pdf",
+          "bytes": 1445,
+          "sha256": "5450ff6c218d7f1a7952510e7208c235f72093542e3c058a30ee4f21c0382c96"
+        },
+        {
+          "name": "memo.docx",
+          "bytes": 1488,
+          "sha256": "e69a4158c374a92fddfd287dcffb0c7338589c3adb49c55b5237b30921cbd79a"
+        },
+        {
+          "name": "appendix/long.pdf",
+          "bytes": 2359,
+          "sha256": "7ac23537f1fa56ee3330e8039cd7ff1dd759700cbfaea855d46afd35667b94e0"
+        },
+        {
+          "name": "scans/scan.pdf",
+          "bytes": 1223,
+          "sha256": "40cd98a3843286bf35d79bfccb6c0251ea642acc8e70f3129da196b1d3cd14f8"
+        },
+        {
+          "name": "partial/truncated.csv",
+          "bytes": 20,
+          "sha256": "97d53cc4f7d90e0f10a2a38e1904ca14f6b96401924b0a6244a4e9ddf23cfa18"
+        },
+        {
+          "name": "nested.zip",
+          "bytes": 472,
+          "sha256": "538d6865e3622c063e7c9c9362a28f67a8e430660b047ef44bdf83b03a1a23ba"
+        },
+        {
+          "name": "duplicates/BRIEF.TXT",
+          "bytes": 121,
+          "sha256": "5f7b61d051f30a45775154b93d7fb45196033ab3e06bf9c160503f9ce9f6b7fc"
+        },
+        {
+          "name": "__MACOSX/._brief.txt",
+          "bytes": 17,
+          "sha256": "99aa22c6e6de948b03b5ec2f01e914be4e4e21cb48620f7289103088d11fcdfb"
+        },
+        {
+          "name": "notes.md",
+          "bytes": 96,
+          "sha256": "7dc9830337353d60b3dea970e93864d4bb923ee293727fabe1fb2bfd849373c1"
+        }
+      ],
+      "expected_document_names": [
+        "brief.txt",
+        "budget.csv",
+        "report.pdf",
+        "memo.docx",
+        "appendix › long.pdf",
+        "scans › scan.pdf",
+        "partial › truncated.csv",
+        "nested.zip › nested › brief.txt",
+        "nested.zip › nested › extra.csv",
+        "duplicates › BRIEF.TXT"
+      ],
+      "skipped": [
+        {
+          "name": "__MACOSX/._brief.txt",
+          "reason": "macos_resource_fork"
+        },
+        {
+          "name": "notes.md",
+          "reason": "unsupported_extension"
+        }
+      ],
+      "incomplete": [
+        {
+          "name": "partial/truncated.csv",
+          "reason": "header_only_no_data_rows"
+        },
+        {
+          "name": "scans/scan.pdf",
+          "reason": "image_only_page_no_text_layer"
+        }
+      ],
+      "nested_expanded": [
+        {
+          "name": "nested.zip",
+          "inner_name": "nested/brief.txt",
+          "imported_as": "nested.zip вЂє nested вЂє brief.txt"
+        },
+        {
+          "name": "nested.zip",
+          "inner_name": "nested/extra.csv",
+          "imported_as": "nested.zip вЂє nested вЂє extra.csv"
+        }
+      ],
+      "note": "Р Р°СЃС€РёСЂРµРЅРЅС‹Р№ РїР°РєРµС‚: РІР»РѕР¶РµРЅРЅС‹Р№ Р°СЂС…РёРІ СЂР°Р·РІРѕСЂР°С‡РёРІР°РµС‚СЃСЏ РІ РѕРґРёРЅ СѓСЂРѕРІРµРЅСЊ, СЃРєР°РЅ, РЅРµРїРѕР»РЅС‹Р№ CSV Рё РјР°С‚РµСЂРёР°Р»С‹ СЃ РїРѕС…РѕР¶РёРјРё РёРјРµРЅР°РјРё СЃРѕС…СЂР°РЅСЏСЋС‚СЃСЏ РїРѕРґ СЂР°Р·РЅС‹РјРё РїСѓС‚СЏРјРё."
+    }
+  },
+  "pages": [
+    {
+      "file": "report.pdf",
+      "total_pages": 1,
+      "indexed_pages": 1,
+      "blank_pages": []
+    },
+    {
+      "file": "appendix/long.pdf",
+      "total_pages": 3,
+      "indexed_pages": 3,
+      "blank_pages": []
+    },
+    {
+      "file": "scans/scan.pdf",
+      "total_pages": 1,
+      "indexed_pages": 0,
+      "blank_pages": [1]
+    }
+  ],
+  "citations": [
+    {
+      "file": "brief.txt",
+      "page": null,
+      "line": 1,
+      "quote": "РљРѕРґ СЃС‚Р°РЅС†РёРё: SELENE-047",
+      "expected_in_answer": true
+    },
+    {
+      "file": "budget.csv",
+      "page": null,
+      "line": 2,
+      "quote": "00123;19700;07.11.2026",
+      "expected_in_answer": true
+    },
+    {
+      "file": "report.pdf",
+      "page": 1,
+      "line": 3,
+      "quote": "РС‚РѕРі: 24 000 в‚Ѕ",
+      "expected_in_answer": true
+    },
+    {
+      "file": "memo.docx",
+      "page": null,
+      "line": 1,
+      "quote": "РЎСЂРѕРє СЃРґР°С‡Рё: 12 РѕРєС‚СЏР±СЂСЏ 2027",
+      "expected_in_answer": true
+    }
+  ],
+  "expected_answer_contains": ["24 000", "19 700", "4 300", "12 РѕРєС‚СЏР±СЂСЏ 2027", "SELENE-047"],
+  "coverage_rules": {
+    "supported_extensions": ["pdf", "docx", "csv", "txt"],
+    "name_flattening": "path.replaceAll('/', ' вЂє ')",
+    "case_insensitive_names": true,
+    "nested_archives_expanded": false,
+    "blank_or_image_only_pages": "counted but not indexed"
+  }
+}
