@@ -93,6 +93,12 @@ const failure = (e: unknown) => {
     return "Другая операция ещё выполняется. Повторите чуть позже.";
   if (["DRIVE_CONNECTION_CHANGED", "OWNER_DATA_FENCED"].includes(code))
     return "Подключение изменилось. Обновите страницу; исходные чаты сохранены.";
+  if (["DRIVE_AUTH_REQUIRED", "DRIVE_AUTH_INVALID_GRANT"].includes(code))
+    return "Авторизация Google Drive истекла или отозвана. Подключите Google Drive заново.";
+  if (code === "DRIVE_ACCESS_DENIED")
+    return "Google Drive не разрешает доступ к выбранному материалу. Проверьте доступ к нему.";
+  if (code === "DRIVE_FOLDER_NOT_READY")
+    return "Папка для копий недоступна. Проверьте подключение Google Drive.";
   return "Операция не завершена. Копия не считается проверенной; исходные данные не перезаписаны. Можно повторить загрузку или проверить доступ к Drive.";
 };
 export function GoogleDriveBackupControls({

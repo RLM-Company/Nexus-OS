@@ -141,6 +141,24 @@ describe("separate Drive authorization", () => {
     });
   });
 
+  it("distinguishes a revoked refresh grant from a temporary token endpoint error", async () => {
+    const request = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(Response.json({ error: "invalid_grant" }, { status: 400 }))
+      .mockResolvedValueOnce(Response.json({}, { status: 503 }));
+    const auth = new GoogleDriveAuthorization(config, request);
+    const grant = {
+      accessToken: "old",
+      refreshToken: "previous",
+      scope: DRIVE_FILE_SCOPE,
+      expiresAt: 1
+    } as const;
+    await expect(auth.refresh(grant)).rejects.toMatchObject({ code: "DRIVE_AUTH_REQUIRED" });
+    await expect(auth.refresh(grant)).rejects.toMatchObject({
+      code: "DRIVE_TOKEN_EXCHANGE_FAILED"
+    });
+  });
+
   it.each([
     "http://kosmora.example/callback",
     "https://user:pass@kosmora.example/callback",
