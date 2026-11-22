@@ -1059,6 +1059,17 @@ export class PolicyStore {
     }
   }
 
+  completeOperationInTransaction(
+    database: DatabaseSync,
+    operationId: string,
+    result: unknown
+  ): void {
+    if (database !== this.#sqlite || !database.isTransaction) {
+      throw new PolicyStoreConflictError("Operation completion requires a shared transaction");
+    }
+    this.completeOperation(operationId, result);
+  }
+
   failOperation(operationId: string, errorCode: string, timestamp = nowIso()): void {
     const update = this.#sqlite
       .prepare(

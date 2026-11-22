@@ -23,6 +23,7 @@ export interface ToolExecutionContext {
 
 export interface GuardedTool<Input, Output> {
   id: string;
+  mayCompleteInTransaction?: boolean;
   resolveCapabilities(input: Input): readonly CapabilityId[];
   validateScopedExecution?(input: Input, verdict: PolicyVerdict): boolean;
   execute(input: Input, context: ToolExecutionContext): Promise<Output>;
@@ -305,6 +306,20 @@ export class GuardedToolRuntime {
           objectIds: intent.object_ids,
           verdict
         });
+        if (registered.mayCompleteInTransaction) {
+          const committed = this.#policyStore.getOperation(
+            intent.project_id,
+            intent.idempotency_key
+          );
+          if (committed?.operation_id === intent.operation_id && committed.status === "SUCCEEDED") {
+            return {
+              status: "EXECUTED",
+              verdict,
+              result: asReplay<Output>(committed.result),
+              replayed: false
+            };
+          }
+        }
         this.#policyStore.completeOperation(intent.operation_id, result);
         return { status: "EXECUTED", verdict, result: result as Output, replayed: false };
       } catch {
