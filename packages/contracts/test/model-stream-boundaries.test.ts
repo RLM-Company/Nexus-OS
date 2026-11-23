@@ -323,6 +323,14 @@ describe("stream event boundaries", () => {
       data: { run_id: "run-1", error_code: "PROVIDER_ERROR", retryable: false }
     },
     {
+      type: "queued",
+      data: { run_id: "run-1", timestamp: "2026-09-22T20:00:00Z" }
+    },
+    {
+      type: "tool.call",
+      data: { run_id: "run-1", id: "call-1", name: "search", arguments: "{}" }
+    },
+    {
       type: "run.cancelled",
       data: { run_id: "run-1" }
     },

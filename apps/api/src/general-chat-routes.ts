@@ -706,6 +706,10 @@ export const registerGeneralChatRoutes = (options: GeneralChatRouteOptions): voi
         return reply;
       }
       sendEvent(reply, {
+        type: "queued",
+        data: { run_id: run.id, timestamp: new Date().toISOString() }
+      });
+      sendEvent(reply, {
         type: "run.started",
         data: { run_id: run.id, timestamp: new Date().toISOString() }
       });
@@ -847,6 +851,18 @@ export const registerGeneralChatRoutes = (options: GeneralChatRouteOptions): voi
             options.store.failModelUsage(run.id, event.route.attempt, event.errorCode);
             const hold = mainHolds.get(event.route.attempt);
             if (hold) options.accountStore?.uncertainReservation(hold, "main");
+          } else if (event.type === "tool.call") {
+            // Forward the validated call so the chat plan can measure tool time
+            // from a real event; no partial argument deltas are ever forwarded.
+            sendEvent(reply, {
+              type: "tool.call",
+              data: {
+                run_id: run.id,
+                id: event.id,
+                name: event.name,
+                arguments: event.arguments
+              }
+            });
           } else if (event.type === "text.delta") {
             if (prepared.relay) {
               pendingEnglish += event.delta;
