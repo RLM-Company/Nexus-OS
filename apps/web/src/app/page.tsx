@@ -1476,6 +1476,16 @@ export default function Home() {
         emitChatTaskEvent(taskPlanScopeRef.current, { type: "run.started" });
       });
 
+      source.addEventListener("queued", () => {
+        if (!isCurrent()) return;
+        emitChatTaskEvent(taskPlanScopeRef.current, { type: "queue" });
+      });
+
+      source.addEventListener("tool.call", () => {
+        if (!isCurrent()) return;
+        emitChatTaskEvent(taskPlanScopeRef.current, { type: "tool" });
+      });
+
       source.addEventListener("message.started", (raw) => {
         if (!isCurrent()) return;
         const event = JSON.parse(String(raw.data)) as {
@@ -1628,6 +1638,14 @@ export default function Home() {
         setError(null);
         setRunPhase("running");
         emitChatTaskEvent(taskPlanScopeRef.current, { type: "run.started" });
+      });
+      source.addEventListener("queued", () => {
+        if (!isCurrent()) return;
+        emitChatTaskEvent(taskPlanScopeRef.current, { type: "queue" });
+      });
+      source.addEventListener("tool.call", () => {
+        if (!isCurrent()) return;
+        emitChatTaskEvent(taskPlanScopeRef.current, { type: "tool" });
       });
       source.addEventListener("message.started", (raw) => {
         if (!isCurrent()) return;
