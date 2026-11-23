@@ -118,6 +118,14 @@ export function StudioDocumentLibrary({ projectId, onCompose, onProjectCreated }
           if (!controller.signal.aborted) {
             setAnswers(data.answers);
             setAnswerAvailable(data.available);
+            // A marker from a lost response survives reload: show the explicit
+            // reconciliation action until the exact run is attached.
+            const pending = projectId
+              ? data.answers
+                  .map((item) => readAnswerRetry(projectId, item.id))
+                  .find((marker) => marker !== undefined)
+              : undefined;
+            if (pending) setUncertainRetry(pending.sourceId);
             const unfinished = data.answers.find(
               (a) => a.status === "running" || a.status === "queued"
             );
@@ -978,13 +986,13 @@ export function StudioDocumentLibrary({ projectId, onCompose, onProjectCreated }
                   <button
                     type="button"
                     disabled={!!activeAnswerId || !!retryPending || busy || !answerAvailable}
+                    aria-busy={retryPending === saved.id || undefined}
+                    data-busy={retryPending === saved.id || undefined}
                     onClick={() => void retryAnswer(saved.id)}
                   >
                     {uncertainRetry === saved.id
                       ? "Сверить и повторить анализ"
-                      : retryPending === saved.id
-                        ? "Запуск повтора…"
-                        : "Повторить анализ"}
+                      : "Повторить анализ"}
                   </button>
                 )}
                 {saved.status === "done" && (
