@@ -71,13 +71,18 @@ const doneAnswer = (id: string) => ({
   ]
 });
 
-/** Routes must be installed BEFORE navigation so the initial answers GET is stubbed. */
+/** Status line lives in the saved-answers section; other UI also has role=status. */
+const statusOf = (library: ReturnType<typeof pageLibrary>) =>
+  library.getByRole("region", { name: "Сохранённые ответы модели" }).getByRole("status").first();
+
+const pageLibrary = (page: Page) => page.getByRole("region", { name: regionName, exact: true });
+
 async function open(page: Page, id: string, path: string, answers: () => unknown[]) {
   await page.route(`**${path}/answers`, (route) =>
     route.fulfill({ json: { answers: answers(), available: true } })
   );
   await page.goto(`/?project=${id}&surface=files`);
-  return page.getByRole("region", { name: regionName, exact: true });
+  return pageLibrary(page);
 }
 
 test("incomplete coverage -> retry -> fresh run -> report, with double-click guard", async ({
@@ -92,7 +97,7 @@ test("incomplete coverage -> retry -> fresh run -> report, with double-click gua
   const library = await open(page, id, path, () => answers);
   await page.route(`**${path}/answers/${sourceId}/retry`, async (route) => {
     retryPosts++;
-    await new Promise((resolve) => setTimeout(resolve, 40));
+    await new Promise((resolve) => setTimeout(resolve, 80));
     answers = [failedAnswer(sourceId), doneAnswer(newId)];
     await route.fulfill({ status: 202, json: doneAnswer(newId) });
   });
@@ -100,21 +105,21 @@ test("incomplete coverage -> retry -> fresh run -> report, with double-click gua
     route.fulfill({ json: doneAnswer(newId) })
   );
 
-  await expect(library.getByRole("status")).toContainText("INCOMPLETE_COVERAGE");
+  await expect(statusOf(library)).toContainText("INCOMPLETE_COVERAGE");
   await expect(library.getByLabel("Покрытие анализа")).toContainText("Не обработано: 1");
   await expect(library.getByLabel("Покрытие анализа")).toContainText(
     "contract.pdf — 1 из 2 фрагментов, ошибок: 1"
   );
   const retry = library.getByRole("button", { name: "Повторить анализ", exact: true });
   await expect(retry).toBeEnabled();
-  await retry.click();
-  await retry.click({ force: true });
+  // Two rapid clicks in the same tick: the in-flight marker must collapse them.
+  await Promise.all([retry.click(), retry.click({ force: true })]);
   await expect.poll(() => retryPosts).toBe(1);
-  await expect(library.getByRole("status")).toHaveText("Ответ сохранён", { timeout: 10_000 });
+  await expect(statusOf(library)).toHaveText("Ответ сохранён", { timeout: 10_000 });
   await expect(library.getByLabel("Источники ответа")).toContainText("contract.pdf, стр. 2");
 });
 
-test("lost retry response reconciles history instead of re-dispatching after reload", async ({
+test("lost retry response requires a fresh explicit action after reconciliation", async ({
   page,
   request
 }) => {
@@ -126,6 +131,7 @@ test("lost retry response reconciles history instead of re-dispatching after rel
   const library = await open(page, id, path, () => answers);
   await page.route(`**${path}/answers/${sourceId}/retry`, async (route) => {
     retryPosts++;
+    // The server committed, but the browser never receives the acknowledgement.
     answers = [failedAnswer(sourceId), doneAnswer(newId)];
     await route.abort("failed");
   });
@@ -134,10 +140,15 @@ test("lost retry response reconciles history instead of re-dispatching after rel
   );
 
   await library.getByRole("button", { name: "Повторить анализ", exact: true }).click();
-  await expect(library.getByRole("status")).toHaveText("Ответ сохранён");
+  await expect(statusOf(library)).toContainText("INCOMPLETE_COVERAGE");
+  await expect(library.getByText(/Исход запроса неизвестен/)).toBeVisible();
+  expect(retryPosts).toBe(1); // no blind re-dispatch after the lost response
   await page.reload();
-  await expect(library.getByRole("status")).toHaveText("Ответ сохранён");
-  expect(retryPosts).toBe(1);
+  await expect(statusOf(library)).toContainText("INCOMPLETE_COVERAGE");
+  // A fresh explicit click reconciles history and attaches the already-created run.
+  await library.getByRole("button", { name: "Сверить и повторить анализ", exact: true }).click();
+  await expect(statusOf(library)).toHaveText("Ответ сохранён");
+  expect(retryPosts).toBe(1); // reconciliation did not create a second paid run
 });
 
 test("cancelled deep run can be retried explicitly", async ({ page, request }) => {
@@ -156,7 +167,7 @@ test("cancelled deep run can be retried explicitly", async ({ page, request }) =
     route.fulfill({ json: doneAnswer(newId) })
   );
 
-  await expect(library.getByRole("status")).toHaveText("Запрос отменён");
+  await expect(statusOf(library)).toHaveText("Запрос отменён");
   await library.getByRole("button", { name: "Повторить анализ", exact: true }).click();
-  await expect(library.getByRole("status")).toHaveText("Ответ сохранён");
+  await expect(statusOf(library)).toHaveText("Ответ сохранён");
 });
