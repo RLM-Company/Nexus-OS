@@ -19,9 +19,15 @@ import {
 
 class MemoryStorage {
   values = new Map();
-  getItem(key) { return this.values.get(key) ?? null; }
-  setItem(key, value) { this.values.set(key, value); }
-  removeItem(key) { this.values.delete(key); }
+  getItem(key) {
+    return this.values.get(key) ?? null;
+  }
+  setItem(key, value) {
+    this.values.set(key, value);
+  }
+  removeItem(key) {
+    this.values.delete(key);
+  }
 }
 
 const base = {
@@ -37,7 +43,10 @@ const base = {
 };
 
 const results = [];
-const check = (name, fn) => { fn(); results.push(name); };
+const check = (name, fn) => {
+  fn();
+  results.push(name);
+};
 
 check("очередь → планирование → выполнение", () => {
   let plan = createChatTaskPlan(base);
@@ -57,7 +66,10 @@ check("пауза отделена от ошибки и разрешения", (
   const restored = plan; // в реальности это localStorage
   plan = resumeActiveStep(restored);
   assert.equal(plan.steps[0].status, "running");
-  let gated = blockActiveStep(startStep(createChatTaskPlan(base), "a", 1000), "awaiting_permission");
+  let gated = blockActiveStep(
+    startStep(createChatTaskPlan(base), "a", 1000),
+    "awaiting_permission"
+  );
   assert.equal(resumeActiveStep(gated).steps[0].status, "blocked");
   assert.equal(unblockActiveStep(gated).steps[0].status, "running");
 });
@@ -81,7 +93,11 @@ check("разные таймеры и честное отсутствие дан
   plan = recordInterval(plan, "pause", 1500, 1600);
   plan = recordInterval(plan, "await_owner", 1600, 1800);
   assert.deepEqual(planSummary(plan).timing, {
-    model: 300, tool: 150, queue: 50, pause: 100, await_owner: 200
+    model: 300,
+    tool: 150,
+    queue: 50,
+    pause: 100,
+    await_owner: 200
   });
   assert.equal(planSummary(plan).total_ms, 800);
 });

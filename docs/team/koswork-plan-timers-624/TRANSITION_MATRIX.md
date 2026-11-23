@@ -12,23 +12,23 @@
 
 ## Матрица
 
-| # | Событие / действие | Ожидаемый progress | Активный шаг | Таймер | Источник события | Факт в #624 | Вердикт |
-|---|--------------------|--------------------|--------------|--------|------------------|-------------|---------|
-| 1 | `announceChatTaskPlan` | `queued` | `null` | все «—» | CustomEvent, не модель | панель создаётся, активного нет | OK |
-| 2 | `run.started` | `running` | `a` | model открыт | SSE `run.started` | подхват первого pending-шага | OK |
-| 3 | уточнение с вариантом (думаем/ждём) | `await_owner` | `a` | await_owner | `kosmora:clarification` → answer/skip | событие `await_owner` описано, но **не испускается** из `page.tsx` | GAP-1 |
-| 4 | уточнение свободным ответом | `await_owner` | `a` | await_owner закрывается по ответу | тот же канал | ответ карточки не закрывает интервал | GAP-1 |
-| 5 | optional skip | `running` | `a` | нет await_owner | `skipClarification` |ackers status `skipped`, но план не знает | GAP-1 |
-| 6 | `message.delta` | `running` | `a` | model | SSE `message.delta` | OK | OK |
-| 7 | `tool` | `running` | `a` | tool | Model Gateway `tool.call` | событие есть в типе, нет emit в `page.tsx` | GAP-2 |
-| 8 | `pause` | `await_owner` | `a` (paused) | pause | управление Koswork | `pauseActiveStep` ставит `blocked` | **REG-1** |
-| 9 | `resume` | `running` | `a` | pause закрыт | управление Koswork | `resumeActiveStep` снимает `blocked`, включая ошибку | **REG-1** |
-| 10 | блокировка разрешений | `await_owner` | `a` (blocked) | await_owner | `WAITING_CONFIRMATION`/`step-up` | `blocked` не различает причину | **REG-2** |
-| 11 | `run.failed` | `closed` | `null` | интервал закрыт | SSE `run.failed` | шаг `blocked`, актив снят | OK (но причина не сохраняется) |
-| 12 | `run.completed` | `running` | `b` | model | SSE `run.completed` | `next.status = "running"` без `started_at` | **REG-3** |
-| 13 | повторный `run.started` | без изменений | `b` | без изменений | SSE | `startStep` refuse при active | OK |
-| 14 | `run.cancelled` | `closed` | `null` | — | SSE | OK | OK |
-| 15 | перезагрузка на любом шаге | совпадает с сервером/LocalStorage | см. above | сохранённые интервалы | `readChatTaskPlan` | цель/актив/статус восстанавливаются | OK (кроме REG-3) |
+| #   | Событие / действие                  | Ожидаемый progress                | Активный шаг  | Таймер                            | Источник события                      | Факт в #624                                                        | Вердикт                        |
+| --- | ----------------------------------- | --------------------------------- | ------------- | --------------------------------- | ------------------------------------- | ------------------------------------------------------------------ | ------------------------------ |
+| 1   | `announceChatTaskPlan`              | `queued`                          | `null`        | все «—»                           | CustomEvent, не модель                | панель создаётся, активного нет                                    | OK                             |
+| 2   | `run.started`                       | `running`                         | `a`           | model открыт                      | SSE `run.started`                     | подхват первого pending-шага                                       | OK                             |
+| 3   | уточнение с вариантом (думаем/ждём) | `await_owner`                     | `a`           | await_owner                       | `kosmora:clarification` → answer/skip | событие `await_owner` описано, но **не испускается** из `page.tsx` | GAP-1                          |
+| 4   | уточнение свободным ответом         | `await_owner`                     | `a`           | await_owner закрывается по ответу | тот же канал                          | ответ карточки не закрывает интервал                               | GAP-1                          |
+| 5   | optional skip                       | `running`                         | `a`           | нет await_owner                   | `skipClarification`                   | ackers status `skipped`, но план не знает                          | GAP-1                          |
+| 6   | `message.delta`                     | `running`                         | `a`           | model                             | SSE `message.delta`                   | OK                                                                 | OK                             |
+| 7   | `tool`                              | `running`                         | `a`           | tool                              | Model Gateway `tool.call`             | событие есть в типе, нет emit в `page.tsx`                         | GAP-2                          |
+| 8   | `pause`                             | `await_owner`                     | `a` (paused)  | pause                             | управление Koswork                    | `pauseActiveStep` ставит `blocked`                                 | **REG-1**                      |
+| 9   | `resume`                            | `running`                         | `a`           | pause закрыт                      | управление Koswork                    | `resumeActiveStep` снимает `blocked`, включая ошибку               | **REG-1**                      |
+| 10  | блокировка разрешений               | `await_owner`                     | `a` (blocked) | await_owner                       | `WAITING_CONFIRMATION`/`step-up`      | `blocked` не различает причину                                     | **REG-2**                      |
+| 11  | `run.failed`                        | `closed`                          | `null`        | интервал закрыт                   | SSE `run.failed`                      | шаг `blocked`, актив снят                                          | OK (но причина не сохраняется) |
+| 12  | `run.completed`                     | `running`                         | `b`           | model                             | SSE `run.completed`                   | `next.status = "running"` без `started_at`                         | **REG-3**                      |
+| 13  | повторный `run.started`             | без изменений                     | `b`           | без изменений                     | SSE                                   | `startStep` refuse при active                                      | OK                             |
+| 14  | `run.cancelled`                     | `closed`                          | `null`        | —                                 | SSE                                   | OK                                                                 | OK                             |
+| 15  | перезагрузка на любом шаге          | совпадает с сервером/LocalStorage | см. above     | сохранённые интервалы             | `readChatTaskPlan`                    | цель/актив/статус восстанавливаются                                | OK (кроме REG-3)               |
 
 ## Найденные регрессии
 
