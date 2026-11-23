@@ -318,4 +318,133 @@ describe("real authenticated HTTP document answer flow (fixture transport, zero 
       db.close();
     }
   });
+
+  it("replays incomplete coverage -> failed -> retry -> done -> sourced report", async () => {
+    const db = openDatabase(":memory:");
+    let app: ReturnType<typeof buildApp> | undefined;
+    try {
+      await runMigrations(db);
+      const projectStore = new ProjectStore(db.sqlite);
+      const project = projectStore.createProject("Coverage replay", "coverage-replay").project.id;
+      const library = new DocumentLibraryStore(db.sqlite);
+      const answers = new DocumentAnswerStore(db.sqlite);
+      const budget: DocumentAnswerOwnerBudget = {
+        reserve: () => true,
+        reconcile: () => undefined,
+        uncertain: () => undefined
+      };
+      const gateway = {
+        assertRoute: () => undefined,
+        async *stream() {
+          yield { type: "route.selected" as const, route };
+          yield {
+            type: "text.delta" as const,
+            delta: "Документ говорит: «Конец договора в октябре 2027» [S1]"
+          };
+          yield {
+            type: "response.completed" as const,
+            provider: "fixture",
+            model: "fixture",
+            finishReason: "stop",
+            usage: { inputTokens: 210, outputTokens: 20 },
+            route,
+            calculatedCost: null
+          };
+        }
+      } as DocumentAnswerTransport;
+      const service = new DocumentAnswerService(
+        library,
+        answers,
+        gateway,
+        new ChatService({
+          preferredProvider: "fixture",
+          preferredModelAlias: "fixture",
+          fallbackAllowed: false
+        }),
+        budget
+      );
+      app = buildApp({
+        config: loadServerConfig({ NODE_ENV: "test", MOCK_PROVIDER_MODE: "success" }),
+        database: db,
+        projectStore,
+        documentLibrary: library,
+        documentAnswerService: service
+      });
+      const url = `/api/v1/projects/${project}/document-library`;
+      const raw = Buffer.from("Конец договора в октябре 2027");
+      const staged = await app.inject({
+        method: "POST",
+        url,
+        headers: {
+          "content-type": "application/octet-stream",
+          "x-kosmora-file-name": "contract.txt"
+        },
+        payload: raw
+      });
+      const fileId = staged.json<{ id: string }>().id;
+      await app.inject({
+        method: "PUT",
+        url: `${url}/${fileId}/index`,
+        payload: { pages: [{ page: null, text: raw.toString() }] }
+      });
+      const coverage = {
+        total_chunks: 1,
+        analyzed_chunks: 0,
+        failed_chunks: 0,
+        phase: "synthesis" as const,
+        files: [
+          {
+            name: "contract.txt",
+            chunks: 1,
+            analyzed_chunks: 0,
+            failed_chunks: 0,
+            is_pdf: false,
+            total_pages: null,
+            indexed_pages: null
+          }
+        ]
+      };
+      const failedRun = answers.create(
+        project,
+        "local-owner",
+        "Что в договоре?",
+        [fileId],
+        [],
+        coverage
+      );
+      expect(answers.transition(project, "local-owner", failedRun.id, "queued", "running")).toBe(
+        true
+      );
+      expect(
+        answers.transition(project, "local-owner", failedRun.id, "running", "failed", {
+          error: "INCOMPLETE_COVERAGE"
+        })
+      ).toBe(true);
+      const failed = answers.get(project, "local-owner", failedRun.id)!;
+      expect(failed.error_code).toBe("INCOMPLETE_COVERAGE");
+      expect(failed.coverage).toMatchObject({ analyzed_chunks: 0, failed_chunks: 0 });
+
+      const retried = await app.inject({
+        method: "POST",
+        url: `${url}/answers/${failedRun.id}/retry`
+      });
+      expect(retried.statusCode).toBe(202);
+      const newId = retried.json<{ id: string }>().id;
+      expect(newId).not.toBe(failedRun.id);
+      await expect.poll(() => answers.get(project, "local-owner", newId)?.status).toBe("done");
+      const done = answers.get(project, "local-owner", newId)!;
+      expect(done.coverage).toMatchObject({
+        phase: "complete",
+        analyzed_chunks: 1,
+        failed_chunks: 0
+      });
+      expect(done.answer).toContain("contract.txt, строки 1–1");
+      expect(answers.get(project, "local-owner", failedRun.id)?.error_code).toBe(
+        "INCOMPLETE_COVERAGE"
+      );
+    } finally {
+      await app?.close();
+      db.close();
+    }
+  });
 });
