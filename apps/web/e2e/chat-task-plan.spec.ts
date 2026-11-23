@@ -1,4 +1,4 @@
-﻿import { randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { expect, test, type Page } from "@playwright/test";
 
 /** Stage-three "Задачи, план и таймеры в чатах" (owner approved 15 Nov 2026,
@@ -55,7 +55,9 @@ test("shows goal, active step and status counters with a collapsible plan", asyn
   await expect(panel(page)).toBeVisible();
   await expect(panel(page)).toContainText("Текущая цель");
   await expect(panel(page)).toContainText("Подготовить отчёт по проекту");
-  await expect(panel(page)).toContainText("Шагов: 3 · завершено 0 · выполняется 0 · ожидает 3");
+  await expect(panel(page)).toContainText(
+    "Шагов: 3 · завершено 0 · выполняется 0 · на паузе 0 · ожидает 3 · заблокировано 0"
+  );
   await expect(panel(page).getByText("Собрать данные")).toBeVisible();
   await panel(page).getByRole("button", { name: "Свернуть план" }).click();
   await expect(panel(page).getByText("Написать отчёт")).toHaveCount(0);
@@ -73,11 +75,11 @@ test("two dependent steps: first completes, second starts automatically, reload 
   await expect(panel(page).locator('[data-status="running"]')).toContainText("Собрать данные");
   await event(page, scope, "message.delta");
   await event(page, scope, "run.completed");
-  await expect(panel(page)).toContainText("завершено 1 · выполняется 1");
+  await expect(panel(page)).toContainText("завершено 1 · выполняется 1 · на паузе 0");
   await expect(panel(page)).toContainText("активный: Написать отчёт");
   await page.reload();
   await expect(panel(page)).toContainText("Подготовить отчёт по проекту");
-  await expect(panel(page)).toContainText("завершено 1 · выполняется 1");
+  await expect(panel(page)).toContainText("завершено 1 · выполняется 1 · на паузе 0");
   await expect(panel(page)).toContainText("активный: Написать отчёт");
   // A completed step is never restarted.
   await event(page, scope, "run.started");
@@ -105,6 +107,50 @@ test("failure blocks the active step without losing completed progress", async (
   await event(page, scope, "run.failed");
   await expect(panel(page)).toContainText("заблокировано 1");
   await expect(panel(page)).not.toContainText("активный:");
+});
+
+test("pause, permission gate and resume stay distinct through a reload", async ({ page }) => {
+  const scope = await chat(page);
+  await announce(page, scope);
+  await event(page, scope, "run.started");
+  await event(page, scope, "pause");
+  await expect(panel(page)).toContainText("на паузе 1 · ожидает 2 · заблокировано 0");
+  await expect(panel(page).locator('[data-status="paused"]')).toContainText(
+    "на паузе (пауза владельца)"
+  );
+  await page.reload();
+  await expect(panel(page)).toContainText("на паузе 1 · ожидает 2 · заблокировано 0");
+  await event(page, scope, "resume");
+  await expect(panel(page).locator('[data-status="running"]')).toContainText("Собрать данные");
+  await event(page, scope, "permission");
+  await expect(panel(page).locator('[data-status="blocked"]')).toContainText(
+    "заблокирован (ожидает разрешения)"
+  );
+  // A pause resume must not clear a permission gate.
+  await event(page, scope, "resume");
+  await expect(panel(page).locator('[data-status="blocked"]')).toContainText(
+    "заблокирован (ожидает разрешения)"
+  );
+  await event(page, scope, "approval");
+  await expect(panel(page).locator('[data-status="running"]')).toContainText("Собрать данные");
+});
+
+test("clarification answer closes the owner gate and the next step starts once", async ({
+  page
+}) => {
+  const scope = await chat(page);
+  await announce(page, scope);
+  await event(page, scope, "run.started");
+  await event(page, scope, "await_owner");
+  // The card is mounted in a project chat; this scenario drives the plan events
+  // emitted by its onResolved callback (option answer or skip).
+  await event(page, scope, "approval");
+  await event(page, scope, "run.completed");
+  await expect(panel(page)).toContainText("активный: Написать отчёт");
+  await expect(panel(page).locator('[data-status="running"]')).toHaveCount(1);
+  await event(page, scope, "run.started");
+  await expect(panel(page).locator('[data-status="running"]')).toHaveCount(1);
+  await expect(panel(page)).toContainText("активный: Написать отчёт");
 });
 
 test("a plan from another chat scope is never shown", async ({ page }) => {
