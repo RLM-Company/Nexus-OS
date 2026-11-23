@@ -52,12 +52,27 @@ apps/web: node ../../node_modules/prettier/bin/prettier.cjs --check <измен�
   → All matched files use Prettier code style!, exit 0
 ```
 
-Vitest/e2e в этой среде не запускаются: sandbox блокирует дочерний `spawn` (EPERM)
+Vitest/e2e локально не запускаются: sandbox блокирует дочерний `spawn` (EPERM)
 в `vite`/`rolldown`, а пост-install скрипты нативных пакетов (`esbuild`) создают
 тот же EPERM. Те же проверки продублированы в unit-тестах
 (`apps/web/src/app/chat-task-plan.test.ts`) и e2e
-(`apps/web/e2e/chat-task-plan.spec.ts`) для CI; локально использован прямой
+(`apps/web/e2e/chat-task-plan.spec.ts`); локально использован прямой
 прогон чистого автомата через Node 24.
+
+### CI PR #627
+
+После двух точечных правок (форматирование новых файлов и lint-ошибки в
+тесте: неиспользуемые импорты и `let` → `const`) все проверки CI на
+`4f7125c7409ad6b0167c402d065589eebe7d8717` зелёные:
+
+| Check                  | Результат |
+| ---------------------- | --------- |
+| Verify monorepo        | SUCCESS   |
+| Browser acceptance     | SUCCESS   |
+| Code sandbox isolation | SUCCESS   |
+
+Локально дополнительно: `eslint` на всех изменённых файлах — 0,
+`prettier --check .` — 0, `tsc --noEmit` — 0.
 
 ## Принципы правки
 
