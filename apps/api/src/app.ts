@@ -9,6 +9,7 @@ import { ComputerControlService } from "./computer-control/service.js";
 import { registerComputerControlRoutes } from "./computer-control/routes.js";
 import { registerApexRoutes } from "./apex-routes.js";
 import { registerConnectorRoutes } from "./connector-routes.js";
+import type { McpDiscovery } from "./mcp-discovery.js";
 import { registerProjectKnowledgeRoutes } from "./project-knowledge-routes.js";
 import { registerProjectAutomationRoutes } from "./project-automation-routes.js";
 import { ProjectAutomation } from "./project-automation.js";
@@ -237,6 +238,7 @@ import type { CanvasArtifactStore } from "@cosmora/db";
 import type { MediaService } from "./media/media-service.js";
 
 export interface AppDependencies {
+  mcpDiscovery?: McpDiscovery | undefined;
   indexedRecall?: IndexedMemoryRecall | undefined;
   semanticRanker?: ContextMemoryRanker | undefined;
   googleDrive?: GoogleDriveRuntime;
@@ -859,7 +861,15 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
     identityFor
   );
   registerRuntimeClockRoutes(app, dependencies.runtimeClock ?? new RuntimeClock());
-  registerConnectorRoutes(app, dependencies.policyStore, "owner");
+  registerConnectorRoutes(app, dependencies.policyStore, "owner", {
+    pilot: dependencies.mcpDiscovery,
+    projects: dependencies.projectStore,
+    stop: dependencies.emergencyStopStore,
+    ownerActive: (ownerId) =>
+      (dependencies.ownerPrivacy?.overview(ownerId).lifecycle ?? "active") === "active",
+    origin: dependencies.config.webOrigin,
+    identityFor
+  });
   if (dependencies.projectStore) registerApexRoutes(app, dependencies.projectStore, identityFor);
   if (dependencies.payStore)
     registerPayRoutes(app, {

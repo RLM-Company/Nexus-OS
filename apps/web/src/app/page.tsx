@@ -27,6 +27,9 @@ import { ChatItemMenu } from "./chat-item-menu";
 import { CreateProjectDialog } from "./create-project-dialog";
 import { ProfileOnboarding } from "./profile-onboarding";
 import { greetingByAssistantGender, type GreetingProfile } from "./profile-onboarding-core";
+import { ClarificationCardPanel } from "./clarification-card";
+import { ChatTaskPlanPanel } from "./chat-task-plan-panel";
+import { emitChatTaskEvent, useChatTaskPlan } from "./use-chat-task-plan";
 import { ChatSearchTrigger } from "./chat-search-trigger";
 import { ProjectTitleEditor } from "./project-title-editor";
 import { QuickSwitcher } from "./quick-switcher";
@@ -207,6 +210,7 @@ const SURFACE_TITLE: Record<WorkspaceSurface, string> = {
   images: "Изображения",
   video: "Видео",
   sound: "Sound",
+  music: "Music",
   "multi-agent": "Multi-Agent",
   apps: "Интеграции",
   features: "Возможности",
@@ -424,6 +428,12 @@ const composerDraftStorageKey = (projectId: string | null, chatId: string | null
 
 const isToolSurface = (value: string | null): value is ToolSurface =>
   TOOL_ITEMS.some((item) => item.id === value);
+/** Legacy `?surface=studio` links: the overview page was removed, so they open
+ * the first real Studio tool. Keeps shared links working without the catalog. */
+const resolveToolSurface = (value: string | null): ToolSurface | null => {
+  const resolved = value === "studio" ? "files" : value;
+  return isToolSurface(resolved) ? resolved : null;
+};
 
 const greetingSeed = (): number => {
   if (typeof crypto.getRandomValues === "function") {
@@ -610,6 +620,13 @@ export default function Home() {
     ),
     pins.chats
   );
+  // Koscode sidebar: group sessions by project and expose active task counts.
+  const codeSessionsByProject = projects
+    .map((project) => ({
+      project,
+      sessions: spaceChats.filter((chat) => chat.project_id === project.id)
+    }))
+    .filter((group) => group.sessions.length > 0);
   const matchingProjects = pinsFirst(
     navigationSearch
       ? projects.filter((project) =>
@@ -623,6 +640,10 @@ export default function Home() {
   const composerDraftKey = pendingProjectId
     ? `${COMPOSER_DRAFT_STORAGE_PREFIX}project-new-chat:${pendingProjectId}`
     : composerDraftStorageKey(activeProject?.id ?? selectedProjectRef.current, activeLocalChatId);
+  const taskPlanScope = activeProject?.id ?? activeLocalChatId ?? "new-chat";
+  const taskPlanScopeRef = useRef(taskPlanScope);
+  taskPlanScopeRef.current = taskPlanScope;
+  const taskPlan = useChatTaskPlan(taskPlanScope);
   const composerActions = draftActions.get(composerDraftKey) ?? DEFAULT_COMPOSER_ACTIONS;
   const updateDraftActions = (
     key: string,
@@ -1014,21 +1035,30 @@ export default function Home() {
         setWorkspaceSurfaceHydrated(true);
         return;
       }
-      if (isToolSurface(requestedSurface)) {
-        setSurface(requestedSurface);
-        if (["studio", "files", "images", "video", "sound"].includes(requestedSurface))
+      const resolvedSurface = resolveToolSurface(requestedSurface);
+      if (resolvedSurface) {
+        if (requestedSurface === "studio") {
+          // Old Studio-overview links now point at the real tool, so the shared
+          // URL must not keep advertising the removed catalog.
+          const url = new URL(window.location.href);
+          url.searchParams.set("surface", resolvedSurface);
+          window.history.replaceState(window.history.state, "", url.toString());
+        }
+        setSurface(resolvedSurface);
+        if (["files", "images", "video", "sound", "music"].includes(resolvedSurface))
           setStudioExpanded(true);
         setWorkspaceSurfaceHydrated(true);
         return;
       }
       const savedSurface = window.localStorage.getItem(WORKSPACE_SURFACE_STORAGE_KEY);
-      if (isToolSurface(savedSurface)) {
-        if (savedSurface === "work" || savedSurface === "code") {
-          setChatMode(savedSurface === "code" ? "coscode" : "work");
-          setCodeSpace(savedSurface === "code");
+      const resolvedSaved = resolveToolSurface(savedSurface);
+      if (resolvedSaved) {
+        if (resolvedSaved === "work" || resolvedSaved === "code") {
+          setChatMode(resolvedSaved === "code" ? "coscode" : "work");
+          setCodeSpace(resolvedSaved === "code");
           setSurface("manager");
-        } else setSurface(savedSurface);
-        if (["studio", "files", "images", "video", "sound"].includes(savedSurface))
+        } else setSurface(resolvedSaved);
+        if (["files", "images", "video", "sound", "music"].includes(resolvedSaved))
           setStudioExpanded(true);
       }
     } catch {
@@ -1443,6 +1473,7 @@ export default function Home() {
         if (!isCurrent()) return;
         setError(null);
         setRunPhase("running");
+        emitChatTaskEvent(taskPlanScopeRef.current, { type: "run.started" });
       });
 
       source.addEventListener("message.started", (raw) => {
@@ -1468,6 +1499,7 @@ export default function Home() {
       source.addEventListener("message.delta", (raw) => {
         if (!isCurrent()) return;
         setRunPhase("streaming");
+        emitChatTaskEvent(taskPlanScopeRef.current, { type: "message.delta" });
         const event = JSON.parse(String(raw.data)) as {
           data: { message_id: string; seq: number; delta: string };
         };
@@ -1495,6 +1527,7 @@ export default function Home() {
         viewRequestRef.current += 1;
         finished = true;
         closeSource();
+        emitChatTaskEvent(taskPlanScopeRef.current, { type: "run.completed" });
         setLastCompletedRoute({
           provider: event.data.provider,
           model: event.data.model_resolved
@@ -1515,6 +1548,7 @@ export default function Home() {
 
       source.addEventListener("run.failed", () => {
         if (!isCurrent()) return;
+        emitChatTaskEvent(taskPlanScopeRef.current, { type: "run.failed" });
         terminalRunRef.current = { runId: accepted.run_id, phase: "failed" };
         viewRequestRef.current += 1;
         finished = true;
@@ -1528,6 +1562,7 @@ export default function Home() {
 
       source.addEventListener("run.cancelled", () => {
         if (!isCurrent()) return;
+        emitChatTaskEvent(taskPlanScopeRef.current, { type: "run.cancelled" });
         terminalRunRef.current = { runId: accepted.run_id, phase: "cancelled" };
         viewRequestRef.current += 1;
         finished = true;
@@ -1592,6 +1627,7 @@ export default function Home() {
         if (!isCurrent()) return;
         setError(null);
         setRunPhase("running");
+        emitChatTaskEvent(taskPlanScopeRef.current, { type: "run.started" });
       });
       source.addEventListener("message.started", (raw) => {
         if (!isCurrent()) return;
@@ -1611,6 +1647,7 @@ export default function Home() {
       source.addEventListener("message.delta", (raw) => {
         if (!isCurrent()) return;
         setRunPhase("streaming");
+        emitChatTaskEvent(taskPlanScopeRef.current, { type: "message.delta" });
         const event = JSON.parse(String(raw.data)) as {
           data: { message_id: string; seq: number; delta: string };
         };
@@ -1637,6 +1674,7 @@ export default function Home() {
         };
         finished = true;
         closeSource();
+        emitChatTaskEvent(taskPlanScopeRef.current, { type: "run.completed" });
         setLastCompletedRoute({
           provider: event.data.provider,
           model: event.data.model_resolved
@@ -1655,6 +1693,7 @@ export default function Home() {
       });
       source.addEventListener("run.failed", (raw) => {
         if (!isCurrent()) return;
+        emitChatTaskEvent(taskPlanScopeRef.current, { type: "run.failed" });
         terminalRunRef.current = { runId: accepted.run_id, phase: "failed" };
         const failure = JSON.parse(String(raw.data)) as { data: { error_code: string } };
         viewRequestRef.current += 1;
@@ -1697,6 +1736,7 @@ export default function Home() {
       });
       source.addEventListener("run.cancelled", () => {
         if (!isCurrent()) return;
+        emitChatTaskEvent(taskPlanScopeRef.current, { type: "run.cancelled" });
         terminalRunRef.current = { runId: accepted.run_id, phase: "cancelled" };
         viewRequestRef.current += 1;
         finished = true;
@@ -2404,6 +2444,46 @@ export default function Home() {
             </Link>
           </div>
         )}
+        {codeSpace && (
+          <section className="sidebar-section coscode-sessions" aria-label="Сессии Koscode">
+            <div className="coscode-sessions-heading">
+              <span>Активные задачи</span>
+              <small>{spaceChats.length}</small>
+            </div>
+            {codeSessionsByProject.length === 0 ? (
+              <p className="empty-projects">Нет сессий с проектом.</p>
+            ) : (
+              codeSessionsByProject.map(({ project, sessions }) => (
+                <div className="coscode-session-group" key={project.id}>
+                  <div className="coscode-session-title">
+                    <strong>{project.title}</strong>
+                    <small>{sessions.length}</small>
+                  </div>
+                  {sessions.slice(0, 4).map((chat) => (
+                    <button
+                      type="button"
+                      key={chat.id}
+                      className={
+                        activeLocalChatId === chat.id
+                          ? "project-chat-item active"
+                          : "project-chat-item"
+                      }
+                      onClick={() => void openLocalChat(chat.id)}
+                    >
+                      <span>{chat.title}</span>
+                    </button>
+                  ))}
+                  <Link
+                    className="coscode-session-link"
+                    href={`/code-agent?project=${encodeURIComponent(project.id)}`}
+                  >
+                    Задачи и проверки <WorkspaceIcon name="arrow" />
+                  </Link>
+                </div>
+              ))
+            )}
+          </section>
+        )}
 
         <button className="new-project" onClick={newChat}>
           <span>
@@ -2638,6 +2718,7 @@ export default function Home() {
                   "images",
                   "video",
                   "sound",
+                  "music",
                   "settings",
                   "apps",
                   "features",
@@ -3452,6 +3533,20 @@ export default function Home() {
             <ProfileOnboarding onSaved={setGreetingProfile} />
           </>
         ) : null}
+
+        {taskPlan.plan && <ChatTaskPlanPanel plan={taskPlan.plan} onChange={taskPlan.setPlan} />}
+
+        {activeProject && (
+          <ClarificationCardPanel
+            projectId={activeProject.id}
+            taskScope={activeProject.id}
+            onDraft={(answer) => {
+              setDraft(answer);
+              saveBrowserDraft();
+              composerRef.current?.focus();
+            }}
+          />
+        )}
 
         <form
           autoComplete="off"

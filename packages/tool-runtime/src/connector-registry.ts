@@ -17,6 +17,8 @@ import type {
  * registry, descriptor, input or returned result.
  */
 export interface ConnectorTransport {
+  /** The transport may commit its receipt in the same database transaction as the effect. */
+  mayCompleteInTransaction?: boolean;
   execute(input: unknown, context: ToolExecutionContext): Promise<unknown>;
 }
 
@@ -108,6 +110,7 @@ export class ConnectorRegistry {
       const transport = entry.transport;
       const tool: GuardedTool<unknown, unknown> = {
         id: entry.toolId,
+        ...(transport.mayCompleteInTransaction ? { mayCompleteInTransaction: true } : {}),
         resolveCapabilities: () => entry.operation.capability_ids,
         execute: (input, context) => transport.execute(input, context)
       };

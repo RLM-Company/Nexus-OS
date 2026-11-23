@@ -1,0 +1,65 @@
+{
+  "format": "kosmora.koswork-acceptance.v1",
+  "version": 1,
+  "goal": "Подготовить короткий отчёт о бюджете лунной станции по двум источникам.",
+  "sources": [
+    {
+      "id": "source-a",
+      "file": "source-a.txt",
+      "facts": { "amount": 19700, "article": "00123", "date": "2026-11-07" }
+    },
+    {
+      "id": "source-b",
+      "file": "source-b.txt",
+      "facts": { "amount": 4300, "article": "00456", "date": "2026-11-08" }
+    }
+  ],
+  "derived": {
+    "total_amount": 24000,
+    "articles": ["00123", "00456"],
+    "formula": "19700 + 4300 = 24000"
+  },
+  "final_document": {
+    "name": "budget-report.docx",
+    "must_contain": ["24 000", "00123", "00456", "SELENE-047"]
+  },
+  "scenarios": {
+    "normal": {
+      "steps": ["read_source_a", "read_source_b", "calculate_dependency", "create_docx"],
+      "model_requests": 6,
+      "expected_status": "completed"
+    },
+    "paused_resumed": {
+      "pause_after": "read_source_a",
+      "resume_explicit": true,
+      "no_replay_of_completed_steps": true,
+      "model_requests": 6
+    },
+    "restarted": {
+      "restart_after": "calculate_dependency",
+      "completed_steps_kept": ["read_source_a", "read_source_b", "calculate_dependency"],
+      "explicit_continuation_required": true
+    },
+    "partial": {
+      "completed_steps": 1,
+      "total_steps": 4,
+      "complete": false,
+      "must_expose": ["complete:false", "completed_steps:1"]
+    },
+    "retry_new_date": {
+      "new_date": "2026-11-15",
+      "invariant": {
+        "total_amount": 24000,
+        "articles": ["00123", "00456"],
+        "formula_unchanged": true
+      },
+      "explicit_retry_required": true
+    }
+  },
+  "coverage_rules": {
+    "no_automatic_replay_after_uncertain_response": true,
+    "completed_steps_never_reissued": true,
+    "partial_result_not_presented_as_complete": true,
+    "sources_are_untrusted_data": true
+  }
+}

@@ -11,6 +11,7 @@ import { StudioDataSurface } from "./studio-data-workbench";
 import { MediaWorkbench } from "./media-generation/media-workbench";
 import { SitesWorkbench } from "./sites/sites-workbench";
 import { GamesWorkbench } from "./games/games-workbench";
+import { McpIntegration } from "./mcp-integration";
 
 import type { ChatAttachment } from "@cosmora/contracts/chat-attachments";
 
@@ -28,6 +29,7 @@ export type ToolSurface =
   | "images"
   | "video"
   | "sound"
+  | "music"
   | "apps"
   | "features"
   | "settings";
@@ -36,11 +38,11 @@ export const TOOL_ITEMS: { id: ToolSurface; label: string; description: string }
   { id: "code", label: "Koscode", description: "Задачи разработки" },
   { id: "multi-agent", label: "Multi-Agent", description: "Команда и роли" },
   { id: "skills", label: "Skills", description: "Навыки и специализации" },
-  { id: "studio", label: "Kosmora Studio", description: "Изображения, видео и звук" },
   { id: "files", label: "Анализ файлов", description: "Документы, данные и код" },
   { id: "images", label: "Изображения", description: "Кадр, стиль и композиция" },
   { id: "video", label: "Видео", description: "Сцена и движение" },
-  { id: "sound", label: "Sound", description: "Голос, музыка и атмосфера" },
+  { id: "sound", label: "Sound", description: "Озвучивание текста и записи" },
+  { id: "music", label: "Music", description: "Музыка и атмосфера" },
   { id: "research", label: "Deep Research", description: "Поиск, источники и отчёты" },
   { id: "presentations", label: "Презентации", description: "Слайды и PPTX" },
   { id: "sites", label: "Сайты", description: "Идея, структура и реализация" },
@@ -50,9 +52,17 @@ export const TOOL_ITEMS: { id: ToolSurface; label: string; description: string }
   { id: "settings", label: "Настройки", description: "Ваше пространство" }
 ];
 export const STUDIO_ITEMS = TOOL_ITEMS.filter((item) =>
-  ["files", "images", "video", "sound", "research", "presentations", "sites", "games"].includes(
-    item.id
-  )
+  [
+    "files",
+    "images",
+    "video",
+    "sound",
+    "music",
+    "research",
+    "presentations",
+    "sites",
+    "games"
+  ].includes(item.id)
 );
 export type UiPreferences = { compact: boolean; largeText: boolean };
 type OwnerSessionView = {
@@ -602,104 +612,21 @@ function Code({ onCompose }: Props) {
   );
 }
 
-function Media({ surface }: { surface: "images" | "video" | "sound" }) {
+function Media({ surface }: { surface: "images" | "video" | "sound" | "music" }) {
   return <MediaWorkbench key={surface} surface={surface} />;
 }
 
-function Studio({ onNavigate }: Props) {
-  const tools = {
-    files: {
-      description: "Читайте документы, находите нужные фрагменты и готовьте выборку для чата.",
-      action: "Открыть анализ",
-      status: "Локальный анализ"
-    },
-    images: {
-      description: "Создавайте изображения: описание, параметры, референсы и результат.",
-      action: "Открыть студию",
-      status: "Медиа-студия"
-    },
-    video: {
-      description: "Настройте сцену, формат, длительность и визуальные референсы.",
-      action: "Открыть студию",
-      status: "Медиа-студия"
-    },
-    sound: {
-      description: "Озвучивайте текст и сохраняйте записи.",
-      action: "Открыть студию",
-      status: "Медиа-студия"
-    },
-    research: {
-      description: "Исследуйте тему с источниками и отчётом.",
-      action: "Открыть Deep Research",
-      status: "Поиск и отчёты"
-    },
-    presentations: {
-      description: "Соберите слайды и экспортируйте PPTX.",
-      action: "Открыть презентации",
-      status: "Слайды"
-    },
-    sites: {
-      description: "Создайте страницу с ИИ, отредактируйте HTML и сохраните версии.",
-      action: "Создать сайт",
-      status: "HTML и CSS"
-    },
-    games: {
-      description:
-        "Разрабатывайте браузерные игры: код, запуск, отладка, версии и экспорт проекта.",
-      action: "Создать игру",
-      status: "Прототипирование"
-    }
-  } as const;
+/** The Studio overview page was removed per the stage-three instruction.
+ * Old `?surface=studio` links now open the first real tool instead of a card
+ * catalog; no overview grid is rendered. */
+function StudioRedirect({ onNavigate }: Props) {
+  useEffect(() => {
+    onNavigate("files");
+  }, [onNavigate]);
   return (
-    <>
-      <Header icon="studio" eyebrow="Файлы и медиа" title="Kosmora Studio">
-        Разберите документ или подготовьте идею для следующей работы.
-      </Header>
-      <div className={styles.studioGrid}>
-        {STUDIO_ITEMS.map((item) => {
-          const detail = tools[item.id as keyof typeof tools];
-          const featured = item.id === "files";
-          return (
-            <button
-              type="button"
-              className={`${styles.studioCard}${featured ? ` ${styles.studioFeatured}` : ""}`}
-              key={item.id}
-              onClick={() => onNavigate(item.id)}
-            >
-              <div className={styles.studioArt} aria-hidden="true">
-                <Icon name={item.id} />
-              </div>
-              <div className={styles.studioCopy}>
-                <span className={styles.studioStatus}>{detail.status}</span>
-                <h3>{item.label}</h3>
-                <p>{detail.description}</p>
-                {featured && (
-                  <div className={styles.studioFormats} aria-hidden="true">
-                    <span>PDF</span>
-                    <span>DOCX</span>
-                    <span>CSV</span>
-                    <span>Текст и код</span>
-                  </div>
-                )}
-                <span className={styles.studioAction}>
-                  {detail.action}
-                  <Icon name="arrow" />
-                </span>
-              </div>
-            </button>
-          );
-        })}
-      </div>
-      <div className={styles.studioFooter}>
-        <p>
-          Доступность генерации зависит от подключённой модели. Параметры и результаты собраны
-          внутри каждого инструмента.
-        </p>
-        <button type="button" onClick={() => onNavigate("features")}>
-          Возможности Studio <Icon name="arrow" />
-        </button>
-      </div>
-    </>
+    <Header icon="studio" eyebrow="Файлы и медиа" title="Kosmora Studio">
+      Открываю рабочие инструменты…
+    </Header>
   );
 }
 
@@ -830,42 +757,100 @@ function Skills({ agentStudioHref, controlCenterHref }: Props) {
   );
 }
 
-function Apps({ onNavigate, activeProjectId }: Props) {
+type ConnectorState = {
+  id: string;
+  app: string;
+  state: string;
+  transport_wired: boolean;
+  operations: number;
+};
+function Apps({ onNavigate, activeProjectId, projects }: Props) {
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState("all");
+  const [mcpProject, setMcpProject] = useState("");
+  const selectedMcpProject =
+    projects.find(({ id }) => id === (mcpProject || activeProjectId)) ?? projects[0];
+  const [connectors, setConnectors] = useState<ConnectorState[] | null>(null);
+  useEffect(() => {
+    const controller = new AbortController();
+    void fetch("/api/v1/integrations/status", {
+      cache: "no-store",
+      signal: controller.signal
+    })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data: { connectors?: ConnectorState[] } | null) => {
+        if (Array.isArray(data?.connectors)) setConnectors(data.connectors);
+      })
+      .catch(() => undefined);
+    return () => controller.abort();
+  }, []);
+  // `implemented` reflects code already shipped, not a hardcoded preview flag.
+  // Google Drive really works through personal-settings, GitHub through /github;
+  // Office is in the connector registry; Telegram is still planned.
   const applications = [
     {
+      id: "github",
       name: "GitHub",
       icon: "code",
       category: "Разработка",
       text: "Чтение и редактирование файлов, проверка изменений и создание черновика PR.",
-      available: true
+      implemented: true,
+      href: "/github",
+      action: "Открыть GitHub"
     },
     {
+      id: "graph",
       name: "Граф знаний",
       icon: "multi-agent",
       category: "Знания",
       text: "Узлы, связи, источники и история графа вашего проекта.",
-      available: true
+      implemented: true,
+      href: `/graph-workspace${activeProjectId ? `?projectId=${encodeURIComponent(activeProjectId)}` : ""}`,
+      action: "Открыть граф"
     },
     {
+      id: "google-drive",
       name: "Google Drive",
       icon: "projects",
       category: "Материалы",
-      text: "Документы и файлы для контекста проекта.",
-      available: false
+      text: "Документы и файлы для контекста проекта. Подключается в личных настройках.",
+      implemented: true,
+      href: "/personal-settings#drive-storage",
+      action: "Настроить Drive"
     },
     {
+      id: "office",
+      name: "Office",
+      icon: "files",
+      category: "Документы",
+      text: "DOCX, XLSX и PPTX через локальное рабочее пространство с проверкой байтов.",
+      implemented: true,
+      href: "/?surface=files",
+      action: "Открыть файлы"
+    },
+    {
+      id: "telegram",
       name: "Telegram",
       icon: "chats",
       category: "Общение",
       text: "Материалы из чатов и уведомления проекта.",
-      available: false
+      implemented: false,
+      href: "",
+      action: ""
     }
   ];
+  const statusOf = (id: string): string => {
+    const connector = connectors?.find((item) => item.id === id);
+    if (!connector) return "Статус подключения недоступен";
+    return connector.state === "connected"
+      ? "Подключено"
+      : connector.transport_wired
+        ? "Транспорт подключён"
+        : "Ожидает подключения владельца";
+  };
   const items = applications.filter(
     (a) =>
-      (filter === "all" || a.available) &&
+      (filter === "all" || a.implemented) &&
       `${a.name} ${a.category}`.toLowerCase().includes(query.toLowerCase())
   );
   return (
@@ -907,18 +892,13 @@ function Apps({ onNavigate, activeProjectId }: Props) {
             </div>
             <div className={styles.appStatus}>
               <span className={styles.badge}>
-                {app.available ? "Серверное подключение" : "Запланировано"}
+                {app.implemented ? "Реализовано" : "Запланировано"}
               </span>
-              {app.available ? (
-                <ActionLink
-                  href={
-                    app.name === "GitHub"
-                      ? "/github"
-                      : `/graph-workspace${activeProjectId ? `?projectId=${encodeURIComponent(activeProjectId)}` : ""}`
-                  }
-                >
-                  {app.name === "GitHub" ? "Открыть GitHub" : "Открыть граф"}
-                </ActionLink>
+              {app.implemented ? (
+                <>
+                  <span className={styles.unavailable}>{statusOf(app.id)}</span>
+                  <ActionLink href={app.href}>{app.action}</ActionLink>
+                </>
               ) : (
                 <span className={styles.unavailable}>Интеграция ещё недоступна</span>
               )}
@@ -931,6 +911,24 @@ function Apps({ onNavigate, activeProjectId }: Props) {
           Измените запрос или фильтр.
         </Empty>
       )}
+      {selectedMcpProject && (
+        <div className={styles.note}>
+          <label>
+            Проект для MCP
+            <select
+              value={selectedMcpProject.id}
+              onChange={(event) => setMcpProject(event.target.value)}
+            >
+              {projects.map(({ id, title }) => (
+                <option value={id} key={id}>
+                  {title}
+                </option>
+              ))}
+            </select>
+          </label>
+          <McpIntegration key={selectedMcpProject.id} project={selectedMcpProject.id} />
+        </div>
+      )}
       <div className={styles.note}>
         <Icon name="shield" />
         <strong>Доступ GitHub ограничен одним репозиторием</strong>
@@ -940,7 +938,8 @@ function Apps({ onNavigate, activeProjectId }: Props) {
         </p>
       </div>
       <FutureHint onNavigate={onNavigate}>
-        Подключение аккаунтов появится после настройки входа и управления доступом.
+        Состояние подключений берётся из реестра коннекторов; новые сервисы и привязка транспорта
+        появятся после согласования владельцем.
       </FutureHint>
     </>
   );
@@ -1308,7 +1307,7 @@ export function WorkspaceSections(props: Props) {
       content = <Skills {...props} />;
       break;
     case "studio":
-      content = <Studio {...props} />;
+      content = <StudioRedirect {...props} />;
       break;
     case "files":
       // Resolve the URL's project before accepting local input. Otherwise a late

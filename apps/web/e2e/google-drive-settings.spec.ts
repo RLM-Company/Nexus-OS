@@ -76,6 +76,7 @@ test("connection, copy action, journal and revocation stay consistent", async ({
   let connected = false;
   let archived = 0;
   let pending = 0;
+  let nextFailure: "DRIVE_ACCESS_DENIED" | "DRIVE_AUTH_REQUIRED" | undefined;
   await page.addInitScript(() => {
     try {
       localStorage.setItem("kosmora:profile-onboarding.v1", "done");
@@ -100,6 +101,10 @@ test("connection, copy action, journal and revocation stay consistent", async ({
     }
     if (path.endsWith("/backups")) {
       if (request.method() === "POST") {
+        if (nextFailure) {
+          await route.fulfill({ status: 502, json: { error: { code: nextFailure } } });
+          return;
+        }
         // An explicit owner action creates a pending, then verified journal entry.
         archived = 1;
         pending = 1;
@@ -143,12 +148,28 @@ test("connection, copy action, journal and revocation stay consistent", async ({
     panel.getByText("Копий в журнале: 1. Непроверенных: 0.", { exact: true })
   ).toBeVisible();
 
+  nextFailure = "DRIVE_ACCESS_DENIED";
+  await panel.getByRole("button", { name: "Сохранить копию на Drive" }).click();
+  await expect(
+    panel.getByText("Google Drive не разрешает доступ к выбранному материалу.", {
+      exact: false
+    })
+  ).toBeVisible();
+  nextFailure = "DRIVE_AUTH_REQUIRED";
+  await panel.getByRole("button", { name: "Сохранить копию на Drive" }).click();
+  await expect(
+    panel.getByText("Авторизация Google Drive истекла или отозвана.", {
+      exact: false
+    })
+  ).toBeVisible();
+
   // 4. Revoke: connection is gone, journal metadata is retained.
   await panel.getByRole("button", { name: "Отключить Google Drive" }).click();
   await expect(
     panel.getByText("Подключение отключено. Копии на вашем Drive сохранены.")
   ).toBeVisible();
   await expect(panel.getByRole("button", { name: "Отключить Google Drive" })).toHaveCount(0);
+  await expect(panel.getByRole("button", { name: "Сохранить копию на Drive" })).toBeDisabled();
   await expect(
     panel.getByText("Копий в журнале: 1. Непроверенных: 0.", { exact: true })
   ).toBeVisible();

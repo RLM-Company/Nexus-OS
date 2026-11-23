@@ -171,6 +171,20 @@ describe("Drive copies through real transport and durable journal", () => {
     expect(fixture.uploadWrites).toBe(1);
   });
 
+  it("rechecks a previously verified folder and surfaces revoked or limited access without creating it again", async () => {
+    await connected();
+    for (const [status, code] of [
+      [401, "DRIVE_AUTH_REQUIRED"],
+      [403, "DRIVE_ACCESS_DENIED"]
+    ] as const) {
+      fixture.request.mockResolvedValueOnce(json({ error: "fixture" }, status));
+      await expect(backups.initializeFolder("owner-a")).rejects.toMatchObject({ code });
+    }
+    await backups.initializeFolder("owner-a");
+    expect(fixture.folderWrites).toBe(1);
+    expect(fixture.uploadWrites).toBe(0);
+  });
+
   it("recovers after a lost upload ACK using only reads, even across a new worker instance", async () => {
     await connected();
     fixture.loseUploadAck = true;

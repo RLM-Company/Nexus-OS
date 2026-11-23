@@ -22,6 +22,10 @@ const message = (e: unknown): string => {
   const code = e instanceof Error ? e.message : "";
   if (code === "DRIVE_AUTH_FAILED" || code === "DRIVE_AUTH_INVALID_GRANT")
     return "Подключение не подтверждено. Начните вход в Google заново в этой вкладке.";
+  if (code === "DRIVE_AUTH_REQUIRED")
+    return "Авторизация Google Drive истекла или отозвана. Подключите Google Drive заново.";
+  if (code === "DRIVE_ACCESS_DENIED")
+    return "Google Drive не разрешает доступ к папке копий. Проверьте разрешения в Google.";
   if (code === "DRIVE_NOT_CONFIGURED") return "Подключение Google Drive пока недоступно.";
   if (["DRIVE_AUTH_BUSY", "DRIVE_OWNER_BUSY", "DRIVE_BUSY"].includes(code))
     return "Другая операция ещё выполняется. Повторите чуть позже.";
@@ -167,7 +171,7 @@ export function GoogleDriveSettings() {
               {status.can_disconnect ? "Подключить заново" : "Подключить Google Drive"}
             </button>
           )}
-          {status.state === "preparing" && (
+          {(status.state === "preparing" || status.state === "connected") && (
             <button
               type="button"
               disabled={busy}

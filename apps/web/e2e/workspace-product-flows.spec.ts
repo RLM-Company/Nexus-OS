@@ -53,16 +53,16 @@ test("mobile search reaches chats beyond the recent six", async ({ page }) => {
   await expect(drawer).toBeHidden();
 });
 
-test("opens the Studio overview directly from a shared preview link", async ({ page }) => {
+test("an old Studio overview link opens a real tool instead of the removed catalog", async ({
+  page
+}) => {
   await page.addInitScript(() => localStorage.setItem("cosmora:workspace-surface", "code"));
   await page.goto("/?surface=studio");
-  await expect(
-    page.locator(".capability-workspace").getByRole("heading", { name: "Kosmora Studio" })
-  ).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Изображения" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Видео" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Sound" })).toBeVisible();
+  // The Studio overview page was removed in stage three; legacy links land on
+  // the first working tool rather than a card catalog.
+  await expect(page).toHaveURL(/surface=files/);
   await expect(page.locator(".studio-section")).not.toContainText("Обзор Studio");
+  await expect(page.getByRole("heading", { name: "Kosmora Studio", level: 2 })).toHaveCount(0);
 });
 
 test("shows a searchable plan with real entry points and honest future requirements", async ({
@@ -83,10 +83,8 @@ test("shows a searchable plan with real entry points and honest future requireme
   await expect(page.getByText("Custom автономность")).toBeVisible();
   await page.getByRole("textbox", { name: "Поиск возможностей" }).fill("");
   await page.getByRole("button", { name: /Studio.*Файлы и медиа-инструменты/ }).click();
-  await expect(
-    page.locator(".capability-workspace").getByRole("heading", { name: "Kosmora Studio" })
-  ).toBeVisible();
-  await expect(page).toHaveURL(/surface=studio/);
+  await expect(page).toHaveURL(/surface=files/);
+  await expect(page.getByRole("heading", { name: "Kosmora Studio", level: 2 })).toHaveCount(0);
 });
 
 test("opens Games from the Studio sidebar and keeps a shareable surface URL", async ({ page }) => {
