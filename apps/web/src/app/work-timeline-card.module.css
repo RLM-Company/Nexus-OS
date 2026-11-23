@@ -1,0 +1,44 @@
+.card {
+  display: grid;
+  gap: 0.5rem;
+  padding: 0.9rem;
+  border: 1px solid var(--line, #ddd);
+  border-radius: 10px;
+  background: var(--surface, #fff);
+  color: var(--text, inherit);
+  font: inherit;
+}
+.card header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+.card .progress {
+  font-size: 11px;
+  color: var(--muted, #777);
+}
+.card p {
+  margin: 0;
+  font-size: 12px;
+}
+.card .meta {
+  color: var(--muted, #777);
+}
+.card ol {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding-left: 1.1rem;
+  font-size: 12px;
+}
+.card li[data-kind="diagnostic"] {
+  color: #a33;
+}
+.card li[data-kind="model"] {
+  color: inherit;
+}
+.card time {
+  color: var(--muted, #777);
+  font-variant-numeric: tabular-nums;
+}

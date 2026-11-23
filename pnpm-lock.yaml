@@ -77,6 +77,9 @@ importers:
       "@cosmora/contracts":
         specifier: workspace:*
         version: link:../../packages/contracts
+      "@cosmora/core":
+        specifier: workspace:*
+        version: link:../../packages/core
       "@tesseract.js-data/eng":
         specifier: 1.0.0
         version: 1.0.0
