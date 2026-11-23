@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 import {
   formatDuration,
   planSummary,
@@ -27,6 +27,16 @@ const TIMING_LABEL: Record<TimingKind, string> = {
   queue: "очередь",
   pause: "пауза",
   await_owner: "ожидание решения"
+};
+/** Which upstream event must exist before a counter can be measured. Chats that
+ * never receive one keep the em dash and say exactly why, instead of inventing
+ * a number or silently attributing the time to model work. */
+const TIMING_SOURCE: Record<TimingKind, string> = {
+  model: "run.started / message.delta",
+  tool: "tool.call",
+  queue: "queued",
+  pause: "pause",
+  await_owner: "await_owner / clarification"
 };
 
 /** Compact collapsible panel above the composer. Pure presentation: the parent
@@ -83,8 +93,13 @@ export function ChatTaskPlanPanel({
           </ol>
           <div className={styles.timing} aria-label="Время по событиям">
             {(Object.keys(TIMING_LABEL) as TimingKind[]).map((kind) => (
-              <span key={kind} data-kind={kind}>
+              <span
+                key={kind}
+                data-kind={kind}
+                title={summary.timing[kind] > 0 ? undefined : `Нет события: ${TIMING_SOURCE[kind]}`}
+              >
                 {TIMING_LABEL[kind]}: {formatDuration(summary.timing[kind])}
+                {summary.timing[kind] <= 0 ? ` (нет события: ${TIMING_SOURCE[kind]})` : ""}
               </span>
             ))}
             <span data-kind="total">всего: {formatDuration(summary.total_ms)}</span>
