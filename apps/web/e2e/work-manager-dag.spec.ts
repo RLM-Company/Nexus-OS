@@ -37,6 +37,10 @@ test("owner runs the complete reviewed plan once and recovers a lost start respo
     .fill("На основе брифа подготовь итоговый документ в result.md");
   await second.getByLabel("Бриф", { exact: true }).check();
   await panel.getByRole("button", { name: "Сохранить план", exact: true }).click();
+  // The saved durable DAG also feeds the chat plan/timer panel with real nodes.
+  await expect(page.getByRole("region", { name: "Задачи и план чата" })).toContainText(
+    "Автоматически подготовить документы"
+  );
   const run = panel.getByRole("button", { name: "Выполнить план", exact: true });
   await expect(run).toBeDisabled();
   await panel

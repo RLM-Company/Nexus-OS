@@ -21,6 +21,7 @@ import {
   type WorkDueFilter
 } from "./work-schedule-ui";
 import { useExecutionGate } from "./use-execution-gate";
+import { announceChatTaskPlan } from "./use-chat-task-plan";
 import styles from "./work-manager.module.css";
 
 const statuses: Record<string, string> = {
@@ -254,6 +255,17 @@ export function WorkManagerDag({ projectId }: { projectId: string }) {
       setSelected(result.id);
       setCollection(result.archived_at ? "archived" : "active");
       setSearch("");
+      // Feed the real durable DAG into the chat plan/timer panel. Nodes already
+      // carry ids, titles and dependencies, so no text is parsed or invented.
+      announceChatTaskPlan(projectId, {
+        id: result.id,
+        goal: result.title,
+        steps: result.nodes.map((node) => ({
+          id: node.id,
+          title: node.title,
+          depends_on: [...node.depends_on]
+        }))
+      });
     } else {
       setCopiedElsewhere(result);
     }
