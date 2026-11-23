@@ -33,6 +33,9 @@ export type DocumentAnswer = {
   citations: string[];
   status: "queued" | "running" | "done" | "failed" | "cancelled";
   error_code: string | null;
+  /** Stable retry link. Optional: legacy runs have neither field. */
+  retry_of?: string | null;
+  retry_request_id?: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -57,6 +60,9 @@ const asAnswer = (row: Record<string, unknown>): DocumentAnswer => ({
   citations: json<string[]>(String(row.citations_json)),
   status: row.status as DocumentAnswer["status"],
   error_code: row.error_code as string | null,
+  retry_of: typeof row.retry_of === "string" && row.retry_of ? row.retry_of : null,
+  retry_request_id:
+    typeof row.retry_request_id === "string" && row.retry_request_id ? row.retry_request_id : null,
   created_at: String(row.created_at),
   updated_at: String(row.updated_at)
 });
@@ -96,7 +102,8 @@ export class DocumentAnswerStore {
     question: string,
     fileIds: string[],
     sources: AnswerSource[],
-    coverage?: DocumentAnalysisCoverage
+    coverage?: DocumentAnalysisCoverage,
+    retry?: { of: string; requestId: string }
   ): DocumentAnswer {
     if (
       !fileIds.length ||
@@ -133,8 +140,8 @@ export class DocumentAnswerStore {
       this.sqlite
         .prepare(
           `INSERT INTO document_answer_runs
-        (id,project_id,owner_id,question,selected_files_json,sources_json,coverage_json,status,created_at,updated_at)
-        VALUES (?,?,?,?,?,?,?,'queued',?,?)`
+        (id,project_id,owner_id,question,selected_files_json,sources_json,coverage_json,status,retry_of,retry_request_id,created_at,updated_at)
+        VALUES (?,?,?,?,?,?,?,'queued',?,?,?,?)`
         )
         .run(
           id,
@@ -144,6 +151,8 @@ export class DocumentAnswerStore {
           JSON.stringify(fileIds),
           JSON.stringify(sources),
           coverage ? JSON.stringify(coverage) : null,
+          retry?.of ?? null,
+          retry?.requestId ?? null,
           at,
           at
         );
@@ -195,6 +204,16 @@ export class DocumentAnswerStore {
           ).changes
       ) === 1
     );
+  }
+  /** Find the exact server-side task created by a retry attempt, scoped to owner
+   * and project. The client's id is stable across a lost response and reload. */
+  findByRetryRequest(projectId: string, ownerId: string, requestId: string): DocumentAnswer | null {
+    const row = this.sqlite
+      .prepare(
+        "SELECT * FROM document_answer_runs WHERE project_id=? AND owner_id=? AND retry_request_id=? ORDER BY created_at DESC LIMIT 1"
+      )
+      .get(projectId, ownerId, requestId) as Record<string, unknown> | undefined;
+    return row ? asAnswer(row) : null;
   }
   cancel(projectId: string, ownerId: string, id: string): boolean {
     return (

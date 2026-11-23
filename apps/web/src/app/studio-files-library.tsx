@@ -485,29 +485,36 @@ export function StudioDocumentLibrary({ projectId, onCompose, onProjectCreated }
    * reconcile the answer history and only dispatch a new model request on a
    * fresh explicit click. The original run keeps its diagnostic in history.
    */
+  const retryInFlight = useRef<string | null>(null);
   const retryAnswer = async (sourceId: string) => {
+    if (retryInFlight.current) return;
     if (!base || !projectId || busy || !!activeAnswerId || !!retryPending || !answerAvailable)
       return;
     const source = answers.find((item) => item.id === sourceId);
     if (!source?.coverage || (source.status !== "failed" && source.status !== "cancelled")) return;
+    retryInFlight.current = sourceId;
     setBusy(true);
     setError("");
     try {
       const pending = readAnswerRetry(projectId, sourceId);
       if (pending) {
-        // A previous retry may have been accepted by the server. Reconcile
-        // before dispatching anything else — never blind re-POST a paid retry.
-        const history = await libraryFetch<{ answers: AnswerReport[] }>(`${base}/answers`);
-        setAnswers(history.answers);
-        const sourceIndex = history.answers.findIndex((item) => item.id === sourceId);
-        const newer = history.answers
-          .slice(0, Math.max(0, sourceIndex))
-          .find((item) => item.question === source.question);
-        if (newer) {
+        // The same question may exist in several runs. Resolve the exact
+        // server-side task by the stable retry attempt id, never by text.
+        const attempt = await libraryFetch<AnswerReport>(
+          `${base}/answers/retry/${encodeURIComponent(pending.requestId)}`
+        ).catch(() => null);
+        const history = attempt
+          ? null
+          : await libraryFetch<{ answers: AnswerReport[] }>(`${base}/answers`);
+        if (history) setAnswers(history.answers);
+        const linked =
+          attempt ?? history?.answers.find((item) => item.retry_request_id === pending.requestId);
+        if (linked) {
           clearAnswerRetry(projectId, sourceId);
           setUncertainRetry(null);
+          setAnswers((old) => [linked, ...old.filter((entry) => entry.id !== linked.id)]);
           setActiveAnswerId(
-            newer.status === "running" || newer.status === "queued" ? newer.id : null
+            linked.status === "running" || linked.status === "queued" ? linked.id : null
           );
           setStatus("Ранее запущенный повтор найден в истории и подключён.");
           return;
@@ -525,7 +532,11 @@ export function StudioDocumentLibrary({ projectId, onCompose, onProjectCreated }
       setRetryPending(sourceId);
       const created = await libraryFetch<AnswerReport>(
         `${base}/answers/${encodeURIComponent(sourceId)}/retry`,
-        { method: "POST", headers: { "x-kosmora-retry-id": requestId } }
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ retry_request_id: requestId })
+        }
       );
       clearAnswerRetry(projectId, sourceId);
       setUncertainRetry(null);
@@ -540,11 +551,14 @@ export function StudioDocumentLibrary({ projectId, onCompose, onProjectCreated }
           "Исход запроса неизвестен — сначала сверьте историю, затем повторите явным действием."
       );
     } finally {
+      retryInFlight.current = null;
       setRetryPending(null);
       setBusy(false);
     }
   };
-  const saved = answers.find((item) => item.id === activeAnswerId) ?? answers[0];
+  // Keep the source selected while a retry is in flight: the double-click
+  // guard must remain visible until the server result is reconciled.
+  const saved = answers.find((item) => item.id === (retryPending ?? activeAnswerId)) ?? answers[0];
   const exportAnswer = async (kind: "docx" | "pdf" | "csv") => {
     if (!saved || saved.status !== "done") return;
     try {

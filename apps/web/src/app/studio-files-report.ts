@@ -30,6 +30,8 @@ export type AnswerReport = {
   answer: string | null;
   status: string;
   error_code: string | null;
+  retry_of?: string | null;
+  retry_request_id?: string | null;
   created_at?: string;
   coverage?: {
     total_chunks: number;

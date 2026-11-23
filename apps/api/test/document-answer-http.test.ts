@@ -290,6 +290,15 @@ describe("real authenticated HTTP document answer flow (fixture transport, zero 
       const newId = retried.json<{ id: string }>().id;
       expect(newId).not.toBe(originalId);
       const fresh = answers.get(project, "local-owner", newId)!;
+      // Old clients send no body: the server still creates a stable retry link.
+      expect(fresh.retry_of).toBe(originalId);
+      expect(fresh.retry_request_id).toMatch(/^server:/u);
+      const linked = await app.inject({
+        method: "GET",
+        url: `${url}/answers/retry/${encodeURIComponent(fresh.retry_request_id!)}`
+      });
+      expect(linked.statusCode).toBe(200);
+      expect(linked.json<{ id: string }>().id).toBe(newId);
       expect(fresh.question).toBe("Когда конец договора?");
       expect(fresh.selected_file_ids).toEqual([fileId]);
       await expect.poll(() => answers.get(project, "local-owner", newId)?.status).toBe("done");

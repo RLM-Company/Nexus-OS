@@ -129,6 +129,10 @@ test("lost retry response reconciles history instead of re-dispatching after rel
     answers = [failedAnswer(sourceId), doneAnswer(newId)];
     await route.abort("failed");
   });
+  // The client keeps the stable attempt id and resolves it on reload.
+  await page.route(`**${path}/answers/retry/*`, (route) =>
+    route.fulfill({ json: doneAnswer(newId) })
+  );
   await page.route(`**${path}/answers/${newId}`, (route) =>
     route.fulfill({ json: doneAnswer(newId) })
   );
@@ -157,6 +161,12 @@ test("cancelled deep run can be retried explicitly", async ({ page, request }) =
   );
 
   await expect(library.getByRole("status")).toHaveText("Запрос отменён");
+  await expect(library.getByLabel("Сохранённые ответы")).toContainText("Что говорит договор?");
   await library.getByRole("button", { name: "Повторить анализ", exact: true }).click();
   await expect(library.getByRole("status")).toHaveText("Ответ сохранён");
+  // The cancelled original remains in history with its diagnostic.
+  await expect
+    .poll(() => answers.filter((item) => (item as { id?: string }).id === sourceId).length)
+    .toBe(1);
+  await expect(library.getByLabel("Сохранённые ответы")).toContainText("cancelled");
 });
