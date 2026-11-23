@@ -324,7 +324,10 @@ export async function main(argv = process.argv.slice(2)) {
         "--require",
         join(root, "scripts/windows-node-user.cjs"),
         "--import",
-        "tsx",
+        // tsx is a dependency of @cosmora/api, not of the workspace root.
+        // Resolve it from that package so the rehearsal also works on a clean
+        // install where the root node_modules/.bin has no tsx shim.
+        pathToFileURL(join(root, "apps/api/node_modules/tsx/dist/loader.mjs")).href,
         "--conditions=development",
         "src/server.ts"
       ],
