@@ -112,8 +112,9 @@ test("incomplete coverage -> retry -> fresh run -> report, with double-click gua
   );
   const retry = library.getByRole("button", { name: "Повторить анализ", exact: true });
   await expect(retry).toBeEnabled();
-  // Two rapid clicks in the same tick: the in-flight marker must collapse them.
-  await Promise.all([retry.click(), retry.click({ force: true })]);
+  // Two rapid clicks in the same tick: dispatch directly so actionability
+  // checks do not serialize them; the in-flight marker must collapse them.
+  await Promise.all([retry.dispatchEvent("click"), retry.dispatchEvent("click")]);
   await expect.poll(() => retryPosts).toBe(1);
   await expect(statusOf(library)).toHaveText("Ответ сохранён", { timeout: 10_000 });
   await expect(library.getByLabel("Источники ответа")).toContainText("contract.pdf, стр. 2");
@@ -172,7 +173,7 @@ test("cancelled deep run can be retried explicitly", async ({ page, request }) =
   );
 
   await expect(statusOf(library)).toHaveText("Запрос отменён");
-  const history = library.getByLabel("Сохранённые ответы");
+  const history = library.getByRole("combobox", { name: "Сохранённые ответы" });
   await expect(history).toContainText("cancelled"); // old diagnostic stays in history
   await library.getByRole("button", { name: "Повторить анализ", exact: true }).click();
   await expect(statusOf(library)).toHaveText("Ответ сохранён");
