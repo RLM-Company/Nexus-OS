@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type {
   ModelGateway,
   ModelGatewayStreamEvent,
@@ -196,7 +197,12 @@ export class DocumentAnswerService {
    */
   // The async API captures synchronous validation errors before callers await the queued durable run.
   // eslint-disable-next-line @typescript-eslint/require-await
-  async retry(projectId: string, ownerId: string, id: string): Promise<DocumentAnswer> {
+  async retry(
+    projectId: string,
+    ownerId: string,
+    id: string,
+    retryRequestId?: string
+  ): Promise<DocumentAnswer> {
     this.assertAvailable();
     if (this.quiesced.has(ownerId)) throw new DocumentAnswerError("QUIESCED");
     const previous = this.store.get(projectId, ownerId, id);
@@ -222,7 +228,12 @@ export class DocumentAnswerService {
       previous.question,
       previous.selected_file_ids,
       [],
-      coverage
+      coverage,
+      {
+        of: previous.id,
+        // Old clients that omit the id still get a server-generated stable link.
+        requestId: retryRequestId?.trim() || `server:${randomUUID()}`
+      }
     );
     void this.execute(run);
     return this.store.get(projectId, ownerId, run.id)!;

@@ -82,6 +82,23 @@ export function registerDocumentAnswerRoutes(
       }
     }
   );
+  const requestParam = Type.Object({
+    projectId: Type.String({ minLength: 1, maxLength: 120 }),
+    requestId: Type.String({ minLength: 1, maxLength: 160 })
+  });
+  // Declared before /:id so a stable retry id is never mistaken for an answer id.
+  app.get<{ Params: { projectId: string; requestId: string } }>(
+    `${base}/retry/:requestId`,
+    { schema: { params: requestParam } },
+    (req, reply) => {
+      const answer = service.store.findByRetryRequest(
+        req.params.projectId,
+        identityFor(req).owner_id,
+        req.params.requestId
+      );
+      return answer ?? reply.code(404).send({ error: { code: "NOT_FOUND" } });
+    }
+  );
   app.get<{ Params: { projectId: string; id: string } }>(
     `${base}/:id`,
     { schema: { params: item } },
@@ -94,15 +111,29 @@ export function registerDocumentAnswerRoutes(
       return answer ?? reply.code(404).send({ error: { code: "NOT_FOUND" } });
     }
   );
-  app.post<{ Params: { projectId: string; id: string } }>(
+  app.post<{
+    Params: { projectId: string; id: string };
+    Body: { retry_request_id?: string };
+    Headers: { "x-kosmora-retry-id"?: string };
+  }>(
     `${base}/:id/retry`,
-    { schema: { params: item } },
+    {
+      // No body schema: older clients send no body (and possibly only the
+      // header). The optional id is validated explicitly below.
+      schema: { params: item }
+    },
     async (req, reply) => {
       try {
+        // Body is preferred; the header keeps older clients working unchanged.
+        const provided = req.body?.retry_request_id ?? req.headers["x-kosmora-retry-id"];
+        if (provided !== undefined && (typeof provided !== "string" || provided.length > 160))
+          return reply.code(400).send({ error: { code: "INVALID_RETRY_REQUEST_ID" } });
+        const retryRequestId = provided?.trim() || undefined;
         const answer = await service.retry(
           req.params.projectId,
           identityFor(req).owner_id,
-          req.params.id
+          req.params.id,
+          retryRequestId
         );
         return reply.code(202).send(answer);
       } catch (cause) {
