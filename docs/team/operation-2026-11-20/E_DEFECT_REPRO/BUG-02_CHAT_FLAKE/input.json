@@ -1,0 +1,14 @@
+{
+  "scenario": "browser test fails first attempt, passes on retry",
+  "first_attempt": { "status": "FAIL", "role": "assistant", "error_code": "fixture-error" },
+  "retry": { "status": "PASS" },
+  "ci_expectation": "job must FAIL and keep trace when any test is flaky",
+  "historical_observations": {
+    "ci_run": "43262386490",
+    "browser_job": "131336988797",
+    "spec": "chat-reliability.spec.ts:87",
+    "result": "489 passed + 1 flaky, job SUCCESS"
+  },
+  "model_provider": "not used; synthetic runner",
+  "note": "historical chat crash cause remains unconfirmed"
+}
