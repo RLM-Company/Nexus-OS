@@ -5,7 +5,6 @@ import {
   clearChatTaskPlan,
   completeStep,
   createChatTaskPlan,
-  failStep,
   formatDuration,
   nextReadyStep,
   pauseActiveStep,
@@ -15,7 +14,6 @@ import {
   resumeActiveStep,
   saveChatTaskPlan,
   startStep,
-  toggleCollapsed,
   unblockActiveStep
 } from "./chat-task-plan";
 
@@ -156,7 +154,7 @@ describe("chat task plan", () => {
     expect(plan.steps[0]!.block_reason).toBeNull();
 
     // A permission gate is not cleared by a pause/resume.
-    let gated = blockActiveStep(
+    const gated = blockActiveStep(
       startStep(createChatTaskPlan(input), "a", 1000),
       "awaiting_permission"
     );
