@@ -117,7 +117,8 @@ test("incomplete coverage -> retry -> fresh run -> report, with double-click gua
   await Promise.all([retry.dispatchEvent("click"), retry.dispatchEvent("click")]);
   await expect.poll(() => retryPosts).toBe(1);
   await expect(statusOf(library)).toHaveText("Ответ сохранён", { timeout: 10_000 });
-  await expect(library.getByLabel("Источники ответа")).toContainText("contract.pdf, стр. 2");
+  await expect(library.getByLabel("Источники ответа")).toContainText("contract.pdf");
+  await expect(library.getByLabel("Источники ответа")).toContainText("Страница 2");
 });
 
 test("lost retry response requires a fresh explicit action after reconciliation", async ({
