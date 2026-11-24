@@ -94,8 +94,8 @@ jobs:
             --report-dir "$RELEASE_DIR/rehearsal-fail" || true
           test "$(node -p "require(process.argv[1]).failed_stage" \
             "$RELEASE_DIR/rehearsal-fail/rehearsal.json")" = "migrate"
-          test "$(node -p "require(process.argv[1]).status" \
-            "$RELEASE_DIR/rehearsal-low-disk/rehearsal.json")" = "failed"
+          test "$(node -p "require(process.argv[1]).failed_stage" \
+            "$RELEASE_DIR/rehearsal-low-disk/rehearsal.json")" = "prepare"
 
       - name: Preserve release candidate
         if: always()
