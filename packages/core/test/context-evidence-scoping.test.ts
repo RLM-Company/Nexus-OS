@@ -41,7 +41,7 @@ describe("context evidence scoping for the assembled model context", () => {
       evidence("M:answer", "Ответ", "Прямой ответ", { matched: true }),
       evidence("M:similar", "Похожее", "Тематически близко, но не ответ", { matched: false })
     ];
-    const selected = selectContextScope(items, { owner: "A" });
+    const selected = selectContextScope(items, { owner: "A", query: "прямой ответ" });
     expect(selected.map((i) => i.reference)).toEqual(["M:answer"]);
   });
 
@@ -53,8 +53,8 @@ describe("context evidence scoping for the assembled model context", () => {
       }),
       evidence("M:similar", "Похожее", "Не ответ", { matched: false })
     ];
-    expect(selectContextScope(items, { owner: "A" }).map((i) => i.reference)).toEqual([
-      "M:constraint"
-    ]);
+    expect(
+      selectContextScope(items, { owner: "A", query: "метрики" }).map((i) => i.reference)
+    ).toEqual(["M:constraint"]);
   });
 });
