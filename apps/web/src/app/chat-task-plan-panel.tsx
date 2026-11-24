@@ -22,18 +22,18 @@ const REASON_LABEL: Record<string, string> = {
   cancelled: "отменён"
 };
 const TIMING_LABEL: Record<TimingKind, string> = {
-  model: "модель",
+  model: "ответы модели",
   tool: "инструменты",
   queue: "очередь",
   pause: "пауза",
-  await_owner: "ожидание решения"
+  await_owner: "ожидание подтверждения"
 };
 const TIMING_SOURCE: Record<TimingKind, string> = {
-  model: "время модели не измеряется",
+  model: "нет замера завершённого запроса",
   tool: "нет замера записи файлов",
   queue: "нет завершённого замера очереди",
-  pause: "время паузы не измеряется",
-  await_owner: "время ожидания решения не измеряется"
+  pause: "нет завершённого замера паузы",
+  await_owner: "нет завершённого замера ожидания"
 };
 
 /** Compact collapsible panel above the composer. Pure presentation: the parent
@@ -93,13 +93,21 @@ export function ChatTaskPlanPanel({
               <span
                 key={kind}
                 data-kind={kind}
-                title={summary.timing[kind] > 0 ? undefined : TIMING_SOURCE[kind]}
+                title={summary.measured.has(kind) ? undefined : TIMING_SOURCE[kind]}
               >
-                {TIMING_LABEL[kind]}: {formatDuration(summary.timing[kind])}
-                {summary.timing[kind] <= 0 ? ` (${TIMING_SOURCE[kind]})` : ""}
+                {TIMING_LABEL[kind]}:{" "}
+                {summary.measured.has(kind) && summary.timing[kind] === 0
+                  ? "0 мс"
+                  : formatDuration(summary.timing[kind])}
+                {summary.measured.has(kind) ? "" : ` (${TIMING_SOURCE[kind]})`}
               </span>
             ))}
-            <span data-kind="total">измерено: {formatDuration(summary.total_ms)}</span>
+            <span data-kind="total">
+              измерено:{" "}
+              {summary.measured.size && summary.total_ms === 0
+                ? "0 мс"
+                : formatDuration(summary.total_ms)}
+            </span>
           </div>
         </>
       )}

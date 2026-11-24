@@ -124,6 +124,7 @@ async function fixture(
     [],
     {
       maxAttemptsPerRoute: 5,
+      now: () => Date.now(),
       retryBaseDelayMs: 1,
       retryMaxDelayMs: 1,
       circuitFailureThreshold: 10,
@@ -375,11 +376,11 @@ describe("executable durable Work DAG", () => {
     expect(graph.nodes[1]?.status).toBe("completed");
     expect(f.dag.get(other.id, owner)?.execution?.status).toBe("running");
   });
-  it("measures only the admitted attempt's queue and real file write, not reads or recovery replay", async () => {
-    const f = await fixture();
+  it("keeps completed attempt timings stable across reads and recovery replay", async () => {
     vi.useFakeTimers({ toFake: ["Date"] });
     try {
       vi.setSystemTime(new Date("2026-11-24T09:00:00Z"));
+      const f = await fixture();
       const plan = f.create();
       const queued = f.dag.control(plan.id, owner, {
         version: plan.version,
@@ -398,12 +399,15 @@ describe("executable durable Work DAG", () => {
       f.coordinator.control(paused.id, owner, paused.version, "resume");
       vi.setSystemTime(new Date("2026-11-24T09:00:02.000Z"));
       await f.coordinator.execute(attempt.work_id, owner);
+      expect(f.store.get(attempt.work_id, owner)?.error_code).toBeNull();
       const done = f.dag.get(plan.id, owner)!;
       const measured = done.nodes[0]!.result?.timing;
       expect(measured).toEqual({
         work_id: attempt.work_id,
         attempt: 1,
         queue_ms: 1250,
+        model_ms: 0,
+        pause_ms: 750,
         tool_ms: expect.any(Number) as number
       });
       expect(measured?.tool_ms).toBeGreaterThan(0);
@@ -424,6 +428,94 @@ describe("executable durable Work DAG", () => {
       expect(f.store.get(attempt.work_id, owner)?.measured_timing?.tool_ms).toBeUndefined();
       expect(f.store.runtime.artifacts(plan.project_id, owner, attempt.work_id)).toHaveLength(1);
       expect(f.calls).toHaveLength(before);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("separates completed model calls, plan approval, effective pause and queue time across a restart", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      const start = Date.parse("2026-11-24T10:00:00Z");
+      const at = (offset: number) => vi.setSystemTime(start + offset);
+      at(0);
+      const f = await fixture({
+        onCall: () => {
+          vi.setSystemTime(Date.now() + 400);
+          return Promise.resolve();
+        },
+        output: (request) =>
+          request.task_type === "manager_work_plan"
+            ? {
+                summary: "Requires owner approval",
+                instructions: "Prepare the file",
+                complexity: "complex",
+                needs_critic: true,
+                requires_external_actions: false
+              }
+            : undefined
+      });
+      const graph = f.create();
+      const queued = f.dag.control(graph.id, owner, {
+        version: graph.version,
+        action: "run",
+        node_id: "brief"
+      });
+      const id = queued.nodes[0]!.attempts[0]!.work_id;
+      at(250);
+      await f.coordinator.execute(id, owner);
+
+      const waiting = f.dag.get(graph.id, owner)!;
+      expect(waiting.nodes[0]!.blocked_reason).toBe("AWAITING_APPROVAL");
+      expect(waiting.nodes[0]!.result?.timing).toEqual({
+        work_id: id,
+        attempt: 1,
+        queue_ms: 250,
+        model_ms: 400
+      });
+      expect(f.calls).toHaveLength(1);
+
+      // A new coordinator sees the same open marker from SQLite. A read does
+      // not count an unfinished interval, even at a much later wall clock.
+      const restarted = new ManagerWorkCoordinator(f.deps);
+      at(2650);
+      expect(restarted.dag.get(graph.id, owner)).toEqual(waiting);
+      restarted.dag.control(graph.id, owner, {
+        version: waiting.version,
+        action: "approve_step",
+        node_id: "brief"
+      });
+      at(2900);
+      const admitted = f.store.get(id, owner)!;
+      const paused = restarted.control(id, owner, admitted.version, "pause")!;
+      expect(paused.measured_timing).toEqual({
+        queue_ms: 500,
+        model_ms: 400,
+        await_owner_ms: 2000
+      });
+      at(4000);
+      const stillPaused = restarted.control(id, owner, paused.version, "pause")!;
+      expect(stillPaused.paused_since).toBe(paused.paused_since);
+      expect(stillPaused.measured_timing).toEqual(paused.measured_timing);
+      at(4500);
+      restarted.control(id, owner, stillPaused.version, "resume");
+      at(4750);
+      await restarted.execute(id, owner);
+      expect(f.store.get(id, owner)?.error_code).toBeNull();
+      const finished = restarted.dag.get(graph.id, owner)!;
+      expect(finished.nodes[0]!.status).toBe("completed");
+      expect(finished.nodes[0]!.result?.timing).toEqual({
+        work_id: id,
+        attempt: 1,
+        queue_ms: 750,
+        model_ms: 1200,
+        pause_ms: 1600,
+        await_owner_ms: 2000,
+        tool_ms: expect.any(Number) as number
+      });
+      expect(f.calls).toHaveLength(3);
+      expect(finished.nodes[1]!.result?.timing).toBeUndefined();
+      expect(restarted.dag.get(graph.id, owner)).toEqual(finished);
     } finally {
       vi.useRealTimers();
     }
@@ -571,6 +663,53 @@ describe("executable durable Work DAG", () => {
     expect(graph.execution?.status).toBe("failed");
     expect(graph.nodes[2]?.attempts).toHaveLength(0);
     expect(f.calls).toHaveLength(0);
+  });
+  it("uses the URL project boundary before reconciling an observed child completion", async () => {
+    const f = await fixture();
+    const graph = f.create();
+    const admitted = f.dag.control(graph.id, owner, {
+      version: graph.version,
+      action: "run",
+      node_id: "brief"
+    });
+    const childId = admitted.nodes[0]!.attempts[0]!.work_id;
+    await f.coordinator.execute(childId, owner);
+    expect(f.store.get(childId, owner)?.status).toBe("completed");
+    const before = f.store.dag.get(graph.id, owner)!;
+    expect(before.nodes[0]!.status).toBe("running");
+    const other = f.projects.createProject("Other owned project", "other-request", owner).project;
+    const app = buildApp({
+      config: f.config,
+      database: f.db,
+      projectStore: f.projects,
+      managerWorkStore: f.store,
+      projectAutomationStore: new ProjectAutomationStore(f.db.sqlite),
+      managerWorkCoordinator: f.coordinator
+    });
+    try {
+      const scopes = ["/work-dags/", "/automation/missions/"];
+      for (const scope of scopes) {
+        const denied = await app.inject({
+          url: `/api/v1/projects/${other.id}${scope}${graph.id}`
+        });
+        expect(denied.statusCode).toBe(404);
+        expect(denied.json()).toEqual({
+          error: scope === "/work-dags/" ? "DAG_NOT_FOUND" : "AUTOMATION_NOT_FOUND"
+        });
+        expect(f.store.dag.get(graph.id, owner)).toEqual(before);
+      }
+      const allowed = await app.inject({
+        url: `/api/v1/projects/${f.project.id}/work-dags/${graph.id}`
+      });
+      expect(allowed.statusCode).toBe(200);
+      expect(allowed.headers["cache-control"]).toBe("private, no-store");
+      const after = allowed.json<WorkDag>();
+      expect(after.nodes[0]!.status).toBe("completed");
+      expect(after.version).toBe(before.version + 1);
+      expect(f.store.dag.get(graph.id, owner)).toEqual(after);
+    } finally {
+      await app.close();
+    }
   });
   it("protects step cancellation with owner scope, version, terminal/archive and privacy checks", async () => {
     const f = await fixture();
@@ -1624,6 +1763,7 @@ describe("executable durable Work DAG", () => {
     expect(g.nodes[0]!.status).toBe("failed");
     expect(g.nodes[0]!.result?.timing?.attempt).toBe(1);
     expect(g.nodes[0]!.result?.timing?.tool_ms).toBeUndefined();
+    expect(g.nodes[0]!.result?.timing?.model_ms).toBeUndefined();
     expect(g.nodes[1]!.status).toBe("blocked");
     expect(f.calls).toHaveLength(3);
     f.dag.reconcileAll();

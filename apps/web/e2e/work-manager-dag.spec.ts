@@ -68,12 +68,19 @@ test("owner runs the complete reviewed plan once and recovers a lost start respo
     expect(node.result?.timing?.work_id).toBe(node.attempts[0]!.work_id);
     expect(node.result?.timing?.attempt).toBe(1);
     expect(node.result?.timing?.tool_ms).toBeGreaterThan(0);
+    expect(node.result?.timing?.model_ms).toBeGreaterThanOrEqual(0);
   }
   const chatPlan = page.getByRole("region", { name: "Задачи и план чата" });
   await expect(chatPlan.locator('[data-status="completed"]')).toHaveCount(2);
   await expect(
     chatPlan.getByLabel("Время по событиям").locator('[data-kind="tool"]')
   ).not.toContainText("—");
+  await expect(
+    chatPlan.getByLabel("Время по событиям").locator('[data-kind="model"]')
+  ).not.toContainText("—");
+  await expect(
+    chatPlan.getByLabel("Время по событиям").locator('[data-kind="await_owner"]')
+  ).toContainText("—");
   await page.goto(`/?project=${project.id}&view=chat&plan=${graph.id}`);
   await expect(chatPlan.locator('[data-status="completed"]')).toHaveCount(2);
   await page.goto(`/?project=${project.id}&view=plan&plan=${graph.id}`);

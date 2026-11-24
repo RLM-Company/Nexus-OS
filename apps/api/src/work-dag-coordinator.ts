@@ -93,9 +93,10 @@ export class WorkDagCoordinator {
   owns(id: string, owner: string, project: string): boolean {
     return this.works.dag.get(id, owner)?.project_id === project;
   }
-  get(id: string, owner: string): WorkDag | null {
+  get(id: string, owner: string, project?: string): WorkDag | null {
     const graph = this.works.dag.get(id, owner);
-    return graph ? this.reconcile(graph) : null;
+    if (!graph || (project !== undefined && graph.project_id !== project)) return null;
+    return this.reconcile(graph);
   }
   checkpoints(id: string, owner: string) {
     return this.works.dag.checkpoints(id, owner);
@@ -257,7 +258,12 @@ export class WorkDagCoordinator {
                 work_id: child.id,
                 attempt: attempt.number,
                 ...(timing.queue_ms === undefined ? {} : { queue_ms: timing.queue_ms }),
-                ...(timing.tool_ms === undefined ? {} : { tool_ms: timing.tool_ms })
+                ...(timing.tool_ms === undefined ? {} : { tool_ms: timing.tool_ms }),
+                ...(timing.model_ms === undefined ? {} : { model_ms: timing.model_ms }),
+                ...(timing.pause_ms === undefined ? {} : { pause_ms: timing.pause_ms }),
+                ...(timing.await_owner_ms === undefined
+                  ? {}
+                  : { await_owner_ms: timing.await_owner_ms })
               }
             }
           : {}),
