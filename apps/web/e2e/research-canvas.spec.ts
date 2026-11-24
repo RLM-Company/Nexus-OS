@@ -58,6 +58,47 @@ async function routes(
   ).toBeVisible();
 }
 
+test("restores a selected report from its URL without launching research", async ({
+  page,
+  request
+}) => {
+  const projectId = await project(request);
+  const first = run(projectId, "Свежий отчёт");
+  const older = run(projectId, "Отчёт для восстановления");
+  let starts = 0;
+  let openedOlder = 0;
+  await routes(page, [first, older], (route) => route.fulfill({ body: report }));
+  await page.route("**/api/v1/research", (route) => {
+    if (route.request().method() !== "GET") starts++;
+    return route.fulfill({ json: { items: [first] } });
+  });
+  await page.route("**/api/v1/research/" + older.id, (route) => {
+    expect(route.request().method()).toBe("GET");
+    openedOlder++;
+    return route.fulfill({ json: older });
+  });
+  await page.getByRole("button", { name: /Отчёт для восстановления/ }).click();
+  await expect(page).toHaveURL(new RegExp(`[?&]run_id=${older.id}`));
+  await page.reload();
+  await expect(page.getByRole("heading", { name: older.question, exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: first.question, exact: true })).toHaveCount(0);
+  expect(openedOlder).toBe(1);
+  await page.getByRole("button", { name: "Обновить", exact: true }).click();
+  await expect.poll(() => openedOlder).toBe(2);
+  await expect(page.getByRole("heading", { name: older.question, exact: true })).toBeVisible();
+
+  const missing = randomUUID();
+  await page.route("**/api/v1/research/" + missing, (route) =>
+    route.fulfill({ status: 404, json: { error: { code: "NOT_FOUND" } } })
+  );
+  await page.goto(`/research-workspace?run_id=${missing}&query=ignored&source=chat`);
+  await expect(
+    page.getByRole("alert").filter({ hasText: "Выбранный отчёт недоступен." })
+  ).toBeVisible();
+  await expect(page.getByRole("heading", { name: first.question, exact: true })).toHaveCount(0);
+  expect(starts).toBe(0);
+});
+
 test("rechecks a selected research source without replacing saved excerpts", async ({
   page,
   request
