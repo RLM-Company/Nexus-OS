@@ -93,9 +93,10 @@ export class WorkDagCoordinator {
   owns(id: string, owner: string, project: string): boolean {
     return this.works.dag.get(id, owner)?.project_id === project;
   }
-  get(id: string, owner: string): WorkDag | null {
+  get(id: string, owner: string, project?: string): WorkDag | null {
     const graph = this.works.dag.get(id, owner);
-    return graph ? this.reconcile(graph) : null;
+    if (!graph || (project !== undefined && graph.project_id !== project)) return null;
+    return this.reconcile(graph);
   }
   checkpoints(id: string, owner: string) {
     return this.works.dag.checkpoints(id, owner);

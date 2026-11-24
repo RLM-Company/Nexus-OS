@@ -572,6 +572,53 @@ describe("executable durable Work DAG", () => {
     expect(graph.nodes[2]?.attempts).toHaveLength(0);
     expect(f.calls).toHaveLength(0);
   });
+  it("uses the URL project boundary before reconciling an observed child completion", async () => {
+    const f = await fixture();
+    const graph = f.create();
+    const admitted = f.dag.control(graph.id, owner, {
+      version: graph.version,
+      action: "run",
+      node_id: "brief"
+    });
+    const childId = admitted.nodes[0]!.attempts[0]!.work_id;
+    await f.coordinator.execute(childId, owner);
+    expect(f.store.get(childId, owner)?.status).toBe("completed");
+    const before = f.store.dag.get(graph.id, owner)!;
+    expect(before.nodes[0]!.status).toBe("running");
+    const other = f.projects.createProject("Other owned project", "other-request", owner).project;
+    const app = buildApp({
+      config: f.config,
+      database: f.db,
+      projectStore: f.projects,
+      managerWorkStore: f.store,
+      projectAutomationStore: new ProjectAutomationStore(f.db.sqlite),
+      managerWorkCoordinator: f.coordinator
+    });
+    try {
+      const scopes = ["/work-dags/", "/automation/missions/"];
+      for (const scope of scopes) {
+        const denied = await app.inject({
+          url: `/api/v1/projects/${other.id}${scope}${graph.id}`
+        });
+        expect(denied.statusCode).toBe(404);
+        expect(denied.json()).toEqual({
+          error: scope === "/work-dags/" ? "DAG_NOT_FOUND" : "AUTOMATION_NOT_FOUND"
+        });
+        expect(f.store.dag.get(graph.id, owner)).toEqual(before);
+      }
+      const allowed = await app.inject({
+        url: `/api/v1/projects/${f.project.id}/work-dags/${graph.id}`
+      });
+      expect(allowed.statusCode).toBe(200);
+      expect(allowed.headers["cache-control"]).toBe("private, no-store");
+      const after = allowed.json<WorkDag>();
+      expect(after.nodes[0]!.status).toBe("completed");
+      expect(after.version).toBe(before.version + 1);
+      expect(f.store.dag.get(graph.id, owner)).toEqual(after);
+    } finally {
+      await app.close();
+    }
+  });
   it("protects step cancellation with owner scope, version, terminal/archive and privacy checks", async () => {
     const f = await fixture();
     let graph = await f.execute(f.create(), "independent");

@@ -138,7 +138,7 @@ export function registerProjectAutomationRoutes(
   get("/missions", (s) => ({ items: service.work.dag.list(s.project, s.owner) }));
   get("/missions/:id", (s, r) => {
     const graph = coordinator
-      ? coordinator.get(r.params.id, s.owner)
+      ? coordinator.get(r.params.id, s.owner, s.project)
       : service.work.dag.get(r.params.id, s.owner);
     if (!graph || graph.project_id !== s.project)
       throw new AutomationStoreError("AUTOMATION_NOT_FOUND");

@@ -37,10 +37,6 @@ export function registerWorkDagRoutes(options: {
   );
   const owned = (r: FastifyRequest<{ Params: Params }>) =>
     projects.getProject(r.params.projectId, identityFor(r).owner_id);
-  const graph = (r: FastifyRequest<{ Params: Params }>) => {
-    const g = coordinator.get(r.params.id, identityFor(r).owner_id);
-    return g?.project_id === r.params.projectId ? g : null;
-  };
   const safe = (
     fn: () => unknown,
     reply: { code: (n: number) => { send: (value: unknown) => unknown } }
@@ -91,9 +87,15 @@ export function registerWorkDagRoutes(options: {
       );
     }
   );
-  app.get<{ Params: Params }>(base + "/:id", { schema: { params } }, (r, reply) =>
-    safe(() => graph(r) ?? reply.code(404).send({ error: "DAG_NOT_FOUND" }), reply)
-  );
+  app.get<{ Params: Params }>(base + "/:id", { schema: { params } }, (r, reply) => {
+    reply.header("Cache-Control", "private, no-store");
+    return safe(
+      () =>
+        coordinator.get(r.params.id, identityFor(r).owner_id, r.params.projectId) ??
+        reply.code(404).send({ error: "DAG_NOT_FOUND" }),
+      reply
+    );
+  });
   app.post<{ Params: Params; Body: WorkPlanImport }>(
     base + "/import",
     {
