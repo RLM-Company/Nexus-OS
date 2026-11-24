@@ -1,0 +1,117 @@
+name: Linux x86-64 reproducible release
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_sha:
+        description: Exact 40-hex commit to build (must equal checked-out HEAD)
+        required: true
+        type: string
+      label:
+        description: Release label (lowercase slug)
+        required: false
+        default: rc-linux-x64
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: linux-release-${{ github.ref }}-${{ inputs.source_sha }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Build, rehearse and publish candidate
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      NEXT_TELEMETRY_DISABLED: "1"
+      TURBO_TELEMETRY_DISABLED: "1"
+    steps:
+      - name: Check out exact source SHA
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.source_sha }}
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.19.0
+          run_install: false
+
+      - name: Set up Node.js 24 (linux x64)
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Verify HEAD equals requested SHA
+        shell: bash
+        run: |
+          head="$(git rev-parse HEAD)"
+          [[ "$head" == "${{ inputs.source_sha }}" ]] || {
+            echo "HEAD $head != requested ${{ inputs.source_sha }}" >&2; exit 1; }
+          [[ "$(git status --porcelain)" == "" ]] || {
+            echo "Dirty checkout" >&2; exit 1; }
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build source artifact from exact SHA
+        shell: bash
+        run: |
+          out="${RUNNER_TEMP}/kosmora-release"
+          node scripts/build-release.mjs "${{ inputs.source_sha }}" "$out" "${{ inputs.label }}" \
+            | tee "$out-build.log"
+          echo "RELEASE_DIR=$out/kosmora-linux-x64-${{ inputs.label }}" >> "$GITHUB_ENV"
+
+      - name: Verify reproducible archive (build twice, identical SHA-256)
+        shell: bash
+        run: |
+          out="${RUNNER_TEMP}/kosmora-release-verify"
+          node scripts/build-release.mjs "${{ inputs.source_sha }}" "$out" "${{ inputs.label }}" >/dev/null
+          a="$(node -p "require(process.argv[1]).archive.sha256" "$RELEASE_DIR/manifest.json")"
+          b="$(node -p "require(process.argv[1]).archive.sha256" "$out/kosmora-linux-x64-${{ inputs.label }}/manifest.json")"
+          [[ "$a" == "$b" ]] || { echo "Non-reproducible archive: $a != $b" >&2; exit 1; }
+          echo "Reproducible source SHA-256: $a"
+
+      - name: Build pinned linux/amd64 OCI image
+        run: node scripts/build-image.mjs --release "$RELEASE_DIR"
+
+      - name: Build API and web with workspace dependencies
+        run: pnpm build
+
+      - name: Isolated rehearsal (mock provider + temporary SQLite)
+        run: node scripts/rehearse-release.mjs --report-dir "$RELEASE_DIR/rehearsal"
+
+      - name: Failure drills (low disk + failed stage)
+        shell: bash
+        run: |
+          node scripts/rehearse-release.mjs --low-disk \
+            --report-dir "$RELEASE_DIR/rehearsal-low-disk" || true
+          node scripts/rehearse-release.mjs --fail-at migrate \
+            --report-dir "$RELEASE_DIR/rehearsal-fail" || true
+          test "$(node -p "require(process.argv[1]).failed_stage" \
+            "$RELEASE_DIR/rehearsal-fail/rehearsal.json")" = "migrate"
+          test "$(node -p "require(process.argv[1]).failed_stage" \
+            "$RELEASE_DIR/rehearsal-low-disk/rehearsal.json")" = "prepare"
+
+      - name: Preserve release candidate
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kosmora-linux-x64-${{ inputs.label }}
+          path: |
+            ${{ runner.temp }}/kosmora-release/
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Preserve rehearsal reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kosmora-linux-x64-rehearsal
+          path: ${{ env.RELEASE_DIR }}/rehearsal*/rehearsal.json
+          if-no-files-found: warn
+          retention-days: 14
