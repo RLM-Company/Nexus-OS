@@ -104,6 +104,11 @@ export type ManagerWorkStatus =
   | "completed"
   | "failed"
   | "cancelled";
+/** Only closed server measurements. Missing duration means no observation. */
+export interface WorkMeasuredTiming {
+  queue_ms?: number;
+  tool_ms?: number;
+}
 export interface ManagerWork {
   id: string;
   project_id: string;
@@ -130,6 +135,8 @@ export interface ManagerWork {
   result_accepted_at?: string | null;
   result_accepted_by?: string | null;
   inflight_run_id: string | null;
+  queued_since?: string;
+  measured_timing?: WorkMeasuredTiming;
   /** Bounded recovery text, never a validated artifact, plan or publication grant. */
   output_checkpoint?: ModelOutputCheckpoint;
   model_requests: number;

@@ -64,6 +64,20 @@ test("owner runs the complete reviewed plan once and recovers a lost start respo
   const graph = ((await list.json()) as { items: WorkDag[] }).items[0]!;
   expect(graph.nodes.map((node) => node.attempts.length)).toEqual([1, 1]);
   expect(graph.nodes.map((node) => node.result?.review?.verdict)).toEqual(["PASS", "PASS"]);
+  for (const node of graph.nodes) {
+    expect(node.result?.timing?.work_id).toBe(node.attempts[0]!.work_id);
+    expect(node.result?.timing?.attempt).toBe(1);
+    expect(node.result?.timing?.tool_ms).toBeGreaterThan(0);
+  }
+  const chatPlan = page.getByRole("region", { name: "Задачи и план чата" });
+  await expect(chatPlan.locator('[data-status="completed"]')).toHaveCount(2);
+  await expect(
+    chatPlan.getByLabel("Время по событиям").locator('[data-kind="tool"]')
+  ).not.toContainText("—");
+  await page.goto(`/?project=${project.id}&view=chat&plan=${graph.id}`);
+  await expect(chatPlan.locator('[data-status="completed"]')).toHaveCount(2);
+  await page.goto(`/?project=${project.id}&view=plan&plan=${graph.id}`);
+  await expect(panel.getByText("План выполнен", { exact: true })).toBeVisible();
   expect(graph.usage?.model_requests).toBe(6);
   expect(starts).toBe(1);
   const bundle = await request.get(

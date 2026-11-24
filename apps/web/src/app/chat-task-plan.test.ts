@@ -1,3 +1,4 @@
+import type { WorkDag } from "@cosmora/contracts";
 import { describe, expect, it } from "vitest";
 import {
   blockActiveStep,
@@ -9,6 +10,7 @@ import {
   nextReadyStep,
   pauseActiveStep,
   planSummary,
+  projectChatTaskPlan,
   readChatTaskPlan,
   recordInterval,
   resumeActiveStep,
@@ -223,4 +225,70 @@ describe("chat task plan", () => {
     expect(resumeActiveStep(restored).steps[0]!.status).toBe("blocked");
     expect(unblockActiveStep(restored).active_step_id).toBe("a");
   });
+});
+
+it("projects only canonical statuses and the latest matching measured Work attempt", () => {
+  const at = "2026-11-24T09:00:00.000Z";
+  const graph: WorkDag = {
+    id: "graph",
+    project_id: "project",
+    owner_id: "owner",
+    actor_id: "owner",
+    version: 4,
+    client_request_id: "request",
+    title: "Canonical plan",
+    mode: "active",
+    created_at: at,
+    updated_at: at,
+    events: [],
+    nodes: [
+      {
+        id: "brief",
+        title: "Brief",
+        goal: "Prepare a brief",
+        depends_on: [],
+        status: "completed",
+        blocked_reason: null,
+        artifacts: [],
+        attempts: [
+          { number: 1, work_id: "previous", started_at: at, source_artifact_ids: [] },
+          { number: 2, work_id: "current", started_at: at, source_artifact_ids: [] }
+        ],
+        result: {
+          stage: "done",
+          plan_summary: null,
+          plan_instructions: null,
+          review: null,
+          confirmation_id: null,
+          sources: [],
+          timing: { work_id: "previous", attempt: 1, queue_ms: 4000, tool_ms: 400 }
+        }
+      },
+      {
+        id: "report",
+        title: "Report",
+        goal: "Prepare a report",
+        depends_on: ["brief"],
+        status: "running",
+        blocked_reason: "EXECUTOR_QUEUE",
+        artifacts: [],
+        attempts: [{ number: 1, work_id: "next", started_at: at, source_artifact_ids: [] }]
+      }
+    ]
+  };
+  const first = projectChatTaskPlan(graph, false);
+  expect(first.steps.map((step) => step.status)).toEqual(["completed", "pending"]);
+  expect(first.active_step_id).toBeNull();
+  expect(planSummary(first).total_ms).toBe(0);
+  graph.nodes[0]!.result!.timing = { work_id: "current", attempt: 2, queue_ms: 1250, tool_ms: 12 };
+  const second = projectChatTaskPlan(graph, true);
+  expect(second.collapsed).toBe(true);
+  expect(planSummary(second).timing).toEqual({
+    queue: 1250,
+    tool: 12,
+    model: 0,
+    pause: 0,
+    await_owner: 0
+  });
+  expect(projectChatTaskPlan(graph, true)).toEqual(second);
 });
