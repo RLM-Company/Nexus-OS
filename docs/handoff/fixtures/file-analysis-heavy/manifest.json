@@ -1,0 +1,108 @@
+{
+  "format": "kosmora.file-analysis-heavy.v1",
+  "generated_by": "generate.mjs",
+  "deterministic": true,
+  "question": "Найти код станции, итоговую сумму и срок сдачи по смете SELENE-047.",
+  "archives": {
+    "outer": {
+      "file": "heavy.zip",
+      "bytes": 100550,
+      "sha256": "18facdea5a940e065acc717556ea93492b3b39eab18a85088b6643bc350ee5cc",
+      "members": [
+        {
+          "name": "brief.txt",
+          "bytes": 96,
+          "sha256": "4503ffa47486bd9018f33a7f837dd5794c81524c7c9247fa6f07070caa2881b7"
+        },
+        {
+          "name": "tables/budget.csv",
+          "bytes": 14594,
+          "sha256": "5239d93fce0e777739cca98604288dca74ac29b2194ae12f59a0f4ff95b9dbfe"
+        },
+        {
+          "name": "long/report.txt",
+          "bytes": 49671,
+          "sha256": "82aa77bf9134bf139d42f470685270c42cda85658f5109da1d1b791897abb83b"
+        },
+        {
+          "name": "long/report.pdf",
+          "bytes": 32839
+        },
+        {
+          "name": "scans/scan.pdf",
+          "bytes": 472,
+          "sha256": "4f52a9f57cdb9fed8c9ab7812c643b26ae599f218623e4c9c93737f6e290661c",
+          "image_only": true
+        },
+        {
+          "name": "scans/scan.txt",
+          "bytes": 107,
+          "sha256": "cb4fad4b590aeaf4048f94507cceb35fd723c69ef0b1f89d19b100ac641a66a2",
+          "ocr_sidecar": true
+        },
+        {
+          "name": "memo.docx",
+          "bytes": 1329
+        }
+      ],
+      "expected_document_names": [
+        "brief.txt",
+        "tables › budget.csv",
+        "long › report.txt",
+        "long › report.pdf",
+        "scans › scan.pdf",
+        "scans › scan.txt",
+        "memo.docx",
+        "nested-evidence.zip › nested › extra.csv",
+        "nested-evidence.zip › nested › quote.txt"
+      ],
+      "skipped": [
+        {
+          "name": "unsupported/notes.md",
+          "reason": "unsupported_extension"
+        },
+        {
+          "name": "__MACOSX/._brief.txt",
+          "reason": "macos_resource_fork"
+        }
+      ],
+      "incomplete": [
+        {
+          "name": "scans/scan.pdf",
+          "reason": "image_only_no_text_layer"
+        }
+      ]
+    }
+  },
+  "limits": {
+    "file_bytes": 20000000,
+    "text_characters": 2000000,
+    "pdf_pages": 3000,
+    "chunks_per_file": 5000,
+    "files_per_project": 100,
+    "bytes_per_project": 100000000,
+    "archive_bytes": 4000000
+  },
+  "expected": {
+    "long_pages": 140,
+    "long_lines": 840,
+    "csv_rows": 600,
+    "citations": [
+      {
+        "file": "nested-evidence.zip › nested › quote.txt",
+        "quote": "Код станции: SELENE-047",
+        "page": null
+      },
+      {
+        "file": "memo.docx",
+        "quote": "Сумма 19700",
+        "page": null
+      },
+      {
+        "file": "scans › scan.txt",
+        "quote": "Срок сдачи 12 октября 2027",
+        "page": null
+      }
+    ]
+  }
+}
