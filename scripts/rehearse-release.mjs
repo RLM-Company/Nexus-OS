@@ -123,9 +123,21 @@ const startProcess = (command, args, extraEnv, cwd = root) => {
 const stop = (child) =>
   new Promise((resolve) => {
     if (!child || child.exitCode !== null) return resolve();
-    child.once("exit", () => resolve());
+    let done = false;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      resolve();
+    };
+    child.once("exit", finish);
+    const timer = setTimeout(() => {
+      if (!done) child.kill("SIGKILL");
+    }, 2000);
+    timer.unref();
     child.kill("SIGTERM");
-    setTimeout(() => child.kill("SIGKILL"), 3000).unref();
+    // Never block teardown on a lingering child (e.g. Next keeping pipes open).
+    setTimeout(finish, 3500).unref();
   });
 
 let api;
