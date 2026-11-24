@@ -4,6 +4,29 @@ import { EntityIdSchema, IsoDateTimeSchema } from "./primitives.js";
 const RunRefSchema = Type.Object({ run_id: EntityIdSchema }, { additionalProperties: false });
 
 export const StreamEventSchema = Type.Union([
+  /** The run was accepted and is waiting before model dispatch. Emitted before
+   * run.started so queue time can be measured without inventing it. */
+  Type.Object({
+    type: Type.Literal("queued"),
+    data: Type.Object(
+      { run_id: EntityIdSchema, timestamp: IsoDateTimeSchema },
+      { additionalProperties: false }
+    )
+  }),
+  /** A validated tool call from the Model Gateway, forwarded to chat observers.
+   * Never an executable partial argument delta. */
+  Type.Object({
+    type: Type.Literal("tool.call"),
+    data: Type.Object(
+      {
+        run_id: EntityIdSchema,
+        id: Type.String({ minLength: 1, maxLength: 128 }),
+        name: Type.String({ minLength: 1, maxLength: 128 }),
+        arguments: Type.String()
+      },
+      { additionalProperties: false }
+    )
+  }),
   Type.Object({
     type: Type.Literal("run.started"),
     data: Type.Object(
