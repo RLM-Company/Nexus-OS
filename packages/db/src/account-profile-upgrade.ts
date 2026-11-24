@@ -9,7 +9,8 @@ const profileColumns = [
   [
     "assistant_gender",
     "TEXT NOT NULL DEFAULT 'neutral' CHECK (assistant_gender IN ('masculine','feminine','neutral'))"
-  ]
+  ],
+  ["task_decomposition", "INTEGER NOT NULL DEFAULT 0 CHECK (task_decomposition IN (0,1))"]
 ] as const;
 
 /** Called after Drizzle migrations. Legacy 0027 did not create the profile

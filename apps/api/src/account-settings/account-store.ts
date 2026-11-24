@@ -19,6 +19,7 @@ export type AccountPreferences = {
   preferred_provider: string | null;
   preferred_model: string | null;
   chat_style: "standard" | "concise" | "detailed";
+  task_decomposition: boolean;
   max_total_tokens: number | null;
   /** Имя пользователя для приветствия и обращения; пустое = не задано. */
   display_name: string;
@@ -30,13 +31,19 @@ export type AccountPreferences = {
 };
 export type PreferenceUpdate = Omit<
   AccountPreferences,
-  "version" | "updated_at" | "display_name" | "user_gender" | "assistant_gender"
+  | "version"
+  | "updated_at"
+  | "display_name"
+  | "user_gender"
+  | "assistant_gender"
+  | "task_decomposition"
 > & {
   expected_version: number;
   /** Необязательны для обратной совместимости со старыми клиентами/тестами. */
   display_name?: string;
   user_gender?: Gender;
   assistant_gender?: Gender;
+  task_decomposition?: boolean;
 };
 type RecordRow = Record<string, unknown>;
 const now = () => new Date().toISOString();
@@ -48,6 +55,7 @@ const defaults: AccountPreferences = {
   preferred_provider: null,
   preferred_model: null,
   chat_style: "standard",
+  task_decomposition: false,
   max_total_tokens: null,
   display_name: "",
   user_gender: "masculine",
@@ -169,6 +177,7 @@ export class AccountStore {
           optimize_for: row.optimize_for as OptimizeFor,
           preferred_provider: row.preferred_provider as string | null,
           preferred_model: row.preferred_model as string | null,
+          task_decomposition: row.task_decomposition === 1,
           chat_style: row.chat_style as AccountPreferences["chat_style"],
           max_total_tokens: row.max_total_tokens as number | null,
           display_name: typeof row.display_name === "string" ? row.display_name : "",
@@ -186,6 +195,7 @@ export class AccountStore {
       !["balanced", "quality", "latency", "cost"].includes(next.optimize_for) ||
       !["standard", "concise", "detailed"].includes(next.chat_style) ||
       typeof next.relay_enabled !== "boolean" ||
+      (next.task_decomposition !== undefined && typeof next.task_decomposition !== "boolean") ||
       (next.display_name !== undefined &&
         (typeof next.display_name !== "string" ||
           next.display_name.length > 80 ||
@@ -204,8 +214,8 @@ export class AccountStore {
       const userGender = next.user_gender ?? current.user_gender;
       const assistantGender = next.assistant_gender ?? current.assistant_gender;
       const insert = this.sqlite
-        .prepare(`INSERT INTO kosmora_account_preferences (owner_id,version,relay_enabled,response_language,optimize_for,preferred_provider,preferred_model,chat_style,max_total_tokens,display_name,user_gender,assistant_gender,updated_at)
-      VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(owner_id) DO UPDATE SET version=excluded.version,relay_enabled=excluded.relay_enabled,response_language=excluded.response_language,optimize_for=excluded.optimize_for,preferred_provider=excluded.preferred_provider,preferred_model=excluded.preferred_model,chat_style=excluded.chat_style,max_total_tokens=excluded.max_total_tokens,display_name=excluded.display_name,user_gender=excluded.user_gender,assistant_gender=excluded.assistant_gender,updated_at=excluded.updated_at`);
+        .prepare(`INSERT INTO kosmora_account_preferences (owner_id,version,relay_enabled,response_language,optimize_for,preferred_provider,preferred_model,chat_style,max_total_tokens,display_name,user_gender,assistant_gender,task_decomposition,updated_at)
+      VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(owner_id) DO UPDATE SET version=excluded.version,relay_enabled=excluded.relay_enabled,response_language=excluded.response_language,optimize_for=excluded.optimize_for,preferred_provider=excluded.preferred_provider,preferred_model=excluded.preferred_model,chat_style=excluded.chat_style,max_total_tokens=excluded.max_total_tokens,display_name=excluded.display_name,user_gender=excluded.user_gender,assistant_gender=excluded.assistant_gender,task_decomposition=excluded.task_decomposition,updated_at=excluded.updated_at`);
       insert.run(
         owner,
         current.version + 1,
@@ -219,6 +229,7 @@ export class AccountStore {
         displayName,
         userGender,
         assistantGender,
+        Number(next.task_decomposition ?? current.task_decomposition),
         now()
       );
       this.sqlite.exec("COMMIT");

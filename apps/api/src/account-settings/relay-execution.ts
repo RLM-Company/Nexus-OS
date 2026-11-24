@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
-import type { ModelRequest } from "@cosmora/contracts";
+import type { ServerConfig } from "@cosmora/config";
+import type { GeneralChatMessage, ModelRequest } from "@cosmora/contracts";
 import { estimateInputTokensUpperBound } from "@cosmora/core";
 import {
   GatewayRunError,
@@ -10,6 +11,7 @@ import { protectRelayText, RelayProtectionError } from "@cosmora/model-gateway/e
 import { QuotaExceededError } from "./account-store.js";
 import type { AccountStore } from "./account-store.js";
 import { ownerIdentityPrompt } from "./owner-identity.js";
+import { decomposeChatTask } from "./chat-task-decomposition.js";
 import { MODEL_PROFILES } from "./execution-profile.js";
 
 export { RelayProtectionError, QuotaExceededError };
@@ -19,7 +21,8 @@ export type RelayStage = "to_en" | "from_en";
 export class RelayExecution {
   constructor(
     private readonly store: AccountStore,
-    private readonly gateway: ModelGateway
+    private readonly gateway: ModelGateway,
+    private readonly taskSplitRoutes?: ServerConfig["chatTaskSplitRoutes"]
   ) {}
   async translate(
     owner: string,
@@ -135,7 +138,8 @@ export class RelayExecution {
     chatId: string,
     runId: string,
     request: ModelRequest,
-    signal: AbortSignal
+    signal: AbortSignal,
+    subject?: Pick<GeneralChatMessage, "content" | "attachments">
   ): Promise<{ request: ModelRequest; relay: boolean }> {
     const preference = this.store.get(owner);
     const execution = this.store.getExecution(owner);
@@ -203,7 +207,19 @@ export class RelayExecution {
         ...adjusted.messages.slice(1)
       ];
     adjusted.routing.estimated_input_tokens = estimateInputTokensUpperBound(adjusted.messages);
-    if (!relay) return { request: adjusted, relay: false };
+    if (!relay)
+      return {
+        request:
+          preference.task_decomposition && subject
+            ? decomposeChatTask(adjusted, {
+                subject,
+                turbo: execution.turbo || execution.model_profile === "mercurius",
+                routes: this.taskSplitRoutes,
+                gateway: this.gateway
+              })
+            : adjusted,
+        relay: false
+      };
     if (adjusted.messages.some((message) => message.images?.length))
       throw new RelayProtectionError("Relay does not support image attachments");
     const last = [...adjusted.messages]

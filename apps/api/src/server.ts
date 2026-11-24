@@ -25,7 +25,6 @@ import {
   PatternLibraryStore,
   ScheduledDispatchStore,
   runMigrations,
-  upgradeAccountProfileColumns,
   StepUpProofStore,
   UsageStore
 } from "@cosmora/db";
@@ -134,7 +133,6 @@ process.once("SIGTERM", () => void shutdown("SIGTERM"));
 
 try {
   await runMigrations(database);
-  upgradeAccountProfileColumns(database.sqlite);
   const accountStore = new AccountStore(database.sqlite);
   const scheduledDispatchStore = new ScheduledDispatchStore(database.sqlite);
   const recoveredAccountHolds = accountStore.reconcileKnownCanonicalHolds();
@@ -456,6 +454,7 @@ try {
     search: new WebSearch(process.env.WEB_SEARCH_ORIGIN),
     store: generalChatStore,
     modelGateway: modelRuntime.gateway,
+    taskSplitRoutes: config.chatTaskSplitRoutes,
     chat: modelRuntime.chat,
     runtimeMetrics,
     emergencyStopStore,

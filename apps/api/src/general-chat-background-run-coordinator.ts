@@ -11,6 +11,7 @@ import {
   type ModelGateway,
   type ModelGatewayStreamEvent
 } from "@cosmora/model-gateway";
+import type { ServerConfig } from "@cosmora/config";
 import type { FastifyBaseLogger } from "fastify";
 import type {
   GeneralChatRuntimeStore,
@@ -32,6 +33,7 @@ import {
 export interface GeneralChatBackgroundRunCoordinatorOptions {
   store: GeneralChatRuntimeStore;
   modelGateway: ModelGateway;
+  taskSplitRoutes?: ServerConfig["chatTaskSplitRoutes"];
   chat: ChatService;
   runtimeMetrics: RuntimeMetrics;
   emergencyStopStore?: EmergencyStopStore;
@@ -83,7 +85,7 @@ export class GeneralChatBackgroundRunCoordinator {
     this.#accountStore = options.accountStore;
     this.#imageGeneration = options.imageGeneration;
     this.#relay = options.accountStore
-      ? new RelayExecution(options.accountStore, options.modelGateway)
+      ? new RelayExecution(options.accountStore, options.modelGateway, options.taskSplitRoutes)
       : undefined;
     this.#modelGateway = options.modelGateway;
     this.#chat = options.chat;
@@ -270,7 +272,10 @@ export class GeneralChatBackgroundRunCoordinator {
             queued.chat_id,
             queued.run_id,
             modelRequest,
-            controller.signal
+            controller.signal,
+            this.#store.getChat(queued.chat_id, queued.owner_id)?.mode === "kosmora"
+              ? latestUser
+              : undefined
           )
         : { request: modelRequest, relay: false };
       modelRequest = prepared.request;

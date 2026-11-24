@@ -10,6 +10,7 @@ const base: AccountPreferences = {
   preferred_provider: null,
   preferred_model: null,
   chat_style: "standard",
+  task_decomposition: false,
   max_total_tokens: null,
   display_name: "",
   user_gender: "masculine",

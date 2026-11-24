@@ -174,3 +174,25 @@ test("Studio submits one explicit image request and displays its PNG without an 
   expect(calls).toBe(1);
   await page.screenshot({ path: "../../qa/image-studio-20261025.png", fullPage: true });
 });
+
+test("task decomposition can be enabled, restored after reload and disabled", async ({
+  page,
+  request
+}) => {
+  await page.goto("/personal-settings");
+  const setting = page.getByRole("switch", { name: "Дробление задач", exact: true });
+  await expect(setting).toBeEnabled();
+  const saved = async () =>
+    (await (await request.get("/api/v1/personal-settings")).json()).settings.task_decomposition;
+  try {
+    await setting.check();
+    await expect.poll(saved).toBe(true);
+    await page.reload();
+    await expect(setting).toBeChecked();
+  } finally {
+    await setting.uncheck();
+    await expect.poll(saved).toBe(false);
+  }
+  await page.reload();
+  await expect(setting).not.toBeChecked();
+});

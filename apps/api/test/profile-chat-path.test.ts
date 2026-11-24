@@ -14,6 +14,7 @@ import { buildApp } from "../src/app.js";
 import { buildModelRuntime } from "../src/model-runtime.js";
 import { ownerIdentityPrompt } from "../src/account-settings/owner-identity.js";
 import { ManagerService, ChatService } from "@cosmora/core";
+import { largeTaskBrief, sharedTaskCondition } from "./fixtures/chat-task-decomposition.js";
 
 describe("profile path: registration -> first dialog", () => {
   let db: ReturnType<typeof openDatabase>;
@@ -24,7 +25,12 @@ describe("profile path: registration -> first dialog", () => {
   beforeEach(async () => {
     db = openDatabase(":memory:");
     await runMigrations(db);
-    const config = loadServerConfig({ NODE_ENV: "test", MOCK_PROVIDER_MODE: "success" });
+    const config = loadServerConfig({
+      NODE_ENV: "test",
+      MOCK_PROVIDER_MODE: "success",
+      CHAT_TASK_SPLIT_FAST_ROUTE: "unknown:inactive",
+      CHAT_TASK_SPLIT_LARGE_ROUTE: "mock:manager-b0.1"
+    });
     const runtime = await buildModelRuntime(config);
     requests = [];
     const stream = runtime.gateway.stream.bind(runtime.gateway);
@@ -156,6 +162,55 @@ describe("profile path: registration -> first dialog", () => {
     expect(systemText).toContain("в женском роде");
     expect(systemText).toContain("Имя пользователя: Мария");
     expect(systemText).not.toContain("OpenAI");
+  });
+
+  it("splits eligible requests in one metered call and stops when the setting is disabled", async () => {
+    const run = async (brief: string) => {
+      const created = await app.inject({
+        method: "POST",
+        url: "/api/v1/chats",
+        payload: { initial_message: brief, client_message_id: crypto.randomUUID() }
+      });
+      expect(created.statusCode, created.body).toBe(201);
+      const { stream_url, chat } = created.json<{ stream_url: string; chat: { id: string } }>();
+      const response = await app.inject({ method: "GET", url: stream_url });
+      expect(response.body).toContain("run.completed");
+      expect(store.listMessages(chat.id, LOCAL_OWNER_ID)[0]?.content).toBe(brief);
+      return requests.at(-1)!;
+    };
+    const userText = (request: ModelRequest) =>
+      request.messages.findLast((message) => message.role === "user")!.content;
+    const disabled = await run(largeTaskBrief);
+    expect(userText(disabled)).toBe(largeTaskBrief);
+    expect((await put({ ...base, expected_version: 0, task_decomposition: true })).statusCode).toBe(
+      200
+    );
+    const enabled = await run(largeTaskBrief);
+    expect(enabled.routing.preferred_model_alias).toBe("manager-b0.1");
+    expect(enabled.routing.estimated_input_tokens).toBeLessThan(
+      disabled.routing.estimated_input_tokens
+    );
+    expect(userText(enabled)).toContain(`[[shared:1]]=${sharedTaskCondition}`);
+    expect(userText(enabled)).toContain("[[step:3]] 3. Напиши сопроводительное письмо.");
+    expect(userText(enabled).split(sharedTaskCondition)).toHaveLength(2);
+    const shortBrief = "1. Найди тезис.\n2. Приведи пример.";
+    expect(userText(await run(shortBrief))).toBe(shortBrief);
+    account.setExecution(LOCAL_OWNER_ID, {
+      expected_version: 0,
+      model_profile: "mars",
+      autonomy: 2,
+      turbo: true
+    });
+    const fast = await run(shortBrief);
+    expect(fast.routing.preferred_provider).toBe("mock");
+    expect(userText(fast)).toContain("[[step:2]] 2. Приведи пример.");
+    const simple = "Как будет спасибо на английском?";
+    expect(userText(await run(simple))).toBe(simple);
+    expect(
+      (await put({ ...base, expected_version: 1, task_decomposition: false })).statusCode
+    ).toBe(200);
+    expect(userText(await run(shortBrief))).toBe(shortBrief);
+    expect(requests).toHaveLength(6);
   });
 
   it("affects Koswork (ManagerService) requests", () => {
