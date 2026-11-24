@@ -1,0 +1,14 @@
+{
+  "run_id": "run-terminal-001",
+  "events": [
+    { "type": "run.cancelled", "count": 3, "same_id": true },
+    { "type": "history.read", "result": "user message only, no assistant" },
+    { "type": "inferred_state", "value": "queued" },
+    { "type": "eventsource", "action": "reopened" },
+    { "type": "refresh", "result": "terminal event again" }
+  ],
+  "expected_final_state": "cancelled",
+  "observer_limit": 1,
+  "model_provider": "fixture; HTTP history and SSE replaced",
+  "note": "trace does not prove React erased text; cancellation cause unknown"
+}

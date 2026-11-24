@@ -1,0 +1,13 @@
+{
+  "route": "POST /repair-v2",
+  "trigger": "code-agent check failed",
+  "validator_result": {
+    "stdout": "check failed: expected 5 actual -1\nARTIFICIAL_TOKEN_DO_NOT_USE_9f3a",
+    "stderr": "trace: ARTIFICIAL_TOKEN_DO_NOT_USE_9f3a",
+    "journal": "[repair] ARTIFICIAL_TOKEN_DO_NOT_USE_9f3a"
+  },
+  "excerpt_limit_chars": 8000,
+  "expected": "no token in model request or checkpoint; numbers 5 / -1 preserved",
+  "model_provider": "fixture; token assembled inside the test",
+  "note": "secret is synthetic and created in the test only"
+}

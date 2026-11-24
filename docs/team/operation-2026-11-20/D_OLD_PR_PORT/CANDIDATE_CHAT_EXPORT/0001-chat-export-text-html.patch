@@ -1,0 +1,153 @@
+diff --git a/apps/web/src/app/chat-export-controls.tsx b/apps/web/src/app/chat-export-controls.tsx
+index 29ccf28..4d46c6f 100644
+--- a/apps/web/src/app/chat-export-controls.tsx
++++ b/apps/web/src/app/chat-export-controls.tsx
+@@ -35,6 +35,8 @@ export function ChatExportControls({
+         }}
+       >
+         <option value="markdown">Markdown (.md)</option>
++        <option value="text">Текст (.txt)</option>
++        <option value="html">HTML (.html)</option>
+         <option value="json">JSON (.json)</option>
+         <option value="zip">Архив с вложениями (.zip)</option>
+       </select>
+diff --git a/apps/web/src/app/chat-export.test.ts b/apps/web/src/app/chat-export.test.ts
+index a3bc931..bbec848 100644
+--- a/apps/web/src/app/chat-export.test.ts
++++ b/apps/web/src/app/chat-export.test.ts
+@@ -127,4 +127,38 @@ describe("portable chat exports", () => {
+       createChatExport({ ...source, messages: [source.messages[1]!] }, "json", at)
+     ).toThrow(/нет сообщений/);
+   });
++
++  it("writes plain text with verbatim content and metadata-only attachments", () => {
++    const file = createChatExport(source, "text", at);
++    expect(file.filename).toMatch(/\.txt$/);
++    expect(file.mimeType).toBe("text/plain;charset=utf-8");
++    expect(file.content).toContain(source.messages[0]!.content);
++    expect(file.content).toContain(source.messages[2]!.content);
++    expect(file.content).toContain("отчёт.pdf (pdf)");
++    expect(file.content).not.toMatch(/private extracted|private-image|internal execution/);
++  });
++
++  it("escapes HTML so message content and attachment names cannot inject markup", () => {
++    const file = createChatExport(
++      {
++        ...source,
++        messages: [
++          {
++            ...source.messages[0]!,
++            content: "<script>alert(1)</script>\n```ts\nconst value = '<tag>';\n```",
++            attachments: [{ name: "<img src=x>", content: "hidden" }]
++          }
++        ]
++      },
++      "html",
++      at
++    );
++    expect(file.filename).toMatch(/\.html$/);
++    expect(file.mimeType).toBe("text/html;charset=utf-8");
++    expect(file.content).toContain("&lt;script&gt;alert(1)&lt;/script&gt;");
++    expect(file.content).toContain("&lt;img src=x&gt;");
++    expect(file.content).not.toContain("<script>");
++    expect(file.content).not.toContain("<img src=x>");
++    expect(file.content).not.toMatch(/private extracted|private-image|internal execution/);
++  });
+ });
+diff --git a/apps/web/src/app/chat-export.ts b/apps/web/src/app/chat-export.ts
+index c0a3328..85d0f61 100644
+--- a/apps/web/src/app/chat-export.ts
++++ b/apps/web/src/app/chat-export.ts
+@@ -11,7 +11,7 @@ export type ChatExportSource = {
+   title: string;
+   messages: readonly ExportableChatMessage[];
+ };
+-export type ChatExportFormat = "markdown" | "json";
++export type ChatExportFormat = "markdown" | "json" | "text" | "html";
+ 
+ const statusLabels: Record<ExportableChatMessage["status"], string> = {
+   pending: "Ожидает ответа",
+@@ -31,6 +31,17 @@ function literal(value: string): string {
+     .replace(/[\\`*_{}[\]()#+.!|~-]/g, "\\$&");
+ }
+ 
++// HTML is an escaped, readable transcript, not a Markdown renderer. Message
++// content stays verbatim inside <pre> so model output cannot inject markup.
++function escapeHtml(value: string): string {
++  return value
++    .replace(/&/g, "&amp;")
++    .replace(/</g, "&lt;")
++    .replace(/>/g, "&gt;")
++    .replace(/"/g, "&quot;")
++    .replace(/'/g, "&#39;");
++}
++
+ export function createChatExport(
+   source: ChatExportSource,
+   format: ChatExportFormat,
+@@ -71,7 +82,51 @@ export function createChatExport(
+     .slice(0, 72)
+     .join("")
+     .replace(/^-+|-+$/g, "");
+-  const filename = `kosmora-${title || "chat"}-${exportedAt.replace(/[^0-9]/g, "")}.${format === "json" ? "json" : "md"}`;
++  const extension =
++    format === "json" ? "json" : format === "text" ? "txt" : format === "html" ? "html" : "md";
++  const filename = `kosmora-${title || "chat"}-${exportedAt.replace(/[^0-9]/g, "")}.${extension}`;
++  if (format === "text") {
++    const content = [
++      `${source.title} — экспортировано из Kosmora: ${exportedAt}`,
++      source.projectId ? "Переписка проекта" : "Обычный чат",
++      "Вложения: только названия и типы; содержимое файлов и фотографии не включены.",
++      ...messages.map((message) => {
++        const attachments = message.attachments.length
++          ? `\nВложения:\n${message.attachments
++              .map(
++                (attachment) =>
++                  `- ${attachment.name} (${attachment.kind === "image" ? "изображение" : attachment.source_type ?? "text"})`
++              )
++              .join("\n")}`
++          : "";
++        return `---\n${message.role === "user" ? "Вы" : "Kosmora"} · ${message.created_at} · ${statusLabels[message.status]}\n\n${message.content}${attachments}`;
++      })
++    ].join("\n\n");
++    return { content: `${content}\n`, filename, mimeType: "text/plain;charset=utf-8" };
++  }
++  if (format === "html") {
++    const content = [
++      "<!doctype html>",
++      '<html lang="ru"><head><meta charset="utf-8"><title>',
++      `${escapeHtml(source.title)}</title></head><body>`,
++      `<h1>${escapeHtml(source.title)}</h1>`,
++      `<p>Экспортировано из Kosmora: ${escapeHtml(exportedAt)}. ${source.projectId ? "Переписка проекта" : "Обычный чат"}.</p>`,
++      "<p>Вложения: только названия и типы; содержимое файлов и фотографии не включены.</p>",
++      ...messages.map((message) => {
++        const attachments = message.attachments.length
++          ? `<ul>${message.attachments
++              .map(
++                (attachment) =>
++                  `<li>${escapeHtml(attachment.name)} (${attachment.kind === "image" ? "изображение" : escapeHtml(attachment.source_type ?? "text")})</li>`
++              )
++              .join("")}</ul>`
++          : "";
++        return `<section><h2>${message.role === "user" ? "Вы" : "Kosmora"}</h2><p>${escapeHtml(message.created_at)} · ${escapeHtml(statusLabels[message.status])}</p><pre>${escapeHtml(message.content)}</pre>${attachments}</section>`;
++      }),
++      "</body></html>"
++    ].join("\n");
++    return { content: `${content}\n`, filename, mimeType: "text/html;charset=utf-8" };
++  }
+   if (format === "json") {
+     return {
+       content: `${JSON.stringify(document, null, 2)}\n`,
+diff --git a/apps/web/src/app/chat-item-menu.tsx b/apps/web/src/app/chat-item-menu.tsx
+index 6738f69..9dd4b34 100644
+--- a/apps/web/src/app/chat-item-menu.tsx
++++ b/apps/web/src/app/chat-item-menu.tsx
+@@ -268,6 +268,8 @@ export function ChatItemMenu({
+                 {projectId && item("Вернуть в общий список", "chats", () => void moveTo(null))}
+                 <hr />
+                 {item("Скачать Markdown", "download", () => void exportChat("markdown"))}
++                {item("Скачать текст", "download", () => void exportChat("text"))}
++                {item("Скачать HTML", "download", () => void exportChat("html"))}
+                 {item("Скачать JSON", "files", () => void exportChat("json"))}
+                 <hr />
+                 {item("В архив", "archive", () => void save("archive"))}
