@@ -166,7 +166,6 @@ const pad = (bytes) => (512 - (bytes.length % 512)) % 512;
 const archivePathOf = (name) => `kosmora-${commit.slice(0, 12)}/${name}`;
 for (const file of staged) {
   const name = archivePathOf(file.path);
-  if (Buffer.byteLength(name) > 100) throw new Error(`Path exceeds tar name limit: ${name}`);
   blocks.push(header(name, file.bytes.length, file.mode, "0"));
   blocks.push(file.bytes);
   if (file.bytes.length % 512) blocks.push(Buffer.alloc(pad(file.bytes)));
