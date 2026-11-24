@@ -106,9 +106,9 @@ const waitFor = async (url, predicate, timeoutMs = 25_000) => {
   }
   throw new Error(`Timed out waiting for ${url}; last: ${last}`);
 };
-const startProcess = (command, args, extraEnv) => {
+const startProcess = (command, args, extraEnv, cwd = root) => {
   const child = spawn(command, args, {
-    cwd: root,
+    cwd,
     env: { ...env, ...extraEnv },
     stdio: ["ignore", "pipe", "pipe"]
   });
@@ -198,7 +198,7 @@ try {
   const nextBin = join(webDir, "node_modules", "next", "dist", "bin", "next");
   web = startProcess(process.execPath, [nextBin, "start", "-H", "127.0.0.1", "-p", String(ports.web)], {
     COSMORA_API_ORIGIN: env.COSMORA_API_ORIGIN
-  });
+  }, webDir);
   note("web-start", "ok", { pid: web.child.pid });
 
   note("web-health", "start");
@@ -239,6 +239,12 @@ try {
 
   report.status = "pass";
 } catch (error) {
+  if ((api && !report.stages.some((s) => s.stage === "api-health" && s.state === "ok")) || web) {
+    report.child_output = {
+      api: api?.output().slice(-4000) ?? null,
+      web: web?.output().slice(-4000) ?? null
+    };
+  }
   if (!report.failed_stage) {
     report.status = "error";
     report.error = error instanceof Error ? error.message : String(error);
