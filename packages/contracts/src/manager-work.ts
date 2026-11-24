@@ -108,6 +108,9 @@ export type ManagerWorkStatus =
 export interface WorkMeasuredTiming {
   queue_ms?: number;
   tool_ms?: number;
+  model_ms?: number;
+  pause_ms?: number;
+  await_owner_ms?: number;
 }
 export interface ManagerWork {
   id: string;
@@ -136,6 +139,8 @@ export interface ManagerWork {
   result_accepted_by?: string | null;
   inflight_run_id: string | null;
   queued_since?: string;
+  paused_since?: string;
+  approval_since?: string;
   measured_timing?: WorkMeasuredTiming;
   /** Bounded recovery text, never a validated artifact, plan or publication grant. */
   output_checkpoint?: ModelOutputCheckpoint;

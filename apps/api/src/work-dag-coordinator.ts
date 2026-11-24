@@ -257,7 +257,12 @@ export class WorkDagCoordinator {
                 work_id: child.id,
                 attempt: attempt.number,
                 ...(timing.queue_ms === undefined ? {} : { queue_ms: timing.queue_ms }),
-                ...(timing.tool_ms === undefined ? {} : { tool_ms: timing.tool_ms })
+                ...(timing.tool_ms === undefined ? {} : { tool_ms: timing.tool_ms }),
+                ...(timing.model_ms === undefined ? {} : { model_ms: timing.model_ms }),
+                ...(timing.pause_ms === undefined ? {} : { pause_ms: timing.pause_ms }),
+                ...(timing.await_owner_ms === undefined
+                  ? {}
+                  : { await_owner_ms: timing.await_owner_ms })
               }
             }
           : {}),

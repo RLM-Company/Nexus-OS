@@ -280,15 +280,29 @@ it("projects only canonical statuses and the latest matching measured Work attem
   expect(first.steps.map((step) => step.status)).toEqual(["completed", "pending"]);
   expect(first.active_step_id).toBeNull();
   expect(planSummary(first).total_ms).toBe(0);
-  graph.nodes[0]!.result!.timing = { work_id: "current", attempt: 2, queue_ms: 1250, tool_ms: 12 };
+  expect(planSummary(first).measured.size).toBe(0);
+  graph.nodes[0]!.result!.timing = {
+    work_id: "current",
+    attempt: 2,
+    queue_ms: 1250,
+    tool_ms: 12,
+    model_ms: 900,
+    pause_ms: 4000,
+    await_owner_ms: 15000
+  };
   const second = projectChatTaskPlan(graph, true);
   expect(second.collapsed).toBe(true);
   expect(planSummary(second).timing).toEqual({
     queue: 1250,
     tool: 12,
-    model: 0,
-    pause: 0,
-    await_owner: 0
+    model: 900,
+    pause: 4000,
+    await_owner: 15000
   });
+  expect(planSummary(second).total_ms).toBe(21162);
   expect(projectChatTaskPlan(graph, true)).toEqual(second);
+  graph.nodes[0]!.result!.timing = { work_id: "current", attempt: 2, queue_ms: 0, tool_ms: -1 };
+  const immediate = planSummary(projectChatTaskPlan(graph, false));
+  expect(immediate.total_ms).toBe(0);
+  expect([...immediate.measured]).toEqual(["queue"]);
 });
