@@ -174,16 +174,23 @@ export function WorkManagerDag({
         text.toLocaleLowerCase("ru-RU").includes(search.trim().toLocaleLowerCase("ru-RU"))
       )
   );
-  const graph = visibleGraphs.find((g) => g.id === selected) ?? visibleGraphs[0] ?? null;
+  // Search filters the list, not the identity of the selected plan. A missing
+  // deep link must not expose actions for some other matching plan.
+  const graph = selected
+    ? (visibleGraphs.find((item) => item.id === selected) ?? null)
+    : (visibleGraphs[0] ?? null);
+  const pinned = selected ? graphs.find((item) => item.id === selected) : graph;
   useEffect(() => {
-    if (!graph || graph.project_id !== projectId) return;
+    if (!pinned || pinned.project_id !== projectId) return;
     const url = new URL(window.location.href);
     if (url.searchParams.get("project") !== projectId) return;
-    onPlanSnapshot(graph);
-    if (url.searchParams.get("plan") === graph.id) return;
-    url.searchParams.set("plan", graph.id);
+    // Treat the initial default like any other selection once it is pinned.
+    if (!selected) setSelected(pinned.id);
+    onPlanSnapshot(pinned);
+    if (url.searchParams.get("plan") === pinned.id) return;
+    url.searchParams.set("plan", pinned.id);
     window.history.replaceState(window.history.state, "", url);
-  }, [graph, onPlanSnapshot, projectId]);
+  }, [pinned, selected, onPlanSnapshot, projectId]);
   useEffect(() => {
     const openPlan = (event: Event) => {
       const detail = (event as CustomEvent<{ projectId: string; id: string }>).detail;
@@ -619,11 +626,17 @@ export function WorkManagerDag({
                 disabled={browsingLocked}
                 onChange={(e) => {
                   setSelected(e.target.value);
+                  setError("");
                   setRetry(null);
                   setAcknowledged(false);
                   setAutoConfirmed(false);
                 }}
               >
+                {!graph && (
+                  <option value="" disabled>
+                    Выберите план
+                  </option>
+                )}
                 {visibleGraphs.map((g) => (
                   <option key={g.id} value={g.id}>
                     {g.title}
