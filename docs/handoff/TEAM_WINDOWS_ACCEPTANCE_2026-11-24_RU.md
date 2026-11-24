@@ -53,15 +53,22 @@
 сверяется с `package.json`, добавлены SHA-проверка инсталлятора и результат
 прогона 24.11. Коммит `731c71b4`.
 
+## Проверяемая сборка и SHA (CI run `45428006738`, 24 ноября)
+
+- Инсталлятор: `Kosmora-Setup-0.27.0-x64.exe` (unsigned).
+- **SHA-256: `bbf272919d11608b1891931ca787824226b70fd1d4f64cc4041a38c12e7e7332`**
+- Windows workflow `completed/success`: job `Test, build and lifecycle-test NSIS
+installer` ✅ и `Live server acceptance smoke` ✅. NSIS Fresh и Upgrade
+  (baseline 0.8.0 → 0.27.0), packaged GUI acceptance (вход/сессия, загрузки,
+  offline→online, logout/isolation) — пройдены; побайтовая сверка
+  `connection.json` и session sentinel при апгрейде — успешна.
+
 ## Сдача
 
-- **Проверяемая сборка и SHA**: job `build` CI этого PR producing
-  `Kosmora-Setup-0.27.0-x64.exe` + `dist/SHA256SUMS.txt` (SHA-256 через
-  `Get-FileHash`, `ci/build-unsigned.ps1:26–31`, workflow L109–120). Точные bytes
-  SHA будут зафиксированы в комментарии PR после завершения job.
+- **Проверяемая сборка и SHA**: см. выше (Exact SHA из CI) и комментарий в PR.
 - **Инструкция установки/обновления**: `desktop/windows/README.md:67–89,115–150`.
-- **Список пройденных сценариев**: таблица выше.
-- **PR**: открыт на `main` (draft до зелёного CI).
+- **Список пройденных сценариев**: таблица выше + CI-сценарии.
+- **PR**: [#643](https://github.com/RLM-Company/Nexus-OS/pull/643) (Draft).
 
 ## Ограничения
 
