@@ -60,3 +60,52 @@ test("the selected project plan survives reload without progressing from chat or
   await page.goto(`/?project=${foreign.id}&view=chat&plan=${plan.id}`);
   await expect(card).toHaveCount(0);
 });
+
+test("a pinned chat plan picks up an external start and archive without a page reload", async ({
+  page,
+  request
+}) => {
+  const created = await request.post("/api/v1/projects", {
+    data: { initial_message: "Проверка обновления плана", client_message_id: crypto.randomUUID() }
+  });
+  expect(created.status()).toBe(201);
+  const { project } = (await created.json()) as { project: { id: string } };
+  const base = "/api/v1/projects/" + project.id;
+  const profile = await request.put(base + "/autonomy-profile", {
+    data: { base_level: "A2", overrides: [], expected_version: 1 }
+  });
+  expect(profile.status()).toBe(200);
+  const saved = await request.post(base + "/work-dags", {
+    data: {
+      client_request_id: crypto.randomUUID(),
+      title: "План из другой вкладки",
+      nodes: [{ id: "brief", title: "Бриф", goal: "Создай result.md", depends_on: [] }]
+    }
+  });
+  expect(saved.status()).toBe(201);
+  const plan = (await saved.json()) as WorkDag;
+  const path = base + "/work-dags/" + plan.id;
+
+  await page.goto(`/?project=${project.id}&view=chat&plan=${plan.id}`);
+  const card = page.getByRole("region", { name: "Задачи и план чата" });
+  await expect(card.locator('[data-status="pending"]')).toContainText("Бриф");
+  const started = await request.post(path + "/control", {
+    data: { action: "run", node_id: "brief", version: plan.version }
+  });
+  expect(started.status()).toBe(200);
+
+  // Returning to the tab should get the update immediately, even after a
+  // previously idle snapshot. Do not use a reload to recreate the hook.
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await expect(card.locator('[data-status="completed"]')).toContainText("Бриф", {
+    timeout: 25_000
+  });
+  const done = (await (await request.get(path)).json()) as WorkDag;
+  const archived = await request.put(path + "/archive", {
+    data: { expected_version: done.version, archived: true }
+  });
+  expect(archived.status()).toBe(200);
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await expect(card).toHaveCount(0);
+  expect(new URL(page.url()).searchParams.get("plan")).toBe(plan.id);
+});
