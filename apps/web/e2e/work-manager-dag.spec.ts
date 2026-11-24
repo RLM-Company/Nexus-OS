@@ -190,3 +190,50 @@ test("owner creates, edits and executes a dependency plan with durable versioned
   await expect(versionOne).toBeVisible();
   await expect(versionTwo).toBeVisible();
 });
+
+test("owner can opt into reviewed continuation with an explicit request budget", async ({
+  page,
+  request
+}) => {
+  test.setTimeout(60_000);
+  const created = await request.post("/api/v1/projects", {
+    data: { initial_message: "План с исправлением", client_message_id: crypto.randomUUID() }
+  });
+  expect(created.ok()).toBe(true);
+  const { project } = (await created.json()) as { project: { id: string } };
+  const prefix = "/api/v1/projects/" + project.id;
+  expect(
+    (
+      await request.put(prefix + "/autonomy-profile", {
+        data: { base_level: "A2", overrides: [], expected_version: 1 }
+      })
+    ).ok()
+  ).toBe(true);
+  const response = await request.post(prefix + "/work-dags", {
+    data: {
+      client_request_id: crypto.randomUUID(),
+      title: "Проверка результата",
+      nodes: [{ id: "report", title: "Отчёт", goal: "Создай краткий отчёт", depends_on: [] }]
+    }
+  });
+  expect(response.ok()).toBe(true);
+  const graph = (await response.json()) as WorkDag;
+  await page.goto(`/?project=${project.id}&view=plan&plan=${graph.id}`);
+  const panel = page.getByRole("region", { name: "План с зависимостями", exact: true });
+  await panel.getByLabel(/проверять шаги и один раз исправить/i).check();
+  await panel.getByLabel("Общий лимит запросов модели", { exact: true }).fill("6");
+  const run = panel.getByRole("button", { name: "Выполнить план", exact: true });
+  await expect(run).toBeDisabled();
+  await panel.getByLabel("Разрешаю выполнение оставшихся шагов с расходом токенов").check();
+  await run.click();
+  await expect(panel.getByText("План выполнен", { exact: true })).toBeVisible({ timeout: 30_000 });
+  await expect(panel.getByText(/Запросов модели: 3 из 6.*Осталось по лимиту: 3/)).toBeVisible();
+  const latest = (await (await request.get(prefix + "/work-dags/" + graph.id)).json()) as WorkDag;
+  expect(latest.execution).toMatchObject({
+    status: "completed",
+    auto_repair: true,
+    max_model_requests: 6
+  });
+  expect(latest.nodes[0]?.result?.review?.verdict).toBe("PASS");
+  expect(latest.nodes[0]?.attempts).toHaveLength(1);
+});

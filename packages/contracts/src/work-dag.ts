@@ -84,7 +84,8 @@ export const WorkDagControlSchema = Type.Object(
     ]),
     node_id: Type.Optional(Type.String({ minLength: 1, maxLength: 60 })),
     acknowledge_cost: Type.Optional(Type.Literal(true)),
-    max_model_requests: Type.Optional(Type.Integer({ minimum: 3, maximum: 96 }))
+    max_model_requests: Type.Optional(Type.Integer({ minimum: 3, maximum: 96 })),
+    auto_repair: Type.Optional(Type.Literal(true))
   },
   { additionalProperties: false }
 );
@@ -96,6 +97,7 @@ export interface WorkDagAttempt {
   work_id: string;
   started_at: string;
   source_artifact_ids: string[];
+  repair?: { rejected_attempt: number; reason: string };
 }
 export interface WorkDagNode extends WorkDagNodeInput {
   status: WorkDagStatus;
@@ -143,6 +145,7 @@ export interface WorkDag {
   execution?: {
     status: "running" | "waiting" | "paused" | "stopped" | "completed" | "failed";
     max_model_requests: number | null;
+    auto_repair?: true;
     reason: string | null;
     started_at: string;
   };
@@ -153,6 +156,21 @@ export interface WorkDag {
   created_at: string;
   updated_at: string;
 }
+export function pendingWorkDagRepair(graph: Pick<WorkDag, "nodes">): WorkDagNode | undefined {
+  if (graph.nodes.some((node) => node.attempts.some((attempt) => attempt.repair))) return;
+  const terminal = graph.nodes.filter((node) => ["failed", "cancelled"].includes(node.status));
+  const node = terminal[0];
+  if (
+    terminal.length === 1 &&
+    node?.status === "failed" &&
+    node.blocked_reason === "CRITIC_REJECTED" &&
+    node.result?.review?.verdict === "FAIL" &&
+    node.attempts.length > 0 &&
+    node.attempts.length < 10
+  )
+    return node;
+}
+
 // Structural compatibility with AccountStore. Reconciliation releases a main hold
 // ONLY after the canonical project ledger is committed. No new accounting table.
 export interface WorkOwnerBudget {
