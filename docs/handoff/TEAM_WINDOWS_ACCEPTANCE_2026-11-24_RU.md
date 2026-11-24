@@ -56,7 +56,13 @@
 ## Проверяемая сборка и SHA (CI run `45428006738`, 24 ноября)
 
 - Инсталлятор: `Kosmora-Setup-0.27.0-x64.exe` (unsigned).
-- **SHA-256: `bbf272919d11608b1891931ca787824226b70fd1d4f64cc4041a38c12e7e7332`**
+- **SHA-256 для финального HEAD `1af160d8` (CI run `45429688482`):
+  `6b962c0f9f03541a0e97e64904d6a1d5c1003d82b285a7abd9457a7ffb447c04`**.
+  В первом run `45428006738` тот же код дал
+  `bbf272919d11608b1891931ca787824226b70fd1d4f64cc4041a38c12e7e7332` — это
+  ожидаемо: `README.md:177` не утверждает byte-identical сборку между хостами.
+  SHA привязан к конкретному артефакту/run, а не к версии вообще; при приёмке
+  сверять с `dist/SHA256SUMS.txt` того же прогона.
 - Windows workflow `completed/success`: job `Test, build and lifecycle-test NSIS
 installer` ✅ и `Live server acceptance smoke` ✅. NSIS Fresh и Upgrade
   (baseline 0.8.0 → 0.27.0), packaged GUI acceptance (вход/сессия, загрузки,
