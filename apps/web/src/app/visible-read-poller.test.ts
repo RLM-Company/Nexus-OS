@@ -47,6 +47,34 @@ describe("visible read polling", () => {
     await vi.advanceTimersByTimeAsync(0);
     expect(read).toHaveBeenCalledTimes(3);
   });
+  it("slows idle snapshots, refreshes on focus and switches back to active cadence", async () => {
+    vi.useFakeTimers();
+    const page = activity();
+    let active = false;
+    const read = vi.fn(async () => {});
+    disposers.push(
+      startVisibleReadPolling(read, {
+        intervalMs: 15000,
+        nextIntervalMs: () => (active ? 2000 : 15000),
+        onError: vi.fn(),
+        activity: page.events
+      })
+    );
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(14999);
+    expect(read).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(read).toHaveBeenCalledTimes(2);
+    active = true;
+    page.wake();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(read).toHaveBeenCalledTimes(3);
+    await vi.advanceTimersByTimeAsync(1999);
+    expect(read).toHaveBeenCalledTimes(3);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(read).toHaveBeenCalledTimes(4);
+  });
+
   it("coalesces wake events while a read is pending and does not rearm behind a hidden view", async () => {
     vi.useFakeTimers();
     const page = activity();
