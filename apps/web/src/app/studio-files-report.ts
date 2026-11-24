@@ -202,6 +202,27 @@ export function createDocxReport(lines: readonly string[]): Blob {
   );
 }
 
+/** Packages the completed report using the same content as the individual exports. */
+export async function createAnswerZipReport(answer: AnswerReport): Promise<Blob> {
+  if (answer.status !== "done") throw new Error("Отчёт ещё не готов к экспорту.");
+  const lines = answerReportLines(answer);
+  const [docx, pdf, csv] = await Promise.all([
+    createDocxReport(lines).arrayBuffer(),
+    createPdfReport(lines).then((file) => file.arrayBuffer()),
+    createAnswerCsvReport(answer).arrayBuffer()
+  ]);
+  const archive = zipSync(
+    {
+      "report.txt": strToU8(lines.join("\n") + "\n"),
+      "report.docx": new Uint8Array(docx),
+      "report.pdf": new Uint8Array(pdf),
+      "report.csv": new Uint8Array(csv)
+    },
+    { level: 0 }
+  );
+  return new Blob([new Uint8Array(archive)], { type: "application/zip" });
+}
+
 /** Browser-based, self-contained PDF pages with embedded JPEG raster text (not OCR/searchable). */
 export async function createPdfReport(lines: readonly string[]): Promise<Blob> {
   const encoder = new TextEncoder();

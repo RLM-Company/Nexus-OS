@@ -82,6 +82,19 @@ async function api<T>(url: string, options?: RequestInit): Promise<T> {
   return (await response.json()) as T;
 }
 
+async function includeSelectedRun(items: Run[], id: string | null, signal?: AbortSignal) {
+  if (!id || items.some((run) => run.id === id)) return { items, unavailable: false };
+  const response = await fetch(`/api/v1/research/${encodeURIComponent(id)}`, {
+    cache: "no-store",
+    signal: signal ?? null
+  });
+  if (response.status === 404) return { items, unavailable: true };
+  if (!response.ok) throw new Error("Не удалось открыть выбранный отчёт.");
+  const run = (await response.json()) as Run;
+  if (run.id !== id) throw new Error("Ответ сервера не совпадает с выбранным отчётом.");
+  return { items: [run, ...items], unavailable: false };
+}
+
 export function ResearchWorkspaceContent({ embedded = false }: { embedded?: boolean } = {}) {
   const Root = embedded ? "section" : "main";
   const [availability, setAvailability] = useState<ResearchStatus | null>(null);
@@ -91,36 +104,59 @@ export function ResearchWorkspaceContent({ embedded = false }: { embedded?: bool
   const [synthesize, setSynthesize] = useState(false);
   const [runs, setRuns] = useState<Run[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
+  const selectedRun = useRef<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const pendingStart = useRef<{ payload: string; id: string } | null>(null);
   const startInFlight = useRef(false);
   const current = runs.find((run) => run.id === selected) ?? null;
+  function selectRun(id: string | null) {
+    selectedRun.current = id;
+    setSelected(id);
+    const url = new URL(window.location.href);
+    if (id) url.searchParams.set("run_id", id);
+    else url.searchParams.delete("run_id");
+    window.history.replaceState(window.history.state, "", url);
+  }
   const sync = useCallback(async () => {
+    const id = selectedRun.current;
     try {
       const list = await api<{ items: Run[] }>("/api/v1/research");
-      setRuns(list.items);
-      setNotice(null);
+      const history = await includeSelectedRun(list.items, id);
+      if (id !== selectedRun.current) return;
+      setRuns(history.items);
+      setNotice(history.unavailable ? "Выбранный отчёт недоступен." : null);
     } catch (error) {
+      if (id !== selectedRun.current) return;
       setNotice(error instanceof Error ? error.message : "Нет связи с API");
     }
   }, []);
   useEffect(() => {
+    const controller = new AbortController();
+    const requested = new URLSearchParams(window.location.search).get("run_id")?.trim() || null;
+    const { signal } = controller;
+    selectedRun.current = requested;
     void Promise.all([
-      api<ResearchStatus>("/api/v1/research/status"),
-      api<{ items: Project[] }>("/api/v1/projects"),
-      api<{ items: Run[] }>("/api/v1/research")
+      api<ResearchStatus>("/api/v1/research/status", { signal }),
+      api<{ items: Project[] }>("/api/v1/projects", { signal }),
+      api<{ items: Run[] }>("/api/v1/research", { signal })
     ])
-      .then(([status, projectList, researchList]) => {
+      .then(async ([status, projectList, researchList]) => {
+        const history = await includeSelectedRun(researchList.items, requested, signal);
+        if (signal.aborted) return;
         setAvailability(status);
         setProjects(projectList.items);
         setProjectId((old) => old || projectList.items[0]?.id || "");
-        setRuns(researchList.items);
-        setSelected((old) => old || researchList.items[0]?.id || null);
+        setRuns(history.items);
+        selectedRun.current = requested ?? history.items[0]?.id ?? null;
+        setSelected(selectedRun.current);
+        if (history.unavailable) setNotice("Выбранный отчёт недоступен.");
       })
-      .catch(() =>
-        setNotice("Не удалось загрузить исследования. Проверьте вход и доступность сервера.")
-      );
+      .catch(() => {
+        if (!signal.aborted)
+          setNotice("Не удалось загрузить исследования. Проверьте вход и доступность сервера.");
+      });
+    return () => controller.abort();
   }, []);
   useEffect(() => {
     if (!current || !["queued", "searching", "reading", "synthesizing"].includes(current.status))
@@ -150,7 +186,7 @@ export function ResearchWorkspaceContent({ embedded = false }: { embedded?: bool
     setNotice(null);
     try {
       await api(`/api/v1/research/${current.id}`, { method: "DELETE" });
-      setSelected(null);
+      selectRun(null);
       await sync();
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "Не удалось удалить отчёт");
@@ -180,7 +216,7 @@ export function ResearchWorkspaceContent({ embedded = false }: { embedded?: bool
         body: JSON.stringify({ ...body, client_request_id: id })
       });
       pendingStart.current = null;
-      setSelected(run.id);
+      selectRun(run.id);
       setQuestion("");
       setSynthesize(false);
       await sync();
@@ -320,7 +356,7 @@ export function ResearchWorkspaceContent({ embedded = false }: { embedded?: bool
                 type="button"
                 key={run.id}
                 className={run.id === selected ? styles.active : styles.historyItem}
-                onClick={() => setSelected(run.id)}
+                onClick={() => selectRun(run.id)}
               >
                 <strong>{run.question}</strong>
                 <small>

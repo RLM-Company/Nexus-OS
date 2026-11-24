@@ -1,5 +1,7 @@
 import { randomUUID } from "node:crypto";
+import { readFile } from "node:fs/promises";
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
+import { strFromU8, unzipSync } from "fflate";
 
 const apiOrigin = "http://127.0.0.1:3100";
 const regionName = "Библиотека проекта";
@@ -106,6 +108,8 @@ test("incomplete coverage -> retry -> fresh run -> report, with double-click gua
   );
 
   await expect(statusOf(library)).toContainText("INCOMPLETE_COVERAGE");
+  const exportZip = library.getByRole("button", { name: "Скачать пакет отчёта ZIP" });
+  await expect(exportZip).toBeDisabled();
   await expect(library.getByLabel("Покрытие анализа")).toContainText("Не обработано: 1");
   await expect(library.getByLabel("Покрытие анализа")).toContainText(
     "contract.pdf — 1 из 2 фрагментов, ошибок: 1"
@@ -119,6 +123,21 @@ test("incomplete coverage -> retry -> fresh run -> report, with double-click gua
   await expect(statusOf(library)).toHaveText("Ответ сохранён", { timeout: 10_000 });
   await expect(library.getByLabel("Источники ответа")).toContainText("contract.pdf");
   await expect(library.getByLabel("Источники ответа")).toContainText("Страница 2");
+  const downloadPromise = page.waitForEvent("download");
+  await exportZip.click();
+  const download = await downloadPromise;
+  expect(download.suggestedFilename()).toBe(`kosmora-model-answer-${newId}.zip`);
+  const files = unzipSync(await readFile(await download.path()));
+  expect(Object.keys(files).sort()).toEqual([
+    "report.csv",
+    "report.docx",
+    "report.pdf",
+    "report.txt"
+  ]);
+  expect(strFromU8(files["report.txt"]!)).toContain("[S1]");
+  expect(strFromU8(files["report.csv"]!)).toContain("contract.pdf");
+  expect(strFromU8(files["report.pdf"]!.subarray(0, 5))).toBe("%PDF-");
+  expect(unzipSync(files["report.docx"]!)["word/document.xml"]).toBeDefined();
 });
 
 test("lost retry response requires a fresh explicit action after reconciliation", async ({
