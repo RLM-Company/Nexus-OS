@@ -614,10 +614,12 @@ export class ManagerWorkCoordinator {
             // The Gateway measured the completed provider call. Exclude
             // context preparation, budget admission and response validation
             // after the receipt; this is not provider reasoning time.
-            const elapsed = event.timing.total_ms;
-            const accumulated = (work.measured_timing?.model_ms ?? 0) + elapsed;
-            if (elapsed >= 0 && Number.isSafeInteger(accumulated))
-              work.measured_timing = { ...work.measured_timing, model_ms: accumulated };
+            const elapsed = event.timing?.total_ms;
+            if (elapsed !== undefined && Number.isSafeInteger(elapsed) && elapsed >= 0) {
+              const accumulated = (work.measured_timing?.model_ms ?? 0) + elapsed;
+              if (Number.isSafeInteger(accumulated))
+                work.measured_timing = { ...work.measured_timing, model_ms: accumulated };
+            }
             work = this.checkpoint({ ...work, owner_budget_hold_id: null });
           }
         }
