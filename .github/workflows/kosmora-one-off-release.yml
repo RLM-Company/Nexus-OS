@@ -1,0 +1,84 @@
+name: Build Kosmora Linux release
+
+on:
+  push:
+    branches: [release/artifact-4fb73e33]
+
+permissions:
+  contents: read
+
+jobs:
+  image:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      RELEASE_SHA: 4fb73e33142fbb13180138cb3052c73aa17b6b23
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 4fb73e33142fbb13180138cb3052c73aa17b6b23
+          persist-credentials: false
+      - name: Build from the committed release tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$RELEASE_SHA"
+          node scripts/check-secrets.mjs
+          release_dir="$RUNNER_TEMP/kosmora-release"
+          mkdir -p "$release_dir/context" "$release_dir/output"
+          git archive "$RELEASE_SHA" | tar -x -C "$release_dir/context"
+          image="kosmora-release:${RELEASE_SHA:0:12}"
+          docker build --platform linux/amd64 \
+            --label "org.opencontainers.image.revision=$RELEASE_SHA" \
+            --tag "$image" --file "$release_dir/context/deploy/alpha/Dockerfile" "$release_dir/context"
+      - name: Verify both runtime entry points without network or live data
+        shell: bash
+        run: |
+          set -euo pipefail
+          image="kosmora-release:${RELEASE_SHA:0:12}"
+          trap 'docker rm -f kosmora-release-api kosmora-release-web >/dev/null 2>&1 || true' EXIT
+          docker run -d --network none --name kosmora-release-api \
+            -e MODEL_PROVIDER=mock -e API_HOST=127.0.0.1 -e API_PORT=3100 \
+            -e DATABASE_URL=file:/tmp/release-smoke.sqlite \
+            "$image" pnpm --filter @cosmora/api start
+          docker run -d --network none --name kosmora-release-web \
+            "$image" pnpm --filter @cosmora/web exec next start -H 127.0.0.1 -p 3000
+          for role in api web; do
+            container="kosmora-release-$role"
+            ready=false
+            for attempt in {1..45}; do
+              if docker exec "$container" node deploy/alpha/healthcheck.mjs "$role"; then
+                ready=true
+                break
+              fi
+              if [ "$(docker inspect --format '{{.State.Running}}' "$container")" != true ]; then break; fi
+              sleep 2
+            done
+            if [ "$ready" != true ]; then
+              docker logs "$container"
+              exit 1
+            fi
+          done
+      - name: Package image and record its checksum and uncompressed size
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/kosmora-release/output"
+          image="kosmora-release:${RELEASE_SHA:0:12}"
+          docker save "$image" | gzip -1 -n > kosmora-linux-amd64.tar.gz
+          sha256sum kosmora-linux-amd64.tar.gz > SHA256SUMS
+          sha256sum --check SHA256SUMS
+          {
+            printf 'revision=%s\n' "$RELEASE_SHA"
+            printf 'image=%s\n' "$image"
+            docker image inspect --format 'image_id={{.Id}} platform={{.Os}}/{{.Architecture}} unpacked_bytes={{.Size}}' "$image"
+            printf 'archive_bytes=%s\n' "$(stat -c %s kosmora-linux-amd64.tar.gz)"
+            printf 'api_smoke=pass\nweb_smoke=pass\n'
+          } | tee build-info.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kosmora-linux-amd64-4fb73e33
+          path: ${{ runner.temp }}/kosmora-release/output/
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7
