@@ -209,7 +209,15 @@ export class DocumentAnswerService {
     if (!previous) throw new DocumentAnswerError("NOT_FOUND");
     if (!previous.coverage || !["cancelled", "failed"].includes(previous.status))
       throw new DocumentAnswerError("INVALID_SOURCES");
-    if ([...this.active.values()].some((job) => job.ownerId === ownerId && job.deep))
+    // A cancelled/failed job can still be finishing its async cleanup in `active`;
+    // the durable run is already fenced, so it must not block an explicit retry.
+    if (
+      [...this.active.entries()].some(([activeId, job]) => {
+        if (job.ownerId !== ownerId || !job.deep) return false;
+        const activeRun = this.store.get(job.projectId, ownerId, activeId);
+        return !activeRun || activeRun.status === "queued" || activeRun.status === "running";
+      })
+    )
       throw new DocumentAnswerError("CONFLICT");
     const coverage: DocumentAnalysisCoverage = {
       ...previous.coverage,

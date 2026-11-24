@@ -99,12 +99,27 @@ export function buildWorkResultsArchive(
     if (emitted.has(file.id)) throw new WorkDagConflict("DEPENDENCY_ARTIFACT_MISSING");
     emitted.add(file.id);
     const nodeIndex = graph.nodes.findIndex((node) => node.id === file.node_id);
+    // Reject path traversal/control characters before normalization, while
+    // allowing owner-visible library breadcrumb names ("tables › budget.csv").
     if (
       nodeIndex < 0 ||
-      !/^[a-zA-Z0-9][a-zA-Z0-9_-]*\.(md|txt|json|html|css|js|ts|py|csv)$/.test(file.name) ||
-      file.name.length > 100
+      !file.name ||
+      file.name.length > 100 ||
+      // eslint-disable-next-line no-control-regex -- Archive names must not contain control characters.
+      /[/\\\u0000-\u001f\u007f]/u.test(file.name) ||
+      !/^[a-zA-Z0-9 ._›-]+\.[a-zA-Z0-9]{1,8}$/.test(file.name) ||
+      !/\.(md|txt|json|html|css|js|ts|py|csv|pdf|docx)$/i.test(file.name)
     )
       throw new WorkDagConflict("RESULTS_INVALID_ARTIFACT");
+    // Privacy archive paths are intentionally conservative ASCII-only. Build a
+    // stable slug for the ZIP path; the exact name stays in `original_name`.
+    const slug = file.name
+      .normalize("NFKD")
+      .replace(/[^\x20-\x7e]/g, "")
+      .replace(/[^a-zA-Z0-9._-]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .toLowerCase();
+    if (!slug || slug.length > 80) throw new WorkDagConflict("RESULTS_INVALID_ARTIFACT");
     const node = graph.nodes[nodeIndex]!;
     const declared = node.artifacts.find((artifact) => artifact.id === file.id);
     const bytes = Buffer.from(file.content, "utf8");
@@ -130,7 +145,7 @@ export function buildWorkResultsArchive(
     assertOptionalIntegrity(file.integrity, graph, file, digest, bytes.length, attempt);
     assertOptionalVerification(file.verification);
     // Numeric folders/prefixes isolate duplicate names and exclude untrusted IDs/titles from paths.
-    const path = `steps/${String(nodeIndex + 1).padStart(2, "0")}/${String(index + 1).padStart(3, "0")}-${file.name}`;
+    const path = `steps/${String(nodeIndex + 1).padStart(2, "0")}/${String(index + 1).padStart(3, "0")}-${slug}`;
     entries.push({ path, bytes });
     const publicIntegrity = {
       published: true,
