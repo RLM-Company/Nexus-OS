@@ -377,10 +377,10 @@ describe("executable durable Work DAG", () => {
     expect(f.dag.get(other.id, owner)?.execution?.status).toBe("running");
   });
   it("keeps completed attempt timings stable across reads and recovery replay", async () => {
-    const f = await fixture();
     vi.useFakeTimers({ toFake: ["Date"] });
     try {
       vi.setSystemTime(new Date("2026-11-24T09:00:00Z"));
+      const f = await fixture();
       const plan = f.create();
       const queued = f.dag.control(plan.id, owner, {
         version: plan.version,
@@ -399,6 +399,7 @@ describe("executable durable Work DAG", () => {
       f.coordinator.control(paused.id, owner, paused.version, "resume");
       vi.setSystemTime(new Date("2026-11-24T09:00:02.000Z"));
       await f.coordinator.execute(attempt.work_id, owner);
+      expect(f.store.get(attempt.work_id, owner)?.error_code).toBeNull();
       const done = f.dag.get(plan.id, owner)!;
       const measured = done.nodes[0]!.result?.timing;
       expect(measured).toEqual({
@@ -433,27 +434,27 @@ describe("executable durable Work DAG", () => {
   });
 
   it("separates completed model calls, plan approval, effective pause and queue time across a restart", async () => {
-    const f = await fixture({
-      onCall: () => {
-        vi.setSystemTime(Date.now() + 400);
-        return Promise.resolve();
-      },
-      output: (request) =>
-        request.task_type === "manager_work_plan"
-          ? {
-              summary: "Requires owner approval",
-              instructions: "Prepare the file",
-              complexity: "complex",
-              needs_critic: true,
-              requires_external_actions: false
-            }
-          : undefined
-    });
     vi.useFakeTimers({ toFake: ["Date"] });
     try {
       const start = Date.parse("2026-11-24T10:00:00Z");
       const at = (offset: number) => vi.setSystemTime(start + offset);
       at(0);
+      const f = await fixture({
+        onCall: () => {
+          vi.setSystemTime(Date.now() + 400);
+          return Promise.resolve();
+        },
+        output: (request) =>
+          request.task_type === "manager_work_plan"
+            ? {
+                summary: "Requires owner approval",
+                instructions: "Prepare the file",
+                complexity: "complex",
+                needs_critic: true,
+                requires_external_actions: false
+              }
+            : undefined
+      });
       const graph = f.create();
       const queued = f.dag.control(graph.id, owner, {
         version: graph.version,
@@ -500,6 +501,7 @@ describe("executable durable Work DAG", () => {
       restarted.control(id, owner, stillPaused.version, "resume");
       at(4750);
       await restarted.execute(id, owner);
+      expect(f.store.get(id, owner)?.error_code).toBeNull();
       const finished = restarted.dag.get(graph.id, owner)!;
       expect(finished.nodes[0]!.status).toBe("completed");
       expect(finished.nodes[0]!.result?.timing).toEqual({
