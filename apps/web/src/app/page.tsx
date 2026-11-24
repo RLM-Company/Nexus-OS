@@ -640,7 +640,10 @@ export default function Home() {
   const composerDraftKey = pendingProjectId
     ? `${COMPOSER_DRAFT_STORAGE_PREFIX}project-new-chat:${pendingProjectId}`
     : composerDraftStorageKey(activeProject?.id ?? selectedProjectRef.current, activeLocalChatId);
-  const taskPlan = useChatTaskPlan(activeProject?.id ?? null, projectView === "plan");
+  const taskPlan = useChatTaskPlan(
+    activeProject?.id ?? null,
+    projectView === "chat" && surface === "manager"
+  );
   const composerActions = draftActions.get(composerDraftKey) ?? DEFAULT_COMPOSER_ACTIONS;
   const updateDraftActions = (
     key: string,

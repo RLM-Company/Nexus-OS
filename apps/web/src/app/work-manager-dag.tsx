@@ -177,11 +177,10 @@ export function WorkManagerDag({
   const graph = visibleGraphs.find((g) => g.id === selected) ?? visibleGraphs[0] ?? null;
   useEffect(() => {
     if (!graph || graph.project_id !== projectId) return;
-    onPlanSnapshot(graph);
-    if (graph.archived_at) return;
     const url = new URL(window.location.href);
-    if (url.searchParams.get("project") !== projectId || url.searchParams.get("plan") === graph.id)
-      return;
+    if (url.searchParams.get("project") !== projectId) return;
+    onPlanSnapshot(graph);
+    if (url.searchParams.get("plan") === graph.id) return;
     url.searchParams.set("plan", graph.id);
     window.history.replaceState(window.history.state, "", url);
   }, [graph, onPlanSnapshot, projectId]);

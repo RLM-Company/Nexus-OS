@@ -4,7 +4,13 @@ type Activity = { visible: () => boolean; document: Events; window: Events };
 /** Read-only polling; hiding a view never pauses or resumes agent execution. */
 export function startVisibleReadPolling(
   read: (signal: AbortSignal) => Promise<void>,
-  options: { intervalMs: number; onError: (error: unknown) => void; activity?: Activity }
+  options: {
+    intervalMs: number;
+    /** Override the next delay after reading current state. */
+    nextIntervalMs?: () => number;
+    onError: (error: unknown) => void;
+    activity?: Activity;
+  }
 ): () => void {
   if (!Number.isFinite(options.intervalMs) || options.intervalMs < 1)
     throw new RangeError("Invalid read polling interval");
@@ -29,8 +35,13 @@ export function startVisibleReadPolling(
       // Also stop sibling reads when Promise.all rejects early.
       request.abort();
       pending = false;
-      if (!lifetime.signal.aborted && activity.visible())
-        timer = setTimeout(() => void tick(), options.intervalMs);
+      if (!lifetime.signal.aborted && activity.visible()) {
+        const interval = options.nextIntervalMs?.() ?? options.intervalMs;
+        timer = setTimeout(
+          () => void tick(),
+          Number.isFinite(interval) && interval >= 1 ? interval : options.intervalMs
+        );
+      }
     }
   };
   const wake = () => {
