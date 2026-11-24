@@ -16,7 +16,10 @@ const node = process.execPath;
 
 test("release artifact is reproducible from an exact SHA and extracts cleanly", (t) => {
   // Only run when the tree is clean (the script refuses dirty trees by design).
-  const dirty = execFileSync("git", ["status", "--porcelain"], { cwd: root, encoding: "utf8" }).trim();
+  const dirty = execFileSync("git", ["status", "--porcelain"], {
+    cwd: root,
+    encoding: "utf8"
+  }).trim();
   if (dirty) return t.skip("requires a clean checkout");
   const sha = execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim();
   const first = mkdtempSync(join(tmpdir(), "kosmora-release-a-"));
@@ -35,8 +38,12 @@ test("release artifact is reproducible from an exact SHA and extracts cleanly", 
   };
   const a = build(first);
   const b = build(second);
-  const hashA = createHash("sha256").update(readFileSync(join(a, "source.tar.gz"))).digest("hex");
-  const hashB = createHash("sha256").update(readFileSync(join(b, "source.tar.gz"))).digest("hex");
+  const hashA = createHash("sha256")
+    .update(readFileSync(join(a, "source.tar.gz")))
+    .digest("hex");
+  const hashB = createHash("sha256")
+    .update(readFileSync(join(b, "source.tar.gz")))
+    .digest("hex");
   assert.equal(hashA, hashB, "archive must be byte-identical across builds");
   const manifest = JSON.parse(readFileSync(join(a, "manifest.json"), "utf8"));
   assert.equal(manifest.commit, sha);
@@ -70,8 +77,8 @@ test("rehearsal failure drills report stage, reason and restore command", (t) =>
   ];
   for (const drill of drills) {
     const dir = join(out, drill.name);
-    assert.throws(
-      () => execFileSync(node, [...drill.args, dir], { cwd: root, stdio: "pipe", timeout: 30_000 })
+    assert.throws(() =>
+      execFileSync(node, [...drill.args, dir], { cwd: root, stdio: "pipe", timeout: 30_000 })
     );
     const report = JSON.parse(readFileSync(join(dir, "rehearsal.json"), "utf8"));
     assert.equal(report.status, "failed");

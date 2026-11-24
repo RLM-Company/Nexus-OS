@@ -26,13 +26,11 @@ if (!outputArgument || !isAbsolute(outputArgument)) {
 }
 const output = resolve(outputArgument);
 const relativeOutput = relative(root, output);
-if (
-  !(
-    relativeOutput === ".." ||
-    relativeOutput.startsWith(`..${sep}`) ||
-    isAbsolute(relativeOutput)
-  )
-) {
+if (!(
+  relativeOutput === ".." ||
+  relativeOutput.startsWith(`..${sep}`) ||
+  isAbsolute(relativeOutput)
+)) {
   throw new Error("Release output must be outside the source checkout.");
 }
 const label = labelArgument ?? `rc-${commit.slice(0, 12)}`;
@@ -206,6 +204,9 @@ writeFileSync(resolve(directory, "manifest.json"), JSON.stringify(manifest, null
   flag: "wx"
 });
 process.stdout.write(
-  JSON.stringify({ directory, label, commit, files: entries.length, archive: manifest.archive }, null, 2) +
-    "\n"
+  JSON.stringify(
+    { directory, label, commit, files: entries.length, archive: manifest.archive },
+    null,
+    2
+  ) + "\n"
 );

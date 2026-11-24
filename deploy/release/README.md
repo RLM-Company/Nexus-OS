@@ -31,14 +31,14 @@ SHA и toolchain даёт байтово-identичный `source.tar.gz`.
 
 ## Зафиксированные требования
 
-| Параметр          | Значение / источник                                                                                     |
-| ----------------- | ------------------------------------------------------------------------------------------------------ |
-| Размер исходников   | `manifest.json: source_bytes`, лимит 64 MiB                                                             |
-| Размер образа       | `build.json: image.bytes` (заполняется CI, `docker image inspect`)                                      |
-| Место на диске      | `build.json: requirements.disk_bytes` = 2.5×образ + исходники + 512 MiB на SQLite/WAL                   |
-| Память              | `build.json: requirements.memory_bytes` = 2 GiB на этапе сборки Next; runtime меньше                    |
-| Платформа           | `linux/amd64`, образ `node:24-bookworm-slim`, pnpm 11.19.0                                              |
-| Контрольная сумма   | SHA-256 исходного архива в `manifest.json`, SHA-256 образа в `build.json: image.digest`                 |
+| Параметр          | Значение / источник                                                                     |
+| ----------------- | --------------------------------------------------------------------------------------- |
+| Размер исходников | `manifest.json: source_bytes`, лимит 64 MiB                                             |
+| Размер образа     | `build.json: image.bytes` (заполняется CI, `docker image inspect`)                      |
+| Место на диске    | `build.json: requirements.disk_bytes` = 2.5×образ + исходники + 512 MiB на SQLite/WAL   |
+| Память            | `build.json: requirements.memory_bytes` = 2 GiB на этапе сборки Next; runtime меньше    |
+| Платформа         | `linux/amd64`, образ `node:24-bookworm-slim`, pnpm 11.19.0                              |
+| Контрольная сумма | SHA-256 исходного архива в `manifest.json`, SHA-256 образа в `build.json: image.digest` |
 
 ## Проверки в изолированной среде
 

@@ -29,7 +29,17 @@ const option = (name) => {
 let failAt = option("--fail-at");
 const lowDisk = args.includes("--low-disk");
 const reportDirOverride = option("--report-dir");
-const stages = ["prepare", "migrate", "api-start", "api-health", "web-start", "web-health", "restart", "verify-version", "rollback"];
+const stages = [
+  "prepare",
+  "migrate",
+  "api-start",
+  "api-health",
+  "web-start",
+  "web-health",
+  "restart",
+  "verify-version",
+  "rollback"
+];
 if (failAt !== undefined && !stages.includes(failAt)) {
   throw new Error(`Unknown stage. Choose one of: ${stages.join(", ")}`);
 }
@@ -174,8 +184,10 @@ try {
   const migrationArgs = existsSync(compiledMigration)
     ? [compiledMigration]
     : [
-        "--require", join(root, "scripts/windows-node-user.cjs"),
-        "--import", pathToFileURL(join(root, "apps/api/node_modules/tsx/dist/loader.mjs")).href,
+        "--require",
+        join(root, "scripts/windows-node-user.cjs"),
+        "--import",
+        pathToFileURL(join(root, "apps/api/node_modules/tsx/dist/loader.mjs")).href,
         "packages/db/src/migrate.ts"
       ];
   const migration = spawn(process.execPath, migrationArgs, {
@@ -188,13 +200,16 @@ try {
   migration.stderr.on("data", (c) => (migrationOutput += c));
   const migrationCode = await new Promise((r) => migration.once("exit", r));
   if (migrationCode !== 0) throw new Error(`migrate failed (${migrationCode}): ${migrationOutput}`);
-  const journal = JSON.parse(readFileSync(join(root, "packages/db/migrations/meta/_journal.json"), "utf8"));
+  const journal = JSON.parse(
+    readFileSync(join(root, "packages/db/migrations/meta/_journal.json"), "utf8")
+  );
   note("migrate", "ok", { migrations: journal.entries.length, last: journal.entries.at(-1).tag });
 
   note("api-start", "start");
   const apiEntry = join(root, "apps/api/dist/server.js");
   const hasBuild = existsSync(apiEntry);
-  if (!hasBuild) throw new Error("apps/api/dist/server.js missing; run pnpm --filter @cosmora/api build first.");
+  if (!hasBuild)
+    throw new Error("apps/api/dist/server.js missing; run pnpm --filter @cosmora/api build first.");
   api = startProcess(process.execPath, [apiEntry]);
   note("api-start", "ok", { built: true, pid: api.child.pid });
 
@@ -216,9 +231,14 @@ try {
     throw new Error("apps/web/.next missing; run pnpm --filter @cosmora/web build first.");
   }
   const nextBin = join(webDir, "node_modules", "next", "dist", "bin", "next");
-  web = startProcess(process.execPath, [nextBin, "start", "-H", "127.0.0.1", "-p", String(ports.web)], {
-    COSMORA_API_ORIGIN: env.COSMORA_API_ORIGIN
-  }, webDir);
+  web = startProcess(
+    process.execPath,
+    [nextBin, "start", "-H", "127.0.0.1", "-p", String(ports.web)],
+    {
+      COSMORA_API_ORIGIN: env.COSMORA_API_ORIGIN
+    },
+    webDir
+  );
   note("web-start", "ok", { pid: web.child.pid });
 
   note("web-health", "start");
@@ -254,7 +274,8 @@ try {
     (status, body) => status === 200 && body.database === "ok"
   );
   const dbHashAfter = createHash("sha256").update(readFileSync(db)).digest("hex");
-  if (dbHashAfter !== dbHash) throw new Error("Rollback changed the database; data safety violation.");
+  if (dbHashAfter !== dbHash)
+    throw new Error("Rollback changed the database; data safety violation.");
   note("rollback", "ok", { health: afterRollback, database_unchanged: true });
 
   report.status = "pass";
