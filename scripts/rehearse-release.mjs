@@ -26,7 +26,7 @@ const option = (name) => {
   const i = args.indexOf(name);
   return i === -1 ? undefined : args[i + 1];
 };
-const failAt = option("--fail-at");
+let failAt = option("--fail-at");
 const lowDisk = args.includes("--low-disk");
 const reportDirOverride = option("--report-dir");
 const stages = ["prepare", "migrate", "api-start", "api-health", "web-start", "web-health", "restart", "verify-version", "rollback"];
@@ -153,7 +153,10 @@ try {
       simulated_free_bytes: 64 * 1024 * 1024,
       behavior: "preflight must refuse before unpack or migration, with a clear message"
     };
-    note("prepare", "ok", { low_disk: report.low_disk });
+    // Treat this as an injected failure at the prepare stage so every failure
+    // report has an explicit stopping point and restore command.
+    failAt = "prepare";
+    note("prepare", "start", { low_disk: report.low_disk });
     throw new Error(
       "LOW_DISK: refusing to unpack. Need at least the disk_bytes in build.json; " +
         "free 64 MiB is below the preflight threshold. Nothing was written."
