@@ -24,6 +24,12 @@ export const RawServerConfigSchema = Type.Object(
     MODEL_BASE_URL: Type.Optional(Type.String({ pattern: "^https?://" })),
     MODEL_API_KEY: Type.Optional(Type.String({ minLength: 1 })),
     MODEL_NAME: Type.Optional(Type.String({ minLength: 1 })),
+    CHAT_TASK_SPLIT_FAST_ROUTE: Type.Optional(
+      Type.String({ pattern: "^[^:\\s]+:\\S+$", maxLength: 385 })
+    ),
+    CHAT_TASK_SPLIT_LARGE_ROUTE: Type.Optional(
+      Type.String({ pattern: "^[^:\\s]+:\\S+$", maxLength: 385 })
+    ),
     MODEL_FALLBACK_TO_MOCK: Type.Optional(
       Type.Union([Type.Literal("true"), Type.Literal("false")])
     ),
@@ -76,6 +82,7 @@ export interface ServerConfig {
   modelBaseUrl: string | null;
   modelApiKeyConfigured: boolean;
   modelName: string;
+  chatTaskSplitRoutes?: Partial<Record<"fast" | "large", string>>;
   modelFallbackToMock: boolean;
   modelMaxAttemptsPerRoute: number;
   modelRetryBaseDelayMs: number;
@@ -109,6 +116,8 @@ const configKeys = [
   "MODEL_BASE_URL",
   "MODEL_API_KEY",
   "MODEL_NAME",
+  "CHAT_TASK_SPLIT_FAST_ROUTE",
+  "CHAT_TASK_SPLIT_LARGE_ROUTE",
   "MODEL_FALLBACK_TO_MOCK",
   "MODEL_MAX_ATTEMPTS_PER_ROUTE",
   "MODEL_RETRY_BASE_DELAY_MS",
@@ -236,6 +245,10 @@ export const loadServerConfig = (env: NodeJS.ProcessEnv = process.env): ServerCo
     modelBaseUrl: raw.MODEL_BASE_URL ?? null,
     modelApiKeyConfigured: hasCanonicalValue(raw.MODEL_API_KEY),
     modelName: raw.MODEL_NAME ?? "manager",
+    chatTaskSplitRoutes: {
+      ...(raw.CHAT_TASK_SPLIT_FAST_ROUTE ? { fast: raw.CHAT_TASK_SPLIT_FAST_ROUTE } : {}),
+      ...(raw.CHAT_TASK_SPLIT_LARGE_ROUTE ? { large: raw.CHAT_TASK_SPLIT_LARGE_ROUTE } : {})
+    },
     modelFallbackToMock: raw.MODEL_FALLBACK_TO_MOCK !== "false",
     modelMaxAttemptsPerRoute,
     modelRetryBaseDelayMs,

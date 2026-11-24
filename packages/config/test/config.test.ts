@@ -15,6 +15,7 @@ describe("loadServerConfig", () => {
       modelBaseUrl: null,
       modelApiKeyConfigured: false,
       modelName: "manager",
+      chatTaskSplitRoutes: {},
       modelFallbackToMock: true,
       modelMaxAttemptsPerRoute: 2,
       modelRetryBaseDelayMs: 250,
@@ -27,6 +28,18 @@ describe("loadServerConfig", () => {
       logLevel: "info",
       mockProviderMode: "success"
     });
+  });
+
+  it("parses separate route choices for fast and large task decomposition", () => {
+    expect(
+      loadServerConfig({
+        CHAT_TASK_SPLIT_FAST_ROUTE: "mock:manager",
+        CHAT_TASK_SPLIT_LARGE_ROUTE: "live:model:v2"
+      }).chatTaskSplitRoutes
+    ).toEqual({ fast: "mock:manager", large: "live:model:v2" });
+    expect(() => loadServerConfig({ CHAT_TASK_SPLIT_FAST_ROUTE: ":unconfigured" })).toThrow(
+      "Invalid server configuration: /CHAT_TASK_SPLIT_FAST_ROUTE"
+    );
   });
 
   it("parses an explicit port", () => {
