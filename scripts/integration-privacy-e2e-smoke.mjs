@@ -17,6 +17,8 @@ const emit = (source, target) => {
     fileName: source,
     compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 }
   }).outputText;
+  if (source === "apps/api/src/account-settings/account-store.ts")
+    out = out.replaceAll('"@cosmora/db"', '"./account-profile-upgrade.js"');
   if (source === "packages/db/src/canvas-artifact-store.ts")
     out = out
       .replaceAll('"@cosmora/contracts"', '"./canvas-artifacts.js"')
@@ -32,6 +34,7 @@ try {
   writeFileSync(join(temp, "package.json"), '{"type":"module"}');
   for (const [src, dst] of [
     ["apps/api/src/account-settings/account-store.ts", "account-store.js"],
+    ["packages/db/src/account-profile-upgrade.ts", "account-profile-upgrade.js"],
     ["apps/api/src/account-settings/execution-profile.ts", "execution-profile.js"],
     ["apps/api/src/account-settings/migration.ts", "migration.js"],
     ["apps/api/src/account-settings/privacy/archive.ts", "privacy/archive.js"],

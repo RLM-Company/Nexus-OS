@@ -169,3 +169,5 @@ export * from "./work-skill-store.js";
 export * from "./project-automation-store.js";
 export * from "./scheduled-dispatch-store.js";
 export * from "./pay-store.js";
+
+export { upgradeAccountProfileColumns } from "./account-profile-upgrade.js";
