@@ -148,7 +148,7 @@ try {
 
   note("migrate", "start");
   const migration = spawn(process.execPath, [
-    "--require", "scripts/windows-node-user.cjs",
+    "--require", join(root, "scripts/windows-node-user.cjs"),
     "--import", "tsx",
     "packages/db/src/migrate.ts"
   ], { cwd: root, env, stdio: ["ignore", "pipe", "pipe"] });
