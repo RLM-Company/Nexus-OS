@@ -148,11 +148,21 @@ try {
   note("prepare", "ok");
 
   note("migrate", "start");
-  const migration = spawn(process.execPath, [
-    "--require", join(root, "scripts/windows-node-user.cjs"),
-    "--import", pathToFileURL(join(root, "apps/api/node_modules/tsx/dist/loader.mjs")).href,
-    "packages/db/src/migrate.ts"
-  ], { cwd: root, env, stdio: ["ignore", "pipe", "pipe"] });
+  // Prefer the compiled migration entrypoint; fall back to tsx for source trees
+  // that have not been built yet (the CI workflow runs `pnpm build` first).
+  const compiledMigration = join(root, "packages/db/dist/migrate.js");
+  const migrationArgs = existsSync(compiledMigration)
+    ? [compiledMigration]
+    : [
+        "--require", join(root, "scripts/windows-node-user.cjs"),
+        "--import", pathToFileURL(join(root, "apps/api/node_modules/tsx/dist/loader.mjs")).href,
+        "packages/db/src/migrate.ts"
+      ];
+  const migration = spawn(process.execPath, migrationArgs, {
+    cwd: root,
+    env,
+    stdio: ["ignore", "pipe", "pipe"]
+  });
   let migrationOutput = "";
   migration.stdout.on("data", (c) => (migrationOutput += c));
   migration.stderr.on("data", (c) => (migrationOutput += c));
