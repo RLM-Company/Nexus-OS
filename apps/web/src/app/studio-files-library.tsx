@@ -19,6 +19,7 @@ import {
   answerCoverageLines,
   answerReportLines,
   createAnswerCsvReport,
+  createAnswerZipReport,
   type AnswerReport
 } from "./studio-files-report";
 import styles from "./studio-files-library.module.css";
@@ -567,9 +568,13 @@ export function StudioDocumentLibrary({ projectId, onCompose, onProjectCreated }
   // Keep the source selected while a retry is in flight: the double-click
   // guard must remain visible until the server result is reconciled.
   const saved = answers.find((item) => item.id === (retryPending ?? activeAnswerId)) ?? answers[0];
-  const exportAnswer = async (kind: "docx" | "pdf" | "csv") => {
+  const exportAnswer = async (kind: "docx" | "pdf" | "csv" | "zip") => {
     if (!saved || saved.status !== "done") return;
     try {
+      if (kind === "zip") {
+        downloadReport(await createAnswerZipReport(saved), `kosmora-model-answer-${saved.id}.zip`);
+        return;
+      }
       const lines = answerReportLines(saved);
       const blob =
         kind === "csv"
@@ -1056,6 +1061,13 @@ export function StudioDocumentLibrary({ projectId, onCompose, onProjectCreated }
                     onClick={() => void exportAnswer("csv")}
                   >
                     Экспорт ответа CSV
+                  </button>
+                  <button
+                    type="button"
+                    disabled={saved.status !== "done"}
+                    onClick={() => void exportAnswer("zip")}
+                  >
+                    Скачать пакет отчёта ZIP
                   </button>
                   <ReportCanvas
                     key={saved.id}
