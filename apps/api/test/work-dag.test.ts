@@ -1291,6 +1291,119 @@ describe("executable durable Work DAG", () => {
     expect(graph.usage?.model_requests).toBe(6);
     expect(graph.nodes.map((node) => node.attempts.length)).toEqual([1, 1, 1]);
   });
+  it("corrects a rejected result once, rechecks it, then runs the dependent goal", async () => {
+    let reviews = 0;
+    const repairReason = "Добавьте обязательный итог по сумме 19 700.";
+    const f = await fixture({
+      output: (request) =>
+        request.task_type === "manager_work_review" && ++reviews === 1
+          ? { verdict: "FAIL", reason: repairReason }
+          : request.task_type === "manager_work_draft" && reviews > 0
+            ? { files: [{ name: "result.md", content: "Итог: 19 700" }] }
+            : undefined
+    });
+    let graph = f.dag.create(f.project.id, owner, owner, {
+      client_request_id: "adaptive-plan",
+      title: "Проверенное предложение",
+      nodes: nodes.slice(0, 2)
+    });
+    const settings = { action: "run_plan", acknowledge_cost: true, auto_repair: true } as const;
+    expect(() => f.dag.control(graph.id, owner, { version: graph.version, ...settings })).toThrow(
+      "INVALID_PLAN_BUDGET"
+    );
+    graph = f.dag.control(graph.id, owner, {
+      version: graph.version,
+      ...settings,
+      max_model_requests: 9
+    });
+    graph = await autoTick(f, graph.id);
+    expect(graph.execution).toMatchObject({ status: "running", reason: "REPAIR_PENDING" });
+    expect(graph.nodes[1]!.attempts).toHaveLength(0);
+    expect(f.dag.results(graph.id, owner).files).toEqual([]);
+
+    f.dag.get(graph.id, owner);
+    expect(f.calls).toHaveLength(3);
+    expect(f.store.pending()).toHaveLength(0);
+    f.dag.advance();
+    f.dag.advance();
+    graph = f.dag.get(graph.id, owner)!;
+    expect(graph.nodes[0]!.attempts[1]?.repair).toEqual({
+      rejected_attempt: 1,
+      reason: repairReason
+    });
+    expect(f.store.pending()).toHaveLength(1);
+    expect(graph.events.some((event) => event.message.includes("Добавлено исправление"))).toBe(
+      true
+    );
+
+    graph = await autoTick(f, graph.id);
+    expect(graph.nodes[0]!.status).toBe("completed");
+    expect(graph.nodes[0]!.result?.review?.verdict).toBe("PASS");
+    expect(f.calls[3]?.messages.at(-1)?.content).toContain(repairReason);
+    expect(f.calls).toHaveLength(6);
+    graph = await autoTick(f, graph.id);
+    expect(graph.execution?.status).toBe("completed");
+    expect(graph.usage?.model_requests).toBe(9);
+    expect(graph.nodes.map((node) => node.attempts.length)).toEqual([2, 1]);
+    expect(f.dag.results(graph.id, owner).files).toHaveLength(2);
+    expect(JSON.stringify(f.dag.results(graph.id, owner).files)).toContain("Итог: 19 700");
+  });
+
+  it("holds a repair at the budget boundary and stops after a second rejection", async () => {
+    const f = await fixture({
+      output: (request) =>
+        request.task_type === "manager_work_review"
+          ? { verdict: "FAIL", reason: "Отклонено в фикстуре" }
+          : undefined
+    });
+    const armRepair = (graph: WorkDag, limit: number) =>
+      f.dag.control(graph.id, owner, {
+        version: graph.version,
+        action: "run_plan",
+        acknowledge_cost: true,
+        auto_repair: true,
+        max_model_requests: limit
+      });
+    let graph = armRepair(f.create(), 3);
+    graph = await autoTick(f, graph.id);
+    graph = await autoTick(f, graph.id);
+    expect(graph.execution).toMatchObject({ status: "stopped", reason: "PLAN_REQUEST_LIMIT" });
+    expect(graph.nodes[0]!.attempts).toHaveLength(1);
+    expect(f.calls).toHaveLength(3);
+    expect(() => armRepair(graph, 5)).toThrow("PLAN_REQUEST_LIMIT");
+    graph = armRepair(graph, 12);
+    graph = await autoTick(f, graph.id);
+    graph = await autoTick(f, graph.id);
+    expect(graph.execution).toMatchObject({ status: "failed", reason: "STEP_FAILED" });
+    expect(graph.nodes.map((node) => node.attempts.length)).toEqual([2, 0, 0]);
+    expect(f.calls).toHaveLength(6);
+    expect(f.dag.results(graph.id, owner).files).toEqual([]);
+  });
+
+  it("does not launch a pending repair after the owner stops automation", async () => {
+    const f = await fixture({
+      output: (request) =>
+        request.task_type === "manager_work_review"
+          ? { verdict: "FAIL", reason: "Нужно дополнить результат" }
+          : undefined
+    });
+    let graph = f.create();
+    graph = f.dag.control(graph.id, owner, {
+      version: graph.version,
+      action: "run_plan",
+      acknowledge_cost: true,
+      auto_repair: true,
+      max_model_requests: 12
+    });
+    graph = await autoTick(f, graph.id);
+    expect(graph.execution?.reason).toBe("REPAIR_PENDING");
+    graph = f.dag.control(graph.id, owner, { version: graph.version, action: "stop_plan" });
+    graph = await autoTick(f, graph.id);
+    expect(graph.execution?.reason).toBe("STOPPED_BY_OWNER");
+    expect(graph.nodes[0]!.attempts).toHaveLength(1);
+    expect(f.calls).toHaveLength(3);
+  });
+
   it("never retries a failed model step or starts an independent step behind it", async () => {
     let fail = true;
     const f = await fixture({
