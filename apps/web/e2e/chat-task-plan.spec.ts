@@ -109,3 +109,56 @@ test("a pinned chat plan picks up an external start and archive without a page r
   await expect(card).toHaveCount(0);
   expect(new URL(page.url()).searchParams.get("plan")).toBe(plan.id);
 });
+
+test("plan search and missing links cannot silently select a different plan", async ({
+  page,
+  request
+}) => {
+  const created = await request.post("/api/v1/projects", {
+    data: { initial_message: "Проверка закрепления", client_message_id: crypto.randomUUID() }
+  });
+  expect(created.status()).toBe(201);
+  const { project } = (await created.json()) as { project: { id: string } };
+  const base = "/api/v1/projects/" + project.id + "/work-dags";
+  const plans: WorkDag[] = [];
+  for (const title of ["Первый отчёт", "Второй отчёт"]) {
+    const saved = await request.post(base, {
+      data: {
+        client_request_id: crypto.randomUUID(),
+        title,
+        nodes: [{ id: "brief", title: "Бриф", goal: "Создай result.md", depends_on: [] }]
+      }
+    });
+    expect(saved.status()).toBe(201);
+    plans.push((await saved.json()) as WorkDag);
+  }
+  const [first, second] = [plans[0]!, plans[1]!];
+  await page.goto(`/?project=${project.id}&view=plan&plan=${first.id}`);
+  const editor = page.getByRole("region", { name: "План с зависимостями", exact: true });
+  const card = page.getByRole("region", { name: "Задачи и план чата", exact: true });
+  const select = editor.getByLabel("Сохранённые планы");
+  await expect(select).toHaveValue(first.id);
+  await expect(card).toContainText(first.title);
+
+  await editor.getByLabel("Поиск планов").fill(second.title);
+  await expect(select.getByRole("option", { name: second.title, exact: true })).toHaveCount(1);
+  await expect(select).toHaveValue("");
+  await expect(editor.getByRole("button", { name: "Выполнить план", exact: true })).toHaveCount(0);
+  await expect(card).toContainText(first.title);
+  await expect(page).toHaveURL(new RegExp("plan=" + first.id + "$"));
+
+  await select.selectOption(second.id);
+  await expect(card).toContainText(second.title);
+  await expect(page).toHaveURL(new RegExp("plan=" + second.id + "$"));
+
+  const missing = crypto.randomUUID();
+  await page.goto(`/?project=${project.id}&view=plan&plan=${missing}`);
+  await expect(editor.getByText("План из ссылки не найден в этом проекте")).toBeVisible();
+  await expect(select).toHaveValue("");
+  await expect(editor.getByRole("button", { name: "Выполнить план", exact: true })).toHaveCount(0);
+  await expect(card).toHaveCount(0);
+  await expect(page).toHaveURL(new RegExp("plan=" + missing + "$"));
+  await select.selectOption(first.id);
+  await expect(card).toContainText(first.title);
+  await expect(editor.getByText("План из ссылки не найден в этом проекте")).toHaveCount(0);
+});
