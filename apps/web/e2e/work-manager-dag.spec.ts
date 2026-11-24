@@ -1,6 +1,57 @@
 import { expect, test } from "@playwright/test";
 import type { WorkDag } from "@cosmora/contracts";
 
+test("builds a chain with the mock model, saves it and executes dependent goals", async ({
+  page,
+  request
+}) => {
+  test.setTimeout(75_000);
+  const created = await request.post("/api/v1/projects", {
+    data: {
+      initial_message: "Работай до конца задачи: подготовь проверенный результат.",
+      client_message_id: crypto.randomUUID()
+    }
+  });
+  expect(created.status()).toBe(201);
+  const { project } = (await created.json()) as { project: { id: string } };
+  const root = "/api/v1/projects/" + project.id;
+  expect(
+    (
+      await request.put(root + "/autonomy-profile", {
+        data: { base_level: "A2", overrides: [], expected_version: 1 }
+      })
+    ).status()
+  ).toBe(200);
+  await page.goto("/?project=" + project.id + "&view=plan");
+  await page.getByRole("button", { name: "Построить цепочку с ИИ", exact: true }).click();
+  const panel = page.getByRole("region", { name: "План с зависимостями", exact: true });
+  await panel.getByRole("button", { name: "Посмотреть цепочку от ИИ" }).click({ timeout: 32_000 });
+  const preview = panel.getByRole("form", { name: "Предпросмотр импорта плана" });
+  await expect(preview).toContainText("Проверить демонстрационный результат");
+  await expect(preview.getByRole("listitem").nth(1)).toContainText(
+    "Зависимости: Подготовить исходные данные"
+  );
+  await preview.getByRole("checkbox").check();
+  await preview.getByRole("button", { name: "Сохранить импортированный план" }).click();
+  const run = panel.getByRole("button", { name: "Выполнить план", exact: true });
+  await expect(run).toBeDisabled();
+  await panel
+    .getByLabel("Разрешаю выполнение оставшихся шагов с расходом токенов", { exact: true })
+    .check();
+  await run.click();
+  await expect(panel.getByText("План выполнен", { exact: true })).toBeVisible({ timeout: 35_000 });
+  await page.reload();
+  await expect(
+    page.getByRole("region", { name: "Задачи и план чата" }).locator('[data-status="completed"]')
+  ).toHaveCount(2);
+  const data = await request.get(root + "/work-dags");
+  const [graph] = ((await data.json()) as { items: WorkDag[] }).items;
+  expect(graph?.nodes.map((step) => [step.depends_on, step.status, step.attempts.length])).toEqual([
+    [[], "completed", 1],
+    [["step-1"], "completed", 1]
+  ]);
+});
+
 test("owner runs the complete reviewed plan once and recovers a lost start response", async ({
   page,
   request

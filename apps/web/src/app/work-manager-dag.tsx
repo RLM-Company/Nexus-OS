@@ -27,6 +27,7 @@ import {
 } from "./work-schedule-ui";
 import { useExecutionGate } from "./use-execution-gate";
 import { announceChatTaskPlan } from "./use-chat-task-plan";
+import { AI_WORK_CHAIN_FILE, parseAiWorkChain } from "./ai-work-chain";
 import styles from "./work-manager.module.css";
 
 const statuses: Record<string, string> = {
@@ -117,10 +118,12 @@ const freshStep = (): WorkDagNodeInput => ({
 
 export function WorkManagerDag({
   projectId,
-  onPlanSnapshot
+  onPlanSnapshot,
+  aiPlanWorkId
 }: {
   projectId: string;
   onPlanSnapshot: (graph: WorkDag) => void;
+  aiPlanWorkId: string | null;
 }) {
   const base = "/api/v1/projects/" + encodeURIComponent(projectId) + "/work-dags";
   const gate = useExecutionGate(projectId);
@@ -158,6 +161,7 @@ export function WorkManagerDag({
     checked: boolean;
   } | null>(null);
   const [readingImport, setReadingImport] = useState(false);
+  const importPanel = useRef<HTMLDetailsElement>(null);
   const importEpoch = useRef(0);
   const [retry, setRetry] = useState<string | null>(null);
   const [cancellation, setCancellation] = useState<{
@@ -531,6 +535,26 @@ export function WorkManagerDag({
       if (epoch === importEpoch.current) setReadingImport(false);
     }
   }
+  async function readAiPlan(workId: string) {
+    if (browsingLocked) return;
+    setReadingImport(true);
+    setError("");
+    const source = `/api/v1/projects/${encodeURIComponent(projectId)}/work/${encodeURIComponent(workId)}/files/${AI_WORK_CHAIN_FILE}`;
+    try {
+      const response = await fetch(source, {
+        cache: "no-store",
+        signal: AbortSignal.timeout(15000)
+      });
+      if (!response.ok) throw Error("AI_WORK_CHAIN_UNAVAILABLE");
+      const plan = parseAiWorkChain(await response.text());
+      setImportDraft({ package: plan, requestId: "ai-chain:" + workId, checked: false });
+      if (importPanel.current) importPanel.current.open = true;
+    } catch {
+      setError("Не удалось прочитать цепочку из результата ИИ. Проверьте задачу планирования.");
+    } finally {
+      setReadingImport(false);
+    }
+  }
   function act(action: WorkDagControl["action"], nodeId?: string) {
     if (
       !graph ||
@@ -567,6 +591,15 @@ export function WorkManagerDag({
         Бюджеты и разрешения проверяются перед выполнением. Повторы запускаются вручную.
       </p>
       <div className={styles.actions}>
+        {aiPlanWorkId && (
+          <button
+            type="button"
+            disabled={browsingLocked}
+            onClick={() => void readAiPlan(aiPlanWorkId)}
+          >
+            Посмотреть цепочку от ИИ
+          </button>
+        )}
         {graph && (
           <button
             type="button"
@@ -687,7 +720,7 @@ export function WorkManagerDag({
           )}
         </>
       )}
-      <details>
+      <details ref={importPanel}>
         <summary>Перенос плана через JSON</summary>
         <p>
           Файл содержит задачи и зависимости. После локального предпросмотра импорт создаст новый
@@ -1316,7 +1349,11 @@ export function WorkManagerDag({
           )}
           <ol className={styles.entries}>
             {visibleSteps.map((node) => (
-              <li className={styles.entry} key={node.id}>
+              <li
+                className={styles.entry}
+                key={node.id}
+                aria-current={node.status === "running" ? "step" : undefined}
+              >
                 <strong>
                   {node.title} · {statuses[node.status]}
                 </strong>
