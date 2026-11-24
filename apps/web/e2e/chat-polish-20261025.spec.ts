@@ -184,15 +184,25 @@ test("task decomposition can be enabled, restored after reload and disabled", as
   await expect(setting).toBeEnabled();
   const saved = async () =>
     (await (await request.get("/api/v1/personal-settings")).json()).settings.task_decomposition;
-  try {
-    await setting.check();
-    await expect.poll(saved).toBe(true);
-    await page.reload();
-    await expect(setting).toBeChecked();
-  } finally {
-    await setting.uncheck();
-    await expect.poll(saved).toBe(false);
-  }
+  const toggle = async (enabled: boolean) => {
+    await expect(setting).toBeEnabled();
+    const [response] = await Promise.all([
+      page.waitForResponse(
+        (candidate) =>
+          new URL(candidate.url()).pathname === "/api/v1/personal-settings" &&
+          candidate.request().method() === "PUT"
+      ),
+      setting.press("Space")
+    ]);
+    expect(response.ok(), await response.text()).toBe(true);
+    await expect.poll(saved).toBe(enabled);
+  };
+
+  await expect(setting).not.toBeChecked();
+  await toggle(true);
+  await page.reload();
+  await expect(setting).toBeChecked();
+  await toggle(false);
   await page.reload();
   await expect(setting).not.toBeChecked();
 });
