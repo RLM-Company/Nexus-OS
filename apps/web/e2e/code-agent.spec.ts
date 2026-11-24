@@ -13,19 +13,23 @@ test.beforeEach(async ({ page }) => {
   });
 });
 
+type CheckFixture = {
+  exitCode?: number | null;
+  cleanupVerified?: boolean;
+  status?: string;
+  check_type?: "syntax" | "node-test";
+};
+
 async function scenario(
   page: Page,
-  lostPublish: false | "after-start" | "after-commit" | "before-start" = false,
-  proof: {
-    exitCode?: number | null;
-    cleanupVerified?: boolean;
-    status?: string;
-    check_type?: "syntax" | "node-test";
-  } = {},
+  lostPublish:
+    false | "after-start" | "after-start-pending" | "after-commit" | "before-start" = false,
+  proof: CheckFixture | ((check: number) => CheckFixture) = {},
   expectedReview: (review: number) => string = () => "export const value = 3;",
   repairCapability: boolean | number = false
 ) {
   let publications = 0;
+  let reconciliations = 0;
   let checks = 0;
   let reviews = 0;
   let repairs = 0;
@@ -160,7 +164,7 @@ async function scenario(
           exitCode: 0,
           cleanupVerified: true,
           journal: [{ event: "completed" }],
-          ...proof
+          ...(typeof proof === "function" ? proof(checks) : proof)
         }
       };
       data = run;
@@ -219,7 +223,8 @@ async function scenario(
         approve: true
       });
       if (lostPublish && lostPublish !== "after-commit" && publications === 1) {
-        if (lostPublish === "after-start") run = { ...run, status: "uncertain" };
+        if (lostPublish !== "before-start")
+          run = { ...run, status: "uncertain", error: "RECONCILIATION_REQUIRED" };
         await route.abort("failed");
         return;
       }
@@ -238,13 +243,17 @@ async function scenario(
       }
       data = run;
     } else if (url.pathname.endsWith("/reconcile")) {
-      if (lostPublish === "before-start") {
+      reconciliations++;
+      if (lostPublish === "after-start-pending" && reconciliations === 1) {
+        data = run;
+      } else if (lostPublish === "before-start") {
         run = { ...run, status: "checked", publication_token: "publication-token-2" };
         data = run;
       } else {
         run = {
           ...run,
           status: "published",
+          error: undefined,
           draft: {
             ...(run.draft as object),
             status: "published",
@@ -262,6 +271,7 @@ async function scenario(
   });
   return {
     publications: () => publications,
+    reconciliations: () => reconciliations,
     checks: () => checks,
     repairs: () => repairs,
     snapshot: () => structuredClone(run),
@@ -295,13 +305,14 @@ async function scenario(
   };
 }
 
-async function prepare(page: Page, navigate = true) {
+async function prepare(page: Page, navigate = true, editProposal = true) {
   if (navigate) await page.goto("/code-agent");
   await page.getByLabel("Задача", { exact: true }).fill("Исправь неверный результат");
   await page.getByRole("button", { name: "Предложить исправление" }).click();
   await expect(page.getByLabel("Просмотр изменений")).toContainText("export const value = 1;");
   await page.getByRole("checkbox", { name: "src/unrelated.js", exact: true }).uncheck();
-  await page.getByLabel("+ Итоговое содержимое: src/value.js").fill("export const value = 3;");
+  if (editProposal)
+    await page.getByLabel("+ Итоговое содержимое: src/value.js").fill("export const value = 3;");
   await page.getByRole("button", { name: "Сохранить выбранные изменения" }).click();
   const check = page.getByRole("button", { name: "Запустить проверку", exact: true });
   await expect(check).toBeDisabled();
@@ -605,20 +616,41 @@ test("browser Back can be cancelled with edits visible, then explicitly confirme
   expect(state.publications()).toBe(0);
 });
 
-test("does not retry lost publication and reconciles it explicitly", async ({ page }) => {
+test("restores the Draft PR automatically when the upstream publication result is unknown", async ({
+  page
+}) => {
+  test.setTimeout(60_000);
   const state = await scenario(page, "after-start");
   await prepare(page);
   await page
     .getByRole("checkbox", { name: "Подтверждаю создание этой ветки", exact: false })
     .check();
-  await page.getByRole("button", { name: "Создать черновик PR в GitHub" }).click();
-  await expect(page.getByRole("button", { name: "Создать черновик PR в GitHub" })).toBeDisabled();
-  await expect(page.getByRole("button", { name: "Сверить результат с GitHub" })).toBeEnabled();
+  const publish = page.getByRole("button", { name: "Создать черновик PR в GitHub" });
+  await publish.click({ clickCount: 2 });
+  const link = page.getByRole("link", { name: "Открыть созданный PR" });
+  await expect(link).toHaveAttribute("href", "https://github.com/RLM-Company/Nexus-OS/pull/1000");
   await page.reload();
-  await expect(page.getByRole("button", { name: "Создать черновик PR в GitHub" })).toBeDisabled();
-  await page.getByRole("button", { name: "Сверить результат с GitHub" }).click();
+  await expect(link).toBeVisible();
+  await expect(publish).toBeDisabled();
+  expect(state.publications()).toBe(1);
+});
+
+test("allows explicit read-only reconciliation when the first lookup cannot confirm the PR", async ({
+  page
+}) => {
+  const state = await scenario(page, "after-start-pending");
+  await prepare(page);
+  await page
+    .getByRole("checkbox", { name: "Подтверждаю создание этой ветки", exact: false })
+    .check();
+  await page.getByRole("button", { name: "Создать черновик PR в GitHub" }).click();
+  const reconcile = page.getByRole("button", { name: "Сверить результат с GitHub" });
+  await expect.poll(state.reconciliations).toBe(1);
+  await expect(reconcile).toBeEnabled();
+  await reconcile.click();
   await expect(page.getByRole("link", { name: "Открыть созданный PR" })).toBeVisible();
   expect(state.publications()).toBe(1);
+  expect(state.reconciliations()).toBe(2);
 });
 
 test("checks the model proposal, restores it after reload and shows an already created Draft PR after a lost response", async ({
@@ -1157,17 +1189,17 @@ test("an unavailable project from a link cannot fall back to another owned proje
   expect(state.publications()).toBe(0);
 });
 
-test("explicit bounded repair requires approval, shows a new diff and requires a fresh review", async ({
+test("model repair replaces failed proof and publishes the freshly checked diff only once", async ({
   page
 }) => {
   const state = await scenario(
     page,
-    false,
-    { status: "failed", exitCode: 1, check_type: "syntax" },
-    (n) => `export const value = ${n === 1 ? 3 : 4};`,
+    "after-start",
+    (check) => (check === 1 ? { status: "failed", exitCode: 1, check_type: "syntax" } : {}),
+    (n) => `export const value = ${n === 1 ? 2 : 4};`,
     true
   );
-  await prepare(page);
+  await prepare(page, true, false);
   const repair = page.getByRole("button", {
     name: "Исправить по результату проверки",
     exact: true
@@ -1196,6 +1228,20 @@ test("explicit bounded repair requires approval, shows a new diff and requires a
   expect(state.repairs()).toBe(1);
   expect(state.publications()).toBe(0);
   expect(state.checks()).toBe(1);
+  await page
+    .getByRole("checkbox", { name: "Разрешаю запуск выбранной проверки для этих изменений" })
+    .check();
+  await page.getByRole("button", { name: "Запустить проверку", exact: true }).click();
+  await expect(page.getByLabel("Результат проверки")).toContainText("syntax checked");
+  await page
+    .getByRole("checkbox", { name: "Подтверждаю создание этой ветки", exact: false })
+    .check();
+  await page.getByRole("button", { name: "Создать черновик PR в GitHub" }).click({ clickCount: 2 });
+  const link = page.getByRole("link", { name: "Открыть созданный PR" });
+  await expect(link).toHaveAttribute("href", "https://github.com/RLM-Company/Nexus-OS/pull/1000");
+  expect(state.checks()).toBe(2);
+  expect(state.publications()).toBe(1);
+  expect(state.reconciliations()).toBe(1);
 });
 
 test("a server without repair capability never receives the new command", async ({ page }) => {

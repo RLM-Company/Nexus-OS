@@ -1980,6 +1980,7 @@ describe("Code agent real gateway/GitHub/policy vertical", () => {
       })
     ).rejects.toThrow("STALE_REVIEW");
     const recovered = await f.service.publish(id, owner, approval);
+    expect(recovered.error).toBeUndefined();
     expect(recovered).toMatchObject({
       status: "published",
       draft: { status: "published", pr_url: "https://github.com/RLM-Company/Nexus-OS/pull/1000" }

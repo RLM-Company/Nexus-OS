@@ -249,6 +249,7 @@ export default function CodeAgentPage() {
   const snapshotSequence = useRef(0);
   const acceptedSnapshot = useRef<CodeSnapshotStamp | null>(null);
   const requestBusy = useRef(false);
+  const automaticReconciliations = useRef(new Set<string>());
   const createAttempt = useRef<{ signature: string; id: string } | null>(null);
   const root = `/api/v1/projects/${encodeURIComponent(project)}/code-agent`;
 
@@ -476,6 +477,20 @@ export default function CodeAgentPage() {
       setBusy(false);
     }
   }
+
+  useEffect(() => {
+    if (!run || run.status !== "uncertain" || busy || requestBusy.current || editorConflict) return;
+    const id = run.id;
+    if (activeRun.current !== id) return;
+    const key = JSON.stringify([project, id, run.publication_token ?? null]);
+    if (automaticReconciliations.current.has(key)) return;
+    automaticReconciliations.current.add(key);
+    void action(async () => {
+      const recovered = await api<Run>(`${root}/${encodeURIComponent(id)}/reconcile`, {});
+      if (recovered.id !== id) throw new Error("Ответ сверки не подтверждает выбранную задачу.");
+      return recovered;
+    }, true);
+  }, [project, run?.id, run?.status, run?.publication_token, busy, editorConflict]);
 
   const selected = edits.filter((file) => file.selected);
   const diffPreview = useMemo(
@@ -1258,7 +1273,11 @@ export default function CodeAgentPage() {
                         const saved = await api<Run>(`${root}/${encodeURIComponent(run.id)}`).catch(
                           () => null
                         );
-                        if (saved?.id === run.id && saved.status === "published") return saved;
+                        if (
+                          saved?.id === run.id &&
+                          ["published", "uncertain", "publishing"].includes(saved.status)
+                        )
+                          return saved;
                       }
                       throw reason;
                     })
