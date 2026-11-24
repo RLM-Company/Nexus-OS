@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 import {
   formatDuration,
   planSummary,
@@ -11,8 +11,15 @@ import styles from "./chat-task-plan.module.css";
 const STATUS_LABEL: Record<string, string> = {
   pending: "ожидает",
   running: "выполняется",
+  paused: "на паузе",
   completed: "завершён",
   blocked: "заблокирован"
+};
+const REASON_LABEL: Record<string, string> = {
+  owner_pause: "пауза владельца",
+  awaiting_permission: "ожидает разрешения",
+  failed: "ошибка",
+  cancelled: "отменён"
 };
 const TIMING_LABEL: Record<TimingKind, string> = {
   model: "модель",
@@ -20,6 +27,13 @@ const TIMING_LABEL: Record<TimingKind, string> = {
   queue: "очередь",
   pause: "пауза",
   await_owner: "ожидание решения"
+};
+const TIMING_SOURCE: Record<TimingKind, string> = {
+  model: "время модели не измеряется",
+  tool: "нет замера записи файлов",
+  queue: "нет завершённого замера очереди",
+  pause: "время паузы не измеряется",
+  await_owner: "время ожидания решения не измеряется"
 };
 
 /** Compact collapsible panel above the composer. Pure presentation: the parent
@@ -51,7 +65,7 @@ export function ChatTaskPlanPanel({
         </button>
       </div>
       <p className={styles.summary} role="status">
-        {`Шагов: ${summary.total} · завершено ${summary.completed} · выполняется ${summary.running} · ожидает ${summary.pending} · заблокировано ${summary.blocked}`}
+        {`Шагов: ${summary.total} · завершено ${summary.completed} · выполняется ${summary.running} · на паузе ${summary.paused} · ожидает ${summary.pending} · заблокировано ${summary.blocked}`}
         {active ? ` · активный: ${active.title}` : ""}
       </p>
       {!plan.collapsed && (
@@ -59,7 +73,10 @@ export function ChatTaskPlanPanel({
           <ol className={styles.steps}>
             {plan.steps.map((step) => (
               <li key={step.id} className={styles.step} data-status={step.status}>
-                <span className={styles.status}>{STATUS_LABEL[step.status]}</span>
+                <span className={styles.status}>
+                  {STATUS_LABEL[step.status]}
+                  {step.block_reason ? ` (${REASON_LABEL[step.block_reason]})` : ""}
+                </span>
                 <span className={styles.title}>{step.title}</span>
                 {step.started_at !== null && (
                   <span className={styles.time}>
@@ -73,11 +90,16 @@ export function ChatTaskPlanPanel({
           </ol>
           <div className={styles.timing} aria-label="Время по событиям">
             {(Object.keys(TIMING_LABEL) as TimingKind[]).map((kind) => (
-              <span key={kind} data-kind={kind}>
+              <span
+                key={kind}
+                data-kind={kind}
+                title={summary.timing[kind] > 0 ? undefined : TIMING_SOURCE[kind]}
+              >
                 {TIMING_LABEL[kind]}: {formatDuration(summary.timing[kind])}
+                {summary.timing[kind] <= 0 ? ` (${TIMING_SOURCE[kind]})` : ""}
               </span>
             ))}
-            <span data-kind="total">всего: {formatDuration(summary.total_ms)}</span>
+            <span data-kind="total">измерено: {formatDuration(summary.total_ms)}</span>
           </div>
         </>
       )}

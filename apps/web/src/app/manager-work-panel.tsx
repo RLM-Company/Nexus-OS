@@ -9,7 +9,11 @@ import { WorkManagerProgress } from "./work-manager-progress";
 import { WorkManagerMemory } from "./work-manager-memory";
 import { DesktopComputerButton } from "./desktop-computer-button";
 import { useEffect, useRef, useState } from "react";
-import { MANAGER_WORK_CONTROL_EVENTS, type CreateManagerWork } from "@cosmora/contracts";
+import {
+  MANAGER_WORK_CONTROL_EVENTS,
+  type CreateManagerWork,
+  type WorkDag
+} from "@cosmora/contracts";
 import { startVisibleReadPolling } from "./visible-read-poller";
 import { executionGateLabels, useExecutionGate } from "./use-execution-gate";
 
@@ -166,10 +170,12 @@ function saveWorkSelection(key: string, id: string | null) {
 
 export function ManagerWorkPanel({
   projectId,
-  initialGoal
+  initialGoal,
+  onPlanSnapshot
 }: {
   projectId: string;
   initialGoal: string;
+  onPlanSnapshot: (graph: WorkDag) => void;
 }) {
   const [goal, setGoal] = useState(initialGoal);
   const [role, setRole] = useState<CreateManagerWork["worker_role"]>("analyst");
@@ -522,7 +528,11 @@ export function ManagerWorkPanel({
           )}
         </div>
       )}
-      <WorkManagerDag key={"dag:" + projectId} projectId={projectId} />
+      <WorkManagerDag
+        key={"dag:" + projectId}
+        projectId={projectId}
+        onPlanSnapshot={onPlanSnapshot}
+      />
       <WorkManagerMemory key={projectId} projectId={projectId} />
       {work && (
         <>

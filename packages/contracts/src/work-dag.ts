@@ -109,6 +109,10 @@ export interface WorkDagNode extends WorkDagNodeInput {
     review: { verdict: string; reason: string } | null;
     confirmation_id: string | null;
     sources: { run_id: string; provider: string; model: string; stage: string }[];
+    timing?: NonNullable<ManagerWork["measured_timing"]> & {
+      work_id: string;
+      attempt: number;
+    };
     /** Optional for old graphs. Reconcile never claims byte verification. */
     verification?: {
       file_bytes: "not_checked_by_reconcile" | "verified";

@@ -129,7 +129,7 @@ test("preactivation accepts the exact deployed CRLF migration 0063 without rewri
   assert.deepEqual(readFileSync(join(f.root, "backups", f.backup.file)), before);
 });
 
-test("preactivation recognizes recorded VPS history and reports the profile startup upgrade", async (t) => {
+test("preactivation recognizes recorded VPS history and rehearses the actual profile startup upgrade", async (t) => {
   const f = await fixture(t, {
     pending: 2,
     crlf: ["0063_semantic_history_index", "0068_document_package_analysis"],
@@ -146,11 +146,25 @@ test("preactivation recognizes recorded VPS history and reports the profile star
     "0063_semantic_history_index",
     "0068_document_package_analysis"
   ]);
-  assert.deepEqual(report.profile_columns_requiring_api_startup_upgrade, [
+  assert.deepEqual(report.profile_columns_upgraded_on_disposable_copy, [
     "display_name",
     "user_gender",
     "assistant_gender"
   ]);
   assert.deepEqual(readFileSync(f.file), before);
   assert.deepEqual(readFileSync(join(f.root, "backups", f.backup.file)), before);
+});
+
+test("canonical migration history does not excuse missing profile columns", async (t) => {
+  const f = await fixture(t);
+  const db = new DatabaseSync(f.source);
+  db.exec("ALTER TABLE kosmora_account_preferences DROP COLUMN display_name");
+  db.close();
+  const backup = await createBackup(f.source, join(f.root, "unexpected-schema-backups"));
+  const copy = join(f.root, "unexpected-schema.sqlite");
+  copyFileSync(join(f.root, "unexpected-schema-backups", backup.file), copy);
+  await assert.rejects(
+    verifyVpsPreactivation({ database: copy, backupManifest: backup.manifestPath }),
+    /PREACTIVATION_UNEXPECTED_PROFILE_SCHEMA/
+  );
 });

@@ -29,7 +29,7 @@ import { ProfileOnboarding } from "./profile-onboarding";
 import { greetingByAssistantGender, type GreetingProfile } from "./profile-onboarding-core";
 import { ClarificationCardPanel } from "./clarification-card";
 import { ChatTaskPlanPanel } from "./chat-task-plan-panel";
-import { emitChatTaskEvent, useChatTaskPlan } from "./use-chat-task-plan";
+import { useChatTaskPlan } from "./use-chat-task-plan";
 import { ChatSearchTrigger } from "./chat-search-trigger";
 import { ProjectTitleEditor } from "./project-title-editor";
 import { QuickSwitcher } from "./quick-switcher";
@@ -245,7 +245,7 @@ const replaceConsoleRoute = (
   if (currentParams.get("space") === "coscode")
     route += `${route.includes("?") ? "&" : "?"}space=coscode`;
   const planId = currentParams.get("plan");
-  if (projectId && view === "plan" && currentParams.get("project") === projectId && planId)
+  if (projectId && currentParams.get("project") === projectId && planId)
     route += `&plan=${encodeURIComponent(planId)}`;
   if (currentParams.get("context_preview") === "1")
     route += `${route.includes("?") ? "&" : "?"}context_preview=1`;
@@ -640,10 +640,7 @@ export default function Home() {
   const composerDraftKey = pendingProjectId
     ? `${COMPOSER_DRAFT_STORAGE_PREFIX}project-new-chat:${pendingProjectId}`
     : composerDraftStorageKey(activeProject?.id ?? selectedProjectRef.current, activeLocalChatId);
-  const taskPlanScope = activeProject?.id ?? activeLocalChatId ?? "new-chat";
-  const taskPlanScopeRef = useRef(taskPlanScope);
-  taskPlanScopeRef.current = taskPlanScope;
-  const taskPlan = useChatTaskPlan(taskPlanScope);
+  const taskPlan = useChatTaskPlan(activeProject?.id ?? null, projectView === "plan");
   const composerActions = draftActions.get(composerDraftKey) ?? DEFAULT_COMPOSER_ACTIONS;
   const updateDraftActions = (
     key: string,
@@ -1473,7 +1470,6 @@ export default function Home() {
         if (!isCurrent()) return;
         setError(null);
         setRunPhase("running");
-        emitChatTaskEvent(taskPlanScopeRef.current, { type: "run.started" });
       });
 
       source.addEventListener("message.started", (raw) => {
@@ -1499,7 +1495,6 @@ export default function Home() {
       source.addEventListener("message.delta", (raw) => {
         if (!isCurrent()) return;
         setRunPhase("streaming");
-        emitChatTaskEvent(taskPlanScopeRef.current, { type: "message.delta" });
         const event = JSON.parse(String(raw.data)) as {
           data: { message_id: string; seq: number; delta: string };
         };
@@ -1527,7 +1522,6 @@ export default function Home() {
         viewRequestRef.current += 1;
         finished = true;
         closeSource();
-        emitChatTaskEvent(taskPlanScopeRef.current, { type: "run.completed" });
         setLastCompletedRoute({
           provider: event.data.provider,
           model: event.data.model_resolved
@@ -1548,7 +1542,6 @@ export default function Home() {
 
       source.addEventListener("run.failed", () => {
         if (!isCurrent()) return;
-        emitChatTaskEvent(taskPlanScopeRef.current, { type: "run.failed" });
         terminalRunRef.current = { runId: accepted.run_id, phase: "failed" };
         viewRequestRef.current += 1;
         finished = true;
@@ -1562,7 +1555,6 @@ export default function Home() {
 
       source.addEventListener("run.cancelled", () => {
         if (!isCurrent()) return;
-        emitChatTaskEvent(taskPlanScopeRef.current, { type: "run.cancelled" });
         terminalRunRef.current = { runId: accepted.run_id, phase: "cancelled" };
         viewRequestRef.current += 1;
         finished = true;
@@ -1627,7 +1619,6 @@ export default function Home() {
         if (!isCurrent()) return;
         setError(null);
         setRunPhase("running");
-        emitChatTaskEvent(taskPlanScopeRef.current, { type: "run.started" });
       });
       source.addEventListener("message.started", (raw) => {
         if (!isCurrent()) return;
@@ -1647,7 +1638,6 @@ export default function Home() {
       source.addEventListener("message.delta", (raw) => {
         if (!isCurrent()) return;
         setRunPhase("streaming");
-        emitChatTaskEvent(taskPlanScopeRef.current, { type: "message.delta" });
         const event = JSON.parse(String(raw.data)) as {
           data: { message_id: string; seq: number; delta: string };
         };
@@ -1674,7 +1664,6 @@ export default function Home() {
         };
         finished = true;
         closeSource();
-        emitChatTaskEvent(taskPlanScopeRef.current, { type: "run.completed" });
         setLastCompletedRoute({
           provider: event.data.provider,
           model: event.data.model_resolved
@@ -1693,7 +1682,6 @@ export default function Home() {
       });
       source.addEventListener("run.failed", (raw) => {
         if (!isCurrent()) return;
-        emitChatTaskEvent(taskPlanScopeRef.current, { type: "run.failed" });
         terminalRunRef.current = { runId: accepted.run_id, phase: "failed" };
         const failure = JSON.parse(String(raw.data)) as { data: { error_code: string } };
         viewRequestRef.current += 1;
@@ -1736,7 +1724,6 @@ export default function Home() {
       });
       source.addEventListener("run.cancelled", () => {
         if (!isCurrent()) return;
-        emitChatTaskEvent(taskPlanScopeRef.current, { type: "run.cancelled" });
         terminalRunRef.current = { runId: accepted.run_id, phase: "cancelled" };
         viewRequestRef.current += 1;
         finished = true;
@@ -3156,6 +3143,7 @@ export default function Home() {
             <ManagerWorkPanel
               key={activeProject.id}
               projectId={activeProject.id}
+              onPlanSnapshot={taskPlan.observe}
               initialGoal={
                 [...messages].reverse().find((message) => message.role === "user")?.content ?? ""
               }
@@ -3534,7 +3522,12 @@ export default function Home() {
           </>
         ) : null}
 
-        {taskPlan.plan && <ChatTaskPlanPanel plan={taskPlan.plan} onChange={taskPlan.setPlan} />}
+        {taskPlan.plan && (
+          <ChatTaskPlanPanel
+            plan={taskPlan.plan}
+            onChange={(plan) => taskPlan.setCollapsed(plan.collapsed)}
+          />
+        )}
 
         {activeProject && (
           <ClarificationCardPanel

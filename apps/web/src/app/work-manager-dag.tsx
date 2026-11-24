@@ -108,7 +108,13 @@ const freshStep = (): WorkDagNodeInput => ({
   depends_on: []
 });
 
-export function WorkManagerDag({ projectId }: { projectId: string }) {
+export function WorkManagerDag({
+  projectId,
+  onPlanSnapshot
+}: {
+  projectId: string;
+  onPlanSnapshot: (graph: WorkDag) => void;
+}) {
   const base = "/api/v1/projects/" + encodeURIComponent(projectId) + "/work-dags";
   const gate = useExecutionGate(projectId);
   const [graphs, setGraphs] = useState<WorkDag[]>([]);
@@ -169,6 +175,16 @@ export function WorkManagerDag({ projectId }: { projectId: string }) {
       )
   );
   const graph = visibleGraphs.find((g) => g.id === selected) ?? visibleGraphs[0] ?? null;
+  useEffect(() => {
+    if (!graph || graph.project_id !== projectId) return;
+    onPlanSnapshot(graph);
+    if (graph.archived_at) return;
+    const url = new URL(window.location.href);
+    if (url.searchParams.get("project") !== projectId || url.searchParams.get("plan") === graph.id)
+      return;
+    url.searchParams.set("plan", graph.id);
+    window.history.replaceState(window.history.state, "", url);
+  }, [graph, onPlanSnapshot, projectId]);
   useEffect(() => {
     const openPlan = (event: Event) => {
       const detail = (event as CustomEvent<{ projectId: string; id: string }>).detail;

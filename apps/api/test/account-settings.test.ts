@@ -62,8 +62,8 @@ describe("owner account settings", () => {
       ALTER TABLE kosmora_account_preferences DROP COLUMN assistant_gender;
     `);
 
-    store.upgradeProfileColumns();
-    store.upgradeProfileColumns();
+    store.migrate();
+    store.migrate();
 
     expect(store.get("owner")).toMatchObject({
       version: 1,

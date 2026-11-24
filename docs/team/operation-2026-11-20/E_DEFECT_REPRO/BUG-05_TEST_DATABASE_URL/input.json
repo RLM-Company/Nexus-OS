@@ -1,0 +1,20 @@
+{
+  "test": "scripts/test/presentation-demo.test.mjs:13",
+  "input": {
+    "PATH": "/test/bin",
+    "HOME": "/test/home",
+    "SystemRoot": "C:\\Windows",
+    "MODEL_PROVIDER": "openai-compatible",
+    "MODEL_API_KEY": "fixture-secret",
+    "MODEL_REGISTRY_PATH": "private.json",
+    "GITHUB_TOKEN": "fixture-secret",
+    "NODE_OPTIONS": "--import=bad.mjs",
+    "DATABASE_URL": "file:customer.db",
+    "API_HOST": "0.0.0.0",
+    "API_PORT": "80"
+  },
+  "isolated_dir": "/isolated-demo",
+  "expected_url": "file:/isolated-demo/demo.db",
+  "actual_url_windows": "file:\\isolated-demo\\demo.db",
+  "environment": "Windows, Node v26.13.0, BASE_SHA 51ce52a9"
+}

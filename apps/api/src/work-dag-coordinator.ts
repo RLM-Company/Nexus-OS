@@ -241,7 +241,26 @@ export class WorkDagCoordinator {
         node.blocked_reason = "WORK_NOT_FOUND";
         continue;
       }
+      const binding = child.dag_binding;
+      const timing =
+        binding?.bound &&
+        child.project_id === graph.project_id &&
+        binding.graph_id === graph.id &&
+        binding.node_id === node.id &&
+        binding.attempt === attempt.number
+          ? child.measured_timing
+          : undefined;
       node.result = {
+        ...(timing
+          ? {
+              timing: {
+                work_id: child.id,
+                attempt: attempt.number,
+                ...(timing.queue_ms === undefined ? {} : { queue_ms: timing.queue_ms }),
+                ...(timing.tool_ms === undefined ? {} : { tool_ms: timing.tool_ms })
+              }
+            }
+          : {}),
         stage: child.stage,
         plan_summary: child.plan?.summary ?? null,
         plan_instructions: child.plan?.instructions ?? null,

@@ -1,0 +1,3 @@
+Запуск локальной репетиции Kosmora. Модель: mock; внешние вызовы отключены.
+Rehearsal logs retained: C:\Users\8523~1\AppData\Local\Temp\kosmora-presentation-V9zuI2
+Presentation demo FAILED: Main page did not render HTML (HTTP 500)

@@ -125,7 +125,8 @@ export async function verifyVpsPreactivation({ database, backupManifest }) {
     entries.some((entry, index) => index > 0 && entry.when <= entries[index - 1].when)
   )
     throw Error("PREACTIVATION_INVALID_SOURCE_JOURNAL");
-  const { openDatabase, runMigrations } = await import("../packages/db/dist/index.js");
+  const { openDatabase, runMigrations, upgradeAccountProfileColumns } =
+    await import("../packages/db/dist/index.js");
   const scratch = mkdtempSync(join(tmpdir(), "kosmora-preactivation-"));
   if (
     dirname(resolve(scratch)) !== resolve(tmpdir()) ||
@@ -150,15 +151,12 @@ export async function verifyVpsPreactivation({ database, backupManifest }) {
     const appliedAfter = migrationHistory(handle.sqlite, entries);
     if (appliedAfter.count !== entries.length)
       throw Error("PREACTIVATION_INCOMPLETE_MIGRATION_REHEARSAL");
-    const profileColumns = new Set(
-      handle.sqlite
-        .prepare("PRAGMA table_info(kosmora_account_preferences)")
-        .all()
-        .map(({ name }) => name)
-    );
-    const missingProfileColumns = ["display_name", "user_gender", "assistant_gender"].filter(
-      (name) => !profileColumns.has(name)
-    );
+    const upgradedProfileColumns = upgradeAccountProfileColumns(handle.sqlite);
+    if (upgradedProfileColumns.length && !appliedBefore.recorded.includes("0027_personal_settings"))
+      throw Error("PREACTIVATION_UNEXPECTED_PROFILE_SCHEMA");
+    if (upgradeAccountProfileColumns(handle.sqlite).length)
+      throw Error("PREACTIVATION_PROFILE_UPGRADE_NOT_IDEMPOTENT");
+    integrity(handle.sqlite);
     handle.close();
     handle = undefined;
     if ((await digest(copy)) !== originalSha || (await digest(backup)) !== verified.sha256)
@@ -171,7 +169,7 @@ export async function verifyVpsPreactivation({ database, backupManifest }) {
       applied_after: appliedAfter.count,
       migrations_applied_to_disposable_copy: appliedAfter.count - appliedBefore.count,
       recorded_legacy_migrations: appliedBefore.recorded,
-      profile_columns_requiring_api_startup_upgrade: missingProfileColumns,
+      profile_columns_upgraded_on_disposable_copy: upgradedProfileColumns,
       migrations: entries.map(({ idx, tag, sha256 }) => ({ idx, tag, sha256 })),
       production_deployed: false,
       live_provider_tested: false
