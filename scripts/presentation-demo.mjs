@@ -208,7 +208,7 @@ export async function main(argv = process.argv.slice(2)) {
   }
   check(Number(process.versions.node.split(".")[0]) >= 24, "Node.js 24+ is required");
   const apiRequire = createRequire(join(root, "apps/api/package.json"));
-  apiRequire.resolve("tsx");
+  const tsx = pathToFileURL(apiRequire.resolve("tsx")).href;
   const webRequire = createRequire(join(root, "apps/web/package.json"));
   const next = webRequire.resolve("next/dist/bin/next");
   if (config.production)
@@ -324,7 +324,10 @@ export async function main(argv = process.argv.slice(2)) {
         "--require",
         join(root, "scripts/windows-node-user.cjs"),
         "--import",
-        "tsx",
+        // tsx is a dependency of @cosmora/api, not of the workspace root.
+        // Resolve it from that package so the rehearsal also works on a clean
+        // install where the root node_modules/.bin has no tsx shim.
+        tsx,
         "--conditions=development",
         "src/server.ts"
       ],

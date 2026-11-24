@@ -1130,9 +1130,19 @@ test("an unavailable project from a link cannot fall back to another owned proje
   page
 }) => {
   const state = await scenario(page);
-  let runReads = 0;
+  // Network-boundary assertion: only API calls to a scoped Code-agent task
+  // count. The document and its CSS/JS chunks also live under /code-agent but
+  // are page loading, not an attempt to read another project's task.
+  const scopedApiReads: Array<{ method: string; path: string; type: string }> = [];
   page.on("request", (r) => {
-    if (new URL(r.url()).pathname.includes("/code-agent")) runReads++;
+    const url = new URL(r.url());
+    if (/\/api\/v1\/projects\/[^/]+\/code-agent/.test(url.pathname)) {
+      scopedApiReads.push({
+        method: r.method(),
+        path: url.pathname + url.search,
+        type: r.resourceType()
+      });
+    }
   });
   await page.goto(
     "/code-agent?project=unavailable-project&run=00000000-0000-4000-8000-000000000001"
@@ -1142,7 +1152,8 @@ test("an unavailable project from a link cannot fall back to another owned proje
   );
   await expect(page.getByRole("combobox", { name: "Проект", exact: true })).toHaveValue("");
   await expect(page.getByRole("region", { name: "Состояние задачи" })).toHaveCount(0);
-  expect(runReads).toBe(1); // The document itself; no scoped Code API request was made.
+  // An unavailable project must not trigger ANY scoped Code-agent API request.
+  expect(scopedApiReads).toEqual([]);
   expect(state.publications()).toBe(0);
 });
 

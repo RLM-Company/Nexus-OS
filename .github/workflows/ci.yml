@@ -43,6 +43,10 @@ jobs:
           TURBO_TELEMETRY_DISABLED: "1"
         run: pnpm check:core
 
+      - name: Verify local development rehearsal with mock data
+        timeout-minutes: 4
+        run: pnpm demo:rehearse
+
   browser:
     name: Browser acceptance
     runs-on: ubuntu-latest
