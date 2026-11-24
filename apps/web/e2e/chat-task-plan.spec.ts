@@ -29,7 +29,8 @@ test("the selected project plan survives reload without progressing from chat or
   await card.getByRole("button", { name: "Свернуть план" }).click();
   await expect(card.getByText("Собрать данные")).toHaveCount(0);
   await card.getByRole("button", { name: "Развернуть план" }).click();
-  await expect(card.locator('[data-status="pending"]')).toHaveCount(2);
+  await expect(card.locator('[data-status="pending"]')).toContainText("Собрать данные");
+  await expect(card.locator('[data-status="blocked"]')).toContainText("Написать отчёт");
 
   // Even a stale browser event from the old chat timer has no authority.
   await page.evaluate((scope) => {
@@ -41,10 +42,12 @@ test("the selected project plan survives reload without progressing from chat or
   await composer.press("Enter");
   await expect(composer).toHaveValue("");
   await expect(page.getByText("Ответ получен", { exact: true })).toBeVisible();
-  await expect(card.locator('[data-status="pending"]')).toHaveCount(2);
+  await expect(card.locator('[data-status="pending"]')).toContainText("Собрать данные");
+  await expect(card.locator('[data-status="blocked"]')).toContainText("Написать отчёт");
   await expect(card.getByLabel("Время по событиям")).toContainText("инструменты: —");
   await page.reload();
-  await expect(card.locator('[data-status="pending"]')).toHaveCount(2);
+  await expect(card.locator('[data-status="pending"]')).toContainText("Собрать данные");
+  await expect(card.locator('[data-status="blocked"]')).toContainText("Написать отчёт");
   const persisted = (await (await request.get(base + "/" + plan.id)).json()) as WorkDag;
   expect(persisted.nodes.map((node) => node.attempts.length)).toEqual([0, 0]);
   expect(persisted.version).toBe(plan.version);
