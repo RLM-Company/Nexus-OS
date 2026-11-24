@@ -1,9 +1,9 @@
+import type { WorkDag } from "@cosmora/contracts";
+
 /** Chat task plan and event timers (stage-three, owner-approved 15 Nov 2026).
  *
- * Pure, deterministic state machine. Time is derived ONLY from recorded event
- * intervals; nothing is estimated, invented or attributed to "reasoning" when
- * the provider did not report it. Persisted per chat/project scope so a reload
- * restores the goal, plan, progress and measured time without replaying steps. */
+ * Includes the legacy local state machine used by the stage-three fixtures.
+ * Product progress is now projected only from the durable Work DAG below. */
 
 export type StepStatus = "pending" | "running" | "paused" | "completed" | "blocked";
 export type BlockReason = "owner_pause" | "awaiting_permission" | "failed" | "cancelled";
@@ -271,6 +271,7 @@ export function planSummary(plan: ChatTaskPlan): {
 export function formatDuration(ms: number): string {
   if (!Number.isFinite(ms) || ms <= 0) return "—";
   const seconds = ms / 1000;
+  if (ms < 100) return `${ms} мс`;
   if (seconds < 60) return `${seconds.toFixed(1)} с`;
   const minutes = Math.floor(seconds / 60);
   return `${minutes} мин ${Math.round(seconds % 60)} с`;
@@ -335,4 +336,51 @@ export function clearChatTaskPlan(storage: Pick<Storage, "removeItem">, scope: s
   } catch {
     /* Nothing to clear when storage is unavailable. */
   }
+}
+
+/** Projection only: admission, dependency order and completion belong to the server. */
+export function projectChatTaskPlan(graph: WorkDag, collapsed: boolean): ChatTaskPlan {
+  const steps: PlanStep[] = graph.nodes.map((node) => {
+    const attempt = node.attempts.at(-1);
+    const measured = node.result?.timing;
+    const sameRun =
+      attempt && measured?.work_id === attempt.work_id && measured.attempt === attempt.number;
+    const duration = (value: number | undefined) =>
+      typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : 0;
+    const timing = emptyTiming();
+    if (sameRun) {
+      timing.queue = duration(measured.queue_ms);
+      timing.tool = duration(measured.tool_ms);
+    }
+    let status: StepStatus =
+      node.status === "cancelled" || node.status === "failed" ? "blocked" : node.status;
+    let block_reason: BlockReason | null = null;
+    if (node.blocked_reason === "EXECUTOR_QUEUE") status = "pending";
+    else if (node.blocked_reason === "PAUSED" || node.blocked_reason === "PROJECT_PAUSED") {
+      status = "paused";
+      block_reason = "owner_pause";
+    } else if (node.status === "cancelled") block_reason = "cancelled";
+    else if (node.status === "failed") block_reason = "failed";
+    else if (["AWAITING_APPROVAL", "WAITING_CONFIRMATION"].includes(node.blocked_reason ?? ""))
+      block_reason = "awaiting_permission";
+    return {
+      id: node.id,
+      title: node.title,
+      depends_on: [...node.depends_on],
+      status,
+      block_reason,
+      started_at: null,
+      ended_at: null,
+      timing
+    };
+  });
+  return {
+    id: graph.id,
+    scope: graph.project_id,
+    goal: graph.title,
+    steps,
+    active_step_id: steps.find((step) => step.status === "running")?.id ?? null,
+    collapsed,
+    created_at: Date.parse(graph.created_at)
+  };
 }

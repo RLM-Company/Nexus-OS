@@ -286,6 +286,7 @@ export class ManagerWorkStore {
         : {}),
       memory_snapshot: this.memory.snapshot(projectId, ownerId),
       status: dormant || mode === "paused" ? "paused" : "queued",
+      ...(!dormant && mode !== "paused" ? { queued_since: at } : {}),
       stage: "plan",
       version: 1,
       pause_requested: false,
@@ -365,6 +366,21 @@ export class ManagerWorkStore {
     const next = structuredClone(state);
     next.version++;
     next.updated_at = new Date().toISOString();
+    if (next.status === "queued") {
+      if (
+        next.queued_since === undefined &&
+        this.get(state.id, state.owner_id)?.status !== "queued"
+      )
+        next.queued_since = next.updated_at;
+    } else if (next.queued_since !== undefined) {
+      const elapsed = Date.parse(next.updated_at) - Date.parse(next.queued_since);
+      delete next.queued_since;
+      if (Number.isSafeInteger(elapsed) && elapsed >= 0)
+        next.measured_timing = {
+          ...next.measured_timing,
+          queue_ms: (next.measured_timing?.queue_ms ?? 0) + elapsed
+        };
+    }
     if (message)
       next.events.push({
         sequence: next.events.length + 1,

@@ -96,6 +96,12 @@ export interface ManagerWorkDependencies {
   accountStore?: AccountStore;
 }
 
+type PublishWorkInput = {
+  id: string;
+  ownerId: string;
+  onExecuted: (elapsedMs: number) => void;
+};
+
 export class ManagerWorkCoordinator {
   readonly dag: WorkDagCoordinator;
   private readonly settledOwners = new Map<string, number>();
@@ -138,7 +144,7 @@ export class ManagerWorkCoordinator {
       throw new Error("Invalid Work execution concurrency");
     this.dag = new WorkDagCoordinator(dependencies.store, this);
     this.tools = new GuardedToolRuntime(dependencies.policy);
-    this.tools.register<{ id: string; ownerId: string }, string[]>({
+    this.tools.register<PublishWorkInput, string[]>({
       id: "manager.publish-files",
       resolveCapabilities: () => ["workspace.write"],
       validateScopedExecution: (input, verdict) => {
@@ -154,7 +160,10 @@ export class ManagerWorkCoordinator {
       execute: (input) => {
         const work = dependencies.store.get(input.id, input.ownerId);
         if (!work?.draft || this.isStopped(work)) throw new Error("EXECUTION_STOPPED");
-        return Promise.resolve(dependencies.store.publish(work.id, work.owner_id, work.draft));
+        const start = performance.now();
+        const files = dependencies.store.publish(work.id, work.owner_id, work.draft);
+        input.onExecuted(Math.ceil(performance.now() - start));
+        return Promise.resolve(files);
       }
     });
   }
@@ -775,14 +784,21 @@ export class ManagerWorkCoordinator {
           const profile = policy.getProfile(work.project_id);
           if (!profile) throw new Error("POLICY_UNAVAILABLE");
           const digest = createHash("sha256").update(JSON.stringify(work.draft)).digest("hex");
-          const result = await this.tools.invoke({
+          let elapsedMs: number | undefined;
+          const result = await this.tools.invoke<PublishWorkInput, string[]>({
             toolId: "manager.publish-files",
             projectId: work.project_id,
             actorId: work.actor_id,
             objectIds: work.draft.files.map((f) => work.id + "/" + f.name),
             purpose: "Publish work files " + digest,
             idempotencyKey: "manager-work:" + work.id + ":policy:" + profile.version,
-            input: { id: work.id, ownerId: work.owner_id }
+            input: {
+              id: work.id,
+              ownerId: work.owner_id,
+              onExecuted: (ms) => {
+                elapsedMs = ms;
+              }
+            }
           });
           work = this.current(id, ownerId);
           if (work.status === "cancelled") return;
@@ -794,6 +810,8 @@ export class ManagerWorkCoordinator {
             this.checkpoint(work, "Сохранение файлов ожидает разрешения");
             return;
           }
+          if (!result.replayed && elapsedMs !== undefined)
+            work.measured_timing = { ...work.measured_timing, tool_ms: elapsedMs };
           work.stage = "done";
           work.status = "completed";
           work.error_code = null;

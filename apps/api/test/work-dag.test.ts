@@ -22,7 +22,7 @@ import {
   type ModelProviderAdapter,
   type ProviderStreamEvent
 } from "@cosmora/model-gateway";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { buildApp } from "../src/app.js";
 import { ManagerWorkCoordinator } from "../src/manager-work-coordinator.js";
 import { buildModelRuntime, loadModelRegistryDocument } from "../src/model-runtime.js";
@@ -375,6 +375,60 @@ describe("executable durable Work DAG", () => {
     expect(graph.nodes[1]?.status).toBe("completed");
     expect(f.dag.get(other.id, owner)?.execution?.status).toBe("running");
   });
+  it("measures only the admitted attempt's queue and real file write, not reads or recovery replay", async () => {
+    const f = await fixture();
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      vi.setSystemTime(new Date("2026-11-24T09:00:00Z"));
+      const plan = f.create();
+      const queued = f.dag.control(plan.id, owner, {
+        version: plan.version,
+        action: "run",
+        node_id: "brief"
+      });
+      const attempt = queued.nodes[0]!.attempts[0]!;
+      expect(queued.nodes[0]!.result?.timing).toBeUndefined();
+      expect(f.store.get(attempt.work_id, owner)?.queued_since).toBe("2026-11-24T09:00:00.000Z");
+      vi.setSystemTime(new Date("2026-11-24T09:00:00.250Z"));
+      const pending = f.store.get(attempt.work_id, owner)!;
+      const paused = f.coordinator.control(pending.id, owner, pending.version, "pause")!;
+      expect(paused.measured_timing?.queue_ms).toBe(250);
+      expect(paused.queued_since).toBeUndefined();
+      vi.setSystemTime(new Date("2026-11-24T09:00:01.000Z"));
+      f.coordinator.control(paused.id, owner, paused.version, "resume");
+      vi.setSystemTime(new Date("2026-11-24T09:00:02.000Z"));
+      await f.coordinator.execute(attempt.work_id, owner);
+      const done = f.dag.get(plan.id, owner)!;
+      const measured = done.nodes[0]!.result?.timing;
+      expect(measured).toEqual({
+        work_id: attempt.work_id,
+        attempt: 1,
+        queue_ms: 1250,
+        tool_ms: expect.any(Number) as number
+      });
+      expect(measured?.tool_ms).toBeGreaterThan(0);
+      expect(done.nodes[1]!.result?.timing).toBeUndefined();
+      expect(f.dag.get(plan.id, "foreign-owner")).toBeNull();
+      const before = f.calls.length;
+      vi.setSystemTime(new Date("2026-11-24T09:05:00Z"));
+      expect(f.dag.get(plan.id, owner)).toEqual(done);
+      await f.coordinator.execute(attempt.work_id, owner);
+      expect(f.dag.get(plan.id, owner)).toEqual(done);
+      expect(f.calls).toHaveLength(before);
+      // Simulate an uncertain publication checkpoint with an existing successful
+      // GuardedToolRuntime operation. Replayed bytes are not a fresh tool interval.
+      const prior = f.store.get(attempt.work_id, owner)!;
+      delete prior.measured_timing;
+      f.store.save({ ...prior, stage: "publish", status: "queued" });
+      await f.coordinator.execute(attempt.work_id, owner);
+      expect(f.store.get(attempt.work_id, owner)?.measured_timing?.tool_ms).toBeUndefined();
+      expect(f.store.runtime.artifacts(plan.project_id, owner, attempt.work_id)).toHaveLength(1);
+      expect(f.calls).toHaveLength(before);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("cancels a queued step while the project is paused without resuming or invoking a model", async () => {
     const f = await fixture();
     let graph = f.create();
@@ -1568,6 +1622,8 @@ describe("executable durable Work DAG", () => {
     const successfulId = g.nodes[2]!.attempts[0]!.work_id;
     g = await f.execute(g, "brief");
     expect(g.nodes[0]!.status).toBe("failed");
+    expect(g.nodes[0]!.result?.timing?.attempt).toBe(1);
+    expect(g.nodes[0]!.result?.timing?.tool_ms).toBeUndefined();
     expect(g.nodes[1]!.status).toBe("blocked");
     expect(f.calls).toHaveLength(3);
     f.dag.reconcileAll();
@@ -1594,6 +1650,8 @@ describe("executable durable Work DAG", () => {
     g = f.dag.get(g.id, owner)!;
     expect(g.nodes[0]!.status).toBe("completed");
     expect(g.nodes[0]!.attempts).toHaveLength(2);
+    expect(g.nodes[0]!.result?.timing?.attempt).toBe(2);
+    expect(g.nodes[0]!.result?.timing?.work_id).toBe(g.nodes[0]!.attempts[1]!.work_id);
     expect(g.nodes[2]!.attempts[0]!.work_id).toBe(successfulId);
     expect(g.nodes[2]!.attempts).toHaveLength(1);
     expect(f.calls).toHaveLength(5);
