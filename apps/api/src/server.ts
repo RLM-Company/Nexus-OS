@@ -25,6 +25,7 @@ import {
   PatternLibraryStore,
   ScheduledDispatchStore,
   runMigrations,
+  upgradeAccountProfileColumns,
   StepUpProofStore,
   UsageStore
 } from "@cosmora/db";
@@ -133,6 +134,7 @@ process.once("SIGTERM", () => void shutdown("SIGTERM"));
 
 try {
   await runMigrations(database);
+  upgradeAccountProfileColumns(database.sqlite);
   const accountStore = new AccountStore(database.sqlite);
   const scheduledDispatchStore = new ScheduledDispatchStore(database.sqlite);
   const recoveredAccountHolds = accountStore.reconcileKnownCanonicalHolds();

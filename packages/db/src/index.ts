@@ -5,7 +5,7 @@ import { DatabaseSync, type SQLInputValue } from "node:sqlite";
 import { drizzle, type RemoteCallback, type SqliteRemoteDatabase } from "drizzle-orm/sqlite-proxy";
 import { migrate, type ProxyMigrator } from "drizzle-orm/sqlite-proxy/migrator";
 import * as schema from "./schema.js";
-import { upgradeAccountProfileColumns } from "./account-profile-upgrade.js";
+import { upgradeAccountTaskDecomposition } from "./account-profile-upgrade.js";
 
 export type KosmoraDatabase = SqliteRemoteDatabase<typeof schema>;
 
@@ -130,7 +130,7 @@ export const runMigrations = (
     );
   assertDocumentLibraryUpgradeReady(database.sqlite);
   return migrate(database.db, applyQueries, { migrationsFolder: folder }).then(() => {
-    if (folder === migrationsFolder) upgradeAccountProfileColumns(database.sqlite);
+    if (folder === migrationsFolder) upgradeAccountTaskDecomposition(database.sqlite);
   });
 };
 
@@ -173,4 +173,7 @@ export * from "./project-automation-store.js";
 export * from "./scheduled-dispatch-store.js";
 export * from "./pay-store.js";
 
-export { upgradeAccountProfileColumns } from "./account-profile-upgrade.js";
+export {
+  upgradeAccountProfileColumns,
+  upgradeAccountTaskDecomposition
+} from "./account-profile-upgrade.js";

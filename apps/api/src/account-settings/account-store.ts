@@ -1,5 +1,5 @@
 import { randomBytes, randomUUID, createHash } from "node:crypto";
-import { upgradeAccountProfileColumns } from "@cosmora/db";
+import { upgradeAccountProfileColumns, upgradeAccountTaskDecomposition } from "@cosmora/db";
 import { ACCOUNT_MIGRATION_SQL } from "./migration.js";
 import type { DatabaseSync } from "node:sqlite";
 import {
@@ -104,6 +104,7 @@ export class AccountStore {
       "CREATE TABLE IF NOT EXISTS kosmora_reasoning_preferences (owner_id TEXT PRIMARY KEY, effort TEXT CHECK (effort IN ('low','medium','high')));"
     );
     upgradeAccountProfileColumns(this.sqlite);
+    upgradeAccountTaskDecomposition(this.sqlite);
   }
   getReasoning(owner: string): "low" | "medium" | "high" | null {
     const row = this.sqlite
