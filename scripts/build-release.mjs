@@ -125,8 +125,25 @@ mkdirSync(directory, { recursive: true });
 const TAR_MTIME = 0;
 const staged = [...entries].sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
 
+// USTAR supports a 155-byte prefix plus a 100-byte name; split at a '/' so
+// deep repository paths (e.g. docs/handoff/...) remain representable.
+const splitPath = (name) => {
+  if (Buffer.byteLength(name) <= 100) return { prefix: "", name };
+  const bytes = Buffer.from(name, "utf8");
+  for (let i = 0; i < bytes.length; i++) {
+    if (bytes[i] === 0x2f) {
+      const prefixBytes = bytes.subarray(0, i);
+      const nameBytes = bytes.subarray(i + 1);
+      if (prefixBytes.length <= 155 && nameBytes.length <= 100) {
+        return { prefix: prefixBytes.toString("utf8"), name: nameBytes.toString("utf8") };
+      }
+    }
+  }
+  throw new Error(`Path exceeds tar prefix/name limits: ${name}`);
+};
 const blocks = [];
-const header = (name, size, mode, type) => {
+const header = (fullName, size, mode, type) => {
+  const { prefix, name } = splitPath(fullName);
   const buffer = Buffer.alloc(512, 0);
   buffer.write(name, 0, 100, "utf8");
   buffer.write(mode.toString(8).padStart(7, "0") + "\0", 100, 8, "ascii");
@@ -139,15 +156,16 @@ const header = (name, size, mode, type) => {
   buffer.write(type, 156, 1, "ascii");
   buffer.write("ustar\0", 257, 6, "ascii");
   buffer.write("00", 263, 2, "ascii");
+  if (prefix) buffer.write(prefix, 345, 155, "utf8");
   let sum = 0;
   for (const byte of buffer) sum += byte;
   buffer.write(sum.toString(8).padStart(6, "0") + "\0 ", 148, 8, "ascii");
   return buffer;
 };
 const pad = (bytes) => (512 - (bytes.length % 512)) % 512;
-const prefix = (name) => `kosmora-${commit.slice(0, 12)}/${name}`;
+const archivePathOf = (name) => `kosmora-${commit.slice(0, 12)}/${name}`;
 for (const file of staged) {
-  const name = prefix(file.path);
+  const name = archivePathOf(file.path);
   if (Buffer.byteLength(name) > 100) throw new Error(`Path exceeds tar name limit: ${name}`);
   blocks.push(header(name, file.bytes.length, file.mode, "0"));
   blocks.push(file.bytes);
