@@ -610,8 +610,18 @@ export class ManagerWorkCoordinator {
             ownerReservation = undefined;
           }
           work = this.current(work.id, work.owner_id);
-          if (!signal.aborted && work.status === "running" && !this.isStopped(work))
+          if (!signal.aborted && work.status === "running" && !this.isStopped(work)) {
+            // The Gateway measured the completed provider call. Exclude
+            // context preparation, budget admission and response validation
+            // after the receipt; this is not provider reasoning time.
+            const elapsed = event.timing?.total_ms;
+            if (elapsed !== undefined && Number.isSafeInteger(elapsed) && elapsed >= 0) {
+              const accumulated = (work.measured_timing?.model_ms ?? 0) + elapsed;
+              if (Number.isSafeInteger(accumulated))
+                work.measured_timing = { ...work.measured_timing, model_ms: accumulated };
+            }
             work = this.checkpoint({ ...work, owner_budget_hold_id: null });
+          }
         }
       }
       if (!completion) throw new Error("INVALID_MODEL_OUTPUT");

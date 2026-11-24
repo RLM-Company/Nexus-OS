@@ -20,6 +20,7 @@ export type PlanStep = {
   started_at: number | null;
   ended_at: number | null;
   timing: Timing;
+  measured?: TimingKind[];
 };
 
 export type ChatTaskPlan = {
@@ -251,10 +252,16 @@ export function planSummary(plan: ChatTaskPlan): {
   blocked: number;
   total_ms: number;
   timing: Timing;
+  measured: ReadonlySet<TimingKind>;
 } {
   const timing = emptyTiming();
-  for (const step of plan.steps)
-    for (const kind of Object.keys(timing) as TimingKind[]) timing[kind] += step.timing[kind];
+  const measured = new Set<TimingKind>();
+  for (const step of plan.steps) {
+    for (const kind of Object.keys(timing) as TimingKind[]) {
+      timing[kind] += step.timing[kind];
+      if (step.timing[kind] > 0 || step.measured?.includes(kind)) measured.add(kind);
+    }
+  }
   const total_ms = Object.values(timing).reduce((sum, value) => sum + value, 0);
   return {
     total: plan.steps.length,
@@ -264,7 +271,8 @@ export function planSummary(plan: ChatTaskPlan): {
     paused: plan.steps.filter((s) => s.status === "paused").length,
     blocked: plan.steps.filter((s) => s.status === "blocked").length,
     total_ms,
-    timing
+    timing,
+    measured
   };
 }
 
@@ -345,12 +353,21 @@ export function projectChatTaskPlan(graph: WorkDag, collapsed: boolean): ChatTas
     const measured = node.result?.timing;
     const sameRun =
       attempt && measured?.work_id === attempt.work_id && measured.attempt === attempt.number;
-    const duration = (value: number | undefined) =>
-      typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : 0;
     const timing = emptyTiming();
+    const observed: TimingKind[] = [];
     if (sameRun) {
-      timing.queue = duration(measured.queue_ms);
-      timing.tool = duration(measured.tool_ms);
+      const samples = [
+        ["queue", measured.queue_ms],
+        ["tool", measured.tool_ms],
+        ["model", measured.model_ms],
+        ["pause", measured.pause_ms],
+        ["await_owner", measured.await_owner_ms]
+      ] as const;
+      for (const [kind, value] of samples) {
+        if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0) continue;
+        timing[kind] = value;
+        observed.push(kind);
+      }
     }
     let status: StepStatus =
       node.status === "cancelled" || node.status === "failed" ? "blocked" : node.status;
@@ -371,7 +388,8 @@ export function projectChatTaskPlan(graph: WorkDag, collapsed: boolean): ChatTas
       block_reason,
       started_at: null,
       ended_at: null,
-      timing
+      timing,
+      measured: observed
     };
   });
   return {

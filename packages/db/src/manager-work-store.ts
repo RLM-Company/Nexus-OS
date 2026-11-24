@@ -366,20 +366,28 @@ export class ManagerWorkStore {
     const next = structuredClone(state);
     next.version++;
     next.updated_at = new Date().toISOString();
-    if (next.status === "queued") {
-      if (
-        next.queued_since === undefined &&
-        this.get(state.id, state.owner_id)?.status !== "queued"
-      )
-        next.queued_since = next.updated_at;
-    } else if (next.queued_since !== undefined) {
-      const elapsed = Date.parse(next.updated_at) - Date.parse(next.queued_since);
-      delete next.queued_since;
-      if (Number.isSafeInteger(elapsed) && elapsed >= 0)
-        next.measured_timing = {
-          ...next.measured_timing,
-          queue_ms: (next.measured_timing?.queue_ms ?? 0) + elapsed
-        };
+    // A marker is written on the actual state transition, never inferred
+    // from created_at/updated_at on old records or a dormant child's pause.
+    const phases = [
+      [next.status === "queued", "queued", "queued_since", "queue_ms"],
+      [next.status === "paused" && next.pause_requested, "paused", "paused_since", "pause_ms"],
+      [next.status === "awaiting_approval", "awaiting_approval", "approval_since", "await_owner_ms"]
+    ] as const;
+    const previousStatus = phases.some(([open, , marker]) => open && next[marker] === undefined)
+      ? this.get(state.id, state.owner_id)?.status
+      : undefined;
+    for (const [open, status, marker, total] of phases) {
+      if (open) {
+        if (next[marker] === undefined && previousStatus !== status) next[marker] = next.updated_at;
+        continue;
+      }
+      const since = next[marker];
+      if (since === undefined) continue;
+      delete next[marker];
+      const elapsed = Date.parse(next.updated_at) - Date.parse(since);
+      const accumulated = (next.measured_timing?.[total] ?? 0) + elapsed;
+      if (elapsed >= 0 && Number.isSafeInteger(accumulated))
+        next.measured_timing = { ...next.measured_timing, [total]: accumulated };
     }
     if (message)
       next.events.push({
