@@ -1,0 +1,280 @@
+{
+  "schema": "kosmora.context-quality.fixture.v1",
+  "owners": { "self": "owner-A", "foreign": "owner-B" },
+  "scenarios": [
+    {
+      "id": "continue-after-compaction",
+      "query": "продолжить сжатый диалог: цель и текущий шаг",
+      "budget_bytes": 4200,
+      "items": [
+        {
+          "reference": "M:goal-current",
+          "kind": "memory",
+          "memory_kind": "decision",
+          "title": "Текущая цель сессии",
+          "text": "Цель владельца: подготовить отчёт по Koswork до 24 ноября; активный шаг — сверка таймеров.",
+          "source": null,
+          "version": 3,
+          "excerpt_only": false,
+          "priority": true,
+          "matched": true,
+          "owner": "owner-A"
+        },
+        {
+          "reference": "H:g:msg-100",
+          "kind": "history",
+          "memory_kind": "fact",
+          "title": "2026-11-24T10:00:00Z",
+          "text": "Сжатая переписка: зафиксировано решение продолжать со сверки таймеров, цель — отчёт по Koswork.",
+          "source": {
+            "kind": "chat_message",
+            "message_id": "msg-100",
+            "chat_id": "chat-self",
+            "project_id": null,
+            "role": "user",
+            "quote": "продолжить со сверки таймеров",
+            "sha256": "aaa100"
+          },
+          "version": 1,
+          "excerpt_only": false,
+          "matched": true,
+          "owner": "owner-A"
+        },
+        {
+          "reference": "M:foreign-goal",
+          "kind": "memory",
+          "memory_kind": "decision",
+          "title": "Чужая цель",
+          "text": "Цель другого владельца: подготовить отчёт по Koswork до 24 ноября; активный шаг — сверка таймеров.",
+          "source": null,
+          "version": 9,
+          "excerpt_only": false,
+          "priority": true,
+          "matched": true,
+          "owner": "owner-B"
+        }
+      ],
+      "required_facts": ["подготовить отчёт по Koswork", "сверка таймеров"],
+      "expected_references": ["M:goal-current", "H:g:msg-100"],
+      "forbidden_references": ["M:foreign-goal"]
+    },
+    {
+      "id": "new-chat-in-project",
+      "query": "новый чат проекта: какие решения уже приняты",
+      "budget_bytes": 4200,
+      "items": [
+        {
+          "reference": "M:project-decision",
+          "kind": "memory",
+          "memory_kind": "decision",
+          "title": "Решение проекта",
+          "text": "Проект Koswork использует durable DAG; новые чаты проекта наследуют это решение без повторного запроса.",
+          "source": null,
+          "version": 2,
+          "excerpt_only": false,
+          "priority": true,
+          "matched": true,
+          "owner": "owner-A"
+        },
+        {
+          "reference": "H:p:msg-200",
+          "kind": "history",
+          "memory_kind": "fact",
+          "title": "2026-11-23T12:00:00Z",
+          "text": "В проекте зафиксировано: план хранится в WorkDAG, а не в локальном файле чата.",
+          "source": {
+            "kind": "project_message",
+            "message_id": "msg-200",
+            "chat_id": "",
+            "project_id": "project-self",
+            "role": "user",
+            "quote": "план хранится в WorkDAG",
+            "sha256": "bbb200"
+          },
+          "version": 1,
+          "excerpt_only": false,
+          "matched": true,
+          "owner": "owner-A"
+        },
+        {
+          "reference": "M:foreign-project",
+          "kind": "memory",
+          "memory_kind": "decision",
+          "title": "Чужое решение проекта",
+          "text": "В чужом проекте план хранится в локальном файле чата, durable DAG не используется.",
+          "source": null,
+          "version": 4,
+          "excerpt_only": false,
+          "matched": true,
+          "owner": "owner-B"
+        }
+      ],
+      "required_facts": ["durable DAG", "WorkDAG"],
+      "expected_references": ["M:project-decision", "H:p:msg-200"],
+      "forbidden_references": ["M:foreign-project"]
+    },
+    {
+      "id": "exact-quote",
+      "query": "точная цитата про лимит запросов",
+      "budget_bytes": 3800,
+      "items": [
+        {
+          "reference": "H:g:msg-300",
+          "kind": "history",
+          "memory_kind": "fact",
+          "title": "2026-11-22T09:00:00Z",
+          "text": "Дословно: «Лимит запросов плана достигнут; новый шаг не запущен». Код ошибки PLAN_REQUEST_LIMIT.",
+          "source": {
+            "kind": "chat_message",
+            "message_id": "msg-300",
+            "chat_id": "chat-self",
+            "project_id": null,
+            "role": "assistant",
+            "quote": "Лимит запросов плана достигнут; новый шаг не запущен",
+            "sha256": "ccc300"
+          },
+          "version": 1,
+          "excerpt_only": false,
+          "matched": true,
+          "owner": "owner-A"
+        },
+        {
+          "reference": "M:similar-limit",
+          "kind": "memory",
+          "memory_kind": "fact",
+          "title": "Похожий лимит",
+          "text": "Лимит токенов достигнут; запрос остановлен. Другое ограничение, не план.",
+          "source": null,
+          "version": 1,
+          "excerpt_only": false,
+          "matched": false,
+          "owner": "owner-A"
+        },
+        {
+          "reference": "M:foreign-quote",
+          "kind": "history",
+          "memory_kind": "fact",
+          "title": "2026-11-20T09:00:00Z",
+          "text": "Лимит запросов плана достигнут; новый шаг не запущен",
+          "source": {
+            "kind": "chat_message",
+            "message_id": "msg-foreign",
+            "chat_id": "chat-foreign",
+            "project_id": null,
+            "role": "user",
+            "quote": "Лимит запросов плана достигнут; новый шаг не запущен",
+            "sha256": "ddd400"
+          },
+          "version": 1,
+          "excerpt_only": false,
+          "matched": true,
+          "owner": "owner-B"
+        }
+      ],
+      "required_facts": [
+        "Лимит запросов плана достигнут; новый шаг не запущен",
+        "PLAN_REQUEST_LIMIT"
+      ],
+      "expected_references": ["H:g:msg-300"],
+      "forbidden_references": ["M:foreign-quote"]
+    },
+    {
+      "id": "latest-revision",
+      "query": "какое решение по таймерам действует сейчас",
+      "budget_bytes": 3600,
+      "items": [
+        {
+          "reference": "M:timer-decision-old",
+          "kind": "memory",
+          "memory_kind": "decision",
+          "title": "Решение по таймерам",
+          "text": "Устаревшее решение: пауза и блокировка считаются одним состоянием, таймеры не разделяются.",
+          "source": null,
+          "version": 1,
+          "excerpt_only": false,
+          "priority": true,
+          "matched": true,
+          "owner": "owner-A"
+        },
+        {
+          "reference": "M:timer-decision-new",
+          "kind": "memory",
+          "memory_kind": "decision",
+          "title": "Решение по таймерам",
+          "text": "Актуальное решение: пауза, очередь и разрешение разделены; таймеры считаются по событиям.",
+          "source": null,
+          "version": 4,
+          "excerpt_only": false,
+          "priority": true,
+          "matched": true,
+          "owner": "owner-A"
+        },
+        {
+          "reference": "M:foreign-timer",
+          "kind": "memory",
+          "memory_kind": "decision",
+          "title": "Решение по таймерам",
+          "text": "Чужое решение: таймеры считаются по локальному времени без событий.",
+          "source": null,
+          "version": 8,
+          "excerpt_only": false,
+          "priority": true,
+          "matched": true,
+          "owner": "owner-B"
+        }
+      ],
+      "required_facts": ["пауза, очередь и разрешение разделены", "по событиям"],
+      "forbidden_facts": ["пауза и блокировка считаются одним состоянием"],
+      "expected_references": ["M:timer-decision-new"],
+      "forbidden_references": ["M:timer-decision-old", "M:foreign-timer"]
+    },
+    {
+      "id": "deleted-material",
+      "query": "что известно про удалённый черновик",
+      "budget_bytes": 3400,
+      "items": [
+        {
+          "reference": "M:draft-current",
+          "kind": "memory",
+          "memory_kind": "fact",
+          "title": "Черновик",
+          "text": "Черновик отчёта сохранён в проекте и доступен для продолжения.",
+          "source": null,
+          "version": 2,
+          "excerpt_only": false,
+          "matched": true,
+          "owner": "owner-A",
+          "deleted": true
+        },
+        {
+          "reference": "M:kept-fact",
+          "kind": "memory",
+          "memory_kind": "fact",
+          "title": "Подтверждённый факт",
+          "text": "Отчёт по проекту хранится в artifacts и доступен владельцу.",
+          "source": null,
+          "version": 1,
+          "excerpt_only": false,
+          "matched": true,
+          "owner": "owner-A"
+        },
+        {
+          "reference": "M:foreign-draft",
+          "kind": "memory",
+          "memory_kind": "fact",
+          "title": "Чужой черновик",
+          "text": "Чужой черновик отчёта сохранён в другом проекте.",
+          "source": null,
+          "version": 3,
+          "excerpt_only": false,
+          "matched": true,
+          "owner": "owner-B"
+        }
+      ],
+      "required_facts": ["artifacts"],
+      "forbidden_facts": ["Черновик отчёта сохранён"],
+      "expected_references": ["M:kept-fact"],
+      "forbidden_references": ["M:draft-current", "M:foreign-draft"]
+    }
+  ]
+}
