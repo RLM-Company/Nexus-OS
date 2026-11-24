@@ -1,4 +1,4 @@
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { isAbsolute, relative, resolve, sep } from "node:path";
@@ -43,6 +43,41 @@ if (!/^[a-z0-9][a-z0-9._-]{0,63}$/u.test(label)) {
 const git = (params) =>
   execFileSync("git", params, { cwd: root, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
 
+/**
+ * Read every blob for a commit in one `git cat-file --batch` process. Spawning
+ * one `git show` per file costs ~90 ms on Windows and makes the build take
+ * minutes; batching keeps a 3300-file snapshot under a second.
+ */
+const readAllBlobs = (commitName, paths, onBlob) => {
+  const input = paths.map((path) => `${commitName}:${path}\n`).join("");
+  const result = spawnSync("git", ["cat-file", "--batch"], {
+    cwd: root,
+    input,
+    maxBuffer: 512 * 1024 * 1024
+  });
+  if (result.status !== 0) throw new Error("git cat-file --batch failed");
+  let cursor = 0;
+  let total = 0;
+  const buffer = result.stdout;
+  for (let index = 0; index < paths.length; index++) {
+    const newline = buffer.indexOf(0x0a, cursor);
+    if (newline === -1) throw new Error("Truncated cat-file header");
+    const header = buffer.subarray(cursor, newline).toString("ascii").split(" ");
+    cursor = newline + 1;
+    const size = Number(header[2]);
+    if (header[1] !== "blob" || !Number.isInteger(size)) {
+      throw new Error(`Unexpected object for ${paths[index]}: ${header.join(" ")}`);
+    }
+    const bytes = buffer.subarray(cursor, cursor + size);
+    cursor += size;
+    if (buffer[cursor] !== 0x0a) throw new Error("Truncated cat-file payload");
+    cursor += 1;
+    total += size;
+    onBlob(index, bytes);
+  }
+  return total;
+};
+
 if (git(["status", "--porcelain"]).trim()) {
   throw new Error("Commit or preserve source changes before building a release candidate.");
 }
@@ -68,14 +103,15 @@ for (const name of names) {
   }
 }
 
-const entries = names.map((path) => {
-  const bytes = execFileSync("git", ["show", `${commit}:${path}`], {
-    cwd: root,
-    maxBuffer: 16 * 1024 * 1024
-  });
-  return { path, bytes: bytes.length, sha256: createHash("sha256").update(bytes).digest("hex") };
+// Modes come from the same ls-tree entries used for validation; path order is
+// identical to `names`, so index alignment is guaranteed.
+const modes = tree.map((entry) => (entry.startsWith("100755") ? 0o755 : 0o644));
+const entries = names.map((path, index) => ({ path, mode: modes[index], bytes: null, sha256: "" }));
+readAllBlobs(commit, names, (index, bytes) => {
+  entries[index].bytes = bytes;
+  entries[index].sha256 = createHash("sha256").update(bytes).digest("hex");
 });
-const sourceBytes = entries.reduce((sum, entry) => sum + entry.bytes, 0);
+const sourceBytes = entries.reduce((sum, entry) => sum + entry.bytes.length, 0);
 const FILE_LIMIT = 64 * 1024 * 1024;
 if (sourceBytes > FILE_LIMIT) throw new Error("Source snapshot exceeds release bound.");
 
@@ -87,13 +123,7 @@ mkdirSync(directory, { recursive: true });
 // Deterministic tar.gz: fixed order, weights when present, fixed mtime/uid/gid,
 // fixed gzip header with no filename and no OS byte. SHA-256 is stable across builds.
 const TAR_MTIME = 0;
-const staged = entries
-  .map(({ path }) => {
-    const mode = git(["ls-tree", commit, "--", path]).trim().startsWith("100755") ? 0o755 : 0o644;
-    const bytes = execFileSync("git", ["show", `${commit}:${path}`], { cwd: root, maxBuffer: 16 * 1024 * 1024 });
-    return { path, mode, bytes };
-  })
-  .sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+const staged = [...entries].sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
 
 const blocks = [];
 const header = (name, size, mode, type) => {
@@ -163,7 +193,7 @@ const manifest = {
   },
   migrations: migrations.entries.map(({ idx, tag }) => ({ idx, tag })),
   production_deployed: false,
-  files: entries
+  files: entries.map(({ path, bytes, sha256 }) => ({ path, bytes: bytes.length, sha256 }))
 };
 writeFileSync(resolve(directory, "manifest.json"), JSON.stringify(manifest, null, 2) + "\n", {
   flag: "wx"
