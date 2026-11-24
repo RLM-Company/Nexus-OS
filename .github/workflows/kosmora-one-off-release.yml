@@ -60,7 +60,7 @@ jobs:
             container="kosmora-release-$role"
             ready=false
             for attempt in {1..45}; do
-              if docker exec "$container" node deploy/alpha/healthcheck.mjs "$role"; then
+              if docker exec "$container" node /app/deploy/alpha/healthcheck.mjs "$role"; then
                 ready=true
                 break
               fi
