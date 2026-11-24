@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node
 import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import process from "node:process";
 
 /**
@@ -149,7 +150,7 @@ try {
   note("migrate", "start");
   const migration = spawn(process.execPath, [
     "--require", join(root, "scripts/windows-node-user.cjs"),
-    "--import", "tsx",
+    "--import", pathToFileURL(join(root, "apps/api/node_modules/tsx/dist/loader.mjs")).href,
     "packages/db/src/migrate.ts"
   ], { cwd: root, env, stdio: ["ignore", "pipe", "pipe"] });
   let migrationOutput = "";
