@@ -173,21 +173,11 @@ for (const file of staged) {
 blocks.push(Buffer.alloc(1024));
 const tar = Buffer.concat(blocks);
 
-// gzip without timestamp, filename or OS fields (deflate level 9, deterministic in Node).
-const { deflateSync } = await import("node:zlib");
-const deflated = deflateSync(tar, { level: 9 });
-const gzipHeader = Buffer.from([0x1f, 0x8b, 0x08, 0x00, 0, 0, 0, 0, 0x00, 0x03]);
-const crcTable = Array.from({ length: 256 }, (_, index) => {
-  let value = index;
-  for (let bit = 0; bit < 8; bit++) value = value & 1 ? 0xedb88320 ^ (value >>> 1) : value >>> 1;
-  return value >>> 0;
-});
-let crc = 0xffffffff;
-for (const byte of tar) crc = crcTable[(crc ^ byte) & 0xff] ^ (crc >>> 8);
-const trailer = Buffer.alloc(8);
-trailer.writeUInt32LE((crc ^ 0xffffffff) >>> 0, 0);
-trailer.writeUInt32LE(tar.length >>> 0, 4);
-const archive = Buffer.concat([gzipHeader, deflated, trailer]);
+// Deterministic gzip: zlib's own compressor (portable, valid deflate stream)
+// with the mtime bytes in the header zeroed so a given tar is byte-stable.
+const { gzipSync } = await import("node:zlib");
+const archive = Buffer.from(gzipSync(tar, { level: 9 }));
+archive.writeUInt32LE(0, 4); // mtime = 0
 const archiveName = "source.tar.gz";
 writeFileSync(resolve(directory, archiveName), archive);
 
