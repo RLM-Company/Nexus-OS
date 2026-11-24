@@ -2349,5 +2349,189 @@ describe("executable durable Work DAG", () => {
       // The dependent step is still pending until the next wave reconciles it.
       expect(f.dag.get(graph.id, owner)!.nodes[1]!.attempts).toHaveLength(0);
     });
+
+    it("koswork lifecycle: materials -> plan -> approval -> dependent steps -> verified download, including pause/restart/lost start response", async () => {
+      const exactReport =
+        "# Сверка заказа 00123\nQ1=19700, Q2=1300, итого 21000 [S1]\nИсточник: values.csv, anchor.txt";
+      const materials = {
+        version: 0,
+        instructions:
+          "Сложить Q1 и Q2 по строке 00123. Использовать только загруженные исходники и якорную проверку.",
+        attachments: [
+          { name: "values.csv", content: "ID,Q1,Q2\n00123,19700,1300\n" },
+          { name: "anchor.txt", content: "Якорь: 00123 = 21000." }
+        ]
+      };
+      const f = await fixture({
+        maxConcurrentWork: 1,
+        output: (request) => {
+          if (request.task_type === "manager_work_plan")
+            return {
+              summary: "Проверить расчёт 19700+1300 и подготовить отчёт",
+              instructions: "Использовать values.csv и anchor.txt",
+              complexity: "simple",
+              needs_critic: false,
+              requires_external_actions: false
+            };
+          if (request.task_type === "manager_work_review")
+            return { verdict: "PASS", reason: "Проверено по якорю" };
+          return { files: [{ name: "report.md", content: exactReport }] };
+        }
+      });
+      f.projects.setMaterials(f.project.id, owner, materials);
+
+      const planNodes: WorkDagNodeInput[] = [
+        {
+          id: "read",
+          title: "Прочитать значения",
+          goal: "Прочитать values.csv и anchor.txt",
+          depends_on: []
+        },
+        {
+          id: "sum",
+          title: "Сложить Q1 и Q2",
+          goal: "Проверить 19700+1300=21000",
+          depends_on: ["read"]
+        },
+        {
+          id: "report",
+          title: "Подготовить отчёт",
+          goal: "Собрать отчёт с источниками S1",
+          depends_on: ["sum"]
+        }
+      ];
+
+      // 1) Входные материалы и план: без одобрения ни один dispatch не запускается.
+      let graph = f.dag.create(f.project.id, owner, owner, {
+        client_request_id: "koswork-lifecycle-v1",
+        title: "Сверка заказа 00123",
+        nodes: planNodes
+      });
+      expect(() =>
+        f.dag.control(graph.id, owner, {
+          version: graph.version,
+          action: "run_plan",
+          max_model_requests: 9
+        })
+      ).toThrow("EXPLICIT_RETRY_REQUIRED");
+      const callsBeforeApproval = f.calls.length;
+      graph = arm(f, graph, 9);
+      expect(f.calls).toHaveLength(callsBeforeApproval);
+      // Потеря ответа при старте: повтор того же управления на старой версии
+      // должен быть отклонён, а не создавать второе разрешение/запуск.
+      expect(() =>
+        f.dag.control(graph.id, owner, {
+          version: graph.version - 1,
+          action: "run_plan",
+          acknowledge_cost: true,
+          max_model_requests: 9
+        })
+      ).toThrow("STALE_DAG");
+
+      // 2) Первый зависимый шаг завершён, materials pinned в исходном снимке.
+      graph = await autoTick(f, graph.id);
+      expect(graph.nodes.map((node) => node.status)).toEqual(["completed", "pending", "blocked"]);
+      const firstArtifact = graph.nodes[0]!.artifacts[0]!;
+      for (const call of f.calls) expect(call.messages[1]!.content).toContain("ID,Q1,Q2");
+
+      // 3) Пауза: очередь держится, модель не вызывается.
+      const callsBeforePause = f.calls.length;
+      graph = f.dag.control(graph.id, owner, { version: graph.version, action: "pause" });
+      expect(graph.mode).toBe("paused");
+      expect(f.calls).toHaveLength(callsBeforePause);
+      graph = f.dag.control(graph.id, owner, { version: graph.version, action: "resume" });
+
+      // 4) Потеря ответа при старте + рестарт API: нapproved/duplicate dispatch.
+      f.dag.advance();
+      const admitted = f.store.pending()[0]!;
+      expect(admitted.dag_binding?.node_id).toBe("sum");
+      const callsBeforeRestart = f.calls.length;
+      const restarted = new ManagerWorkCoordinator(f.deps);
+      // Имитация потери ответа: повторный вызов recover/advance с тем же чекпоинтом.
+      restarted.dag.recoverAutomation();
+      restarted.dag.advance();
+      restarted.dag.recoverAutomation();
+      restarted.dag.advance();
+      graph = restarted.dag.get(graph.id, owner)!;
+      expect(graph.execution).toMatchObject({
+        status: "paused",
+        reason: "RESTART_REQUIRES_RESUME"
+      });
+      expect(graph.nodes[0]!.artifacts[0]!.sha256).toBe(firstArtifact.sha256);
+      // Потеря ответа/двойной recover не создали вторую очередь и не дублировали
+      // разрешение: ровно один ожидающий child и одно событие разрешения.
+      expect(
+        f.store
+          .list(f.project.id, owner)
+          .filter((item) => item.dag_binding?.node_id === "sum" && item.status !== "completed")
+          .map((item) => item.id)
+      ).toEqual([admitted.id]);
+      expect(
+        graph.events.filter((event) => event.message.includes("разрешил выполнение плана"))
+      ).toHaveLength(1);
+      await restarted.execute(admitted.id, owner);
+      expect(f.calls).toHaveLength(callsBeforeRestart); // без явного разрешения модель не зовётся
+
+      // 5) Явное продолжение: тот же attempt, без повторного admission.
+      graph = restarted.dag.control(graph.id, owner, {
+        version: graph.version,
+        action: "resume_step",
+        node_id: "sum"
+      });
+      await restarted.execute(admitted.id, owner);
+      graph = await autoTick(f, graph.id);
+      // After a restart the plan stays paused; one explicit continuation covers
+      // the rest of the wave. It does not re-plan or re-admit finished steps.
+      graph = restarted.dag.control(graph.id, owner, {
+        version: restarted.dag.get(graph.id, owner)!.version,
+        action: "run_plan",
+        acknowledge_cost: true,
+        max_model_requests: 9
+      });
+      expect(graph.execution).toMatchObject({ status: "running" });
+      // The third step is admitted only after the second one is terminal.
+      restarted.dag.advance();
+      for (const child of f.store.pending()) await restarted.execute(child.id, owner);
+      graph = restarted.dag.get(graph.id, owner)!;
+      expect(graph.nodes.map((node) => node.status)).toEqual([
+        "completed",
+        "completed",
+        "completed"
+      ]);
+      expect(graph.nodes[1]!.attempts.map((attempt) => attempt.work_id)).toEqual([admitted.id]);
+      expect(graph.nodes[0]!.artifacts[0]!.sha256).toBe(firstArtifact.sha256);
+      expect(f.calls.at(-1)!.messages[1]!.content).toContain("anchor.txt");
+      expect(f.calls.at(-1)!.messages[1]!.content).not.toContain("Revised");
+
+      // 6) Проверка содержимого и скачивание: байты совпадают с сохранённым артефактом.
+      const results = restarted.dag.results(graph.id, owner).files;
+      expect(results).toHaveLength(3);
+      const report = results.find((file) => file.name === "report.md")!;
+      expect(report.content).toContain("19700");
+      expect(report.content).toContain("1300");
+      expect(report.content).toContain("21000 [S1]");
+      expect(createHash("sha256").update(Buffer.from(report.content)).digest("hex")).toBe(
+        report.sha256
+      );
+      const storedArchive = restarted.dag.resultsArchive(graph.id, owner);
+      expect(storedArchive.includes(Buffer.from(exactReport))).toBe(true);
+      expect(storedArchive.includes(Buffer.from('"complete": true'))).toBe(true);
+
+      const app = buildApp({
+        config: f.config,
+        database: f.db,
+        projectStore: f.projects,
+        managerWorkStore: f.store,
+        managerWorkCoordinator: restarted
+      });
+      try {
+        const base = "/api/v1/projects/" + f.project.id + "/work-dags/" + graph.id;
+        const downloaded = await app.inject({ url: base + "/results.zip" });
+        expect(downloaded.statusCode).toBe(200);
+        expect(Buffer.from(downloaded.rawPayload)).toEqual(storedArchive);
+      } finally {
+        await app.close();
+      }
+    }, 60_000);
   });
 });
