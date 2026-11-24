@@ -86,10 +86,11 @@ const note = (stage, state, detail = {}) => {
   if (failAt === stage && state === "start") {
     report.status = "failed";
     report.failed_stage = stage;
+    report.reason = detail.reason ?? `Injected failure at stage ${stage}`;
     report.restore_command =
       "bash scripts/deploy-release.sh --rollback <previous-image-digest> <previous-db-snapshot>";
     persistReport();
-    throw new Error(`[${stage}] injected failure. Rollback: ${report.restore_command}`);
+    throw new Error(`[${stage}] ${report.reason}. Rollback: ${report.restore_command}`);
   }
 };
 const waitFor = async (url, predicate, timeoutMs = 25_000) => {
@@ -156,11 +157,13 @@ try {
     // Treat this as an injected failure at the prepare stage so every failure
     // report has an explicit stopping point and restore command.
     failAt = "prepare";
-    note("prepare", "start", { low_disk: report.low_disk });
-    throw new Error(
-      "LOW_DISK: refusing to unpack. Need at least the disk_bytes in build.json; " +
-        "free 64 MiB is below the preflight threshold. Nothing was written."
-    );
+    note("prepare", "start", {
+      low_disk: report.low_disk,
+      reason:
+        "LOW_DISK: need at least requirements.disk_bytes from build.json; " +
+        "64 MiB free is below preflight threshold. No unpack, migration or start was attempted."
+    });
+    throw new Error(report.reason);
   }
   note("prepare", "ok");
 
