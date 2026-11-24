@@ -96,6 +96,52 @@ export function compactContextEvidence(items: readonly Evidence[]): Evidence[] {
   return selected.filter((entry) => retained.has(entry)).map((entry) => entry.item);
 }
 
+/** Source scoping for the assembled model context.
+ *
+ * Recalled evidence is untrusted data. Before packing it must be scoped to the
+ * current owner, deleted material must be dropped, and contradictory revisions
+ * of the same subject must yield to the newest version. Ranking then keeps the
+ * mandatory items and query-overlap order from rankContextEvidence. */
+export function selectContextScope<T extends Evidence>(
+  items: readonly T[],
+  options: {
+    owner: string;
+    query?: string;
+    isDeleted?: (item: T) => boolean;
+  }
+): T[] {
+  const ownerOf = (item: T) =>
+    (item as T & { owner?: string }).owner ??
+    (item.source ? (item.source as unknown as { owner?: string }).owner : undefined);
+  const eligible = items.filter(
+    (item) => !options.isDeleted?.(item) && (!ownerOf(item) || ownerOf(item) === options.owner)
+  );
+  const newest = new Map<string, T>();
+  for (const item of eligible) {
+    const key = `${fold(item.title)}\u0000${item.memory_kind ?? item.kind}`;
+    const current = newest.get(key);
+    const version = item.version ?? 1;
+    const currentVersion = current?.version ?? 1;
+    if (
+      !current ||
+      version > currentVersion ||
+      (version === currentVersion && item.reference < current.reference)
+    )
+      newest.set(key, item);
+  }
+  const survivors = eligible.filter(
+    (item) => newest.get(`${fold(item.title)}\u0000${item.memory_kind ?? item.kind}`) === item
+  );
+  // A topically similar excerpt is search context, not an answer. Once real
+  // matches exist, drop unmatched optional items so the model cannot mistake
+  // them for evidence. Mandatory constraints/preferences always stay.
+  const matched = survivors.some((item) => item.matched);
+  const answered = matched
+    ? survivors.filter((item) => item.matched || item.priority || item.memory_kind === "constraint")
+    : survivors;
+  return rankContextEvidence(compactContextEvidence(answered), options.query) as T[];
+}
+
 /** Preserve trusted hybrid order through final fitting. Priority always wins. */
 export function rankContextEvidence(items: readonly Evidence[], query?: string): Evidence[] {
   const terms = query
