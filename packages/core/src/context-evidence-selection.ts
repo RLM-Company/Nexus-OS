@@ -113,8 +113,10 @@ export function selectContextScope<T extends Evidence>(
   const ownerOf = (item: T) =>
     (item as T & { owner?: string }).owner ??
     (item.source ? (item.source as unknown as { owner?: string }).owner : undefined);
+  const isDeleted = (item: T) =>
+    Boolean((item as T & { deleted?: boolean }).deleted) || Boolean(options.isDeleted?.(item));
   const eligible = items.filter(
-    (item) => !options.isDeleted?.(item) && (!ownerOf(item) || ownerOf(item) === options.owner)
+    (item) => !isDeleted(item) && (!ownerOf(item) || ownerOf(item) === options.owner)
   );
   const newest = new Map<string, T>();
   for (const item of eligible) {
@@ -132,11 +134,10 @@ export function selectContextScope<T extends Evidence>(
   const survivors = eligible.filter(
     (item) => newest.get(`${fold(item.title)}\u0000${item.memory_kind ?? item.kind}`) === item
   );
-  // A topically similar excerpt is search context, not an answer. Once real
-  // matches exist, drop unmatched optional items so the model cannot mistake
-  // them for evidence. Mandatory constraints/preferences always stay.
-  const matched = survivors.some((item) => item.matched);
-  const answered = matched
+  // A topically similar excerpt is search context, not an answer. With a query,
+  // only direct matches and mandatory items belong in the assembled context;
+  // lookalikes must not become false evidence. Without a query keep everything.
+  const answered = options.query
     ? survivors.filter((item) => item.matched || item.priority || item.memory_kind === "constraint")
     : survivors;
   return rankContextEvidence(compactContextEvidence(answered), options.query) as T[];
