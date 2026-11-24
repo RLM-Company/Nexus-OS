@@ -243,7 +243,7 @@ describe("heavy file-analysis scenario", () => {
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
         events: [],
-        nodes: files.map((file, index) => ({
+        nodes: files.map((file) => ({
           id: file.node_id,
           title: file.name,
           goal: "export",
@@ -264,7 +264,18 @@ describe("heavy file-analysis scenario", () => {
       };
       const archive = buildWorkResultsArchive(graph as never, files as never);
       const exported = unzip(archive);
-      const exportedManifest = JSON.parse(exported.get("manifest.json")!.toString("utf8"));
+      type ExportedFile = {
+        path: string;
+        bytes: number;
+        original_name: string;
+      };
+      type ExportedManifest = {
+        complete: boolean;
+        files: ExportedFile[];
+      };
+      const exportedManifest = JSON.parse(
+        exported.get("manifest.json")!.toString("utf8")
+      ) as ExportedManifest;
       for (const manifestFile of exportedManifest.files) {
         const bytes = exported.get(manifestFile.path);
         expect(bytes?.length).toBe(manifestFile.bytes ?? 0);

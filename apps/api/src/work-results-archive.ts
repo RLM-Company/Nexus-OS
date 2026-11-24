@@ -105,6 +105,7 @@ export function buildWorkResultsArchive(
       nodeIndex < 0 ||
       !file.name ||
       file.name.length > 100 ||
+      // eslint-disable-next-line no-control-regex -- Archive names must not contain control characters.
       /[/\\\u0000-\u001f\u007f]/u.test(file.name) ||
       !/^[a-zA-Z0-9 ._›-]+\.[a-zA-Z0-9]{1,8}$/.test(file.name) ||
       !/\.(md|txt|json|html|css|js|ts|py|csv|pdf|docx)$/i.test(file.name)
