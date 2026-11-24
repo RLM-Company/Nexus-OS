@@ -273,5 +273,7 @@ try {
   await stop(web);
   report.finished_at = new Date().toISOString();
   persistReport();
-  process.stdout.write(JSON.stringify(report, null, 2) + "\n");
+  process.stdout.write(JSON.stringify(report, null, 2) + "\n", () => {
+    process.exit(report.status === "pass" ? 0 : 1);
+  });
 }
