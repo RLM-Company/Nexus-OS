@@ -37,7 +37,9 @@ if (failAt !== undefined && !stages.includes(failAt)) {
 const sandbox = join(tmpdir(), `kosmora-rehearsal-${process.pid}`);
 const db = join(sandbox, "data", "rehearsal.sqlite");
 const ports = {
-  api: Number(option("--api-port") ?? 3180),
+  // The web Next build bakes COSMORA_API_ORIGIN into its rewrites at build
+  // time; the default build uses 3100, so the rehearsal API must use it too.
+  api: Number(option("--api-port") ?? 3100),
   web: Number(option("--web-port") ?? 3181)
 };
 const env = {
