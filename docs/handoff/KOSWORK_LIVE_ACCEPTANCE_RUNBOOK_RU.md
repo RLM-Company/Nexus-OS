@@ -32,8 +32,11 @@
 1. **API доступен.** Обновлённый сервер с миграциями и последним `main`
    (включая PR #464 и #468, когда они объединены). Проверка: главная страница
    Kosmora открывается, `/api/v1/health` отвечает.
-2. **Windows-клиент 0.23.0** (`desktop/windows/package.json`, версия 0.23.0)
-   собран как unsigned-кандидат, updater OFF, и запущен на ноутбуке владельца.
+2. **Windows-клиент 0.27.0** (актуальная версия сверяется с `version` в
+   `desktop/windows/package.json`; на 24 ноября 2026 это 0.27.0) собран как
+   unsigned-кандидат, updater OFF, и запущен на ноутбуке владельца. Перед сеансом
+   сверить версию сборки и SHA инсталлятора с `dist/SHA256SUMS.txt`; более старые
+   runbook-значения (0.23.0) не являются требованием текущего релиза.
 3. **Провайдер.** Выбранная модель с vision-маршрутом для управления ПК
    (текстовый маршрут клиент не подменяет). Тарифы/квоты и модель HY4
    не меняются.
@@ -78,6 +81,30 @@ node --test desktop/windows/test/work-document-cycle.test.cjs
 
 Оба прогона — реальные, выполнены на актуальной ревизии; живая модель и
 приложения владельца при этом не использовались.
+
+**Прогон 24 ноября 2026, база `4fb73e33` (fixture, без живой модели):**
+
+```powershell
+cd desktop/windows
+# синтаксис: node --check по всем 56 test/*.test.cjs → 0 ошибок
+node --test test/package-policy.test.cjs test/package-graph.test.cjs `
+  test/download-package.test.cjs test/sign-release.test.cjs `
+  test/update-service.test.cjs test/owner-session.test.cjs `
+  test/session-cleanup.test.cjs                       # → 22/22
+node --test test/download-center.test.cjs test/download-history.test.cjs `
+  test/connection-policy.test.cjs test/connection-renderer.test.cjs `
+  test/local-vault.test.cjs test/computer-workspace.test.cjs `
+  test/vault-workspace.test.cjs                       # → 103/103
+node --test test/gui-acceptance.test.cjs test/desktop-state.test.cjs `
+  test/profile-environment.test.cjs test/work-document-cycle.test.cjs `
+  test/draft-isolation.test.cjs test/draft-session-gate.test.cjs  # → 18/18
+# итого 143 теста, 0 падений
+```
+
+Эти прогоны проверяют политику/логику на локальных фикстурах. Реальные NSIS
+Fresh/Upgrade, packaged GUI, смена сети и перемещение папки выполняются только
+на disposable GitHub-hosted runner (`.github/workflows/windows-desktop.yml`,
+`ci/nsis-lifecycle.ps1`) и не запускаются на машине разработчика.
 
 ## Шаги живого сеанса
 

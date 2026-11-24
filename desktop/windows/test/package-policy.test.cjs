@@ -20,6 +20,10 @@ test("installer remains an explicit unsigned local build", () => {
     "electron-builder --win nsis --x64 --publish never"
   );
   assert.match(packageJson.build.win.artifactName, /^Kosmora-Setup-/);
+  // Acceptance runbooks must quote this exact candidate version. A silent bump
+  // here previously left KOSWORK_LIVE_ACCEPTANCE_RUNBOOK_RU.md on 0.23.0.
+  assert.equal(packageJson.version, "0.27.0");
+  assert.equal(packageJson.build.win.artifactName, "Kosmora-Setup-${version}-${arch}.${ext}");
 });
 
 test("an update keeps the user profile across installs and uninstall keeps user data", () => {
