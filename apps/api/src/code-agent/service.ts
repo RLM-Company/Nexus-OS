@@ -1865,7 +1865,7 @@ export class CodeAgentService {
       this.deps.drafts.reconcile(draft.id, owner, url);
       return this.view(
         this.deps.store.save(
-          { ...this.current(id, owner), status: "published" },
+          { ...this.current(id, owner), status: "published", error: undefined },
           "Результат подтверждён чтением GitHub"
         )
       );
