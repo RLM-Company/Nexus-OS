@@ -20,6 +20,7 @@ type Preferences = {
   preferred_provider: string | null;
   preferred_model: string | null;
   chat_style: "standard" | "concise" | "detailed";
+  task_decomposition: boolean;
   max_total_tokens: number | null;
   display_name: string;
   user_gender: Gender;
@@ -91,6 +92,7 @@ export default function PersonalSettings() {
           preferred_provider: next.preferred_provider,
           preferred_model: next.preferred_model,
           chat_style: next.chat_style,
+          task_decomposition: next.task_decomposition,
           max_total_tokens: next.max_total_tokens,
           display_name: next.display_name,
           user_gender: next.user_gender,
@@ -184,6 +186,17 @@ export default function PersonalSettings() {
           <section id="model-settings">
             <h2>Модель и чат</h2>
             <ModelPicker />
+            <Switch
+              checked={prefs.task_decomposition ?? false}
+              disabled={busy}
+              onChange={(enabled) => void save({ ...prefs, task_decomposition: enabled })}
+            >
+              Дробление задач
+            </Switch>
+            <p className={styles.muted}>
+              Разбирает запросы с несколькими пунктами на шаги в быстром режиме и в некоторых
+              крупных запросах. Общие условия используются повторно в одном запросе к модели.
+            </p>
             <label>
               Язык ответа с ретранслятором
               <select

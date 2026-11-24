@@ -10,7 +10,12 @@ import {
   parseWorkPlanPackageText,
   type WorkPlanPackage
 } from "@cosmora/contracts/work-plan-package";
-import type { WorkDag, WorkDagNodeInput, WorkDagControl } from "@cosmora/contracts";
+import {
+  pendingWorkDagRepair,
+  type WorkDag,
+  type WorkDagNodeInput,
+  type WorkDagControl
+} from "@cosmora/contracts/work-dag";
 import type { WorkPriority } from "@cosmora/contracts/work-schedule";
 import {
   filterWorkSteps,
@@ -22,6 +27,7 @@ import {
 } from "./work-schedule-ui";
 import { useExecutionGate } from "./use-execution-gate";
 import { announceChatTaskPlan } from "./use-chat-task-plan";
+import { AI_WORK_CHAIN_FILE, parseAiWorkChain } from "./ai-work-chain";
 import styles from "./work-manager.module.css";
 
 const statuses: Record<string, string> = {
@@ -68,6 +74,7 @@ const reasons: Record<string, string> = {
   PLAN_EDITED: "План изменён. Подтвердите выполнение обновлённых шагов",
   PLAN_REQUEST_LIMIT: "Достигнут общий лимит запросов. Можно явно продолжить с увеличенным лимитом",
   INVALID_PLAN_BUDGET: "Укажите общий лимит от 3 до 96 запросов",
+  REPAIR_PENDING: "Критик отклонил результат. Исправление ожидает запуска",
   STEP_FAILED: "Шаг завершился ошибкой. Повторите только его после проверки причины",
   STOPPED_BY_OWNER: "Автозапуск остановлен; сохранённые результаты доступны",
   RESTART_REQUIRES_RESUME: "Сервер перезапустился. Для новых шагов подтвердите продолжение",
@@ -111,10 +118,12 @@ const freshStep = (): WorkDagNodeInput => ({
 
 export function WorkManagerDag({
   projectId,
-  onPlanSnapshot
+  onPlanSnapshot,
+  aiPlanWorkId
 }: {
   projectId: string;
   onPlanSnapshot: (graph: WorkDag) => void;
+  aiPlanWorkId: string | null;
 }) {
   const base = "/api/v1/projects/" + encodeURIComponent(projectId) + "/work-dags";
   const gate = useExecutionGate(projectId);
@@ -152,6 +161,7 @@ export function WorkManagerDag({
     checked: boolean;
   } | null>(null);
   const [readingImport, setReadingImport] = useState(false);
+  const importPanel = useRef<HTMLDetailsElement>(null);
   const importEpoch = useRef(0);
   const [retry, setRetry] = useState<string | null>(null);
   const [cancellation, setCancellation] = useState<{
@@ -162,6 +172,11 @@ export function WorkManagerDag({
   } | null>(null);
   const [acknowledged, setAcknowledged] = useState(false);
   const [autoConfirmed, setAutoConfirmed] = useState(false);
+  const [repairDraft, setRepairDraft] = useState<{
+    graphId: string;
+    enabled: boolean;
+    limit: string;
+  } | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [readError, setReadError] = useState("");
@@ -227,6 +242,18 @@ export function WorkManagerDag({
     Boolean(cancellation) ||
     readingImport;
   const automatic = graph?.execution && ["running", "waiting"].includes(graph.execution.status);
+  const repairOptions = graph && {
+    graphId: graph.id,
+    enabled: graph.execution?.auto_repair === true,
+    limit: String(
+      graph.execution?.max_model_requests ?? Math.min(96, (graph.nodes.length + 1) * 3)
+    ),
+    ...(repairDraft?.graphId === graph.id ? repairDraft : {})
+  };
+  const repairLimit = Number(repairOptions?.limit);
+  const invalidRepairLimit =
+    repairOptions?.enabled &&
+    (!Number.isInteger(repairLimit) || repairLimit < 3 || repairLimit > 96);
   useEffect(() => {
     setRetry(null);
     setCancellation(null);
@@ -465,7 +492,9 @@ export function WorkManagerDag({
           const latest = await request<WorkDag>(url.slice(0, -"/control".length));
           if (
             latest.version > (control.version ?? 0) &&
-            (latest.execution?.max_model_requests ?? undefined) === control.max_model_requests
+            latest.execution &&
+            (latest.execution.max_model_requests ?? undefined) === control.max_model_requests &&
+            latest.execution.auto_repair === control.auto_repair
           ) {
             setGraphs((current) => [latest, ...current.filter((g) => g.id !== latest.id)]);
             setSelected(latest.id);
@@ -506,6 +535,26 @@ export function WorkManagerDag({
       if (epoch === importEpoch.current) setReadingImport(false);
     }
   }
+  async function readAiPlan(workId: string) {
+    if (browsingLocked) return;
+    setReadingImport(true);
+    setError("");
+    const source = `/api/v1/projects/${encodeURIComponent(projectId)}/work/${encodeURIComponent(workId)}/files/${AI_WORK_CHAIN_FILE}`;
+    try {
+      const response = await fetch(source, {
+        cache: "no-store",
+        signal: AbortSignal.timeout(15000)
+      });
+      if (!response.ok) throw Error("AI_WORK_CHAIN_UNAVAILABLE");
+      const plan = parseAiWorkChain(await response.text());
+      setImportDraft({ package: plan, requestId: "ai-chain:" + workId, checked: false });
+      if (importPanel.current) importPanel.current.open = true;
+    } catch {
+      setError("Не удалось прочитать цепочку из результата ИИ. Проверьте задачу планирования.");
+    } finally {
+      setReadingImport(false);
+    }
+  }
   function act(action: WorkDagControl["action"], nodeId?: string) {
     if (
       !graph ||
@@ -514,13 +563,16 @@ export function WorkManagerDag({
         gate !== "clear")
     )
       return;
-    if (action === "run_plan" && !autoConfirmed) return;
+    if (action === "run_plan" && (!autoConfirmed || invalidRepairLimit)) return;
     void mutate(base + "/" + graph.id + "/control", "POST", {
       version: graph.version,
       action,
       ...(nodeId ? { node_id: nodeId } : {}),
       ...(action === "retry" ? { acknowledge_cost: true } : {}),
-      ...(action === "run_plan" ? { acknowledge_cost: true } : {})
+      ...(action === "run_plan" ? { acknowledge_cost: true } : {}),
+      ...(action === "run_plan" && repairOptions?.enabled
+        ? { auto_repair: true, max_model_requests: repairLimit }
+        : {})
     });
   }
   function update(index: number, change: Partial<WorkDagNodeInput>) {
@@ -539,6 +591,15 @@ export function WorkManagerDag({
         Бюджеты и разрешения проверяются перед выполнением. Повторы запускаются вручную.
       </p>
       <div className={styles.actions}>
+        {aiPlanWorkId && (
+          <button
+            type="button"
+            disabled={browsingLocked}
+            onClick={() => void readAiPlan(aiPlanWorkId)}
+          >
+            Посмотреть цепочку от ИИ
+          </button>
+        )}
         {graph && (
           <button
             type="button"
@@ -659,7 +720,7 @@ export function WorkManagerDag({
           )}
         </>
       )}
-      <details>
+      <details ref={importPanel}>
         <summary>Перенос плана через JSON</summary>
         <p>
           Файл содержит задачи и зависимости. После локального предпросмотра импорт создаст новый
@@ -1152,8 +1213,9 @@ export function WorkManagerDag({
             </strong>
             <p>
               Готовые шаги выбираются по приоритету, затем по ближайшему сроку и порядку в плане.
-              Зависимости, подтверждения планов и разрешений остаются явными; ошибки не вызывают
-              автоматического повтора.
+              Зависимости и подтверждения учитываются при каждом шаге.
+              {graph.execution?.auto_repair &&
+                " Для этого запуска разрешено одно исправление после отклонения критиком."}
             </p>
             {graph.execution?.reason && (
               <p role="status">{workDagReason(graph.execution.reason, graph)}</p>
@@ -1164,12 +1226,48 @@ export function WorkManagerDag({
                 ? " из " + graph.execution.max_model_requests
                 : ""}
               . Считаются и предыдущие попытки.
+              {graph.execution?.max_model_requests
+                ? ` Осталось по лимиту: ${Math.max(0, graph.execution.max_model_requests - (graph.usage?.model_requests ?? 0))}. Запросы текущих шагов могут быть уже зарезервированы.`
+                : ""}
             </p>
             {!automatic &&
               !graph.archived_at &&
               graph.mode === "active" &&
               graph.nodes.some((node) => !["completed", "cancelled"].includes(node.status)) && (
                 <>
+                  {repairOptions && (
+                    <>
+                      <label>
+                        <input
+                          type="checkbox"
+                          checked={repairOptions.enabled}
+                          disabled={browsingLocked}
+                          onChange={(event) => {
+                            setAutoConfirmed(false);
+                            setRepairDraft({ ...repairOptions, enabled: event.target.checked });
+                          }}
+                        />
+                        Проверять шаги и один раз исправить результат после замечания критика
+                      </label>
+                      {repairOptions.enabled && (
+                        <label>
+                          Общий лимит запросов модели
+                          <input
+                            type="number"
+                            min={3}
+                            max={96}
+                            step={1}
+                            value={repairOptions.limit}
+                            disabled={browsingLocked}
+                            onChange={(event) => {
+                              setAutoConfirmed(false);
+                              setRepairDraft({ ...repairOptions, limit: event.target.value });
+                            }}
+                          />
+                        </label>
+                      )}
+                    </>
+                  )}
                   <label>
                     <input
                       type="checkbox"
@@ -1184,7 +1282,9 @@ export function WorkManagerDag({
                       browsingLocked ||
                       gate !== "clear" ||
                       !autoConfirmed ||
-                      graph.nodes.some((node) => ["failed", "cancelled"].includes(node.status))
+                      invalidRepairLimit ||
+                      (graph.nodes.some((node) => ["failed", "cancelled"].includes(node.status)) &&
+                        !(repairOptions?.enabled && pendingWorkDagRepair(graph)))
                     }
                     onClick={() => act("run_plan")}
                   >
@@ -1249,7 +1349,11 @@ export function WorkManagerDag({
           )}
           <ol className={styles.entries}>
             {visibleSteps.map((node) => (
-              <li className={styles.entry} key={node.id}>
+              <li
+                className={styles.entry}
+                key={node.id}
+                aria-current={node.status === "running" ? "step" : undefined}
+              >
                 <strong>
                   {node.title} · {statuses[node.status]}
                 </strong>
@@ -1442,6 +1546,8 @@ export function WorkManagerDag({
                   <small key={a.work_id}>
                     Попытка {a.number}: {a.work_id} ·{" "}
                     {new Date(a.started_at).toLocaleString("ru-RU")}
+                    {a.repair &&
+                      ` · Исправление и повторная проверка после попытки ${a.repair.rejected_attempt}: ${a.repair.reason}`}
                     {a.source_artifact_ids.length
                       ? " · использованные артефакты: " + a.source_artifact_ids.join(", ")
                       : ""}

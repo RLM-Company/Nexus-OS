@@ -15,6 +15,19 @@ const profileColumns = [
 /** Called after Drizzle migrations. Legacy 0027 did not create the profile
  * columns. Use the same atomic upgrade in startup and offline rehearsal. */
 export function upgradeAccountProfileColumns(sqlite: DatabaseSync): string[] {
+  return addMissingAccountColumns(sqlite, profileColumns);
+}
+
+export function upgradeAccountTaskDecomposition(sqlite: DatabaseSync): void {
+  addMissingAccountColumns(sqlite, [
+    ["task_decomposition", "INTEGER NOT NULL DEFAULT 0 CHECK (task_decomposition IN (0,1))"]
+  ]);
+}
+
+function addMissingAccountColumns(
+  sqlite: DatabaseSync,
+  columns: readonly (readonly [name: string, definition: string])[]
+): string[] {
   sqlite.exec("BEGIN IMMEDIATE");
   try {
     const existing = new Set(
@@ -24,7 +37,7 @@ export function upgradeAccountProfileColumns(sqlite: DatabaseSync): string[] {
         .map(({ name }) => name)
     );
     const added: string[] = [];
-    for (const [name, definition] of profileColumns) {
+    for (const [name, definition] of columns) {
       if (existing.has(name)) continue;
       sqlite.exec("ALTER TABLE kosmora_account_preferences ADD COLUMN " + name + " " + definition);
       added.push(name);

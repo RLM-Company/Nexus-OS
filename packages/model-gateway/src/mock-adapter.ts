@@ -35,6 +35,30 @@ const summarize = (prompt: string): string => {
   return compact.length > 180 ? `${compact.slice(0, 179)}…` : compact;
 };
 
+function workDraft(prompt: string) {
+  const ordinary = {
+    name: "result.md",
+    content: "# Kosmora mock\n\nЭто демонстрационный файл. Живая модель не вызывалась."
+  };
+  try {
+    const input = JSON.parse(prompt) as { goal?: unknown } | null;
+    if (typeof input?.goal !== "string" || !input.goal.startsWith("Подготовь цепочку для Koswork."))
+      return ordinary;
+  } catch {
+    return ordinary;
+  }
+  return {
+    name: "work-plan.json",
+    content: JSON.stringify({
+      title: "Проверить демонстрационный результат",
+      steps: [
+        { title: "Подготовить исходные данные", goal: "Сохранить демонстрационный бриф." },
+        { title: "Проверить результат", goal: "На основе брифа сохранить проверенный итог." }
+      ]
+    })
+  };
+}
+
 export class MockProviderAdapter implements ModelProviderAdapter {
   readonly id = MOCK_PROVIDER_ID;
   readonly modelId = MOCK_MODEL_ID;
@@ -65,15 +89,7 @@ export class MockProviderAdapter implements ModelProviderAdapter {
             requires_external_actions: false
           })
         : request.task_type === "manager_work_draft"
-          ? JSON.stringify({
-              files: [
-                {
-                  name: "result.md",
-                  content:
-                    "# Kosmora mock\n\nЭто демонстрационный файл. Живая модель не вызывалась."
-                }
-              ]
-            })
+          ? JSON.stringify({ files: [workDraft(prompt)] })
           : request.task_type === "manager_work_review"
             ? JSON.stringify({
                 verdict: "PASS",

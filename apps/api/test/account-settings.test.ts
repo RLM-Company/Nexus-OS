@@ -60,6 +60,7 @@ describe("owner account settings", () => {
       ALTER TABLE kosmora_account_preferences DROP COLUMN display_name;
       ALTER TABLE kosmora_account_preferences DROP COLUMN user_gender;
       ALTER TABLE kosmora_account_preferences DROP COLUMN assistant_gender;
+      ALTER TABLE kosmora_account_preferences DROP COLUMN task_decomposition;
     `);
 
     store.migrate();
@@ -70,7 +71,8 @@ describe("owner account settings", () => {
       chat_style: "detailed",
       display_name: "",
       user_gender: "masculine",
-      assistant_gender: "neutral"
+      assistant_gender: "neutral",
+      task_decomposition: false
     });
     const updated = store.update("owner", {
       ...preferenceUpdate,
@@ -84,6 +86,28 @@ describe("owner account settings", () => {
       display_name: "Александр",
       assistant_gender: "feminine"
     });
+  });
+
+  it("keeps the decomposition setting across reload and a legacy client update", async () => {
+    const { app, store } = await routeFixture();
+    const enabled = await app.inject({
+      method: "PUT",
+      url: "/api/v1/personal-settings",
+      payload: { ...preferenceUpdate, task_decomposition: true }
+    });
+    expect(enabled.statusCode, enabled.body).toBe(200);
+    const stale = await app.inject({
+      method: "PUT",
+      url: "/api/v1/personal-settings",
+      payload: { ...preferenceUpdate, task_decomposition: false }
+    });
+    expect(stale.statusCode).toBe(409);
+    store.update("owner", { ...preferenceUpdate, expected_version: 1 });
+    const reload = await app.inject({ method: "GET", url: "/api/v1/personal-settings" });
+    expect(
+      reload.json<{ settings: { task_decomposition: boolean } }>().settings.task_decomposition
+    ).toBe(true);
+    expect(store.get("other").task_decomposition).toBe(false);
   });
 
   it("saves supported native reasoning independently of Relay and isolates owners", async () => {

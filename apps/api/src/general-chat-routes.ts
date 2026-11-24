@@ -41,6 +41,7 @@ import {
   type ModelGateway,
   type ModelGatewayStreamEvent
 } from "@cosmora/model-gateway";
+import type { ServerConfig } from "@cosmora/config";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { Type } from "typebox";
 import { EmergencyStopActivatedError, type RuntimeMetrics } from "./operations.js";
@@ -69,6 +70,7 @@ export interface GeneralChatRouteOptions {
   projectStore?: ProjectStore;
   projectMemory?: ProjectMemoryStore;
   modelGateway: ModelGateway;
+  taskSplitRoutes?: ServerConfig["chatTaskSplitRoutes"];
   chat: ChatService;
   runtimeMetrics: RuntimeMetrics;
   activeRuns: Map<string, ActiveModelRun>;
@@ -770,7 +772,7 @@ export const registerGeneralChatRoutes = (options: GeneralChatRouteOptions): voi
                 : "You are Coscode, the coding workspace of Kosmora. Help implement, debug and review code. Prefer concrete patches and checks. Never claim repository access, execution or commits without actual tool evidence."
           });
         const relay = options.accountStore
-          ? new RelayExecution(options.accountStore, options.modelGateway)
+          ? new RelayExecution(options.accountStore, options.modelGateway, options.taskSplitRoutes)
           : null;
         if (
           options.accountStore?.getRelay(identity.owner_id, run.chat_id) &&
@@ -786,7 +788,10 @@ export const registerGeneralChatRoutes = (options: GeneralChatRouteOptions): voi
               run.chat_id,
               run.id,
               modelRequest,
-              controller.signal
+              controller.signal,
+              mode === "kosmora"
+                ? conversation.findLast((message) => message.role === "user")
+                : undefined
             )
           : { request: modelRequest, relay: false };
         modelRequest = prepared.request;

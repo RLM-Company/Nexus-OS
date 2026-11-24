@@ -9,6 +9,7 @@ import { GeneralChatRuntimeStore } from "../src/general-chat-runtime-store.js";
 import { GeneralChatBackgroundRunCoordinator } from "../src/general-chat-background-run-coordinator.js";
 import { buildModelRuntime } from "../src/model-runtime.js";
 import { RuntimeMetrics } from "../src/operations.js";
+import { largeTaskBrief } from "./fixtures/chat-task-decomposition.js";
 
 const resources: Array<() => Promise<void>> = [];
 afterEach(async () => {
@@ -33,7 +34,8 @@ describe("canonical main usage survives optional Relay failure", () => {
           expected_version: 0,
           preferred_provider: "fixture",
           preferred_model: "fixture-model",
-          relay_enabled: true
+          relay_enabled: true,
+          task_decomposition: true
         });
         const config = loadServerConfig({ NODE_ENV: "test" });
         const runtime = await buildModelRuntime(config);
@@ -118,7 +120,7 @@ describe("canonical main usage survives optional Relay failure", () => {
           method: "POST",
           url: "/api/v1/chats",
           payload: {
-            initial_message: "Объясни результат",
+            initial_message: largeTaskBrief,
             client_message_id: `relay-${mode}-${outcome}`
           }
         });

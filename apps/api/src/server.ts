@@ -456,6 +456,7 @@ try {
     search: new WebSearch(process.env.WEB_SEARCH_ORIGIN),
     store: generalChatStore,
     modelGateway: modelRuntime.gateway,
+    taskSplitRoutes: config.chatTaskSplitRoutes,
     chat: modelRuntime.chat,
     runtimeMetrics,
     emergencyStopStore,

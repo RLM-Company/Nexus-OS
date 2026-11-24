@@ -13,6 +13,7 @@ import { GeneralChatRuntimeStore } from "../src/general-chat-runtime-store.js";
 import { buildModelRuntime } from "../src/model-runtime.js";
 import { RuntimeMetrics } from "../src/operations.js";
 import { AccountStore } from "../src/account-settings/account-store.js";
+import { largeTaskBrief } from "./fixtures/chat-task-decomposition.js";
 import { seedCompactionHistory } from "./fixtures/compaction-history.js";
 
 describe("GeneralChatBackgroundRunCoordinator", () => {
@@ -56,6 +57,27 @@ describe("GeneralChatBackgroundRunCoordinator", () => {
     await coordinator.stop();
     database.close();
   });
+  it("decomposes large tasks in one detached execution and preserves the saved brief", async () => {
+    const owner = "local-owner";
+    const settings = accountStore.get(owner);
+    accountStore.update(owner, {
+      ...settings,
+      expected_version: settings.version,
+      task_decomposition: true
+    });
+    const spy = vi.spyOn(runtime.gateway, "stream");
+    const accepted = store.createChat(largeTaskBrief, "chat-background-task-split");
+    await vi.waitFor(() => expect(store.getRun(accepted.run.id)?.status).toBe("succeeded"), {
+      timeout: 3_000
+    });
+    expect(spy).toHaveBeenCalledTimes(1);
+    expect(spy.mock.calls[0]?.[0].messages.at(-1)?.content).toContain("[[step:3]]");
+    expect(store.listMessages(accepted.chat.id, owner)[0]?.content).toBe(largeTaskBrief);
+    expect(store.getModelUsageForRun(accepted.run.id)).toEqual([
+      expect.objectContaining({ status: "committed", provider_id: "mock" })
+    ]);
+  });
+
   it("uses verified history compaction in detached execution with one model call", async () => {
     await coordinator.stop();
     const seeded = seedCompactionHistory(database);

@@ -1,6 +1,57 @@
 import { expect, test } from "@playwright/test";
 import type { WorkDag } from "@cosmora/contracts";
 
+test("builds a chain with the mock model, saves it and executes dependent goals", async ({
+  page,
+  request
+}) => {
+  test.setTimeout(75_000);
+  const created = await request.post("/api/v1/projects", {
+    data: {
+      initial_message: "Работай до конца задачи: подготовь проверенный результат.",
+      client_message_id: crypto.randomUUID()
+    }
+  });
+  expect(created.status()).toBe(201);
+  const { project } = (await created.json()) as { project: { id: string } };
+  const root = "/api/v1/projects/" + project.id;
+  expect(
+    (
+      await request.put(root + "/autonomy-profile", {
+        data: { base_level: "A2", overrides: [], expected_version: 1 }
+      })
+    ).status()
+  ).toBe(200);
+  await page.goto("/?project=" + project.id + "&view=plan");
+  await page.getByRole("button", { name: "Построить цепочку с ИИ", exact: true }).click();
+  const panel = page.getByRole("region", { name: "План с зависимостями", exact: true });
+  await panel.getByRole("button", { name: "Посмотреть цепочку от ИИ" }).click({ timeout: 32_000 });
+  const preview = panel.getByRole("form", { name: "Предпросмотр импорта плана" });
+  await expect(preview).toContainText("Проверить демонстрационный результат");
+  await expect(preview.getByRole("listitem").nth(1)).toContainText(
+    "Зависимости: Подготовить исходные данные"
+  );
+  await preview.getByRole("checkbox").check();
+  await preview.getByRole("button", { name: "Сохранить импортированный план" }).click();
+  const run = panel.getByRole("button", { name: "Выполнить план", exact: true });
+  await expect(run).toBeDisabled();
+  await panel
+    .getByLabel("Разрешаю выполнение оставшихся шагов с расходом токенов", { exact: true })
+    .check();
+  await run.click();
+  await expect(panel.getByText("План выполнен", { exact: true })).toBeVisible({ timeout: 35_000 });
+  await page.reload();
+  await expect(
+    page.getByRole("region", { name: "Задачи и план чата" }).locator('[data-status="completed"]')
+  ).toHaveCount(2);
+  const data = await request.get(root + "/work-dags");
+  const [graph] = ((await data.json()) as { items: WorkDag[] }).items;
+  expect(graph?.nodes.map((step) => [step.depends_on, step.status, step.attempts.length])).toEqual([
+    [[], "completed", 1],
+    [["step-1"], "completed", 1]
+  ]);
+});
+
 test("owner runs the complete reviewed plan once and recovers a lost start response", async ({
   page,
   request
@@ -189,4 +240,51 @@ test("owner creates, edits and executes a dependency plan with durable versioned
   );
   await expect(versionOne).toBeVisible();
   await expect(versionTwo).toBeVisible();
+});
+
+test("owner can opt into reviewed continuation with an explicit request budget", async ({
+  page,
+  request
+}) => {
+  test.setTimeout(60_000);
+  const created = await request.post("/api/v1/projects", {
+    data: { initial_message: "План с исправлением", client_message_id: crypto.randomUUID() }
+  });
+  expect(created.ok()).toBe(true);
+  const { project } = (await created.json()) as { project: { id: string } };
+  const prefix = "/api/v1/projects/" + project.id;
+  expect(
+    (
+      await request.put(prefix + "/autonomy-profile", {
+        data: { base_level: "A2", overrides: [], expected_version: 1 }
+      })
+    ).ok()
+  ).toBe(true);
+  const response = await request.post(prefix + "/work-dags", {
+    data: {
+      client_request_id: crypto.randomUUID(),
+      title: "Проверка результата",
+      nodes: [{ id: "report", title: "Отчёт", goal: "Создай краткий отчёт", depends_on: [] }]
+    }
+  });
+  expect(response.ok()).toBe(true);
+  const graph = (await response.json()) as WorkDag;
+  await page.goto(`/?project=${project.id}&view=plan&plan=${graph.id}`);
+  const panel = page.getByRole("region", { name: "План с зависимостями", exact: true });
+  await panel.getByLabel(/проверять шаги и один раз исправить/i).check();
+  await panel.getByLabel("Общий лимит запросов модели", { exact: true }).fill("6");
+  const run = panel.getByRole("button", { name: "Выполнить план", exact: true });
+  await expect(run).toBeDisabled();
+  await panel.getByLabel("Разрешаю выполнение оставшихся шагов с расходом токенов").check();
+  await run.click();
+  await expect(panel.getByText("План выполнен", { exact: true })).toBeVisible({ timeout: 30_000 });
+  await expect(panel.getByText(/Запросов модели: 3 из 6.*Осталось по лимиту: 3/)).toBeVisible();
+  const latest = (await (await request.get(prefix + "/work-dags/" + graph.id)).json()) as WorkDag;
+  expect(latest.execution).toMatchObject({
+    status: "completed",
+    auto_repair: true,
+    max_model_requests: 6
+  });
+  expect(latest.nodes[0]?.result?.review?.verdict).toBe("PASS");
+  expect(latest.nodes[0]?.attempts).toHaveLength(1);
 });

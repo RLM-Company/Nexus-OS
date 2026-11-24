@@ -16,6 +16,7 @@ import {
 } from "@cosmora/contracts";
 import { startVisibleReadPolling } from "./visible-read-poller";
 import { executionGateLabels, useExecutionGate } from "./use-execution-gate";
+import { aiWorkChainGoal, aiWorkChainSource, requestsAiWorkChain } from "./ai-work-chain";
 
 type Work = {
   id: string;
@@ -201,13 +202,17 @@ export function ManagerWorkPanel({
   const pendingKey = "kosmora:manager-work-pending:v1:" + projectId;
   const selectionKey = "kosmora:manager-work-selection:v1:" + projectId;
   const draft = pending.current;
+  const chainGoal = aiWorkChainGoal(goal);
   const pendingRequest =
     draft &&
-    draft.goal === goal &&
+    (draft.goal === goal || draft.goal === chainGoal) &&
     draft.worker_role === role &&
     Boolean(draft.require_critic) === critic
       ? draft
       : null;
+  const chainRequested = requestsAiWorkChain(goal) || pendingRequest?.goal === chainGoal;
+  const creationBlocked =
+    busy || !goal.trim() || !runtime || !historyLoaded || executionGate !== "clear";
   useEffect(() => {
     let active = true;
     queueMicrotask(() => {
@@ -215,7 +220,7 @@ export function ManagerWorkPanel({
       const saved = readPendingWork(pendingKey);
       if (!saved) return;
       pending.current = saved;
-      setGoal(saved.goal);
+      setGoal(aiWorkChainSource(saved.goal) ?? saved.goal);
       setRole(saved.worker_role);
       setCritic(Boolean(saved.require_critic));
       setError("Подтверждение предыдущего запуска потеряно. Повтор отправит тот же запрос.");
@@ -293,7 +298,7 @@ export function ManagerWorkPanel({
       );
     }
   };
-  const act = async (action?: keyof typeof MANAGER_WORK_CONTROL_EVENTS) => {
+  const act = async (action?: keyof typeof MANAGER_WORK_CONTROL_EVENTS, plan = false) => {
     if ((!action || action === "resume" || action === "approve") && executionGate !== "clear")
       return;
     if (lock.current || (action && !work)) return;
@@ -309,14 +314,15 @@ export function ManagerWorkPanel({
         url += "/" + encodeURIComponent(work.id) + "/control";
         body = { version: work.version, action };
       } else {
-        if (!pendingRequest)
+        const requestedGoal = plan ? chainGoal : goal;
+        if (!pendingRequest || pendingRequest.goal !== requestedGoal)
           pending.current = {
             client_request_id: crypto.randomUUID(),
-            goal,
+            goal: requestedGoal,
             worker_role: role,
             require_critic: critic
           };
-        body = pendingRequest ?? pending.current;
+        body = pending.current;
         savePendingWork(pendingKey, pending.current);
       }
       const updated = await json<Work>(url, {
@@ -485,11 +491,20 @@ export function ManagerWorkPanel({
       <button
         type="button"
         className="manager-work-submit"
-        disabled={busy || !goal.trim() || !runtime || !historyLoaded || executionGate !== "clear"}
-        onClick={() => void act()}
+        disabled={creationBlocked || (chainRequested && chainGoal.length > 8000)}
+        onClick={() => void act(undefined, chainRequested)}
       >
-        Создать файлы
+        {chainRequested ? "Построить цепочку с ИИ" : "Создать файлы"}
       </button>
+      {!chainRequested && (
+        <button
+          type="button"
+          disabled={creationBlocked || chainGoal.length > 8000 || Boolean(pendingRequest)}
+          onClick={() => void act(undefined, true)}
+        >
+          Построить цепочку с ИИ
+        </button>
+      )}
       <DesktopComputerButton
         projectId={projectId}
         goal={goal}
@@ -518,7 +533,11 @@ export function ManagerWorkPanel({
                   setError("");
                 }}
               >
-                <span>{item.request?.goal ?? `Задача ${index + 1}`}</span>
+                <span>
+                  {item.request?.goal
+                    ? (aiWorkChainSource(item.request.goal) ?? item.request.goal)
+                    : `Задача ${index + 1}`}
+                </span>
                 <small>{labels[item.status] ?? "Состояние неизвестно"}</small>
               </button>
             ))}
@@ -532,6 +551,14 @@ export function ManagerWorkPanel({
         key={"dag:" + projectId}
         projectId={projectId}
         onPlanSnapshot={onPlanSnapshot}
+        aiPlanWorkId={
+          work?.status === "completed" &&
+          work.stage === "done" &&
+          work.request?.goal &&
+          aiWorkChainSource(work.request.goal)
+            ? work.id
+            : null
+        }
       />
       <WorkManagerMemory key={projectId} projectId={projectId} />
       {work && (
