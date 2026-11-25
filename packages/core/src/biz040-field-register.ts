@@ -40,22 +40,28 @@ export type FieldRow = {
 // Tesseract-style glyph confusions that must not be presented as confident data.
 const SUSPICIOUS = /[Oo][0]|[0][Oo]|[Il][1]|[1][Il]|[|]/u;
 const normalize = (value: string) => value.replace(/\s+/gu, " ").trim();
-const matchValue = (text: string, pattern: string): string | null => {
+const matchValues = (text: string, pattern: string): string[] => {
   try {
-    const match = new RegExp(pattern, "iu").exec(text);
-    return match ? normalize(match[1] ?? match[0]) : null;
+    return [
+      ...new Set(
+        Array.from(text.matchAll(new RegExp(pattern, "giu")), (match) =>
+          normalize(match[1] ?? match[0])
+        ).filter(Boolean)
+      )
+    ];
   } catch {
     // Plain substring fallback keeps field specs simple for callers.
     const at = text.toLowerCase().indexOf(pattern.toLowerCase());
-    return at < 0 ? null : normalize(text.slice(at, at + pattern.length));
+    const value = at < 0 ? "" : normalize(text.slice(at, at + pattern.length));
+    return value ? [value] : [];
   }
 };
-const valueOf = (page: FieldPage, field: FieldSpec): string | null => {
+const valuesOf = (page: FieldPage, field: FieldSpec): string[] => {
   for (const pattern of field.patterns) {
-    const value = matchValue(page.text, pattern);
-    if (value) return value;
+    const values = matchValues(page.text, pattern);
+    if (values.length) return values;
   }
-  return null;
+  return [];
 };
 
 /** One row per requested field. A contradiction wins over a single confident
@@ -65,9 +71,7 @@ export function extractFieldRegister(
   fields: readonly FieldSpec[]
 ): FieldRow[] {
   return fields.map((field) => {
-    const found = pages
-      .map((page) => ({ page, value: valueOf(page, field) }))
-      .filter((entry): entry is { page: FieldPage; value: string } => entry.value !== null);
+    const found = pages.flatMap((page) => valuesOf(page, field).map((value) => ({ page, value })));
     const distinct = [...new Set(found.map((entry) => entry.value))];
     const base = {
       field_key: field.key,
@@ -94,8 +98,9 @@ export function extractFieldRegister(
         status: "contradiction",
         note: `Противоречие: ${distinct.map((value) => JSON.stringify(value)).join(", ")}.`
       };
-    const chosen = found[0]!;
-    const imageVerified = found.some((entry) => entry.page.image_verified === true);
+    const verified = found.find((entry) => entry.page.image_verified === true);
+    const chosen = verified ?? found[0]!;
+    const imageVerified = verified !== undefined;
     const uncertain =
       !imageVerified &&
       (SUSPICIOUS.test(chosen.value) ||
