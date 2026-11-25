@@ -1719,7 +1719,7 @@ export default function Home() {
           // The quota is a cumulative owner setting without a reset period.
           // Report the real counted numbers from the existing usage endpoint,
           // point at the breakdown, and never invent a renewal date.
-          setError("Лимит токенов достигнут. Прогон остановлен; текст сохранён в поле ввода.");
+          setError("Лимит токенов достигнут. Запрос сохранён в истории чата.");
           void api<{
             summary: { total_counted_tokens: number; max_total_tokens: number | null };
           }>("/api/v1/personal-settings/usage")
@@ -1731,7 +1731,7 @@ export default function Home() {
                   ? `Учтено ${used.toLocaleString("ru-RU")} токенов.`
                   : `Учтено ${used.toLocaleString("ru-RU")} из ${limit.toLocaleString("ru-RU")} токенов.`;
               setError(
-                `Лимит токенов достигнут. Прогон остановлен; текст сохранён в поле ввода. ${counted} Разбивка по запросам — в личных настройках, раздел «Использование». Период обновления лимита не задан.`
+                `Лимит токенов достигнут. Запрос сохранён в истории чата. ${counted} Разбивка по запросам — в личных настройках, раздел «Использование». Период обновления лимита не задан.`
               );
             })
             .catch(() => {
