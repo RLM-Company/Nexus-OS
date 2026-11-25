@@ -160,6 +160,7 @@ export * from "./canvas-artifact-store.js";
 export * from "./document-answer-store.js";
 export * from "./chat-history-search-store.js";
 export * from "./context-memory-store.js";
+export * from "./project-source-store.js";
 export * from "./semantic-memory-types.js";
 export * from "./semantic-index-store.js";
 export * from "./presentation-store.js";

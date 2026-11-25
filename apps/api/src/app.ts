@@ -4,6 +4,7 @@ import type { ContextMemoryRanker } from "@cosmora/contracts";
 import type { IndexedMemoryRecall } from "@cosmora/db";
 import { registerRuntimeClockRoutes } from "./runtime-clock-routes.js";
 import { registerContextMemoryRoutes } from "./context-memory-routes.js";
+import { registerProjectSourceRoutes } from "./project-source-routes.js";
 import { registerHistoryCompactionRoutes } from "./history-compaction-routes.js";
 import { ComputerControlService } from "./computer-control/service.js";
 import { registerComputerControlRoutes } from "./computer-control/routes.js";
@@ -267,6 +268,7 @@ export interface AppDependencies {
   registration?: RegistrationOptions;
   generalChatStore?: GeneralChatStore;
   projectStore?: ProjectStore;
+  projectSourceStore?: import("@cosmora/db").ProjectSourceStore;
   demoManagerStore?: DemoManagerStore;
   demoManagerCoordinator?: DemoManagerCoordinator;
   managerWorkStore?: ManagerWorkStore;
@@ -1544,7 +1546,17 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
     registerPrivacyRoutes(app, dependencies.ownerPrivacy, dependencies.accountStore, identityFor);
 
   if (dependencies.generalChatStore)
-    registerContextMemoryRoutes(app, dependencies.generalChatStore.contextMemory, identityFor);
+    registerContextMemoryRoutes(
+      app,
+      dependencies.generalChatStore.contextMemory,
+      identityFor,
+      (target, owner) =>
+        target.kind === "project" && dependencies.projectSourceStore
+          ? dependencies.projectSourceStore.excludedSourceIds(target.id, owner)
+          : []
+    );
+  if (dependencies.projectSourceStore)
+    registerProjectSourceRoutes(app, dependencies.projectSourceStore, identityFor);
   if (dependencies.generalChatStore && dependencies.modelGateway && dependencies.chat) {
     registerHistoryCompactionRoutes(
       app,
