@@ -45,6 +45,23 @@ references an existing saved report, not inline CSV/Markdown.
 `applied_rule_versions` and `ignored_rules` are left unchanged. The new field
 is purely an execution-cycle overlay on the same Work.
 
+## Runtime wiring included as a reviewable sketch
+
+This branch also adds (for review, not yet accepted):
+
+- `WorkCycleEventSchema` for `answer|error|instructions|pause|resume|cancel`
+  with `question_version` CAS;
+- `ManagerWorkStore.applyExecutionCycle()` with owner check, Work version CAS
+  and monotonic cycle version;
+- `POST /api/v1/projects/:projectId/manager-work/:id/cycle` which applies the
+  pure core state machine and persists the overlay.
+
+Known limitation to resolve before live acceptance: the round-trip currently
+stores only references (`accepted_inputs`) and gaps, not the raw parsed parts;
+an `answer` after a persisted question must re-attach the original source files
+from `supplier_handoff`. This is intentionally explicit here for integrator
+review rather than silently guessing.
+
 ## Local check
 
 ```
