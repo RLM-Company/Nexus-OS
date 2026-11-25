@@ -2,7 +2,7 @@ import { DOCUMENT_LIBRARY_PDF_MAX_PAGES } from "@cosmora/contracts";
 import type { createLibraryOcr } from "./library-scan-ocr";
 import { decodeStudioDocument } from "./decode-chat-attachment";
 
-export type IndexedPage = { page: number | null; text: string };
+export type IndexedPage = { page: number | null; text: string; source?: "pdf_text" | "ocr" };
 export type LibraryFileView = {
   id: string;
   project_id: string;
@@ -73,7 +73,8 @@ export async function extractLibraryPages(
           content.items
             .map((item) => ("str" in item ? item.str + (item.hasEOL ? "\n" : " ") : ""))
             .join("") || "\n";
-        if (!text.trim()) {
+        const source = text.trim() ? "pdf_text" : "ocr";
+        if (source === "ocr") {
           onProgress("Распознаём страницу " + i + " из " + pdfDocument.numPages);
           ocr ??= (await import("./library-scan-ocr")).createLibraryOcr(browserSignal);
           let cancelOcr: (() => void) | undefined;
@@ -91,7 +92,7 @@ export async function extractLibraryPages(
         }
         characters += text.length;
         if (characters > 2_000_000) throw new Error("Текст: максимум 2 млн символов.");
-        pages.push({ page: i, text });
+        pages.push({ page: i, text, source });
         page.cleanup();
         window.clearTimeout(timer);
         timer = watchdog();

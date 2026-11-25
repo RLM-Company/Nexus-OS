@@ -132,7 +132,10 @@ export function extractFieldRegister(
 }
 
 const csvCell = (value: string | number): string => {
-  const text = String(value);
+  const raw = String(value);
+  const text = /^[\s\u200b-\u200f\u202a-\u202e\u2060-\u206f\ufeff\p{Cc}]*[=+\-@＝＋－＠]/u.test(raw)
+    ? "'" + raw
+    : raw;
   return /[",\r\n]/u.test(text) ? `"${text.replace(/"/gu, '""')}"` : text;
 };
 

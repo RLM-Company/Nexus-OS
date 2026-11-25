@@ -195,6 +195,83 @@ async function fixture(
 }
 
 describe("durable Manager work", () => {
+  it("creates the PDF register and version report as downloadable Work files", async () => {
+    const f = await fixture();
+    const app = buildApp({
+      config: f.config,
+      database: f.database,
+      projectStore: f.projects,
+      managerWorkStore: f.store,
+      managerWorkCoordinator: f.coordinator
+    });
+    const base = "/api/v1/projects/" + f.project.id + "/work";
+    const workspace = (value: string) =>
+      JSON.stringify({
+        schema: "kosmora.studio.data",
+        version: 1,
+        name: "fixture",
+        table: { delimiter: ",", headers: ["ID", "Qty"], rows: [["a", value]] },
+        settings: {
+          types: ["text", "text"],
+          columns: [0, 1],
+          filters: [],
+          sort: null,
+          group: null,
+          measure: 0,
+          chart: { kind: "line", x: 0, y: 0 }
+        }
+      });
+    const cases = [
+      {
+        kind: "pdf_field_register",
+        file: "pdf-field-register.csv",
+        expected: ["contract.pdf,2,ocr,critical_unverified", "'=17", "Основание,,,,"],
+        input: {
+          fields: [{ label: "Сумма (руб.)", critical: true }, { label: "Основание" }],
+          pages: [{ file_name: "contract.pdf", page: 2, text: "Сумма (руб.): =17", source: "ocr" }]
+        }
+      },
+      {
+        kind: "version_change_report",
+        file: "version-change-report.md",
+        expected: ["CHANGED", "before row 1", '"17"', '"19"'],
+        input: {
+          before: { label: "Прежняя", source: workspace("17"), period: "2026-10" },
+          after: { label: "Новая", source: workspace("19"), period: "2026-11" },
+          key: { before_columns: [1], after_columns: [1] }
+        }
+      }
+    ];
+    try {
+      for (const entry of cases) {
+        const response = await app.inject({
+          method: "POST",
+          url: base,
+          payload: {
+            client_request_id: entry.kind,
+            goal: "Проверочный отчёт",
+            worker_role: "analyst",
+            output_contract: { kind: entry.kind, input: JSON.stringify(entry.input) }
+          }
+        });
+        expect(response.statusCode).toBe(201);
+        const { id } = response.json<{ id: string }>();
+        await f.coordinator.execute(id, "local-owner");
+        expect((await app.inject(base + "/" + id)).json()).toMatchObject({
+          status: "completed",
+          model_requests: 0
+        });
+        const downloaded = await app.inject(base + "/" + id + "/files/" + entry.file);
+        expect(downloaded.statusCode).toBe(200);
+        expect(downloaded.headers["content-disposition"]).toContain(entry.file);
+        for (const fragment of entry.expected) expect(downloaded.body).toContain(fragment);
+      }
+      expect(f.calls).toEqual([]);
+    } finally {
+      await app.close();
+    }
+  });
+
   it("publishes a supplier comparison through Work without spending model requests", async () => {
     const f = await fixture();
     const app = buildApp({
@@ -248,7 +325,7 @@ describe("durable Manager work", () => {
       await f.coordinator.execute(invalidId, "local-owner");
       expect((await app.inject(`${base}/${invalidId}`)).json()).toMatchObject({
         status: "failed",
-        error_code: "INVALID_SUPPLIER_INPUT",
+        error_code: "INVALID_BUSINESS_INPUT",
         model_requests: 0
       });
       expect(f.calls).toEqual([]);

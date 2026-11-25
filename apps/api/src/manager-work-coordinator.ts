@@ -1,5 +1,6 @@
 import { validateGeneratedPresentation } from "@cosmora/contracts/presentation-package";
 import { parseModelJson } from "./model-json.js";
+import { businessWorkPlan, buildBusinessWorkFiles } from "./business-work-reports.js";
 import { parseGamePackage, gameOutputInstruction } from "@cosmora/contracts/game-package";
 import {
   validateGameProjectFiles,
@@ -35,7 +36,6 @@ import {
   MemoryContextIncompleteError,
   readWorkGraphContext,
   workRuntimeProgress,
-  compareSupplierOffers,
   assertWorkTaskGraph,
   ModelOutputCheckpointWriter,
   type ManagerService
@@ -765,7 +765,7 @@ export class ManagerWorkCoordinator {
         // normal A0 default before spending; retain any existing owner policy.
         if (!policy.ensureProfile(work.project_id)) throw new Error("POLICY_UNAVAILABLE");
         // Verify every potential role before spending on a plan that cannot run.
-        if (work.request.output_contract?.kind === "supplier_comparison") {
+        if (businessWorkPlan(work.request)) {
           if (work.request.require_critic)
             this.dependencies.gateway.assertRoute(
               this.request({ ...work, stage: "review" }, work.id)
@@ -837,8 +837,8 @@ export class ManagerWorkCoordinator {
           return;
         }
         const stage = work.stage;
-        const supplierComparison = work.request.output_contract?.kind === "supplier_comparison";
-        const localStage = supplierComparison && (stage === "plan" || stage === "draft");
+        const businessPlan = businessWorkPlan(work.request);
+        const localStage = businessPlan !== null && (stage === "plan" || stage === "draft");
         const raw = localStage ? null : await this.model(work, signal);
         work = this.current(id, ownerId);
         if (work.status === "cancelled") return;
@@ -847,31 +847,15 @@ export class ManagerWorkCoordinator {
           if (raw !== null) {
             value = parseModelJson(raw);
           } else if (stage === "plan") {
-            value = {
-              summary: "Сравнить предложения поставщиков",
-              instructions:
-                "Сопоставить позиции по идентификатору. Сохранить валюты и единицы, выделить неполные предложения.",
-              complexity: "simple",
-              needs_critic: false,
-              requires_external_actions: false
-            };
+            value = businessPlan;
           } else {
-            const input = JSON.parse(work.request.goal) as Parameters<
-              typeof compareSupplierOffers
-            >[0];
-            const result = compareSupplierOffers(input);
-            value = {
-              files: [
-                { name: "supplier-comparison.csv", content: result.csv },
-                { name: "supplier-comparison.md", content: result.markdown }
-              ]
-            };
+            value = buildBusinessWorkFiles(work.request);
             if (!Value.Check(ManagerWorkFilesSchema, value))
-              throw Error("SUPPLIER_REPORT_TOO_LARGE");
+              throw Error("BUSINESS_REPORT_TOO_LARGE");
           }
         } catch (error) {
-          if (error instanceof Error && error.message === "SUPPLIER_REPORT_TOO_LARGE") throw error;
-          throw new Error(localStage ? "INVALID_SUPPLIER_INPUT" : "INVALID_MODEL_OUTPUT", {
+          if (error instanceof Error && error.message === "BUSINESS_REPORT_TOO_LARGE") throw error;
+          throw new Error(localStage ? "INVALID_BUSINESS_INPUT" : "INVALID_MODEL_OUTPUT", {
             cause: error
           });
         }
@@ -977,8 +961,8 @@ export class ManagerWorkCoordinator {
         "GRAPH_UNAVAILABLE",
         "INVALID_ARTIFACT_CONTENT",
         "INVALID_WORK_GRAPH",
-        "INVALID_SUPPLIER_INPUT",
-        "SUPPLIER_REPORT_TOO_LARGE"
+        "INVALID_BUSINESS_INPUT",
+        "BUSINESS_REPORT_TOO_LARGE"
       ];
       work.status = "failed";
       work.error_code =
