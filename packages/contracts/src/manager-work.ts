@@ -165,6 +165,30 @@ export interface SupplierWorkEvidence {
   disputes: { supplier: string; item_id: string | null; reason: string }[];
 }
 
+/** Proposed continuation state for the supplier execution cycle.
+ * Accepted inputs are referenced by the immutable supplier_handoff snapshot;
+ * raw file contents are never copied into this field. */
+export interface WorkExecutionCycle {
+  stage:
+    | "collecting"
+    | "extracting"
+    | "awaiting_answer"
+    | "calculating"
+    | "result_ready"
+    | "paused"
+    | "cancelled";
+  /** CAS token for question/answer/control events in addition to Work.version. */
+  version: number;
+  question: string | null;
+  gaps: Array<{ code: string; path: string; question?: string }>;
+  instructions: string[];
+  error_code: string | null;
+  /** Stable references into supplier_handoff.inputs, not raw source bytes. */
+  accepted_inputs: Array<{ name: string; sha256: string }>;
+  /** Reference to an already saved, downloadable report; never inline content. */
+  result_ref: string | null;
+}
+
 export interface ManagerWork {
   id: string;
   project_id: string;
@@ -172,6 +196,8 @@ export interface ManagerWork {
   actor_id: string;
   request: CreateManagerWork;
   supplier_handoff?: SupplierWorkHandoff;
+  /** Optional continuation state; absent for Work created before this field. */
+  execution_cycle?: WorkExecutionCycle;
   correction_rules?: WorkCorrectionRule[];
   materials?: {
     version?: number;
