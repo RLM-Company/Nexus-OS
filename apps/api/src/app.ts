@@ -166,6 +166,7 @@ import {
   type UsageStore
 } from "@cosmora/db";
 import type { ScheduledDispatchStore } from "@cosmora/db";
+import type { ProjectCorrectionRuleStore } from "@cosmora/db";
 import {
   GatewayRunError,
   type ModelGateway,
@@ -214,6 +215,7 @@ import { registerPresentationWorkRoutes } from "./presentation-work-routes.js";
 import { registerPresentationRoutes } from "./presentation-routes.js";
 import { registerNotificationRoutes } from "./notification-routes.js";
 import { registerScheduledDispatchRoutes } from "./scheduled-dispatch-routes.js";
+import { registerProjectCorrectionRuleRoutes } from "./project-correction-rule-routes.js";
 import { registerOwnerSkillRoutes } from "./owner-skill-routes.js";
 import { registerRegistrationRoutes, type RegistrationOptions } from "./registration-routes.js";
 import { registerGoogleDriveRoutes, safeDriveLogUrl } from "./cloud-storage/google-drive-routes.js";
@@ -260,6 +262,7 @@ export interface AppDependencies {
   accountModel?: { provider: string; model: string; capabilities: Record<string, boolean> };
   database: DatabaseHealth;
   scheduledDispatchStore?: ScheduledDispatchStore;
+  projectCorrectionRuleStore?: ProjectCorrectionRuleStore;
   identityStore?: IdentityStore;
   registration?: RegistrationOptions;
   generalChatStore?: GeneralChatStore;
@@ -975,6 +978,12 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
       chats: dependencies.generalChatStore,
       projects: dependencies.projectStore,
       ...(dependencies.managerWorkStore ? { works: dependencies.managerWorkStore } : {}),
+      identityFor
+    });
+  if (dependencies.projectCorrectionRuleStore)
+    registerProjectCorrectionRuleRoutes({
+      app,
+      store: dependencies.projectCorrectionRuleStore,
       identityFor
     });
   registerWebSearchRoutes(app, dependencies.webSearch ?? new WebSearch());
