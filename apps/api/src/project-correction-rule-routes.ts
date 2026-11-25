@@ -2,7 +2,7 @@ import type { FastifyInstance, FastifyRequest } from "fastify";
 import { Type } from "typebox";
 import type { IdentityContext } from "@cosmora/contracts";
 import { ProjectCorrectionRuleError, type ProjectCorrectionRuleStore } from "@cosmora/db";
-import { proposeSkillCorrection } from "@cosmora/core";
+import { applyProjectRulesToWorkResult, proposeSkillCorrection } from "@cosmora/core";
 
 const scope = Type.Object({ projectId: Type.String({ minLength: 1, maxLength: 120 }) });
 const item = Type.Object({
@@ -19,8 +19,13 @@ export function registerProjectCorrectionRuleRoutes(options: {
   app: FastifyInstance;
   store: ProjectCorrectionRuleStore;
   identityFor: (request: FastifyRequest) => IdentityContext;
+  /** Real Work API results reader; injected by the server when available. */
+  workResults?: (
+    ownerId: string,
+    dagId: string
+  ) => { files: Array<{ name: string; content: string }> };
 }): void {
-  const { app, store, identityFor } = options;
+  const { app, store, identityFor, workResults } = options;
   const base = "/api/v1/projects/:projectId/correction-rules";
   const fail = (
     reply: { code(status: number): { send(value: unknown): unknown } },
@@ -138,6 +143,50 @@ export function registerProjectCorrectionRuleRoutes(options: {
       } catch (cause) {
         return fail(reply, cause);
       }
+    }
+  );
+
+  // Ordinary Koswork task entry point: apply accepted rules to a real Work
+  // artifact. Rules never rewrite the immutable original; the report records
+  // exact applied versions, conflicts and unknown/inapplicable statuses.
+  app.post<{
+    Params: { projectId: string };
+    Body: { dag_id: string; file_name?: string };
+  }>(
+    `${base}/work-apply`,
+    {
+      schema: {
+        params: scope,
+        body: Type.Object(
+          {
+            dag_id: Type.String({ minLength: 1, maxLength: 120 }),
+            file_name: Type.Optional(Type.String({ minLength: 1, maxLength: 120 }))
+          },
+          { additionalProperties: false }
+        )
+      }
+    },
+    (request, reply) => {
+      const ownerId = identityFor(request).owner_id;
+      if (!workResults)
+        return reply.code(503).send({ error: { code: "WORK_RESULTS_UNAVAILABLE" } });
+      let results: { files: Array<{ name: string; content: string }> };
+      try {
+        results = workResults(ownerId, request.body.dag_id);
+      } catch {
+        return reply.code(404).send({ error: { code: "WORK_DAG_NOT_FOUND" } });
+      }
+      const file = results.files.find(
+        (item) => item.name === (request.body.file_name ?? results.files[0]?.name)
+      );
+      if (!file) return reply.code(404).send({ error: { code: "WORK_ARTIFACT_NOT_FOUND" } });
+      const rules = store.active(request.params.projectId, ownerId);
+      const report = applyProjectRulesToWorkResult(file.content, rules);
+      return {
+        source: { dag_id: request.body.dag_id, file_name: file.name },
+        rule_versions: rules.map((rule) => ({ id: rule.id, version: rule.version })),
+        ...report
+      };
     }
   );
 }

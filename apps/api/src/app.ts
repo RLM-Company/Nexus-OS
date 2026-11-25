@@ -984,7 +984,13 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
     registerProjectCorrectionRuleRoutes({
       app,
       store: dependencies.projectCorrectionRuleStore,
-      identityFor
+      identityFor,
+      ...(dependencies.managerWorkCoordinator
+        ? {
+            workResults: (ownerId: string, dagId: string) =>
+              dependencies.managerWorkCoordinator!.dag.results(dagId, ownerId)
+          }
+        : {})
     });
   registerWebSearchRoutes(app, dependencies.webSearch ?? new WebSearch());
   if (dependencies.researchStore && dependencies.projectStore && dependencies.policyStore) {
