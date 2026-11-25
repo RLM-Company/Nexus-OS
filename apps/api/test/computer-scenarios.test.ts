@@ -133,7 +133,16 @@ async function scenario(options: {
   });
   const next = (i: number) =>
     service.next("local-owner", project.id, input.client_request_id, input.client_secret, step(i));
-  return { service, next, calls, decisions: options.decisions };
+  return {
+    service,
+    next,
+    calls,
+    projectId: project.id,
+    requestId: input.client_request_id,
+    secret: input.client_secret,
+    goal: input.goal,
+    decisions: options.decisions
+  };
 }
 
 const browser = (i: number) => ({ browser: { tab_id: "a".repeat(12), generation: i } });
@@ -222,5 +231,56 @@ describe("Koswork local executor scenarios", () => {
     const second = await s.next(1);
     expect(second).toMatchObject({ action: { kind: "browser_read" } });
     expect(s.calls).toHaveLength(2);
+  });
+
+  it("handoff pauses for the owner, stop ends the task and reconnect needs a fresh session", async () => {
+    const s = await scenario({
+      mode: "work",
+      decisions: [
+        { kind: "work_plan", steps: [{ title: "Ask owner", criteria: "unlocked" }] },
+        { kind: "ask_user", question: "Unlock the local form" },
+        { kind: "work_step", step: 1, state: "running", evidence: "", observation_id: "obs-2" },
+        { kind: "done", summary: "owner resumed" }
+      ],
+      observation: (i) => ({
+        image_jpeg_base64: jpeg,
+        work: {
+          environment: "computer" as const,
+          generation: i,
+          plan_steps: 1,
+          plan_complete: i >= 3
+        }
+      })
+    });
+    expect(await s.next(0)).toMatchObject({ action: { kind: "work_plan" } });
+    expect(await s.next(1)).toMatchObject({ action: { kind: "ask_user" } });
+    // Owner resumes locally; the model gets a fresh observation, not credentials.
+    const resumed = await s.next(2);
+    expect(resumed).toMatchObject({ action: { kind: "work_step" } });
+    expect(s.calls[2]!.messages[1]!.content).toContain("result after step 1");
+
+    // Device disconnect / owner stop: the session ends and no late action is accepted.
+    expect(s.service.end("local-owner", s.projectId, s.requestId, s.secret)).toEqual({
+      stopped: true
+    });
+    expect(() => s.next(3)).toThrow();
+
+    // Reconnect: the same goal creates a fresh session; the old action hash
+    // cannot authorize anything in it (no inherited grant).
+    const reconnected = await s.service.create("local-owner", "local-owner", s.projectId, {
+      client_request_id: "reconnect-" + Date.now(),
+      client_secret: randomBytes(32).toString("base64url"),
+      goal: s.goal,
+      max_steps: 8,
+      execution_mode: "work"
+    });
+    expect(reconnected).toMatchObject({ id: expect.any(String) });
+    expect(reconnected.id).not.toBe(s.requestId);
+    expect(() =>
+      s.service.authorize("local-owner", s.projectId, s.requestId, s.secret, {
+        step: 0,
+        action_hash: "a".repeat(64)
+      })
+    ).toThrow();
   });
 });
