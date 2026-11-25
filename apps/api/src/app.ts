@@ -1489,6 +1489,7 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
     registerManagerWorkRoutes({
       app,
       store: dependencies.managerWorkStore,
+      ...(dependencies.generalChatStore ? { chats: dependencies.generalChatStore } : {}),
       coordinator: dependencies.managerWorkCoordinator,
       projects: dependencies.projectStore,
       nodeBudget: {

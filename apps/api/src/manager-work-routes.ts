@@ -1,3 +1,4 @@
+import { registerSupplierWorkHandoff } from "./supplier-work-handoff.js";
 import { registerWorkSkillRoutes } from "./work-skill-routes.js";
 import { registerWorkflowRoutes } from "./workflow-routes.js";
 import { TypeBoxValidatorCompiler } from "@fastify/type-provider-typebox";
@@ -9,7 +10,12 @@ import {
   type CreateManagerWork,
   type IdentityContext
 } from "@cosmora/contracts";
-import { ManagerWorkConflict, type ManagerWorkStore, type ProjectStore } from "@cosmora/db";
+import {
+  ManagerWorkConflict,
+  type GeneralChatStore,
+  type ManagerWorkStore,
+  type ProjectStore
+} from "@cosmora/db";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { Type } from "typebox";
 import type { ManagerWorkCoordinator } from "./manager-work-coordinator.js";
@@ -17,6 +23,7 @@ import type { ManagerWorkCoordinator } from "./manager-work-coordinator.js";
 export function registerManagerWorkRoutes(options: {
   app: FastifyInstance;
   store: ManagerWorkStore;
+  chats?: GeneralChatStore;
   projects: ProjectStore;
   coordinator: ManagerWorkCoordinator;
   identityFor: (request: FastifyRequest) => IdentityContext;
@@ -28,6 +35,8 @@ export function registerManagerWorkRoutes(options: {
   registerWorkSkillRoutes(app, store.skills, identityFor);
   registerProjectMemoryRoutes({ app, memory: store.memory, projects, identityFor });
   registerWorkRuntimeRoutes({ app, store, projects, identityFor });
+  if (options.chats)
+    registerSupplierWorkHandoff({ app, store, projects, identityFor, chats: options.chats });
   const base = "/api/v1/projects/:projectId/work";
   const params = Type.Object(
     {

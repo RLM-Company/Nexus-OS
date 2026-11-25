@@ -222,10 +222,19 @@ export class ManagerWorkStore {
     actorId: string,
     request: CreateManagerWork,
     dormant = false,
-    dagBinding?: ManagerWork["dag_binding"]
+    dagBinding?: ManagerWork["dag_binding"],
+    supplierHandoff?: ManagerWork["supplier_handoff"]
   ): ManagerWork | null {
     return this.transaction(() =>
-      this.createAccepted(projectId, ownerId, actorId, request, dormant, dagBinding)
+      this.createAccepted(
+        projectId,
+        ownerId,
+        actorId,
+        request,
+        dormant,
+        dagBinding,
+        supplierHandoff
+      )
     );
   }
 
@@ -235,7 +244,8 @@ export class ManagerWorkStore {
     actorId: string,
     request: CreateManagerWork,
     dormant: boolean,
-    dagBinding?: ManagerWork["dag_binding"]
+    dagBinding?: ManagerWork["dag_binding"],
+    supplierHandoff?: ManagerWork["supplier_handoff"]
   ): ManagerWork | null {
     this.assertWritable(ownerId);
     const mode = this.dag.projectMode(projectId, ownerId);
@@ -255,7 +265,11 @@ export class ManagerWorkStore {
       .get(projectId, ownerId, request.client_request_id) as { state_json: string } | undefined;
     if (existing) {
       const state = JSON.parse(existing.state_json) as ManagerWork;
-      if (JSON.stringify(state.request) !== JSON.stringify(request) || state.actor_id !== actorId)
+      if (
+        JSON.stringify(state.request) !== JSON.stringify(request) ||
+        state.actor_id !== actorId ||
+        JSON.stringify(state.supplier_handoff) !== JSON.stringify(supplierHandoff)
+      )
         throw new ManagerWorkConflict("IDEMPOTENCY_CONFLICT");
       return state;
     }
@@ -272,6 +286,8 @@ export class ManagerWorkStore {
       .run(projectId, ownerId);
     const at = new Date().toISOString();
     const materials = new ProjectStore(this.sqlite).getMaterials(projectId, ownerId);
+    if (supplierHandoff && materials?.version !== supplierHandoff.materials_version)
+      throw new ManagerWorkConflict("STALE_SUPPLIER_MATERIALS");
     const state: ManagerWork = {
       id: randomUUID(),
       project_id: projectId,
@@ -279,6 +295,7 @@ export class ManagerWorkStore {
       actor_id: actorId,
       ...(dagBinding ? { dag_binding: dagBinding } : {}),
       request,
+      ...(supplierHandoff ? { supplier_handoff: supplierHandoff } : {}),
       ...(materials && (materials.instructions || materials.attachments.length)
         ? {
             materials: { instructions: materials.instructions, attachments: materials.attachments }

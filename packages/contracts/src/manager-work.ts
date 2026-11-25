@@ -123,12 +123,45 @@ export interface WorkMeasuredTiming {
   pause_ms?: number;
   await_owner_ms?: number;
 }
+export const CreateSupplierWorkHandoffSchema = Type.Object(
+  {
+    client_request_id: EntityIdSchema,
+    chat_id: EntityIdSchema,
+    message_id: EntityIdSchema,
+    attachment_indexes: Type.Array(Type.Integer({ minimum: 0, maximum: 3 }), {
+      maxItems: 4,
+      uniqueItems: true
+    }),
+    materials_version: Type.Integer({ minimum: 0 })
+  },
+  { additionalProperties: false }
+);
+export type CreateSupplierWorkHandoff = Static<typeof CreateSupplierWorkHandoffSchema>;
+
+export interface SupplierWorkHandoff {
+  chat_id: string;
+  message_id: string;
+  message: string;
+  attachment_indexes: number[];
+  materials_version: number;
+  inputs: { name: string; sha256: string }[];
+}
+
+export interface SupplierWorkEvidence {
+  format: "kosmora.supplier-comparison-evidence.v1";
+  input_sha256: string;
+  source_files: SupplierWorkHandoff["inputs"];
+  checks: string[];
+  disputes: { supplier: string; item_id: string | null; reason: string }[];
+}
+
 export interface ManagerWork {
   id: string;
   project_id: string;
   owner_id: string;
   actor_id: string;
   request: CreateManagerWork;
+  supplier_handoff?: SupplierWorkHandoff;
   materials?: {
     instructions: string;
     attachments: ChatTextAttachment[];

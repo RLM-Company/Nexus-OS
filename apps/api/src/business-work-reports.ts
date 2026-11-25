@@ -1,4 +1,11 @@
-import type { CreateManagerWork, ManagerWorkFiles, ManagerWorkPlan } from "@cosmora/contracts";
+import { createHash } from "node:crypto";
+import type {
+  CreateManagerWork,
+  ManagerWork,
+  ManagerWorkFiles,
+  ManagerWorkPlan,
+  SupplierWorkEvidence
+} from "@cosmora/contracts";
 import {
   buildVersionChangeReport,
   compareSupplierOffers,
@@ -70,17 +77,60 @@ const fieldInput = Type.Object(
   { additionalProperties: false }
 );
 
-export function buildBusinessWorkFiles(request: CreateManagerWork): ManagerWorkFiles {
+export function buildBusinessWorkFiles(work: ManagerWork): ManagerWorkFiles {
+  const { request } = work;
   const output = request.output_contract;
   if (output?.kind === "supplier_comparison") {
     const input = JSON.parse(request.goal) as Parameters<typeof compareSupplierOffers>[0];
     const result = compareSupplierOffers(input);
-    return {
-      files: [
-        { name: "supplier-comparison.csv", content: result.csv },
-        { name: "supplier-comparison.md", content: result.markdown }
-      ]
-    };
+    const files = [
+      { name: "supplier-comparison.csv", content: result.csv },
+      { name: "supplier-comparison.md", content: result.markdown }
+    ];
+    if (work.supplier_handoff) {
+      const disputes: SupplierWorkEvidence["disputes"] = [];
+      for (const row of result.rows) {
+        for (const line of row.lines)
+          for (const reason of line.issues)
+            disputes.push({ supplier: row.supplier, item_id: line.itemId, reason });
+        for (const item_id of row.unrequestedItems)
+          disputes.push({ supplier: row.supplier, item_id, reason: "Позиция вне спецификации" });
+        if (row.deliveryDays === null)
+          disputes.push({ supplier: row.supplier, item_id: null, reason: "Срок не указан" });
+        if (
+          row.additionalCostsStatus === "не указаны" ||
+          row.additionalCostsStatus === "частично известны"
+        )
+          disputes.push({
+            supplier: row.supplier,
+            item_id: null,
+            reason: "Дополнительные расходы: " + row.additionalCostsStatus
+          });
+      }
+      const evidence: SupplierWorkEvidence = {
+        format: "kosmora.supplier-comparison-evidence.v1",
+        input_sha256: createHash("sha256").update(request.goal).digest("hex"),
+        source_files: work.supplier_handoff.inputs,
+        checks: [
+          "Проверена уникальность поставщиков и кодов позиций.",
+          "Сопоставлены комплектация, единицы и цены по точному коду позиции.",
+          "Проверены известные расходы и сроки. Пропуски отмечены отдельно."
+        ],
+        disputes
+      };
+      files.push(
+        { name: "supplier-input.json", content: request.goal },
+        {
+          name: "supplier-evidence.json",
+          content: JSON.stringify(
+            { ...evidence, source_files: work.supplier_handoff.inputs },
+            null,
+            2
+          )
+        }
+      );
+    }
+    return { files };
   }
   if (output?.kind === "version_change_report") {
     const input = JSON.parse(output.input) as VersionChangeInput;

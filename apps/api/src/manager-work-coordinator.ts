@@ -849,7 +849,7 @@ export class ManagerWorkCoordinator {
           } else if (stage === "plan") {
             value = businessPlan;
           } else {
-            value = buildBusinessWorkFiles(work.request);
+            value = buildBusinessWorkFiles(work);
             if (!Value.Check(ManagerWorkFilesSchema, value))
               throw Error("BUSINESS_REPORT_TOO_LARGE");
           }
