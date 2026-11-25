@@ -31,6 +31,7 @@ export * from "./project-automation.js";
 export * from "./scheduled-dispatch.js";
 export * from "./work-admission-snapshot.js";
 export * from "./work-timeline.js";
+export * from "./biz040-field-register.js";
 export * from "./graph-evidence-comparison.js";
 export * from "./graph-source-usage.js";
 export * from "./graph-citation-refresh.js";
