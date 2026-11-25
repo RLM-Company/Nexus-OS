@@ -4,6 +4,7 @@ import { AcceptedSkillView } from "./accepted-skill-view";
 import { CodeFiles } from "./ui/code-files";
 
 import Link from "next/link";
+import { SupplierWorkResult } from "./supplier-work-result";
 import { WorkManagerDag } from "./work-manager-dag";
 import { WorkManagerProgress } from "./work-manager-progress";
 import { WorkManagerMemory } from "./work-manager-memory";
@@ -12,6 +13,7 @@ import { useEffect, useRef, useState } from "react";
 import {
   MANAGER_WORK_CONTROL_EVENTS,
   type CreateManagerWork,
+  type ManagerWork,
   type WorkDag
 } from "@cosmora/contracts";
 import { startVisibleReadPolling } from "./visible-read-poller";
@@ -21,6 +23,8 @@ import { aiWorkChainGoal, aiWorkChainSource, requestsAiWorkChain } from "./ai-wo
 type Work = {
   id: string;
   request?: Pick<CreateManagerWork, "goal" | "output_contract">;
+  supplier_handoff?: ManagerWork["supplier_handoff"];
+  materials?: ManagerWork["materials"];
   version: number;
   status: string;
   stage: string;
@@ -218,6 +222,19 @@ function saveWorkSelection(key: string, id: string | null) {
   }
 }
 
+function workFromUrl(projectId: string): string | null {
+  const params = new URLSearchParams(window.location.search);
+  return params.get("project") === projectId ? params.get("work") : null;
+}
+
+function replaceSelectedWork(projectId: string, work: Work) {
+  const url = new URL(window.location.href);
+  if (work.supplier_handoff || workFromUrl(projectId)) {
+    url.searchParams.set("work", work.id);
+    window.history.replaceState(window.history.state, "", url);
+  }
+}
+
 export function ManagerWorkPanel({
   projectId,
   initialGoal,
@@ -308,7 +325,8 @@ export function ManagerWorkPanel({
           })
         ]);
         // History is bounded. Its window moving is not a change of selection.
-        const wanted = selectedWorkId ?? readWorkSelection(selectionKey);
+        const linked = workFromUrl(projectId);
+        const wanted = linked ?? selectedWorkId ?? readWorkSelection(selectionKey);
         const selected = wanted
           ? (list.items.find((item) => item.id === wanted) ??
             (await json<Work | null>(
@@ -325,7 +343,7 @@ export function ManagerWorkPanel({
         if (!signal.aborted && epoch === mutationEpoch.current && !lock.current) {
           if (wanted && !selected) saveWorkSelection(selectionKey, null);
           setSelectedWorkId(selected?.id ?? null);
-          const latest = selected ?? items[0] ?? null;
+          const latest = selected ?? (linked ? null : (items[0] ?? null));
           setWorks((current) =>
             items.map((item) => {
               const previous = current.find((candidate) => candidate.id === item.id);
@@ -339,7 +357,7 @@ export function ManagerWorkPanel({
           );
           setRuntime(model);
           setHistoryLoaded(true);
-          setReadError("");
+          setReadError(linked && !selected ? "Задача по этой ссылке недоступна." : "");
         }
       },
       {
@@ -347,7 +365,7 @@ export function ManagerWorkPanel({
         onError: () => setReadError("Состояние временно недоступно. Работа сохраняется на сервере.")
       }
     );
-  }, [base, selectedWorkId, selectionKey]);
+  }, [base, projectId, selectedWorkId, selectionKey]);
   const recordMutation = (updated: Work, epoch: number) => {
     setWorks((current) =>
       current.some((item) => item.id === updated.id)
@@ -360,6 +378,7 @@ export function ManagerWorkPanel({
     // updates its own history row without switching the selected task back.
     if (epoch === mutationEpoch.current) {
       saveWorkSelection(selectionKey, updated.id);
+      replaceSelectedWork(projectId, updated);
       setSelectedWorkId(updated.id);
       setWork((previous) =>
         previous?.id === updated.id && previous.version > updated.version ? previous : updated
@@ -574,6 +593,42 @@ export function ManagerWorkPanel({
       setBusy(false);
     }
   };
+  const resultControls =
+    work?.status === "completed" ? (
+      <>
+        <ul className="manager-work-files" aria-label="Готовые файлы">
+          {work.draft?.files.map((file) => (
+            <li key={file.name}>
+              <a
+                download
+                href={
+                  base +
+                  "/" +
+                  encodeURIComponent(work.id) +
+                  "/files/" +
+                  encodeURIComponent(file.name)
+                }
+              >
+                {file.name}
+              </a>
+            </li>
+          ))}
+        </ul>
+        {work.result_accepted_at ? (
+          <p className="manager-work-accepted" role="status">
+            Результат принят владельцем {new Date(work.result_accepted_at).toLocaleString("ru-RU")}.
+          </p>
+        ) : (
+          <button
+            className="manager-work-action primary"
+            disabled={busy || executionGate !== "clear"}
+            onClick={() => void acceptResult()}
+          >
+            Принять результат
+          </button>
+        )}
+      </>
+    ) : null;
   const active = work && isActive(work);
   const projectHasActiveWork = Boolean(active) || works.some(isActive);
   return (
@@ -812,6 +867,7 @@ export function ManagerWorkPanel({
                 onClick={() => {
                   mutationEpoch.current++;
                   saveWorkSelection(selectionKey, item.id);
+                  replaceSelectedWork(projectId, item);
                   setSelectedWorkId(item.id);
                   setWork(item);
                   setError("");
@@ -932,41 +988,23 @@ export function ManagerWorkPanel({
               Разрешения проекта
             </Link>
           )}
-          {work.status === "completed" && (
-            <>
-              <ul className="manager-work-files" aria-label="Готовые файлы">
-                {work.draft?.files.map((file) => (
-                  <li key={file.name}>
-                    <a
-                      download
-                      href={
-                        base +
-                        "/" +
-                        encodeURIComponent(work.id) +
-                        "/files/" +
-                        encodeURIComponent(file.name)
-                      }
-                    >
-                      {file.name}
-                    </a>
-                  </li>
-                ))}
-              </ul>
-              {work.result_accepted_at ? (
-                <p className="manager-work-accepted" role="status">
-                  Результат принят владельцем{" "}
-                  {new Date(work.result_accepted_at).toLocaleString("ru-RU")}.
-                </p>
-              ) : (
-                <button
-                  className="manager-work-action primary"
-                  disabled={busy || executionGate !== "clear"}
-                  onClick={() => void acceptResult()}
-                >
-                  Принять результат
-                </button>
-              )}
-            </>
+          {work.supplier_handoff ? (
+            <SupplierWorkResult
+              projectId={projectId}
+              workId={work.id}
+              source={work.supplier_handoff}
+              instructions={work.materials?.instructions ?? ""}
+              evidence={
+                work.status === "completed"
+                  ? work.draft?.files.find((file) => file.name === "supplier-evidence.json")
+                      ?.content
+                  : undefined
+              }
+            >
+              {resultControls}
+            </SupplierWorkResult>
+          ) : (
+            resultControls
           )}
         </>
       )}
