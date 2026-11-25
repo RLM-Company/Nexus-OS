@@ -15,6 +15,7 @@ import {
   openDatabase,
   PolicyStore,
   ProjectStore,
+  ProjectSourceStore,
   runMigrations,
   UsageStore
 } from "@cosmora/db";
@@ -78,7 +79,11 @@ async function fixture(
     afterCompletion?: (request: ModelRequest) => void | Promise<void>;
     operationTimeoutMs?: number;
     managerContextWindow?: number;
-    prepareMemory?: (store: ManagerWorkStore, projectId: string) => void;
+    prepareMemory?: (
+      store: ManagerWorkStore,
+      projectId: string,
+      projects: ProjectStore
+    ) => void;
   } = {}
 ) {
   const database = openDatabase(options.databasePath ?? ":memory:");
@@ -166,12 +171,13 @@ async function fixture(
       ? {}
       : { operationTimeoutMs: options.operationTimeoutMs }),
     ...(options.graph ? { graph: options.graph } : {}),
-    ownerBudget: options.ownerBudget ?? accountStore
+    ownerBudget: options.ownerBudget ?? accountStore,
+    sourceStore: new ProjectSourceStore(database.sqlite)
   };
   const coordinator = new ManagerWorkCoordinator(dependencies);
   if (options.prepareMemory) {
     projects.failRun(initial.run.id, "FIXTURE_IDLE");
-    options.prepareMemory(store, project.id);
+    options.prepareMemory(store, project.id, projects);
   }
   const work = store.create(project.id, "local-owner", "local-owner", options.request ?? request)!;
   const get = () => store.get(work.id, "local-owner")!;
@@ -485,6 +491,56 @@ describe("durable Manager work", () => {
         "local-owner"
       );
     };
+  it("records sources from the actually formed Koswork request", async () => {
+    const f = await fixture({
+      prepareMemory: (store, projectId, projects) => {
+        const message = projects.createMessage(projectId, "Ключ 19 700 в проекте", "src-1", "local-owner");
+        projects.failRun(message!.run.id, "FIXTURE_IDLE");
+        store.contextMemory.create(
+          {
+            scope: "project",
+            scope_id: projectId,
+            kind: "constraint",
+            title: "Бюджет проекта",
+            content: "Бюджет: 19 700",
+            pinned: true,
+            expires_at: null,
+            source: {
+              kind: "project_message",
+              message_id: message!.userMessage.id,
+              quote: "19 700"
+            }
+          } as never,
+          "local-owner"
+        );
+        store.contextMemory.updateSettings(
+          { kind: "project", id: projectId },
+          {
+            enabled: true,
+            use_personal: false,
+            source_chat_ids: [],
+            project_ids: [projectId],
+            expected_version: 0
+          },
+          "local-owner"
+        );
+      }
+    });
+    await f.coordinator.execute(f.work.id, "local-owner");
+    const sourceStore = f.dependencies.sourceStore!;
+    const runId = f.store.contextMemory.usage({ kind: "project", id: f.project.id }, "local-owner")
+      .items[0]!.run_id;
+    const receipt = sourceStore.runSources(f.project.id, "local-owner", runId);
+    expect(receipt.sources.length).toBeGreaterThan(0);
+    const source = receipt.sources.find((item) => item.quote.includes("19 700"))!;
+    expect(source).toMatchObject({
+      kind: "memory",
+      source_kind: "project_message",
+      version: expect.any(Number),
+      sha256: expect.stringMatching(/^[a-f0-9]{64}$/)
+    });
+    expect(source.reference.length).toBeGreaterThanOrEqual(3);
+  });
   it("drops only optional recall to finish within the remaining task input budget", async () => {
     const requests: ModelRequest[] = [];
     const f = await fixture({

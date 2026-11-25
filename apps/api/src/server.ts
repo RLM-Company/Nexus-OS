@@ -213,6 +213,7 @@ try {
     ...(config.managerTimeoutMs === 0 ? { operationTimeoutMs: 0 } : {}),
     ownerBudget: accountStore,
     accountStore,
+    sourceStore: projectSourceStore,
     maxConcurrentWork: WORK_EXECUTION_CONCURRENCY,
     store: managerWorkStore,
     projects: projectStore,
