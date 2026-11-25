@@ -1,4 +1,6 @@
 /** Bounded source-grounded research, with optional accounted model synthesis. */
+import { createHash } from "node:crypto";
+
 export const RESEARCH_LIMITS = {
   maxSources: 4,
   maxCandidates: 5,
@@ -205,6 +207,70 @@ export function researchEvidence(run: ResearchRun) {
         }))
       : []
   );
+}
+
+/** Format agreed with OpenCode №1 (integration owner): a claim receipt is the
+ * minimal verifiable binding of an assertion to the exact trusted excerpt. */
+export interface ResearchSourceReceipt {
+  format: "kosmora.source-receipt.v1";
+  claim: string;
+  source_id: string;
+  excerpt_id: string;
+  title: string;
+  url: string;
+  checked_at: string;
+  content_digest: string | null;
+  excerpt_sha256: string;
+  position: number;
+  /** Quote is data from the trusted read snapshot, not proof of truth. */
+  quote: string;
+}
+export function researchSourceReceipts(
+  run: ResearchRun,
+  answer: ResearchAnswer
+): ResearchSourceReceipt[] {
+  const evidence = new Map(
+    researchEvidence(run).map((item) => [`${item.source_id}:${item.excerpt_id}`, item])
+  );
+  const byId = new Map(run.sources.map((source, index) => [`S${index + 1}`, source]));
+  return [...answer.summary, ...answer.disagreements].flatMap((claim) =>
+    claim.citations.flatMap((citation) => {
+      const key = `${citation.source_id}:${citation.excerpt_id}`;
+      const item = evidence.get(key);
+      const source = byId.get(citation.source_id);
+      if (!item || !source) return [];
+      return [
+        {
+          format: "kosmora.source-receipt.v1" as const,
+          claim: claim.text,
+          source_id: citation.source_id,
+          excerpt_id: citation.excerpt_id,
+          title: source.title,
+          url: source.url,
+          checked_at: source.checked_at,
+          content_digest: source.content_digest ?? null,
+          excerpt_sha256: createHash("sha256").update(item.excerpt).digest("hex"),
+          position: Number(citation.excerpt_id.slice(1)) - 1,
+          quote: item.excerpt
+        }
+      ];
+    })
+  );
+}
+
+/** A confirmed new fact may redirect the next research step. The revised
+ * question explicitly names the conflicting evidence date; it never claims the
+ * new fact is true or silently discards older contradictions. */
+export function reviseResearchQuestion(
+  question: string,
+  newFact: { text: string; checked_at: string; source_id: string },
+  priorGaps: readonly string[] = []
+): string {
+  const base = question.trim();
+  if (!base || !newFact.text?.trim()) throw Error("INVALID_RESEARCH_REVISION");
+  const hint = `Уточнить с учётом проверенной ${newFact.checked_at} выдержки ${newFact.source_id}: ${newFact.text.trim().slice(0, 400)}`;
+  const gaps = priorGaps.filter((gap) => gap.trim()).slice(0, 3);
+  return [base, hint, ...gaps].join(" | ").slice(0, 2000);
 }
 
 /** Validate the model's *references* against real excerpts; semantic truth still needs human review. */
