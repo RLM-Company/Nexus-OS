@@ -45,3 +45,5 @@ apps/api       test/project-correction-rules-api.test.ts  1 passed (propose→ac
 ```
 
 Границы: не менял общий экран результата, настройки прав/квот, тарифы, VPS и живые провайдеры.
+
+Первый CI-прогон PR показал unrelated failure в `chat-reliability.spec.ts` (восстановление чата после закрытия вкладки) при зелёном `Verify monorepo`; в diff только server/core/db и docs, без web. Прогон повторяется для подтверждения flake.
