@@ -29,7 +29,6 @@ export type WorkRuleReport = {
 
 const SEPARATE_DELIVERY = /доставк\p{L}*\s+отдельн\p{L}*\s+строк\p{L}*/iu;
 const STYLE_RULE = /оформ\p{L}*\s+\p{L}+\s+(?:как|в стиле|по образцу)\p{L}*/iu;
-const STYLE_MARKER = /^стиль:\s*(.+)$/iu;
 
 /** Parse the first agreed task type: supplier comparison rows from a Work file. */
 export function parseSupplierRows(content: string): SupplierRow[] {
@@ -63,7 +62,6 @@ export function applyProjectRulesToWorkResult(
       reason: "Несколько активных правил требуют разных правил оформления доставки."
     });
   const rows = parseSupplierRows(content);
-  const styleMatch = content.match(STYLE_MARKER);
   const baseline = rows.length ? applyProjectRules(rows, []).lines.join("\n") : content;
   const separate = deliveryRules.length === 1;
   const withDelivery: AppliedReport = separate
