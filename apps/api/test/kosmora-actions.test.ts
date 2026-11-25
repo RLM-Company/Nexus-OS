@@ -133,12 +133,8 @@ describe("Kosmora explicit actions", () => {
 
   it("still reports an empty result honestly instead of inventing links", async () => {
     const search = new WebSearch("http://127.0.0.1:8080", fetchFixture([]));
-    const result = await applyKosmoraActions(
-      [message({ web_search: true })],
-      search,
-      new AbortController().signal
-    );
-    expect(result[0]!.content).toContain("items: []");
-    expect(result[0]!.content).toContain("поиск ничего не вернул");
+    await expect(
+      applyKosmoraActions([message({ web_search: true })], search, new AbortController().signal)
+    ).rejects.toMatchObject({ code: "SEARCH_EMPTY" });
   });
 });

@@ -220,9 +220,10 @@ export class GeneralChatBackgroundRunCoordinator {
       const references = (latestUser?.attachments ?? []).filter(
         (file): file is ChatImageAttachment => "data_base64" in file
       );
-      const imagePrompt = latestUser
-        ? imageCreationPrompt(latestUser.content, references.length > 0)
-        : null;
+      const imagePrompt =
+        latestUser && !latestUser.web_search && !latestUser.text_action
+          ? imageCreationPrompt(latestUser.content, references.length > 0)
+          : null;
       if (imagePrompt) {
         if (latestUser?.attachments?.some((file) => !("data_base64" in file)))
           throw new ChatImageError("IMAGE_REFERENCES_UNSUPPORTED");

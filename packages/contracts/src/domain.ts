@@ -217,24 +217,6 @@ export const GeneralChatSummarySchema = Type.Object(
 );
 export type GeneralChatSummary = Static<typeof GeneralChatSummarySchema>;
 
-export const GeneralChatMessageSchema = Type.Object(
-  {
-    id: EntityIdSchema,
-    chat_id: EntityIdSchema,
-    role: Type.Union([Type.Literal("user"), Type.Literal("assistant")]),
-    content_type: Type.Literal("text"),
-    content: Type.String(),
-    attachments: Type.Optional(ChatAttachmentsSchema),
-    status: MessageStatusSchema,
-    run_id: Type.Union([EntityIdSchema, Type.Null()]),
-    error_code: Type.Union([Type.String(), Type.Null()]),
-    created_at: IsoDateTimeSchema,
-    updated_at: IsoDateTimeSchema
-  },
-  { additionalProperties: false }
-);
-export type GeneralChatMessage = Static<typeof GeneralChatMessageSchema>;
-
 export const ChatTextActionSchema = Type.Object(
   {
     kind: Type.Union([
@@ -258,6 +240,26 @@ export type ChatTextAction = Static<typeof ChatTextActionSchema>;
 export function isValidChatTextAction(value: unknown): value is ChatTextAction {
   return Value.Check(ChatTextActionSchema, value);
 }
+
+export const GeneralChatMessageSchema = Type.Object(
+  {
+    id: EntityIdSchema,
+    chat_id: EntityIdSchema,
+    role: Type.Union([Type.Literal("user"), Type.Literal("assistant")]),
+    content_type: Type.Literal("text"),
+    content: Type.String(),
+    attachments: Type.Optional(ChatAttachmentsSchema),
+    web_search: Type.Optional(Type.Boolean()),
+    text_action: Type.Optional(Type.Union([ChatTextActionSchema, Type.Null()])),
+    status: MessageStatusSchema,
+    run_id: Type.Union([EntityIdSchema, Type.Null()]),
+    error_code: Type.Union([Type.String(), Type.Null()]),
+    created_at: IsoDateTimeSchema,
+    updated_at: IsoDateTimeSchema
+  },
+  { additionalProperties: false }
+);
+export type GeneralChatMessage = Static<typeof GeneralChatMessageSchema>;
 
 export const CreateGeneralChatRequestSchema = Type.Object(
   {
