@@ -24,7 +24,8 @@ import {
   type WorkQuiescence,
   type ModelRequest,
   type ContextMemoryBundle,
-  type ModelMessage
+  type ModelMessage,
+  type UsedSource
 } from "@cosmora/contracts";
 import {
   estimateInputTokensUpperBound,
@@ -114,7 +115,7 @@ type PublishWorkInput = {
 function usedSourcesFromContext(
   snapshot: ReturnType<typeof contextMemoryUsage>,
   recalled: ContextMemoryBundle | null
-): import("@cosmora/contracts").UsedSource[] {
+): UsedSource[] {
   if (!snapshot || snapshot.representation !== "exact") return [];
   const byReference = new Map((recalled?.items ?? []).map((item) => [item.reference, item]));
   return snapshot.sources.map((entry) => {

@@ -1,7 +1,7 @@
 import { registerDocumentWorkspaceRoutes } from "./document-workspace-routes.js";
 import { registerGithubIssueRoutes } from "./github-issue-routes.js";
 import type { ContextMemoryRanker } from "@cosmora/contracts";
-import type { IndexedMemoryRecall } from "@cosmora/db";
+import type { IndexedMemoryRecall, ProjectSourceStore } from "@cosmora/db";
 import { registerRuntimeClockRoutes } from "./runtime-clock-routes.js";
 import { registerContextMemoryRoutes } from "./context-memory-routes.js";
 import { registerProjectSourceRoutes } from "./project-source-routes.js";
@@ -265,7 +265,7 @@ export interface AppDependencies {
   registration?: RegistrationOptions;
   generalChatStore?: GeneralChatStore;
   projectStore?: ProjectStore;
-  projectSourceStore?: import("@cosmora/db").ProjectSourceStore;
+  projectSourceStore?: ProjectSourceStore;
   demoManagerStore?: DemoManagerStore;
   demoManagerCoordinator?: DemoManagerCoordinator;
   managerWorkStore?: ManagerWorkStore;
@@ -1546,7 +1546,7 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
           : []
     );
   if (dependencies.projectSourceStore)
-    registerProjectSourceRoutes(app, dependencies.projectSourceStore, identityFor);
+    void registerProjectSourceRoutes(app, dependencies.projectSourceStore, identityFor);
   if (dependencies.generalChatStore && dependencies.modelGateway && dependencies.chat) {
     registerHistoryCompactionRoutes(
       app,

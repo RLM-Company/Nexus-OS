@@ -528,18 +528,15 @@ describe("durable Manager work", () => {
       }
     });
     await f.coordinator.execute(f.work.id, "local-owner");
-    const sourceStore = f.dependencies.sourceStore!;
+    const sourceStore = f.dependencies.sourceStore;
     const runId = f.store.contextMemory.usage({ kind: "project", id: f.project.id }, "local-owner")
       .items[0]!.run_id;
     const receipt = sourceStore.runSources(f.project.id, "local-owner", runId);
     expect(receipt.sources.length).toBeGreaterThan(0);
     const source = receipt.sources.find((item) => item.quote.includes("19 700"))!;
-    expect(source).toMatchObject({
-      kind: "memory",
-      source_kind: "project_message",
-      version: expect.any(Number),
-      sha256: expect.stringMatching(/^[a-f0-9]{64}$/)
-    });
+    expect(source).toMatchObject({ kind: "memory", source_kind: "project_message" });
+    expect(typeof source.version).toBe("number");
+    expect(source.sha256).toMatch(/^[a-f0-9]{64}$/);
     expect(source.reference.length).toBeGreaterThanOrEqual(3);
   });
   it("applies an exclusion to the next formed Koswork request but keeps the old receipt", async () => {
@@ -592,8 +589,8 @@ describe("durable Manager work", () => {
       { kind: "project", id: f.project.id },
       "local-owner"
     ).items;
-    const sourceStore = f.dependencies.sourceStore!;
-    const runOne = usage[0]?.run_id!;
+    const sourceStore = f.dependencies.sourceStore;
+    const runOne = usage[0]!.run_id;
     expect(runOne).toBeTruthy();
     const first = sourceStore.runSources(f.project.id, "local-owner", runOne);
     expect(first.sources.length).toBeGreaterThanOrEqual(2);
