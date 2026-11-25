@@ -195,6 +195,68 @@ async function fixture(
 }
 
 describe("durable Manager work", () => {
+  it("publishes a supplier comparison through Work without spending model requests", async () => {
+    const f = await fixture();
+    const app = buildApp({
+      config: f.config,
+      database: f.database,
+      projectStore: f.projects,
+      managerWorkStore: f.store,
+      managerWorkCoordinator: f.coordinator
+    });
+    const base = `/api/v1/projects/${f.project.id}/work`;
+    const payload = {
+      client_request_id: "supplier-pilot",
+      worker_role: "analyst",
+      output_contract: { kind: "supplier_comparison" },
+      goal: JSON.stringify({
+        requirements: [{ itemId: "bolt", label: "Болт", quantity: 3, unit: "шт" }],
+        offers: [
+          {
+            supplier: "Поставщик А",
+            currency: "RUB",
+            additionalCosts: [],
+            lines: [{ itemId: "bolt", quantity: 3, unit: "шт", unitPrice: 2.5 }]
+          },
+          { supplier: "Поставщик Б", currency: "EUR", lines: [] }
+        ]
+      })
+    };
+    try {
+      const accepted = await app.inject({ method: "POST", url: base, payload });
+      expect(accepted.statusCode).toBe(201);
+      const { id } = accepted.json<{ id: string }>();
+      const duplicate = await app.inject({ method: "POST", url: base, payload });
+      expect(duplicate.json<{ id: string }>().id).toBe(id);
+      await f.coordinator.execute(id, "local-owner");
+      expect((await app.inject(`${base}/${id}`)).json()).toMatchObject({
+        status: "completed",
+        model_requests: 0
+      });
+      expect(f.calls).toEqual([]);
+      const csv = await app.inject(`${base}/${id}/files/supplier-comparison.csv`);
+      expect(csv.statusCode).toBe(200);
+      expect(csv.headers["content-disposition"]).toContain("supplier-comparison.csv");
+      expect(csv.body).toContain("7.5");
+      expect(csv.body).toContain("позиция отсутствует");
+      const invalid = await app.inject({
+        method: "POST",
+        url: base,
+        payload: { ...payload, client_request_id: "invalid-supplier-pilot", goal: '{"offers":[]}' }
+      });
+      const invalidId = invalid.json<{ id: string }>().id;
+      await f.coordinator.execute(invalidId, "local-owner");
+      expect((await app.inject(`${base}/${invalidId}`)).json()).toMatchObject({
+        status: "failed",
+        error_code: "INVALID_SUPPLIER_INPUT",
+        model_requests: 0
+      });
+      expect(f.calls).toEqual([]);
+    } finally {
+      await app.close();
+    }
+  });
+
   it("verifies both single-file download paths and refuses a missing modern version without model replay", async () => {
     const f = await fixture();
     const app = buildApp({

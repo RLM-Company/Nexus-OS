@@ -20,7 +20,7 @@ import { aiWorkChainGoal, aiWorkChainSource, requestsAiWorkChain } from "./ai-wo
 
 type Work = {
   id: string;
-  request?: { goal: string };
+  request?: Pick<CreateManagerWork, "goal" | "output_contract">;
   version: number;
   status: string;
   stage: string;
@@ -34,6 +34,25 @@ type Work = {
   result_accepted_at?: string | null;
   events: { sequence: number; message: string; at: string }[];
 };
+const supplierExample = {
+  requirements: [{ itemId: "item-1", label: "Крепёж", quantity: 10, unit: "шт" }],
+  offers: [
+    {
+      supplier: "Поставщик А",
+      currency: "RUB",
+      deliveryDays: 3,
+      additionalCosts: [],
+      lines: [{ itemId: "item-1", quantity: 10, unit: "шт", unitPrice: 25 }]
+    },
+    {
+      supplier: "Поставщик Б",
+      currency: "RUB",
+      deliveryDays: 5,
+      lines: [{ itemId: "item-1", quantity: 8, unit: "шт", unitPrice: 22 }]
+    }
+  ]
+};
+
 const isActive = (item: Work) => !["completed", "failed", "cancelled"].includes(item.status);
 const labels: Record<string, string> = {
   queued: "В очереди",
@@ -46,6 +65,9 @@ const labels: Record<string, string> = {
   cancelled: "Отменено"
 };
 const errors: Record<string, string> = {
+  INVALID_SUPPLIER_INPUT: "Проверьте JSON со спецификацией и предложениями поставщиков.",
+  SUPPLIER_REPORT_TOO_LARGE:
+    "Отчёт слишком большой. Сократите число позиций и запустите сравнение снова.",
   INVALID_MODEL_OUTPUT:
     "Модель вернула результат неподходящего формата. Автоматического платного повтора не будет.",
   EXECUTION_BUDGET_EXCEEDED: "Достигнут заданный предел запросов или токенов.",
@@ -116,7 +138,8 @@ function readPendingWork(key: string): CreateManagerWork | null {
     const draft = JSON.parse(raw) as Partial<CreateManagerWork> | null;
     if (
       !draft ||
-      ![4, 7].includes(Object.keys(draft).length) ||
+      ![4, 5, 7].includes(Object.keys(draft).length) ||
+      (Object.keys(draft).length === 5 && draft.output_contract?.kind !== "supplier_comparison") ||
       typeof draft.client_request_id !== "string" ||
       !/^[a-f0-9-]{36}$/.test(draft.client_request_id) ||
       typeof draft.goal !== "string" ||
@@ -179,6 +202,7 @@ export function ManagerWorkPanel({
   onPlanSnapshot: (graph: WorkDag) => void;
 }) {
   const [goal, setGoal] = useState(initialGoal);
+  const [supplierComparison, setSupplierComparison] = useState(false);
   const [role, setRole] = useState<CreateManagerWork["worker_role"]>("analyst");
   const [critic, setCritic] = useState(true);
   const [work, setWork] = useState<Work | null>(null);
@@ -207,10 +231,12 @@ export function ManagerWorkPanel({
     draft &&
     (draft.goal === goal || draft.goal === chainGoal) &&
     draft.worker_role === role &&
-    Boolean(draft.require_critic) === critic
+    Boolean(draft.require_critic) === critic &&
+    (draft.output_contract?.kind === "supplier_comparison") === supplierComparison
       ? draft
       : null;
-  const chainRequested = requestsAiWorkChain(goal) || pendingRequest?.goal === chainGoal;
+  const chainRequested =
+    !supplierComparison && (requestsAiWorkChain(goal) || pendingRequest?.goal === chainGoal);
   const creationBlocked =
     busy || !goal.trim() || !runtime || !historyLoaded || executionGate !== "clear";
   useEffect(() => {
@@ -222,6 +248,7 @@ export function ManagerWorkPanel({
       pending.current = saved;
       setGoal(aiWorkChainSource(saved.goal) ?? saved.goal);
       setRole(saved.worker_role);
+      setSupplierComparison(saved.output_contract?.kind === "supplier_comparison");
       setCritic(Boolean(saved.require_critic));
       setError("Подтверждение предыдущего запуска потеряно. Повтор отправит тот же запрос.");
     });
@@ -320,7 +347,8 @@ export function ManagerWorkPanel({
             client_request_id: crypto.randomUUID(),
             goal: requestedGoal,
             worker_role: role,
-            require_critic: critic
+            require_critic: critic,
+            ...(supplierComparison ? { output_contract: { kind: "supplier_comparison" } } : {})
           };
         body = pending.current;
         savePendingWork(pendingKey, pending.current);
@@ -454,9 +482,23 @@ export function ManagerWorkPanel({
         />
       </details>
       <label className="manager-work-field">
-        Задача
+        Тип задачи
+        <select
+          value={supplierComparison ? "supplier" : "general"}
+          onChange={(event) => setSupplierComparison(event.target.value === "supplier")}
+          disabled={busy || !historyLoaded}
+        >
+          <option value="general">Обычная задача</option>
+          <option value="supplier">Сравнить поставщиков</option>
+        </select>
+      </label>
+      <label className="manager-work-field">
+        {supplierComparison ? "Спецификация и предложения (JSON)" : "Задача"}
         <textarea
-          aria-label="Задача для выполнения"
+          aria-label={
+            supplierComparison ? "Спецификация и предложения (JSON)" : "Задача для выполнения"
+          }
+          placeholder={supplierComparison ? '{"requirements":[…],"offers":[…]}' : undefined}
           value={goal}
           maxLength={8000}
           rows={4}
@@ -464,6 +506,15 @@ export function ManagerWorkPanel({
           disabled={busy || !historyLoaded}
         />
       </label>
+      {supplierComparison && !goal.trim() && (
+        <button
+          type="button"
+          disabled={busy || !historyLoaded}
+          onClick={() => setGoal(JSON.stringify(supplierExample, null, 2))}
+        >
+          Вставить пример предложений
+        </button>
+      )}
       <label className="manager-work-field">
         Исполнитель{" "}
         <select
@@ -494,9 +545,13 @@ export function ManagerWorkPanel({
         disabled={creationBlocked || (chainRequested && chainGoal.length > 8000)}
         onClick={() => void act(undefined, chainRequested)}
       >
-        {chainRequested ? "Построить цепочку с ИИ" : "Создать файлы"}
+        {supplierComparison
+          ? "Сравнить поставщиков"
+          : chainRequested
+            ? "Построить цепочку с ИИ"
+            : "Создать файлы"}
       </button>
-      {!chainRequested && (
+      {!chainRequested && !supplierComparison && (
         <button
           type="button"
           disabled={creationBlocked || chainGoal.length > 8000 || Boolean(pendingRequest)}
@@ -534,9 +589,11 @@ export function ManagerWorkPanel({
                 }}
               >
                 <span>
-                  {item.request?.goal
-                    ? (aiWorkChainSource(item.request.goal) ?? item.request.goal)
-                    : `Задача ${index + 1}`}
+                  {item.request?.output_contract?.kind === "supplier_comparison"
+                    ? "Сравнить поставщиков"
+                    : item.request?.goal
+                      ? (aiWorkChainSource(item.request.goal) ?? item.request.goal)
+                      : `Задача ${index + 1}`}
                 </span>
                 <small>{labels[item.status] ?? "Состояние неизвестно"}</small>
               </button>

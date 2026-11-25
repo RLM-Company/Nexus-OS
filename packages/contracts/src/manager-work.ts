@@ -20,6 +20,7 @@ export const CreateManagerWorkSchema = Type.Object(
           { additionalProperties: false }
         ),
         Type.Object({ kind: Type.Literal("website") }, { additionalProperties: false }),
+        Type.Object({ kind: Type.Literal("supplier_comparison") }, { additionalProperties: false }),
         Type.Object({ kind: Type.Literal("game_project") }, { additionalProperties: false }),
         Type.Object(
           {

@@ -35,6 +35,7 @@ import {
   MemoryContextIncompleteError,
   readWorkGraphContext,
   workRuntimeProgress,
+  compareSupplierOffers,
   assertWorkTaskGraph,
   ModelOutputCheckpointWriter,
   type ManagerService
@@ -764,8 +765,15 @@ export class ManagerWorkCoordinator {
         // normal A0 default before spending; retain any existing owner policy.
         if (!policy.ensureProfile(work.project_id)) throw new Error("POLICY_UNAVAILABLE");
         // Verify every potential role before spending on a plan that cannot run.
-        for (const stage of ["plan", "draft", "review"] as const) {
-          this.dependencies.gateway.assertRoute(this.request({ ...work, stage }, work.id));
+        if (work.request.output_contract?.kind === "supplier_comparison") {
+          if (work.request.require_critic)
+            this.dependencies.gateway.assertRoute(
+              this.request({ ...work, stage: "review" }, work.id)
+            );
+        } else {
+          for (const stage of ["plan", "draft", "review"] as const) {
+            this.dependencies.gateway.assertRoute(this.request({ ...work, stage }, work.id));
+          }
         }
       }
       while (work.stage !== "done") {
@@ -829,14 +837,43 @@ export class ManagerWorkCoordinator {
           return;
         }
         const stage = work.stage;
-        const raw = await this.model(work, signal);
+        const supplierComparison = work.request.output_contract?.kind === "supplier_comparison";
+        const localStage = supplierComparison && (stage === "plan" || stage === "draft");
+        const raw = localStage ? null : await this.model(work, signal);
         work = this.current(id, ownerId);
         if (work.status === "cancelled") return;
         let value: unknown;
         try {
-          value = parseModelJson(raw);
-        } catch {
-          throw new Error("INVALID_MODEL_OUTPUT");
+          if (raw !== null) {
+            value = parseModelJson(raw);
+          } else if (stage === "plan") {
+            value = {
+              summary: "Сравнить предложения поставщиков",
+              instructions:
+                "Сопоставить позиции по идентификатору. Сохранить валюты и единицы, выделить неполные предложения.",
+              complexity: "simple",
+              needs_critic: false,
+              requires_external_actions: false
+            };
+          } else {
+            const input = JSON.parse(work.request.goal) as Parameters<
+              typeof compareSupplierOffers
+            >[0];
+            const result = compareSupplierOffers(input);
+            value = {
+              files: [
+                { name: "supplier-comparison.csv", content: result.csv },
+                { name: "supplier-comparison.md", content: result.markdown }
+              ]
+            };
+            if (!Value.Check(ManagerWorkFilesSchema, value))
+              throw Error("SUPPLIER_REPORT_TOO_LARGE");
+          }
+        } catch (error) {
+          if (error instanceof Error && error.message === "SUPPLIER_REPORT_TOO_LARGE") throw error;
+          throw new Error(localStage ? "INVALID_SUPPLIER_INPUT" : "INVALID_MODEL_OUTPUT", {
+            cause: error
+          });
         }
         work.inflight_run_id = null;
         if (stage === "plan") {
@@ -939,7 +976,9 @@ export class ManagerWorkCoordinator {
         "POLICY_UNAVAILABLE",
         "GRAPH_UNAVAILABLE",
         "INVALID_ARTIFACT_CONTENT",
-        "INVALID_WORK_GRAPH"
+        "INVALID_WORK_GRAPH",
+        "INVALID_SUPPLIER_INPUT",
+        "SUPPLIER_REPORT_TOO_LARGE"
       ];
       work.status = "failed";
       work.error_code =
