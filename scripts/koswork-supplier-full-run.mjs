@@ -105,5 +105,8 @@ assert.equal(cancelled.stage, "cancelled");
 assert.equal(cancelled.result?.csv, report.csv);
 record("отмена", "результат сохранён", `csv=${cancelled.result?.csv.length} байт`);
 
-writeFileSync(new URL("full-run.json", outDir), JSON.stringify({ log, result: report }, null, 2));
+writeFileSync(
+  new URL("full-run.local.json", outDir),
+  JSON.stringify({ log, result: report }, null, 2)
+);
 console.log("FULL RUN PASSED");

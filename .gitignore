@@ -32,3 +32,4 @@ Thumbs.db
 # Generated, pinned offline PDF/OCR runtime (rebuilt by document-reader/prepare.cjs).
 /desktop/windows/document-reader/vendor/
 /desktop/windows/document-reader/assets-manifest.json
+docs/team/operation-2026-11-25/execution-cycle/full-run.local.json
