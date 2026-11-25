@@ -1,5 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { openDatabase, runMigrations, ProjectStore, EmergencyStopStore } from "@cosmora/db";
+import {
+  openDatabase,
+  runMigrations,
+  ProjectStore,
+  EmergencyStopStore,
+  GeneralChatStore
+} from "@cosmora/db";
 import { ProjectSourceStore } from "@cosmora/db";
 import { buildApp } from "../src/app.js";
 import type { IdentityContext } from "@cosmora/contracts";
@@ -149,5 +155,67 @@ describe("project source usage and exclusions", () => {
       .run(owner.owner_id);
     const historical = store.runSources(projectId, owner.owner_id, "run-3");
     expect(historical.sources[0]?.source_id).toBe("file-a");
+  });
+
+  it("delivers the exact fragment only while current access allows it", () => {
+    const chats = new GeneralChatStore(db.sqlite);
+    const accepted = chats.createChat("Бюджет 19 700 в чате", "source-grant-chat", owner.owner_id);
+    chats.cancelRun(accepted.run.id);
+    const reference = `H:g:${accepted.userMessage.id}`;
+    const memory = chats.contextMemory;
+    const store = new ProjectSourceStore(db.sqlite);
+    store.recordRunSources(projectId, owner.owner_id, {
+      run_id: "run-grant",
+      sources: [{ ...source("msg-grant"), quote: "Бюджет 19 700" }]
+    });
+    // Owner data revoked: exact-fragment delivery is denied while history stays.
+    const at = new Date().toISOString();
+    db.sqlite
+      .prepare(
+        "INSERT INTO kosmora_owner_data_lifecycle(owner_id,epoch,state,operation_id,started_at,updated_at) VALUES(?,?,?,?,?,?)"
+      )
+      .run(owner.owner_id, 1, "deleting", "source-revoke-test", at, at);
+    expect(() =>
+      memory.sourceFor({ kind: "chat", id: accepted.chat.id }, owner.owner_id, reference, 0)
+    ).toThrow("OWNER_DATA_FENCED");
+    const raw = db.sqlite
+      .prepare("SELECT sources_json FROM project_run_sources WHERE owner_id=? AND run_id=?")
+      .get(owner.owner_id, "run-grant") as { sources_json: string };
+    expect((JSON.parse(raw.sources_json) as { source_id: string }[])[0]?.source_id).toBe(
+      "msg-grant"
+    );
+    db.sqlite
+      .prepare("DELETE FROM kosmora_owner_data_lifecycle WHERE owner_id=?")
+      .run(owner.owner_id);
+  });
+
+  it("keeps the historical quote when the source document changes version", () => {
+    const store = new ProjectSourceStore(db.sqlite);
+    const receipt = store.recordRunSources(projectId, owner.owner_id, {
+      run_id: "run-version",
+      sources: [{ ...source("msg-version", "b".repeat(64)), quote: "Бюджет: 19 700" }]
+    });
+    // A second attempt with changed material is rejected (409); the first bytes survive.
+    expect(() =>
+      store.recordRunSources(projectId, owner.owner_id, {
+        run_id: "run-version",
+        sources: [{ ...source("msg-version", "c".repeat(64)), quote: "Бюджет: 18 000" }]
+      })
+    ).toThrow("RUN_SOURCES_CONFLICT");
+    const after = store.runSources(projectId, owner.owner_id, "run-version");
+    expect(after.sources).toEqual(receipt.sources);
+    expect(after.sources[0]).toMatchObject({ sha256: "b".repeat(64), quote: "Бюджет: 19 700" });
+  });
+
+  it("keeps the receipt after the underlying material is deleted", () => {
+    const store = new ProjectSourceStore(db.sqlite);
+    const receipt = store.recordRunSources(projectId, owner.owner_id, {
+      run_id: "run-deleted",
+      sources: [{ ...source("msg-deleted"), quote: "Удалённый материал" }]
+    });
+    db.sqlite.prepare("DELETE FROM general_chat_messages WHERE id=?").run("msg-deleted");
+    expect(store.runSources(projectId, owner.owner_id, "run-deleted").sources).toEqual(
+      receipt.sources
+    );
   });
 });

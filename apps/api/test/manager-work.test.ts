@@ -79,11 +79,7 @@ async function fixture(
     afterCompletion?: (request: ModelRequest) => void | Promise<void>;
     operationTimeoutMs?: number;
     managerContextWindow?: number;
-    prepareMemory?: (
-      store: ManagerWorkStore,
-      projectId: string,
-      projects: ProjectStore
-    ) => void;
+    prepareMemory?: (store: ManagerWorkStore, projectId: string, projects: ProjectStore) => void;
   } = {}
 ) {
   const database = openDatabase(options.databasePath ?? ":memory:");
@@ -494,7 +490,12 @@ describe("durable Manager work", () => {
   it("records sources from the actually formed Koswork request", async () => {
     const f = await fixture({
       prepareMemory: (store, projectId, projects) => {
-        const message = projects.createMessage(projectId, "Ключ 19 700 в проекте", "src-1", "local-owner");
+        const message = projects.createMessage(
+          projectId,
+          "Ключ 19 700 в проекте",
+          "src-1",
+          "local-owner"
+        );
         projects.failRun(message!.run.id, "FIXTURE_IDLE");
         store.contextMemory.create(
           {
@@ -587,10 +588,12 @@ describe("durable Manager work", () => {
     });
     await f.coordinator.execute(f.work.id, "local-owner");
     expect(f.get().status).toBe("completed");
-    const usage = f.store.contextMemory.usage({ kind: "project", id: f.project.id }, "local-owner")
-      .items;
+    const usage = f.store.contextMemory.usage(
+      { kind: "project", id: f.project.id },
+      "local-owner"
+    ).items;
     const sourceStore = f.dependencies.sourceStore!;
-    const runOne = usage[0]?.run_id;
+    const runOne = usage[0]?.run_id!;
     expect(runOne).toBeTruthy();
     const first = sourceStore.runSources(f.project.id, "local-owner", runOne);
     expect(first.sources.length).toBeGreaterThanOrEqual(2);

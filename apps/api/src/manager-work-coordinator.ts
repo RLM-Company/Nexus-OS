@@ -121,7 +121,9 @@ function usedSourcesFromContext(
     const evidence = byReference.get(entry.reference);
     const original = evidence?.source;
     const sourceKind =
-      entry.source_kind ?? original?.kind ?? (entry.kind === "history" ? "chat_message" : "memory_entry");
+      entry.source_kind ??
+      original?.kind ??
+      (entry.kind === "history" ? "chat_message" : "memory_entry");
     return {
       reference: entry.reference,
       kind: entry.kind,
