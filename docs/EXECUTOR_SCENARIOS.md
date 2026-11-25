@@ -52,6 +52,23 @@ pnpm --filter @cosmora/api typecheck
 Результат после обоих сценариев: **92 passed** (88 прежних + 4 новых),
 typecheck exit 0, Prettier чистый.
 
+## Сценарий 3 (проверен существующим automatic run)
+
+`scripts/run-koswork-local-cycle.mjs` (уже в main, проверка 09):
+
+- симулируется потеря ответа при сохранении `workspace_create`;
+- повторное создание даёт `WORKSPACE_ALREADY_EXISTS` (не перезаписывает файл);
+- агент делает `workspace_read` и убеждается, что байты прежние, без дублирования.
+
+Плюс новый API-сценарий 1 показывает, что каждое внешнее действие получает свежий
+observation-пакет, а модельный `done` приходит только после проверки результата.
+
+Команда воспроизведения (фактически выполнена на этой ветке, exit 0):
+
+```
+pnpm --filter @cosmora/api exec node --import ../../node_modules/.pnpm/tsx@4.20.6/node_modules/tsx/dist/loader.mjs ../../scripts/run-koswork-local-cycle.mjs
+```
+
 ## Следующие шаги
 
 - воспроизводимый прогон с реальным локальным сайтом через нативный Electron-fixture
