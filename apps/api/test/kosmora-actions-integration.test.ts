@@ -107,10 +107,14 @@ describe("Kosmora actions in the real chat dispatch", () => {
     await send({ web_search: true, text_action: { kind: "hint" } });
     const detail = await app.inject({ method: "GET", url: `/api/v1/chats/${chatId}` });
     const messages = detail.json<{
-      messages: { role: string; content: string }[];
+      messages: { role: string; content: string; web_search?: boolean; text_action?: unknown }[];
     }>().messages;
     const latestUser = messages.findLast((m) => m.role === "user")!;
-    expect(latestUser.content).toBe("Сколько стоит?");
+    expect(latestUser).toMatchObject({
+      content: "Сколько стоит?",
+      web_search: true,
+      text_action: { kind: "hint" }
+    });
     expect(latestUser.content).not.toContain("kosmora_");
     expect(
       db.sqlite

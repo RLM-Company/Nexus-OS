@@ -7,6 +7,8 @@ export type KosmoraComposerActionsValue = {
   text_action: ChatTextAction | null;
 };
 
+export const MAX_REWRITE_SELECTION = 8000;
+
 const TEXT_ACTIONS: { kind: ChatTextAction["kind"]; label: string }[] = [
   { kind: "explain", label: "Объяснить тему" },
   { kind: "hint", label: "Дать подсказку" },
@@ -33,6 +35,7 @@ export function KosmoraComposerActions({
   composerRef: RefObject<HTMLTextAreaElement | null>;
 }) {
   const [open, setOpen] = useState(false);
+  const [selectionError, setSelectionError] = useState("");
   const active = value.text_action?.kind;
   return (
     <div
@@ -60,6 +63,50 @@ export function KosmoraComposerActions({
       >
         {active ? TEXT_ACTIONS.find((a) => a.kind === active)?.label : "Действие с текстом"}
       </button>
+      {selectionError && <span role="alert">{selectionError}</span>}
+      {value.text_action?.kind === "rewrite" && (
+        <div aria-label="Параметры новой версии" role="group">
+          <label>
+            Тон
+            <select
+              aria-label="Тон"
+              value={value.text_action.tone ?? "нейтральный"}
+              disabled={disabled}
+              onChange={(event) => {
+                if (value.text_action?.kind === "rewrite")
+                  onChange({
+                    ...value,
+                    text_action: { ...value.text_action, tone: event.target.value }
+                  });
+              }}
+            >
+              <option value="нейтральный">Нейтральный</option>
+              <option value="деловой">Деловой</option>
+              <option value="дружелюбный">Дружелюбный</option>
+            </select>
+          </label>
+          <label>
+            Объём
+            <select
+              aria-label="Объём"
+              value={value.text_action.length ?? "same"}
+              disabled={disabled}
+              onChange={(event) => {
+                const length = event.target.value;
+                if (
+                  value.text_action?.kind === "rewrite" &&
+                  (length === "shorter" || length === "same" || length === "longer")
+                )
+                  onChange({ ...value, text_action: { ...value.text_action, length } });
+              }}
+            >
+              <option value="same">Тот же</option>
+              <option value="shorter">Короче</option>
+              <option value="longer">Подробнее</option>
+            </select>
+          </label>
+        </div>
+      )}
       {open && (
         <ul className="kosmora-actions-menu" role="menu">
           {TEXT_ACTIONS.map((action) => (
@@ -74,6 +121,19 @@ export function KosmoraComposerActions({
                   const selection = area
                     ? area.value.slice(area.selectionStart, area.selectionEnd)
                     : "";
+                  setSelectionError("");
+                  if (action.kind === "rewrite" && active !== "rewrite") {
+                    if (!selection.trim() || selection.length > MAX_REWRITE_SELECTION) {
+                      setSelectionError(
+                        selection.trim()
+                          ? "Сократите выделение до 8 000 символов."
+                          : "Выделите фрагмент текста в поле ввода."
+                      );
+                      setOpen(false);
+                      area?.focus();
+                      return;
+                    }
+                  }
                   const next: KosmoraComposerActionsValue = {
                     ...value,
                     text_action:
@@ -82,9 +142,16 @@ export function KosmoraComposerActions({
                         : {
                             kind: action.kind,
                             ...(selection.trim()
-                              ? { selection: selection.trim().slice(0, 50_000) }
+                              ? {
+                                  selection:
+                                    action.kind === "rewrite"
+                                      ? selection
+                                      : selection.trim().slice(0, 50_000)
+                                }
                               : {}),
-                            ...(action.kind === "rewrite" ? { tone: "нейтральный" } : {})
+                            ...(action.kind === "rewrite"
+                              ? { tone: "нейтральный", length: "same" }
+                              : {})
                           }
                   };
                   onChange(next);

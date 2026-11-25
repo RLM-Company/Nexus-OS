@@ -192,6 +192,36 @@ describe("GeneralChatBackgroundRunCoordinator", () => {
     expect(store.getAssistantMessage(accepted.run.id)?.content).toContain("/api/v1/media/assets/");
   });
 
+  it("uses the selected chat action even when the text resembles an image request", async () => {
+    await coordinator.stop();
+    const imageGeneration = vi.fn().mockResolvedValue("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa");
+    const textModel = vi.spyOn(runtime.gateway, "stream");
+    coordinator = new GeneralChatBackgroundRunCoordinator({
+      store,
+      modelGateway: runtime.gateway,
+      chat: runtime.chat,
+      runtimeMetrics: metrics,
+      accountStore,
+      imageGeneration,
+      pollIntervalMs: 10
+    });
+    coordinator.start();
+    const accepted = store.createChat(
+      "Нарисуй монохромный постер",
+      "explicit-chat-action",
+      "local-owner",
+      [],
+      "kosmora",
+      { web_search: false, text_action: { kind: "explain" } }
+    );
+    await vi.waitFor(() => expect(store.getRun(accepted.run.id)?.status).toBe("succeeded"), {
+      timeout: 5000
+    });
+    expect(imageGeneration).not.toHaveBeenCalled();
+    expect(textModel).toHaveBeenCalledTimes(1);
+    expect(textModel.mock.calls[0]?.[0].messages.at(-1)?.content).toContain("kind: explain");
+  });
+
   it("dispatches explicit attached-photo edits without invoking the text model", async () => {
     await coordinator.stop();
     const imageGeneration = vi.fn().mockResolvedValue("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa");

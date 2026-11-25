@@ -1,5 +1,6 @@
 import { validateGeneratedPresentation } from "@cosmora/contracts/presentation-package";
 import { parseModelJson } from "./model-json.js";
+import { businessWorkPlan, buildBusinessWorkFiles } from "./business-work-reports.js";
 import { parseGamePackage, gameOutputInstruction } from "@cosmora/contracts/game-package";
 import {
   validateGameProjectFiles,
@@ -764,8 +765,15 @@ export class ManagerWorkCoordinator {
         // normal A0 default before spending; retain any existing owner policy.
         if (!policy.ensureProfile(work.project_id)) throw new Error("POLICY_UNAVAILABLE");
         // Verify every potential role before spending on a plan that cannot run.
-        for (const stage of ["plan", "draft", "review"] as const) {
-          this.dependencies.gateway.assertRoute(this.request({ ...work, stage }, work.id));
+        if (businessWorkPlan(work.request)) {
+          if (work.request.require_critic)
+            this.dependencies.gateway.assertRoute(
+              this.request({ ...work, stage: "review" }, work.id)
+            );
+        } else {
+          for (const stage of ["plan", "draft", "review"] as const) {
+            this.dependencies.gateway.assertRoute(this.request({ ...work, stage }, work.id));
+          }
         }
       }
       while (work.stage !== "done") {
@@ -829,14 +837,27 @@ export class ManagerWorkCoordinator {
           return;
         }
         const stage = work.stage;
-        const raw = await this.model(work, signal);
+        const businessPlan = businessWorkPlan(work.request);
+        const localStage = businessPlan !== null && (stage === "plan" || stage === "draft");
+        const raw = localStage ? null : await this.model(work, signal);
         work = this.current(id, ownerId);
         if (work.status === "cancelled") return;
         let value: unknown;
         try {
-          value = parseModelJson(raw);
-        } catch {
-          throw new Error("INVALID_MODEL_OUTPUT");
+          if (raw !== null) {
+            value = parseModelJson(raw);
+          } else if (stage === "plan") {
+            value = businessPlan;
+          } else {
+            value = buildBusinessWorkFiles(work.request);
+            if (!Value.Check(ManagerWorkFilesSchema, value))
+              throw Error("BUSINESS_REPORT_TOO_LARGE");
+          }
+        } catch (error) {
+          if (error instanceof Error && error.message === "BUSINESS_REPORT_TOO_LARGE") throw error;
+          throw new Error(localStage ? "INVALID_BUSINESS_INPUT" : "INVALID_MODEL_OUTPUT", {
+            cause: error
+          });
         }
         work.inflight_run_id = null;
         if (stage === "plan") {
@@ -939,7 +960,9 @@ export class ManagerWorkCoordinator {
         "POLICY_UNAVAILABLE",
         "GRAPH_UNAVAILABLE",
         "INVALID_ARTIFACT_CONTENT",
-        "INVALID_WORK_GRAPH"
+        "INVALID_WORK_GRAPH",
+        "INVALID_BUSINESS_INPUT",
+        "BUSINESS_REPORT_TOO_LARGE"
       ];
       work.status = "failed";
       work.error_code =

@@ -1,8 +1,8 @@
 import { expect, test } from "@playwright/test";
 import { zipSync, strToU8 } from "fflate";
 
-function pdfFixture(): Buffer {
-  const stream = "BT /F1 12 Tf 20 80 Td (Kosmora project brief) Tj ET";
+function pdfFixture(text = "Kosmora project brief"): Buffer {
+  const stream = `BT /F1 12 Tf 20 80 Td (${text}) Tj ET`;
   const objects = [
     "<< /Type /Catalog /Pages 2 0 R >>",
     "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
@@ -23,6 +23,84 @@ function pdfFixture(): Buffer {
     .join("")}trailer\n<< /Size ${offsets.length} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF`;
   return Buffer.from(output);
 }
+
+test("Koswork creates downloadable reports from PDF and Studio Data uploads", async ({
+  page,
+  request
+}) => {
+  const created = await request.post("/api/v1/projects", {
+    data: {
+      initial_message: "PDF field register acceptance",
+      client_message_id: crypto.randomUUID()
+    }
+  });
+  expect(created.status()).toBe(201);
+  const { project } = (await created.json()) as { project: { id: string } };
+  const base = "/api/v1/projects/" + project.id;
+  const profile = await request.put(base + "/autonomy-profile", {
+    data: { base_level: "A2", overrides: [], expected_version: 1 }
+  });
+  expect(profile.status()).toBe(200);
+  await page.goto("/?project=" + project.id + "&view=plan");
+  const manager = page.getByRole("region", { name: "Выполнение задачи Manager", exact: true });
+  await manager
+    .getByRole("combobox", { name: "Тип задачи", exact: true })
+    .selectOption("pdf_field_register");
+  await manager.getByLabel("Названия полей", { exact: false }).fill("!Amount");
+  await manager.getByLabel("PDF и сканы в PDF", { exact: true }).setInputFiles({
+    name: "invoice.pdf",
+    mimeType: "application/pdf",
+    buffer: pdfFixture("Amount: 17")
+  });
+  await expect(manager.getByRole("textbox", { name: "Данные отчёта (JSON)" })).toHaveValue(
+    /Amount: 17/
+  );
+  await manager.getByRole("button", { name: "Извлечь поля из PDF", exact: true }).click();
+  const link = manager.getByRole("link", { name: "pdf-field-register.csv", exact: true });
+  const href = await link.getAttribute("href");
+  expect(href).toBeTruthy();
+  const csv = await request.get(href!);
+  expect(csv.ok()).toBe(true);
+  expect(await csv.text()).toContain("17,invoice.pdf,1,pdf_text,critical_unverified");
+
+  const table = (name: string, amount: string) =>
+    Buffer.from(
+      JSON.stringify({
+        schema: "kosmora.studio.data",
+        version: 1,
+        name,
+        table: { delimiter: ",", headers: ["ID", "Amount"], rows: [["row-1", amount]] },
+        settings: {
+          types: ["text", "text"],
+          columns: [0, 1],
+          filters: [],
+          sort: null,
+          group: null,
+          measure: 0,
+          chart: { kind: "line", x: 0, y: 0 }
+        }
+      })
+    );
+  await manager
+    .getByRole("combobox", { name: "Тип задачи", exact: true })
+    .selectOption("version_change_report");
+  await manager.getByLabel("Прежняя версия Studio Data", { exact: true }).setInputFiles({
+    name: "before.json",
+    mimeType: "application/json",
+    buffer: table("before", "17")
+  });
+  await manager.getByLabel("Новая версия Studio Data", { exact: true }).setInputFiles({
+    name: "after.json",
+    mimeType: "application/json",
+    buffer: table("after", "19")
+  });
+  await manager.getByRole("button", { name: "Подготовить версии" }).click();
+  await manager.getByRole("button", { name: "Сравнить версии данных", exact: true }).click();
+  const reportLink = manager.getByRole("link", { name: "version-change-report.md", exact: true });
+  const report = await request.get((await reportLink.getAttribute("href"))!);
+  expect(report.ok()).toBe(true);
+  expect(await report.text()).toContain("CHANGED");
+});
 
 test("extracts real PDF and DOCX locally, sends their text and restores it from history", async ({
   page

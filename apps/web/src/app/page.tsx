@@ -127,6 +127,8 @@ type LocalChatMessage = {
   content_type: "text";
   content: string;
   attachments?: ChatAttachment[];
+  web_search?: boolean;
+  text_action?: KosmoraComposerActionsValue["text_action"];
   status: "pending" | "streaming" | "completed" | "failed" | "cancelled";
   run_id: string | null;
   error_code: string | null;
@@ -456,7 +458,15 @@ const displayedContent = (message: Message): string | null => {
   return null;
 };
 
+const chatActionFailure = (code: string | null): string | null => {
+  if (code === "SEARCH_EMPTY") return "Поиск не нашёл источников по этому запросу.";
+  if (code === "SEARCH_UNAVAILABLE") return "Поиск сейчас недоступен. Попробуйте позже.";
+  return null;
+};
+
 const displayedGeneralContent = (message: LocalChatMessage): string | null => {
+  const actionFailure = message.status === "failed" && chatActionFailure(message.error_code);
+  if (actionFailure) return actionFailure;
   if (message.status === "failed" && message.error_code === "MEMORY_CONTEXT_INCOMPLETE")
     return "Обязательные записи памяти не поместились. Сократите закреплённые записи или измените выбранные источники в настройках памяти.";
   if (message.status === "failed" && message.error_code?.startsWith("IMAGE_"))
@@ -1719,7 +1729,7 @@ export default function Home() {
           // The quota is a cumulative owner setting without a reset period.
           // Report the real counted numbers from the existing usage endpoint,
           // point at the breakdown, and never invent a renewal date.
-          setError("Лимит токенов достигнут. Прогон остановлен; текст сохранён в поле ввода.");
+          setError("Лимит токенов достигнут. Запрос сохранён в истории чата.");
           void api<{
             summary: { total_counted_tokens: number; max_total_tokens: number | null };
           }>("/api/v1/personal-settings/usage")
@@ -1731,7 +1741,7 @@ export default function Home() {
                   ? `Учтено ${used.toLocaleString("ru-RU")} токенов.`
                   : `Учтено ${used.toLocaleString("ru-RU")} из ${limit.toLocaleString("ru-RU")} токенов.`;
               setError(
-                `Лимит токенов достигнут. Прогон остановлен; текст сохранён в поле ввода. ${counted} Разбивка по запросам — в личных настройках, раздел «Использование». Период обновления лимита не задан.`
+                `Лимит токенов достигнут. Запрос сохранён в истории чата. ${counted} Разбивка по запросам — в личных настройках, раздел «Использование». Период обновления лимита не задан.`
               );
             })
             .catch(() => {
@@ -1741,7 +1751,7 @@ export default function Home() {
           setError(
             code === "RELAY_UNAVAILABLE"
               ? "Перевод не выполнен. Запрос не отправлен без English Relay. Можно выключить перевод и отправить исходный запрос вручную."
-              : "Ответ завершился с ошибкой. Внутренние детали скрыты."
+              : (chatActionFailure(code) ?? "Ответ завершился с ошибкой. Внутренние детали скрыты.")
           );
         }
         void refreshGeneralChat(chatIdForRun).catch(() => undefined);
@@ -1929,17 +1939,30 @@ export default function Home() {
     )
       return;
     setDraft(recoverableMessage.content);
+    if (!activeProject) {
+      const source = localChatMessages.find((message) => message.id === recoverableMessage.id);
+      if (source)
+        updateDraftActions(composerDraftKey, {
+          web_search: source.web_search ?? false,
+          text_action: source.text_action ?? null
+        });
+    }
     chatAttachments.replace(recoverableMessage.attachments ?? []);
     setError(null);
     window.requestAnimationFrame(() => composerRef.current?.focus());
   };
 
-  const submit = async (event?: FormEvent, voiceContent?: string): Promise<void> => {
+  const submit = async (
+    event?: FormEvent,
+    voiceContent?: string,
+    searchMessage?: string
+  ): Promise<void> => {
     event?.preventDefault();
-    const recoverableDraft = voiceContent ?? latestDraftRef.current.text;
+    const recoverableDraft = searchMessage ?? voiceContent ?? latestDraftRef.current.text;
     const content = recoverableDraft.trim();
     if (
       !content ||
+      (searchMessage !== undefined && (activeProject || !activeLocalChatId)) ||
       sending ||
       loading ||
       !initialRouteReady ||
@@ -2034,15 +2057,17 @@ export default function Home() {
           const path = activeLocalChatId
             ? `/api/v1/chats/${encodeURIComponent(activeLocalChatId)}/messages`
             : "/api/v1/chats";
+          const actions =
+            searchMessage === undefined ? composerActions : { web_search: true, text_action: null };
           const body = {
             ...(activeLocalChatId ? { content } : { initial_message: content, mode: chatMode }),
-            attachments: submitted.files,
+            attachments: searchMessage === undefined ? submitted.files : [],
             ...(!activeLocalChatId && pendingProjectId ? { project_id: pendingProjectId } : {}),
-            ...(composerActions.web_search ? { web_search: true } : {}),
-            ...(composerActions.text_action ? { text_action: composerActions.text_action } : {})
+            ...(actions.web_search ? { web_search: true } : {}),
+            ...(actions.text_action ? { text_action: actions.text_action } : {})
           };
           const accepted = await postChatMessage<GeneralChatAcceptedResponse>(path, body);
-          const clearedDraft = acknowledgeDraft();
+          const clearedDraft = searchMessage === undefined && acknowledgeDraft();
           if (clearedDraft)
             updateDraftActions(composerDraftKey, DEFAULT_COMPOSER_ACTIONS, composerActions);
           if (epoch !== viewEpochRef.current) {
@@ -2062,7 +2087,10 @@ export default function Home() {
             ...chatAttachments.files
           ];
           const proposal =
-            assessment.requiresProject && isValidChatAttachments(materials)
+            !actions.web_search &&
+            !actions.text_action &&
+            assessment.requiresProject &&
+            isValidChatAttachments(materials)
               ? { content, assessment, attachments: materials, historyCount: 0 as const }
               : null;
           setLocalChats((current) => {
@@ -2090,7 +2118,7 @@ export default function Home() {
           });
         } catch (cause) {
           if (epoch !== viewEpochRef.current) return;
-          restoreRejectedDraft();
+          if (searchMessage === undefined) restoreRejectedDraft();
           setSending(false);
           setRunPhase("failed");
           setError(
@@ -3418,6 +3446,15 @@ export default function Home() {
                         </time>
                       </header>
                     )}
+                    {message.role === "assistant" &&
+                      message.run_id &&
+                      localChatMessages.some(
+                        (source) =>
+                          source.run_id === message.run_id &&
+                          source.role === "user" &&
+                          source.text_action?.kind === "rewrite"
+                      ) &&
+                      message.status === "completed" && <strong>Новая версия</strong>}
                     <ChatResponse
                       content={displayedGeneralContent(message)}
                       assistant={message.role === "assistant"}
@@ -3458,6 +3495,28 @@ export default function Home() {
                         composerRef.current?.focus();
                       }}
                     />
+                    {message.role === "user" &&
+                      message.text_action?.kind === "rewrite" &&
+                      message.text_action.selection && (
+                        <details>
+                          <summary>Исходный фрагмент</summary>
+                          <blockquote style={{ whiteSpace: "pre-wrap" }}>
+                            {message.text_action.selection}
+                          </blockquote>
+                        </details>
+                      )}
+                    {chatMode === "kosmora" &&
+                      message.status === "completed" &&
+                      message.content.trim() && (
+                        <button
+                          type="button"
+                          className="kosmora-actions-trigger"
+                          disabled={sending || loading || executionGate !== "clear"}
+                          onClick={() => void submit(undefined, undefined, message.content)}
+                        >
+                          Искать в интернете
+                        </button>
+                      )}
                     <ChatMessageAttachments files={message.attachments ?? []} />
                   </div>
                 </article>

@@ -1,0 +1,47 @@
+{
+  "note": "Синтетический пакет BIZ-040: обычный PDF, скан и документ без поля. Текст страниц уже извлечён существующим PDF/OCR конвейером (studio-files-library-client + library-scan-ocr).",
+  "fields": [
+    {
+      "key": "contract",
+      "label": "Номер договора",
+      "patterns": ["№\\s*([0-9]{5})"],
+      "critical": true
+    },
+    { "key": "amount", "label": "Сумма", "patterns": ["Сумма:\\s*([0-9]+)"], "critical": true },
+    { "key": "date", "label": "Срок", "patterns": ["Срок:\\s*([0-9]+ [а-я]+ [0-9]{4})"] },
+    { "key": "counterparty", "label": "Контрагент", "patterns": ["Контрагент:\\s*([^\\n]+)"] },
+    {
+      "key": "penalty",
+      "label": "Неустойка",
+      "patterns": ["Неустойка:\\s*([0-9]+)"],
+      "critical": true
+    }
+  ],
+  "pages": [
+    {
+      "file_name": "contract.pdf",
+      "page": 2,
+      "source": "pdf_text",
+      "text": "Договор № 00123\nСумма: 19700\nСрок: 12 октября 2027\nКонтрагент: ООО Ромашка"
+    },
+    {
+      "file_name": "contract.pdf",
+      "page": 3,
+      "source": "pdf_text",
+      "text": "Сумма: 19700\nПодпись: директор"
+    },
+    {
+      "file_name": "scan.png.pdf",
+      "page": 1,
+      "source": "ocr",
+      "image_verified": true,
+      "text": "Dоговор № 00l23\nСумма: 197O0\nКонтрагент: ООО Ромашка"
+    },
+    {
+      "file_name": "invoice.pdf",
+      "page": 1,
+      "source": "pdf_text",
+      "text": "Счёт № 44\nОплата: 1200"
+    }
+  ]
+}

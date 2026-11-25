@@ -4,10 +4,8 @@ import type { WebSearch } from "./web-search.js";
 
 /** Owner-requested Kosmora action could not be prepared before dispatch. */
 export class ChatActionError extends Error {
-  readonly code: "SEARCH_UNAVAILABLE";
-  constructor(code: "SEARCH_UNAVAILABLE") {
+  constructor(readonly code: "SEARCH_UNAVAILABLE" | "SEARCH_EMPTY") {
     super(code);
-    this.code = code;
     this.name = "ChatActionError";
   }
 }
@@ -69,7 +67,9 @@ export async function applyKosmoraActions(
     if (!search?.configured) throw new ChatActionError("SEARCH_UNAVAILABLE");
     const query = latest.content.replace(/\s+/g, " ").trim().slice(0, 240);
     try {
-      blocks.push(searchResultBlock(await search.search(query, signal)));
+      const result = await search.search(query, signal);
+      if (!result.items.length) throw new ChatActionError("SEARCH_EMPTY");
+      blocks.push(searchResultBlock(result));
     } catch (cause) {
       signal.throwIfAborted();
       throw cause instanceof ChatActionError ? cause : new ChatActionError("SEARCH_UNAVAILABLE");

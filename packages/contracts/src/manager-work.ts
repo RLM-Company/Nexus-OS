@@ -20,6 +20,17 @@ export const CreateManagerWorkSchema = Type.Object(
           { additionalProperties: false }
         ),
         Type.Object({ kind: Type.Literal("website") }, { additionalProperties: false }),
+        Type.Object({ kind: Type.Literal("supplier_comparison") }, { additionalProperties: false }),
+        Type.Object(
+          {
+            kind: Type.Union([
+              Type.Literal("pdf_field_register"),
+              Type.Literal("version_change_report")
+            ]),
+            input: Type.String({ minLength: 1, maxLength: 240_000 })
+          },
+          { additionalProperties: false }
+        ),
         Type.Object({ kind: Type.Literal("game_project") }, { additionalProperties: false }),
         Type.Object(
           {

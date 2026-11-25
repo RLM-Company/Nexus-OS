@@ -20,7 +20,7 @@ import { aiWorkChainGoal, aiWorkChainSource, requestsAiWorkChain } from "./ai-wo
 
 type Work = {
   id: string;
-  request?: { goal: string };
+  request?: Pick<CreateManagerWork, "goal" | "output_contract">;
   version: number;
   status: string;
   stage: string;
@@ -34,6 +34,47 @@ type Work = {
   result_accepted_at?: string | null;
   events: { sequence: number; message: string; at: string }[];
 };
+const businessLabels = {
+  supplier_comparison: "Сравнить поставщиков",
+  pdf_field_register: "Извлечь поля из PDF",
+  version_change_report: "Сравнить версии данных"
+} as const;
+
+type BusinessKind = keyof typeof businessLabels;
+
+function businessKind(request?: Work["request"]): BusinessKind | "" {
+  const kind = request?.output_contract?.kind;
+  return kind === "supplier_comparison" ||
+    kind === "pdf_field_register" ||
+    kind === "version_change_report"
+    ? kind
+    : "";
+}
+
+function requestInput(request: CreateManagerWork): string {
+  const output = request.output_contract;
+  return output && "input" in output ? output.input : request.goal;
+}
+
+const supplierExample = {
+  requirements: [{ itemId: "item-1", label: "Крепёж", quantity: 10, unit: "шт" }],
+  offers: [
+    {
+      supplier: "Поставщик А",
+      currency: "RUB",
+      deliveryDays: 3,
+      additionalCosts: [],
+      lines: [{ itemId: "item-1", quantity: 10, unit: "шт", unitPrice: 25 }]
+    },
+    {
+      supplier: "Поставщик Б",
+      currency: "RUB",
+      deliveryDays: 5,
+      lines: [{ itemId: "item-1", quantity: 8, unit: "шт", unitPrice: 22 }]
+    }
+  ]
+};
+
 const isActive = (item: Work) => !["completed", "failed", "cancelled"].includes(item.status);
 const labels: Record<string, string> = {
   queued: "В очереди",
@@ -46,6 +87,9 @@ const labels: Record<string, string> = {
   cancelled: "Отменено"
 };
 const errors: Record<string, string> = {
+  INVALID_BUSINESS_INPUT: "Проверьте исходные данные выбранного отчёта и запустите задачу снова.",
+  BUSINESS_REPORT_TOO_LARGE:
+    "Отчёт слишком большой. Сократите число позиций и запустите сравнение снова.",
   INVALID_MODEL_OUTPUT:
     "Модель вернула результат неподходящего формата. Автоматического платного повтора не будет.",
   EXECUTION_BUDGET_EXCEEDED: "Достигнут заданный предел запросов или токенов.",
@@ -112,11 +156,16 @@ async function json<T>(url: string, init?: RequestInit, onMissing?: () => T): Pr
 function readPendingWork(key: string): CreateManagerWork | null {
   try {
     const raw = window.sessionStorage.getItem(key);
-    if (!raw || raw.length > 50_000) return null;
+    if (!raw || raw.length > 1_500_000) return null;
     const draft = JSON.parse(raw) as Partial<CreateManagerWork> | null;
     if (
       !draft ||
-      ![4, 7].includes(Object.keys(draft).length) ||
+      ![4, 5, 7].includes(Object.keys(draft).length) ||
+      (Object.keys(draft).length === 5 && !businessKind(draft as CreateManagerWork)) ||
+      (draft.output_contract &&
+        "input" in draft.output_contract &&
+        (typeof draft.output_contract.input !== "string" ||
+          draft.output_contract.input.length > 240_000)) ||
       typeof draft.client_request_id !== "string" ||
       !/^[a-f0-9-]{36}$/.test(draft.client_request_id) ||
       typeof draft.goal !== "string" ||
@@ -179,6 +228,15 @@ export function ManagerWorkPanel({
   onPlanSnapshot: (graph: WorkDag) => void;
 }) {
   const [goal, setGoal] = useState(initialGoal);
+  const [reportKind, setReportKind] = useState<BusinessKind | "">("");
+  const supplierComparison = reportKind === "supplier_comparison";
+  const [pdfFields, setPdfFields] = useState("");
+  const [pdfStatus, setPdfStatus] = useState("");
+  const [beforeFile, setBeforeFile] = useState<File | null>(null);
+  const [afterFile, setAfterFile] = useState<File | null>(null);
+  const [beforeKey, setBeforeKey] = useState("1");
+  const [afterKey, setAfterKey] = useState("1");
+  const extraction = useRef<AbortController | null>(null);
   const [role, setRole] = useState<CreateManagerWork["worker_role"]>("analyst");
   const [critic, setCritic] = useState(true);
   const [work, setWork] = useState<Work | null>(null);
@@ -205,14 +263,21 @@ export function ManagerWorkPanel({
   const chainGoal = aiWorkChainGoal(goal);
   const pendingRequest =
     draft &&
-    (draft.goal === goal || draft.goal === chainGoal) &&
+    (requestInput(draft) === goal || (!reportKind && draft.goal === chainGoal)) &&
     draft.worker_role === role &&
-    Boolean(draft.require_critic) === critic
+    Boolean(draft.require_critic) === critic &&
+    businessKind(draft) === reportKind
       ? draft
       : null;
-  const chainRequested = requestsAiWorkChain(goal) || pendingRequest?.goal === chainGoal;
+  const chainRequested =
+    !reportKind && (requestsAiWorkChain(goal) || pendingRequest?.goal === chainGoal);
   const creationBlocked =
-    busy || !goal.trim() || !runtime || !historyLoaded || executionGate !== "clear";
+    busy ||
+    Boolean(pdfStatus) ||
+    !goal.trim() ||
+    !runtime ||
+    !historyLoaded ||
+    executionGate !== "clear";
   useEffect(() => {
     let active = true;
     queueMicrotask(() => {
@@ -220,8 +285,11 @@ export function ManagerWorkPanel({
       const saved = readPendingWork(pendingKey);
       if (!saved) return;
       pending.current = saved;
-      setGoal(aiWorkChainSource(saved.goal) ?? saved.goal);
+      setGoal(
+        businessKind(saved) ? requestInput(saved) : (aiWorkChainSource(saved.goal) ?? saved.goal)
+      );
       setRole(saved.worker_role);
+      setReportKind(businessKind(saved));
       setCritic(Boolean(saved.require_critic));
       setError("Подтверждение предыдущего запуска потеряно. Повтор отправит тот же запрос.");
     });
@@ -298,6 +366,97 @@ export function ManagerWorkPanel({
       );
     }
   };
+  useEffect(() => () => extraction.current?.abort(), []);
+  const importPdf = async (files: File[]) => {
+    if (!files.length || extraction.current) return;
+    const fields = pdfFields
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .map((line) => ({ label: line.replace(/^!\s*/, ""), critical: line.startsWith("!") }));
+    if (
+      !fields.length ||
+      fields.length > 24 ||
+      fields.some(({ label }) => !label || label.length > 80)
+    ) {
+      setError("Укажите от 1 до 24 названий полей длиной до 80 символов.");
+      return;
+    }
+    const controller = new AbortController();
+    extraction.current = controller;
+    setPdfStatus("Читаем PDF…");
+    setGoal("");
+    setError("");
+    try {
+      const { extractLibraryPages } = await import("./studio-files-library-client");
+      const pages = [];
+      for (const file of files) {
+        if (!/\.pdf$/i.test(file.name)) throw Error("Выберите PDF, в том числе PDF со сканами.");
+        for (const page of await extractLibraryPages(file, controller.signal, setPdfStatus)) {
+          if (page.page !== null)
+            pages.push({
+              file_name: file.name,
+              page: page.page,
+              text: page.text,
+              source: page.source
+            });
+        }
+      }
+      controller.signal.throwIfAborted();
+      const input = JSON.stringify({ fields, pages });
+      if (input.length > 240_000 || pages.length > 250)
+        throw Error(
+          "В реестр помещается до 250 страниц и 240 000 символов входных данных. Выберите меньший пакет."
+        );
+      setGoal(input);
+    } catch (cause) {
+      if (!controller.signal.aborted)
+        setError(cause instanceof Error ? cause.message : "Не удалось прочитать PDF.");
+    } finally {
+      extraction.current = null;
+      if (!controller.signal.aborted) setPdfStatus("");
+    }
+  };
+  const prepareVersions = async () => {
+    if (!beforeFile || !afterFile || busy || extraction.current) return;
+    const columns = (value: string) => value.split(",").map((part) => Number(part.trim()));
+    const beforeColumns = columns(beforeKey);
+    const afterColumns = columns(afterKey);
+    if (
+      beforeColumns.length !== afterColumns.length ||
+      [...beforeColumns, ...afterColumns].some((value) => !Number.isSafeInteger(value) || value < 1)
+    ) {
+      setError("Укажите одинаковое число номеров колонок для обеих версий.");
+      return;
+    }
+    if (beforeFile.size + afterFile.size > 240_000) {
+      setError("Выберите экспорты Studio Data общим размером до 240 КБ.");
+      return;
+    }
+    const controller = new AbortController();
+    extraction.current = controller;
+    setPdfStatus("Читаем версии…");
+    setError("");
+    setGoal("");
+    try {
+      const [before, after] = await Promise.all([beforeFile.text(), afterFile.text()]);
+      controller.signal.throwIfAborted();
+      const input = JSON.stringify({
+        before: { label: beforeFile.name, source: before },
+        after: { label: afterFile.name, source: after },
+        key: { before_columns: beforeColumns, after_columns: afterColumns }
+      });
+      if (input.length > 240_000)
+        throw Error("Размер данных для сравнения превышает 240 000 символов.");
+      setGoal(input);
+    } catch (cause) {
+      if (!controller.signal.aborted)
+        setError(cause instanceof Error ? cause.message : "Не удалось прочитать данные.");
+    } finally {
+      extraction.current = null;
+      if (!controller.signal.aborted) setPdfStatus("");
+    }
+  };
   const act = async (action?: keyof typeof MANAGER_WORK_CONTROL_EVENTS, plan = false) => {
     if ((!action || action === "resume" || action === "approve") && executionGate !== "clear")
       return;
@@ -315,12 +474,17 @@ export function ManagerWorkPanel({
         body = { version: work.version, action };
       } else {
         const requestedGoal = plan ? chainGoal : goal;
-        if (!pendingRequest || pendingRequest.goal !== requestedGoal)
+        if (!pendingRequest || requestInput(pendingRequest) !== requestedGoal)
           pending.current = {
             client_request_id: crypto.randomUUID(),
-            goal: requestedGoal,
+            goal: reportKind && !supplierComparison ? businessLabels[reportKind] : requestedGoal,
             worker_role: role,
-            require_critic: critic
+            require_critic: critic,
+            ...(reportKind === "supplier_comparison"
+              ? { output_contract: { kind: reportKind } }
+              : reportKind
+                ? { output_contract: { kind: reportKind, input: requestedGoal } }
+                : {})
           };
         body = pending.current;
         savePendingWork(pendingKey, pending.current);
@@ -454,16 +618,132 @@ export function ManagerWorkPanel({
         />
       </details>
       <label className="manager-work-field">
-        Задача
+        Тип задачи
+        <select
+          value={reportKind}
+          onChange={(event) => {
+            const value = event.target.value as BusinessKind | "";
+            setReportKind(value);
+            if (value) setCritic(false);
+            if (reportKind) setGoal("");
+          }}
+          disabled={busy || Boolean(pdfStatus) || !historyLoaded}
+        >
+          <option value="">Обычная задача</option>
+          {Object.entries(businessLabels).map(([kind, label]) => (
+            <option value={kind} key={kind}>
+              {label}
+            </option>
+          ))}
+        </select>
+      </label>
+      {reportKind === "pdf_field_register" && (
+        <>
+          <label className="manager-work-field">
+            Названия полей по одному на строку. Начните с ! для критичного поля
+            <textarea
+              value={pdfFields}
+              onChange={(event) => setPdfFields(event.target.value)}
+              rows={3}
+              disabled={busy || Boolean(pdfStatus)}
+            />
+          </label>
+          <label className="manager-work-field">
+            PDF и сканы в PDF
+            <input
+              type="file"
+              accept=".pdf"
+              multiple
+              disabled={busy || Boolean(pdfStatus) || !historyLoaded}
+              onChange={(event) => {
+                const files = Array.from(event.currentTarget.files ?? []);
+                event.currentTarget.value = "";
+                void importPdf(files);
+              }}
+            />
+          </label>
+          <p>Значения извлекаются из строк вида «Название: значение».</p>
+        </>
+      )}
+      {reportKind === "version_change_report" && (
+        <>
+          <label className="manager-work-field">
+            Прежняя версия Studio Data
+            <input
+              type="file"
+              accept=".json"
+              disabled={busy || Boolean(pdfStatus)}
+              onChange={(event) => {
+                setBeforeFile(event.target.files?.[0] ?? null);
+                setGoal("");
+              }}
+            />
+          </label>
+          <label className="manager-work-field">
+            Новая версия Studio Data
+            <input
+              type="file"
+              accept=".json"
+              disabled={busy || Boolean(pdfStatus)}
+              onChange={(event) => {
+                setAfterFile(event.target.files?.[0] ?? null);
+                setGoal("");
+              }}
+            />
+          </label>
+          <label className="manager-work-field">
+            Колонки ключа в прежней версии, через запятую
+            <input
+              value={beforeKey}
+              disabled={busy || Boolean(pdfStatus)}
+              onChange={(event) => {
+                setBeforeKey(event.target.value);
+                setGoal("");
+              }}
+            />
+          </label>
+          <label className="manager-work-field">
+            Колонки ключа в новой версии, через запятую
+            <input
+              value={afterKey}
+              disabled={busy || Boolean(pdfStatus)}
+              onChange={(event) => {
+                setAfterKey(event.target.value);
+                setGoal("");
+              }}
+            />
+          </label>
+          <button
+            type="button"
+            disabled={busy || Boolean(pdfStatus) || !beforeFile || !afterFile}
+            onClick={() => void prepareVersions()}
+          >
+            Подготовить версии
+          </button>
+        </>
+      )}
+      {pdfStatus && <p role="status">{pdfStatus}</p>}
+      <label className="manager-work-field">
+        {reportKind ? "Данные отчёта (JSON)" : "Задача"}
         <textarea
-          aria-label="Задача для выполнения"
+          aria-label={reportKind ? "Данные отчёта (JSON)" : "Задача для выполнения"}
+          placeholder={supplierComparison ? '{"requirements":[…],"offers":[…]}' : undefined}
           value={goal}
-          maxLength={8000}
+          maxLength={reportKind && !supplierComparison ? 240_000 : 8000}
           rows={4}
           onChange={(e) => setGoal(e.target.value)}
-          disabled={busy || !historyLoaded}
+          disabled={busy || Boolean(pdfStatus) || !historyLoaded}
         />
       </label>
+      {supplierComparison && !goal.trim() && (
+        <button
+          type="button"
+          disabled={busy || !historyLoaded}
+          onClick={() => setGoal(JSON.stringify(supplierExample, null, 2))}
+        >
+          Вставить пример предложений
+        </button>
+      )}
       <label className="manager-work-field">
         Исполнитель{" "}
         <select
@@ -494,9 +774,13 @@ export function ManagerWorkPanel({
         disabled={creationBlocked || (chainRequested && chainGoal.length > 8000)}
         onClick={() => void act(undefined, chainRequested)}
       >
-        {chainRequested ? "Построить цепочку с ИИ" : "Создать файлы"}
+        {reportKind
+          ? businessLabels[reportKind]
+          : chainRequested
+            ? "Построить цепочку с ИИ"
+            : "Создать файлы"}
       </button>
-      {!chainRequested && (
+      {!chainRequested && !reportKind && (
         <button
           type="button"
           disabled={creationBlocked || chainGoal.length > 8000 || Boolean(pendingRequest)}
@@ -534,9 +818,11 @@ export function ManagerWorkPanel({
                 }}
               >
                 <span>
-                  {item.request?.goal
-                    ? (aiWorkChainSource(item.request.goal) ?? item.request.goal)
-                    : `Задача ${index + 1}`}
+                  {businessKind(item.request)
+                    ? businessLabels[businessKind(item.request) as BusinessKind]
+                    : item.request?.goal
+                      ? (aiWorkChainSource(item.request.goal) ?? item.request.goal)
+                      : `Задача ${index + 1}`}
                 </span>
                 <small>{labels[item.status] ?? "Состояние неизвестно"}</small>
               </button>
