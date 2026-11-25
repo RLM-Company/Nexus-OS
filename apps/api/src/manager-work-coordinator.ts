@@ -365,7 +365,8 @@ export class ManagerWorkCoordinator {
       this.dependencies.store.contextMemory.resolve(
         { kind: "project", id: work.project_id },
         work.owner_id,
-        work.request.goal
+        work.request.goal,
+        this.dependencies.sourceStore?.excludedSourceIds(work.project_id, work.owner_id) ?? []
       );
     const personalSkills =
       this.dependencies.store.skills.forWork(work.id, work.owner_id)?.items ?? [];
@@ -542,18 +543,21 @@ export class ManagerWorkCoordinator {
       }
     }, 50);
     try {
+      const sourceStore = this.dependencies.sourceStore;
+      const excluded = sourceStore
+        ? sourceStore.excludedSourceIds(work.project_id, work.owner_id)
+        : [];
       const recalled = await store.contextMemory.resolveAsync(
         { kind: "project", id: work.project_id },
         work.owner_id,
         work.request.goal,
-        [],
+        excluded,
         6000,
         controller.signal
       );
       controller.signal.throwIfAborted();
       const request = this.request(work, runId, recalled);
       const snapshot = contextMemoryUsage(request);
-      const sourceStore = this.dependencies.sourceStore;
       if (sourceStore) {
         const sources = usedSourcesFromContext(snapshot, recalled);
         if (sources.length)

@@ -541,6 +541,87 @@ describe("durable Manager work", () => {
     });
     expect(source.reference.length).toBeGreaterThanOrEqual(3);
   });
+  it("applies an exclusion to the next formed Koswork request but keeps the old receipt", async () => {
+    const seen: string[] = [];
+    const ids: Record<string, string> = {};
+    const prepare = (store: ManagerWorkStore, projectId: string, projects: ProjectStore) => {
+      for (const [key, text] of [
+        ["a", "Ключ 19 700 в проекте"],
+        ["b", "Ключ 18 000 в проекте"]
+      ] as const) {
+        const message = projects.createMessage(projectId, text, `msg-${key}`, "local-owner")!;
+        projects.failRun(message.run.id, "FIXTURE_IDLE");
+        ids[key] = message.userMessage.id;
+        store.contextMemory.create(
+          {
+            scope: "project",
+            scope_id: projectId,
+            kind: "constraint",
+            title: `Источник ${key}`,
+            content: text,
+            pinned: true,
+            expires_at: null,
+            source: { kind: "project_message", message_id: message.userMessage.id, quote: text }
+          } as never,
+          "local-owner"
+        );
+      }
+      store.contextMemory.updateSettings(
+        { kind: "project", id: projectId },
+        {
+          enabled: true,
+          use_personal: false,
+          source_chat_ids: [],
+          project_ids: [projectId],
+          expected_version: 0
+        },
+        "local-owner"
+      );
+    };
+    const f = await fixture({
+      prepareMemory: prepare,
+      onCall: (req) => {
+        seen.push(req.messages.find((m) => m.role === "user")?.content ?? "");
+        return Promise.resolve();
+      }
+    });
+    await f.coordinator.execute(f.work.id, "local-owner");
+    expect(f.get().status).toBe("completed");
+    const usage = f.store.contextMemory.usage({ kind: "project", id: f.project.id }, "local-owner")
+      .items;
+    const sourceStore = f.dependencies.sourceStore!;
+    const runOne = usage[0]?.run_id;
+    expect(runOne).toBeTruthy();
+    const first = sourceStore.runSources(f.project.id, "local-owner", runOne);
+    expect(first.sources.length).toBeGreaterThanOrEqual(2);
+
+    sourceStore.updateExclusions(f.project.id, "local-owner", {
+      expected_version: 1,
+      exclusions: [
+        {
+          source_kind: "project_message",
+          source_id: ids.a!,
+          excluded_at: new Date().toISOString(),
+          reason: "Устаревший материал"
+        }
+      ]
+    });
+
+    const secondWork = f.store.create(f.project.id, "local-owner", "local-owner", {
+      ...request,
+      client_request_id: "second-run"
+    })!;
+    await f.coordinator.execute(secondWork.id, "local-owner");
+    const runTwo = f.store.contextMemory.usage({ kind: "project", id: f.project.id }, "local-owner")
+      .items[0]!.run_id;
+    const second = sourceStore.runSources(f.project.id, "local-owner", runTwo);
+    expect(second.sources.map((s) => s.quote).join(" ")).not.toContain("19 700");
+    expect(second.sources.map((s) => s.quote).join(" ")).toContain("18 000");
+    const history = sourceStore.runSources(f.project.id, "local-owner", runOne);
+    expect(history.sources).toEqual(first.sources); // immutable old run
+    expect(history.excluded_now).toContain(ids.a!);
+    expect(seen.length).toBeGreaterThan(1);
+  });
   it("drops only optional recall to finish within the remaining task input budget", async () => {
     const requests: ModelRequest[] = [];
     const f = await fixture({
@@ -1767,7 +1848,8 @@ describe("durable Manager work", () => {
       projects: new ProjectStore(reopened.sqlite),
       policy: new PolicyStore(reopened.sqlite),
       emergency: new EmergencyStopStore(reopened.sqlite),
-      ownerBudget: new AccountStore(reopened.sqlite)
+      ownerBudget: new AccountStore(reopened.sqlite),
+      sourceStore: new ProjectSourceStore(reopened.sqlite)
     });
     const restored = store.get(f.work.id, "local-owner")!;
     coordinator.control(restored.id, "local-owner", restored.version, "approve");
