@@ -167,7 +167,7 @@ import {
   type UsageStore
 } from "@cosmora/db";
 import type { ScheduledDispatchStore } from "@cosmora/db";
-import type { ProjectCorrectionRuleStore } from "@cosmora/db";
+import type { ProjectCorrectionRuleStore, ProjectSourceStore } from "@cosmora/db";
 import {
   GatewayRunError,
   type ModelGateway,
@@ -268,7 +268,7 @@ export interface AppDependencies {
   registration?: RegistrationOptions;
   generalChatStore?: GeneralChatStore;
   projectStore?: ProjectStore;
-  projectSourceStore?: import("@cosmora/db").ProjectSourceStore;
+  projectSourceStore?: ProjectSourceStore;
   demoManagerStore?: DemoManagerStore;
   demoManagerCoordinator?: DemoManagerCoordinator;
   managerWorkStore?: ManagerWorkStore;
