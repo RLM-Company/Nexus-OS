@@ -1,6 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { randomBytes, randomUUID } from "node:crypto";
-import { ManagerService } from "@cosmora/core";
 import { loadServerConfig } from "@cosmora/config";
 import {
   openDatabase,
@@ -199,7 +198,7 @@ describe("Koswork local executor scenarios", () => {
         const decision = await s.next(i);
         kinds.push((decision.action as { kind: string }).kind);
       } catch (error) {
-        throw new Error(`step ${i}: ${(error as Error).message}`);
+        throw new Error(`step ${i}: ${(error as Error).message}`, { cause: error });
       }
     }
     expect(kinds).toEqual(decisions.map((d) => d.kind));
@@ -274,7 +273,7 @@ describe("Koswork local executor scenarios", () => {
       max_steps: 8,
       execution_mode: "work"
     });
-    expect(reconnected).toMatchObject({ id: expect.any(String) });
+    expect(typeof reconnected.id).toBe("string");
     expect(reconnected.id).not.toBe(s.requestId);
     expect(() =>
       s.service.authorize("local-owner", s.projectId, s.requestId, s.secret, {
