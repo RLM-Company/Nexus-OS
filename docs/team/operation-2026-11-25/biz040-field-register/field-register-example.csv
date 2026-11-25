@@ -1,0 +1,6 @@
+﻿field_key,field,value,file_name,page,source,verification_status,critical,note
+contract,Номер договора,00123,contract.pdf,2,pdf_text,critical_unverified,yes,Критичное поле не сверено с изображением страницы.
+amount,Сумма,19700,contract.pdf,2,pdf_text,contradiction,yes,"Противоречие: ""19700"", ""197""."
+date,Срок,12 октября 2027,contract.pdf,2,pdf_text,text_verified,no,Извлечено из встроенного текста PDF; изображение не проверялось.
+counterparty,Контрагент,ООО Ромашка,contract.pdf,2,pdf_text,image_verified,no,Значение сверено с изображением страницы.
+penalty,Неустойка,,,,,missing,yes,Поле не найдено ни в одном выбранном файле.
