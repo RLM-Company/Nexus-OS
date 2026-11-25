@@ -95,7 +95,9 @@ test("B5 rewrites just the selected fragment, retains it across reload and suppo
   await source.getByText("Исходный фрагмент", { exact: true }).click();
   await expect(source.locator("blockquote")).toHaveText(original);
   await run();
-  await expect(page.getByText("Просим ответить сегодня.", { exact: true })).toHaveCount(2);
+  const versions = page.locator(".message.assistant").filter({ hasText: "Новая версия" });
+  await expect(versions).toHaveCount(2);
+  await expect(versions.getByText("Просим ответить сегодня.", { exact: true })).toHaveCount(2);
 });
 
 test("B5 rejects empty and oversized selections and preserves the draft", async ({ page }) => {
