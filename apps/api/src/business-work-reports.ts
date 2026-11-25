@@ -11,6 +11,7 @@ import {
   compareSupplierOffers,
   extractFieldRegister,
   fieldRegisterCsv,
+  resolveSupplierRules,
   type VersionChangeInput
 } from "@cosmora/core";
 import { Type } from "typebox";
@@ -82,12 +83,16 @@ export function buildBusinessWorkFiles(work: ManagerWork): ManagerWorkFiles {
   const output = request.output_contract;
   if (output?.kind === "supplier_comparison") {
     const input = JSON.parse(request.goal) as Parameters<typeof compareSupplierOffers>[0];
-    const result = compareSupplierOffers(input);
+    const rules = work.correction_rules ?? [];
+    const ruleResult = resolveSupplierRules(rules);
+    const result = compareSupplierOffers(input, {
+      separateDelivery: ruleResult.applied_rule_versions.length > 0
+    });
     const files = [
       { name: "supplier-comparison.csv", content: result.csv },
       { name: "supplier-comparison.md", content: result.markdown }
     ];
-    if (work.supplier_handoff) {
+    if (work.supplier_handoff || rules.length > 0) {
       const disputes: SupplierWorkEvidence["disputes"] = [];
       for (const row of result.rows) {
         for (const line of row.lines)
@@ -110,7 +115,14 @@ export function buildBusinessWorkFiles(work: ManagerWork): ManagerWorkFiles {
       const evidence: SupplierWorkEvidence = {
         format: "kosmora.supplier-comparison-evidence.v1",
         input_sha256: createHash("sha256").update(request.goal).digest("hex"),
-        source_files: work.supplier_handoff.inputs,
+        source_files: work.supplier_handoff?.inputs ?? [],
+        applied_rule_versions: ruleResult.applied_rule_versions.flatMap((applied) => {
+          const rule = rules.find((item) => item.id === applied.id);
+          return rule ? [{ ...applied, name: rule.name }] : [];
+        }),
+        ignored_rules: rules
+          .filter((rule) => ruleResult.ignored_rules.includes(rule.id))
+          .map(({ id, name, version }) => ({ id, name, version })),
         checks: [
           "Проверена уникальность поставщиков и кодов позиций.",
           "Сопоставлены комплектация, единицы и цены по точному коду позиции.",
@@ -122,11 +134,7 @@ export function buildBusinessWorkFiles(work: ManagerWork): ManagerWorkFiles {
         { name: "supplier-input.json", content: request.goal },
         {
           name: "supplier-evidence.json",
-          content: JSON.stringify(
-            { ...evidence, source_files: work.supplier_handoff.inputs },
-            null,
-            2
-          )
+          content: JSON.stringify(evidence, null, 2)
         }
       );
     }

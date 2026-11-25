@@ -1,10 +1,8 @@
-import { randomUUID } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
 import { Value } from "typebox/value";
 import {
   RunSourcesInputSchema,
   SourceExclusionsInputSchema,
-  UsedSourceSchema,
   type RunSourcesInput,
   type RunSourcesView,
   type SourceExclusionsInput,
@@ -123,11 +121,6 @@ export class ProjectSourceStore {
           "INSERT INTO project_run_sources(owner_id,project_id,run_id,at,sources_json) VALUES(?,?,?,?,?)"
         )
         .run(owner, projectId, input.run_id, new Date().toISOString(), json);
-      this.db
-        .prepare(
-          "DELETE FROM project_run_sources WHERE owner_id=? AND project_id=? AND run_id NOT IN (SELECT run_id FROM project_run_sources WHERE owner_id=? AND project_id=? ORDER BY at DESC,rowid DESC LIMIT 200)"
-        )
-        .run(owner, projectId, owner, projectId);
     }
     return this.runSources(projectId, owner, input.run_id);
   }
@@ -143,15 +136,23 @@ export class ProjectSourceStore {
     if (!row) throw new ProjectSourceError(404, "RUN_SOURCES_NOT_FOUND");
     const sources = JSON.parse(row.sources_json) as UsedSource[];
     const excluded = this.db
-      .prepare("SELECT source_id FROM project_source_exclusions WHERE owner_id=? AND project_id=?")
-      .all(owner, projectId) as { source_id: string }[];
-    const excludedIds = new Set(excluded.map((e) => e.source_id));
+      .prepare(
+        "SELECT source_kind,source_id FROM project_source_exclusions WHERE owner_id=? AND project_id=?"
+      )
+      .all(owner, projectId) as { source_kind: string; source_id: string }[];
+    const excludedIds = new Set(excluded.map((e) => e.source_kind + ":" + e.source_id));
     return {
       project_id: projectId,
       run_id: runId,
       at: row.at,
       sources,
-      excluded_now: sources.filter((s) => excludedIds.has(s.source_id)).map((s) => s.source_id)
+      excluded_now: [
+        ...new Set(
+          sources
+            .filter((s) => excludedIds.has(s.source_kind + ":" + s.source_id))
+            .map((s) => s.source_id)
+        )
+      ]
     };
   }
 
@@ -162,7 +163,7 @@ export class ProjectSourceStore {
     return (
       this.db
         .prepare(
-          "SELECT source_id FROM project_source_exclusions WHERE owner_id=? AND project_id=?"
+          "SELECT DISTINCT source_id FROM project_source_exclusions WHERE owner_id=? AND project_id=? AND source_kind IN ('chat_message','project_message')"
         )
         .all(owner, projectId) as { source_id: string }[]
     ).map((e) => e.source_id);

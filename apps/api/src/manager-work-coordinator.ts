@@ -1,3 +1,4 @@
+import { modelWorkSources, supplierWorkSources } from "./work-used-sources.js";
 import { validateGeneratedPresentation } from "@cosmora/contracts/presentation-package";
 import { parseModelJson } from "./model-json.js";
 import { businessWorkPlan, buildBusinessWorkFiles } from "./business-work-reports.js";
@@ -333,7 +334,8 @@ export class ManagerWorkCoordinator {
       this.dependencies.store.contextMemory.resolve(
         { kind: "project", id: work.project_id },
         work.owner_id,
-        work.request.goal
+        work.request.goal,
+        this.dependencies.store.sources.excludedSourceIds(work.project_id, work.owner_id)
       );
     const personalSkills =
       this.dependencies.store.skills.forWork(work.id, work.owner_id)?.items ?? [];
@@ -514,7 +516,7 @@ export class ManagerWorkCoordinator {
         { kind: "project", id: work.project_id },
         work.owner_id,
         work.request.goal,
-        [],
+        store.sources.excludedSourceIds(work.project_id, work.owner_id),
         6000,
         controller.signal
       );
@@ -569,6 +571,10 @@ export class ManagerWorkCoordinator {
             throw new Error("PROJECT_USAGE_RESERVATION_FAILED");
           // Once this iteration resumes, provider dispatch can happen. Failures are uncertain.
           memoryUsage(event.route.attempt, "dispatch_boundary");
+          store.sources.recordRunSources(work.project_id, work.owner_id, {
+            run_id: runId,
+            sources: modelWorkSources(work, snapshot)
+          });
           dispatchAllowed = true;
         } else if (event.type === "route.failed") {
           projects.failModelUsage(runId, event.route.attempt, event.errorCode);
@@ -852,6 +858,11 @@ export class ManagerWorkCoordinator {
             value = buildBusinessWorkFiles(work);
             if (!Value.Check(ManagerWorkFilesSchema, value))
               throw Error("BUSINESS_REPORT_TOO_LARGE");
+            if (work.request.output_contract?.kind === "supplier_comparison")
+              store.sources.recordRunSources(work.project_id, work.owner_id, {
+                run_id: work.id,
+                sources: supplierWorkSources(work)
+              });
           }
         } catch (error) {
           if (error instanceof Error && error.message === "BUSINESS_REPORT_TOO_LARGE") throw error;

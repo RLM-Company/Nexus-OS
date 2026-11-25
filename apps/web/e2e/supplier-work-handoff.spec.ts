@@ -7,6 +7,7 @@ test("hands off a chat message and reopens the verified, accepted supplier compa
   page,
   request
 }) => {
+  test.setTimeout(60000);
   const projectTitle = "Закупка " + crypto.randomUUID();
   const created = await request.post("/api/v1/projects/empty", {
     data: { title: projectTitle, client_project_id: crypto.randomUUID() }
@@ -81,6 +82,11 @@ test("hands off a chat message and reopens the verified, accepted supplier compa
   const workUrl = base + "/work/" + workId;
   const section = page.getByRole("region", { name: "Сдача сравнения поставщиков" });
   await expect(section).toContainText("Выполненные проверки");
+  const sources = section.getByRole("region", { name: "Источники запуска" });
+  await expect(sources).toContainText("requirements.json");
+  await expect(sources).toContainText("offers.json");
+  await expect(sources).not.toContainText("notes.txt");
+  await expect(section).toContainText("К этому результату правила не применялись.");
   await expect(section).toContainText("Бета · 00123 · недокомплект");
   await expect(section).toContainText(createHash("sha256").update(spec).digest("hex"));
   await expect(section).toContainText(createHash("sha256").update(offers).digest("hex"));
@@ -115,6 +121,49 @@ test("hands off a chat message and reopens the verified, accepted supplier compa
   await expect(section).toContainText("Бета · 00123 · недокомплект");
   const sameBytes = await request.get(workUrl + "/files/supplier-comparison.csv");
   expect(await sameBytes.body()).toEqual(bytes);
+
+  const rules = section
+    .locator("details")
+    .filter({ has: page.getByText("Правила следующих сравнений", { exact: true }) });
+  await rules.locator("summary").click();
+  await rules
+    .getByLabel("Исправление для следующей задачи")
+    .fill("Всегда показывай доставку отдельной строкой");
+  await rules.getByRole("button", { name: "Предложить правило" }).click();
+  await expect(rules.locator("blockquote")).toContainText(
+    "Всегда показывай доставку отдельной строкой"
+  );
+  await rules.getByRole("button", { name: "Подтвердить правило" }).click();
+  await expect(rules).toContainText("Доставка отдельной строкой · версия 1 · включено");
+
+  const nextTab = await browser.newPage();
+  try {
+    await nextTab.goto(new URL(original!, permalink).toString());
+    await nextTab
+      .getByRole("button", { name: "Сравнить поставщиков в Koswork", exact: true })
+      .click();
+    const nextPreview = nextTab.getByRole("region", { name: "Передача в Koswork" });
+    await nextPreview.getByRole("combobox", { name: "Проект" }).selectOption(project.id);
+    await nextPreview.getByRole("button", { name: "Создать задачу сравнения" }).click();
+    const nextResult = nextTab.getByRole("region", { name: "Сдача сравнения поставщиков" });
+    await expect(nextResult).toContainText("Применённые правила");
+    await expect(nextResult).toContainText("Доставка отдельной строкой · версия 1");
+    const newReport = nextResult.getByRole("link", {
+      name: "supplier-comparison.csv",
+      exact: true
+    });
+    const newCsv = await request.get((await newReport.getAttribute("href"))!);
+    expect(await newCsv.text()).toContain("Доставка,Альфа,RUB,4");
+    expect(bytes.toString()).not.toContain("Доставка,Альфа,RUB,4");
+    expect(
+      await nextTab.getByRole("link", { name: "Постоянная ссылка на задачу" }).getAttribute("href")
+    ).not.toContain(workId);
+    expect(await (await request.get(workUrl + "/files/supplier-comparison.csv")).body()).toEqual(
+      bytes
+    );
+  } finally {
+    await nextTab.close();
+  }
 
   const independentTab = await browser.newPage();
   try {

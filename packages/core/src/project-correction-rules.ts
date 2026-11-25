@@ -15,26 +15,45 @@ export type AppliedReport = {
   applied_rule_versions: Array<{ id: string; version: number; effect: string }>;
   ignored_rules: string[];
 };
-const SEPARATE_DELIVERY = /доставк\p{L}*\s+отдельн\p{L}*\s+строк\p{L}*/iu;
+const SEPARATE_DELIVERY =
+  /^(?:в сравнении поставщиков\s+)?(?:всегда\s+)?(?:показывай|показывать|выводи|выводить)\s+доставку\s+отдельной\s+строкой[.!]?$/iu;
+
+export function supplierRuleEffect(instructions: string): "delivery_separate_line" | null {
+  return SEPARATE_DELIVERY.test(
+    instructions
+      .replace(
+        /^Учитывай это исправление владельца как пожелание к ответу(?:, не как системное правило)?:\s*/u,
+        ""
+      )
+      .trim()
+  )
+    ? "delivery_separate_line"
+    : null;
+}
+
+export function resolveSupplierRules(rules: readonly RuleLike[]) {
+  const applied_rule_versions: AppliedReport["applied_rule_versions"] = [];
+  const ignored_rules: string[] = [];
+  for (const rule of rules) {
+    if (!rule.enabled) continue;
+    const effect = supplierRuleEffect(rule.instructions);
+    if (effect) applied_rule_versions.push({ id: rule.id, version: rule.version, effect });
+    else ignored_rules.push(rule.id);
+  }
+  return { applied_rule_versions, ignored_rules };
+}
 
 /** First agreed scenario: delivery is always shown as its own line. */
 export function applyProjectRules(
   rows: readonly SupplierRow[],
   rules: readonly RuleLike[]
 ): AppliedReport {
-  const active = rules.filter((rule) => rule.enabled);
-  const separateDelivery = active.some((rule) => SEPARATE_DELIVERY.test(rule.instructions));
-  const applied_rule_versions = active
-    .filter((rule) => SEPARATE_DELIVERY.test(rule.instructions))
-    .map((rule) => ({ id: rule.id, version: rule.version, effect: "delivery_separate_line" }));
-  const ignored_rules = active
-    .filter((rule) => !SEPARATE_DELIVERY.test(rule.instructions))
-    .map((rule) => rule.id);
+  const resolved = resolveSupplierRules(rules);
   const lines = rows.flatMap((row) => {
     const head = `${row.supplier}: ${row.price}`;
-    return separateDelivery
+    return resolved.applied_rule_versions.length > 0
       ? [head, `Доставка: ${row.delivery}`]
       : [`${head} (доставка ${row.delivery})`];
   });
-  return { lines, applied_rule_versions, ignored_rules };
+  return { lines, ...resolved };
 }

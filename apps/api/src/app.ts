@@ -726,6 +726,10 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
   const runObservers = new Set<AbortController>();
   const managerRunsExecuteInBackground = dependencies.managerRunExecutionMode === "background";
   const runtimeMetrics = dependencies.runtimeMetrics ?? new RuntimeMetrics();
+  const projectSourceStore =
+    dependencies.projectSourceStore ?? dependencies.managerWorkStore?.sources;
+  const projectCorrectionRuleStore =
+    dependencies.projectCorrectionRuleStore ?? dependencies.managerWorkStore?.correctionRules;
   const requestIdentities = new WeakMap<FastifyRequest, IdentityContext>();
   const identityFor = (request: FastifyRequest): IdentityContext => {
     const identity = requestIdentities.get(request);
@@ -982,10 +986,10 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
       ...(dependencies.managerWorkStore ? { works: dependencies.managerWorkStore } : {}),
       identityFor
     });
-  if (dependencies.projectCorrectionRuleStore)
+  if (projectCorrectionRuleStore)
     registerProjectCorrectionRuleRoutes({
       app,
-      store: dependencies.projectCorrectionRuleStore,
+      store: projectCorrectionRuleStore,
       identityFor
     });
   registerWebSearchRoutes(app, dependencies.webSearch ?? new WebSearch());
@@ -1551,12 +1555,11 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
       dependencies.generalChatStore.contextMemory,
       identityFor,
       (target, owner) =>
-        target.kind === "project" && dependencies.projectSourceStore
-          ? dependencies.projectSourceStore.excludedSourceIds(target.id, owner)
+        target.kind === "project" && projectSourceStore
+          ? projectSourceStore.excludedSourceIds(target.id, owner)
           : []
     );
-  if (dependencies.projectSourceStore)
-    registerProjectSourceRoutes(app, dependencies.projectSourceStore, identityFor);
+  if (projectSourceStore) registerProjectSourceRoutes(app, projectSourceStore, identityFor);
   if (dependencies.generalChatStore && dependencies.modelGateway && dependencies.chat) {
     registerHistoryCompactionRoutes(
       app,

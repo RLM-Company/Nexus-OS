@@ -147,10 +147,20 @@ export interface SupplierWorkHandoff {
   inputs: { name: string; sha256: string }[];
 }
 
+export interface WorkCorrectionRule {
+  id: string;
+  name: string;
+  instructions: string;
+  version: number;
+  enabled: boolean;
+}
+
 export interface SupplierWorkEvidence {
   format: "kosmora.supplier-comparison-evidence.v1";
   input_sha256: string;
   source_files: SupplierWorkHandoff["inputs"];
+  applied_rule_versions?: { id: string; name: string; version: number; effect: string }[];
+  ignored_rules?: { id: string; name: string; version: number }[];
   checks: string[];
   disputes: { supplier: string; item_id: string | null; reason: string }[];
 }
@@ -162,7 +172,9 @@ export interface ManagerWork {
   actor_id: string;
   request: CreateManagerWork;
   supplier_handoff?: SupplierWorkHandoff;
+  correction_rules?: WorkCorrectionRule[];
   materials?: {
+    version?: number;
     instructions: string;
     attachments: ChatTextAttachment[];
   };

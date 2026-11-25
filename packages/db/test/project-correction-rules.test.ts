@@ -39,8 +39,8 @@ describe("project correction rules", () => {
           ownerId: "owner",
           clientRequestId: "req-1",
           name: "Правка владельца",
-          summary: "ignored",
-          instructions: "ignored"
+          summary: first.summary,
+          instructions: first.instructions
         }).version
       ).toBe(1);
 
@@ -53,15 +53,26 @@ describe("project correction rules", () => {
         instructions: "Всегда показывай доставку отдельной строкой и срок"
       });
       expect(second.version).toBe(2);
-      expect(store.active(project, "owner").map((rule) => rule.version)).toEqual([1, 2]);
+      expect(store.active(project, "owner").map((rule) => rule.version)).toEqual([2]);
       const disabled = store.setEnabled(project, "owner", second.id, false, 2);
-      expect(disabled.enabled).toBe(false);
-      expect(store.active(project, "owner").map((rule) => rule.version)).toEqual([1]);
-      const rolledBack = store.rollback(project, "owner", second.id);
-      expect(rolledBack.version).toBe(1);
-      expect(store.active(project, "owner").map((rule) => rule.version)).toEqual([1]);
+      expect(disabled).toMatchObject({ enabled: false, version: 3 });
+      expect(store.active(project, "owner")).toEqual([]);
+      expect(() => store.rollback(project, "owner", second.id, 2)).toThrow("CONFLICT");
+      const rolledBack = store.rollback(project, "owner", disabled.id, 3);
+      expect(rolledBack).toMatchObject({
+        enabled: true,
+        version: 4,
+        instructions: second.instructions
+      });
+      expect(store.active(project, "owner").map((rule) => rule.version)).toEqual([4]);
       // History is immutable: both versions remain readable.
-      expect(store.list(project, "owner")).toHaveLength(2);
+      expect(store.list(project, "owner").map((rule) => rule.enabled)).toEqual([
+        true,
+        true,
+        false,
+        true
+      ]);
+      expect(() => store.list(project, "foreign")).toThrow("NOT_FOUND");
     } finally {
       db.close();
     }

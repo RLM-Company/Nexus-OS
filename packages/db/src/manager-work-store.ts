@@ -1,3 +1,5 @@
+import { ProjectCorrectionRuleStore } from "./project-correction-rule-store.js";
+import { ProjectSourceStore } from "./project-source-store.js";
 import { WorkSkillStore } from "./work-skill-store.js";
 import { WorkflowStore } from "./workflow-store.js";
 import { WorkDagStore } from "./work-dag-store.js";
@@ -30,6 +32,8 @@ export class ManagerWorkStore {
   readonly memory: ProjectMemoryStore;
   readonly contextMemory: ContextMemoryStore;
   readonly runtime: WorkRuntimeStore;
+  readonly correctionRules: ProjectCorrectionRuleStore;
+  readonly sources: ProjectSourceStore;
   private readonly maxConcurrentWork: number;
   constructor(
     private readonly sqlite: DatabaseSync,
@@ -45,6 +49,8 @@ export class ManagerWorkStore {
     this.memory = new ProjectMemoryStore(sqlite);
     this.contextMemory = new ContextMemoryStore(sqlite);
     this.runtime = new WorkRuntimeStore(sqlite);
+    this.correctionRules = new ProjectCorrectionRuleStore(sqlite);
+    this.sources = new ProjectSourceStore(sqlite);
   }
 
   /** Durable privacy fence: prevents a queued Work task from starting during export/delete. */
@@ -288,6 +294,18 @@ export class ManagerWorkStore {
     const materials = new ProjectStore(this.sqlite).getMaterials(projectId, ownerId);
     if (supplierHandoff && materials?.version !== supplierHandoff.materials_version)
       throw new ManagerWorkConflict("STALE_SUPPLIER_MATERIALS");
+    const rules =
+      request.output_contract?.kind === "supplier_comparison"
+        ? this.correctionRules
+            .active(projectId, ownerId)
+            .map(({ id, name, instructions, version, enabled }) => ({
+              id,
+              name,
+              instructions,
+              version,
+              enabled
+            }))
+        : [];
     const state: ManagerWork = {
       id: randomUUID(),
       project_id: projectId,
@@ -296,9 +314,14 @@ export class ManagerWorkStore {
       ...(dagBinding ? { dag_binding: dagBinding } : {}),
       request,
       ...(supplierHandoff ? { supplier_handoff: supplierHandoff } : {}),
+      ...(rules.length ? { correction_rules: rules } : {}),
       ...(materials && (materials.instructions || materials.attachments.length)
         ? {
-            materials: { instructions: materials.instructions, attachments: materials.attachments }
+            materials: {
+              version: materials.version,
+              instructions: materials.instructions,
+              attachments: materials.attachments
+            }
           }
         : {}),
       memory_snapshot: this.memory.snapshot(projectId, ownerId),

@@ -4,6 +4,7 @@ import { AcceptedSkillView } from "./accepted-skill-view";
 import { CodeFiles } from "./ui/code-files";
 
 import Link from "next/link";
+import { WorkResultSources } from "./work-result-sources";
 import { SupplierWorkResult } from "./supplier-work-result";
 import { WorkManagerDag } from "./work-manager-dag";
 import { WorkManagerProgress } from "./work-manager-progress";
@@ -25,6 +26,7 @@ type Work = {
   request?: Pick<CreateManagerWork, "goal" | "output_contract">;
   supplier_handoff?: ManagerWork["supplier_handoff"];
   materials?: ManagerWork["materials"];
+  result_sources?: ManagerWork["result_sources"];
   version: number;
   status: string;
   stage: string;
@@ -629,6 +631,18 @@ export function ManagerWorkPanel({
         )}
       </>
     ) : null;
+  const workIsSupplier = businessKind(work?.request) === "supplier_comparison";
+  const sourcePanel =
+    work?.status === "completed" ? (
+      <WorkResultSources
+        key={work.id}
+        projectId={projectId}
+        runIds={[
+          ...(workIsSupplier ? [work.id] : []),
+          ...(work.result_sources ?? []).map((source) => source.run_id)
+        ]}
+      />
+    ) : null;
   const active = work && isActive(work);
   const projectHasActiveWork = Boolean(active) || works.some(isActive);
   return (
@@ -988,7 +1002,7 @@ export function ManagerWorkPanel({
               Разрешения проекта
             </Link>
           )}
-          {work.supplier_handoff ? (
+          {workIsSupplier ? (
             <SupplierWorkResult
               projectId={projectId}
               workId={work.id}
@@ -1001,10 +1015,14 @@ export function ManagerWorkPanel({
                   : undefined
               }
             >
+              {sourcePanel}
               {resultControls}
             </SupplierWorkResult>
           ) : (
-            resultControls
+            <>
+              {sourcePanel}
+              {resultControls}
+            </>
           )}
         </>
       )}

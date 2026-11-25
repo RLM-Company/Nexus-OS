@@ -16,8 +16,9 @@ const identity: IdentityContext = {
   actor_kind: "owner",
   assurance: "local",
   session_id: "test",
-  authenticated_at: "2026-11-25T00:00:00.000Z"
-} as IdentityContext;
+  authenticated_at: "2026-11-25T00:00:00.000Z",
+  expires_at: "9999-12-31T23:59:59.999Z"
+};
 const setup = async () => {
   const db = openDatabase(":memory:");
   dbs.push(db);
@@ -62,6 +63,15 @@ describe("project correction rule HTTP flow", () => {
     // Повтор того же client_request_id не создаёт вторую версию.
     const replay = await post(app, `${base}/accept`, { client_request_id: "rule-1", correction });
     expect(replay.json<{ rule: { id: string } }>().rule.id).toBe(rule.id);
+
+    expect(
+      (
+        await post(app, `${base}/accept`, {
+          client_request_id: "rule-1",
+          correction: "Иное правило"
+        })
+      ).statusCode
+    ).toBe(409);
 
     const listed = await app.inject({ method: "GET", url: base });
     expect(listed.json<{ rules: unknown[] }>().rules).toHaveLength(1);

@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { openDatabase, runMigrations, ProjectStore, EmergencyStopStore } from "@cosmora/db";
 import { ProjectSourceStore } from "@cosmora/db";
 import { buildApp } from "../src/app.js";
-import type { IdentityContext } from "@cosmora/contracts";
+import type { IdentityContext, RunSourcesView, SourceExclusionsView } from "@cosmora/contracts";
 import { StaticIdentityResolver } from "../src/identity.js";
 import { loadServerConfig } from "@cosmora/config";
 
@@ -27,7 +27,7 @@ beforeEach(async () => {
   const projects = new ProjectStore(db.sqlite);
   projectId = projects.createProject("Source test", "source-test", owner.owner_id).project.id;
   const config = loadServerConfig({ NODE_ENV: "test", MOCK_PROVIDER_MODE: "success" });
-  app = await buildApp({
+  app = buildApp({
     config,
     database: db,
     projectStore: projects,
@@ -55,13 +55,17 @@ const source = (id: string, sha = "a".repeat(64)) => ({
 describe("project source usage and exclusions", () => {
   it("records two runs and keeps the first receipt immutable after exclusion", async () => {
     const base = `/api/v1/projects/${projectId}/sources`;
-    const first = await app.inject({
+    const store = new ProjectSourceStore(db.sqlite);
+    store.recordRunSources(projectId, owner.owner_id, {
+      run_id: "run-1",
+      sources: [source("msg-a"), source("msg-b")]
+    });
+    const forged = await app.inject({
       method: "POST",
       url: `${base}/run`,
-      payload: { run_id: "run-1", sources: [source("msg-a"), source("msg-b")] }
+      payload: { run_id: "run-1", sources: [source("forged")] }
     });
-    expect(first.statusCode, first.body).toBe(200);
-    expect(first.json().sources).toHaveLength(2);
+    expect(forged.statusCode).toBe(404);
 
     const excluded = await app.inject({
       method: "PUT",
@@ -79,27 +83,27 @@ describe("project source usage and exclusions", () => {
       }
     });
     expect(excluded.statusCode, excluded.body).toBe(200);
-    expect(excluded.json().version).toBe(2);
+    expect(excluded.json<SourceExclusionsView>().version).toBe(2);
 
-    const second = await app.inject({
-      method: "POST",
-      url: `${base}/run`,
-      payload: { run_id: "run-2", sources: [source("msg-b")] }
+    store.recordRunSources(projectId, owner.owner_id, {
+      run_id: "run-2",
+      sources: [source("msg-b")]
     });
+    const second = await app.inject({ url: `${base}/run/run-2` });
     expect(second.statusCode).toBe(200);
 
     const historical = await app.inject({ method: "GET", url: `${base}/run/run-1` });
     expect(historical.statusCode).toBe(200);
-    const body = historical.json();
+    const body = historical.json<RunSourcesView>();
     expect(body.sources).toHaveLength(2);
     expect(body.excluded_now).toEqual(["msg-a"]);
-    expect(body.sources[0].quote).toBe("Источник: 19 700 ₽");
-    expect(second.json().sources).toHaveLength(1);
+    expect(body.sources[0]?.quote).toBe("Источник: 19 700 ₽");
+    expect(second.json<RunSourcesView>().sources).toHaveLength(1);
   });
 
   it("refuses foreign owner and stale exclusion version", async () => {
     const base = `/api/v1/projects/${projectId}/sources`;
-    const getForeign = await buildApp({
+    const getForeign = buildApp({
       config: loadServerConfig({ NODE_ENV: "test", MOCK_PROVIDER_MODE: "success" }),
       database: db,
       projectStore: new ProjectStore(db.sqlite),
@@ -122,7 +126,7 @@ describe("project source usage and exclusions", () => {
     expect(stale.json()).toEqual({ error: { code: "SOURCE_EXCLUSIONS_VERSION_CONFLICT" } });
   });
 
-  it("revoked file access cannot write a run receipt and does not rewrite history", async () => {
+  it("revoked file access cannot write a run receipt and does not rewrite history", () => {
     const store = new ProjectSourceStore(db.sqlite);
     store.recordRunSources(projectId, owner.owner_id, {
       run_id: "run-3",

@@ -1,4 +1,4 @@
-import { writeFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
@@ -54,6 +54,17 @@ describe("project rule application — three comparable runs", () => {
     expect(accepted.version).toBe(1);
   });
 
+  it("does not invert a negated owner correction", () => {
+    const report = applyProjectRules(suppliers, [
+      {
+        ...accepted,
+        instructions: "Не показывай доставку отдельной строкой"
+      }
+    ]);
+    expect(report.applied_rule_versions).toEqual([]);
+    expect(report.ignored_rules).toEqual([accepted.id]);
+  });
+
   it("writes comparable artifacts so the change is visible in files", () => {
     const dir = join(
       process.cwd(),
@@ -70,15 +81,13 @@ describe("project rule application — three comparable runs", () => {
       ["run-3-rule-disabled.txt", [{ ...accepted, enabled: false }], []]
     ] as const) {
       const report = applyProjectRules(suppliers, rules);
-      writeFileSync(
-        join(dir, name),
+      expect(readFileSync(join(dir, name), "utf8")).toBe(
         [
           "Сравнение поставщиков",
           ...report.lines,
           `применённые версии правил: ${JSON.stringify(report.applied_rule_versions)}`,
           ""
-        ].join("\n"),
-        "utf8"
+        ].join("\n")
       );
       expect(report.applied_rule_versions).toHaveLength(versions.length);
     }

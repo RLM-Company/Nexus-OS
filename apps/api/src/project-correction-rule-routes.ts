@@ -2,7 +2,7 @@ import type { FastifyInstance, FastifyRequest } from "fastify";
 import { Type } from "typebox";
 import type { IdentityContext } from "@cosmora/contracts";
 import { ProjectCorrectionRuleError, type ProjectCorrectionRuleStore } from "@cosmora/db";
-import { proposeSkillCorrection } from "@cosmora/core";
+import { proposeSkillCorrection, supplierRuleEffect } from "@cosmora/core";
 
 const scope = Type.Object({ projectId: Type.String({ minLength: 1, maxLength: 120 }) });
 const item = Type.Object({
@@ -31,7 +31,7 @@ export function registerProjectCorrectionRuleRoutes(options: {
         .code(
           cause.code === "NOT_FOUND"
             ? 404
-            : cause.code === "CONFLICT"
+            : cause.code === "CONFLICT" || cause.code === "OWNER_DATA_FENCED"
               ? 409
               : cause.code === "NO_PREVIOUS_VERSION"
                 ? 422
@@ -50,11 +50,13 @@ export function registerProjectCorrectionRuleRoutes(options: {
         body: Type.Object({ correction: Type.String({ minLength: 2, maxLength: 2000 }) })
       }
     },
-    (_request, reply) => {
+    (request, reply) => {
       reply.header("Cache-Control", "private, no-store");
       try {
-        return { draft: proposeSkillCorrection(_request.body.correction) };
-      } catch {
+        store.assertProject(request.params.projectId, identityFor(request).owner_id);
+        return { draft: proposeSkillCorrection(request.body.correction) };
+      } catch (cause) {
+        if (cause instanceof ProjectCorrectionRuleError) return fail(reply, cause);
         return reply.code(400).send({ error: { code: "INVALID_CORRECTION" } });
       }
     }
@@ -66,24 +68,39 @@ export function registerProjectCorrectionRuleRoutes(options: {
   }>(`${base}/accept`, { schema: { params: scope, body: draft } }, (request, reply) => {
     reply.header("Cache-Control", "private, no-store");
     try {
+      store.assertProject(request.params.projectId, identityFor(request).owner_id);
       const proposed = proposeSkillCorrection(request.body.correction);
+      const name = supplierRuleEffect(proposed.instructions)
+        ? "Доставка отдельной строкой"
+        : proposed.name;
       const rule = store.create({
         projectId: request.params.projectId,
         ownerId: identityFor(request).owner_id,
         clientRequestId: request.body.client_request_id,
-        name: proposed.name,
+        name,
         summary: proposed.summary,
         instructions: proposed.instructions
       });
       return reply.code(201).send({ rule, draft: proposed });
     } catch (cause) {
+      if (cause instanceof Error && cause.message === "INVALID_CORRECTION")
+        return reply.code(400).send({ error: { code: cause.message } });
       return fail(reply, cause);
     }
   });
 
-  app.get<{ Params: { projectId: string } }>(base, { schema: { params: scope } }, (request) => ({
-    rules: store.list(request.params.projectId, identityFor(request).owner_id)
-  }));
+  app.get<{ Params: { projectId: string } }>(
+    base,
+    { schema: { params: scope } },
+    (request, reply) => {
+      reply.header("Cache-Control", "private, no-store");
+      try {
+        return { rules: store.list(request.params.projectId, identityFor(request).owner_id) };
+      } catch (cause) {
+        return fail(reply, cause);
+      }
+    }
+  );
 
   app.post<{
     Params: { projectId: string; id: string };
@@ -123,16 +140,17 @@ export function registerProjectCorrectionRuleRoutes(options: {
     }
   });
 
-  app.post<{ Params: { projectId: string; id: string } }>(
+  app.post<{ Params: { projectId: string; id: string }; Body: { expected_version: number } }>(
     `${base}/:id/rollback`,
-    { schema: { params: item } },
+    { schema: { params: item, body: version } },
     (request, reply) => {
       try {
         return {
           rule: store.rollback(
             request.params.projectId,
             identityFor(request).owner_id,
-            request.params.id
+            request.params.id,
+            request.body.expected_version
           )
         };
       } catch (cause) {
