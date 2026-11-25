@@ -1,10 +1,8 @@
-import { randomUUID } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
 import { Value } from "typebox/value";
 import {
   RunSourcesInputSchema,
   SourceExclusionsInputSchema,
-  UsedSourceSchema,
   type RunSourcesInput,
   type RunSourcesView,
   type SourceExclusionsInput,

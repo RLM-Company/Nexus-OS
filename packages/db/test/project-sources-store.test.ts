@@ -4,7 +4,6 @@ import {
   runMigrations,
   ProjectStore,
   ProjectSourceStore,
-  ContextMemoryStore,
   GeneralChatStore
 } from "../src/index.js";
 
