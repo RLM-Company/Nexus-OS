@@ -24,6 +24,7 @@ import {
   PolicyStore,
   PatternLibraryStore,
   ScheduledDispatchStore,
+  ProjectCorrectionRuleStore,
   runMigrations,
   upgradeAccountProfileColumns,
   StepUpProofStore,
@@ -137,6 +138,7 @@ try {
   upgradeAccountProfileColumns(database.sqlite);
   const accountStore = new AccountStore(database.sqlite);
   const scheduledDispatchStore = new ScheduledDispatchStore(database.sqlite);
+  const projectCorrectionRuleStore = new ProjectCorrectionRuleStore(database.sqlite);
   const recoveredAccountHolds = accountStore.reconcileKnownCanonicalHolds();
   const modelRuntime = await buildModelRuntime(config, {
     clock: new RuntimeClock({ timeZone: process.env.KOSMORA_TIME_ZONE ?? "Europe/Moscow" }),
@@ -310,6 +312,7 @@ try {
   app = buildApp({
     mcpDiscovery: configuredMcpDiscovery(process.env),
     scheduledDispatchStore,
+    projectCorrectionRuleStore,
     indexedRecall: semanticIndex,
     semanticRanker,
     googleDrive,
