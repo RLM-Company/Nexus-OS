@@ -17,6 +17,27 @@ const originalRead = ResearchPageReader.prototype.read;
 const searchOrigin = process.env.WEB_SEARCH_ORIGIN;
 process.env.WEB_SEARCH_ORIGIN = searchOrigin || "http://127.0.0.1:8080";
 WebSearch.prototype.search = async function (query, signal, engine) {
+  if (query.startsWith("B5 ")) {
+    const fixture = new WebSearch("http://127.0.0.1:8080", () =>
+      Promise.resolve(
+        query === "B5 сбой поиска"
+          ? new Response(null, { status: 503 })
+          : Response.json({
+              results:
+                query === "B5 код демо-архива"
+                  ? [
+                      {
+                        title: "Демо-архив",
+                        url: "https://example.org/b5/archive",
+                        content: "Код архива — B5-047."
+                      }
+                    ]
+                  : []
+            })
+      )
+    );
+    return originalSearch.call(fixture, query, signal);
+  }
   if (query === researchQuestion) {
     return {
       query,
@@ -41,6 +62,46 @@ const provider = new MockProviderAdapter("slow_stream");
 const stream = provider.stream.bind(provider);
 MockProviderAdapter.prototype.stream = async function* (request, signal) {
   const prompt = [...request.messages].reverse().find((message) => message.role === "user");
+  if (prompt?.content.startsWith("B5 ")) {
+    const input = prompt.content;
+    if (input.startsWith("B5 ожидание")) {
+      yield { type: "text.delta", delta: "B5 ожидает остановки." };
+      await new Promise<void>((_resolve, reject) => {
+        const abort = () => reject(new Error("B5 fixture stopped"));
+        if (signal.aborted) abort();
+        else signal.addEventListener("abort", abort, { once: true });
+      });
+      return;
+    }
+    const answer =
+      input.includes("[kosmora_web_search]") &&
+      input.includes("B5-047") &&
+      input.includes("https://example.org/b5/archive")
+        ? "Код архива — B5-047. [Демо-архив](https://example.org/b5/archive)"
+        : input.includes("kind: explain")
+          ? "Дисперсия показывает разброс значений вокруг среднего."
+          : input.includes("kind: hint")
+            ? "Сначала раздели обе части уравнения на 2."
+            : input.includes("kind: walkthrough")
+              ? "Разделим обе части на 2: x + 3 = 5. Вычтем 3: x = 2."
+              : input.includes("kind: check")
+                ? "При x = 3 левая часть равна 12. Верный ответ x = 2."
+                : input.includes("kind: rewrite") &&
+                    input.includes("tone: деловой") &&
+                    input.includes("length: shorter") &&
+                    input.includes("Ответьте, пожалуйста, сегодня.")
+                  ? "Просим ответить сегодня."
+                  : "Обычный ответ B5.";
+    yield { type: "text.delta", delta: answer };
+    yield {
+      type: "response.completed",
+      provider: this.id,
+      model: this.modelId,
+      finishReason: "stop",
+      usage: { inputTokens: 40, outputTokens: 20 }
+    };
+    return;
+  }
   if (prompt?.content === "Покажи тестовый Markdown") {
     yield {
       type: "text.delta",
