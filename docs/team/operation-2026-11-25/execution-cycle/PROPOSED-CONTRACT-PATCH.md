@@ -4,6 +4,18 @@ Branch `codex/supplier-cycle-proposed` is based on candidate #664 head
 `daa34066188fb28f4e4ebd9854aba70e20022354`. It contains **only a proposed
 contract addition**; it is not intended to be merged into main directly.
 
+## Core modules included in this proposed branch
+
+To make the integration self-contained, this branch also brings the already
+merged pure modules from main `d743a6e`:
+
+- `packages/core/src/supplier-input-extraction.ts` (from #666);
+- `packages/core/src/supplier-cycle-continuation.ts` (from #670);
+- exports from `packages/core/src/index.ts`.
+
+No API route, store method or UI change is included: those require the
+integrator's confirmation of the field layout and CAS first.
+
 ## Exact change
 
 `packages/contracts/src/manager-work.ts`:

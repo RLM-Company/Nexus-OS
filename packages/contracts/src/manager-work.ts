@@ -189,6 +189,46 @@ export interface WorkExecutionCycle {
   result_ref: string | null;
 }
 
+export const WorkCycleEventSchema = Type.Union([
+  Type.Object(
+    {
+      type: Type.Literal("answer"),
+      parts: Type.Array(Type.Unknown()),
+      question_version: Type.Integer({ minimum: 1 })
+    },
+    { additionalProperties: false }
+  ),
+  Type.Object(
+    {
+      type: Type.Literal("error"),
+      code: Type.String({ minLength: 1, maxLength: 128 }),
+      question_version: Type.Integer({ minimum: 1 })
+    },
+    { additionalProperties: false }
+  ),
+  Type.Object(
+    {
+      type: Type.Literal("instructions"),
+      text: Type.String({ minLength: 1, maxLength: 2000 }),
+      question_version: Type.Integer({ minimum: 1 })
+    },
+    { additionalProperties: false }
+  ),
+  Type.Object(
+    { type: Type.Literal("pause"), question_version: Type.Integer({ minimum: 1 }) },
+    { additionalProperties: false }
+  ),
+  Type.Object(
+    { type: Type.Literal("resume"), question_version: Type.Integer({ minimum: 1 }) },
+    { additionalProperties: false }
+  ),
+  Type.Object(
+    { type: Type.Literal("cancel"), question_version: Type.Integer({ minimum: 1 }) },
+    { additionalProperties: false }
+  )
+]);
+export type WorkCycleEvent = Static<typeof WorkCycleEventSchema>;
+
 export interface ManagerWork {
   id: string;
   project_id: string;
