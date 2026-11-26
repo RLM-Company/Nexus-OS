@@ -379,3 +379,33 @@ test("review is invalidated by edits and undo, and switching Skills clears local
     editor(page).getByRole("button", { name: "Отменить правку", exact: true })
   ).toBeDisabled();
 });
+
+test("opens a specialization as an editable draft and saves only after confirmation", async ({
+  page,
+  request
+}) => {
+  await page.goto("/skills");
+  let writes = 0;
+  page.on("request", (operation) => {
+    if (operation.method() === "POST" && operation.url().endsWith(base)) writes++;
+  });
+  await page.getByText("Черновики специализаций", { exact: true }).click();
+  await page.getByRole("button", { name: "Аналитик документов", exact: true }).click();
+  const title = editor(page).getByRole("textbox", { name: "Название", exact: true });
+  await expect(title).toHaveValue("Аналитик документов");
+  const instructions = editor(page).getByRole("textbox", { name: "Инструкция", exact: true });
+  await expect(instructions).toHaveValue(/файл, версию и страницу/);
+  const name = `Аналитик ${randomUUID()}`;
+  await title.fill(name);
+  expect(writes).toBe(0);
+  const pending = page.waitForResponse(
+    (response) => response.request().method() === "POST" && response.url().endsWith(base)
+  );
+  await editor(page).getByRole("button", { name: "Сохранить версию", exact: true }).click();
+  const created = await pending;
+  expect(created.status()).toBe(201);
+  const { id } = (await created.json()) as { id: string };
+  const stored = await request.get(`${base}/${id}`);
+  expect((await stored.json()).versions[0]).toMatchObject({ version: 1, name });
+  expect(writes).toBe(1);
+});
