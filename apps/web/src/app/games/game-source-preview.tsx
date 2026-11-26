@@ -1,12 +1,25 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { strToU8, zipSync } from "fflate";
 import { parseGameProject } from "@cosmora/contracts/game-project";
-import { createGameProjectHtml } from "./game-project-runtime";
+import { createGameProjectHtml, gameWorkerSource } from "./game-project-runtime";
+import {
+  gameErrorMessage,
+  mapWorkerErrorToGameLine,
+  type GameDiagnostic
+} from "./game-error-diagnostic";
 import styles from "../sites/sites.module.css";
 
-export function GameSourcePreview({ content }: { content: string }) {
+type RuntimeDiagnostic = { line: number | null; message: string };
+
+export function GameSourcePreview({
+  content,
+  onDiagnostic
+}: {
+  content: string;
+  onDiagnostic?: (diagnostic: RuntimeDiagnostic) => void;
+}) {
   const project = useMemo(() => {
     try {
       return parseGameProject(content);
@@ -18,11 +31,48 @@ export function GameSourcePreview({ content }: { content: string }) {
     null
   );
   const [error, setError] = useState("");
+  const [diagnostic, setDiagnostic] = useState<GameDiagnostic | null>(null);
+  // Accept diagnostics only from the running sandboxed frame of this session.
+  useEffect(() => {
+    const listener = (event: MessageEvent) => {
+      const payload = event.data as {
+        type?: string;
+        source?: string;
+        line?: number | null;
+        text?: string;
+      } | null;
+      if (
+        !session ||
+        event.source !== sessionFrame.current?.contentWindow ||
+        !payload ||
+        payload.type !== "kosmora-game-diagnostic" ||
+        payload.source !== "game.js"
+      )
+        return;
+      const gameSource = project?.files.find((file) => file.name === "game.js")?.content ?? "";
+      const runtime = gameWorkerSource(gameSource);
+      const line =
+        typeof payload.line === "number"
+          ? mapWorkerErrorToGameLine(runtime, gameSource, `at blob:x:${payload.line}:1`)
+          : null;
+      const next: GameDiagnostic = {
+        source: "game.js",
+        line,
+        message: gameErrorMessage(payload.text ?? "")
+      };
+      setDiagnostic(next);
+      onDiagnostic?.({ line: next.line, message: next.message });
+    };
+    window.addEventListener("message", listener);
+    return () => window.removeEventListener("message", listener);
+  }, [session, project, onDiagnostic]);
+  const sessionFrame = useRef<HTMLIFrameElement | null>(null);
   // Unmounting a frame on an edit stops its Worker. Invalidate the old launch as well:
   // reverting the text must never silently re-execute an earlier srcDoc session.
   useEffect(() => {
     setSession(null);
     setError("");
+    setDiagnostic(null);
   }, [content]);
   const running = !!project && session?.source === content;
   return (
@@ -40,6 +90,7 @@ export function GameSourcePreview({ content }: { content: string }) {
                 id: crypto.randomUUID()
               });
               setError("");
+              setDiagnostic(null);
             } catch {
               setError("Не удалось подготовить запуск.");
             }
@@ -90,6 +141,7 @@ export function GameSourcePreview({ content }: { content: string }) {
         <p>Откройте пакет kosmora.game-project.v1 из задачи или файла JSON.</p>
       ) : running && session ? (
         <iframe
+          ref={sessionFrame}
           key={session.id}
           className={`${styles.frame} ${styles.desktop}`}
           style={{ height: 760 }}
@@ -100,6 +152,15 @@ export function GameSourcePreview({ content }: { content: string }) {
         />
       ) : (
         <p>Исходники готовы к запуску.</p>
+      )}
+      {diagnostic && (
+        <div role="alert" aria-label="Диагностика ошибки игры">
+          <p>
+            Ошибка в game.js{diagnostic.line ? `, строка ${diagnostic.line}` : ""}:{" "}
+            {diagnostic.message}
+          </p>
+          <p>Исправьте game.js и нажмите «Запустить игру» для повторного запуска.</p>
+        </div>
       )}
     </section>
   );
