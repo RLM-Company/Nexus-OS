@@ -328,3 +328,74 @@ test("recovers source from exact ZIP without executing it and refuses invalid or
     .click();
   await expect(code).toHaveValue(original);
 });
+
+test("renders an OBJ-lite package in the Games editor and restores its assets from export", async ({
+  page,
+  request
+}) => {
+  const { id, canvas, frame } = await open(page, request);
+  await canvas.getByRole("button", { name: "Пакет JSON" }).click();
+  const source = canvas.getByRole("textbox", { name: "Исходный пакет игры" });
+  const initial = {
+    format: "kosmora.game-project.v2",
+    title: "Закупочная сцена",
+    files: {
+      scene_html: "<h2>Площадка</h2>",
+      styles_css: "body{color:#151515}",
+      game_js: "throw new Error('game.js should stay inert');"
+    },
+    launch: { runtime: "web3d_sandbox", auto_start: false },
+    assets: [{ name: "receipt.txt", media_type: "text/plain", data_base64: "MTkgNzAw" }],
+    scenes: [{ id: "main", title: "Исходная сцена", html: "<p>Проверка содержимого</p>" }],
+    model: {
+      name: "triangle.obj",
+      format: "obj-lite",
+      data: "v 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3"
+    }
+  };
+  await source.fill(JSON.stringify(initial));
+  const display = canvas.getByRole("button", { name: "Показать модель и сцену" });
+  await display.click();
+  const model = frame.getByRole("img", { name: "Модель OBJ-lite: triangle.obj" });
+  await expect(model).toBeVisible();
+  await expect(frame.getByText("19 700", { exact: true })).toBeVisible();
+  const rendered = await model.getAttribute("src");
+  expect(rendered).toMatch(/^data:image\/png;base64,/);
+  expect(await page.locator('iframe[title="Проект игры Kosmora"]').getAttribute("sandbox")).toBe(
+    ""
+  );
+  const edited = {
+    ...initial,
+    model: { ...initial.model, data: initial.model.data.replace("v 1 0 0", "v 1.5 0 0") },
+    scenes: [{ ...initial.scenes[0]!, title: "Исправленная сцена" }]
+  };
+  const value = JSON.stringify(edited, null, 2);
+  await source.fill(value);
+  await expect(model).toHaveCount(0);
+  await display.click();
+  await expect(frame.getByRole("heading", { name: "Исправленная сцена" })).toBeVisible();
+  await expect(model).not.toHaveAttribute("src", rendered!);
+  await canvas.getByRole("button", { name: "Сохранить версию" }).click();
+  await expect(canvas.getByRole("status")).toContainText("Артефакт создан");
+  const downloading = page.waitForEvent("download");
+  await canvas.getByRole("button", { name: "Скачать проект ZIP" }).click();
+  const archive = await readFile(await (await downloading).path());
+  const entries = unzipSync(archive);
+  expect(JSON.parse(strFromU8(entries["project.json"]!))).toEqual(edited);
+  expect(strFromU8(entries["index.html"]!)).toContain("19 700");
+  await page.reload();
+  await page.getByRole("combobox", { name: "Проект игры", exact: true }).selectOption(id);
+  await canvas
+    .getByRole("navigation", { name: "Артефакты проекта" })
+    .getByRole("button", { name: /Звёздный пилот.*v1/ })
+    .click();
+  await expect(source).toHaveValue(value);
+  await source.fill(JSON.stringify(initial));
+  page.once("dialog", (dialog) => void dialog.accept());
+  await canvas.getByLabel("Восстановить ZIP проекта").setInputFiles({
+    name: "source.zip",
+    mimeType: "application/zip",
+    buffer: archive
+  });
+  await expect(source).toHaveValue(value);
+});

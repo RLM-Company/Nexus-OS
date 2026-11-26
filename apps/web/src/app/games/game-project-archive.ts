@@ -1,14 +1,14 @@
 import { unzipSync } from "fflate";
-import { parseGameProject } from "@cosmora/contracts/game-project";
+import { readGameSources } from "./game-project-sources";
 
 export const GAME_ARCHIVE_MAX_BYTES = 1024 * 1024;
-const MAX_TOTAL_EXTRACTED = 1024 * 1024;
+const MAX_TOTAL_EXTRACTED = 2 * 1024 * 1024;
 const entryLimits = new Map([
   ["project.json", 512 * 1024],
   ["scene.html", 64000],
   ["styles.css", 64000],
   ["game.js", 64000],
-  ["index.html", 512 * 1024],
+  ["index.html", 1024 * 1024],
   ["README.txt", 64 * 1024]
 ]);
 const sources = ["project.json", "scene.html", "styles.css", "game.js"] as const;
@@ -67,7 +67,7 @@ export function readGameProjectArchive(archive: Uint8Array): string {
   };
   const text = decode("project.json");
   try {
-    const project = parseGameProject(text);
+    const project = readGameSources(text);
     for (const file of project.files) {
       if (decode(file.name) !== file.content) return invalid();
     }

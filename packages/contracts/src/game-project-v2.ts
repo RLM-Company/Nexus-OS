@@ -97,9 +97,18 @@ export function parseGameProjectV2(source: string): GameProjectV2 {
   if (!Value.Check(GameProjectV2Schema, value)) throw Error("INVALID_GAME_PROJECT_V2");
   const project = value as GameProjectV2;
   // Verify canonical base64 shape without decoding to a URL or fetching data.
+  if (
+    new Set(project.assets.map(({ name }) => name)).size !== project.assets.length ||
+    new Set(project.scenes.map(({ id }) => id)).size !== project.scenes.length
+  )
+    throw Error("INVALID_GAME_PROJECT_V2");
   for (const a of project.assets) {
     const data = a.data_base64;
-    if (!/^[A-Za-z0-9+/]*={0,2}$/.test(data) || data.length % 4 !== 0) {
+    if (
+      !/^[A-Za-z0-9+/]*={0,2}$/.test(data) ||
+      data.length % 4 !== 0 ||
+      (data.length * 3) / 4 - (data.match(/=+$/)?.[0].length ?? 0) > GAME_ASSET_MAX_BYTES
+    ) {
       throw Error("INVALID_GAME_PROJECT_V2");
     }
   }

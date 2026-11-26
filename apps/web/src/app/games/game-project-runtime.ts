@@ -1,5 +1,7 @@
 import { parseGameProject, type GameProject } from "@cosmora/contracts/game-project";
 import { staticSiteDocument } from "../sites/site-preview";
+import type { GameProjectV2 } from "@cosmora/contracts/game-project-v2";
+import { createObjSceneDocument, gameProjectResources } from "./game-project-v2-preview";
 
 // Only this fixed program executes in the iframe. Project JavaScript executes in a worker,
 // which has no DOM/navigation/cookies and inherits the frame's network-denying CSP.
@@ -102,7 +104,12 @@ self.onmessage=(event)=>{
 }
 
 /** Browser-only serializer: model HTML is inert/sanitized, CSS is a text node, JS stays worker data. */
-export function createGameProjectHtml(project: GameProject, autoStart = false): string {
+export function createGameProjectHtml(
+  project: GameProject,
+  autoStart = false,
+  v2?: GameProjectV2
+): string {
+  if (v2?.launch.runtime === "web3d_sandbox") return createObjSceneDocument(v2);
   const parsed = parseGameProject(JSON.stringify(project));
   const file = (name: string) => parsed.files.find((item) => item.name === name)!.content;
   const doc = document.implementation.createHTMLDocument("Kosmora Games");
@@ -136,6 +143,7 @@ export function createGameProjectHtml(project: GameProject, autoStart = false): 
   // User <style> content would share the trusted runtime document; all styling is in styles.css.
   for (const node of scene.querySelectorAll("style")) node.remove();
   doc.body.append(scene);
+  if (v2) doc.body.append(gameProjectResources(doc, v2));
   const controls = document.createElement("div");
   controls.innerHTML =
     '<button id="game-start">Запустить заново</button><button id="game-stop">Остановить</button><p id="game-status" role="status">Готово к запуску</p><canvas id="game-stage" width="800" height="500" tabindex="0" aria-label="Игровое поле"></canvas><ol id="game-log" aria-label="Консоль игры"></ol>';

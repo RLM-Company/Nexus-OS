@@ -1,5 +1,9 @@
 import { describe, expect, test } from "vitest";
-import { GAME_PROJECT_V2_FORMAT, parseGameProjectV2, type GameProjectV2 } from "./game-project-v2.js";
+import {
+  GAME_PROJECT_V2_FORMAT,
+  parseGameProjectV2,
+  type GameProjectV2
+} from "./game-project-v2.js";
 
 const valid = (): GameProjectV2 => ({
   format: GAME_PROJECT_V2_FORMAT,
