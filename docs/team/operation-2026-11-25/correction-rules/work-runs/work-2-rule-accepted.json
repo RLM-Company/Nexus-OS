@@ -1,17 +1,18 @@
 {
   "applied_rule_versions": [
     {
-      "id": "3bb06661-b380-4232-80a8-27e17ae06ee1",
+      "id": "7ffa9d9d-ee3e-4cdc-917d-02aa86153d50",
       "version": 1,
       "effect": "delivery_separate_line"
     }
   ],
   "rule_statuses": [
     {
-      "id": "3bb06661-b380-4232-80a8-27e17ae06ee1",
+      "id": "7ffa9d9d-ee3e-4cdc-917d-02aa86153d50",
       "version": 1,
-      "status": "conflict",
-      "reason": "Конфликт активных правил; правило не применено."
+      "status": "applied",
+      "effect": "delivery_separate_line",
+      "reason": "Доставка вынесена в отдельную строку по принятому правилу."
     }
   ]
 }

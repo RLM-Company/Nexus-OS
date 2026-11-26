@@ -27,6 +27,23 @@ export type WorkRuleReport = {
   ignored_rules: string[];
 };
 
+/** Owner-facing explanation: what was applied, what was not and why.
+ * No hidden choice: a conflict names every involved rule version. */
+export function explainRuleApplication(report: WorkRuleReport): string[] {
+  const lines: string[] = [];
+  for (const version of report.applied_rule_versions)
+    lines.push(`Применено правило ${version.id} v${version.version}: ${version.effect}.`);
+  for (const conflict of report.conflicts)
+    lines.push(
+      `Конфликт правил ${conflict.ids.join(", ")}: ${conflict.reason} Ни одно из них не применено автоматически.`
+    );
+  for (const status of report.rule_statuses)
+    if (status.status !== "applied")
+      lines.push(`Не применено правило ${status.id} v${status.version}: ${status.reason}`);
+  if (!lines.length) lines.push("Активных правил нет: результат сохранён без правок.");
+  return lines;
+}
+
 const SEPARATE_DELIVERY = /доставк\p{L}*\s+отдельн\p{L}*\s+строк\p{L}*/iu;
 const STYLE_RULE = /оформ\p{L}*\s+\p{L}+\s+(?:как|в стиле|по образцу)\p{L}*/iu;
 
@@ -63,7 +80,17 @@ export function applyProjectRulesToWorkResult(
     });
   const rows = parseSupplierRows(content);
   const baseline = rows.length ? applyProjectRules(rows, []).lines.join("\n") : content;
-  const separate = deliveryRules.length === 1;
+  const separate = deliveryRules.length === 1 && rows.length > 0;
+  if (separate) {
+    const applied = deliveryRules[0]!;
+    statuses.push({
+      id: applied.id,
+      version: applied.version,
+      status: "applied",
+      effect: "delivery_separate_line",
+      reason: "Доставка вынесена в отдельную строку по принятому правилу."
+    });
+  }
   const withDelivery: AppliedReport = separate
     ? applyProjectRules(rows, [deliveryRules[0]!])
     : { lines: baseline.split("\n"), applied_rule_versions: [], ignored_rules: [] };

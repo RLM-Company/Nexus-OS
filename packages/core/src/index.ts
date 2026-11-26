@@ -36,6 +36,7 @@ export * from "./work-timeline.js";
 export * from "./biz040-field-register.js";
 export * from "./project-correction-rules.js";
 export * from "./project-rule-workflow.js";
+export * from "./skill-specializations.js";
 export * from "./graph-evidence-comparison.js";
 export * from "./graph-source-usage.js";
 export * from "./graph-citation-refresh.js";
