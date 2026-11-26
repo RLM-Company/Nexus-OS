@@ -220,6 +220,8 @@ export interface ResearchSourceReceipt {
   excerpt_id: string;
   title: string;
   url: string;
+  /** Stable source-exclusion ID across scans of the same canonical URL. */
+  project_source_id?: string;
   checked_at: string;
   content_digest: string | null;
   excerpt_sha256: string;
@@ -249,6 +251,7 @@ export function researchSourceReceipts(
           excerpt_id: citation.excerpt_id,
           title: source.title,
           url: source.url,
+          project_source_id: createHash("sha256").update(source.url).digest("hex"),
           checked_at: source.checked_at,
           content_digest: source.content_digest ?? null,
           excerpt_sha256: createHash("sha256").update(item.excerpt).digest("hex"),

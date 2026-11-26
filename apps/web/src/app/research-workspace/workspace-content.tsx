@@ -6,6 +6,8 @@ import styles from "./research-workspace.module.css";
 import { ReportCanvas } from "../canvas-editor/report-canvas";
 import { ResearchComparison, type ResearchSourceSnapshot } from "./research-comparison";
 import { ResearchSourceRecheck, type SourceRecheckResult } from "./research-source-recheck";
+import { ResearchReceipts } from "./research-receipts";
+import type { ResearchSourceReceipt } from "@cosmora/core";
 
 type Project = { id: string; title: string };
 type Source = ResearchSourceSnapshot & { snippet: string; checked_at: string };
@@ -33,6 +35,7 @@ type Run = {
   error_code: string | null;
   model_requested?: boolean;
   answer?: Answer | null;
+  receipts?: ResearchSourceReceipt[];
   model?: { phase: string; usage_state: string; revision: number };
   created_at: string;
   updated_at: string;
@@ -519,6 +522,13 @@ export function ResearchWorkspaceContent({ embedded = false }: { embedded?: bool
                     <p>Модель не выделила пробелы; полнота не гарантируется.</p>
                   )}
                 </section>
+              )}
+              {Boolean(current.receipts?.length) && (
+                <ResearchReceipts
+                  key={current.id}
+                  projectId={current.project_id}
+                  receipts={current.receipts!}
+                />
               )}
               <h3>Краткий ответ по источникам</h3>
               <p className={styles.muted}>

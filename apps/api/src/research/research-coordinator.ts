@@ -29,7 +29,8 @@ export class ResearchCoordinator {
     private readonly stopGate?: ResearchStopGate,
     private readonly clock: () => number = () => performance.now(),
     private readonly policyAllows: (run: ResearchRun) => boolean = () => false,
-    private readonly synthesis?: ResearchSynthesis
+    private readonly synthesis?: ResearchSynthesis,
+    private readonly excludedSourceIds: (run: ResearchRun) => ReadonlySet<string> = () => new Set()
   ) {}
   private allowed(run: ResearchRun): boolean {
     return (
@@ -194,8 +195,11 @@ export class ResearchCoordinator {
       try {
         const result = await this.search.search(run.question);
         if (timed.aborted || this.clock() >= deadline) throw new Error("TIME_BUDGET");
+        const excluded = this.excludedSourceIds(run);
         run = this.activeUpdate(id, owner, ["searching"], (state) => {
-          state.candidates = deduplicateCandidates(result.items);
+          state.candidates = deduplicateCandidates(result.items).filter(
+            ({ url }) => !excluded.has(createHash("sha256").update(url).digest("hex"))
+          );
           state.status = "reading";
           state.stage = `Найдено ${state.candidates.length} адресов`;
         });

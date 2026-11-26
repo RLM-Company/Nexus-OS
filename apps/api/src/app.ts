@@ -1006,6 +1006,13 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
       projects: dependencies.projectStore,
       policy: dependencies.policyStore,
       identityFor,
+      excludedSourceIds: (run) =>
+        new Set(
+          projectSourceStore
+            ?.exclusions(run.project_id, run.owner_id)
+            .items.filter((source) => source.source_kind === "research_page")
+            .map((source) => source.source_id)
+        ),
       ...(dependencies.emergencyStopStore ? { emergency: dependencies.emergencyStopStore } : {})
     });
     dependencies.researchCoordinatorCreated?.(coordinator);
