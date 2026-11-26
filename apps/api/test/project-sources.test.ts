@@ -1,6 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { openDatabase, runMigrations, ProjectStore, EmergencyStopStore } from "@cosmora/db";
-import { ProjectSourceStore } from "@cosmora/db";
+import {
+  EmergencyStopStore,
+  GeneralChatStore,
+  openDatabase,
+  ProjectSourceStore,
+  ProjectStore,
+  runMigrations
+} from "@cosmora/db";
 import { buildApp } from "../src/app.js";
 import type { IdentityContext, RunSourcesView, SourceExclusionsView } from "@cosmora/contracts";
 import { StaticIdentityResolver } from "../src/identity.js";
@@ -20,16 +26,24 @@ const foreign: IdentityContext = { ...owner, owner_id: "other-owner", actor_id: 
 let db: ReturnType<typeof openDatabase>;
 let app: Awaited<ReturnType<typeof buildApp>>;
 let projectId: string;
+let chats: GeneralChatStore;
 
 beforeEach(async () => {
   db = openDatabase(":memory:");
   await runMigrations(db);
   const projects = new ProjectStore(db.sqlite);
-  projectId = projects.createProject("Source test", "source-test", owner.owner_id).project.id;
+  chats = new GeneralChatStore(db.sqlite);
+  projectId = projects.createEmptyProject(
+    "source-test",
+    "Source test",
+    owner.owner_id,
+    "ACTIVE"
+  ).id;
   const config = loadServerConfig({ NODE_ENV: "test", MOCK_PROVIDER_MODE: "success" });
   app = buildApp({
     config,
     database: db,
+    generalChatStore: chats,
     projectStore: projects,
     emergencyStopStore: new EmergencyStopStore(db.sqlite),
     projectSourceStore: new ProjectSourceStore(db.sqlite),
@@ -153,5 +167,59 @@ describe("project source usage and exclusions", () => {
       .run(owner.owner_id);
     const historical = store.runSources(projectId, owner.owner_id, "run-3");
     expect(historical.sources[0]?.source_id).toBe("file-a");
+  });
+
+  it("preserves the used source version after deletion and denies a fresh fragment read", async () => {
+    const content = "Поставщик указал 19 700 ₽";
+    const accepted = chats.createChat(content, "source-version-chat", owner.owner_id);
+    expect(chats.cancelRun(accepted.run.id, owner.owner_id)).toBe("cancelled");
+    const target = { kind: "project", id: projectId } as const;
+    const memoryBase = `/api/v1/memory/targets/project/${projectId}`;
+    chats.contextMemory.updateSettings(
+      target,
+      {
+        expected_version: chats.contextMemory.settings(target, owner.owner_id).version,
+        enabled: true,
+        use_personal: false,
+        source_chat_ids: [accepted.chat.id],
+        project_ids: []
+      },
+      owner.owner_id
+    );
+    const reference = `H:g:${accepted.userMessage.id}`;
+    const fragmentUrl = `${memoryBase}/source?reference=${encodeURIComponent(reference)}`;
+    const original = await app.inject({ url: fragmentUrl });
+    expect(original.statusCode, original.body).toBe(200);
+    const originalHash = original.json<{ source: { sha256: string } }>().source.sha256;
+    expect(original.json()).toMatchObject({ content });
+
+    const store = new ProjectSourceStore(db.sqlite);
+    const evidence = {
+      ...source(accepted.userMessage.id, originalHash),
+      reference,
+      source_kind: "chat_message" as const,
+      quote: "",
+      excerpt_only: true
+    };
+    const receipt = store.recordRunSources(projectId, owner.owner_id, {
+      run_id: "run-version",
+      sources: [evidence]
+    });
+    expect(() =>
+      store.recordRunSources(projectId, owner.owner_id, {
+        run_id: "run-version",
+        sources: [{ ...evidence, version: 2, sha256: "b".repeat(64) }]
+      })
+    ).toThrow("RUN_SOURCES_CONFLICT");
+
+    expect(chats.deleteChat(accepted.chat.id, owner.owner_id)).toBe(true);
+    const missingFragment = await app.inject({ url: fragmentUrl });
+    expect(missingFragment.statusCode, missingFragment.body).toBe(404);
+    expect(missingFragment.json()).toMatchObject({ error: { code: "MEMORY_SOURCE_NOT_FOUND" } });
+    const historical = await app.inject({
+      url: `/api/v1/projects/${projectId}/sources/run/run-version`
+    });
+    expect(historical.statusCode, historical.body).toBe(200);
+    expect(historical.json<RunSourcesView>().sources).toEqual(receipt.sources);
   });
 });
