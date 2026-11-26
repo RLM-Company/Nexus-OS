@@ -3,7 +3,11 @@ import {
   type SourceExclusionsInput,
   type IdentityContext
 } from "@cosmora/contracts";
-import { ProjectSourceError, type ProjectSourceStore } from "@cosmora/db";
+import {
+  ProjectSourceError,
+  type ProjectSourceStore,
+  type ProjectMembershipStore
+} from "@cosmora/db";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { Type } from "typebox";
 import { TypeBoxValidatorCompiler } from "@fastify/type-provider-typebox";
@@ -16,9 +20,19 @@ const runParams = Type.Object({ projectId: id, runId: id }, { additionalProperti
 export function registerProjectSourceRoutes(
   app: FastifyInstance,
   store: ProjectSourceStore,
-  identityFor: (request: FastifyRequest) => IdentityContext
+  identityFor: (request: FastifyRequest) => IdentityContext,
+  membership?: ProjectMembershipStore
 ) {
   const base = "/api/v1/projects/:projectId/sources";
+  if (membership)
+    app.addHook("onRequest", (request, reply, done) => {
+      if (!request.routeOptions.url?.startsWith(base)) return done();
+      const projectId = (request.params as { projectId?: string } | undefined)?.projectId;
+      if (!projectId) return done();
+      if (!membership.canAccess(projectId, identityFor(request).owner_id))
+        return reply.code(403).send({ error: { code: "PROJECT_MEMBER_REQUIRED" } });
+      done();
+    });
   app.addHook("onSend", (request, reply, payload, done) => {
     if (request.routeOptions.url?.startsWith(base))
       reply

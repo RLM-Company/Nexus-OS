@@ -505,6 +505,13 @@
       "when": 1795608000001,
       "tag": "0073_project_sources",
       "breakpoints": true
+    },
+    {
+      "idx": 74,
+      "version": "6",
+      "when": 1795608000002,
+      "tag": "0074_project_members",
+      "breakpoints": true
     }
   ]
 }

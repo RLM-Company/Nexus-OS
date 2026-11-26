@@ -1,10 +1,11 @@
 import { registerDocumentWorkspaceRoutes } from "./document-workspace-routes.js";
 import { registerGithubIssueRoutes } from "./github-issue-routes.js";
 import type { ContextMemoryRanker } from "@cosmora/contracts";
-import type { IndexedMemoryRecall } from "@cosmora/db";
+import type { IndexedMemoryRecall, ProjectMembershipStore } from "@cosmora/db";
 import { registerRuntimeClockRoutes } from "./runtime-clock-routes.js";
 import { registerContextMemoryRoutes } from "./context-memory-routes.js";
 import { registerProjectSourceRoutes } from "./project-source-routes.js";
+import { registerProjectMembershipRoutes } from "./project-membership-routes.js";
 import { registerHistoryCompactionRoutes } from "./history-compaction-routes.js";
 import { ComputerControlService } from "./computer-control/service.js";
 import { registerComputerControlRoutes } from "./computer-control/routes.js";
@@ -269,6 +270,7 @@ export interface AppDependencies {
   generalChatStore?: GeneralChatStore;
   projectStore?: ProjectStore;
   projectSourceStore?: ProjectSourceStore;
+  projectMembershipStore?: ProjectMembershipStore;
   demoManagerStore?: DemoManagerStore;
   demoManagerCoordinator?: DemoManagerCoordinator;
   managerWorkStore?: ManagerWorkStore;
@@ -728,6 +730,7 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
   const runtimeMetrics = dependencies.runtimeMetrics ?? new RuntimeMetrics();
   const projectSourceStore =
     dependencies.projectSourceStore ?? dependencies.managerWorkStore?.sources;
+  const projectMembershipStore = dependencies.projectMembershipStore;
   const projectCorrectionRuleStore =
     dependencies.projectCorrectionRuleStore ?? dependencies.managerWorkStore?.correctionRules;
   const requestIdentities = new WeakMap<FastifyRequest, IdentityContext>();
@@ -1559,7 +1562,10 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
           ? projectSourceStore.excludedSourceIds(target.id, owner)
           : []
     );
-  if (projectSourceStore) registerProjectSourceRoutes(app, projectSourceStore, identityFor);
+  if (projectSourceStore)
+    registerProjectSourceRoutes(app, projectSourceStore, identityFor, projectMembershipStore);
+  if (projectMembershipStore)
+    registerProjectMembershipRoutes(app, projectMembershipStore, identityFor);
   if (dependencies.generalChatStore && dependencies.modelGateway && dependencies.chat) {
     registerHistoryCompactionRoutes(
       app,

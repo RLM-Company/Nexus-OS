@@ -29,6 +29,7 @@ import {
   upgradeAccountProfileColumns,
   StepUpProofStore,
   ProjectSourceStore,
+  ProjectMembershipStore,
   UsageStore
 } from "@cosmora/db";
 import { validateAgentDelegation } from "@cosmora/policy-engine";
@@ -158,6 +159,7 @@ try {
   const sharedBudget = new SharedOwnerBudget(accountStore, projectStore);
   const documentLibrary = new DocumentLibraryStore(database.sqlite);
   const projectSourceStore = new ProjectSourceStore(database.sqlite);
+  const projectMembershipStore = new ProjectMembershipStore(database.sqlite);
   const canvasStore = new CanvasArtifactStore(database.sqlite);
   const documentAnswerStore = new DocumentAnswerStore(database.sqlite);
   const documentAnswerService = new DocumentAnswerService(
@@ -333,6 +335,7 @@ try {
     documentLibrary,
     documentAnswerService,
     projectSourceStore,
+    projectMembershipStore,
     chatHistorySearchStore,
     presentationStore,
     notificationStore,
