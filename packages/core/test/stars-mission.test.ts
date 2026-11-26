@@ -44,7 +44,7 @@ describe("Stars team mission", () => {
     expect(
       applyStarsMissionEvent(state, {
         type: "message",
-        from: "a1",
+        from: "outsider",
         to: "a2",
         text: "нельзя",
         expected_version: state.version
