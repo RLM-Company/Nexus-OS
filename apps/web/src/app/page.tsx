@@ -21,7 +21,7 @@ import { ModelPicker, SystemMessage } from "./ui/kosmora-controls";
 import { CanvasEditor } from "./canvas-editor/canvas-editor";
 import canvasChat from "./canvas-editor/canvas-chat.module.css";
 import { ChatHistoryActions } from "./chat-history-actions";
-import { ChatBranches, ChatBranchButton } from "./chat-branches";
+import { ChatBranches, ChatBranchButton, ChatForkButton } from "./chat-branches";
 import { useChatNavigation, ChatContextPanel, ChatToCanvas } from "./chat-workspace";
 import { ChatItemMenu } from "./chat-item-menu";
 import { CreateProjectDialog } from "./create-project-dialog";
@@ -3484,6 +3484,18 @@ export default function Home() {
                                 onClick={() =>
                                   setBranchSelection({ chatId: activeLocalChatId, message })
                                 }
+                              />
+                            )}
+                          {activeLocalChatId &&
+                            message.role === "assistant" &&
+                            message.status === "completed" && (
+                              <ChatForkButton
+                                key={activeLocalChatId + ":" + message.id}
+                                chatId={activeLocalChatId}
+                                messageId={message.id}
+                                disabled={loading}
+                                onOpen={(id) => void openChatBranch(id)}
+                                onError={setError}
                               />
                             )}
                         </>
