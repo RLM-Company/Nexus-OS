@@ -1,4 +1,5 @@
 export * from "./agent-studio.js";
+export * from "./stars-mission.js";
 export * from "./auth.js";
 export * from "./domain.js";
 export * from "./chat-attachments.js";

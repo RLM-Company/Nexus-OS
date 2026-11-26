@@ -512,6 +512,13 @@
       "when": 1795608000002,
       "tag": "0074_project_members",
       "breakpoints": true
+    },
+    {
+      "idx": 75,
+      "version": "6",
+      "when": 1795608000003,
+      "tag": "0075_stars_missions",
+      "breakpoints": true
     }
   ]
 }
