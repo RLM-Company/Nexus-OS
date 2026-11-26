@@ -878,7 +878,7 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
       (dependencies.ownerPrivacy?.overview(ownerId).lifecycle ?? "active") === "active",
     origin: dependencies.config.webOrigin,
     identityFor
-  });
+  }, dependencies.googleDrive);
   if (dependencies.projectStore) registerApexRoutes(app, dependencies.projectStore, identityFor);
   if (dependencies.payStore)
     registerPayRoutes(app, {

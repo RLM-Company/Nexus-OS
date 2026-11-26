@@ -3,21 +3,30 @@ import { ConnectorStatusSchema } from "@cosmora/contracts";
 import type { PolicyStore } from "@cosmora/db";
 import {
   ConnectorRegistry,
+  connectorToolId,
   FIRST_SLICE_CONNECTORS,
   GuardedToolRuntime
 } from "@cosmora/tool-runtime";
 import { registerMcpRoutes, type McpRouteDependencies } from "./mcp-routes.js";
+import { driveConnectorTransports } from "./drive-connector-transport.js";
+import type { GoogleDriveRuntime } from "./cloud-storage/google-drive-runtime.js";
 
 /** The general catalog lists descriptors. MCP uses its own project-scoped route. */
 export function registerConnectorRoutes(
   app: FastifyInstance,
   policyStore: PolicyStore | undefined,
   projectId: string,
-  mcp: McpRouteDependencies
+  mcp: McpRouteDependencies,
+  drive?: GoogleDriveRuntime
 ) {
   const runtime = policyStore ? new GuardedToolRuntime(policyStore) : undefined;
   const registry = runtime ? new ConnectorRegistry(runtime) : undefined;
   registry?.register(FIRST_SLICE_CONNECTORS);
+  if (registry && drive) {
+    const transports = driveConnectorTransports(drive);
+    registry.bindTransport(connectorToolId("google-drive", "list_sources"), transports.list_sources);
+    registry.bindTransport(connectorToolId("google-drive", "restore_backup"), transports.restore_backup);
+  }
   registerMcpRoutes(app, registry, { ...mcp, policy: policyStore });
   registry?.bindToRuntime();
 
