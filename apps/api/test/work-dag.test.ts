@@ -29,6 +29,7 @@ import { buildModelRuntime, loadModelRegistryDocument } from "../src/model-runti
 import { AccountStore } from "../src/account-settings/account-store.js";
 import { ProjectAutomation } from "../src/project-automation.js";
 import { ProjectKnowledge } from "../src/project-knowledge.js";
+import { TeamGraphAdapter } from "../src/team-graph-adapter.js";
 
 const cleanups: (() => void)[] = [];
 afterEach(() => {
@@ -1114,6 +1115,58 @@ describe("executable durable Work DAG", () => {
     for (const child of f.store.pending()) await f.coordinator.execute(child.id, owner);
     return f.dag.get(id, owner)!;
   }
+  it("runs two parts of an existing Agent Studio team through Work and exports both verified files", async () => {
+    const f = await fixture();
+    const adapter = new TeamGraphAdapter(f.dag, f.store);
+    const input = {
+      ownerId: owner,
+      actorId: owner,
+      projectId: f.project.id,
+      compositionId: "fixture-team",
+      parts: nodes.slice(0, 2).map((node) => ({
+        instanceId: "instance-" + node.id,
+        nodeId: node.id,
+        title: node.title,
+        goal: node.goal
+      }))
+    };
+    const { graphId } = adapter.createOrGet(input);
+    expect(adapter.createOrGet(input).graphId).toBe(graphId);
+    expect(f.calls).toHaveLength(0);
+    arm(f, f.dag.get(graphId, owner)!, 6);
+    await autoTick(f, graphId);
+    await autoTick(f, graphId);
+    const parts = adapter.nodesOf(graphId, owner, f.project.id);
+    expect(parts.map(({ id, status }) => ({ id, status }))).toEqual(
+      input.parts.map(({ nodeId }) => ({ id: nodeId, status: "completed" }))
+    );
+    expect(parts.every(({ workId }) => typeof workId === "string")).toBe(true);
+    expect(adapter.nodesOf(graphId, owner, "another-project")).toEqual([]);
+    const app = buildApp({
+      config: f.config,
+      database: f.db,
+      projectStore: f.projects,
+      managerWorkStore: f.store,
+      managerWorkCoordinator: f.coordinator
+    });
+    try {
+      const base = "/api/v1/projects/" + f.project.id + "/work-dags/" + graphId;
+      const response = await app.inject({ url: base + "/results" });
+      expect(response.statusCode).toBe(200);
+      const result = response.json<{
+        files: { node_id: string; content: string; sha256: string }[];
+      }>();
+      expect(result.files.map(({ node_id }) => node_id).sort()).toEqual(["brief", "document"]);
+      for (const file of result.files)
+        expect(createHash("sha256").update(file.content).digest("hex")).toBe(file.sha256);
+      const archive = await app.inject({ url: base + "/results.zip" });
+      expect(archive.statusCode).toBe(200);
+      expect(archive.rawPayload.readUInt32LE(0)).toBe(0x04034b50);
+    } finally {
+      await app.close();
+    }
+  });
+
   it("automatically follows dependencies, enforces requested Critic review and exports exact completed results", async () => {
     const f = await fixture();
     let graph = f.dag.create(f.project.id, owner, owner, {
