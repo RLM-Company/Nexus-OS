@@ -145,6 +145,7 @@ export * from "./general-chat-store.js";
 export * from "./identity-store.js";
 export * from "./manager-demo-store.js";
 export * from "./manager-work-store.js";
+export * from "./stars-mission-store.js";
 export * from "./pattern-library-store.js";
 export * from "./policy-store.js";
 export * from "./project-store.js";

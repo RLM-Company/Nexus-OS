@@ -1,0 +1,68 @@
+.page {
+  max-width: 60rem;
+  margin: 0 auto;
+  padding: 1rem;
+}
+.setup {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  align-items: flex-end;
+}
+.setup label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  font-size: 0.75rem;
+}
+.summary {
+  display: flex;
+  gap: 1rem;
+  margin: 0.8rem 0;
+  font-size: 0.8rem;
+}
+.map {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+  gap: 0.6rem;
+}
+.agent {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  padding: 0.6rem;
+  border: 1px solid rgba(157, 157, 157, 0.3);
+  border-radius: 0.6rem;
+  background: rgba(26, 26, 26, 0.9);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.agent[data-role="manager"] {
+  border-color: #8ab4f8;
+}
+.agent[data-status="failed"] {
+  border-color: #e0b24a;
+}
+.edges,
+.work,
+.address {
+  margin-top: 0.8rem;
+  font-size: 0.8rem;
+}
+.address {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  align-items: center;
+}
+.address h2 {
+  width: 100%;
+  margin: 0;
+  font-size: 0.9rem;
+}
+.address input {
+  flex: 1;
+  min-width: 12rem;
+}
