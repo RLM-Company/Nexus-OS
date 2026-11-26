@@ -27,6 +27,8 @@ export * from "./document-library.js";
 export * from "./table-analysis.js";
 export * from "./table-comparison.js";
 export * from "./supplier-offer-comparison.js";
+export * from "./stars-mission.js";
+export * from "./stars-environment.js";
 export * from "./version-change-report.js";
 export * from "./project-knowledge.js";
 export * from "./project-automation.js";

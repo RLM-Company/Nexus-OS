@@ -505,6 +505,20 @@
       "when": 1795608000001,
       "tag": "0073_project_sources",
       "breakpoints": true
+    },
+    {
+      "idx": 75,
+      "version": "6",
+      "when": 1795608000003,
+      "tag": "0075_stars_missions",
+      "breakpoints": true
+    },
+    {
+      "idx": 77,
+      "version": "6",
+      "when": 1795608000005,
+      "tag": "0077_project_intake_schema",
+      "breakpoints": true
     }
   ]
 }
