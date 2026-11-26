@@ -65,14 +65,24 @@ describe("Drive connector lifecycle through the guarded runtime", () => {
     const registry = new ConnectorRegistry(runtime);
     registry.register(FIRST_SLICE_CONNECTORS);
     const transports = driveConnectorTransports(drive);
-    registry.bindTransport(connectorToolId("google-drive", "list_sources"), transports.list_sources);
-    registry.bindTransport(connectorToolId("google-drive", "restore_backup"), transports.restore_backup);
+    registry.bindTransport(
+      connectorToolId("google-drive", "list_sources"),
+      transports.list_sources
+    );
+    registry.bindTransport(
+      connectorToolId("google-drive", "restore_backup"),
+      transports.restore_backup
+    );
     registry.bindToRuntime();
 
     const status = registry.status(projectId).connectors.find((c) => c.id === "google-drive")!;
     expect(status.transport_wired).toBe(true);
 
-    const listed = await invoke(connectorToolId("google-drive", "list_sources"), "drive-list-1", {});
+    const listed = await invoke(
+      connectorToolId("google-drive", "list_sources"),
+      "drive-list-1",
+      {}
+    );
     if (listed.status !== "EXECUTED") throw new Error(listed.status);
     expect(sources).toHaveBeenCalledWith("owner-1");
     expect((listed.result as { files: unknown[] }).files).toHaveLength(1);
@@ -96,7 +106,11 @@ describe("Drive connector lifecycle through the guarded runtime", () => {
     const registry = new ConnectorRegistry(runtime);
     registry.register(FIRST_SLICE_CONNECTORS);
     registry.bindToRuntime();
-    const result = await invoke(connectorToolId("google-drive", "list_sources"), "drive-unbound", {});
+    const result = await invoke(
+      connectorToolId("google-drive", "list_sources"),
+      "drive-unbound",
+      {}
+    );
     expect(result.status).toBe("PAUSED");
     expect(sources).not.toHaveBeenCalled();
   });

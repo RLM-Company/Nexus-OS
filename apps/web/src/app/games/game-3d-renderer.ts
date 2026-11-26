@@ -37,7 +37,11 @@ export function parseObjLite(data: string): Triangle[] {
       const indices = parts.slice(1).map((p) => Number(p.split("/")[0]));
       if (indices.some((i) => !Number.isInteger(i) || i < 1 || i > vertices.length))
         throw Error("INVALID_3D_MODEL");
-      const [a, b, c] = indices.map((i) => vertices[i - 1]!);
+      const [a, b, c] = [
+        vertices[indices[0]! - 1]!,
+        vertices[indices[1]! - 1]!,
+        vertices[indices[2]! - 1]!
+      ];
       faces.push({ a, b, c });
       if (faces.length > MAX_FACES) throw Error("INVALID_3D_MODEL");
     } else {
