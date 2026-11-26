@@ -5,6 +5,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ModelRequest, WorkDag, WorkDagNodeInput, WorkOwnerBudget } from "@cosmora/contracts";
 import {
+  AgentBlueprintStore,
+  AgentInstanceStore,
+  AgentTeamRunStore,
+  AgentTeamStore,
+  PatternLibraryStore,
+  StarsMissionStore,
   OwnerSkillStore,
   EmergencyStopStore,
   ManagerWorkStore,
@@ -30,6 +36,9 @@ import { AccountStore } from "../src/account-settings/account-store.js";
 import { ProjectAutomation } from "../src/project-automation.js";
 import { ProjectKnowledge } from "../src/project-knowledge.js";
 import { TeamGraphAdapter } from "../src/team-graph-adapter.js";
+import { registerStarsMissionRoutes } from "../src/stars-mission-routes.js";
+import { registerWorkDagRoutes } from "../src/work-dag-routes.js";
+import Fastify from "fastify";
 
 const cleanups: (() => void)[] = [];
 afterEach(() => {
@@ -173,6 +182,189 @@ async function fixture(
     config
   };
 }
+
+it("binds a Stars mission to a confirmed team and delivers the verified runtime results", async () => {
+  const f = await fixture({ maxConcurrentWork: 2 });
+  const scoped = {
+    owner_id: owner,
+    actor_id: owner,
+    actor_kind: "owner" as const,
+    session_id: owner,
+    assurance: "local" as const,
+    authenticated_at: new Date().toISOString(),
+    expires_at: new Date(Date.now() + 60_000).toISOString()
+  };
+  const pid = f.project.id;
+  const patterns = new PatternLibraryStore(f.db.sqlite);
+  const fn = patterns.createFunction(scoped, {
+    project_id: pid,
+    name: "Проверка материалов",
+    description: "Сверка материалов проекта",
+    result_contract: "Данные и выводы"
+  });
+  const pattern = patterns.createPattern(scoped, {
+    project_id: pid,
+    name: "Проверка чисел",
+    description: "Работа с данными",
+    instructions: "Сверь исходные числа.",
+    allowed_function_ids: [fn.function_id],
+    known_limitations: [],
+    test_status: "untested"
+  });
+  const blueprints = new AgentBlueprintStore(f.db.sqlite);
+  for (const task of ["Собери итог из двух файлов", "Извлеки реквизиты", "Проверь стоимость"]) {
+    blueprints.createBlueprint(scoped, {
+      project_id: pid,
+      function_ref: { id: fn.function_id, version: 1 },
+      behavior_pattern_ref: { id: pattern.pattern_id, version: 1 },
+      model_profile_ref: { id: "cosmora-mars", version: 1 },
+      grant: {
+        project_id: pid,
+        capability_ids: [],
+        tool_ids: [],
+        data_scope_ids: [],
+        object_ids: [],
+        budget: { currency: "USD", money_minor: 0, tokens: 10_000, operations: 0 },
+        delegation_depth: 0,
+        valid_until: new Date(Date.now() + 60_000).toISOString()
+      },
+      memory_scope: { read_mode: "task", source_ids: [], write_back: "result_only" },
+      task_contract: task,
+      start_condition: "Явный запуск",
+      close_conditions: ["Файл сохранён"]
+    });
+  }
+  const instances = new AgentInstanceStore(f.db.sqlite, {
+    delegationValidator: () => ({ allowed: true, reasons: [] })
+  });
+  const teams = new AgentTeamStore(f.db.sqlite, { blueprints, instances });
+  const planned = teams.plan(scoped, pid);
+  const roster = teams.confirm(
+    scoped,
+    pid,
+    planned.items.map(({ instance_id }) => instance_id)
+  );
+  const manager = roster.items.find((item) => item.blueprint.task_contract.startsWith("Собери"))!;
+  const teamRuns = new AgentTeamRunStore(f.db.sqlite, {
+    instances,
+    graph: new TeamGraphAdapter(f.dag, f.store)
+  });
+  const store = new StarsMissionStore(f.db.sqlite);
+  const app = Fastify();
+  const identityFor = (request: { headers: { [key: string]: unknown } }) =>
+    request.headers["x-fixture-owner"]
+      ? { ...scoped, owner_id: "another-owner", actor_id: "another-owner" }
+      : scoped;
+  registerStarsMissionRoutes({
+    app,
+    store,
+    teamRuns,
+    projects: f.projects,
+    dag: f.dag,
+    identityFor
+  });
+  registerWorkDagRoutes({ app, projects: f.projects, coordinator: f.dag, identityFor });
+  try {
+    const base = "/api/v1/stars/missions";
+    const post = async (url: string, payload: Record<string, unknown>, status = 200) => {
+      const response = await app.inject({ method: "POST", url, payload });
+      expect(response.statusCode, response.body).toBe(status);
+      return response.json();
+    };
+    const newMission = async (suffix: string) => {
+      const mission = await post(base, {
+        client_request_id: "fixture-" + suffix,
+        team_scope: pid,
+        goal: "Сравнить предложения"
+      });
+      const url = base + "/" + mission.id;
+      const brief = await post(url + "/events", {
+        type: "brief",
+        goal: mission.goal,
+        expected_version: mission.version
+      });
+      const state = await post(url + "/events", {
+        type: "plan",
+        expected_version: brief.version,
+        agents: [
+          { id: "manager", role: "manager", task: "Итог", context_scopes: [] },
+          { id: "a", role: "executor", task: "Реквизиты", context_scopes: [] },
+          { id: "b", role: "executor", task: "Стоимость", context_scopes: [] }
+        ]
+      });
+      return { url, state };
+    };
+    const { url, state } = await newMission("team");
+    const body = {
+      expected_version: state.version,
+      composition_id: roster.composition_id,
+      manager_instance_id: manager.instance_id
+    };
+    const bound = await post(url + "/execution", body);
+    expect((await post(url + "/execution", body)).execution).toEqual(bound.execution);
+    expect(f.dag.list(pid, owner)).toHaveLength(1);
+    const other = await newMission("other");
+    await post(other.url + "/execution", { ...body, expected_version: other.state.version }, 409);
+    await post(
+      url + "/events",
+      {
+        type: "result",
+        expected_version: bound.version,
+        agent_id: "manager",
+        summary: "False result"
+      },
+      409
+    );
+    const denied = await app.inject({ url, headers: { "x-fixture-owner": "foreign" } });
+    expect(denied.statusCode).toBe(404);
+    const { graph_id, manager_node_id } = bound.execution;
+    const dagUrl = `/api/v1/projects/${pid}/work-dags/${graph_id}`;
+    let graph = f.dag.get(graph_id, owner)!;
+    const getManager = () => graph.nodes.find(({ id }) => id === manager_node_id)!;
+    expect(getManager().status).toBe("blocked");
+    expect(getManager().depends_on).toHaveLength(2);
+    expect(f.calls).toHaveLength(0);
+    await post(
+      dagUrl + "/control",
+      { version: graph.version, action: "run_plan", max_model_requests: 9 },
+      409
+    );
+    graph = await post(dagUrl + "/control", {
+      version: graph.version,
+      action: "run_plan",
+      max_model_requests: 9,
+      acknowledge_cost: true
+    });
+    for (let tick = 0; tick < 8 && graph.execution?.status !== "completed"; tick++) {
+      f.dag.advance();
+      for (const child of f.store.pending()) await f.coordinator.execute(child.id, owner);
+      graph = f.dag.get(graph_id, owner)!;
+    }
+    expect(graph.execution?.status).toBe("completed");
+    expect(
+      graph.nodes.every((node) => node.attempts.length === 1 && node.artifacts.length === 1)
+    ).toBe(true);
+    const reads = f.calls.filter((call) =>
+      JSON.stringify(call).includes("published_bytes_readback")
+    );
+    expect(reads.length).toBeGreaterThan(0);
+    const saved = (await app.inject(url)).json();
+    expect(saved.execution).toEqual(bound.execution);
+    expect(
+      saved.runtime.nodes.every((node: { status: string }) => node.status === "completed")
+    ).toBe(true);
+    const result = (await app.inject(dagUrl + "/results")).json();
+    expect(result.files).toHaveLength(3);
+    for (const artifact of result.files) {
+      expect(artifact.sha256).toBe(createHash("sha256").update(artifact.content).digest("hex"));
+    }
+    const zip = await app.inject(dagUrl + "/results.zip");
+    expect(zip.statusCode).toBe(200);
+    expect(zip.rawPayload.subarray(0, 4)).toEqual(Buffer.from([80, 75, 3, 4]));
+  } finally {
+    await app.close();
+  }
+});
 
 describe("Work priorities and deadlines", () => {
   it("selects ready steps by priority after explicit launch, without bypassing dependencies", async () => {

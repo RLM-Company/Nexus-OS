@@ -1543,6 +1543,10 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
     registerStarsMissionRoutes({
       app,
       store: dependencies.starsMissionStore,
+      ...(dependencies.projectStore ? { projects: dependencies.projectStore } : {}),
+      ...(dependencies.managerWorkCoordinator
+        ? { dag: dependencies.managerWorkCoordinator.dag }
+        : {}),
       ...(dependencies.agentTeamRunStore ? { teamRuns: dependencies.agentTeamRunStore } : {}),
       identityFor
     });

@@ -21,9 +21,17 @@ export interface AgentTeamRunGraphPort {
     actorId: string;
     projectId: string;
     compositionId: string;
-    parts: Array<{ instanceId: string; nodeId: string; title: string; goal: string }>;
+    runKey?: string;
+    title?: string;
+    parts: Array<{
+      instanceId: string;
+      nodeId: string;
+      title: string;
+      goal: string;
+      dependsOn?: string[];
+    }>;
   }): { graphId: string; nodes: TeamGraphNode[] };
-  nodesOf(graphId: string, ownerId: string, projectId: string): TeamGraphNode[];
+  nodesOf(graphId: string, ownerId: string, projectId: string, runKey?: string): TeamGraphNode[];
 }
 
 export interface AgentTeamRunStoreOptions {
@@ -85,7 +93,8 @@ export class AgentTeamRunStore {
   activate(
     identity: AgentInstanceIdentity,
     projectId: string,
-    compositionId: string
+    compositionId: string,
+    mission?: { runKey: string; goal: string; managerInstance: string }
   ): ActivateAgentTeamResponse {
     if (!/^[0-9a-f]{64}$/.test(compositionId)) {
       throw new AgentTeamRunValidationError("Invalid team composition id");
@@ -122,7 +131,12 @@ export class AgentTeamRunStore {
       )
       .get(identity.owner_id, projectId, compositionId) as { graph_id: string } | undefined;
     if (existing) {
-      const nodes = this.#graph.nodesOf(existing.graph_id, identity.owner_id, projectId);
+      const nodes = this.#graph.nodesOf(
+        existing.graph_id,
+        identity.owner_id,
+        projectId,
+        mission?.runKey
+      );
       return {
         composition_id: compositionId,
         graph_id: existing.graph_id,
@@ -138,6 +152,8 @@ export class AgentTeamRunStore {
       if (instance.parent_instance_id !== null || instance.status !== "proposed") continue;
       const line = rosterLine(instance.blueprint);
       if (!wanted.has(line) || byLine.has(line)) continue;
+      if (mission && Date.parse(instance.blueprint.grant.valid_until) <= this.#now())
+        throw new AgentTeamRunValidationError("An agent blueprint has expired");
       if (instance.blueprint.task_contract.length > MAX_PART_GOAL) {
         throw new AgentTeamRunValidationError(
           "A blueprint task contract exceeds the part node goal limit (4000 characters)"
@@ -158,17 +174,35 @@ export class AgentTeamRunStore {
       return { ...part, nodeId: nodeIdFor(line), line };
     });
 
+    const manager = mission && parts.find((part) => part.instanceId === mission.managerInstance);
+    if (mission && (!manager || parts.length !== 3)) {
+      throw new AgentTeamRunValidationError(
+        "Select one manager and two workers from this composition"
+      );
+    }
+    const nodes = parts.map((part) => ({
+      instanceId: part.instanceId,
+      nodeId: part.nodeId,
+      title: mission
+        ? (part === manager ? "Менеджер" : "Исполнитель") + " · " + part.line
+        : `Part ${part.line}`,
+      goal: mission ? `${mission.goal}\n\nЗадача участника: ${part.goal}` : part.goal,
+      ...(part === manager
+        ? { dependsOn: parts.filter((worker) => worker !== manager).map((worker) => worker.nodeId) }
+        : {})
+    }));
+    if (nodes.some((node) => node.goal.length > MAX_PART_GOAL || node.title.length > 160))
+      throw new AgentTeamRunValidationError(
+        "Mission or blueprint instructions exceed the DAG limits"
+      );
+
     const created = this.#graph.createOrGet({
       ownerId: identity.owner_id,
       actorId: identity.actor_id,
       projectId,
       compositionId,
-      parts: parts.map((part) => ({
-        instanceId: part.instanceId,
-        nodeId: part.nodeId,
-        title: `Part ${part.line}`,
-        goal: part.goal
-      }))
+      ...(mission ? { runKey: mission.runKey, title: mission.goal.slice(0, 120) } : {}),
+      parts: nodes
     });
     for (const part of parts) {
       this.#sqlite
