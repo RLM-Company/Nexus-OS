@@ -1,0 +1,17 @@
+{
+  "applied_rule_versions": [
+    {
+      "id": "3bb06661-b380-4232-80a8-27e17ae06ee1",
+      "version": 1,
+      "effect": "delivery_separate_line"
+    }
+  ],
+  "rule_statuses": [
+    {
+      "id": "3bb06661-b380-4232-80a8-27e17ae06ee1",
+      "version": 1,
+      "status": "conflict",
+      "reason": "Конфликт активных правил; правило не применено."
+    }
+  ]
+}
