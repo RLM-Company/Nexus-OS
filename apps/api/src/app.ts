@@ -207,6 +207,7 @@ import { GithubIntegration, type GithubDraftStore } from "./github-integration.j
 import { registerGithubRoutes } from "./github-routes.js";
 import { WebSearch, registerWebSearchRoutes } from "./web-search.js";
 import { registerProjectMaterialsRoutes } from "./project-materials-routes.js";
+import { projectAccess } from "./project-access.js";
 import { registerAccountRoutes } from "./account-settings/routes.js";
 import { registerPrivacyRoutes } from "./account-settings/privacy/routes.js";
 import type { OwnerPrivacyCoordinator } from "./account-settings/privacy/coordinator.js";
@@ -875,15 +876,21 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
     identityFor
   );
   registerRuntimeClockRoutes(app, dependencies.runtimeClock ?? new RuntimeClock());
-  registerConnectorRoutes(app, dependencies.policyStore, "owner", {
-    pilot: dependencies.mcpDiscovery,
-    projects: dependencies.projectStore,
-    stop: dependencies.emergencyStopStore,
-    ownerActive: (ownerId) =>
-      (dependencies.ownerPrivacy?.overview(ownerId).lifecycle ?? "active") === "active",
-    origin: dependencies.config.webOrigin,
-    identityFor
-  }, dependencies.googleDrive);
+  registerConnectorRoutes(
+    app,
+    dependencies.policyStore,
+    "owner",
+    {
+      pilot: dependencies.mcpDiscovery,
+      projects: dependencies.projectStore,
+      stop: dependencies.emergencyStopStore,
+      ownerActive: (ownerId) =>
+        (dependencies.ownerPrivacy?.overview(ownerId).lifecycle ?? "active") === "active",
+      origin: dependencies.config.webOrigin,
+      identityFor
+    },
+    dependencies.googleDrive
+  );
   if (dependencies.projectStore) registerApexRoutes(app, dependencies.projectStore, identityFor);
   if (dependencies.payStore)
     registerPayRoutes(app, {
@@ -1024,7 +1031,12 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
   if (dependencies.mediaService) registerMediaRoutes(app, dependencies.mediaService, identityFor);
   if (dependencies.canvasStore) registerCanvasRoutes(app, dependencies.canvasStore, identityFor);
   if (dependencies.projectStore)
-    registerProjectMaterialsRoutes(app, dependencies.projectStore, identityFor);
+    registerProjectMaterialsRoutes(
+      app,
+      dependencies.projectStore,
+      identityFor,
+      projectMembershipStore
+    );
   if (dependencies.projectStore)
     registerProjectKnowledgeRoutes(
       app,
@@ -3115,14 +3127,21 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
             required: ["projectId"],
             additionalProperties: false
           },
+          querystring: Type.Object({
+            q: Type.Optional(Type.String({ minLength: 1, maxLength: 200 }))
+          }),
           response: { 200: ProjectDetailResponseSchema, 404: ApiErrorSchema }
         }
       },
       async (request, reply) => {
-        const ownerId = identityFor(request).owner_id;
-        const project = store.getProject(request.params.projectId, ownerId);
-        const chatId = store.getMainChatId(request.params.projectId, ownerId);
-        if (!project || !chatId) {
+        const access = projectAccess(
+          projectMembershipStore,
+          request.params.projectId,
+          identityFor(request).owner_id
+        );
+        const project = access && store.getProject(access.projectId, access.ownerId);
+        const chatId = access && store.getMainChatId(access.projectId, access.ownerId);
+        if (!access || !project || !chatId) {
           return reply
             .status(404)
             .send(errorBody(request.id, "PROJECT_NOT_FOUND", "Project not found"));
@@ -3130,8 +3149,14 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
         const response: ProjectDetailResponse = {
           project,
           chat_id: chatId,
-          messages: store.listMessages(project.id, ownerId)
+          messages: store.listMessages(project.id, access.ownerId)
         };
+        const query = request.query.q?.trim().toLocaleLowerCase();
+        if (query)
+          response.messages = response.messages.filter((message) =>
+            message.content.toLocaleLowerCase().includes(query)
+          );
+        reply.header("Cache-Control", "private, no-store");
         return response;
       }
     );

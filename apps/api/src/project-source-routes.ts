@@ -11,6 +11,7 @@ import {
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { Type } from "typebox";
 import { TypeBoxValidatorCompiler } from "@fastify/type-provider-typebox";
+import { projectAccess } from "./project-access.js";
 
 const id = Type.String({ minLength: 1, maxLength: 128 });
 const params = Type.Object({ projectId: id }, { additionalProperties: false });
@@ -24,15 +25,6 @@ export function registerProjectSourceRoutes(
   membership?: ProjectMembershipStore
 ) {
   const base = "/api/v1/projects/:projectId/sources";
-  if (membership)
-    app.addHook("onRequest", (request, reply, done) => {
-      if (!request.routeOptions.url?.startsWith(base)) return done();
-      const projectId = (request.params as { projectId?: string } | undefined)?.projectId;
-      if (!projectId) return done();
-      if (!membership.canAccess(projectId, identityFor(request).owner_id))
-        return reply.code(403).send({ error: { code: "PROJECT_MEMBER_REQUIRED" } });
-      done();
-    });
   app.addHook("onSend", (request, reply, payload, done) => {
     if (request.routeOptions.url?.startsWith(base))
       reply
@@ -49,8 +41,19 @@ export function registerProjectSourceRoutes(
     base + "/exclusions",
     { schema: { params }, validatorCompiler: TypeBoxValidatorCompiler },
     (req, reply) => {
+      const { projectId } = req.params;
+      const access = projectAccess(membership, projectId, identityFor(req).owner_id);
+      if (!access) return reply.code(403).send({ error: { code: "PROJECT_MEMBER_REQUIRED" } });
       try {
-        return store.exclusions(req.params.projectId, identityFor(req).owner_id);
+        const result = store.exclusions(projectId, access.ownerId);
+        return access.role === "owner"
+          ? result
+          : {
+              ...result,
+              items: result.items
+                .filter((item) => store.isSharedSource(projectId, item))
+                .map((item) => ({ ...item, reason: "" }))
+            };
       } catch (error) {
         return failure(reply, error);
       }
@@ -64,8 +67,15 @@ export function registerProjectSourceRoutes(
       schema: { params, body: SourceExclusionsInputSchema }
     },
     (req, reply) => {
+      const access = projectAccess(
+        membership,
+        req.params.projectId,
+        identityFor(req).owner_id,
+        "owner"
+      );
+      if (!access) return reply.code(403).send({ error: { code: "PROJECT_MEMBER_REQUIRED" } });
       try {
-        return store.updateExclusions(req.params.projectId, identityFor(req).owner_id, req.body);
+        return store.updateExclusions(req.params.projectId, access.ownerId, req.body);
       } catch (error) {
         return failure(reply, error);
       }
@@ -75,8 +85,20 @@ export function registerProjectSourceRoutes(
     base + "/run/:runId",
     { schema: { params: runParams }, validatorCompiler: TypeBoxValidatorCompiler },
     (req, reply) => {
+      const { projectId, runId } = req.params;
+      const access = projectAccess(membership, projectId, identityFor(req).owner_id);
+      if (!access) return reply.code(403).send({ error: { code: "PROJECT_MEMBER_REQUIRED" } });
       try {
-        return store.runSources(req.params.projectId, identityFor(req).owner_id, req.params.runId);
+        const result = store.runSources(projectId, access.ownerId, runId);
+        if (access.role === "owner") return result;
+        const sources = result.sources.filter((source) => store.isSharedSource(projectId, source));
+        return {
+          ...result,
+          sources,
+          excluded_now: result.excluded_now.filter((id) =>
+            sources.some((source) => source.source_id === id)
+          )
+        };
       } catch (error) {
         return failure(reply, error);
       }

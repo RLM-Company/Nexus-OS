@@ -171,3 +171,8 @@ END')
   OR (type = 'index' AND name = 'project_members_account_idx' AND sql = 'CREATE INDEX project_members_account_idx ON project_members(account_id, status)');
 --> statement-breakpoint
 DROP TABLE compatible_project_intake_schema;
+--> statement-breakpoint
+CREATE TRIGGER IF NOT EXISTS project_members_cleanup AFTER DELETE ON projects
+BEGIN
+  DELETE FROM project_members WHERE project_id = OLD.id;
+END;

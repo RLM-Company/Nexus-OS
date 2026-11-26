@@ -35,11 +35,12 @@ export class ProjectSourceStore {
     if (!this.db.prepare("SELECT 1 FROM projects WHERE id=? AND owner_id=?").get(projectId, owner))
       throw new ProjectSourceError(404, "PROJECT_NOT_FOUND");
   }
-  private settings(projectId: string, owner: string): number {
+  private settings(projectId: string, owner: string, initialize = true): number {
     const row = this.db
       .prepare("SELECT version FROM project_source_settings WHERE owner_id=? AND project_id=?")
       .get(owner, projectId) as { version: number } | undefined;
     if (row) return row.version;
+    if (!initialize) return 1;
     this.db
       .prepare(
         "INSERT INTO project_source_settings(owner_id,project_id,version,updated_at) VALUES(?,?,1,?)"
@@ -48,10 +49,20 @@ export class ProjectSourceStore {
     return 1;
   }
 
+  isSharedSource(projectId: string, source: Pick<UsedSource, "source_kind" | "source_id">) {
+    return (
+      source.source_kind === "research_page" ||
+      (source.source_kind === "project_message" &&
+        !!this.db
+          .prepare("SELECT 1 FROM messages WHERE project_id=? AND id=?")
+          .get(projectId, source.source_id))
+    );
+  }
+
   exclusions(projectId: string, owner: string): SourceExclusionsView {
     this.active(owner);
     this.project(projectId, owner);
-    const version = this.settings(projectId, owner);
+    const version = this.settings(projectId, owner, false);
     const items = this.db
       .prepare(
         "SELECT source_kind,source_id,excluded_at,reason FROM project_source_exclusions WHERE owner_id=? AND project_id=? ORDER BY source_kind,source_id"

@@ -67,18 +67,18 @@ export class ProjectMembershipStore {
   accept(projectId: string, accountId: string): ProjectMembersView {
     this.active(accountId);
     const row = this.db
-      .prepare("SELECT status FROM project_members WHERE project_id=? AND account_id=?")
-      .get(projectId, accountId) as { status: string } | undefined;
+      .prepare(
+        "SELECT m.status, p.owner_id FROM project_members m JOIN projects p ON p.id=m.project_id AND p.owner_id=m.owner_id WHERE m.project_id=? AND m.account_id=?"
+      )
+      .get(projectId, accountId) as { status: string; owner_id: string } | undefined;
     if (!row || row.status !== "invited") throw new MembershipError("NOT_FOUND");
+    this.active(row.owner_id);
     this.db
-      .prepare("UPDATE project_members SET status='active', accepted_at=? WHERE project_id=? AND account_id=?")
+      .prepare(
+        "UPDATE project_members SET status='active', accepted_at=? WHERE project_id=? AND account_id=?"
+      )
       .run(new Date().toISOString(), projectId, accountId);
-    const owner = (
-      this.db
-        .prepare("SELECT owner_id FROM project_members WHERE project_id=? AND account_id=?")
-        .get(projectId, accountId) as { owner_id: string }
-    ).owner_id;
-    return this.members(projectId, owner);
+    return this.members(projectId, accountId);
   }
 
   leave(projectId: string, accountId: string): void {
@@ -101,18 +101,28 @@ export class ProjectMembershipStore {
 
   /** Active membership is required for reading, search, download and actions. */
   canAccess(projectId: string, accountId: string, role: ProjectRole | "any" = "any"): boolean {
+    return this.access(projectId, accountId, role) !== null;
+  }
+
+  access(projectId: string, accountId: string, role: ProjectRole | "any" = "any") {
     this.active(accountId);
-    const row = this.db
-      .prepare("SELECT 1 FROM projects WHERE id=? AND owner_id=?")
-      .get(projectId, accountId);
-    if (row) return true;
-    const member = this.db
-      .prepare("SELECT role FROM project_members WHERE project_id=? AND account_id=? AND status='active'")
-      .get(projectId, accountId) as { role: ProjectRole } | undefined;
-    if (!member) return false;
-    if (role === "any") return true;
+    const project = this.db.prepare("SELECT owner_id FROM projects WHERE id=?").get(projectId) as
+      { owner_id: string } | undefined;
+    if (!project) return null;
+    const ownerId = project.owner_id;
+    const member =
+      ownerId === accountId
+        ? { role: "owner" as const }
+        : (this.db
+            .prepare(
+              "SELECT role FROM project_members WHERE project_id=? AND owner_id=? AND account_id=? AND status='active' AND role IN ('viewer','editor')"
+            )
+            .get(projectId, ownerId, accountId) as { role: ProjectRole } | undefined);
+    if (!member) return null;
     const rank: Record<ProjectRole, number> = { viewer: 1, editor: 2, owner: 3 };
-    return rank[member.role] >= rank[role];
+    if (role !== "any" && rank[member.role] < rank[role]) return null;
+    this.active(ownerId);
+    return { accountId, projectId, ownerId, role: member.role };
   }
 
   requireAccess(projectId: string, accountId: string): void {

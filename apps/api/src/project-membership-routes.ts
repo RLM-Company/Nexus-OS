@@ -81,14 +81,15 @@ export function registerProjectMembershipRoutes(
           const owner = identityFor(req).owner_id;
           if (owner === params.account_id) store.leave(params.projectId, owner);
           else store.revoke(params.projectId, owner, params.account_id);
-        return { ok: true };
-      } catch (error) {
-        if (error instanceof MembershipError)
-          return reply.code(error.code === "NOT_FOUND" ? 404 : 409).send({
-            error: { code: error.code }
-          });
-        throw error;
+          return { ok: true };
+        } catch (error) {
+          if (error instanceof MembershipError)
+            return reply.code(error.code === "NOT_FOUND" ? 404 : 409).send({
+              error: { code: error.code }
+            });
+          throw error;
+        }
       }
-    });
+    );
   });
 }
