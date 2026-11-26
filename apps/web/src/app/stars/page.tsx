@@ -43,7 +43,7 @@ const POST = async <T,>(url: string, body: unknown): Promise<T> => {
 export default function StarsPage() {
   const [mission, setMission] = useState<Mission | null>(null);
   const [scope, setScope] = useState("");
-  const [projects, setProjects] = useState<{ id: string; name: string }[]>([]);
+  const [projects, setProjects] = useState<{ id: string; title: string }[]>([]);
   const [creating, setCreating] = useState(false);
   const [goal, setGoal] = useState("Сравнить предложения поставщиков");
   const [error, setError] = useState("");
@@ -54,7 +54,7 @@ export default function StarsPage() {
     const controller = new AbortController();
     fetch("/api/v1/projects", { cache: "no-store", signal: controller.signal })
       .then((response) => response.json())
-      .then((data: { items?: { id: string; name: string }[] }) => setProjects(data.items ?? []))
+      .then((data: { items?: { id: string; title: string }[] }) => setProjects(data.items ?? []))
       .catch(() => {});
     fetch("/api/v1/stars/missions", { cache: "no-store", signal: controller.signal })
       .then((response) => response.json())
@@ -175,7 +175,7 @@ export default function StarsPage() {
             <option value="">Выберите проект</option>
             {projects.map((project) => (
               <option key={project.id} value={project.id}>
-                {project.name}
+                {project.title}
               </option>
             ))}
           </select>
