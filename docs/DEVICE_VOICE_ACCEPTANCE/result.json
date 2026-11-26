@@ -1,0 +1,57 @@
+{
+  "passed": true,
+  "suite": "koswork-local-cycle",
+  "at": "2026-11-26T14:15:09.933Z",
+  "base": "synthetic deterministic planner + real desktop modules + dedicated temp folder",
+  "checks": [
+    {
+      "name": "01 connect + workspace selection",
+      "status": "pass",
+      "detail": "workspace 11b92e9519f5eb61b3e0adc7"
+    },
+    {
+      "name": "02 open test application proposal is bounded",
+      "status": "pass",
+      "detail": "open_app accepted; unsafe workspace path rejected"
+    },
+    {
+      "name": "03-05 create/save file, read back and return result to Koswork",
+      "status": "pass",
+      "detail": "file koswork-cycle.md sha256=923a7e406cea status=completed"
+    },
+    {
+      "name": "06 revoke permission mid-action",
+      "status": "pass",
+      "detail": "write after revoke refused; no file created"
+    },
+    {
+      "name": "07 stop during action",
+      "status": "pass",
+      "detail": "aborted action rejected before execution"
+    },
+    {
+      "name": "08 assistant restart restores status from history",
+      "status": "pass",
+      "detail": "status completed restored after restart"
+    },
+    {
+      "name": "09 lost save response continues without duplication",
+      "status": "pass",
+      "detail": "duplicate create refused; readback verified same bytes"
+    },
+    {
+      "name": "10 executor respects selected permissions",
+      "status": "pass",
+      "detail": "foreign owner refused; no native desktop input"
+    }
+  ],
+  "result": {
+    "file": "koswork-cycle.md",
+    "sha256": "923a7e406cea7bc4667657b4fefb3d148ef2559258e7db82d209b192f31414ea",
+    "session": "completed"
+  },
+  "limits": [
+    "No Electron binary or installed Windows client was used; GUI/live acceptance is a separate chat.",
+    "No paid model, real owner profile or PC control; all data is synthetic and scoped to the temp folder."
+  ]
+}
