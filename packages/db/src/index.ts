@@ -161,6 +161,8 @@ export * from "./canvas-artifact-store.js";
 export * from "./document-answer-store.js";
 export * from "./chat-history-search-store.js";
 export * from "./context-memory-store.js";
+export * from "./project-source-store.js";
+export * from "./project-membership-store.js";
 export * from "./semantic-memory-types.js";
 export * from "./semantic-index-store.js";
 export * from "./presentation-store.js";
@@ -171,6 +173,7 @@ export * from "./chat-workspace-store.js";
 export * from "./chat-skill-store.js";
 export * from "./work-skill-store.js";
 export * from "./project-automation-store.js";
+export * from "./project-correction-rule-store.js";
 export * from "./scheduled-dispatch-store.js";
 export * from "./pay-store.js";
 

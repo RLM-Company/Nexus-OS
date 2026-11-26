@@ -319,6 +319,14 @@ export class GeneralChatStore {
     return this.getChat(chatId, ownerId);
   }
 
+  getMessage(chatId: string, messageId: string, ownerId: string): StoredGeneralChatMessage | null {
+    if (!this.getChat(chatId, ownerId)) return null;
+    const row = this.#sqlite
+      .prepare(`SELECT ${MESSAGE_COLUMNS} FROM general_chat_messages WHERE chat_id = ? AND id = ?`)
+      .get(chatId, messageId) as SqlRow | undefined;
+    return row ? asMessage(row) : null;
+  }
+
   listMessages(chatId: string, ownerId = LOCAL_OWNER_ID): StoredGeneralChatMessage[] {
     if (!this.getChat(chatId, ownerId)) return [];
     return this.#sqlite

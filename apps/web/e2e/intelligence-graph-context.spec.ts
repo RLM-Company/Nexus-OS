@@ -2,6 +2,9 @@ import { createHash, randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { test, expect, type Page } from "@playwright/test";
 
+// A long graph page should settle immediately when Playwright scrolls to a control.
+test.use({ reducedMotion: "reduce" });
+
 const graph = {
   graph_id: "graph-a",
   title: "Контекст проекта",
@@ -82,8 +85,24 @@ const openGraph = async (page: Page) => {
 };
 const open = async (page: Page) => {
   const panel = await openGraph(page);
+  const savedStatus = panel.getByRole("region", {
+    name: "Актуальность сохранённого контекста",
+    exact: true
+  });
+  await expect(savedStatus.getByRole("status")).not.toContainText("Проверяем сохранённый снимок");
   await panel.getByRole("textbox", { name: "Запрос для контекста графа" }).fill("Исходный");
-  await panel.getByRole("button", { name: "Подготовить контекст", exact: true }).click();
+  await Promise.all([
+    page.waitForRequest((request) => {
+      const url = new URL(request.url());
+      return (
+        request.method() === "GET" &&
+        url.pathname.endsWith("/context") &&
+        url.searchParams.get("q") === "Исходный" &&
+        url.searchParams.get("revision") === "2"
+      );
+    }),
+    panel.getByRole("button", { name: "Подготовить контекст", exact: true }).click()
+  ]);
   return panel;
 };
 test("preview does not write and apply sends the reviewed exact hash plus materials CAS", async ({

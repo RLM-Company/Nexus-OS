@@ -286,6 +286,44 @@ for (const corruption of ["bytes", "version"] as const)
     await expect(editor.getByRole("link", { name: "Скачать новую копию" })).toHaveCount(0);
   });
 
+test("a version conflict offers an explicit continuation choice without losing the plan", async ({
+  page
+}) => {
+  const editor = await prepareWordPlan(page);
+  await page.route("**/api/v1/document-workspace/preview", async (route) =>
+    route.fulfill({ status: 409, json: { error: { code: "VERSION_CONFLICT" } } })
+  );
+  const group = editor.getByRole("group", { name: "Конфликт версии: выбор продолжения" });
+  await editor.getByRole("button", { name: "Посмотреть изменения" }).click();
+  await expect(editor.getByRole("alert")).toContainText("Версия файла изменилась");
+  await expect(group).toBeVisible();
+  await expect(editor.getByRole("list", { name: "План правок" }).getByRole("listitem")).toHaveCount(
+    1
+  );
+  await expect(editor.getByRole("link", { name: "Скачать новую копию" })).toHaveCount(0);
+  // Reopening with the plan kept re-inspects the selected bytes at a fresh version.
+  await group.getByRole("button", { name: "Переоткрыть файл и сохранить план" }).click();
+  await expect(group).toHaveCount(0);
+  await expect(editor.getByRole("list", { name: "План правок" }).getByRole("listitem")).toHaveCount(
+    1
+  );
+  await expect(editor).toContainText("sha256:");
+});
+
+test("discarding after a version conflict clears the stale plan", async ({ page }) => {
+  const editor = await prepareWordPlan(page);
+  await page.route("**/api/v1/document-workspace/preview", async (route) =>
+    route.fulfill({ status: 409, json: { error: { code: "VERSION_CONFLICT" } } })
+  );
+  await editor.getByRole("button", { name: "Посмотреть изменения" }).click();
+  const group = editor.getByRole("group", { name: "Конфликт версии: выбор продолжения" });
+  await group.getByRole("button", { name: "Отменить правки" }).click();
+  await expect(editor.getByRole("list", { name: "План правок" }).getByRole("listitem")).toHaveCount(
+    0
+  );
+  await expect(group).toHaveCount(0);
+});
+
 test("an empty Word document is shown without offering an invalid text edit", async ({ page }) => {
   const { zipSync, strToU8 } = await import("fflate");
   const parts = unzipSync(await readFile("../../docs/handoff/fixtures/koswork-office/offer.docx"));

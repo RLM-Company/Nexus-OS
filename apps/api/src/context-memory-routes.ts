@@ -27,7 +27,8 @@ const target = (p: TargetParams): MemoryTarget => ({ kind: p.kind, id: p.targetI
 export function registerContextMemoryRoutes(
   app: FastifyInstance,
   store: ContextMemoryStore,
-  identityFor: (request: FastifyRequest) => IdentityContext
+  identityFor: (request: FastifyRequest) => IdentityContext,
+  excludedFor: (target: MemoryTarget, owner: string) => readonly string[] = () => []
 ) {
   app.register((routes) => {
     routes.setValidatorCompiler(TypeBoxValidatorCompiler);
@@ -207,7 +208,14 @@ export function registerContextMemoryRoutes(
           )
         }
       },
-      (r) => store.resolveAsync(target(r.params), owner(r), r.body.query, [], r.body.budget_bytes)
+      (r) =>
+        store.resolveAsync(
+          target(r.params),
+          owner(r),
+          r.body.query,
+          excludedFor(target(r.params), owner(r)),
+          r.body.budget_bytes
+        )
     );
     routes.get<{ Params: TargetParams; Querystring: { reference: string; offset?: number } }>(
       base + "/source",
