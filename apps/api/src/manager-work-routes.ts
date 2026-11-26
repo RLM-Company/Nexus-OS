@@ -117,6 +117,38 @@ export function registerManagerWorkRoutes(options: {
       throw error;
     }
   });
+  app.post<{ Params: Params; Body: { expected_version: number; answer: string } }>(
+    base + "/:id/supplier-answer",
+    {
+      validatorCompiler: TypeBoxValidatorCompiler,
+      schema: {
+        params,
+        body: Type.Object(
+          {
+            expected_version: Type.Integer({ minimum: 1 }),
+            answer: Type.String({ minLength: 1, maxLength: 8000 })
+          },
+          { additionalProperties: false }
+        )
+      }
+    },
+    (request, reply) => {
+      reply.header("Cache-Control", "private, no-store");
+      const work = get(request);
+      if (!work) return reply.code(404).send({ error: "WORK_NOT_FOUND" });
+      try {
+        return coordinator.answerSupplierQuestion(
+          work,
+          request.body.expected_version,
+          request.body.answer
+        );
+      } catch (error) {
+        if (error instanceof ManagerWorkConflict)
+          return reply.code(409).send({ error: error.message });
+        throw error;
+      }
+    }
+  );
   // Owner acceptance of the finished result. Separate from plan approval.
   app.post<{ Params: Params; Body: { expected_version: number } }>(
     base + "/:id/result/accept",

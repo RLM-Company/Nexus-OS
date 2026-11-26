@@ -172,6 +172,7 @@ export interface ManagerWork {
   actor_id: string;
   request: CreateManagerWork;
   supplier_handoff?: SupplierWorkHandoff;
+  supplier_clarification?: { question: string; answer?: string };
   correction_rules?: WorkCorrectionRule[];
   materials?: {
     version?: number;

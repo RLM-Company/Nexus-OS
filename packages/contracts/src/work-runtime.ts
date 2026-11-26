@@ -92,7 +92,7 @@ export interface WorkRuntimeProgress {
   completed: number;
   total: number;
   next_task_id: string | null;
-  waiting_decision: "plan" | "permission" | "resume" | "recovery" | null;
+  waiting_decision: "plan" | "permission" | "resume" | "recovery" | "clarification" | null;
   restores_permissions: false;
 }
 // Adapter receives only project-scoped public records, never prompts, credentials,

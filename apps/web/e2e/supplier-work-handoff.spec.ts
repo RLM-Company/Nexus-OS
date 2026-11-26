@@ -161,6 +161,20 @@ test("hands off a chat message and reopens the verified, accepted supplier compa
     expect(await (await request.get(workUrl + "/files/supplier-comparison.csv")).body()).toEqual(
       bytes
     );
+    const nextRules = nextResult.locator("details").filter({
+      has: nextTab.getByText("Правила следующих сравнений", { exact: true })
+    });
+    await nextRules.locator("summary").click();
+    await nextRules.getByRole("button", { name: "Отключить правило" }).click();
+    await expect(nextRules).toContainText("Доставка отдельной строкой · версия 2 · отключено");
+    await nextTab.goto(new URL(original!, permalink).toString());
+    await nextTab.getByRole("button", { name: "Сравнить поставщиков в Koswork" }).click();
+    await nextPreview.getByRole("combobox", { name: "Проект" }).selectOption(project.id);
+    await nextPreview.getByRole("button", { name: "Создать задачу сравнения" }).click();
+    await expect(nextResult).toContainText("К этому результату правила не применялись.");
+    expect(await (await request.get((await newReport.getAttribute("href"))!)).body()).toEqual(
+      bytes
+    );
   } finally {
     await nextTab.close();
   }
@@ -178,4 +192,101 @@ test("hands off a chat message and reopens the verified, accepted supplier compa
   } finally {
     await independentTab.close();
   }
+});
+
+test("resumes an incomplete comparison in the same task after reload and a lost answer response", async ({
+  page,
+  request
+}) => {
+  test.setTimeout(60000);
+  const created = await request.post("/api/v1/projects/empty", {
+    data: { title: "Уточнение " + crypto.randomUUID(), client_project_id: crypto.randomUUID() }
+  });
+  expect(created.status()).toBe(201);
+  const { project } = (await created.json()) as { project: { id: string } };
+  const base = "/api/v1/projects/" + project.id;
+  expect(
+    (
+      await request.put(base + "/autonomy-profile", {
+        data: { base_level: "A2", overrides: [], expected_version: 1 }
+      })
+    ).status()
+  ).toBe(200);
+  const requirement = { itemId: "00123", label: "Крепёж", quantity: 10, unit: "шт" };
+  const offer = (supplier: string, unitPrice: number) => ({
+    supplier,
+    currency: "RUB",
+    deliveryDays: 4,
+    additionalCosts: [],
+    lines: [{ itemId: requirement.itemId, quantity: 10, unit: "шт", unitPrice }]
+  });
+  const initial = JSON.stringify({ requirements: [requirement], offers: [offer("Альфа", 1970)] });
+  const answer = JSON.stringify({ offers: [offer("Бета", 1800)] });
+  await page.goto("/?mode=kosmora");
+  await page.getByLabel("Сообщение Kosmora").fill(initial);
+  await page.getByRole("button", { name: "Отправить", exact: true }).click();
+  await page.getByRole("button", { name: "Сравнить поставщиков в Koswork" }).click();
+  const preview = page.getByRole("region", { name: "Передача в Koswork" });
+  await preview.getByRole("combobox", { name: "Проект" }).selectOption(project.id);
+  await preview.getByRole("button", { name: "Создать задачу сравнения" }).click();
+
+  const clarification = page.getByRole("form", { name: "Уточнение сравнения поставщиков" });
+  await expect(clarification).toContainText("дополнительное предложение");
+  const permalink = page.url();
+  const workId = new URL(permalink).searchParams.get("work");
+  expect(workId).toBeTruthy();
+  const workUrl = base + "/work/" + workId;
+  const before = await (await request.get(workUrl)).json();
+  expect(before.status).toBe("blocked");
+  expect((await request.get(workUrl + "/files/supplier-comparison.csv")).status()).toBe(404);
+  await page.reload();
+  await expect(clarification).toBeVisible();
+  await expect(page).toHaveURL(permalink);
+
+  const submit = clarification.getByRole("button", { name: "Продолжить сравнение" });
+  const editor = clarification.getByLabel("Недостающие данные JSON");
+  await editor.fill('{"offers":[]}');
+  await submit.click();
+  await expect(
+    page.getByText("Добавьте недостающие данные в JSON.", { exact: false })
+  ).toBeVisible();
+  await expect(editor).toHaveValue('{"offers":[]}');
+  const stale = await request.post(workUrl + "/supplier-answer", {
+    data: { expected_version: before.version + 1, answer }
+  });
+  expect(stale.status()).toBe(409);
+  expect(await stale.json()).toEqual({ error: "STALE_EXECUTION" });
+
+  let posts = 0;
+  let responseStatus = 0;
+  await page.route("**/supplier-answer", async (route) => {
+    posts++;
+    responseStatus = (await route.fetch()).status();
+    await route.abort();
+  });
+  await editor.fill(answer);
+  await submit.click();
+  const section = page.getByRole("region", { name: "Сдача сравнения поставщиков" });
+  await expect(section.getByRole("link", { name: "supplier-comparison.csv" })).toBeVisible();
+  expect(posts).toBe(1);
+  expect(responseStatus).toBe(200);
+
+  const final = await (await request.get(workUrl)).json();
+  expect(final).toMatchObject({
+    id: workId,
+    request: { goal: initial },
+    supplier_handoff: before.supplier_handoff,
+    supplier_clarification: { question: before.supplier_clarification.question, answer }
+  });
+  const input = await (await request.get(workUrl + "/files/supplier-input.json")).json();
+  expect(input).toEqual({
+    requirements: [requirement],
+    offers: [offer("Альфа", 1970), offer("Бета", 1800)]
+  });
+  const duplicate = await request.post(workUrl + "/supplier-answer", {
+    data: { expected_version: before.version, answer }
+  });
+  expect((await duplicate.json()).version).toBe(final.version);
+  await expect(page).toHaveURL(permalink);
+  await expect(section).toContainText("Уточнение владельца");
 });

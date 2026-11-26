@@ -25,6 +25,7 @@ type Work = {
   id: string;
   request?: Pick<CreateManagerWork, "goal" | "output_contract">;
   supplier_handoff?: ManagerWork["supplier_handoff"];
+  supplier_clarification?: ManagerWork["supplier_clarification"];
   materials?: ManagerWork["materials"];
   result_sources?: ManagerWork["result_sources"];
   version: number;
@@ -93,6 +94,8 @@ const labels: Record<string, string> = {
   cancelled: "Отменено"
 };
 const errors: Record<string, string> = {
+  INVALID_SUPPLIER_ANSWER: "Добавьте недостающие данные в JSON. Исходные позиции сохраняются.",
+  STALE_EXECUTION: "Задача изменилась. Проверьте её текущее состояние и повторите действие.",
   INVALID_BUSINESS_INPUT: "Проверьте исходные данные выбранного отчёта и запустите задачу снова.",
   BUSINESS_REPORT_TOO_LARGE:
     "Отчёт слишком большой. Сократите число позиций и запустите сравнение снова.",
@@ -259,6 +262,7 @@ export function ManagerWorkPanel({
   const [role, setRole] = useState<CreateManagerWork["worker_role"]>("analyst");
   const [critic, setCritic] = useState(true);
   const [work, setWork] = useState<Work | null>(null);
+  const [supplierAnswer, setSupplierAnswer] = useState({ workId: "", text: "" });
   const [works, setWorks] = useState<Work[]>([]);
   const [selectedWorkId, setSelectedWorkId] = useState<string | null>(null);
   const [historyLoaded, setHistoryLoaded] = useState(false);
@@ -590,6 +594,35 @@ export function ManagerWorkPanel({
     } catch (cause) {
       if (epoch === mutationEpoch.current)
         setError(cause instanceof Error ? cause.message : "Не удалось принять результат");
+    } finally {
+      lock.current = false;
+      setBusy(false);
+    }
+  };
+  const answerSupplierQuestion = async (questionWork: Work, answer: string) => {
+    if (lock.current || executionGate !== "clear") return;
+    const epoch = ++mutationEpoch.current;
+    lock.current = true;
+    setBusy(true);
+    setError("");
+    const url = base + "/" + encodeURIComponent(questionWork.id);
+    try {
+      const updated = await json<Work>(url + "/supplier-answer", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ expected_version: questionWork.version, answer })
+      });
+      recordMutation(updated, epoch);
+    } catch (cause) {
+      if (!(cause instanceof WorkHttpError && cause.status < 500)) {
+        const current = await json<Work>(url).catch(() => null);
+        if (current?.id === questionWork.id && current.supplier_clarification?.answer === answer) {
+          recordMutation(current, epoch);
+          return;
+        }
+      }
+      if (epoch === mutationEpoch.current)
+        setError(cause instanceof Error ? cause.message : "Не удалось сохранить уточнение.");
     } finally {
       lock.current = false;
       setBusy(false);
@@ -952,7 +985,7 @@ export function ManagerWorkPanel({
               Критик: {work.review.verdict}. {work.review.reason}
             </p>
           )}
-          {work.error_code && (
+          {work.error_code && work.error_code !== "SUPPLIER_ANSWER_REQUIRED" && (
             <p className="manager-work-error" role="alert">
               {errors[work.error_code] ??
                 "Работа остановлена. Сохранённые этапы доступны; автоматического повтора нет."}
@@ -976,15 +1009,16 @@ export function ManagerWorkPanel({
               {work.pause_requested ? "Ожидается пауза" : "Пауза"}
             </button>
           )}
-          {["paused", "blocked"].includes(work.status) && (
-            <button
-              className="manager-work-action primary"
-              disabled={busy || executionGate !== "clear"}
-              onClick={() => void act("resume")}
-            >
-              Продолжить
-            </button>
-          )}
+          {["paused", "blocked"].includes(work.status) &&
+            work.error_code !== "SUPPLIER_ANSWER_REQUIRED" && (
+              <button
+                className="manager-work-action primary"
+                disabled={busy || executionGate !== "clear"}
+                onClick={() => void act("resume")}
+              >
+                Продолжить
+              </button>
+            )}
           {active && (
             <button
               className="manager-work-action"
@@ -994,7 +1028,7 @@ export function ManagerWorkPanel({
               Остановить задачу
             </button>
           )}
-          {work.status === "blocked" && (
+          {work.status === "blocked" && work.error_code !== "SUPPLIER_ANSWER_REQUIRED" && (
             <Link
               className="manager-work-permissions"
               href={"/control-center?project=" + encodeURIComponent(projectId)}
@@ -1002,6 +1036,41 @@ export function ManagerWorkPanel({
               Разрешения проекта
             </Link>
           )}
+          {work.status === "blocked" &&
+            work.error_code === "SUPPLIER_ANSWER_REQUIRED" &&
+            work.supplier_clarification && (
+              <form
+                aria-label="Уточнение сравнения поставщиков"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  if (supplierAnswer.workId === work.id && supplierAnswer.text.trim())
+                    void answerSupplierQuestion(work, supplierAnswer.text);
+                }}
+              >
+                <p>{work.supplier_clarification.question}</p>
+                <label>
+                  Недостающие данные JSON
+                  <textarea
+                    value={supplierAnswer.workId === work.id ? supplierAnswer.text : ""}
+                    maxLength={8000}
+                    onChange={(event) =>
+                      setSupplierAnswer({ workId: work.id, text: event.target.value })
+                    }
+                  />
+                </label>
+                <button
+                  className="manager-work-action primary"
+                  disabled={
+                    busy ||
+                    executionGate !== "clear" ||
+                    supplierAnswer.workId !== work.id ||
+                    !supplierAnswer.text.trim()
+                  }
+                >
+                  Продолжить сравнение
+                </button>
+              </form>
+            )}
           {workIsSupplier ? (
             <SupplierWorkResult
               projectId={projectId}
