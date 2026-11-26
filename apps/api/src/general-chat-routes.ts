@@ -12,6 +12,8 @@ import {
   UpdateChatMemorySchema,
   CreateChatBranchSchema,
   ChatBranchListSchema,
+  ForkChatSchema,
+  ForkChatResponseSchema,
   CreateGeneralChatRequestSchema,
   CreateGeneralChatMessageRequestSchema,
   isValidChatAttachments,
@@ -285,6 +287,47 @@ export const registerGeneralChatRoutes = (options: GeneralChatRouteOptions): voi
       return family;
     }
   );
+  app.post(
+    "/api/v1/chats/:chatId/branches/fork",
+    {
+      validatorCompiler: TypeBoxValidatorCompiler,
+      schema: {
+        params,
+        body: ForkChatSchema,
+        response: {
+          200: ForkChatResponseSchema,
+          201: ForkChatResponseSchema,
+          400: ApiErrorSchema,
+          404: ApiErrorSchema,
+          409: ApiErrorSchema
+        }
+      }
+    },
+    (request, reply) => {
+      reply.header("Cache-Control", "private, no-store");
+      try {
+        const fork = options.store.createChatBranch(
+          request.params.chatId,
+          options.identityFor(request).owner_id,
+          request.body
+        );
+        if (!fork) {
+          reply
+            .code(404)
+            .send(error(request.id, "CHAT_NOT_FOUND", "Чат или сообщение не найдено."));
+          return;
+        }
+        reply.code(fork.duplicate ? 200 : 201).send({ chat: fork.chat });
+      } catch (cause) {
+        if (cause instanceof ChatBranchValidationError) {
+          reply.code(400).send(error(request.id, "VALIDATION_ERROR", cause.message));
+          return;
+        }
+        throw cause;
+      }
+    }
+  );
+
   app.post(
     "/api/v1/chats/:chatId/branches",
     {
