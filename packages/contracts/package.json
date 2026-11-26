@@ -19,6 +19,11 @@
       "types": "./src/game-project.ts",
       "default": "./dist/game-project.js"
     },
+    "./game-project-v2": {
+      "development": "./src/game-project-v2.ts",
+      "types": "./src/game-project-v2.ts",
+      "default": "./dist/game-project-v2.js"
+    },
     "./game-package": {
       "development": "./src/game-package.ts",
       "types": "./src/game-package.ts",

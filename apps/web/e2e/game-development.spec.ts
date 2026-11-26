@@ -150,6 +150,27 @@ game.onUpdate=()=>{game.ctx.fillRect(0,0,20,20);};`);
   await expect(page.locator('iframe[title="Проект игры Kosmora"]')).toHaveCount(0);
 });
 
+test("binds a runtime error to game.js, fixes it and restarts the game", async ({
+  page,
+  request
+}) => {
+  const { canvas, code, frame } = await open(page, request);
+  await code.fill("game.onUpdate=()=>{throw Error('diagnostic-game-error');};");
+  await canvas.getByRole("button", { name: "Запустить игру", exact: true }).click();
+  await expect(frame.locator("#game-log")).toContainText("diagnostic-game-error");
+  const diagnostic = page.getByRole("alert", { name: "Диагностика ошибки игры" });
+  await expect(diagnostic).toContainText("game.js");
+  await expect(diagnostic).toContainText("diagnostic-game-error");
+  // Fix in the same editor: the stale session is invalidated, then an explicit
+  // restart produces a healthy game without any new model request.
+  await code.fill("game.onUpdate=()=>{game.ctx.fillRect(0,0,10,10);};");
+  await expect(page.locator('iframe[title="Проект игры Kosmora"]')).toHaveCount(0);
+  await expect(diagnostic).toHaveCount(0);
+  await canvas.getByRole("button", { name: "Запустить игру", exact: true }).click();
+  await expect(frame.locator("#game-status")).toHaveText("Игра запущена");
+  await expect(page.getByRole("alert", { name: "Диагностика ошибки игры" })).toHaveCount(0);
+});
+
 test("compares a selected game file against its saved version and never restarts on source revert", async ({
   page,
   request

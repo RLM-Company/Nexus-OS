@@ -14,6 +14,9 @@ function report(kind, text) {
   if (log.childElementCount >= 100) log.firstElementChild.remove();
   const line = document.createElement('li'); line.textContent = kind + ': ' + String(text).slice(0,1000); log.append(line);
 }
+function diagnostic(text, workerLine) {
+  try { parent.postMessage({type:'kosmora-game-diagnostic',source:'game.js',line:workerLine,text:String(text||'').slice(0,1000)},'*'); } catch(e) {}
+}
 function stop(message) {
   cancelAnimationFrame(frame); clearInterval(timer);
   if(worker) worker.terminate(); worker=null; waiting=false;
@@ -35,7 +38,7 @@ function start() {
   try {
     url=URL.createObjectURL(new Blob([data.worker],{type:'text/javascript'}));
     worker=new Worker(url); URL.revokeObjectURL(url);
-    worker.onerror=(event)=>{ event.preventDefault(); report('Ошибка',event.message+' · строка '+event.lineno); stop('Ошибка в game.js'); };
+    worker.onerror=(event)=>{ event.preventDefault(); report('Ошибка',event.message+' · строка '+event.lineno); diagnostic(event.message+' · строка '+event.lineno,event.lineno); stop('Ошибка в game.js'); };
     worker.onmessage=(event)=>{
       if(!worker) return;
       const now=performance.now(); if(now-messageWindow>1000){messageWindow=now;windowMessages=0;}
@@ -45,7 +48,7 @@ function start() {
       if(!message || typeof message !== 'object') return;
       if(message.type==='ready') { status.textContent='Игра запущена'; waiting=false; last=0; frame=requestAnimationFrame(tick); }
       else if(message.type==='done') waiting=false;
-      else if(message.type==='error') { report('Ошибка',message.text); stop('Ошибка в game.js'); }
+      else if(message.type==='error') { report('Ошибка',message.text); diagnostic(message.text,message.worker_line); stop('Ошибка в game.js'); }
       else if(message.type==='log') report('Консоль',message.text);
     };
     stage.addEventListener('keydown',event=>{ event.preventDefault(); worker?.postMessage({type:'key',key:event.key.toLowerCase(),down:true}); });
@@ -92,7 +95,7 @@ self.onmessage=(event)=>{
     else if(game && message.type==='key') { if(message.down) game.keys.add(message.key); else game.keys.delete(message.key); game.onKey?.(message.key,message.down); }
     else if(game && message.type==='pointer') { Object.assign(game.pointer,{x:message.x,y:message.y,down:message.down}); game.onPointer?.(game.pointer); }
     else if(game && message.type==='reset-input') { game.keys.clear(); game.pointer.down=false; }
-  } catch(error) { send({type:'error',text:String(error?.stack || error).slice(0,1000)}); self.close(); }
+  } catch(error) { const stack=String(error?.stack || error); const m=/(?:blob:[^\s)]+|https?:\/\/[^\s)]+):(\d+):(\d+)/.exec(stack); send({type:'error',text:stack.slice(0,1000),worker_line:m?Number(m[1]):null}); self.close(); }
 };
 `
   );
