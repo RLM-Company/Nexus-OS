@@ -24,8 +24,14 @@ export function registerConnectorRoutes(
   registry?.register(FIRST_SLICE_CONNECTORS);
   if (registry && drive) {
     const transports = driveConnectorTransports(drive);
-    registry.bindTransport(connectorToolId("google-drive", "list_sources"), transports.list_sources);
-    registry.bindTransport(connectorToolId("google-drive", "restore_backup"), transports.restore_backup);
+    registry.bindTransport(
+      connectorToolId("google-drive", "list_sources"),
+      transports.list_sources
+    );
+    registry.bindTransport(
+      connectorToolId("google-drive", "restore_backup"),
+      transports.restore_backup
+    );
   }
   registerMcpRoutes(app, registry, { ...mcp, policy: policyStore });
   registry?.bindToRuntime();
