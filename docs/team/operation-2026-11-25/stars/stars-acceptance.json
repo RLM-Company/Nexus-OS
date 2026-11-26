@@ -1,0 +1,91 @@
+{
+  "mission": {
+    "id": "mission-stars-1",
+    "team_scope": "team-stars",
+    "version": 11,
+    "goal": "Подготовить сравнение предложений поставщиков",
+    "stage": "completed",
+    "agents": [
+      {
+        "id": "manager",
+        "role": "manager",
+        "task": "собрать общий итог",
+        "context_scopes": ["team-stars"],
+        "status": "assigned",
+        "replaced_by": null,
+        "handoff": null
+      },
+      {
+        "id": "extractor",
+        "role": "executor",
+        "task": "извлечь предложения",
+        "context_scopes": ["team-stars"],
+        "status": "replaced",
+        "replaced_by": "extractor-2",
+        "handoff": "извлечь предложения"
+      },
+      {
+        "id": "reviewer",
+        "role": "executor",
+        "task": "проверить комплектность",
+        "context_scopes": ["team-stars"],
+        "status": "completed",
+        "replaced_by": null,
+        "handoff": null
+      },
+      {
+        "id": "extractor-2",
+        "role": "executor",
+        "task": "извлечь предложения",
+        "context_scopes": ["team-stars"],
+        "status": "completed",
+        "replaced_by": null,
+        "handoff": "извлечь предложения"
+      }
+    ],
+    "dependencies": {
+      "reviewer": ["extractor-2"]
+    },
+    "messages": [
+      {
+        "id": "m-6",
+        "from": "manager",
+        "to": "extractor-2",
+        "text": "Добавить валюту",
+        "at": 1795701982601
+      }
+    ],
+    "results": [
+      {
+        "agent_id": "extractor-2",
+        "summary": "извлечено 2 предложения",
+        "artifact_ref": "artifact-extract",
+        "verification": "verified",
+        "verified_by": "manager"
+      },
+      {
+        "agent_id": "reviewer",
+        "summary": "комплектность проверена",
+        "artifact_ref": "artifact-review",
+        "verification": "verified",
+        "verified_by": "manager"
+      }
+    ],
+    "combined_result": "Общий итог: предложения сравнены, расходы указаны",
+    "question": null,
+    "history": [
+      "mission created",
+      "goal accepted",
+      "plan accepted: one manager and executors assigned",
+      "extractor failed: PROVIDER_ERROR",
+      "replacement extractor-2 received unfinished work",
+      "message manager -> extractor-2",
+      "result from extractor-2",
+      "result from reviewer",
+      "extractor-2 result verified by manager",
+      "reviewer result verified by manager",
+      "senior combined the verified results"
+    ]
+  },
+  "combined": "Общий итог: предложения сравнены, расходы указаны"
+}
