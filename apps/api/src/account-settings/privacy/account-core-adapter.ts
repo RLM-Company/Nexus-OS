@@ -150,6 +150,10 @@ export class AccountCorePrivacyAdapter implements PrivacyAdapter {
       materials: select(
         "SELECT m.* FROM project_materials m JOIN projects p ON p.id=m.project_id WHERE p.owner_id=?"
       ),
+      project_correction_rules: select("SELECT * FROM project_correction_rules WHERE owner_id=?"),
+      project_source_exclusions: select("SELECT * FROM project_source_exclusions WHERE owner_id=?"),
+      project_source_settings: select("SELECT * FROM project_source_settings WHERE owner_id=?"),
+      project_run_sources: select("SELECT * FROM project_run_sources WHERE owner_id=?"),
       project_limits: select("SELECT * FROM project_usage_limits WHERE owner_id=?"),
       github_drafts: select(
         "SELECT d.* FROM github_change_drafts d JOIN projects p ON p.id=d.project_id AND p.owner_id=d.owner_id WHERE d.owner_id=?"

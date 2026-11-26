@@ -1,6 +1,6 @@
 import {
-  RunSourcesInputSchema,
   SourceExclusionsInputSchema,
+  type SourceExclusionsInput,
   type IdentityContext
 } from "@cosmora/contracts";
 import { ProjectSourceError, type ProjectSourceStore } from "@cosmora/db";
@@ -19,12 +19,12 @@ export function registerProjectSourceRoutes(
   identityFor: (request: FastifyRequest) => IdentityContext
 ) {
   const base = "/api/v1/projects/:projectId/sources";
-  app.addHook("onSend", async (request, reply, payload) => {
+  app.addHook("onSend", (request, reply, payload, done) => {
     if (request.routeOptions.url?.startsWith(base))
       reply
         .header("cache-control", "private, no-store")
         .header("x-content-type-options", "nosniff");
-    return payload;
+    done(null, payload);
   });
   const failure = (reply: { code(n: number): { send(v: unknown): unknown } }, error: unknown) => {
     if (!(error instanceof ProjectSourceError)) throw error;
@@ -42,7 +42,7 @@ export function registerProjectSourceRoutes(
       }
     }
   );
-  app.put<{ Params: { projectId: string }; Body: unknown }>(
+  app.put<{ Params: { projectId: string }; Body: SourceExclusionsInput }>(
     base + "/exclusions",
     {
       bodyLimit: 32768,
@@ -51,30 +51,7 @@ export function registerProjectSourceRoutes(
     },
     (req, reply) => {
       try {
-        return store.updateExclusions(
-          req.params.projectId,
-          identityFor(req).owner_id,
-          req.body as never
-        );
-      } catch (error) {
-        return failure(reply, error);
-      }
-    }
-  );
-  app.post<{ Params: { projectId: string }; Body: unknown }>(
-    base + "/run",
-    {
-      bodyLimit: 262144,
-      validatorCompiler: TypeBoxValidatorCompiler,
-      schema: { params, body: RunSourcesInputSchema }
-    },
-    (req, reply) => {
-      try {
-        return store.recordRunSources(
-          req.params.projectId,
-          identityFor(req).owner_id,
-          req.body as never
-        );
+        return store.updateExclusions(req.params.projectId, identityFor(req).owner_id, req.body);
       } catch (error) {
         return failure(reply, error);
       }
@@ -91,5 +68,4 @@ export function registerProjectSourceRoutes(
       }
     }
   );
-  return Promise.resolve();
 }

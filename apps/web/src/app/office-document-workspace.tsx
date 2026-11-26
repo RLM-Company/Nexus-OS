@@ -54,6 +54,14 @@ type Preview = {
   preview_token: string;
 };
 type OfficeSource = { name: string; bytes: string };
+type OfficeErrorCode = "VERSION_CONFLICT" | "PREVIEW_EXPIRED" | "OTHER";
+class OfficeRequestError extends Error {
+  readonly code: OfficeErrorCode;
+  constructor(code: OfficeErrorCode, message: string) {
+    super(message);
+    this.code = code;
+  }
+}
 
 function officeCopyName(name: string) {
   return name.replace(
@@ -75,12 +83,23 @@ async function request<T>(mode: string, body: unknown, signal: AbortSignal): Pro
     signal,
     cache: "no-store"
   });
-  if (!response.ok)
-    throw Error(
-      response.status === 409
-        ? "Версия или preview изменились. Откройте файл заново."
-        : "Операция отклонена: неподдерживаемый объект, файл, размер или доступ."
+  if (!response.ok) {
+    const code = (await response.json().catch(() => null)) as { error?: { code?: string } } | null;
+    const kind: OfficeErrorCode =
+      code?.error?.code === "VERSION_CONFLICT"
+        ? "VERSION_CONFLICT"
+        : code?.error?.code === "PREVIEW_EXPIRED"
+          ? "PREVIEW_EXPIRED"
+          : "OTHER";
+    throw new OfficeRequestError(
+      kind,
+      kind === "VERSION_CONFLICT"
+        ? "Версия файла изменилась. План правок сохранён: переоткройте файл заново или отмените правки."
+        : kind === "PREVIEW_EXPIRED"
+          ? "Подтверждение устарело. Посмотрите изменения заново и подтвердите копию."
+          : "Операция отклонена: неподдерживаемый объект, файл, размер или доступ."
     );
+  }
   return (await response.json()) as T;
 }
 function displayValue(value: unknown): string {
@@ -116,6 +135,7 @@ export function OfficeDocumentWorkspace() {
     drive: { bytes: string; operationId: string; verified: boolean } | null;
   } | null>(null);
   const [error, setError] = useState("");
+  const [conflict, setConflict] = useState<OfficeErrorCode | null>(null);
   const [busy, setBusy] = useState(false);
   const abort = useRef<AbortController | null>(null);
   const generation = useRef(0);
@@ -125,6 +145,7 @@ export function OfficeDocumentWorkspace() {
     abort.current?.abort();
     setBusy(false);
     setError("");
+    setConflict(null);
   };
   const clearPlan = useCallback(() => {
     setPreview(null);
@@ -153,10 +174,17 @@ export function OfficeDocumentWorkspace() {
       const current = () => !controller.signal.aborted && generation.current === n;
       setBusy(true);
       setError("");
+      setConflict(null);
       try {
         await fn(controller.signal, current);
       } catch (e) {
-        if (current()) setError(e instanceof Error ? e.message : "Ошибка документа");
+        if (current()) {
+          setError(e instanceof Error ? e.message : "Ошибка документа");
+          if (e instanceof OfficeRequestError && e.code === "VERSION_CONFLICT")
+            setConflict("VERSION_CONFLICT");
+          if (e instanceof OfficeRequestError && e.code === "PREVIEW_EXPIRED")
+            setConflict("PREVIEW_EXPIRED");
+        }
       } finally {
         if (current()) setBusy(false);
       }
@@ -168,15 +196,16 @@ export function OfficeDocumentWorkspace() {
       selected: OfficeSource,
       signal: AbortSignal,
       current: () => boolean,
-      expectedVersion?: string
+      expectedVersion?: string,
+      keepPlan = false
     ) => {
       const opened = await request<View>(
         "inspect",
-        { ...selected, expected_version: expectedVersion },
+        { ...selected, ...(expectedVersion ? { expected_version: expectedVersion } : {}) },
         signal
       );
       if (current()) {
-        clearPlan();
+        if (!keepPlan) clearPlan();
         setPageHistory([]);
         setSource(selected);
         setView(opened);
@@ -214,6 +243,19 @@ export function OfficeDocumentWorkspace() {
     cancel();
     setPreview(null);
     setResult(null);
+  };
+  // Version conflict: keep the user's plan, but offer an explicit continuation.
+  // The web editor holds a fixed byte snapshot, so reopening re-inspects those
+  // bytes at the current version; the user can instead discard the plan.
+  const reopenAfterConflict = () => {
+    if (!source) return;
+    void run(async (signal, current) => {
+      await inspectSource(source, signal, current, undefined, true);
+    });
+  };
+  const discardAfterConflict = () => {
+    cancel();
+    clearPlan();
   };
   const applyPlan = (next: OfficeOperation[]) => {
     validateEditableOfficePlan(next, existingSheets);
@@ -683,7 +725,27 @@ export function OfficeDocumentWorkspace() {
           Отменить
         </button>
       )}
-      {error && <p role="alert">{error}</p>}
+      {error && (
+        <div>
+          <p role="alert">{error}</p>
+          {conflict === "VERSION_CONFLICT" && source && (
+            <div role="group" aria-label="Конфликт версии: выбор продолжения">
+              <button type="button" disabled={busy} onClick={reopenAfterConflict}>
+                Переоткрыть файл и сохранить план
+              </button>
+              <button type="button" disabled={busy} onClick={discardAfterConflict}>
+                Отменить правки
+              </button>
+            </div>
+          )}
+          {conflict === "PREVIEW_EXPIRED" && (
+            <p>
+              План правок не изменён. Нажмите «Посмотреть изменения», чтобы подготовить новое
+              подтверждение.
+            </p>
+          )}
+        </div>
+      )}
       {result && (
         <div>
           <p>Копия подготовлена и повторно прочитана.</p>

@@ -1,12 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
-  openDatabase,
-  runMigrations,
-  ProjectStore,
   EmergencyStopStore,
-  GeneralChatStore
+  GeneralChatStore,
+  openDatabase,
+  ProjectSourceStore,
+  ProjectStore,
+  runMigrations
 } from "@cosmora/db";
-import { ProjectSourceStore } from "@cosmora/db";
 import { buildApp } from "../src/app.js";
 import type { IdentityContext, RunSourcesView, SourceExclusionsView } from "@cosmora/contracts";
 import { StaticIdentityResolver } from "../src/identity.js";
@@ -26,16 +26,24 @@ const foreign: IdentityContext = { ...owner, owner_id: "other-owner", actor_id: 
 let db: ReturnType<typeof openDatabase>;
 let app: Awaited<ReturnType<typeof buildApp>>;
 let projectId: string;
+let chats: GeneralChatStore;
 
 beforeEach(async () => {
   db = openDatabase(":memory:");
   await runMigrations(db);
   const projects = new ProjectStore(db.sqlite);
-  projectId = projects.createProject("Source test", "source-test", owner.owner_id).project.id;
+  chats = new GeneralChatStore(db.sqlite);
+  projectId = projects.createEmptyProject(
+    "source-test",
+    "Source test",
+    owner.owner_id,
+    "ACTIVE"
+  ).id;
   const config = loadServerConfig({ NODE_ENV: "test", MOCK_PROVIDER_MODE: "success" });
   app = buildApp({
     config,
     database: db,
+    generalChatStore: chats,
     projectStore: projects,
     emergencyStopStore: new EmergencyStopStore(db.sqlite),
     projectSourceStore: new ProjectSourceStore(db.sqlite),
@@ -61,13 +69,17 @@ const source = (id: string, sha = "a".repeat(64)) => ({
 describe("project source usage and exclusions", () => {
   it("records two runs and keeps the first receipt immutable after exclusion", async () => {
     const base = `/api/v1/projects/${projectId}/sources`;
-    const first = await app.inject({
+    const store = new ProjectSourceStore(db.sqlite);
+    store.recordRunSources(projectId, owner.owner_id, {
+      run_id: "run-1",
+      sources: [source("msg-a"), source("msg-b")]
+    });
+    const forged = await app.inject({
       method: "POST",
       url: `${base}/run`,
-      payload: { run_id: "run-1", sources: [source("msg-a"), source("msg-b")] }
+      payload: { run_id: "run-1", sources: [source("forged")] }
     });
-    expect(first.statusCode, first.body).toBe(200);
-    expect(first.json<RunSourcesView>().sources).toHaveLength(2);
+    expect(forged.statusCode).toBe(404);
 
     const excluded = await app.inject({
       method: "PUT",
@@ -87,11 +99,11 @@ describe("project source usage and exclusions", () => {
     expect(excluded.statusCode, excluded.body).toBe(200);
     expect(excluded.json<SourceExclusionsView>().version).toBe(2);
 
-    const second = await app.inject({
-      method: "POST",
-      url: `${base}/run`,
-      payload: { run_id: "run-2", sources: [source("msg-b")] }
+    store.recordRunSources(projectId, owner.owner_id, {
+      run_id: "run-2",
+      sources: [source("msg-b")]
     });
+    const second = await app.inject({ url: `${base}/run/run-2` });
     expect(second.statusCode).toBe(200);
 
     const historical = await app.inject({ method: "GET", url: `${base}/run/run-1` });
@@ -157,65 +169,57 @@ describe("project source usage and exclusions", () => {
     expect(historical.sources[0]?.source_id).toBe("file-a");
   });
 
-  it("delivers the exact fragment only while current access allows it", () => {
-    const chats = new GeneralChatStore(db.sqlite);
-    const accepted = chats.createChat("Бюджет 19 700 в чате", "source-grant-chat", owner.owner_id);
-    chats.cancelRun(accepted.run.id);
-    const reference = `H:g:${accepted.userMessage.id}`;
-    const memory = chats.contextMemory;
-    const store = new ProjectSourceStore(db.sqlite);
-    store.recordRunSources(projectId, owner.owner_id, {
-      run_id: "run-grant",
-      sources: [{ ...source("msg-grant"), quote: "Бюджет 19 700" }]
-    });
-    // Owner data revoked: exact-fragment delivery is denied while history stays.
-    const at = new Date().toISOString();
-    db.sqlite
-      .prepare(
-        "INSERT INTO kosmora_owner_data_lifecycle(owner_id,epoch,state,operation_id,started_at,updated_at) VALUES(?,?,?,?,?,?)"
-      )
-      .run(owner.owner_id, 1, "deleting", "source-revoke-test", at, at);
-    expect(() =>
-      memory.sourceFor({ kind: "chat", id: accepted.chat.id }, owner.owner_id, reference, 0)
-    ).toThrow("OWNER_DATA_FENCED");
-    const raw = db.sqlite
-      .prepare("SELECT sources_json FROM project_run_sources WHERE owner_id=? AND run_id=?")
-      .get(owner.owner_id, "run-grant") as { sources_json: string };
-    expect((JSON.parse(raw.sources_json) as { source_id: string }[])[0]?.source_id).toBe(
-      "msg-grant"
+  it("preserves the used source version after deletion and denies a fresh fragment read", async () => {
+    const content = "Поставщик указал 19 700 ₽";
+    const accepted = chats.createChat(content, "source-version-chat", owner.owner_id);
+    expect(chats.cancelRun(accepted.run.id, owner.owner_id)).toBe("cancelled");
+    const target = { kind: "project", id: projectId } as const;
+    const memoryBase = `/api/v1/memory/targets/project/${projectId}`;
+    chats.contextMemory.updateSettings(
+      target,
+      {
+        expected_version: chats.contextMemory.settings(target, owner.owner_id).version,
+        enabled: true,
+        use_personal: false,
+        source_chat_ids: [accepted.chat.id],
+        project_ids: []
+      },
+      owner.owner_id
     );
-    db.sqlite
-      .prepare("DELETE FROM kosmora_owner_data_lifecycle WHERE owner_id=?")
-      .run(owner.owner_id);
-  });
+    const reference = `H:g:${accepted.userMessage.id}`;
+    const fragmentUrl = `${memoryBase}/source?reference=${encodeURIComponent(reference)}`;
+    const original = await app.inject({ url: fragmentUrl });
+    expect(original.statusCode, original.body).toBe(200);
+    const originalHash = original.json<{ source: { sha256: string } }>().source.sha256;
+    expect(original.json()).toMatchObject({ content });
 
-  it("keeps the historical quote when the source document changes version", () => {
     const store = new ProjectSourceStore(db.sqlite);
+    const evidence = {
+      ...source(accepted.userMessage.id, originalHash),
+      reference,
+      source_kind: "chat_message" as const,
+      quote: "",
+      excerpt_only: true
+    };
     const receipt = store.recordRunSources(projectId, owner.owner_id, {
       run_id: "run-version",
-      sources: [{ ...source("msg-version", "b".repeat(64)), quote: "Бюджет: 19 700" }]
+      sources: [evidence]
     });
-    // A second attempt with changed material is rejected (409); the first bytes survive.
     expect(() =>
       store.recordRunSources(projectId, owner.owner_id, {
         run_id: "run-version",
-        sources: [{ ...source("msg-version", "c".repeat(64)), quote: "Бюджет: 18 000" }]
+        sources: [{ ...evidence, version: 2, sha256: "b".repeat(64) }]
       })
     ).toThrow("RUN_SOURCES_CONFLICT");
-    const after = store.runSources(projectId, owner.owner_id, "run-version");
-    expect(after.sources).toEqual(receipt.sources);
-    expect(after.sources[0]).toMatchObject({ sha256: "b".repeat(64), quote: "Бюджет: 19 700" });
-  });
 
-  it("keeps the receipt after the underlying material is deleted", () => {
-    const store = new ProjectSourceStore(db.sqlite);
-    const receipt = store.recordRunSources(projectId, owner.owner_id, {
-      run_id: "run-deleted",
-      sources: [{ ...source("msg-deleted"), quote: "Удалённый материал" }]
+    expect(chats.deleteChat(accepted.chat.id, owner.owner_id)).toBe(true);
+    const missingFragment = await app.inject({ url: fragmentUrl });
+    expect(missingFragment.statusCode, missingFragment.body).toBe(404);
+    expect(missingFragment.json()).toMatchObject({ error: { code: "MEMORY_SOURCE_NOT_FOUND" } });
+    const historical = await app.inject({
+      url: `/api/v1/projects/${projectId}/sources/run/run-version`
     });
-    db.sqlite.prepare("DELETE FROM general_chat_messages WHERE id=?").run("msg-deleted");
-    expect(store.runSources(projectId, owner.owner_id, "run-deleted").sources).toEqual(
-      receipt.sources
-    );
+    expect(historical.statusCode, historical.body).toBe(200);
+    expect(historical.json<RunSourcesView>().sources).toEqual(receipt.sources);
   });
 });

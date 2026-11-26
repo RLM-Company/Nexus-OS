@@ -64,7 +64,7 @@ it("project exclusions reach the next run's context resolution", async () => {
       pinned: true,
       expires_at: null,
       source: { kind: "project_message", message_id: a.userMessage.id, quote: "19 700" }
-    } as never,
+    },
     owner
   );
   memory.create(
@@ -77,7 +77,7 @@ it("project exclusions reach the next run's context resolution", async () => {
       pinned: true,
       expires_at: null,
       source: { kind: "project_message", message_id: b.userMessage.id, quote: "18 000" }
-    } as never,
+    },
     owner
   );
   const sources = new ProjectSourceStore(db.sqlite);

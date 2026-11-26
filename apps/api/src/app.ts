@@ -1,7 +1,7 @@
 import { registerDocumentWorkspaceRoutes } from "./document-workspace-routes.js";
 import { registerGithubIssueRoutes } from "./github-issue-routes.js";
 import type { ContextMemoryRanker } from "@cosmora/contracts";
-import type { IndexedMemoryRecall, ProjectSourceStore } from "@cosmora/db";
+import type { IndexedMemoryRecall } from "@cosmora/db";
 import { registerRuntimeClockRoutes } from "./runtime-clock-routes.js";
 import { registerContextMemoryRoutes } from "./context-memory-routes.js";
 import { registerProjectSourceRoutes } from "./project-source-routes.js";
@@ -167,6 +167,7 @@ import {
   type UsageStore
 } from "@cosmora/db";
 import type { ScheduledDispatchStore } from "@cosmora/db";
+import type { ProjectCorrectionRuleStore, ProjectSourceStore } from "@cosmora/db";
 import {
   GatewayRunError,
   type ModelGateway,
@@ -215,6 +216,7 @@ import { registerPresentationWorkRoutes } from "./presentation-work-routes.js";
 import { registerPresentationRoutes } from "./presentation-routes.js";
 import { registerNotificationRoutes } from "./notification-routes.js";
 import { registerScheduledDispatchRoutes } from "./scheduled-dispatch-routes.js";
+import { registerProjectCorrectionRuleRoutes } from "./project-correction-rule-routes.js";
 import { registerOwnerSkillRoutes } from "./owner-skill-routes.js";
 import { registerRegistrationRoutes, type RegistrationOptions } from "./registration-routes.js";
 import { registerGoogleDriveRoutes, safeDriveLogUrl } from "./cloud-storage/google-drive-routes.js";
@@ -261,6 +263,7 @@ export interface AppDependencies {
   accountModel?: { provider: string; model: string; capabilities: Record<string, boolean> };
   database: DatabaseHealth;
   scheduledDispatchStore?: ScheduledDispatchStore;
+  projectCorrectionRuleStore?: ProjectCorrectionRuleStore;
   identityStore?: IdentityStore;
   registration?: RegistrationOptions;
   generalChatStore?: GeneralChatStore;
@@ -723,6 +726,10 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
   const runObservers = new Set<AbortController>();
   const managerRunsExecuteInBackground = dependencies.managerRunExecutionMode === "background";
   const runtimeMetrics = dependencies.runtimeMetrics ?? new RuntimeMetrics();
+  const projectSourceStore =
+    dependencies.projectSourceStore ?? dependencies.managerWorkStore?.sources;
+  const projectCorrectionRuleStore =
+    dependencies.projectCorrectionRuleStore ?? dependencies.managerWorkStore?.correctionRules;
   const requestIdentities = new WeakMap<FastifyRequest, IdentityContext>();
   const identityFor = (request: FastifyRequest): IdentityContext => {
     const identity = requestIdentities.get(request);
@@ -977,6 +984,12 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
       chats: dependencies.generalChatStore,
       projects: dependencies.projectStore,
       ...(dependencies.managerWorkStore ? { works: dependencies.managerWorkStore } : {}),
+      identityFor
+    });
+  if (projectCorrectionRuleStore)
+    registerProjectCorrectionRuleRoutes({
+      app,
+      store: projectCorrectionRuleStore,
       identityFor
     });
   registerWebSearchRoutes(app, dependencies.webSearch ?? new WebSearch());
@@ -1491,6 +1504,7 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
     registerManagerWorkRoutes({
       app,
       store: dependencies.managerWorkStore,
+      ...(dependencies.generalChatStore ? { chats: dependencies.generalChatStore } : {}),
       coordinator: dependencies.managerWorkCoordinator,
       projects: dependencies.projectStore,
       nodeBudget: {
@@ -1541,12 +1555,11 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
       dependencies.generalChatStore.contextMemory,
       identityFor,
       (target, owner) =>
-        target.kind === "project" && dependencies.projectSourceStore
-          ? dependencies.projectSourceStore.excludedSourceIds(target.id, owner)
+        target.kind === "project" && projectSourceStore
+          ? projectSourceStore.excludedSourceIds(target.id, owner)
           : []
     );
-  if (dependencies.projectSourceStore)
-    void registerProjectSourceRoutes(app, dependencies.projectSourceStore, identityFor);
+  if (projectSourceStore) registerProjectSourceRoutes(app, projectSourceStore, identityFor);
   if (dependencies.generalChatStore && dependencies.modelGateway && dependencies.chat) {
     registerHistoryCompactionRoutes(
       app,

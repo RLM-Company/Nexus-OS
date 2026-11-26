@@ -6,6 +6,7 @@ const id = Type.String({ minLength: 1, maxLength: 128 });
 /** A bounded, immutable link to the exact material that was used in one run. */
 export const UsedSourceSchema = Type.Object(
   {
+    label: Type.Optional(Type.String({ maxLength: 180 })),
     reference: Type.String({ minLength: 3, maxLength: 200 }),
     kind: Type.Union([
       Type.Literal("memory"),
@@ -13,7 +14,8 @@ export const UsedSourceSchema = Type.Object(
       Type.Literal("canvas"),
       Type.Literal("work"),
       Type.Literal("document"),
-      Type.Literal("research")
+      Type.Literal("research"),
+      Type.Literal("input")
     ]),
     source_kind: Type.Union([
       Type.Literal("chat_message"),
@@ -21,7 +23,8 @@ export const UsedSourceSchema = Type.Object(
       Type.Literal("artifact"),
       Type.Literal("document_chunk"),
       Type.Literal("memory_entry"),
-      Type.Literal("research_page")
+      Type.Literal("research_page"),
+      Type.Literal("work_input")
     ]),
     source_id: id,
     version: Type.Union([Type.Integer({ minimum: 1 }), Type.Null()]),

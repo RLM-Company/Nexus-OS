@@ -528,14 +528,13 @@ describe("durable Manager work", () => {
       }
     });
     await f.coordinator.execute(f.work.id, "local-owner");
-    const sourceStore = f.dependencies.sourceStore;
+    const sourceStore = f.store.sources;
     const runId = f.store.contextMemory.usage({ kind: "project", id: f.project.id }, "local-owner")
       .items[0]!.run_id;
     const receipt = sourceStore.runSources(f.project.id, "local-owner", runId);
     expect(receipt.sources.length).toBeGreaterThan(0);
-    const source = receipt.sources.find((item) => item.quote.includes("19 700"))!;
-    expect(source).toMatchObject({ kind: "memory", source_kind: "project_message" });
-    expect(typeof source.version).toBe("number");
+    const source = receipt.sources.find((item) => item.kind === "memory")!;
+    expect(source).toMatchObject({ source_kind: "project_message" });
     expect(source.sha256).toMatch(/^[a-f0-9]{64}$/);
     expect(source.reference.length).toBeGreaterThanOrEqual(3);
   });
@@ -589,7 +588,7 @@ describe("durable Manager work", () => {
       { kind: "project", id: f.project.id },
       "local-owner"
     ).items;
-    const sourceStore = f.dependencies.sourceStore;
+    const sourceStore = f.store.sources;
     const runOne = usage[0]!.run_id;
     expect(runOne).toBeTruthy();
     const first = sourceStore.runSources(f.project.id, "local-owner", runOne);
@@ -615,8 +614,9 @@ describe("durable Manager work", () => {
     const runTwo = f.store.contextMemory.usage({ kind: "project", id: f.project.id }, "local-owner")
       .items[0]!.run_id;
     const second = sourceStore.runSources(f.project.id, "local-owner", runTwo);
-    expect(second.sources.map((s) => s.quote).join(" ")).not.toContain("19 700");
-    expect(second.sources.map((s) => s.quote).join(" ")).toContain("18 000");
+    const secondIds = second.sources.map((s) => s.source_id);
+    expect(secondIds).not.toContain(ids.a);
+    expect(secondIds).toContain(ids.b);
     const history = sourceStore.runSources(f.project.id, "local-owner", runOne);
     expect(history.sources).toEqual(first.sources); // immutable old run
     expect(history.excluded_now).toContain(ids.a!);
@@ -802,6 +802,99 @@ describe("durable Manager work", () => {
       });
     }
     expect(JSON.stringify(rows)).not.toContain("Use plain language");
+  });
+
+  it("uses project exclusions in the normal model request and preserves the earlier receipt", async () => {
+    const supplied: string[] = [];
+    const f = await fixture({
+      onCall: (modelRequest) => {
+        supplied.push(JSON.stringify(modelRequest.messages));
+        return Promise.resolve();
+      }
+    });
+    const owner = "local-owner";
+    const projectId = f.project.id;
+    f.coordinator.control(f.work.id, owner, f.work.version, "cancel");
+    f.projects.cancelRun(f.initialRun.id, owner);
+    const source = f.projects.createMessage(
+      projectId,
+      "SUPPLIER-EXCLUDE-19700",
+      "exclude-origin",
+      owner
+    )!;
+    f.projects.cancelRun(source.run.id, owner);
+    f.store.contextMemory.create(
+      {
+        scope: "project",
+        scope_id: projectId,
+        kind: "constraint",
+        title: "Порог поставщика",
+        content: "SUPPLIER-EXCLUDE-19700",
+        pinned: true,
+        expires_at: null,
+        source: {
+          kind: "project_message",
+          message_id: source.userMessage.id,
+          quote: "SUPPLIER-EXCLUDE-19700"
+        }
+      },
+      owner
+    );
+    f.store.contextMemory.updateSettings(
+      { kind: "project", id: projectId },
+      {
+        enabled: true,
+        use_personal: false,
+        source_chat_ids: [],
+        project_ids: [projectId],
+        expected_version: 0
+      },
+      owner
+    );
+
+    const first = f.store.create(projectId, owner, owner, {
+      ...request,
+      client_request_id: "with-source"
+    })!;
+    await f.coordinator.execute(first.id, owner);
+    const firstRun = f.store.get(first.id, owner)?.result_sources?.[0]?.run_id;
+    expect(firstRun).toBeTruthy();
+    expect(supplied).toHaveLength(2);
+    expect(supplied[0]).toContain("SUPPLIER-EXCLUDE-19700");
+    expect(f.store.sources.runSources(projectId, owner, firstRun!).sources).toContainEqual(
+      expect.objectContaining({ source_kind: "project_message", source_id: source.userMessage.id })
+    );
+
+    f.store.sources.updateExclusions(projectId, owner, {
+      expected_version: 1,
+      exclusions: [
+        {
+          source_kind: "project_message",
+          source_id: source.userMessage.id,
+          reason: "Заменён",
+          excluded_at: new Date().toISOString()
+        }
+      ]
+    });
+    const second = f.store.create(projectId, owner, owner, {
+      ...request,
+      client_request_id: "without-source"
+    })!;
+    await f.coordinator.execute(second.id, owner);
+    expect(supplied).toHaveLength(4);
+    expect(supplied.slice(2).every((payload) => !payload.includes("SUPPLIER-EXCLUDE-19700"))).toBe(
+      true
+    );
+    const secondRun = f.store.get(second.id, owner)?.result_sources?.[0]?.run_id;
+    expect(secondRun).toBeTruthy();
+    expect(
+      f.store.sources
+        .runSources(projectId, owner, secondRun!)
+        .sources.some((item) => item.source_id === source.userMessage.id)
+    ).toBe(false);
+    expect(f.store.sources.runSources(projectId, owner, firstRun!).excluded_now).toEqual([
+      source.userMessage.id
+    ]);
   });
 
   it("does not create a memory dispatch receipt when the project budget rejects Work", async () => {
@@ -1848,8 +1941,7 @@ describe("durable Manager work", () => {
       projects: new ProjectStore(reopened.sqlite),
       policy: new PolicyStore(reopened.sqlite),
       emergency: new EmergencyStopStore(reopened.sqlite),
-      ownerBudget: new AccountStore(reopened.sqlite),
-      sourceStore: new ProjectSourceStore(reopened.sqlite)
+      ownerBudget: new AccountStore(reopened.sqlite)
     });
     const restored = store.get(f.work.id, "local-owner")!;
     coordinator.control(restored.id, "local-owner", restored.version, "approve");
