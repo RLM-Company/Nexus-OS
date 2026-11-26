@@ -9,7 +9,8 @@ import {
   WORK_EXECUTION_CONCURRENCY,
   type CreateManagerWork,
   type ManagerWork,
-  type ManagerWorkFiles
+  type ManagerWorkFiles,
+  type WorkExecutionCycle
 } from "@cosmora/contracts";
 import { ProjectMemoryStore } from "./project-memory-store.js";
 import { ContextMemoryStore } from "./context-memory-store.js";
@@ -508,6 +509,32 @@ export class ManagerWorkStore {
       this.sqlite.exec("ROLLBACK");
       throw error;
     }
+  }
+
+  /** Versioned continuation overlay for the supplier execution cycle.
+   * The caller computes the transition with the pure core state machine; this
+   * method only enforces owner and CAS, then persists the resulting snapshot. */
+  applyExecutionCycle(
+    id: string,
+    ownerId: string,
+    expectedWorkVersion: number,
+    cycle: WorkExecutionCycle
+  ): ManagerWork {
+    return this.transaction(() => {
+      this.assertWritable(ownerId);
+      const state = this.get(id, ownerId);
+      if (!state) throw new ManagerWorkConflict("WORK_NOT_FOUND");
+      if (!Number.isSafeInteger(expectedWorkVersion) || state.version !== expectedWorkVersion)
+        throw new ManagerWorkConflict("STALE_WORK");
+      if (state.supplier_handoff === undefined)
+        throw new ManagerWorkConflict("SUPPLIER_HANDOFF_REQUIRED");
+      if (!Number.isSafeInteger(cycle.version) || cycle.version < 1)
+        throw new ManagerWorkConflict("INVALID_CYCLE_VERSION");
+      const previous = state.execution_cycle;
+      if (previous && cycle.version <= previous.version)
+        throw new ManagerWorkConflict("STALE_CYCLE");
+      return this.save({ ...state, execution_cycle: cycle }, "Цикл исполнения обновлён");
+    });
   }
 
   /** Owner acceptance of a finished result. One immutable record, separate from

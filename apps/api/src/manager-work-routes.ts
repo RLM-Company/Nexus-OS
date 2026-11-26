@@ -7,9 +7,17 @@ import { registerProjectMemoryRoutes } from "./project-memory-routes.js";
 import { registerWorkRuntimeRoutes } from "./work-runtime-routes.js";
 import {
   CreateManagerWorkSchema,
+  WorkCycleEventSchema,
   type CreateManagerWork,
-  type IdentityContext
+  type IdentityContext,
+  type WorkCycleEvent
 } from "@cosmora/contracts";
+import {
+  applySupplierCycleEvent,
+  initialSupplierCycle,
+  SupplierCycleConflict,
+  type SupplierCycleState
+} from "@cosmora/core";
 import {
   ManagerWorkConflict,
   type GeneralChatStore,
@@ -117,6 +125,66 @@ export function registerManagerWorkRoutes(options: {
       throw error;
     }
   });
+  // Versioned continuation of the supplier execution cycle. The pure core
+  // machine computes the next state; the store enforces owner/CAS and persists.
+  app.post<{ Params: Params; Body: WorkCycleEvent }>(
+    base + "/:id/cycle",
+    {
+      validatorCompiler: TypeBoxValidatorCompiler,
+      schema: { params, body: WorkCycleEventSchema }
+    },
+    (request, reply) => {
+      if (!get(request)) return reply.code(404).send({ error: "WORK_NOT_FOUND" });
+      const identity = identityFor(request);
+      const work = store.get(request.params.id, identity.owner_id);
+      if (!work) return reply.code(404).send({ error: "WORK_NOT_FOUND" });
+      const saved = work.execution_cycle;
+      const state: SupplierCycleState = saved
+        ? {
+            version: saved.version,
+            stage: saved.stage,
+            parts: saved.accepted_inputs,
+            extraction: null,
+            question: saved.question,
+            error_code: saved.error_code,
+            result: saved.result_ref ? { format: "", csv: "", markdown: "" } : null,
+            instructions: saved.instructions,
+            history: []
+          }
+        : initialSupplierCycle();
+      if (request.body.question_version !== state.version)
+        return reply.code(409).send({ error: "STALE_CYCLE" });
+      const { question_version: _checked, ...event } = request.body;
+      void _checked;
+      let next: SupplierCycleState;
+      try {
+        next = applySupplierCycleEvent(state, event);
+      } catch (error) {
+        if (error instanceof SupplierCycleConflict)
+          return reply.code(409).send({ error: "STALE_CYCLE" });
+        throw error;
+      }
+      try {
+        return store.applyExecutionCycle(work.id, identity.owner_id, work.version, {
+          stage: next.stage,
+          version: next.version,
+          question: next.question,
+          gaps: next.extraction?.gaps ?? [],
+          instructions: next.instructions,
+          error_code: next.error_code,
+          accepted_inputs: work.supplier_handoff?.inputs ?? [],
+          result_ref: next.result ? work.id : null
+        });
+      } catch (error) {
+        if (error instanceof ManagerWorkConflict)
+          return reply.code(error.message === "WORK_NOT_FOUND" ? 404 : 409).send({
+            error: error.message
+          });
+        throw error;
+      }
+    }
+  );
+
   // Owner acceptance of the finished result. Separate from plan approval.
   app.post<{ Params: Params; Body: { expected_version: number } }>(
     base + "/:id/result/accept",
