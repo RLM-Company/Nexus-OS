@@ -29,6 +29,7 @@ import {
   runMigrations,
   upgradeAccountProfileColumns,
   StepUpProofStore,
+  ProjectMembershipStore,
   UsageStore
 } from "@cosmora/db";
 import { validateAgentDelegation } from "@cosmora/policy-engine";
@@ -157,6 +158,7 @@ try {
   generalChatStore.contextMemory.indexedRecall = semanticIndex;
   const sharedBudget = new SharedOwnerBudget(accountStore, projectStore);
   const documentLibrary = new DocumentLibraryStore(database.sqlite);
+  const projectMembershipStore = new ProjectMembershipStore(database.sqlite);
   const canvasStore = new CanvasArtifactStore(database.sqlite);
   const documentAnswerStore = new DocumentAnswerStore(database.sqlite);
   const documentAnswerService = new DocumentAnswerService(
@@ -331,6 +333,7 @@ try {
     },
     documentLibrary,
     documentAnswerService,
+    projectMembershipStore,
     chatHistorySearchStore,
     presentationStore,
     notificationStore,
