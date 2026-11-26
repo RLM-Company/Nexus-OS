@@ -77,6 +77,8 @@ export interface ResearchRun {
   model_requested?: boolean;
   initial_model_requested?: boolean;
   answer?: ResearchAnswer | null;
+  /** Verifiable receipts attached to the user-visible Research run. */
+  receipts?: ResearchSourceReceipt[];
   model?: ResearchModelState;
   created_at: string;
   updated_at: string;
