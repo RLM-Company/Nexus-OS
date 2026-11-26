@@ -65,6 +65,25 @@ describe("project rule application — three comparable runs", () => {
     expect(report.ignored_rules).toEqual([accepted.id]);
   });
 
+  it("records both versions and leaves the default layout when rules conflict", () => {
+    const inline = {
+      ...accepted,
+      id: "rule-2",
+      version: 2,
+      instructions: "Показывай доставку в общей строке"
+    };
+    const report = applyProjectRules(suppliers, [accepted, inline]);
+    expect(report.lines).toEqual(applyProjectRules(suppliers, []).lines);
+    expect(report.applied_rule_versions).toEqual([]);
+    expect(report.conflicting_rules).toEqual([
+      { id: accepted.id, version: 1, effect: "delivery_separate_line" },
+      { id: inline.id, version: 2, effect: "delivery_inline" }
+    ]);
+    expect(
+      applyProjectRules(suppliers, [{ ...accepted, enabled: false }, inline]).applied_rule_versions
+    ).toEqual([{ id: inline.id, version: 2, effect: "delivery_inline" }]);
+  });
+
   it("writes comparable artifacts so the change is visible in files", () => {
     const dir = join(
       process.cwd(),

@@ -91,6 +91,18 @@ export function SupplierWorkResult({
           ) : (
             <p>К этому результату правила не применялись.</p>
           )}
+          {!!result.conflicting_rules?.length && (
+            <>
+              <p>Конфликт формата доставки. Применён стандартный формат отчёта.</p>
+              <ul>
+                {result.conflicting_rules.map((rule) => (
+                  <li key={rule.id}>
+                    {rule.name} · версия {rule.version}
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
           {result.ignored_rules?.map((rule) => (
             <p key={rule.id}>
               {rule.name} · версия {rule.version}. Автоматическое применение не поддерживается.

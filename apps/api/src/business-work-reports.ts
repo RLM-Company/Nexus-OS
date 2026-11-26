@@ -88,7 +88,9 @@ export function buildBusinessWorkFiles(work: ManagerWork): ManagerWorkFiles {
     const rules = work.correction_rules ?? [];
     const ruleResult = resolveSupplierRules(rules);
     const result = compareSupplierOffers(input, {
-      separateDelivery: ruleResult.applied_rule_versions.length > 0
+      separateDelivery: ruleResult.applied_rule_versions.some(
+        (rule) => rule.effect === "delivery_separate_line"
+      )
     });
     const files = [
       { name: "supplier-comparison.csv", content: result.csv },
@@ -125,6 +127,10 @@ export function buildBusinessWorkFiles(work: ManagerWork): ManagerWorkFiles {
         ignored_rules: rules
           .filter((rule) => ruleResult.ignored_rules.includes(rule.id))
           .map(({ id, name, version }) => ({ id, name, version })),
+        conflicting_rules: ruleResult.conflicting_rules.flatMap((conflict) => {
+          const rule = rules.find((item) => item.id === conflict.id);
+          return rule ? [{ ...conflict, name: rule.name }] : [];
+        }),
         checks: [
           "Проверена уникальность поставщиков и кодов позиций.",
           "Сопоставлены комплектация, единицы и цены по точному коду позиции.",

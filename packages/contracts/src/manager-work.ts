@@ -161,6 +161,7 @@ export interface SupplierWorkEvidence {
   source_files: SupplierWorkHandoff["inputs"];
   applied_rule_versions?: { id: string; name: string; version: number; effect: string }[];
   ignored_rules?: { id: string; name: string; version: number }[];
+  conflicting_rules?: SupplierWorkEvidence["applied_rule_versions"];
   checks: string[];
   disputes: { supplier: string; item_id: string | null; reason: string }[];
 }
