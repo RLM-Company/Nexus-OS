@@ -1,0 +1,18 @@
+{
+  "applied_rule_versions": [
+    {
+      "id": "7ffa9d9d-ee3e-4cdc-917d-02aa86153d50",
+      "version": 1,
+      "effect": "delivery_separate_line"
+    }
+  ],
+  "rule_statuses": [
+    {
+      "id": "7ffa9d9d-ee3e-4cdc-917d-02aa86153d50",
+      "version": 1,
+      "status": "applied",
+      "effect": "delivery_separate_line",
+      "reason": "Доставка вынесена в отдельную строку по принятому правилу."
+    }
+  ]
+}
