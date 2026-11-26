@@ -71,7 +71,9 @@ export class ProjectMembershipStore {
       .get(projectId, accountId) as { status: string } | undefined;
     if (!row || row.status !== "invited") throw new MembershipError("NOT_FOUND");
     this.db
-      .prepare("UPDATE project_members SET status='active', accepted_at=? WHERE project_id=? AND account_id=?")
+      .prepare(
+        "UPDATE project_members SET status='active', accepted_at=? WHERE project_id=? AND account_id=?"
+      )
       .run(new Date().toISOString(), projectId, accountId);
     const owner = (
       this.db
@@ -107,7 +109,9 @@ export class ProjectMembershipStore {
       .get(projectId, accountId);
     if (row) return true;
     const member = this.db
-      .prepare("SELECT role FROM project_members WHERE project_id=? AND account_id=? AND status='active'")
+      .prepare(
+        "SELECT role FROM project_members WHERE project_id=? AND account_id=? AND status='active'"
+      )
       .get(projectId, accountId) as { role: ProjectRole } | undefined;
     if (!member) return false;
     if (role === "any") return true;

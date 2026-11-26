@@ -24,7 +24,9 @@ export function driveConnectorTransports(runtime: GoogleDriveRuntime | undefined
           return Promise.resolve({ state: "not_connected", items: [], files: [] });
         const sources = runtime.bundleStore.sources(context.actorId);
         return Promise.resolve({
-          state: runtime.store.status(context.actorId)?.connection_id ? "connected" : "disconnected",
+          state: runtime.store.status(context.actorId)?.connection_id
+            ? "connected"
+            : "disconnected",
           items: sources.items,
           files: sources.files
         });

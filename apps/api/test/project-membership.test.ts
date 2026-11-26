@@ -1,5 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { openDatabase, runMigrations, ProjectStore, ProjectMembershipStore, ProjectSourceStore } from "@cosmora/db";
+import {
+  openDatabase,
+  runMigrations,
+  ProjectStore,
+  ProjectMembershipStore,
+  ProjectSourceStore
+} from "@cosmora/db";
 import type { IdentityContext } from "@cosmora/contracts";
 import { StaticIdentityResolver } from "../src/identity.js";
 import { buildApp } from "../src/app.js";
@@ -74,7 +80,9 @@ describe("project membership API", () => {
 
     const accepted = await memberApp.inject({ method: "POST", url: `${base}/accept` });
     expect(accepted.statusCode).toBe(200);
-    const acceptedBody = accepted.json<{ members: Array<{ account_id: string; status: string }> }>();
+    const acceptedBody = accepted.json<{
+      members: Array<{ account_id: string; status: string }>;
+    }>();
     expect(acceptedBody.members.find((m) => m.account_id === "owner-b")?.status).toBe("active");
     expect(membership.canAccess(projectId, "owner-b")).toBe(true);
     expect(membership.canAccess(projectId, "owner-c")).toBe(false);
