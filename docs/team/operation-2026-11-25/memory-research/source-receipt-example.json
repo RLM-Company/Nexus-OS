@@ -1,0 +1,36 @@
+﻿{
+  "run_id": "research-1",
+  "question": "Какой срок поставки по договору?",
+  "answer": {
+    "summary": [
+      {
+        "text": "Договор допускает поставку в октябре 2027.",
+        "citations": [
+          {
+            "source_id": "S2",
+            "excerpt_id": "E1"
+          }
+        ]
+      }
+    ],
+    "disagreements": [],
+    "gaps": ["Единицы срока не согласованы; победитель не выбран."]
+  },
+  "receipts": [
+    {
+      "format": "kosmora.source-receipt.v1",
+      "claim": "Договор допускает поставку в октябре 2027.",
+      "source_id": "S2",
+      "excerpt_id": "E1",
+      "title": "Договор (снимок S2)",
+      "url": "https://example.test/contract-v2",
+      "checked_at": "2026-11-25T10:00:00.000Z",
+      "content_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "excerpt_sha256": "3c36e5a8fa810132e5ee171466b50c3a49fe712689f2ee80e4f92df0c60538ae",
+      "position": 0,
+      "quote": "Срок поставки — 12 октября 2027; в той же строке указано 12 недель."
+    }
+  ],
+  "revised_question": "Какой срок поставки по договору? | Уточнить с учётом проверенной 2026-11-25T10:00:00.000Z выдержки S2: Снимок S2 показывает 12 недель вместо октября 2027. | Единицы срока не согласованы; победитель не выбран.",
+  "note": "Фикстурный пример; цитата не доказывает истинность утверждения."
+}
