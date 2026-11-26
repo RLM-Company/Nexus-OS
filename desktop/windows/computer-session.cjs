@@ -608,6 +608,9 @@ class ComputerSession {
             "WORKSPACE_SYMLINK_REJECTED"
           ].includes(error?.code);
           const deviceEvent = classifyDeviceFailure(error);
+          // The native connection can drop after an action reached the device.
+          // Leave that dispatch unresolved and require a new session.
+          if (deviceEvent?.retryable === false) throw error;
           if (
             !knownWorkspaceRejection &&
             !deviceEvent &&

@@ -684,7 +684,8 @@ function createKosworkBrowser({
     if (!["new", "navigate", "switch", "close", "back", "forward", "reload"].includes(command))
       return { error: "BROWSER_COMMAND_INVALID" };
     try {
-      if (runner?.active) stop();
+      if (engine.takeControl) engine.takeControl();
+      else if (runner?.active) stop();
       if (selection) selection.abort();
       if (command === "new") await engine.open();
       else if (command === "navigate") {
