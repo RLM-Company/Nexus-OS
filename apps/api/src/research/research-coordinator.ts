@@ -2,6 +2,7 @@ import {
   deduplicateCandidates,
   RESEARCH_LIMITS,
   researchPassages,
+  researchSourceReceipts,
   type ResearchRun,
   type ResearchStatus,
   type ResearchSource
@@ -330,6 +331,10 @@ export class ResearchCoordinator {
       this.activeUpdate(id, owner, ["synthesizing"], (state) => {
         if (state.model?.run_id !== modelRunId) return;
         state.answer = result.answer;
+        // Attach receipts to the user-visible run at the same moment as the
+        // answer. No join is required downstream; unverified citations yield
+        // no receipt by construction.
+        state.receipts = researchSourceReceipts(run, result.answer);
         state.status = "completed";
         state.stage =
           result.usage === "uncertain"

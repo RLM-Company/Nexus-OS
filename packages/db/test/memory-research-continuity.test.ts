@@ -83,6 +83,15 @@ describe("memory continuity across material update and restart", () => {
       expect(store.versions(first.id, "a")).toHaveLength(2);
       // A stale summary cannot become active memory again.
       expect(store.localSnapshot("a").entries[0]!.content).toContain("20 октября");
+      // Source exclusion: forgetting the derived entry removes it from the next
+      // task's evidence, while the original source message stays untouched.
+      expect(store.forget(first.id, 2, "a")).toEqual({
+        forgotten: true,
+        original_messages_deleted: false
+      });
+      const afterExclusion = store.resolve(target, "a", "срок поставки");
+      expect(afterExclusion.answer_evidence).toBe("absent");
+      expect(afterExclusion.items.some((item) => item.text.includes("20 октября"))).toBe(false);
     } finally {
       db.close();
       rmSync(folder, { recursive: true, force: true });
