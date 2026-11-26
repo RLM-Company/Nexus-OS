@@ -184,7 +184,27 @@ async function fixture(
 }
 
 it("binds a Stars mission to a confirmed team and delivers the verified runtime results", async () => {
-  const f = await fixture({ maxConcurrentWork: 2 });
+  let rejectFirstWorkerOutput = true;
+  const f = await fixture({
+    maxConcurrentWork: 2,
+    output: (model) => {
+      if (model.task_type === "manager_work_plan")
+        return {
+          summary: "Файл",
+          instructions: "Верни результат",
+          complexity: "simple",
+          needs_critic: false,
+          requires_external_actions: false
+        };
+      if (model.task_type === "manager_work_review")
+        return { verdict: "PASS", reason: "Проверено" };
+      if (rejectFirstWorkerOutput && JSON.stringify(model).includes("Извлеки реквизиты")) {
+        rejectFirstWorkerOutput = false;
+        return { files: [] };
+      }
+      return { files: [{ name: "result.md", content: "# Exact\nVerified source file" }] };
+    }
+  });
   const scoped = {
     owner_id: owner,
     actor_id: owner,
@@ -212,7 +232,7 @@ it("binds a Stars mission to a confirmed team and delivers the verified runtime 
     test_status: "untested"
   });
   const blueprints = new AgentBlueprintStore(f.db.sqlite);
-  for (const task of ["Собери итог из двух файлов", "Извлеки реквизиты", "Проверь стоимость"]) {
+  const blueprint = (task: string) =>
     blueprints.createBlueprint(scoped, {
       project_id: pid,
       function_ref: { id: fn.function_id, version: 1 },
@@ -233,7 +253,8 @@ it("binds a Stars mission to a confirmed team and delivers the verified runtime 
       start_condition: "Явный запуск",
       close_conditions: ["Файл сохранён"]
     });
-  }
+  for (const task of ["Собери итог из двух файлов", "Извлеки реквизиты", "Проверь стоимость"])
+    blueprint(task);
   const instances = new AgentInstanceStore(f.db.sqlite, {
     delegationValidator: () => ({ allowed: true, reasons: [] })
   });
@@ -266,10 +287,23 @@ it("binds a Stars mission to a confirmed team and delivers the verified runtime 
   registerWorkDagRoutes({ app, projects: f.projects, coordinator: f.dag, identityFor });
   try {
     const base = "/api/v1/stars/missions";
-    const post = async (url: string, payload: Record<string, unknown>, status = 200) => {
+    type MissionFixture = { id: string; version: number; goal: string };
+    type RunFixture = MissionFixture & {
+      execution: { graph_id: string; manager_node_id: string };
+      runtime: {
+        version: number;
+        status: string;
+        nodes: { id: string; status: string; instance_id: string; attempts: number }[];
+      };
+    };
+    const post = async <T = MissionFixture>(
+      url: string,
+      payload: Record<string, unknown>,
+      status = 200
+    ) => {
       const response = await app.inject({ method: "POST", url, payload });
       expect(response.statusCode, response.body).toBe(status);
-      return response.json();
+      return response.json<T>();
     };
     const newMission = async (suffix: string) => {
       const mission = await post(base, {
@@ -300,8 +334,8 @@ it("binds a Stars mission to a confirmed team and delivers the verified runtime 
       composition_id: roster.composition_id,
       manager_instance_id: manager.instance_id
     };
-    const bound = await post(url + "/execution", body);
-    expect((await post(url + "/execution", body)).execution).toEqual(bound.execution);
+    const bound = await post<RunFixture>(url + "/execution", body);
+    expect((await post<RunFixture>(url + "/execution", body)).execution).toEqual(bound.execution);
     expect(f.dag.list(pid, owner)).toHaveLength(1);
     const other = await newMission("other");
     await post(other.url + "/execution", { ...body, expected_version: other.state.version }, 409);
@@ -329,31 +363,68 @@ it("binds a Stars mission to a confirmed team and delivers the verified runtime 
       { version: graph.version, action: "run_plan", max_model_requests: 9 },
       409
     );
-    graph = await post(dagUrl + "/control", {
+    graph = await post<WorkDag>(dagUrl + "/control", {
       version: graph.version,
       action: "run_plan",
       max_model_requests: 9,
       acknowledge_cost: true
     });
-    for (let tick = 0; tick < 8 && graph.execution?.status !== "completed"; tick++) {
+    const tick = async () => {
       f.dag.advance();
       for (const child of f.store.pending()) await f.coordinator.execute(child.id, owner);
       graph = f.dag.get(graph_id, owner)!;
-    }
+    };
+    await tick();
+    const failed = graph.nodes.find((node) => node.status === "failed")!;
+    expect(failed.goal).toContain("Извлеки реквизиты");
+    expect(getManager().attempts).toHaveLength(0);
+    const view = (await app.inject(url)).json<RunFixture>();
+    const previous = view.runtime.nodes.find(
+      (node: { id: string }) => node.id === failed.id
+    )!.instance_id;
+    const replace = { node_id: failed.id, expected_instance_id: previous };
+    const replacement = await post<RunFixture>(url + "/execution/replace", replace);
+    const updated = replacement.runtime.nodes.find((node) => node.id === failed.id)!;
+    expect(updated.instance_id).not.toBe(previous);
+    expect(updated.attempts).toBe(1);
+    expect((await post<RunFixture>(url + "/execution/replace", replace)).runtime).toEqual(
+      replacement.runtime
+    );
+    // The node retains its original instructions, dependencies and failed attempt.
+    graph = await post<WorkDag>(dagUrl + "/control", {
+      version: graph.version,
+      action: "retry",
+      node_id: failed.id,
+      acknowledge_cost: true
+    });
+    await tick();
+    graph = await post<WorkDag>(dagUrl + "/control", {
+      version: graph.version,
+      action: "run_plan",
+      max_model_requests: 15,
+      acknowledge_cost: true
+    });
+    for (let i = 0; i < 5 && graph.execution?.status !== "completed"; i++) await tick();
     expect(graph.execution?.status).toBe("completed");
+    expect(getManager().result?.review?.verdict).toBe("PASS");
     expect(
-      graph.nodes.every((node) => node.attempts.length === 1 && node.artifacts.length === 1)
+      graph.nodes.every(
+        (node) =>
+          node.attempts.length === (node.id === failed.id ? 2 : 1) && node.artifacts.length === 1
+      )
     ).toBe(true);
     const reads = f.calls.filter((call) =>
       JSON.stringify(call).includes("published_bytes_readback")
     );
     expect(reads.length).toBeGreaterThan(0);
-    const saved = (await app.inject(url)).json();
+    const saved = (await app.inject(url)).json<RunFixture>();
     expect(saved.execution).toEqual(bound.execution);
     expect(
       saved.runtime.nodes.every((node: { status: string }) => node.status === "completed")
     ).toBe(true);
-    const result = (await app.inject(dagUrl + "/results")).json();
+    const result = (await app.inject(dagUrl + "/results")).json<{
+      files: { sha256: string; content: string }[];
+    }>();
     expect(result.files).toHaveLength(3);
     for (const artifact of result.files) {
       expect(artifact.sha256).toBe(createHash("sha256").update(artifact.content).digest("hex"));
@@ -361,6 +432,46 @@ it("binds a Stars mission to a confirmed team and delivers the verified runtime 
     const zip = await app.inject(dagUrl + "/results.zip");
     expect(zip.statusCode).toBe(200);
     expect(zip.rawPayload.subarray(0, 4)).toEqual(Buffer.from([80, 75, 3, 4]));
+    const another = f.dag.get(f.create().id, owner)!;
+    const second = await newMission("cancel");
+    const extra = blueprint("Проверь сроки");
+    const extraPart = instances.proposeRoot(scoped, {
+      project_id: pid,
+      blueprint_ref: { id: extra.blueprint_id, version: extra.version }
+    });
+    const updatedRoster = teams.confirm(scoped, pid, [
+      manager.instance_id,
+      roster.items.find((item) => item.instance_id !== manager.instance_id)!.instance_id,
+      extraPart.instance_id
+    ]);
+    const active = await post<RunFixture>(second.url + "/execution", {
+      ...body,
+      expected_version: second.state.version,
+      composition_id: updatedRoster.composition_id
+    });
+    const secondGraph = active.execution.graph_id;
+    await post(`/api/v1/projects/${pid}/work-dags/${secondGraph}/control`, {
+      version: active.runtime.version,
+      action: "run_plan",
+      max_model_requests: 9,
+      acknowledge_cost: true
+    });
+    f.dag.advance();
+    const pending = f.dag.get(secondGraph, owner)!;
+    expect(pending.nodes.some((node) => node.status === "running")).toBe(true);
+    const callsBeforeCancel = f.calls.length;
+    const cancel = { expected_version: pending.version };
+    const cancelled = await post<RunFixture>(second.url + "/execution/cancel", cancel);
+    expect(
+      cancelled.runtime.nodes.every((node: { status: string }) => node.status === "cancelled")
+    ).toBe(true);
+    expect((await post<RunFixture>(second.url + "/execution/cancel", cancel)).runtime).toEqual(
+      cancelled.runtime
+    );
+    f.dag.advance();
+    expect(f.store.pending()).toHaveLength(0);
+    expect(f.calls).toHaveLength(callsBeforeCancel);
+    expect(f.dag.get(another.id, owner)).toEqual(another);
   } finally {
     await app.close();
   }

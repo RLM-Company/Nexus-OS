@@ -4,7 +4,7 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import Fastify from "fastify";
-import { type IdentityContext } from "@cosmora/contracts";
+import type { IdentityContext } from "@cosmora/contracts";
 import type { ResearchRun } from "@cosmora/core";
 import { loadServerConfig } from "@cosmora/config";
 import {

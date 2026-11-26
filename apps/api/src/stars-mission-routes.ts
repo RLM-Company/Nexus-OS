@@ -10,6 +10,7 @@ import {
 } from "@cosmora/contracts";
 import { applyStarsMissionEvent, createStarsMission, StarsMissionConflict } from "@cosmora/core";
 import {
+  AgentInstanceValidationError,
   AgentTeamRunNotFoundError,
   AgentTeamRunValidationError,
   StarsMissionConflict as StarsMissionStoreConflict,
@@ -94,12 +95,28 @@ export function registerStarsMissionRoutes({
     const run = mission.execution as MissionRun | undefined;
     if (!run) return mission;
     const graph = dag?.get(run.graph_id, owner, run.project_id);
+    const parts =
+      graph &&
+      teamRuns?.parts(
+        { owner_id: owner, actor_id: graph.actor_id },
+        run.project_id,
+        run.composition_id
+      ).parts;
+    const complete =
+      graph?.nodes.length && graph.nodes.every((node) => node.status === "completed");
+    const cancelled =
+      graph?.nodes.some((node) => node.status === "cancelled") &&
+      graph.nodes.every((node) => ["completed", "failed", "cancelled"].includes(node.status));
     return {
       ...mission,
       runtime: graph
         ? {
             mode: graph.mode,
-            status: graph.execution?.status ?? "awaiting_owner_run",
+            status: complete
+              ? "completed"
+              : cancelled
+                ? "cancelled"
+                : (graph.execution?.status ?? "awaiting_owner_run"),
             reason: graph.execution?.reason ?? null,
             version: graph.version,
             nodes: graph.nodes.map(({ id, title, status, depends_on, artifacts, attempts }) => ({
@@ -108,6 +125,7 @@ export function registerStarsMissionRoutes({
               status,
               depends_on,
               artifact_count: artifacts.length,
+              instance_id: parts?.find((part) => part.node_id === id)?.instance_id ?? null,
               attempts: attempts.length
             }))
           }
@@ -195,6 +213,99 @@ export function registerStarsMissionRoutes({
           error instanceof WorkDagConflict ||
           error instanceof ManagerWorkConflict
         )
+          return reply.code(409).send({ error: error.message });
+        throw error;
+      }
+    }
+  );
+
+  app.post<{ Params: { id: string }; Body: { node_id: string; expected_instance_id: string } }>(
+    base + "/:id/execution/replace",
+    {
+      validatorCompiler: TypeBoxValidatorCompiler,
+      schema: {
+        params,
+        body: Type.Object(
+          { node_id: EntityIdSchema, expected_instance_id: EntityIdSchema },
+          { additionalProperties: false }
+        )
+      }
+    },
+    (request, reply) => {
+      reply.header("cache-control", "private, no-store");
+      const identity = identityFor(request);
+      const mission = store.get(request.params.id, identity.owner_id);
+      const run = mission?.execution as MissionRun | undefined;
+      if (
+        !mission ||
+        !run ||
+        !teamRuns ||
+        !dag?.owns(run.graph_id, identity.owner_id, run.project_id)
+      )
+        return reply.code(404).send({ error: "STARS_RUN_NOT_FOUND" });
+      if (request.body.node_id === run.manager_node_id)
+        return reply.code(409).send({ error: "STARS_ONLY_WORKERS_CAN_BE_REPLACED" });
+      try {
+        teamRuns.replaceFailedPart(
+          identity,
+          run.project_id,
+          run.composition_id,
+          run.graph_id,
+          request.body.node_id,
+          request.body.expected_instance_id
+        );
+        return withExecution(mission, identity.owner_id);
+      } catch (error) {
+        if (error instanceof AgentTeamRunNotFoundError)
+          return reply.code(404).send({ error: "STARS_PART_NOT_FOUND" });
+        if (
+          error instanceof AgentTeamRunValidationError ||
+          error instanceof AgentInstanceValidationError
+        )
+          return reply
+            .code(409)
+            .send({ error: "STARS_REPLACEMENT_INVALID", message: error.message });
+        throw error;
+      }
+    }
+  );
+
+  app.post<{ Params: { id: string }; Body: { expected_version: number } }>(
+    base + "/:id/execution/cancel",
+    {
+      validatorCompiler: TypeBoxValidatorCompiler,
+      schema: {
+        params,
+        body: Type.Object(
+          { expected_version: Type.Integer({ minimum: 1 }) },
+          { additionalProperties: false }
+        )
+      }
+    },
+    (request, reply) => {
+      reply.header("cache-control", "private, no-store");
+      const owner = identityFor(request).owner_id;
+      const mission = store.get(request.params.id, owner);
+      const run = mission?.execution as MissionRun | undefined;
+      if (!mission || !run || !dag) return reply.code(404).send({ error: "STARS_RUN_NOT_FOUND" });
+      let graph = dag.get(run.graph_id, owner, run.project_id);
+      if (!graph) return reply.code(404).send({ error: "STARS_RUN_NOT_FOUND" });
+      const cancellable = graph.nodes.filter((node) =>
+        ["pending", "running", "blocked"].includes(node.status)
+      );
+      if (cancellable.length && request.body.expected_version !== graph.version)
+        return reply.code(409).send({ error: "STALE_DAG" });
+      try {
+        for (const node of cancellable) {
+          graph = dag.control(graph.id, owner, {
+            version: graph.version,
+            action: "cancel_step",
+            node_id: node.id
+          });
+        }
+        return withExecution(mission, owner);
+      } catch (error) {
+        if (error instanceof WorkDagConflict || error instanceof ManagerWorkConflict)
           return reply.code(409).send({ error: error.message });
         throw error;
       }

@@ -95,7 +95,7 @@ export function parseGameProjectV2(source: string): GameProjectV2 {
     throw Error("INVALID_GAME_PROJECT_V2");
   }
   if (!Value.Check(GameProjectV2Schema, value)) throw Error("INVALID_GAME_PROJECT_V2");
-  const project = value as GameProjectV2;
+  const project = value;
   // Verify canonical base64 shape without decoding to a URL or fetching data.
   if (
     new Set(project.assets.map(({ name }) => name)).size !== project.assets.length ||

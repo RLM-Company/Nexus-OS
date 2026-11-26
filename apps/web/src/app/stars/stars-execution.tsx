@@ -12,12 +12,14 @@ export type MissionExecution = {
   execution?: { project_id: string; graph_id: string; manager_node_id: string };
   runtime?: {
     status: string;
+    version: number;
     reason: string | null;
     nodes: {
       id: string;
       title: string;
       status: string;
       artifact_count: number;
+      instance_id: string | null;
       attempts: number;
     }[];
   } | null;
@@ -29,9 +31,12 @@ async function post<T>(path: string, payload: unknown): Promise<T> {
     headers: { "content-type": "application/json", "idempotency-key": crypto.randomUUID() },
     body: JSON.stringify(payload)
   });
-  const data = await response.json();
-  if (!response.ok) throw new Error(data?.message ?? data?.error ?? "REQUEST_FAILED");
-  return data as T;
+  if (response.ok) return response.json() as Promise<T>;
+  const error = (await response.json().catch(() => null)) as {
+    message?: string;
+    error?: string;
+  } | null;
+  throw new Error(error?.message ?? error?.error ?? "REQUEST_FAILED");
 }
 
 export function StarsExecution<Mission extends MissionExecution>({
@@ -84,29 +89,83 @@ export function StarsExecution<Mission extends MissionExecution>({
     }
   };
 
+  const updateRun = async (operation: "cancel" | "replace", payload: unknown) => {
+    if (pending) return;
+    setPending(true);
+    setNotice("");
+    try {
+      onBound(
+        await post<Mission>(
+          `/api/v1/stars/missions/${encodeURIComponent(mission.id)}/execution/${operation}`,
+          payload
+        )
+      );
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Не удалось изменить план");
+    } finally {
+      setPending(false);
+    }
+  };
+
   if (mission.execution) {
     const graph = encodeURIComponent(mission.execution.graph_id);
     const finished = mission.runtime?.status === "completed";
+    const runtime = mission.runtime;
     return (
       <section aria-label="Исполнение миссии">
         <h2>Исполнение в Koswork</h2>
-        {mission.runtime ? (
+        {runtime ? (
           <>
             <p role="status">
-              {mission.runtime.status}
-              {mission.runtime.reason ? ` · ${mission.runtime.reason}` : ""}
+              {runtime.status}
+              {runtime.reason ? ` · ${runtime.reason}` : ""}
             </p>
             <ul>
-              {mission.runtime.nodes.map((node) => (
+              {runtime.nodes.map((node) => (
                 <li key={node.id}>
                   {node.title} · {node.status} · файлов {node.artifact_count} · попыток{" "}
                   {node.attempts}
+                  {node.status === "failed" &&
+                    node.instance_id &&
+                    node.id !== mission.execution?.manager_node_id && (
+                      <button
+                        type="button"
+                        disabled={pending}
+                        onClick={() => {
+                          if (
+                            window.confirm(
+                              "Заменить исполнителя в той же роли? Повторный запуск подтверждается в Koswork."
+                            )
+                          )
+                            void updateRun("replace", {
+                              node_id: node.id,
+                              expected_instance_id: node.instance_id
+                            });
+                        }}
+                      >
+                        Заменить исполнителя
+                      </button>
+                    )}
                 </li>
               ))}
             </ul>
             <Link href={`/?project=${project}&view=plan&plan=${graph}`}>
               Открыть план в Koswork
             </Link>
+            {runtime.nodes.some(({ status }) =>
+              ["blocked", "pending", "running"].includes(status)
+            ) && (
+              <button
+                type="button"
+                disabled={pending}
+                onClick={() => {
+                  if (window.confirm("Отменить незавершённые шаги этой миссии?"))
+                    void updateRun("cancel", { expected_version: runtime.version });
+                }}
+              >
+                Отменить выполнение миссии
+              </button>
+            )}
             {finished && (
               <p>
                 <a href={`/api/v1/projects/${project}/work-dags/${graph}/results.zip`}>
@@ -118,6 +177,7 @@ export function StarsExecution<Mission extends MissionExecution>({
         ) : (
           <p>План недоступен.</p>
         )}
+        {notice && <p role="status">{notice}</p>}
       </section>
     );
   }

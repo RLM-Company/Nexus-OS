@@ -135,7 +135,9 @@ describe("media gateway without paid network", () => {
   it("rejects URL-only image assets without requesting the artifact host", async () => {
     const targets: string[] = [];
     const adapter = new OpenAIMediaAdapter("fixture-only", async (input, setup) => {
-      targets.push(String(input));
+      targets.push(
+        typeof input === "string" ? input : input instanceof URL ? input.href : input.url
+      );
       expect(setup).toMatchObject({ redirect: "error", credentials: "omit" });
       return Response.json({ data: [{ url: "https://cdn.example.test/result.png?sig=fixture" }] });
     });

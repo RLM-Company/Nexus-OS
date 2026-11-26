@@ -29,6 +29,7 @@ export interface AgentTeamRunGraphPort {
       title: string;
       goal: string;
       dependsOn?: string[];
+      requiresCritic?: true;
     }>;
   }): { graphId: string; nodes: TeamGraphNode[] };
   nodesOf(graphId: string, ownerId: string, projectId: string, runKey?: string): TeamGraphNode[];
@@ -188,7 +189,10 @@ export class AgentTeamRunStore {
         : `Part ${part.line}`,
       goal: mission ? `${mission.goal}\n\nЗадача участника: ${part.goal}` : part.goal,
       ...(part === manager
-        ? { dependsOn: parts.filter((worker) => worker !== manager).map((worker) => worker.nodeId) }
+        ? {
+            dependsOn: parts.filter((worker) => worker !== manager).map((worker) => worker.nodeId),
+            requiresCritic: true as const
+          }
         : {})
     }));
     if (nodes.some((node) => node.goal.length > MAX_PART_GOAL || node.title.length > 160))
@@ -229,6 +233,57 @@ export class AgentTeamRunStore {
       parts: this.#parts(identity, projectId, compositionId, created.nodes),
       execution_status: "awaiting_owner_run"
     };
+  }
+
+  replaceFailedPart(
+    identity: AgentInstanceIdentity,
+    projectId: string,
+    compositionId: string,
+    graphId: string,
+    nodeId: string,
+    expectedInstance: string
+  ): { instance_id: string } {
+    // Claim and replace the canonical part together. An identical retry after
+    // a lost response observes the already-created instance.
+    this.#sqlite.exec("BEGIN IMMEDIATE");
+    try {
+      const scope = [identity.owner_id, projectId, compositionId, graphId, nodeId];
+      const part = this.#sqlite
+        .prepare(
+          `SELECT instance_id FROM agent_team_parts
+         WHERE owner_id=? AND project_id=? AND composition_id=? AND graph_id=? AND node_id=?`
+        )
+        .get(...scope) as { instance_id: string } | undefined;
+      if (!part) throw new AgentTeamRunNotFoundError("Team part was not found");
+      const current = this.#instances.getInstance(identity, projectId, part.instance_id);
+      const expected = this.#instances.getInstance(identity, projectId, expectedInstance);
+      if (!current || !expected || rosterLine(current.blueprint) !== rosterLine(expected.blueprint))
+        throw new AgentTeamRunNotFoundError("Agent instance was not found");
+      let result = part;
+      if (part.instance_id === expectedInstance) {
+        const node = this.#graph
+          .nodesOf(graphId, identity.owner_id, projectId)
+          .find(({ id }) => id === nodeId);
+        if (node?.status !== "failed")
+          throw new AgentTeamRunValidationError("Only a failed part can be replaced");
+        const replacement = this.#instances.proposeRoot(identity, {
+          project_id: projectId,
+          blueprint_ref: { id: current.blueprint.blueprint_id, version: current.blueprint.version }
+        });
+        this.#sqlite
+          .prepare(
+            `UPDATE agent_team_parts SET instance_id=?, updated_at=?
+           WHERE owner_id=? AND project_id=? AND composition_id=? AND graph_id=? AND node_id=?`
+          )
+          .run(replacement.instance_id, this.#timestamp(), ...scope);
+        result = { instance_id: replacement.instance_id };
+      }
+      this.#sqlite.exec("COMMIT");
+      return result;
+    } catch (error) {
+      this.#sqlite.exec("ROLLBACK");
+      throw error;
+    }
   }
 
   parts(

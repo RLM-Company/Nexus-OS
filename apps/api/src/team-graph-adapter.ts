@@ -26,7 +26,8 @@ export class TeamGraphAdapter implements AgentTeamRunGraphPort {
         id: part.nodeId,
         title: part.title,
         goal: part.goal,
-        depends_on: part.dependsOn ?? []
+        depends_on: part.dependsOn ?? [],
+        ...(part.requiresCritic ? { requires_critic: true } : {})
       }))
     });
     return {
