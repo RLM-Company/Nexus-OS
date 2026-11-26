@@ -27,6 +27,7 @@ import {
   runMigrations,
   upgradeAccountProfileColumns,
   StepUpProofStore,
+  ProjectSourceStore,
   UsageStore
 } from "@cosmora/db";
 import { validateAgentDelegation } from "@cosmora/policy-engine";
@@ -154,6 +155,7 @@ try {
   generalChatStore.contextMemory.indexedRecall = semanticIndex;
   const sharedBudget = new SharedOwnerBudget(accountStore, projectStore);
   const documentLibrary = new DocumentLibraryStore(database.sqlite);
+  const projectSourceStore = new ProjectSourceStore(database.sqlite);
   const canvasStore = new CanvasArtifactStore(database.sqlite);
   const documentAnswerStore = new DocumentAnswerStore(database.sqlite);
   const documentAnswerService = new DocumentAnswerService(
@@ -211,6 +213,7 @@ try {
     ...(config.managerTimeoutMs === 0 ? { operationTimeoutMs: 0 } : {}),
     ownerBudget: accountStore,
     accountStore,
+    sourceStore: projectSourceStore,
     maxConcurrentWork: WORK_EXECUTION_CONCURRENCY,
     store: managerWorkStore,
     projects: projectStore,
@@ -327,6 +330,7 @@ try {
     },
     documentLibrary,
     documentAnswerService,
+    projectSourceStore,
     chatHistorySearchStore,
     presentationStore,
     notificationStore,

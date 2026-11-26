@@ -24,7 +24,8 @@ import {
   type WorkQuiescence,
   type ModelRequest,
   type ContextMemoryBundle,
-  type ModelMessage
+  type ModelMessage,
+  type UsedSource
 } from "@cosmora/contracts";
 import {
   estimateInputTokensUpperBound,
@@ -46,6 +47,7 @@ import {
   type EmergencyStopStore,
   type ManagerWorkStore,
   type PolicyStore,
+  type ProjectSourceStore,
   type ProjectStore
 } from "@cosmora/db";
 import {
@@ -95,6 +97,8 @@ export interface ManagerWorkDependencies {
   ownerBudget?: WorkOwnerBudget;
   /** Сохранённые настройки владельца (имя и род) для Koswork. */
   accountStore?: AccountStore;
+  /** Immutable receipts of the sources actually present in a formed model request. */
+  sourceStore?: ProjectSourceStore;
 }
 
 type PublishWorkInput = {
@@ -102,6 +106,37 @@ type PublishWorkInput = {
   ownerId: string;
   onExecuted: (elapsedMs: number) => void;
 };
+
+/**
+ * Map the sources that actually entered the formed request (tagged by
+ * contextMemoryUsage) to immutable receipts. Quote/version come from the
+ * recalled evidence with the same reference; no source is invented.
+ */
+function usedSourcesFromContext(
+  snapshot: ReturnType<typeof contextMemoryUsage>,
+  recalled: ContextMemoryBundle | null
+): UsedSource[] {
+  if (!snapshot || snapshot.representation !== "exact") return [];
+  const byReference = new Map((recalled?.items ?? []).map((item) => [item.reference, item]));
+  return snapshot.sources.map((entry) => {
+    const evidence = byReference.get(entry.reference);
+    const original = evidence?.source;
+    const sourceKind =
+      entry.source_kind ??
+      original?.kind ??
+      (entry.kind === "history" ? "chat_message" : "memory_entry");
+    return {
+      reference: entry.reference,
+      kind: entry.kind,
+      source_kind: sourceKind,
+      source_id: entry.source_message_id ?? original?.message_id ?? entry.reference,
+      version: entry.version ?? evidence?.version ?? null,
+      sha256: entry.source_sha256 ?? entry.text_sha256,
+      quote: (original?.quote || evidence?.text || "").slice(0, 4000),
+      excerpt_only: entry.excerpt_only
+    };
+  });
+}
 
 export class ManagerWorkCoordinator {
   readonly dag: WorkDagCoordinator;
@@ -333,7 +368,8 @@ export class ManagerWorkCoordinator {
       this.dependencies.store.contextMemory.resolve(
         { kind: "project", id: work.project_id },
         work.owner_id,
-        work.request.goal
+        work.request.goal,
+        this.dependencies.sourceStore?.excludedSourceIds(work.project_id, work.owner_id) ?? []
       );
     const personalSkills =
       this.dependencies.store.skills.forWork(work.id, work.owner_id)?.items ?? [];
@@ -510,17 +546,26 @@ export class ManagerWorkCoordinator {
       }
     }, 50);
     try {
+      const sourceStore = this.dependencies.sourceStore;
+      const excluded = sourceStore
+        ? sourceStore.excludedSourceIds(work.project_id, work.owner_id)
+        : [];
       const recalled = await store.contextMemory.resolveAsync(
         { kind: "project", id: work.project_id },
         work.owner_id,
         work.request.goal,
-        [],
+        excluded,
         6000,
         controller.signal
       );
       controller.signal.throwIfAborted();
       const request = this.request(work, runId, recalled);
       const snapshot = contextMemoryUsage(request);
+      if (sourceStore) {
+        const sources = usedSourcesFromContext(snapshot, recalled);
+        if (sources.length)
+          sourceStore.recordRunSources(work.project_id, work.owner_id, { run_id: runId, sources });
+      }
       const memoryUsage = (attempt: number, phase: "dispatch_boundary" | "provider_completed") =>
         store.contextMemory.recordUsage({ kind: "project", id: work.project_id }, work.owner_id, {
           run_id: runId,
