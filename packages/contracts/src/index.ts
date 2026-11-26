@@ -35,6 +35,7 @@ export * from "./account-finance.js";
 export * from "./model-output-checkpoint.js";
 export * from "./runtime-clock.js";
 export * from "./manager-work.js";
+export * from "./work-execution-cycle.js";
 export * from "./work-runtime.js";
 export * from "./canvas-artifacts.js";
 export * from "./work-dag.js";
