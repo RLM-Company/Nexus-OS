@@ -10,18 +10,23 @@ import {
 import { applyStarsMissionEvent, createStarsMission, StarsMissionConflict } from "@cosmora/core";
 import {
   StarsMissionConflict as StarsMissionStoreConflict,
-  type StarsMissionStore
+  type AgentTeamRunStore,
+  type StarsMissionStore,
+  type StoredStarsMission
 } from "@cosmora/db";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { Type } from "typebox";
+import { bindStarsTeam, starsTeamStatus } from "./stars-team-adapter.js";
 
 export function registerStarsMissionRoutes({
   app,
   store,
+  teamRuns,
   identityFor
 }: {
   app: FastifyInstance;
   store: StarsMissionStore;
+  teamRuns?: AgentTeamRunStore;
   identityFor: (request: FastifyRequest) => IdentityContext;
 }): void {
   const base = "/api/v1/stars/missions";
@@ -48,9 +53,39 @@ export function registerStarsMissionRoutes({
     }
   );
 
+  const projectIdFor = (teamScope: string) => teamScope;
+
+  const withTeamBinding = (
+    mission: Record<string, unknown>,
+    owner: string,
+    actor: string
+  ): Record<string, unknown> => {
+    const stored = mission.team_binding as
+      { composition_id?: string; project_id?: string } | undefined;
+    if (!teamRuns || !stored?.composition_id || !stored.project_id) return mission;
+    const live = teamRuns.parts(
+      { owner_id: owner, actor_id: actor },
+      stored.project_id,
+      stored.composition_id
+    );
+    const merged = starsTeamStatus(live.parts, stored as Parameters<typeof starsTeamStatus>[1]);
+    return { ...mission, team_binding: merged };
+  };
+
   app.get(base, (request, reply) => {
     reply.header("cache-control", "private, no-store");
-    return { items: store.list(identityFor(request).owner_id) };
+    const identity = identityFor(request);
+    return {
+      items: store
+        .list(identity.owner_id)
+        .map((m) =>
+          withTeamBinding(
+            m as unknown as Record<string, unknown>,
+            identity.owner_id,
+            identity.actor_id
+          )
+        )
+    };
   });
 
   app.get<{ Params: { id: string } }>(base + "/:id", { schema: { params } }, (request, reply) => {
@@ -86,8 +121,22 @@ export function registerStarsMissionRoutes({
           return reply.code(409).send({ error: error.message });
         throw error;
       }
+      const savedState = next as unknown as StoredStarsMission & Record<string, unknown>;
+      if (event.type === "plan" && Array.isArray(savedState.agents)) {
+        const missionId = typeof savedState.id === "string" ? savedState.id : "";
+        const teamScope = typeof savedState.team_scope === "string" ? savedState.team_scope : "";
+        const binding = bindStarsTeam(
+          {
+            id: missionId,
+            team_scope: teamScope,
+            agents: (savedState.agents as Array<{ id: string }>).map((a) => ({ id: a.id }))
+          },
+          projectIdFor(teamScope)
+        );
+        savedState.team_binding = binding;
+      }
       try {
-        return store.save(next, owner, current.version);
+        return store.save(savedState, owner, current.version);
       } catch (error) {
         if (error instanceof StarsMissionStoreConflict)
           return reply.code(409).send({ error: error.message });
