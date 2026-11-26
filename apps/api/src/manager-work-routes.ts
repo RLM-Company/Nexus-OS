@@ -7,14 +7,25 @@ import { registerProjectMemoryRoutes } from "./project-memory-routes.js";
 import { registerWorkRuntimeRoutes } from "./work-runtime-routes.js";
 import {
   CreateManagerWorkSchema,
+  WorkCycleEventSchema,
   type CreateManagerWork,
-  type IdentityContext
+  type IdentityContext,
+  type WorkCycleEvent
 } from "@cosmora/contracts";
 import {
+  applySupplierCycleEvent,
+  initialSupplierCycle,
+  SupplierCycleConflict,
+  type SupplierCycleState
+} from "@cosmora/core";
+import {
   ManagerWorkConflict,
+  WorkExecutionCycleConflict,
   type GeneralChatStore,
   type ManagerWorkStore,
-  type ProjectStore
+  type ProjectStore,
+  type WorkExecutionCycleStore,
+  type WorkExecutionCycle
 } from "@cosmora/db";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { Type } from "typebox";
@@ -23,6 +34,7 @@ import type { ManagerWorkCoordinator } from "./manager-work-coordinator.js";
 export function registerManagerWorkRoutes(options: {
   app: FastifyInstance;
   store: ManagerWorkStore;
+  cycles?: WorkExecutionCycleStore;
   chats?: GeneralChatStore;
   projects: ProjectStore;
   coordinator: ManagerWorkCoordinator;
@@ -30,6 +42,7 @@ export function registerManagerWorkRoutes(options: {
   nodeBudget?: { max_input_tokens: number; max_output_tokens: number };
 }): void {
   const { app, store, projects, coordinator, identityFor } = options;
+  const cycles = options.cycles;
   registerWorkflowRoutes(options);
   registerWorkDagRoutes({ app, projects, coordinator: coordinator.dag, identityFor });
   registerWorkSkillRoutes(app, store.skills, identityFor);
@@ -149,6 +162,79 @@ export function registerManagerWorkRoutes(options: {
       }
     }
   );
+
+  // Standalone, additive execution cycle. No ManagerWork contract field is used.
+  const toCycleState = (cycle: WorkExecutionCycle | null): SupplierCycleState =>
+    cycle
+      ? {
+          version: cycle.version,
+          stage: cycle.stage,
+          parts: [],
+          extraction: null,
+          question: cycle.question,
+          error_code: cycle.error_code,
+          result: cycle.result_ref ? { format: "", csv: "", markdown: "" } : null,
+          instructions: cycle.instructions,
+          history: []
+        }
+      : initialSupplierCycle();
+
+  if (cycles) {
+    app.get<{ Params: Params }>(base + "/:id/cycle", { schema: { params } }, (request, reply) => {
+      if (!get(request)) return reply.code(404).send({ error: "WORK_NOT_FOUND" });
+      return cycles.get(request.params.id, identityFor(request).owner_id);
+    });
+    app.post<{ Params: Params; Body: WorkCycleEvent }>(
+      base + "/:id/cycle",
+      {
+        validatorCompiler: TypeBoxValidatorCompiler,
+        schema: { params, body: WorkCycleEventSchema }
+      },
+      (request, reply) => {
+        if (!get(request)) return reply.code(404).send({ error: "WORK_NOT_FOUND" });
+        const owner = identityFor(request).owner_id;
+        const work = store.get(request.params.id, owner);
+        if (!work) return reply.code(404).send({ error: "WORK_NOT_FOUND" });
+        if (!work.supplier_handoff)
+          return reply.code(409).send({ error: "SUPPLIER_HANDOFF_REQUIRED" });
+        const current = cycles.get(work.id, owner);
+        const state = toCycleState(current);
+        if (request.body.expected_version !== state.version)
+          return reply.code(409).send({ error: "STALE_CYCLE" });
+        const { expected_version: _checked, ...event } = request.body;
+        void _checked;
+        let next: SupplierCycleState;
+        try {
+          next = applySupplierCycleEvent(state, event);
+        } catch (error) {
+          if (error instanceof SupplierCycleConflict)
+            return reply.code(409).send({ error: "STALE_CYCLE" });
+          throw error;
+        }
+        const saved: WorkExecutionCycle = {
+          work_id: work.id,
+          owner_id: owner,
+          stage: next.stage,
+          version: next.version,
+          question: next.question,
+          gaps: next.extraction?.gaps ?? current?.gaps ?? [],
+          instructions: next.instructions,
+          error_code: next.error_code,
+          accepted_inputs: work.supplier_handoff.inputs,
+          result_ref: next.result ? work.id : null,
+          updated_at: new Date().toISOString()
+        };
+        try {
+          return cycles.save(saved, state.version);
+        } catch (error) {
+          if (error instanceof WorkExecutionCycleConflict)
+            return reply.code(409).send({ error: error.message });
+          throw error;
+        }
+      }
+    );
+  }
+
   // Owner acceptance of the finished result. Separate from plan approval.
   app.post<{ Params: Params; Body: { expected_version: number } }>(
     base + "/:id/result/accept",
