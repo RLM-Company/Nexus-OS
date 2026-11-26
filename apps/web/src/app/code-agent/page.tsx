@@ -314,7 +314,7 @@ export default function CodeAgentPage() {
       setPublishApproved(false);
       setUnknownPublish(storedUncertainty(project, value.id));
     }
-    if (value.status === "published") {
+    if (value.status === "published" || value.error === "GITHUB_BASE_CHANGED") {
       markPublication(project, value.id, false);
       setUnknownPublish(false);
     }
@@ -1270,12 +1270,18 @@ export default function CodeAgentPage() {
                         markPublication(project, run.id, false);
                         setUnknownPublish(false);
                       } else {
+                        if (reason instanceof ApiFailure && reason.code === "GITHUB_BASE_CHANGED") {
+                          markPublication(project, run.id, false);
+                          setUnknownPublish(false);
+                          setPublishApproved(false);
+                        }
                         const saved = await api<Run>(`${root}/${encodeURIComponent(run.id)}`).catch(
                           () => null
                         );
                         if (
                           saved?.id === run.id &&
-                          ["published", "uncertain", "publishing"].includes(saved.status)
+                          (["published", "uncertain", "publishing"].includes(saved.status) ||
+                            saved.error === "GITHUB_BASE_CHANGED")
                         )
                           return saved;
                       }

@@ -171,6 +171,7 @@ async function fixture(
     [];
   let loseResponse = false,
     prExists = false;
+  let branchHead = options.baseSha ?? head;
   const github = new GithubIntegration({
     token: "fixture-token",
     fetchImplementation: (input, init) => {
@@ -191,11 +192,11 @@ async function fixture(
       if (path.startsWith("/git/ref/heads/"))
         value = {
           ref: `refs/heads/${decodeURIComponent(path.slice(15))}`,
-          object: { type: "commit", sha: options.baseSha ?? head }
+          object: { type: "commit", sha: branchHead }
         };
       else if (path.startsWith("/commits/"))
         value = {
-          sha: options.baseSha ?? head,
+          sha: path === "/commits/" + branchHead ? branchHead : (options.baseSha ?? head),
           commit: { tree: { sha: options.baseTree ?? tree } }
         };
       else if (path.startsWith("/git/trees/")) {
@@ -446,6 +447,9 @@ async function fixture(
     review,
     check,
     base: `/api/v1/projects/${project}/code-agent`,
+    moveBaseBranch: () => {
+      branchHead = "9".repeat(40);
+    },
     losePrResponse: () => {
       loseResponse = true;
     },
@@ -1956,6 +1960,29 @@ describe("Code agent real gateway/GitHub/policy vertical", () => {
     expect(f.githubCalls.find((c) => c.path === "/git/refs")!.body!.ref).toMatch(
       /^refs\/heads\/kosmora\/change-/
     );
+  });
+
+  it("refuses a confirmed publication when the upstream branch moved after the check", async () => {
+    const f = await fixture();
+    const id = await f.start();
+    const review = await f.review(id);
+    const hash = review.draft!.plan.review_hash;
+    await f.check(id, hash);
+    f.moveBaseBranch();
+    const result = await f.app.inject({
+      method: "POST",
+      url: `${f.base}/${id}/publish`,
+      payload: { review_hash: hash, publication_token: f.get(id).publication_token!, approve: true }
+    });
+    expect(result.statusCode, result.body).toBe(409);
+    expect(result.json()).toEqual({ error: { code: "GITHUB_BASE_CHANGED" } });
+    expect(f.githubCalls.every((call) => call.method === "GET")).toBe(true);
+    expect(f.get(id)).toMatchObject({ status: "checked", error: "GITHUB_BASE_CHANGED" });
+    expect(f.get(id).publication_token).toBeUndefined();
+    const reread = await f.service.reconcile(id, owner);
+    expect(reread.error).toBe("GITHUB_BASE_CHANGED");
+    expect(reread.draft?.plan.review_hash).toBe(hash);
+    expect(reread.publication_token).toBeUndefined();
   });
 
   it("reconciles a lost publication response by reading GitHub without repeating writes", async () => {
