@@ -93,9 +93,13 @@ const labels: Record<string, string> = {
   failed: "Остановлено с ошибкой",
   cancelled: "Отменено"
 };
+function workStatusLabel(work: Work): string {
+  return work.status === "blocked" && work.error_code === "SUPPLIER_ANSWER_REQUIRED"
+    ? "Нужно уточнение"
+    : (labels[work.status] ?? "Состояние неизвестно");
+}
 const errors: Record<string, string> = {
   INVALID_SUPPLIER_ANSWER: "Добавьте недостающие данные в JSON. Исходные позиции сохраняются.",
-  STALE_EXECUTION: "Задача изменилась. Проверьте её текущее состояние и повторите действие.",
   INVALID_BUSINESS_INPUT: "Проверьте исходные данные выбранного отчёта и запустите задачу снова.",
   BUSINESS_REPORT_TOO_LARGE:
     "Отчёт слишком большой. Сократите число позиций и запустите сравнение снова.",
@@ -686,7 +690,7 @@ export function ManagerWorkPanel({
           <strong>Создать результат с Manager</strong>
         </div>
         <span className={`manager-work-status ${work?.status ?? "new"}`} role="status">
-          {work ? labels[work.status] : "Новая задача"}
+          {work ? workStatusLabel(work) : "Новая задача"}
         </span>
       </header>
       <p className="manager-work-runtime">
@@ -927,7 +931,7 @@ export function ManagerWorkPanel({
                       ? (aiWorkChainSource(item.request.goal) ?? item.request.goal)
                       : `Задача ${index + 1}`}
                 </span>
-                <small>{labels[item.status] ?? "Состояние неизвестно"}</small>
+                <small>{workStatusLabel(item)}</small>
               </button>
             ))}
           </div>
