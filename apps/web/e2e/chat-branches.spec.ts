@@ -46,6 +46,48 @@ async function branch(page: Page, original: string) {
   return id;
 }
 
+test("starts a new chat at an earlier answer and recovers a lost acknowledgement once", async ({
+  page,
+  request
+}) => {
+  const original = await source(page, request);
+  const originalComposer = page.getByRole("textbox", { name: "Сообщение Kosmora", exact: true });
+  await originalComposer.fill("Черновик только в исходном чате");
+  let writes = 0;
+  await page.route(`**/api/v1/chats/${original.id}/branches/fork`, async (route) => {
+    writes++;
+    const response = await route.fetch({ maxRetries: 0 });
+    expect(response.status()).toBe(201);
+    await route.abort();
+  });
+  const buttons = page.getByRole("button", { name: "Начать новый чат с этого ответа" });
+  await expect(buttons).toHaveCount(2);
+  await buttons.first().click();
+  await expect(page).toHaveURL(
+    (url) => Boolean(url.searchParams.get("chat")) && url.searchParams.get("chat") !== original.id
+  );
+  const id = new URL(page.url()).searchParams.get("chat")!;
+  await expect(originalComposer).toBeEnabled();
+  await expect(originalComposer).toHaveValue("");
+  await expect(page.locator(".message.assistant")).toHaveCount(1);
+  const detail = (await (
+    await request.get(`${api}/api/v1/chats/${id}`)
+  ).json()) as GeneralChatDetailResponse;
+  expect(detail.messages.map(({ role, content }) => ({ role, content }))).toEqual(
+    original.snapshot.messages.slice(0, 2).map(({ role, content }) => ({ role, content }))
+  );
+  expect(detail.messages.every((message) => message.run_id === null)).toBe(true);
+  expect(writes).toBe(1);
+  await page.reload();
+  const selector = page.getByRole("combobox", { name: "Варианты переписки" });
+  await expect(selector).toHaveValue(id);
+  await selector.selectOption(original.id);
+  await expect(originalComposer).toHaveValue("Черновик только в исходном чате");
+  expect(await (await request.get(`${api}/api/v1/chats/${original.id}`)).json()).toEqual(
+    original.snapshot
+  );
+});
+
 test("edit preserves the original and composer draft; variants switch and survive reload", async ({
   page,
   request

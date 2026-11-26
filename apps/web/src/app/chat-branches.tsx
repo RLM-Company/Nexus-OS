@@ -4,11 +4,88 @@ import { useEffect, useId, useRef, useState } from "react";
 import type {
   ChatBranchList,
   CreateChatBranch,
+  ForkChat,
+  ForkChatResponse,
   GeneralChatMessage,
   GeneralChatMessageAcceptedResponse
 } from "@cosmora/contracts";
 import styles from "./chat-branches.module.css";
 import { WorkspaceIcon } from "./workspace-icons";
+
+export function ChatForkButton({
+  chatId,
+  messageId,
+  disabled,
+  onOpen,
+  onError
+}: {
+  chatId: string;
+  messageId: string;
+  disabled: boolean;
+  onOpen: (id: string) => void;
+  onError: (message: string | null) => void;
+}) {
+  const attempt = useRef<string | null>(null);
+  const active = useRef<AbortController | null>(null);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => () => active.current?.abort(), []);
+
+  async function fork() {
+    if (active.current) return;
+    const scope = new AbortController();
+    active.current = scope;
+    setBusy(true);
+    onError(null);
+    const id = (attempt.current ??= crypto.randomUUID());
+    const base = "/api/v1/chats/";
+    const input: ForkChat = { kind: "fork", message_id: messageId, client_branch_id: id };
+    try {
+      const response = await fetch(`${base}${encodeURIComponent(chatId)}/branches/fork`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(input),
+        signal: AbortSignal.any([scope.signal, AbortSignal.timeout(20_000)])
+      }).catch(() => null);
+      if (response && response.status < 500 && !response.ok) {
+        const detail = (await response.json()) as { error?: { message?: string } };
+        throw new Error(detail.error?.message ?? "Не удалось создать ветку.");
+      }
+      // Read the known ID after a lost response without issuing a second write.
+      const saved = response?.ok
+        ? response
+        : await fetch(base + encodeURIComponent(id), {
+            cache: "no-store",
+            signal: AbortSignal.any([scope.signal, AbortSignal.timeout(8_000)])
+          });
+      const state = saved.ok ? ((await saved.json()) as ForkChatResponse) : null;
+      if (state?.chat.id !== id)
+        throw new Error("Не удалось подтвердить создание ветки. Нажмите кнопку ещё раз.");
+      if (!scope.signal.aborted) onOpen(id);
+    } catch (cause) {
+      if (!scope.signal.aborted)
+        onError(cause instanceof Error ? cause.message : "Не удалось создать ветку.");
+    } finally {
+      if (!scope.signal.aborted) {
+        active.current = null;
+        setBusy(false);
+      }
+    }
+  }
+
+  return (
+    <button
+      type="button"
+      className="message-action"
+      aria-label="Начать новый чат с этого ответа"
+      title="Начать новый чат с этого ответа"
+      aria-busy={busy}
+      disabled={disabled || busy}
+      onClick={() => void fork()}
+    >
+      <WorkspaceIcon name="new-chat" />
+    </button>
+  );
+}
 
 export function ChatBranchButton({
   assistant,

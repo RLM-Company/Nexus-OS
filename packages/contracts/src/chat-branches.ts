@@ -1,4 +1,5 @@
 import { Type, type Static } from "typebox";
+import { GeneralChatSchema } from "./domain.js";
 
 const identity = Type.String({
   pattern: "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$"
@@ -23,6 +24,20 @@ export const CreateChatBranchSchema = Type.Union([
   )
 ]);
 export type CreateChatBranch = Static<typeof CreateChatBranchSchema>;
+export const ForkChatSchema = Type.Object(
+  {
+    client_branch_id: identity,
+    message_id: Type.String({ minLength: 1, maxLength: 128 }),
+    kind: Type.Literal("fork")
+  },
+  { additionalProperties: false }
+);
+export type ForkChat = Static<typeof ForkChatSchema>;
+export const ForkChatResponseSchema = Type.Object(
+  { chat: GeneralChatSchema },
+  { additionalProperties: false }
+);
+export type ForkChatResponse = Static<typeof ForkChatResponseSchema>;
 export const ChatBranchListSchema = Type.Object(
   {
     root_chat_id: Type.String(),
@@ -34,7 +49,8 @@ export const ChatBranchListSchema = Type.Object(
           kind: Type.Union([
             Type.Literal("original"),
             Type.Literal("edit"),
-            Type.Literal("regenerate")
+            Type.Literal("regenerate"),
+            Type.Literal("fork")
           ]),
           created_at: Type.String()
         },

@@ -3,6 +3,8 @@ import { loadServerConfig } from "@cosmora/config";
 import { GeneralChatStore, LOCAL_OWNER_ID, openDatabase, runMigrations } from "@cosmora/db";
 import type {
   ChatBranchList,
+  ForkChat,
+  ForkChatResponse,
   GeneralChatMessageAcceptedResponse,
   ModelRequest,
   CreateChatBranch
@@ -63,6 +65,60 @@ describe("chat variants", () => {
     await finish(second.run);
     return { first, second };
   };
+
+  it("forks through a completed answer without queuing a run and continues with its copied context", async () => {
+    const source = store.createChat("Начало обсуждения", randomUUID(), LOCAL_OWNER_ID, [
+      { name: "brief.txt", content: "Входные данные" }
+    ]);
+    await finish(source.run);
+    const answer = store.getAssistantMessage(source.run.id)!;
+    const later = store.createMessage(source.chat.id, "Более поздний запрос", randomUUID())!;
+    const payload: ForkChat = {
+      client_branch_id: randomUUID(),
+      message_id: answer.id,
+      kind: "fork"
+    };
+    const post = (body: ForkChat) =>
+      app.inject({
+        method: "POST",
+        url: `/api/v1/chats/${source.chat.id}/branches/fork`,
+        payload: body
+      });
+    expect((await post({ ...payload, message_id: source.userMessage.id })).statusCode).toBe(400);
+    const original = store.listMessages(source.chat.id);
+    const created = await post(payload);
+    expect(created.statusCode, created.body).toBe(201);
+    expect(created.json<ForkChatResponse>().chat.id).toBe(payload.client_branch_id);
+    expect((await post(payload)).statusCode).toBe(200);
+    const copy = store.listMessages(payload.client_branch_id);
+    expect(copy.map(({ role, content, attachments }) => ({ role, content, attachments }))).toEqual(
+      original.slice(0, 2).map(({ role, content, attachments }) => ({ role, content, attachments }))
+    );
+    expect(copy.every((message) => message.run_id === null)).toBe(true);
+    expect(
+      db.sqlite
+        .prepare("SELECT COUNT(*) AS n FROM general_chat_runs WHERE chat_id=?")
+        .get(payload.client_branch_id)
+    ).toMatchObject({ n: 0 });
+    expect(store.getRun(later.run.id)?.status).toBe("queued");
+    expect(store.listMessages(source.chat.id)).toEqual(original);
+    expect(store.listChatBranches(source.chat.id)?.items.map((item) => item.kind)).toEqual([
+      "original",
+      "fork"
+    ]);
+    expect(requests).toHaveLength(1);
+
+    const resumed = store.createMessage(payload.client_branch_id, "Продолжение", randomUUID())!;
+    await finish(resumed.run);
+    expect(requests.at(-1)?.messages.map((message) => message.role)).toEqual([
+      "system",
+      "user",
+      "assistant",
+      "user"
+    ]);
+    expect(requests.at(-1)?.messages[2]?.content).toBe(answer.content);
+    expect(requests.at(-1)?.messages[3]?.content).toBe("Продолжение");
+  });
 
   it("edits an early request without altering source history or leaking the future; repeated acceptance queues once", async () => {
     const { first } = await seed();
