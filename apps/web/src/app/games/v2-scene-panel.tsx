@@ -18,7 +18,7 @@ export function V2ScenePanel({
   const [error, setError] = useState("");
   const [sceneId, setSceneId] = useState("");
   if (!editable.ok) return null;
-  const { title, launch, scenes, transform, modelName } = editable;
+  const { title, launch, scenes, transform, render, modelName } = editable;
   const current = scenes.find((scene) => scene.id === sceneId) ?? scenes[0];
   const apply = (edit: Parameters<typeof applyV2FieldEdit>[1]) => {
     const result = applyV2FieldEdit(content, edit);
@@ -143,6 +143,69 @@ export function V2ScenePanel({
                   field: "model_transform",
                   name: modelName,
                   value: { ...transform, scale: event.target.value }
+                })
+              }
+            />
+          </label>
+        </div>
+      )}
+      {render && modelName && (
+        <div>
+          <p>Камера, свет и материал — параметры рендера сцены.</p>
+          <label>
+            Камера (x,y,z,fov)
+            <input
+              value={render.camera}
+              disabled={disabled}
+              onChange={(event) =>
+                apply({
+                  field: "model_render",
+                  name: modelName,
+                  value: { ...render, camera: event.target.value }
+                })
+              }
+            />
+          </label>
+          <label>
+            Свет (x,y,z,intensity)
+            <input
+              value={render.light}
+              disabled={disabled}
+              onChange={(event) =>
+                apply({
+                  field: "model_render",
+                  name: modelName,
+                  value: { ...render, light: event.target.value }
+                })
+              }
+            />
+          </label>
+          <label>
+            Цвет материала
+            <input
+              type="color"
+              value={render.color}
+              disabled={disabled}
+              onChange={(event) =>
+                apply({
+                  field: "model_render",
+                  name: modelName,
+                  value: { ...render, color: event.target.value }
+                })
+              }
+            />
+          </label>
+          <label>
+            Каркасный режим
+            <input
+              type="checkbox"
+              checked={render.wireframe}
+              disabled={disabled}
+              onChange={(event) =>
+                apply({
+                  field: "model_render",
+                  name: modelName,
+                  value: { ...render, wireframe: event.target.checked }
                 })
               }
             />

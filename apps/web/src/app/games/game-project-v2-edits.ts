@@ -1,5 +1,14 @@
 import { parseGameProjectV2, type GameProjectV2 } from "@cosmora/contracts/game-project-v2";
 
+/** Editing state for the inert obj-lite model markers. No mesh vertices are changed. */
+export type ModelTransform = { rotation: string; scale: string };
+export type RenderSettings = {
+  camera: string; // "x,y,z,fov"
+  light: string; // "x,y,z,intensity"
+  color: string; // "#rrggbb"
+  wireframe: boolean;
+};
+
 /** A structured, addressable change to one field of a v2 project. Other fields stay byte-identical. */
 export type V2FieldEdit =
   | { field: "title"; value: string }
@@ -8,25 +17,48 @@ export type V2FieldEdit =
   | { field: "game_js"; value: string }
   | { field: "launch"; value: GameProjectV2["launch"] }
   | { field: "scene"; id: string; value: { title: string; html: string } }
-  | { field: "model_transform"; name: string; value: { rotation: string; scale: string } };
+  | { field: "model_transform"; name: string; value: ModelTransform }
+  | { field: "model_render"; name: string; value: RenderSettings };
 
 export type V2EditResult =
   { ok: true; json: string; project: GameProjectV2 } | { ok: false; error: string };
 
 const TRANSFORM_MARKER = "# kosmora-transform:";
+const RENDER_MARKER = "# kosmora-render:";
 
-function transformFromHtml(html: string): { rotation: string; scale: string } {
-  const match = /# kosmora-transform:([^\r\n]*)/.exec(html);
-  if (!match) return { rotation: "0.25,0.45", scale: "1" };
-  const rotation = /rotation=([^;\s]+)/.exec(match[1] ?? "")?.[1] ?? "0.25,0.45";
-  const scale = /scale=([^;\s]+)/.exec(match[1] ?? "")?.[1] ?? "1";
-  return { rotation, scale };
+const DEFAULT_TRANSFORM: ModelTransform = { rotation: "0.25,0.45", scale: "1" };
+const DEFAULT_RENDER: RenderSettings = {
+  camera: "0,1.5,5,50",
+  light: "3,4,5,2",
+  color: "#62d9b0",
+  wireframe: false
+};
+
+/** Parse all `# kosmora-*` markers without touching vertex/face lines. */
+export function readModelMarkers(data: string): {
+  transform: ModelTransform;
+  render: RenderSettings;
+} {
+  const transformLine = /# kosmora-transform:([^\r\n]*)/.exec(data)?.[1] ?? "";
+  const renderLine = /# kosmora-render:([^\r\n]*)/.exec(data)?.[1] ?? "";
+  const rotation = /rotation=([^;\s]+)/.exec(transformLine)?.[1] ?? DEFAULT_TRANSFORM.rotation;
+  const scale = /scale=([^;\s]+)/.exec(transformLine)?.[1] ?? DEFAULT_TRANSFORM.scale;
+  const camera = /camera=([^;\s]+)/.exec(renderLine)?.[1] ?? DEFAULT_RENDER.camera;
+  const light = /light=([^;\s]+)/.exec(renderLine)?.[1] ?? DEFAULT_RENDER.light;
+  const rawColor = /color=([^;\s]+)/.exec(renderLine)?.[1] ?? DEFAULT_RENDER.color;
+  const color = /^#[0-9a-fA-F]{6}$/.test(rawColor) ? rawColor : DEFAULT_RENDER.color;
+  const wireframe = /wireframe=1/.test(renderLine);
+  return { transform: { rotation, scale }, render: { camera, light, color, wireframe } };
 }
 
-function applyTransform(html: string, value: { rotation: string; scale: string }): string {
-  const marker = `${TRANSFORM_MARKER}rotation=${value.rotation};scale=${value.scale}`;
-  const without = html.replace(/# kosmora-transform:[^\r\n]*\r?\n?/g, "");
-  return `${marker}\n${without}`;
+/** Replace only the requested marker line; vertex/face lines remain byte-identical. */
+function writeModelMarker(data: string, marker: string, payload: string): string {
+  const without = data
+    .split(/\r?\n/)
+    .filter((line) => !line.startsWith(marker))
+    .join("\n")
+    .replace(/^\n+/, "");
+  return `${marker}${payload}\n${without}`;
 }
 
 /**
@@ -64,10 +96,31 @@ export function applyV2FieldEdit(source: string, edit: V2FieldEdit): V2EditResul
       break;
     }
     case "model_transform": {
-      if (!next.model) return { ok: false, error: "MODEL_NOT_FOUND" };
-      if (next.model.name !== edit.name) return { ok: false, error: "MODEL_NAME_MISMATCH" };
-      if (next.model.format !== "obj-lite") return { ok: false, error: "MODEL_FORMAT_UNSUPPORTED" };
-      next.model = { ...next.model, data: applyTransform(next.model.data, edit.value) };
+      const model = checkModel(next, edit.name);
+      if (!model.ok) return model;
+      next.model = {
+        ...model.value,
+        data: writeModelMarker(
+          model.value.data,
+          TRANSFORM_MARKER,
+          `rotation=${edit.value.rotation};scale=${edit.value.scale}`
+        )
+      };
+      break;
+    }
+    case "model_render": {
+      const model = checkModel(next, edit.name);
+      if (!model.ok) return model;
+      const { camera, light, color, wireframe } = edit.value;
+      if (!/^#[0-9a-fA-F]{6}$/.test(color)) return { ok: false, error: "INVALID_COLOR" };
+      next.model = {
+        ...model.value,
+        data: writeModelMarker(
+          model.value.data,
+          RENDER_MARKER,
+          `camera=${camera};light=${light};color=${color};wireframe=${wireframe ? 1 : 0}`
+        )
+      };
       break;
     }
   }
@@ -79,30 +132,60 @@ export function applyV2FieldEdit(source: string, edit: V2FieldEdit): V2EditResul
   }
 }
 
-/** Map the v2 transform marker to the real runtime descriptor with safe defaults. */
+function checkModel(
+  project: GameProjectV2,
+  name: string
+): { ok: true; value: NonNullable<GameProjectV2["model"]> } | { ok: false; error: string } {
+  if (!project.model) return { ok: false, error: "MODEL_NOT_FOUND" };
+  if (project.model.name !== name) return { ok: false, error: "MODEL_NAME_MISMATCH" };
+  if (project.model.format !== "obj-lite") return { ok: false, error: "MODEL_FORMAT_UNSUPPORTED" };
+  return { ok: true, value: project.model };
+}
+
+const tuple4 = (value: string, fallback: string): [number, number, number, number] => {
+  const parts = value.split(",").map((part) => Number(part));
+  const base = fallback.split(",").map((part) => Number(part));
+  return [
+    parts[0] ?? base[0] ?? 0,
+    parts[1] ?? base[1] ?? 0,
+    parts[2] ?? base[2] ?? 0,
+    parts[3] ?? base[3] ?? 0
+  ].map((n, i) => (Number.isFinite(n) ? n : (base[i] ?? 0))) as [number, number, number, number];
+};
+
+/** Map the v2 model markers to the real runtime descriptor with safe defaults. */
 export function v2SceneDescriptor(project: GameProjectV2) {
-  const transform = project.model ? transformFromHtml(project.model.data) : null;
-  const [rx, ry] = (transform?.rotation ?? "0.25,0.45").split(",").map(Number);
+  const markers = project.model ? readModelMarkers(project.model.data) : null;
+  const [rx, ry] = tuple4(
+    markers?.transform.rotation ?? DEFAULT_TRANSFORM.rotation,
+    "0.25,0.45,0,0"
+  );
+  const [scale] = tuple4(markers?.transform.scale ?? DEFAULT_TRANSFORM.scale, "1,0,0,0");
+  const [cx, cy, cz, fov] = tuple4(markers?.render.camera ?? DEFAULT_RENDER.camera, "0,1.5,5,50");
+  const [lx, ly, lz, intensity] = tuple4(markers?.render.light ?? DEFAULT_RENDER.light, "3,4,5,2");
   return {
-    rotation: {
-      x: typeof rx === "number" && Number.isFinite(rx) ? rx : 0.25,
-      y: typeof ry === "number" && Number.isFinite(ry) ? ry : 0.45
-    },
-    scale: Number(transform?.scale) || 1,
-    camera: { x: 0, y: 1.5, z: 5, fov: 50 },
-    light: { x: 3, y: 4, z: 5, intensity: 2 },
-    material: { color: "#62d9b0", wireframe: false, metalness: 0.1, roughness: 0.6 }
+    rotation: { x: rx, y: ry },
+    scale,
+    camera: { x: cx, y: cy, z: cz, fov },
+    light: { x: lx, y: ly, z: lz, intensity },
+    material: {
+      color: markers?.render.color ?? DEFAULT_RENDER.color,
+      wireframe: markers?.render.wireframe ?? false,
+      metalness: 0.1,
+      roughness: 0.6
+    }
   };
 }
 
-/** Read the current addressable scene/model transform for the editor fields. */
+/** Read the current addressable fields for the editor panel. */
 export function readV2Editable(source: string):
   | {
       ok: true;
       title: string;
       launch: GameProjectV2["launch"];
       scenes: GameProjectV2["scenes"];
-      transform: { rotation: string; scale: string } | null;
+      transform: ModelTransform | null;
+      render: RenderSettings | null;
       modelName: string | null;
     }
   | { ok: false; error: string } {
@@ -112,12 +195,14 @@ export function readV2Editable(source: string):
   } catch {
     return { ok: false, error: "INVALID_GAME_PROJECT_V2" };
   }
+  const markers = project.model ? readModelMarkers(project.model.data) : null;
   return {
     ok: true,
     title: project.title,
     launch: project.launch,
     scenes: project.scenes,
-    transform: project.model ? transformFromHtml(project.model.data) : null,
+    transform: markers?.transform ?? null,
+    render: markers?.render ?? null,
     modelName: project.model?.name ?? null
   };
 }

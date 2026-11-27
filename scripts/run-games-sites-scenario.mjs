@@ -153,8 +153,28 @@ async function main() {
     const mesh = scene.children.find((c) => c instanceof THREE.Mesh);
     if (!mesh || mesh.rotation.y !== 1.4 || mesh.scale.x !== 2)
       throw Error("RUNTIME_TRANSFORM_MISMATCH");
-    gameJson = result.json;
-    return "rotation=0.8,1.4 scale=2, vertices unchanged, scene built";
+    const rendered = gameEdits.applyV2FieldEdit(result.json, {
+      field: "model_render",
+      name: "ship.obj",
+      value: { camera: "1,2,7,60", light: "-2,5,4,3", color: "#ff8800", wireframe: true }
+    });
+    if (!rendered.ok) throw Error(rendered.error);
+    const descriptor2 = gameEdits.v2SceneDescriptor(rendered.project);
+    const camera = threeScene.buildThreeCamera(descriptor2, 800, 500);
+    const scene2 = threeScene.buildThreeScene(rendered.project.model.data, descriptor2);
+    const mesh2 = scene2.children.find((c) => c instanceof THREE.Mesh);
+    const light = scene2.children.find((c) => c instanceof THREE.DirectionalLight);
+    if (
+      camera.fov !== 60 ||
+      camera.position.z !== 7 ||
+      !mesh2 ||
+      (mesh2.material && mesh2.material.wireframe !== true) ||
+      !light ||
+      light.intensity !== 3
+    )
+      throw Error("RENDER_EDIT_NOT_APPLIED");
+    gameJson = rendered.json;
+    return "rotation=0.8,1.4 scale=2, camera/light/material applied, vertices unchanged";
   });
 
   check("04 edit one site block; other blocks and resources stay byte-identical", () => {
@@ -181,7 +201,12 @@ async function main() {
         "Koskora Games+Sites export; source of truth is project.json and site.project.json.\n"
       )
     };
-    const archive = zipSync(entries, { level: 6 });
+    // Fixed mtime makes the archive byte-for-byte reproducible.
+    const ZIP_MTIME = new Date("2020-01-01T00:00:00Z");
+    const archive = zipSync(entries, { level: 6, mtime: ZIP_MTIME });
+    const archiveAgain = zipSync(entries, { level: 6, mtime: ZIP_MTIME });
+    if (sha(Buffer.from(archive)) !== sha(Buffer.from(archiveAgain)))
+      throw Error("NON_DETERMINISTIC_ZIP");
     const restored = unzipSync(archive);
     if (
       Buffer.compare(

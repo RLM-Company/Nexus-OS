@@ -1,7 +1,7 @@
 {
   "passed": true,
   "suite": "koswork-games-sites-scenario",
-  "at": "2026-11-27T13:44:17.176Z",
+  "at": "2026-11-27T14:35:23.426Z",
   "base": "real edit modules + real three.js scene + real site validator + verified ZIP round-trip",
   "checks": [
     {
@@ -17,7 +17,7 @@
     {
       "name": "03 edit scene object transform; original model vertices preserved",
       "status": "pass",
-      "detail": "rotation=0.8,1.4 scale=2, vertices unchanged, scene built"
+      "detail": "rotation=0.8,1.4 scale=2, camera/light/material applied, vertices unchanged"
     },
     {
       "name": "04 edit one site block; other blocks and resources stay byte-identical",
@@ -27,7 +27,7 @@
     {
       "name": "05 save + export ZIP with verified paths, unzip and reopen same sources",
       "status": "pass",
-      "detail": "zip bytes=1920, sha256=0eb127819ff4"
+      "detail": "zip bytes=1970, sha256=e8a29eaf85a7"
     },
     {
       "name": "06 bad resource / unsupported format / empty block are refused",
@@ -37,7 +37,7 @@
   ],
   "artifact": {
     "file": "games-sites-export.zip",
-    "sha256": "0eb127819ff4a5f5cb2a2b52265ddd624c3447704b505f075df4609e4f8e9660"
+    "sha256": "e8a29eaf85a7ccaaa676ecaf42aaeab35b37baad3a0655fbfdac82b44699b84f"
   },
   "limits": [
     "No paid model, network or Electron GUI used; scene is built and validated in Node, WebGL component is exercised by project build.",

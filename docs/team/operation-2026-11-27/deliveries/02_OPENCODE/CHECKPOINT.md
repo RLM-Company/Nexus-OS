@@ -2,24 +2,35 @@
 
 **Обновлено:** 27 ноября 2026. **База:** `3af92583`.
 **Ветка:** `feature/oc2-games-sites-workspace-20261127`.
+**Head:** см. `git rev-parse HEAD` в ветке; PR #693.
 
 ## Выполнено
 
-- Адресные v2-правки (`game-project-v2-edits.ts`) и минимальная панель
-  (`v2-scene-panel.tsx`), подключённая в `GameSourceEditor`.
-- Закреплён 3D runtime three.js 0.187.0 (MIT, notices), построены сцена
-  (`three-scene.ts`) и WebGL-просмотр (`three-game-view.tsx`), подключённый
-  вместо статического PNG для `web3d_sandbox`.
-- Документированы интерфейсы, сценарии и решение по runtime.
+- Адресные v2-правки (`game-project-v2-edits.ts`): название, среда запуска,
+  исходники, сцена, трансформация модели, камера/свет/материал. Маркеры
+  `# kosmora-*` инертны и не меняют вершины `obj-lite`.
+- Панель `v2-scene-panel.tsx` подключена в `GameSourceEditor` только для v2.
+- Закреплён 3D runtime three.js 0.187.0 (MIT, notices); сцена (`three-scene.ts`)
+  и WebGL-просмотр (`three-game-view.tsx`) вместо статического PNG.
+- `site-project.ts`: связанные ресурсы и адресные блоки сайта с запретом
+  исполняемых имен и script/iframe/form.
+- Воспроизводимый сценарий `run-games-sites-scenario.mjs`: новая 3D-игра и сайт,
+  три независимые правки, детерминированный ZIP, распаковка и повторное
+  открытие, отказы. Артефакты в `deliveries/02_OPENCODE/ACCEPTANCE/`.
 
-## Проверки
+## Проверки (последний прогон)
 
-- games v2 edits + three-scene: 7/7 vitest;
-- web typecheck: exit 0;
-- web build (с three.js): exit 0;
-- Prettier по изменённым файлам: чистый.
+- `pnpm --filter @cosmora/web exec vitest run src/app/games src/app/sites/site-project.test.ts`
+  → 25/25;
+- `pnpm --filter @cosmora/web lint` → exit 0;
+- `pnpm --filter @cosmora/web typecheck` → exit 0;
+- `pnpm --filter @cosmora/web build` → exit 0;
+- `node scripts/run-games-sites-scenario.mjs` → 6/6, exit 0, детерминированный
+  SHA256 `e8a29eaf85a7ccaaa676ecaf42aaeab35b37baad3a0655fbfdac82b44699b84f`
+  (проверено двумя независимыми прогонами).
 
 ## Точка продолжения
 
-Sites: связанные ресурсы и адресные изменения блока; затем обязательный
-продуктовый сценарий с экспортом/распаковкой/открытием заново и отказами.
+CI PR #693 (Verify monorepo / Browser acceptance) и финальная сверка head SHA
+в DELIVERY.md. Нативный адаптер OpenCode 1 не требуется при выбранном
+веб-рантайме; общий sidebar/чат/logo не менялись.

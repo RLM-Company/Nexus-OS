@@ -51,7 +51,52 @@ describe("addressable v2 project edits", () => {
     expect(editable.ok && editable.transform).toEqual({ rotation: "0.5,1.2", scale: "2" });
   });
 
-  it("keeps source files byte-identical when changing the launch mode", () => {
+  it("edits camera, light and material without touching mesh vertices or the transform marker", () => {
+    const first = applyV2FieldEdit(source, {
+      field: "model_transform",
+      name: "ship.obj",
+      value: { rotation: "0.5,1.2", scale: "2" }
+    });
+    expect(first.ok).toBe(true);
+    if (!first.ok) return;
+    const result = applyV2FieldEdit(first.json, {
+      field: "model_render",
+      name: "ship.obj",
+      value: {
+        camera: "1,2,7,60",
+        light: "-2,5,4,3",
+        color: "#ff8800",
+        wireframe: true
+      }
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const data = result.project.model?.data ?? "";
+    expect(data).toContain("v 0 0 0");
+    expect(data).toContain("f 1 2 3");
+    expect(data).toContain("rotation=0.5,1.2;scale=2");
+    const editable = readV2Editable(result.json);
+    expect(editable.ok && editable.render).toEqual({
+      camera: "1,2,7,60",
+      light: "-2,5,4,3",
+      color: "#ff8800",
+      wireframe: true
+    });
+  });
+
+  it("refuses an unsafe color and keeps source files byte-identical when changing the launch mode", () => {
+    expect(
+      applyV2FieldEdit(source, {
+        field: "model_render",
+        name: "ship.obj",
+        value: {
+          camera: "0,1,5,50",
+          light: "3,4,5,2",
+          color: "javascript:alert(1)",
+          wireframe: false
+        }
+      })
+    ).toMatchObject({ ok: false, error: "INVALID_COLOR" });
     const result = applyV2FieldEdit(source, {
       field: "launch",
       value: { runtime: "canvas2d_worker", auto_start: true }
