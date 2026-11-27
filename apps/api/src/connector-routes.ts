@@ -5,7 +5,8 @@ import {
   ConnectorRegistry,
   connectorToolId,
   FIRST_SLICE_CONNECTORS,
-  GuardedToolRuntime
+  GuardedToolRuntime,
+  type ConnectorTransport
 } from "@cosmora/tool-runtime";
 import { registerMcpRoutes, type McpRouteDependencies } from "./mcp-routes.js";
 import { driveConnectorTransports } from "./drive-connector-transport.js";
@@ -17,7 +18,8 @@ export function registerConnectorRoutes(
   policyStore: PolicyStore | undefined,
   projectId: string,
   mcp: McpRouteDependencies,
-  drive?: GoogleDriveRuntime
+  drive?: GoogleDriveRuntime,
+  http?: ConnectorTransport
 ) {
   const runtime = policyStore ? new GuardedToolRuntime(policyStore) : undefined;
   const registry = runtime ? new ConnectorRegistry(runtime) : undefined;
@@ -33,6 +35,7 @@ export function registerConnectorRoutes(
       transports.restore_backup
     );
   }
+  if (http) registry?.bindTransport(connectorToolId("http-api", "call"), http);
   registerMcpRoutes(app, registry, { ...mcp, policy: policyStore });
   registry?.bindToRuntime();
 

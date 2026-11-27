@@ -201,7 +201,10 @@ import { registerGeneralChatRoutes, type ActiveModelRun } from "./general-chat-r
 import { registerCodeAgentRoutes } from "./code-agent/routes.js";
 import { CodeAgentService } from "./code-agent/service.js";
 import { CodeAgentStore } from "./code-agent/store.js";
-import type { CodeAgentWorkspaceRunner } from "@cosmora/tool-runtime";
+import type {
+  CodeAgentWorkspaceRunner,
+  ConnectorTransport
+} from "@cosmora/tool-runtime";
 import { configuredCodeAgentExecutor } from "./code-agent/executor.js";
 import { GithubIntegration, type GithubDraftStore } from "./github-integration.js";
 import { registerGithubRoutes } from "./github-routes.js";
@@ -248,6 +251,8 @@ export interface AppDependencies {
   indexedRecall?: IndexedMemoryRecall | undefined;
   semanticRanker?: ContextMemoryRanker | undefined;
   googleDrive?: GoogleDriveRuntime;
+  /** Owner-approved HTTP connector transport; injected by the server, never from descriptors. */
+  httpConnectorTransport?: ConnectorTransport;
   computerControl?: { enabled: boolean };
   runtimeClock?: RuntimeClock;
   config: ServerConfig;
@@ -889,7 +894,8 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
       origin: dependencies.config.webOrigin,
       identityFor
     },
-    dependencies.googleDrive
+    dependencies.googleDrive,
+    dependencies.httpConnectorTransport
   );
   if (dependencies.projectStore) registerApexRoutes(app, dependencies.projectStore, identityFor);
   if (dependencies.payStore)

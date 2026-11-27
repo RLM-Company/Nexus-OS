@@ -90,9 +90,30 @@ const office: ConnectorDescriptor = parseConnectorDescriptor({
   ]
 });
 
+/** User-compatible HTTP API: descriptor only; transport is injected by the
+ * server for an owner-approved base URL. No endpoint or credential is stored here. */
+const httpApi: ConnectorDescriptor = parseConnectorDescriptor({
+  id: "http-api",
+  version: 1,
+  app: "Compatible HTTP API",
+  implementation: "packages/tool-runtime/src/http-connector.ts",
+  auth_kind: "server.token",
+  state: "not_connected",
+  operations: [
+    {
+      id: "call",
+      kind: "read",
+      summary: "Call an allowlisted endpoint through the guarded runtime.",
+      capability_ids: ["context.project.read", "integration.private.use"],
+      result_checks: ["fresh_observation"]
+    }
+  ]
+});
+
 /** Frozen, validated first-slice catalog; never pretend a grant is connected. */
 export const FIRST_SLICE_CONNECTORS: readonly ConnectorDescriptor[] = Object.freeze([
   github,
   drive,
-  office
+  office,
+  httpApi
 ]);
