@@ -21,6 +21,11 @@ import { EmergencyStopActivatedError, type RuntimeMetrics } from "./operations.j
 import type { AccountStore } from "./account-settings/account-store.js";
 import { ownerIdentityPrompt } from "./account-settings/owner-identity.js";
 import { imageCreationPrompt, ChatImageError } from "./media/chat-images.js";
+import {
+  ChatStudioError,
+  isChatStudioCommand,
+  type ChatStudioRunner
+} from "./media/chat-studio.js";
 import type { WebSearch } from "./web-search.js";
 import { applyKosmoraActions, ChatActionError } from "./kosmora-actions.js";
 import {
@@ -44,11 +49,13 @@ export interface GeneralChatBackgroundRunCoordinatorOptions {
   accountStore?: AccountStore;
   /** Explicit web search action support; absent means the run fails with SEARCH_UNAVAILABLE. */
   search?: WebSearch;
+  studio?: ChatStudioRunner;
   imageGeneration?: (
     ownerId: string,
     prompt: string,
     signal: AbortSignal,
-    references?: readonly ChatImageAttachment[]
+    references?: readonly ChatImageAttachment[],
+    runId?: string
   ) => Promise<string>;
 }
 
@@ -64,6 +71,7 @@ const positiveInteger = (value: number | undefined, fallback: number): number =>
 export class GeneralChatBackgroundRunCoordinator {
   readonly #store: GeneralChatRuntimeStore;
   readonly #accountStore: AccountStore | undefined;
+  readonly #studio: GeneralChatBackgroundRunCoordinatorOptions["studio"];
   readonly #imageGeneration: GeneralChatBackgroundRunCoordinatorOptions["imageGeneration"];
   readonly #relay: RelayExecution | undefined;
   readonly #modelGateway: ModelGateway;
@@ -83,6 +91,7 @@ export class GeneralChatBackgroundRunCoordinator {
   constructor(options: GeneralChatBackgroundRunCoordinatorOptions) {
     this.#store = options.store;
     this.#accountStore = options.accountStore;
+    this.#studio = options.studio;
     this.#imageGeneration = options.imageGeneration;
     this.#relay = options.accountStore
       ? new RelayExecution(options.accountStore, options.modelGateway, options.taskSplitRoutes)
@@ -217,6 +226,25 @@ export class GeneralChatBackgroundRunCoordinator {
       }
 
       const latestUser = conversation.findLast((message) => message.role === "user");
+      if (
+        latestUser &&
+        !latestUser.web_search &&
+        !latestUser.text_action &&
+        isChatStudioCommand(latestUser.content)
+      ) {
+        if (!this.#studio) throw new ChatStudioError("STUDIO_UNAVAILABLE");
+        if (latestUser.attachments?.length) throw new ChatStudioError("STUDIO_COMMAND_INVALID");
+        const result = await this.#studio(
+          queued.owner_id,
+          queued.run_id,
+          latestUser.content,
+          controller.signal
+        );
+        controller.signal.throwIfAborted();
+        if (this.#store.completeStudioRun(queued.run_id, queued.owner_id, result))
+          this.#runtimeMetrics.runCompleted();
+        return;
+      }
       const references = (latestUser?.attachments ?? []).filter(
         (file): file is ChatImageAttachment => "data_base64" in file
       );
@@ -232,7 +260,8 @@ export class GeneralChatBackgroundRunCoordinator {
           queued.owner_id,
           imagePrompt,
           controller.signal,
-          references
+          references,
+          queued.run_id
         );
         controller.signal.throwIfAborted();
         if (this.#store.completeImageRun(queued.run_id, queued.owner_id, assetId))
@@ -445,7 +474,7 @@ export class GeneralChatBackgroundRunCoordinator {
         "Background general chat run completed"
       );
     } catch (error) {
-      if (error instanceof ChatImageError) {
+      if (error instanceof ChatImageError || error instanceof ChatStudioError) {
         this.#store.failRun(queued.run_id, error.code);
         this.#runtimeMetrics.runFailed("PROVIDER_ERROR");
         return;

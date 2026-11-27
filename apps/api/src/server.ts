@@ -60,6 +60,7 @@ import { AccountStore } from "./account-settings/account-store.js";
 import { loadModelRegistryDocument } from "./model-runtime.js";
 import { ResearchStore } from "./research/research-store.js";
 import { MediaService } from "./media/media-service.js";
+import { runChatStudio } from "./media/chat-studio.js";
 import { generateChatImage } from "./media/chat-images.js";
 import { AccountMediaBudget } from "./media/account-media-budget.js";
 import { resolve } from "node:path";
@@ -476,8 +477,9 @@ try {
     logger: app.log
   });
   generalChatBackgroundCoordinator = new GeneralChatBackgroundRunCoordinator({
-    imageGeneration: (owner, prompt, signal, references) =>
-      generateChatImage(mediaService, owner, prompt, signal, references),
+    studio: (owner, run, prompt, signal) => runChatStudio(mediaService, owner, run, prompt, signal),
+    imageGeneration: (owner, prompt, signal, references, run) =>
+      generateChatImage(mediaService, owner, prompt, signal, references, run),
     search: new WebSearch(process.env.WEB_SEARCH_ORIGIN),
     store: generalChatStore,
     modelGateway: modelRuntime.gateway,

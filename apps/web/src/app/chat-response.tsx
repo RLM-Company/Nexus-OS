@@ -141,7 +141,9 @@ const ResponseMarkdown = memo(function ResponseMarkdown({ content }: { content: 
       skipHtml
       urlTransform={(url) =>
         /^https?:\/\//i.test(url) ||
-        /^\/api\/v1\/media\/assets\/[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/i.test(url)
+        /^\/api\/v1\/media\/assets\/[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}(?:\?download=1)?$/i.test(
+          url
+        )
           ? url
           : ""
       }
