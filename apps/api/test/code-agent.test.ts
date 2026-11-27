@@ -2246,9 +2246,7 @@ describe("Code agent real gateway/GitHub/policy vertical", () => {
       base_branch: "main",
       files: ["src/add.js"]
     }).id;
-    await vi.waitFor(() =>
-      expect(f.get(id).output_checkpoint?.text).toContain(secretTail)
-    );
+    await vi.waitFor(() => expect(f.get(id).output_checkpoint?.text).toContain(secretTail));
     await nextTurn();
     f.service.cancel(id, owner);
     await f.service.whenIdle();

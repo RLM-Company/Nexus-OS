@@ -25,10 +25,7 @@ import {
   runMigrations
 } from "@cosmora/db";
 import { ModelGateway, ModelRegistry, ModelRouter } from "@cosmora/model-gateway";
-import {
-  renderCodeAgentUnifiedDiff,
-  type CodeAgentWorkspaceRunner
-} from "@cosmora/tool-runtime";
+import { renderCodeAgentUnifiedDiff, type CodeAgentWorkspaceRunner } from "@cosmora/tool-runtime";
 import { CodeAgentService } from "../src/code-agent/service.js";
 import { CodeAgentStore } from "../src/code-agent/store.js";
 import { registerCodeAgentRoutes } from "../src/code-agent/routes.js";
@@ -120,27 +117,27 @@ async function harness(runner: CodeAgentWorkspaceRunner) {
           content: Buffer.from(content).toString("base64"),
           size: Buffer.byteLength(content)
         };
-      } else if (path === "/git/trees" && method === "POST")
-        value = { sha: "c".repeat(40) };
-      else if (path === "/git/commits" && method === "POST")
-        value = { sha: "d".repeat(40) };
+      } else if (path === "/git/trees" && method === "POST") value = { sha: "c".repeat(40) };
+      else if (path === "/git/commits" && method === "POST") value = { sha: "d".repeat(40) };
       else if (path === "/git/refs" && method === "POST") {
-        const body = JSON.parse(typeof init?.body === "string" ? init.body : "{}") as { ref: string };
+        const body = JSON.parse(typeof init?.body === "string" ? init.body : "{}") as {
+          ref: string;
+        };
         value = { ref: body.ref, object: { type: "commit", sha: "d".repeat(40) } };
       } else if (path === "/pulls" && method === "POST") {
-        const body = JSON.parse(typeof init?.body === "string" ? init.body : "{}") as { head: string; base: string };
+        const body = JSON.parse(typeof init?.body === "string" ? init.body : "{}") as {
+          head: string;
+          base: string;
+        };
         value = {
           html_url: "https://github.com/RLM-Company/Nexus-OS/pull/901",
           draft: true,
           head: { sha: "d".repeat(40), ref: body.head },
           base: { ref: body.base }
         };
-      } else if (path.startsWith("/pulls?state=all"))
-        value = [];
-      else if (path === "" || path === "/")
-        value = { default_branch: "main", private: true };
-      else
-        throw new Error(`Unexpected GitHub fixture call ${method} ${path}`);
+      } else if (path.startsWith("/pulls?state=all")) value = [];
+      else if (path === "" || path === "/") value = { default_branch: "main", private: true };
+      else throw new Error(`Unexpected GitHub fixture call ${method} ${path}`);
       return Promise.resolve(
         new Response(JSON.stringify(value), { headers: { "content-type": "application/json" } })
       );
@@ -205,157 +202,166 @@ async function harness(runner: CodeAgentWorkspaceRunner) {
       `WAIT_TIMEOUT_${status}: status=${get(id).status} error=${get(id).error} draft=${get(id).draft?.status} log=${JSON.stringify(get(id).log.slice(-4))}`
     );
   };
-  return { app, service, store, drafts, project, root, call, get, view, wait, githubCalls, database };
+  return {
+    app,
+    service,
+    store,
+    drafts,
+    project,
+    root,
+    call,
+    get,
+    view,
+    wait,
+    githubCalls,
+    database
+  };
 }
 
 describe("OC5 Koscode workbench local acceptance", () => {
-  it(
-    "runs task → exact diff → failed check → fix → recheck → confirmed draft PR",
-    async () => {
-      const repo = await createTestRepository();
-      // A deliberately wrong assertion is the small defect under repair.
-      const goodTest = sources["src/add.test.mjs"]!;
-      const goodAdd = sources["src/add.mjs"]!.replace("a - b", "a + b");
-      // First proposal: broken function and a test that documents the bug.
-      const brokenAdd = sources["src/add.mjs"]!;
-      const brokenTest = goodTest.replace("baselineSum, 5", "baselineSum, 999");
-      let checks = 0;
-      const runner: CodeAgentWorkspaceRunner = {
-        async run(input) {
-          // Materialize the immutable reviewed snapshot into the isolated repo
-          // and run its real Node test, as the pinned OCI executor would.
-          for (const file of input.files)
-            await writeFile(join(repo.directory, file.path), file.content, "utf8");
-          let exitCode = 0;
-          let stdout: string;
-          try {
-            stdout = execFileSync(process.execPath, ["--test", "src/add.test.mjs"], {
-              cwd: repo.directory,
-              encoding: "utf8",
-              stdio: ["ignore", "pipe", "pipe"]
-            });
-          } catch (error) {
-            const failure = error as { status?: number; stdout?: string };
-            exitCode = failure.status ?? 1;
-            stdout = failure.stdout ?? "";
-          }
-          checks += 1;
-          return {
-            status: exitCode === 0 ? "passed" : "failed",
-            snapshotDigest: input.expectedDigest!,
-            exitCode,
-            cleanupVerified: true,
-            stdout: stdout.slice(0, 2000),
-            stderr: "",
-            truncated: false,
-            journal: []
-          };
+  it("runs task → exact diff → failed check → fix → recheck → confirmed draft PR", async () => {
+    const repo = await createTestRepository();
+    // A deliberately wrong assertion is the small defect under repair.
+    const goodTest = sources["src/add.test.mjs"]!;
+    const goodAdd = sources["src/add.mjs"]!.replace("a - b", "a + b");
+    // First proposal: broken function and a test that documents the bug.
+    const brokenAdd = sources["src/add.mjs"]!;
+    const brokenTest = goodTest.replace("baselineSum, 5", "baselineSum, 999");
+    let checks = 0;
+    const runner: CodeAgentWorkspaceRunner = {
+      async run(input) {
+        // Materialize the immutable reviewed snapshot into the isolated repo
+        // and run its real Node test, as the pinned OCI executor would.
+        for (const file of input.files)
+          await writeFile(join(repo.directory, file.path), file.content, "utf8");
+        let exitCode = 0;
+        let stdout: string;
+        try {
+          stdout = execFileSync(process.execPath, ["--test", "src/add.test.mjs"], {
+            cwd: repo.directory,
+            encoding: "utf8",
+            stdio: ["ignore", "pipe", "pipe"]
+          });
+        } catch (error) {
+          const failure = error as { status?: number; stdout?: string };
+          exitCode = failure.status ?? 1;
+          stdout = failure.stdout ?? "";
         }
-      };
-      const f = await harness(runner);
-      try {
-        // Import an exact diff: fix add(), but keep a deliberately wrong assertion.
-        const imported = await f.call("/import-diff", {
-          task: "Fix add() and its failing test, then confirm the draft PR",
-          base_branch: "main",
-          base_sha: baseSha,
-          diff: renderCodeAgentUnifiedDiff([
-            { path: "src/add.mjs", before: brokenAdd, content: goodAdd },
-            { path: "src/add.test.mjs", before: goodTest, content: brokenTest }
-          ])
-        });
-        await f.wait(imported.id, "proposed");
-        const reviewed = await f.call(`/${imported.id}/review`, {
-          proposal_hash: f.get(imported.id).proposal_hash,
-          expected_review_hash: null,
-          files: [
-            { path: "src/add.mjs", content: goodAdd },
-            { path: "src/add.test.mjs", content: brokenTest }
-          ]
-        });
-        await f.call(`/${imported.id}/check`, {
-          review_hash: reviewed.draft!.plan.review_hash,
-          check: "node-test",
-          approve: true
-        });
-        const failed = await f.wait(imported.id, "checked");
-        expect(failed.check?.status).toBe("failed");
-        expect(failed.check?.exitCode).toBe(1);
-        expect(failed.publication_token).toBeUndefined();
-        // The view carries the exact diff and never leaks raw model output.
-        const failedView = await f.view(imported.id);
-        expect(failedView.output_checkpoint).toBeUndefined();
-        expect(failedView.proposal_diff).toBeTruthy();
-        // Repair the small test by restoring the correct expectation (plus a
-        // verification marker so the proposal stays a real change), then
-        // reapply the corrected bytes through a new review (fresh proof).
-        const correctedTest = goodTest + "// проверено: сумма равна пяти\n";
-        await writeFile(join(repo.directory, "src/add.test.mjs"), correctedTest, "utf8");
-        const passedReview = await f.call(`/${imported.id}/review`, {
-          proposal_hash: f.get(imported.id).proposal_hash,
-          expected_review_hash: reviewed.draft!.plan.review_hash,
-          files: [
-            { path: "src/add.mjs", content: goodAdd },
-            { path: "src/add.test.mjs", content: correctedTest }
-          ]
-        });
-        await f.call(`/${imported.id}/check`, {
-          review_hash: passedReview.draft!.plan.review_hash,
-          check: "node-test",
-          approve: true
-        });
-        const passed = await f.wait(imported.id, "checked");
-        expect(passed.check?.status).toBe("passed");
-        expect(passed.check?.exitCode).toBe(0);
-        expect(passed.publication_token).toBeTruthy();
-        expect(checks).toBe(2);
-        // Confirmation creates one draft PR; a repeated confirmation must not
-        // write to GitHub again.
-        await f.call(`/${imported.id}/publish`, {
-          review_hash: passedReview.draft!.plan.review_hash,
-          publication_token: passed.publication_token,
-          approve: true
-        });
-        const published = await f.wait(imported.id, "published");
-        expect(published.draft_id).toBeTruthy();
-        const publishedView = await f.view(imported.id);
-        expect(publishedView.status).toBe("published");
-        const draft = publishedView.draft as {
-          status: string;
-          pr_url: string;
-          plan: { files: Array<{ path: string; content: string; before: string; mode: string }> };
+        checks += 1;
+        return {
+          status: exitCode === 0 ? "passed" : "failed",
+          snapshotDigest: input.expectedDigest!,
+          exitCode,
+          cleanupVerified: true,
+          stdout: stdout.slice(0, 2000),
+          stderr: "",
+          truncated: false,
+          journal: []
         };
-        expect(draft).toBeTruthy();
-        expect(draft.status).toBe("published");
-        expect(draft.pr_url).toBe("https://github.com/RLM-Company/Nexus-OS/pull/901");
-        expect(draft.plan.files).toEqual([
-          {
-            path: "src/add.mjs",
-            content: goodAdd,
-            before: sources["src/add.mjs"]!,
-            mode: "100644"
-          },
-          {
-            path: "src/add.test.mjs",
-            content: correctedTest,
-            before: sources["src/add.test.mjs"]!,
-            mode: "100644"
-          }
-        ]);
-        const replayBefore = [...f.githubCalls];
-        await f.call(`/${imported.id}/publish`, {
-          review_hash: passedReview.draft!.plan.review_hash,
-          publication_token: passed.publication_token,
-          approve: true
-        });
-        expect(f.githubCalls.slice(replayBefore.length).every((c) => c.method === "GET")).toBe(true);
-        expect(f.get(imported.id).status).toBe("published");
-      } finally {
-        await f.app.close();
-        await f.service.stop();
-        f.database.close();
       }
-    },
-    120000
-  );
+    };
+    const f = await harness(runner);
+    try {
+      // Import an exact diff: fix add(), but keep a deliberately wrong assertion.
+      const imported = await f.call("/import-diff", {
+        task: "Fix add() and its failing test, then confirm the draft PR",
+        base_branch: "main",
+        base_sha: baseSha,
+        diff: renderCodeAgentUnifiedDiff([
+          { path: "src/add.mjs", before: brokenAdd, content: goodAdd },
+          { path: "src/add.test.mjs", before: goodTest, content: brokenTest }
+        ])
+      });
+      await f.wait(imported.id, "proposed");
+      const reviewed = await f.call(`/${imported.id}/review`, {
+        proposal_hash: f.get(imported.id).proposal_hash,
+        expected_review_hash: null,
+        files: [
+          { path: "src/add.mjs", content: goodAdd },
+          { path: "src/add.test.mjs", content: brokenTest }
+        ]
+      });
+      await f.call(`/${imported.id}/check`, {
+        review_hash: reviewed.draft!.plan.review_hash,
+        check: "node-test",
+        approve: true
+      });
+      const failed = await f.wait(imported.id, "checked");
+      expect(failed.check?.status).toBe("failed");
+      expect(failed.check?.exitCode).toBe(1);
+      expect(failed.publication_token).toBeUndefined();
+      // The view carries the exact diff and never leaks raw model output.
+      const failedView = await f.view(imported.id);
+      expect(failedView.output_checkpoint).toBeUndefined();
+      expect(failedView.proposal_diff).toBeTruthy();
+      // Repair the small test by restoring the correct expectation (plus a
+      // verification marker so the proposal stays a real change), then
+      // reapply the corrected bytes through a new review (fresh proof).
+      const correctedTest = goodTest + "// проверено: сумма равна пяти\n";
+      await writeFile(join(repo.directory, "src/add.test.mjs"), correctedTest, "utf8");
+      const passedReview = await f.call(`/${imported.id}/review`, {
+        proposal_hash: f.get(imported.id).proposal_hash,
+        expected_review_hash: reviewed.draft!.plan.review_hash,
+        files: [
+          { path: "src/add.mjs", content: goodAdd },
+          { path: "src/add.test.mjs", content: correctedTest }
+        ]
+      });
+      await f.call(`/${imported.id}/check`, {
+        review_hash: passedReview.draft!.plan.review_hash,
+        check: "node-test",
+        approve: true
+      });
+      const passed = await f.wait(imported.id, "checked");
+      expect(passed.check?.status).toBe("passed");
+      expect(passed.check?.exitCode).toBe(0);
+      expect(passed.publication_token).toBeTruthy();
+      expect(checks).toBe(2);
+      // Confirmation creates one draft PR; a repeated confirmation must not
+      // write to GitHub again.
+      await f.call(`/${imported.id}/publish`, {
+        review_hash: passedReview.draft!.plan.review_hash,
+        publication_token: passed.publication_token,
+        approve: true
+      });
+      const published = await f.wait(imported.id, "published");
+      expect(published.draft_id).toBeTruthy();
+      const publishedView = await f.view(imported.id);
+      expect(publishedView.status).toBe("published");
+      const draft = publishedView.draft as {
+        status: string;
+        pr_url: string;
+        plan: { files: Array<{ path: string; content: string; before: string; mode: string }> };
+      };
+      expect(draft).toBeTruthy();
+      expect(draft.status).toBe("published");
+      expect(draft.pr_url).toBe("https://github.com/RLM-Company/Nexus-OS/pull/901");
+      expect(draft.plan.files).toEqual([
+        {
+          path: "src/add.mjs",
+          content: goodAdd,
+          before: sources["src/add.mjs"]!,
+          mode: "100644"
+        },
+        {
+          path: "src/add.test.mjs",
+          content: correctedTest,
+          before: sources["src/add.test.mjs"]!,
+          mode: "100644"
+        }
+      ]);
+      const replayBefore = [...f.githubCalls];
+      await f.call(`/${imported.id}/publish`, {
+        review_hash: passedReview.draft!.plan.review_hash,
+        publication_token: passed.publication_token,
+        approve: true
+      });
+      expect(f.githubCalls.slice(replayBefore.length).every((c) => c.method === "GET")).toBe(true);
+      expect(f.get(imported.id).status).toBe("published");
+    } finally {
+      await f.app.close();
+      await f.service.stop();
+      f.database.close();
+    }
+  }, 120000);
 });
