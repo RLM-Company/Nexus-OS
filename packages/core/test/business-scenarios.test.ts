@@ -62,7 +62,7 @@ const validInput = (id: BusinessScenarioId): Record<string, unknown> => {
       return {
         pages: [{ file_name: "a.pdf", page: 1, source: "pdf_text", text: "Сумма: 00123" }],
         fields: [
-          { key: "amount", label: "Сумма", patterns: ["Сумма:\\s*([0-9]+)"], critical: true }
+          { key: "amount", label: "Сумма", patterns: ["Сумма:\\s*([0-9]+)"], critical: false }
         ]
       };
     case "BIZ-042":
