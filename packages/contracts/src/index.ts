@@ -46,6 +46,7 @@ export * from "./context-memory.js";
 export * from "./memory-usage.js";
 export * from "./project-sources.js";
 export * from "./project-members.js";
+export * from "./developer-api.js";
 export * from "./history-compaction.js";
 export * from "./profile-candidates.js";
 export * from "./memory-sensitive.js";
