@@ -8,3 +8,5 @@ export * from "./types.js";
 export * from "./runtime-clock.js";
 export * from "./media/media-registry.js";
 export * from "./media/openai-media-adapter.js";
+
+export * from "./media/elevenlabs-media.js";

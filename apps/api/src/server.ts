@@ -1,7 +1,7 @@
 import { EnvironmentSecretResolver, loadServerConfig } from "@cosmora/config";
 import { configuredMcpDiscovery } from "./mcp-discovery.js";
 import { WORK_EXECUTION_CONCURRENCY } from "@cosmora/contracts";
-import { RuntimeClock } from "@cosmora/model-gateway";
+import { ElevenLabsMediaAdapter, RuntimeClock } from "@cosmora/model-gateway";
 import {
   AgentBlueprintStore,
   DocumentLibraryStore,
@@ -243,7 +243,11 @@ try {
     runner: configuredCodeAgentExecutor(),
     ownerBudget: sharedBudget
   });
+  const elevenLabsCredential = process.env.KOSMORA_MEDIA_ELEVENLABS_API_KEY?.trim();
   const mediaService = new MediaService({
+    ...(process.env.KOSMORA_MEDIA_ELEVENLABS_ENABLED === "true" && elevenLabsCredential
+      ? { creativeAudio: new ElevenLabsMediaAdapter(elevenLabsCredential) }
+      : {}),
     imageEditingEnabled: process.env.KOSMORA_MEDIA_EDIT_ENABLED === "true",
     ownerBudget: new AccountMediaBudget(
       accountStore,
