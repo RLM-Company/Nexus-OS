@@ -9,6 +9,8 @@ import {
 } from "@cosmora/contracts/game-project";
 import { CanvasComparison } from "../canvas-editor/canvas-comparison";
 import { GAME_ARCHIVE_MAX_BYTES, readGameProjectArchive } from "./game-project-archive";
+import { GAME_PROJECT_V2_FORMAT } from "@cosmora/contracts/game-project-v2";
+import { V2ScenePanel } from "./v2-scene-panel";
 import styles from "./game-source.module.css";
 
 type FileHistory = { past: string[]; future: string[] };
@@ -86,6 +88,13 @@ export function GameSourceEditor({
   } catch {
     /* Raw editing recovers incomplete/imported packages. Empty files stay editable. */
   }
+  const isV2 = (() => {
+    try {
+      return (JSON.parse(content) as { format?: string }).format === GAME_PROJECT_V2_FORMAT;
+    } catch {
+      return false;
+    }
+  })();
   const file = project?.files.find((item) => item.name === selected);
   const original = baselineFiles.find((item) => item.name === selected);
   const history = histories[selected];
@@ -177,6 +186,17 @@ export function GameSourceEditor({
   };
   return (
     <section className={styles.editor} aria-label="Файлы игры">
+      {isV2 && (
+        <V2ScenePanel
+          content={content}
+          disabled={disabled}
+          onChange={(value) => {
+            setHistories({});
+            lastInput.current = null;
+            emit(value);
+          }}
+        />
+      )}
       <div className={styles.tabs} role="group" aria-label="Исходники игры">
         {project?.files.map((item) => (
           <button
