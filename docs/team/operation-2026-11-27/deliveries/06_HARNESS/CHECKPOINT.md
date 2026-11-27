@@ -1,7 +1,7 @@
 # CHECKPOINT — 06_HARNESS (2026-11-27)
 
 Ветка `feature/ds3-collaboration-connectors-20261127`, база `3af92583`.
-PR #691. Точный code head `584bd292a6504787e5ad14e4c286692f4c100f65`.
+PR #691. Точный code head `1f3f08f1ca4828279413012136a8c263825deea7`.
 
 ## Выполнено
 
@@ -10,6 +10,8 @@ PR #691. Точный code head `584bd292a6504787e5ad14e4c286692f4c100f65`.
 3. `83834e08` — http-api в каталоге, инъекция transport, status без секретов.
 4. `ca7e8514` — event stream общего run доступен принятому участнику по id;
    invited/third/revoked получают 404, старый id после отзыва не работает.
+5. `1f3f08f1` — capabilities→instrument selection: /integrations/tools
+   показывает только wired-операции с выданными capabilities.
 
 ## Проверено в последнем запуске
 
