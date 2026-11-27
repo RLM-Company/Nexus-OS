@@ -10,6 +10,8 @@ import {
   type GameDiagnostic
 } from "./game-error-diagnostic";
 import styles from "../sites/sites.module.css";
+import { v2SceneDescriptor } from "./game-project-v2-edits";
+import { ThreeGameView } from "./three-game-view";
 
 type RuntimeDiagnostic = { line: number | null; message: string };
 
@@ -76,6 +78,9 @@ export function GameSourcePreview({
   }, [content]);
   const running = !!project && session?.source === content;
   const objScene = project?.v2?.launch.runtime === "web3d_sandbox";
+  const threeModel =
+    running && project?.v2?.model?.format === "obj-lite" ? project.v2.model.data : null;
+  const descriptor = useMemo(() => (project?.v2 ? v2SceneDescriptor(project.v2) : null), [project]);
   return (
     <section className={styles.preview} aria-label="Запуск проекта игры">
       <div className={styles.toolbar}>
@@ -124,7 +129,7 @@ export function GameSourcePreview({
               );
               entries["README.txt"] = strToU8(
                 objScene
-                  ? "Откройте index.html для статического просмотра OBJ-lite. Модель и встроенные ресурсы сохраняются в project.json. Импортируйте ZIP в Games для правок.\n"
+                  ? "Модель и встроенные ресурсы сохраняются в project.json; откройте ZIP в Kosmora Games для редактируемого 3D-просмотра. index.html — снимок исходников на момент экспорта, а не редактор.\n"
                   : "Kosmora Games — исходники браузерной игры\nОткройте index.html, чтобы играть без сервера и интернета.\nscene.html — статичная сцена, styles.css — оформление, game.js — логика Canvas 2D в Worker.\nindex.html содержит снимок исходников на момент экспорта. После правок импортируйте project.json в Games и экспортируйте снова.\nПоле 800x500. API: game.ctx, game.keys (lower-case), game.pointer{x,y,down}, game.onUpdate(dt), game.onKey(key,down), game.onPointer(pointer).\nНужен современный браузер с OffscreenCanvas. Это браузерный проект, не Unity/Godot и не нативная сборка.\n"
               );
               const bytes = zipSync(entries, { level: 6 });
@@ -147,12 +152,17 @@ export function GameSourcePreview({
       </div>
       <p className={styles.caption}>
         {objScene
-          ? "Статический просмотр OBJ-lite. Код game.js в этом режиме не выполняется."
+          ? "Редактируемая 3D-сцена на three.js: модель, поворот, масштаб, камера и свет берутся из проекта. Код game.js в этом режиме не выполняется."
           : "Запуск без запросов к ИИ. Изменение исходников останавливает предпросмотр. Ошибки и консоль отображаются под игровым полем."}
       </p>
       {error && <p role="alert">{error}</p>}
       {!project ? (
         <p>Откройте поддерживаемый пакет игры или проверьте исходный JSON.</p>
+      ) : running && session && objScene && threeModel && descriptor ? (
+        <div className={styles.frame} role="region" aria-label="3D-сцена Kosmora">
+          <ThreeGameView model={threeModel} descriptor={descriptor} />
+          <p>Настоящий 3D-рантайм three.js. Исходная модель не изменяется.</p>
+        </div>
       ) : running && session ? (
         <iframe
           ref={sessionFrame}
@@ -160,7 +170,7 @@ export function GameSourcePreview({
           className={`${styles.frame} ${styles.desktop}`}
           style={{ height: 760 }}
           title="Проект игры Kosmora"
-          sandbox={objScene ? "" : "allow-scripts"}
+          sandbox="allow-scripts"
           referrerPolicy="no-referrer"
           srcDoc={session.document}
         />

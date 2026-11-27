@@ -79,10 +79,24 @@ export function applyV2FieldEdit(source: string, edit: V2FieldEdit): V2EditResul
   }
 }
 
+/** Map the v2 transform marker to the real runtime descriptor with safe defaults. */
+export function v2SceneDescriptor(project: GameProjectV2) {
+  const transform = project.model ? transformFromHtml(project.model.data) : null;
+  const [rx, ry] = (transform?.rotation ?? "0.25,0.45").split(",").map(Number);
+  return {
+    rotation: {
+      x: typeof rx === "number" && Number.isFinite(rx) ? rx : 0.25,
+      y: typeof ry === "number" && Number.isFinite(ry) ? ry : 0.45
+    },
+    scale: Number(transform?.scale) || 1,
+    camera: { x: 0, y: 1.5, z: 5, fov: 50 },
+    light: { x: 3, y: 4, z: 5, intensity: 2 },
+    material: { color: "#62d9b0", wireframe: false, metalness: 0.1, roughness: 0.6 }
+  };
+}
+
 /** Read the current addressable scene/model transform for the editor fields. */
-export function readV2Editable(
-  source: string
-):
+export function readV2Editable(source: string):
   | {
       ok: true;
       title: string;
