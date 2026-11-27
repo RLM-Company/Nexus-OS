@@ -1617,6 +1617,9 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
       chat: dependencies.chat,
       ...(dependencies.accountStore ? { accountStore: dependencies.accountStore } : {}),
       ...(dependencies.projectStore ? { projectStore: dependencies.projectStore } : {}),
+      ...(dependencies.projectMembershipStore
+        ? { projectMembership: dependencies.projectMembershipStore }
+        : {}),
       ...(dependencies.managerWorkStore
         ? { projectMemory: dependencies.managerWorkStore.memory }
         : {}),
