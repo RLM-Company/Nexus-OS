@@ -351,6 +351,14 @@ describe("GeneralChatBackgroundRunCoordinator", () => {
   });
 
   it("lets multiple SSE observers follow one server-owned execution", async () => {
+    // Observer replay does not need the real sleeps used by cancellation tests.
+    // A gated, real-HTTP disconnect test separately covers active concurrency.
+    const fastRuntime = await buildModelRuntime(
+      loadServerConfig({ NODE_ENV: "test", MOCK_PROVIDER_MODE: "success" })
+    );
+    const stream = vi
+      .spyOn(runtime.gateway, "stream")
+      .mockImplementation(fastRuntime.gateway.stream.bind(fastRuntime.gateway));
     const app = buildApp({
       config,
       database,
@@ -384,6 +392,7 @@ describe("GeneralChatBackgroundRunCoordinator", () => {
       expect(second.statusCode).toBe(200);
       expect(first.body).toContain("event: run.completed");
       expect(second.body).toContain("event: run.completed");
+      expect(stream).toHaveBeenCalledTimes(1);
       expect(store.getModelUsageForRun(body.run_id)).toEqual([
         expect.objectContaining({ status: "committed", provider_id: "mock" })
       ]);

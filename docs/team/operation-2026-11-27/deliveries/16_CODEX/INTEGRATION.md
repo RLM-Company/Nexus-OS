@@ -65,3 +65,9 @@ pnpm --filter @cosmora/api typecheck
 Targeted ESLint/Prettier and diff checks accompany these tests. The exact candidate
 must still pass the full GitHub CI before inclusion in the release. Keep local
 fixtures, candidate CI and live-server acceptance as separate evidence.
+
+The existing two-observer test intermittently exceeded its 5-second limit on
+Windows with the slow-stream fixture. It now uses the normal success fixture and
+explicitly asserts one gateway call; its timeout was not increased. The separate
+gated real-HTTP test still covers disconnecting one observer during active model
+execution. The complete targeted API set passed 39/39 after this stabilization.
