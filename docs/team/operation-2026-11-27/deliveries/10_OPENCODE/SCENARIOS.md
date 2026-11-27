@@ -33,12 +33,29 @@
 3. Отказ: неверный target, перенос строки, объект-формула, отсутствующее
    значение; сложные объекты (field/revision/drawing) не трогаются.
 
+## Срез 3 — независимый reader и полная цепочка
+
+`desktop/windows/test/fixtures/independent-office-reader.cjs` читает ZIP
+через собственный сканер локальных заголовков и zlib, извлекает текст
+своим обходом XML — **не использует engine**. Тесты
+`office-independent-readback.test.cjs` проходят цепочку
+исходник → план → адресная правка → readback → экспорт → независимое
+открытие для DOCX, XLSX (два листа, формулы, boolean), PPTX и CSV.
+
+## Срез 4 — черновики планов
+
+Черновики (`OfficePlanDraft`) сохраняют планы CSV (`table:1`) и DOCX
+(`set_docx_cell`); кросс-форматные операции при восстановлении отклоняются.
+Ранее черновик для `.csv` и ячеек DOCX отвергался и терялся при переключении.
+
 ## Запуск
 
 ```
+node --test desktop/windows/test/office-independent-readback.test.cjs
 node --test desktop/windows/test/office-docx-cell.test.cjs
 node --test desktop/windows/test/office-csv.test.cjs
 pnpm --filter @cosmora/api exec vitest run test/document-workspace-docx-cell.test.ts test/document-workspace-csv.test.ts test/document-workspace-api.test.ts
+pnpm --filter @cosmora/web exec vitest run src/app/office-draft-storage.test.ts
 pnpm --filter @cosmora/web exec vitest run
 pnpm --filter @cosmora/web typecheck
 pnpm --filter @cosmora/api build   # проверяет копирование engine в dist
@@ -46,8 +63,8 @@ pnpm --filter @cosmora/api build   # проверяет копирование e
 
 ## Статус
 
-- Engine: 61/61 desktop Office тестов (10 CSV + 3 DOCX-cell).
+- Engine: 65/65 desktop Office тестов (10 CSV + 3 DOCX-cell + 4 independent).
 - API: 9/9 targeted тестов (DOCX/XLSX/PPTX + CSV + DOCX-cell).
-- Web: 463/463 unit-тестов, typecheck зелёный.
+- Web: 464/464 unit-тестов, typecheck зелёный.
 - E2E Playwright (браузер) и живая приёмка Windows — **не запускались**
   (нет назначенного доступа к device/браузеру; отдельный срез).
