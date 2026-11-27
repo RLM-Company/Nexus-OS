@@ -25,7 +25,19 @@ import {
   type OwnerMediaBudget
 } from "./media-budget.js";
 import { MediaFileStore, type CreateMediaJobMetadata, type MediaJob } from "./media-store.js";
-import { isValidChatAttachments, type ChatImageAttachment } from "@cosmora/contracts";
+import {
+  CHAT_ATTACHMENT_LIMITS,
+  isValidChatAttachments,
+  type ChatImageAttachment,
+  type StudioStoryboard,
+  type StudioStoryboardChange
+} from "@cosmora/contracts";
+import {
+  deleteStoryboard,
+  emptyStoryboard,
+  readStoryboard,
+  updateStoryboard
+} from "./media-storyboard.js";
 
 type AudioMime = MediaAudioMime;
 type GeneratedBinary = Awaited<ReturnType<OpenAIMediaAdapter["generateImage"]>> & {
@@ -82,6 +94,7 @@ export interface MediaOptions {
 }
 
 export interface EnqueueImageRequest extends ImageGenerationParametersInput {
+  readonly source_job_id?: string | undefined;
   readonly client_request_id?: string | undefined;
 }
 
@@ -270,7 +283,8 @@ export class MediaService {
       duration_seconds?: number | null;
       usage?: CanonicalMediaUsage;
     }>,
-    timeoutMs = this.executionTimeoutMs
+    timeoutMs = this.executionTimeoutMs,
+    prepare?: () => void
   ): MediaJob {
     const capability =
       kind === "image" ? "image_generation" : kind === "speech" ? "speech" : "transcription";
@@ -302,6 +316,7 @@ export class MediaService {
     const route = this.registry.route(capability);
     if (!route) throw new Error("MEDIA_UNAVAILABLE");
 
+    prepare?.();
     const job = this.store!.create(ownerId, kind, {
       ...metadata,
       model: route.model,
@@ -332,9 +347,12 @@ export class MediaService {
       ? (optionsOrReferences as ChatImageAttachment[])
       : references;
     const inputs = resolvedReferences.map((reference) => ({ ...reference }));
-    if (inputs.length && (kind !== "image" || !this.capabilities().image_editing.ready))
+    const source =
+      kind === "image" ? (requestOptions as EnqueueImageRequest).source_job_id : undefined;
+    const editing = Boolean(source || inputs.length);
+    if (editing && (kind !== "image" || !this.capabilities().image_editing.ready))
       throw new Error("IMAGE_EDITING_UNAVAILABLE");
-    if (inputs.length && !isValidChatAttachments(inputs))
+    if ((source && inputs.length >= 2) || (inputs.length && !isValidChatAttachments(inputs)))
       throw new Error("IMAGE_REFERENCES_INVALID");
     const capability = kind === "image" ? "image_generation" : "speech";
     const route = this.registry.route(capability);
@@ -356,6 +374,7 @@ export class MediaService {
           quality: validated.quality,
           format: validated.format,
           count: validated.count,
+          ...(source ? { source_job_id: source } : {}),
           references: inputs.map((reference) => ({
             mime: reference.media_type,
             sha256: sha256Hex(Buffer.from(reference.data_base64, "base64"))
@@ -370,6 +389,7 @@ export class MediaService {
           client_request_id: clientRequestId,
           request_fingerprint: fingerprint,
           parameters: {
+            ...(source ? { source_job_id: source } : {}),
             prompt_sha256: sha256Hex(trimmed),
             prompt_length: trimmed.length,
             size: validated.size,
@@ -392,7 +412,28 @@ export class MediaService {
                 format: validated.format
               }))
         }),
-        inputs.length ? 120_000 : this.executionTimeoutMs
+        editing ? 120_000 : this.executionTimeoutMs,
+        source
+          ? () => {
+              const job = this.get(source, ownerId);
+              const asset = job?.kind === "image" ? this.asset(source, ownerId) : null;
+              if (!asset) throw new Error("MEDIA_SOURCE_NOT_FOUND");
+              if (
+                asset.bytes.length > CHAT_ATTACHMENT_LIMITS.imageBytes ||
+                (asset.mime !== "image/png" && asset.mime !== "image/jpeg")
+              )
+                throw new Error("IMAGE_REFERENCES_INVALID");
+              const reference: ChatImageAttachment = {
+                kind: "image",
+                name: `source.${asset.extension}`,
+                media_type: asset.mime,
+                data_base64: asset.bytes.toString("base64")
+              };
+              if (!isValidChatAttachments([reference, ...inputs]))
+                throw new Error("IMAGE_REFERENCES_INVALID");
+              inputs.unshift(reference);
+            }
+          : undefined
       );
     }
 
@@ -793,8 +834,17 @@ export class MediaService {
     if (!this.closed) this.closedOwners.delete(ownerId);
   }
 
+  storyboard(ownerId: string, change?: StudioStoryboardChange): StudioStoryboard {
+    if (!this.store || this.closed || this.closedOwners.has(ownerId) || !this.ownerActive(ownerId))
+      throw Error("STORYBOARD_UNAVAILABLE");
+    return change
+      ? updateStoryboard(this.store.directory, ownerId, change)
+      : (readStoryboard(this.store.directory, ownerId) ?? emptyStoryboard());
+  }
+
   exportOwner(ownerId: string): {
     jobs: MediaJob[];
+    storyboard?: StudioStoryboard;
     assets: Array<{
       id: string;
       url: string;
@@ -805,8 +855,10 @@ export class MediaService {
     }>;
   } {
     const jobs = this.list(ownerId);
+    const storyboard = this.store && readStoryboard(this.store.directory, ownerId);
     return {
       jobs,
+      ...(storyboard ? { storyboard } : {}),
       assets: jobs
         .filter((job) => job.status === "done" && job.asset && this.asset(job.id, ownerId))
         .map((job) => ({
@@ -823,6 +875,7 @@ export class MediaService {
   /** Caller must quiesce owner before invoking; usage ledger is deliberately untouched. */
   async deleteOwner(ownerId: string): Promise<{ deleted_jobs: number }> {
     await this.quiesce(ownerId);
+    if (this.store) deleteStoryboard(this.store.directory, ownerId);
     return { deleted_jobs: this.store?.deleteOwner(ownerId) ?? 0 };
   }
 

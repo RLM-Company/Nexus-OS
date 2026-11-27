@@ -1,3 +1,4 @@
+import { registerSupplierWorkHandoff } from "./supplier-work-handoff.js";
 import { registerWorkSkillRoutes } from "./work-skill-routes.js";
 import { registerWorkflowRoutes } from "./workflow-routes.js";
 import { TypeBoxValidatorCompiler } from "@fastify/type-provider-typebox";
@@ -9,7 +10,12 @@ import {
   type CreateManagerWork,
   type IdentityContext
 } from "@cosmora/contracts";
-import { ManagerWorkConflict, type ManagerWorkStore, type ProjectStore } from "@cosmora/db";
+import {
+  ManagerWorkConflict,
+  type GeneralChatStore,
+  type ManagerWorkStore,
+  type ProjectStore
+} from "@cosmora/db";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { Type } from "typebox";
 import type { ManagerWorkCoordinator } from "./manager-work-coordinator.js";
@@ -17,6 +23,7 @@ import type { ManagerWorkCoordinator } from "./manager-work-coordinator.js";
 export function registerManagerWorkRoutes(options: {
   app: FastifyInstance;
   store: ManagerWorkStore;
+  chats?: GeneralChatStore;
   projects: ProjectStore;
   coordinator: ManagerWorkCoordinator;
   identityFor: (request: FastifyRequest) => IdentityContext;
@@ -28,6 +35,8 @@ export function registerManagerWorkRoutes(options: {
   registerWorkSkillRoutes(app, store.skills, identityFor);
   registerProjectMemoryRoutes({ app, memory: store.memory, projects, identityFor });
   registerWorkRuntimeRoutes({ app, store, projects, identityFor });
+  if (options.chats)
+    registerSupplierWorkHandoff({ app, store, projects, identityFor, chats: options.chats });
   const base = "/api/v1/projects/:projectId/work";
   const params = Type.Object(
     {
@@ -108,6 +117,38 @@ export function registerManagerWorkRoutes(options: {
       throw error;
     }
   });
+  app.post<{ Params: Params; Body: { expected_version: number; answer: string } }>(
+    base + "/:id/supplier-answer",
+    {
+      validatorCompiler: TypeBoxValidatorCompiler,
+      schema: {
+        params,
+        body: Type.Object(
+          {
+            expected_version: Type.Integer({ minimum: 1 }),
+            answer: Type.String({ minLength: 1, maxLength: 8000 })
+          },
+          { additionalProperties: false }
+        )
+      }
+    },
+    (request, reply) => {
+      reply.header("Cache-Control", "private, no-store");
+      const work = get(request);
+      if (!work) return reply.code(404).send({ error: "WORK_NOT_FOUND" });
+      try {
+        return coordinator.answerSupplierQuestion(
+          work,
+          request.body.expected_version,
+          request.body.answer
+        );
+      } catch (error) {
+        if (error instanceof ManagerWorkConflict)
+          return reply.code(409).send({ error: error.message });
+        throw error;
+      }
+    }
+  );
   // Owner acceptance of the finished result. Separate from plan approval.
   app.post<{ Params: Params; Body: { expected_version: number } }>(
     base + "/:id/result/accept",

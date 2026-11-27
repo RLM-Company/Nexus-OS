@@ -6,6 +6,7 @@
     "e2e/terminal-run-recovery.spec.ts",
     "e2e/run-draft-recovery.spec.ts",
     "e2e/composer-draft-races.spec.ts",
+    "e2e/supplier-work-handoff.spec.ts",
     "playwright.composer.config.ts"
   ],
   "exclude": ["node_modules"]

@@ -30,7 +30,7 @@ function researchRequestId(ownerId: string, actorId: string, projectId: string, 
 export function registerResearchRoutes(options: {
   app: FastifyInstance;
   store: ResearchStore;
-  search: WebSearch;
+  search: Pick<WebSearch, "search" | "configured">;
   projects: ProjectStore;
   policy: PolicyStore;
   emergency?: EmergencyStopStore;
@@ -39,6 +39,7 @@ export function registerResearchRoutes(options: {
   gateway?: ModelGateway;
   manager?: ManagerService;
   ownerBudget?: ResearchOwnerBudget;
+  excludedSourceIds?: ConstructorParameters<typeof ResearchCoordinator>[7];
 }): ResearchCoordinator {
   const { app, store, search, projects, policy, identityFor } = options;
   const authorized = (run: ResearchRun): boolean => {
@@ -81,7 +82,8 @@ export function registerResearchRoutes(options: {
     options.emergency,
     Date.now,
     authorized,
-    synthesis
+    synthesis,
+    options.excludedSourceIds
   );
   const idParams = Type.Object(
     { id: Type.String({ format: "uuid" }) },

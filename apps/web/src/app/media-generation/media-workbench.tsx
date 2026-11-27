@@ -1,11 +1,17 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { ChatImageAttachment } from "@cosmora/contracts";
+import { CHAT_ATTACHMENT_LIMITS, type ChatImageAttachment } from "@cosmora/contracts";
 import { prepareChatImage } from "../prepare-chat-image";
 import { WorkspaceIcon } from "../workspace-icons";
-import { MediaGenerationPanel, useMediaCapabilities } from "./media-panel";
+import {
+  MediaGenerationPanel,
+  mediaAssetUrl,
+  useMediaCapabilities,
+  type MediaJob
+} from "./media-panel";
 import { IMAGE_SIZE_FOR_RATIO, resolveImageOptions } from "./media-image-options";
 import { SpeechStudio } from "../voice/voice-playback";
+import { VideoStoryboard } from "./video-storyboard";
 import styles from "./media-workbench.module.css";
 
 type Reference = ChatImageAttachment & { id: string; url: string };
@@ -18,6 +24,8 @@ export function MediaWorkbench({ surface }: { surface: "images" | "video" | "sou
   const capabilities = useMediaCapabilities();
   const [style, setStyle] = useState("Авто");
   const [duration, setDuration] = useState("5");
+  const [source, setSource] = useState<{ id: string; name: string }>();
+  const sourceId = source?.id;
   const [references, setReferences] = useState<Reference[]>([]);
   const refs = useRef<Reference[]>([]);
   const input = useRef<HTMLInputElement>(null);
@@ -74,61 +82,74 @@ export function MediaWorkbench({ surface }: { surface: "images" | "video" | "sou
     },
     []
   );
-  const read = useCallback(async (files: File[], replace = false) => {
-    if (!files.length) return;
-    const sequence = ++epoch.current;
-    setError("");
-    setReading(true);
-    try {
-      if (files.length + (replace ? 0 : refs.current.length) > 2)
-        throw new Error("Можно добавить до двух референсов.");
-      const prepared = await Promise.all(files.map((file) => prepareChatImage(file)));
-      if (sequence !== epoch.current) return;
-      const added = prepared.map((file) => ({
-        ...file,
-        id: crypto.randomUUID(),
-        url: URL.createObjectURL(
-          new Blob(
-            [Uint8Array.from(atob(file.data_base64), (character) => character.charCodeAt(0))],
-            { type: file.media_type }
+  const read = useCallback(
+    async (files: File[]) => {
+      if (!files.length) return;
+      const sequence = ++epoch.current;
+      setError("");
+      setReading(true);
+      try {
+        if (files.length + refs.current.length + Number(Boolean(sourceId)) > 2)
+          throw new Error("Можно добавить до двух референсов.");
+        const prepared = await Promise.all(files.map((file) => prepareChatImage(file)));
+        if (sequence !== epoch.current) return;
+        const added = prepared.map((file) => ({
+          ...file,
+          id: crypto.randomUUID(),
+          url: URL.createObjectURL(
+            new Blob(
+              [Uint8Array.from(atob(file.data_base64), (character) => character.charCodeAt(0))],
+              { type: file.media_type }
+            )
           )
-        )
-      }));
-      if (replace) refs.current.forEach((file) => URL.revokeObjectURL(file.url));
-      refs.current = [...(replace ? [] : refs.current), ...added];
-      setReferences(refs.current);
-    } catch (cause) {
-      if (sequence === epoch.current)
-        setError(cause instanceof Error ? cause.message : "Не удалось прочитать референсы.");
-    } finally {
-      if (sequence === epoch.current) setReading(false);
-    }
+        }));
+        refs.current = [...refs.current, ...added];
+        setReferences(refs.current);
+      } catch (cause) {
+        if (sequence === epoch.current)
+          setError(cause instanceof Error ? cause.message : "Не удалось прочитать референсы.");
+      } finally {
+        if (sequence === epoch.current) setReading(false);
+      }
+    },
+    [sourceId]
+  );
+  const selectSource = useCallback((job: MediaJob) => {
+    epoch.current++;
+    refs.current.forEach((file) => URL.revokeObjectURL(file.url));
+    refs.current = [];
+    setReferences([]);
+    setReading(false);
+    setError("");
+    setSource({
+      id: job.id,
+      name: `kosmora-${job.id}.${job.asset?.mime === "image/jpeg" ? "jpg" : "png"}`
+    });
   }, []);
   useEffect(() => {
     if (surface !== "images" || capabilities?.image_editing?.ready !== true) return;
     const id = new URLSearchParams(window.location.search).get("reference");
     if (!id || !/^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/i.test(id)) return;
     const controller = new AbortController();
-    void fetch(`/api/v1/media/assets/${id}`, { signal: controller.signal })
+    void fetch(`/api/v1/media/jobs/${id}`, { signal: controller.signal })
       .then(async (response) => {
-        const mime = response.headers.get("content-type")?.split(";")[0]?.trim();
-        if (!response.ok || (mime !== "image/png" && mime !== "image/jpeg")) throw Error();
-        const blob = await response.blob();
-        if (!controller.signal.aborted)
-          await read(
-            [
-              new File([blob], `kosmora-${id}.${mime === "image/png" ? "png" : "jpg"}`, {
-                type: mime
-              })
-            ],
-            true
-          );
+        if (!response.ok) throw Error();
+        const job = (await response.json()) as MediaJob;
+        if (
+          job.kind !== "image" ||
+          job.status !== "done" ||
+          !["image/png", "image/jpeg"].includes(job.asset?.mime ?? "") ||
+          (job.asset?.bytes ?? Infinity) > CHAT_ATTACHMENT_LIMITS.imageBytes
+        )
+          throw Error();
+        if (job.id !== id) throw Error();
+        if (!controller.signal.aborted) selectSource(job);
       })
       .catch(() => {
-        if (!controller.signal.aborted) setError("Не удалось открыть исходное изображение.");
+        if (!controller.signal.aborted) setError("Исходное изображение недоступно для правки.");
       });
     return () => controller.abort();
-  }, [surface, capabilities?.image_editing?.ready, read]);
+  }, [surface, capabilities?.image_editing?.ready, selectSource]);
   if (surface === "music")
     return (
       <section className={styles.workbench}>
@@ -143,10 +164,7 @@ export function MediaWorkbench({ surface }: { surface: "images" | "video" | "sou
         <div className={styles.empty} role="status">
           <WorkspaceIcon name="sound" />
           <h3>Генерация музыки не подключена</h3>
-          <p>
-            Сервер пока поддерживает озвучивание текста и изображения. Здесь можно сохранить
-            описание будущей композиции без платного вызова модели.
-          </p>
+          <p>Пока создание аудиофайлов доступно для озвучивания текста в Sound.</p>
           <button type="button" disabled>
             Сгенерировать музыку
           </button>
@@ -165,6 +183,7 @@ export function MediaWorkbench({ surface }: { surface: "images" | "video" | "sou
           <p>Озвучивание текста, прослушивание и сохранённые записи.</p>
         </header>
         <SpeechStudio />
+        <p role="status">Генерация звуковых эффектов (SFX) пока не подключена.</p>
       </section>
     );
   const imageConstraints = capabilities?.image_generation.constraints;
@@ -193,7 +212,7 @@ export function MediaWorkbench({ surface }: { surface: "images" | "video" | "sou
         <h2>{video ? "Создание видео" : "Создание изображений"}</h2>
         <p>
           {video
-            ? "Видеопровайдер не подключён: можно сохранить только текстовый черновик сцены."
+            ? "Видеопровайдер не подключён. Составьте текстовую раскадровку из нескольких сцен."
             : "Создавайте изображения по описанию, сохраняйте результат и возвращайтесь к нему в галерее."}
         </p>
       </header>
@@ -246,7 +265,7 @@ export function MediaWorkbench({ surface }: { surface: "images" | "video" | "sou
             <div className={styles.references}>
               <div className={styles.sectionTitle}>
                 <h3>Референсы</h3>
-                <span>{references.length} / 2</span>
+                <span>{references.length + Number(Boolean(sourceId))} / 2</span>
               </div>
               <input
                 ref={input}
@@ -264,7 +283,9 @@ export function MediaWorkbench({ surface }: { surface: "images" | "video" | "sou
                 className={styles.upload}
                 type="button"
                 disabled={
-                  reading || references.length >= 2 || capabilities?.image_editing?.ready !== true
+                  reading ||
+                  references.length + Number(Boolean(sourceId)) >= 2 ||
+                  capabilities?.image_editing?.ready !== true
                 }
                 onClick={() => input.current?.click()}
               >
@@ -272,6 +293,18 @@ export function MediaWorkbench({ surface }: { surface: "images" | "video" | "sou
                 {reading ? "Проверяем…" : "Добавить референсы"}
                 <small>PNG, JPEG · до 20 МБ</small>
               </button>
+              {source && (
+                <div>
+                  <img src={mediaAssetUrl(source.id)} alt="Исходник для правки" width={96} />
+                  <button
+                    type="button"
+                    aria-label={`Убрать референс ${source.name}`}
+                    onClick={() => setSource(undefined)}
+                  >
+                    Убрать исходник
+                  </button>
+                </div>
+              )}
               {references.length > 0 && (
                 <div className={styles.thumbnails}>
                   {references.map((file) => (
@@ -385,14 +418,14 @@ export function MediaWorkbench({ surface }: { surface: "images" | "video" | "sou
         </section>
         <section className={styles.result} aria-label="Результат генерации">
           {video ? (
-            <div className={styles.empty}>
-              <WorkspaceIcon name="video" />
-              <h3>Здесь появится видео</h3>
-              <p>Видеогенерация не подключена. Здесь можно сохранить описание сцены.</p>
-              <button type="button" disabled>
-                Сгенерировать видео
-              </button>
-            </div>
+            <VideoStoryboard
+              description={prompt}
+              duration={duration}
+              onSelect={(next, seconds) => {
+                setPrompt(next);
+                setDuration(seconds);
+              }}
+            />
           ) : (
             <MediaGenerationPanel
               prompt={description}
@@ -403,7 +436,8 @@ export function MediaWorkbench({ surface }: { surface: "images" | "video" | "sou
                 media_type,
                 data_base64
               }))}
-              onUseResult={(file) => read([file], true)}
+              onUseResult={selectSource}
+              sourceId={sourceId}
               onRestoreParameters={(saved) => {
                 setRatio(saved.aspect_ratio);
                 setQuality(saved.quality);

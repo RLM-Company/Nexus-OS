@@ -70,7 +70,9 @@ export function workRuntimeProgress(work: ManagerWork): WorkRuntimeProgress {
         : work.status === "awaiting_approval"
           ? "plan"
           : work.status === "blocked"
-            ? "permission"
+            ? work.error_code === "SUPPLIER_ANSWER_REQUIRED"
+              ? "clarification"
+              : "permission"
             : work.status === "paused"
               ? "resume"
               : null,

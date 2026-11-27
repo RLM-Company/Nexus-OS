@@ -3,6 +3,7 @@
 const { ComputerSessionGate, recoveryWriteActions } = require("./computer-policy.cjs");
 const { setTimeout: delay } = require("node:timers/promises");
 const { WorkRetryGuard } = require("./work-retry-guard.cjs");
+const { classifyDeviceFailure } = require("./computer-recovery-events.cjs");
 const { serializeToolResult } = require("./tool-result.cjs");
 
 class ComputerSession {
@@ -606,13 +607,14 @@ class ComputerSession {
             "WORKSPACE_PATH_TRAVERSAL",
             "WORKSPACE_SYMLINK_REJECTED"
           ].includes(error?.code);
+          const deviceEvent = classifyDeviceFailure(error);
+          // The native connection can drop after an action reached the device.
+          // Leave that dispatch unresolved and require a new session.
+          if (deviceEvent?.retryable === false) throw error;
           if (
             !knownWorkspaceRejection &&
+            !deviceEvent &&
             ![
-              "COMPUTER_WINDOW_CHANGED",
-              "COMPUTER_OBSERVATION_STALE",
-              "COMPUTER_USER_INPUT_ACTIVE",
-              "COMPUTER_TARGET_OCCLUDED",
               "BROWSER_STALE",
               "BROWSER_ELEMENT_UNAVAILABLE",
               "BROWSER_TAB_LIMIT",
@@ -626,14 +628,16 @@ class ComputerSession {
           // Preserve uncertain dispatch; unexpected journal errors still fail closed.
           await this.assertLive(state);
           state.journal?.mark(step + 1, "not_executed");
-          const retry = retryGuard?.recordFailure(
-            action,
-            observation,
-            knownWorkspaceRejection ? error.code : error.message
-          );
+          const reason = knownWorkspaceRejection
+            ? error.code
+            : deviceEvent
+              ? deviceEvent.reason
+              : error.message;
+          const retry = retryGuard?.recordFailure(action, observation, reason);
           previousResult = JSON.stringify({
             not_executed: true,
-            reason: knownWorkspaceRejection ? error.code : error.message,
+            reason,
+            ...(deviceEvent ? { event: deviceEvent.kind, retryable: deviceEvent.retryable } : {}),
             ...(retry ? { retry_guard: retry } : {}),
             instruction:
               "Inspect a fresh observation and replan; never blindly repeat the prior action."

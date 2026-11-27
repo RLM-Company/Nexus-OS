@@ -5,6 +5,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ModelRequest, WorkDag, WorkDagNodeInput, WorkOwnerBudget } from "@cosmora/contracts";
 import {
+  AgentBlueprintStore,
+  AgentInstanceStore,
+  AgentTeamRunStore,
+  AgentTeamStore,
+  PatternLibraryStore,
+  StarsMissionStore,
   OwnerSkillStore,
   EmergencyStopStore,
   ManagerWorkStore,
@@ -29,6 +35,10 @@ import { buildModelRuntime, loadModelRegistryDocument } from "../src/model-runti
 import { AccountStore } from "../src/account-settings/account-store.js";
 import { ProjectAutomation } from "../src/project-automation.js";
 import { ProjectKnowledge } from "../src/project-knowledge.js";
+import { TeamGraphAdapter } from "../src/team-graph-adapter.js";
+import { registerStarsMissionRoutes } from "../src/stars-mission-routes.js";
+import { registerWorkDagRoutes } from "../src/work-dag-routes.js";
+import Fastify from "fastify";
 
 const cleanups: (() => void)[] = [];
 afterEach(() => {
@@ -172,6 +182,300 @@ async function fixture(
     config
   };
 }
+
+it("binds a Stars mission to a confirmed team and delivers the verified runtime results", async () => {
+  let rejectFirstWorkerOutput = true;
+  const f = await fixture({
+    maxConcurrentWork: 2,
+    output: (model) => {
+      if (model.task_type === "manager_work_plan")
+        return {
+          summary: "Файл",
+          instructions: "Верни результат",
+          complexity: "simple",
+          needs_critic: false,
+          requires_external_actions: false
+        };
+      if (model.task_type === "manager_work_review")
+        return { verdict: "PASS", reason: "Проверено" };
+      if (rejectFirstWorkerOutput && JSON.stringify(model).includes("Извлеки реквизиты")) {
+        rejectFirstWorkerOutput = false;
+        return { files: [] };
+      }
+      return { files: [{ name: "result.md", content: "# Exact\nVerified source file" }] };
+    }
+  });
+  const scoped = {
+    owner_id: owner,
+    actor_id: owner,
+    actor_kind: "owner" as const,
+    session_id: owner,
+    assurance: "local" as const,
+    authenticated_at: new Date().toISOString(),
+    expires_at: new Date(Date.now() + 60_000).toISOString()
+  };
+  const pid = f.project.id;
+  const patterns = new PatternLibraryStore(f.db.sqlite);
+  const fn = patterns.createFunction(scoped, {
+    project_id: pid,
+    name: "Проверка материалов",
+    description: "Сверка материалов проекта",
+    result_contract: "Данные и выводы"
+  });
+  const pattern = patterns.createPattern(scoped, {
+    project_id: pid,
+    name: "Проверка чисел",
+    description: "Работа с данными",
+    instructions: "Сверь исходные числа.",
+    allowed_function_ids: [fn.function_id],
+    known_limitations: [],
+    test_status: "untested"
+  });
+  const blueprints = new AgentBlueprintStore(f.db.sqlite);
+  const blueprint = (task: string) =>
+    blueprints.createBlueprint(scoped, {
+      project_id: pid,
+      function_ref: { id: fn.function_id, version: 1 },
+      behavior_pattern_ref: { id: pattern.pattern_id, version: 1 },
+      model_profile_ref: { id: "cosmora-mars", version: 1 },
+      grant: {
+        project_id: pid,
+        capability_ids: [],
+        tool_ids: [],
+        data_scope_ids: [],
+        object_ids: [],
+        budget: { currency: "USD", money_minor: 0, tokens: 10_000, operations: 0 },
+        delegation_depth: 0,
+        valid_until: new Date(Date.now() + 60_000).toISOString()
+      },
+      memory_scope: { read_mode: "task", source_ids: [], write_back: "result_only" },
+      task_contract: task,
+      start_condition: "Явный запуск",
+      close_conditions: ["Файл сохранён"]
+    });
+  for (const task of ["Собери итог из двух файлов", "Извлеки реквизиты", "Проверь стоимость"])
+    blueprint(task);
+  const instances = new AgentInstanceStore(f.db.sqlite, {
+    delegationValidator: () => ({ allowed: true, reasons: [] })
+  });
+  const teams = new AgentTeamStore(f.db.sqlite, { blueprints, instances });
+  const planned = teams.plan(scoped, pid);
+  const roster = teams.confirm(
+    scoped,
+    pid,
+    planned.items.map(({ instance_id }) => instance_id)
+  );
+  const manager = roster.items.find((item) => item.blueprint.task_contract.startsWith("Собери"))!;
+  const teamRuns = new AgentTeamRunStore(f.db.sqlite, {
+    instances,
+    graph: new TeamGraphAdapter(f.dag, f.store)
+  });
+  const store = new StarsMissionStore(f.db.sqlite);
+  const app = Fastify();
+  const identityFor = (request: { headers: { [key: string]: unknown } }) =>
+    request.headers["x-fixture-owner"]
+      ? { ...scoped, owner_id: "another-owner", actor_id: "another-owner" }
+      : scoped;
+  registerStarsMissionRoutes({
+    app,
+    store,
+    teamRuns,
+    projects: f.projects,
+    dag: f.dag,
+    identityFor
+  });
+  registerWorkDagRoutes({ app, projects: f.projects, coordinator: f.dag, identityFor });
+  try {
+    const base = "/api/v1/stars/missions";
+    type MissionFixture = { id: string; version: number; goal: string };
+    type RunFixture = MissionFixture & {
+      execution: { graph_id: string; manager_node_id: string };
+      runtime: {
+        version: number;
+        status: string;
+        nodes: { id: string; status: string; instance_id: string; attempts: number }[];
+      };
+    };
+    const post = async <T = MissionFixture>(
+      url: string,
+      payload: Record<string, unknown>,
+      status = 200
+    ) => {
+      const response = await app.inject({ method: "POST", url, payload });
+      expect(response.statusCode, response.body).toBe(status);
+      return response.json<T>();
+    };
+    const newMission = async (suffix: string) => {
+      const mission = await post(base, {
+        client_request_id: "fixture-" + suffix,
+        team_scope: pid,
+        goal: "Сравнить предложения"
+      });
+      const url = base + "/" + mission.id;
+      const brief = await post(url + "/events", {
+        type: "brief",
+        goal: mission.goal,
+        expected_version: mission.version
+      });
+      const state = await post(url + "/events", {
+        type: "plan",
+        expected_version: brief.version,
+        agents: [
+          { id: "manager", role: "manager", task: "Итог", context_scopes: [] },
+          { id: "a", role: "executor", task: "Реквизиты", context_scopes: [] },
+          { id: "b", role: "executor", task: "Стоимость", context_scopes: [] }
+        ]
+      });
+      return { url, state };
+    };
+    const { url, state } = await newMission("team");
+    const body = {
+      expected_version: state.version,
+      composition_id: roster.composition_id,
+      manager_instance_id: manager.instance_id
+    };
+    const bound = await post<RunFixture>(url + "/execution", body);
+    expect((await post<RunFixture>(url + "/execution", body)).execution).toEqual(bound.execution);
+    expect(f.dag.list(pid, owner)).toHaveLength(1);
+    const other = await newMission("other");
+    await post(other.url + "/execution", { ...body, expected_version: other.state.version }, 409);
+    await post(
+      url + "/events",
+      {
+        type: "result",
+        expected_version: bound.version,
+        agent_id: "manager",
+        summary: "False result"
+      },
+      409
+    );
+    const denied = await app.inject({ url, headers: { "x-fixture-owner": "foreign" } });
+    expect(denied.statusCode).toBe(404);
+    const { graph_id, manager_node_id } = bound.execution;
+    const dagUrl = `/api/v1/projects/${pid}/work-dags/${graph_id}`;
+    let graph = f.dag.get(graph_id, owner)!;
+    const getManager = () => graph.nodes.find(({ id }) => id === manager_node_id)!;
+    expect(getManager().status).toBe("blocked");
+    expect(getManager().depends_on).toHaveLength(2);
+    expect(f.calls).toHaveLength(0);
+    await post(
+      dagUrl + "/control",
+      { version: graph.version, action: "run_plan", max_model_requests: 9 },
+      409
+    );
+    graph = await post<WorkDag>(dagUrl + "/control", {
+      version: graph.version,
+      action: "run_plan",
+      max_model_requests: 9,
+      acknowledge_cost: true
+    });
+    const tick = async () => {
+      f.dag.advance();
+      for (const child of f.store.pending()) await f.coordinator.execute(child.id, owner);
+      graph = f.dag.get(graph_id, owner)!;
+    };
+    await tick();
+    const failed = graph.nodes.find((node) => node.status === "failed")!;
+    expect(failed.goal).toContain("Извлеки реквизиты");
+    expect(getManager().attempts).toHaveLength(0);
+    const view = (await app.inject(url)).json<RunFixture>();
+    const previous = view.runtime.nodes.find(
+      (node: { id: string }) => node.id === failed.id
+    )!.instance_id;
+    const replace = { node_id: failed.id, expected_instance_id: previous };
+    const replacement = await post<RunFixture>(url + "/execution/replace", replace);
+    const updated = replacement.runtime.nodes.find((node) => node.id === failed.id)!;
+    expect(updated.instance_id).not.toBe(previous);
+    expect(updated.attempts).toBe(1);
+    expect((await post<RunFixture>(url + "/execution/replace", replace)).runtime).toEqual(
+      replacement.runtime
+    );
+    // The node retains its original instructions, dependencies and failed attempt.
+    graph = await post<WorkDag>(dagUrl + "/control", {
+      version: graph.version,
+      action: "retry",
+      node_id: failed.id,
+      acknowledge_cost: true
+    });
+    await tick();
+    graph = await post<WorkDag>(dagUrl + "/control", {
+      version: graph.version,
+      action: "run_plan",
+      max_model_requests: 15,
+      acknowledge_cost: true
+    });
+    for (let i = 0; i < 5 && graph.execution?.status !== "completed"; i++) await tick();
+    expect(graph.execution?.status).toBe("completed");
+    expect(getManager().result?.review?.verdict).toBe("PASS");
+    expect(
+      graph.nodes.every(
+        (node) =>
+          node.attempts.length === (node.id === failed.id ? 2 : 1) && node.artifacts.length === 1
+      )
+    ).toBe(true);
+    const reads = f.calls.filter((call) =>
+      JSON.stringify(call).includes("published_bytes_readback")
+    );
+    expect(reads.length).toBeGreaterThan(0);
+    const saved = (await app.inject(url)).json<RunFixture>();
+    expect(saved.execution).toEqual(bound.execution);
+    expect(
+      saved.runtime.nodes.every((node: { status: string }) => node.status === "completed")
+    ).toBe(true);
+    const result = (await app.inject(dagUrl + "/results")).json<{
+      files: { sha256: string; content: string }[];
+    }>();
+    expect(result.files).toHaveLength(3);
+    for (const artifact of result.files) {
+      expect(artifact.sha256).toBe(createHash("sha256").update(artifact.content).digest("hex"));
+    }
+    const zip = await app.inject(dagUrl + "/results.zip");
+    expect(zip.statusCode).toBe(200);
+    expect(zip.rawPayload.subarray(0, 4)).toEqual(Buffer.from([80, 75, 3, 4]));
+    const another = f.dag.get(f.create().id, owner)!;
+    const second = await newMission("cancel");
+    const extra = blueprint("Проверь сроки");
+    const extraPart = instances.proposeRoot(scoped, {
+      project_id: pid,
+      blueprint_ref: { id: extra.blueprint_id, version: extra.version }
+    });
+    const updatedRoster = teams.confirm(scoped, pid, [
+      manager.instance_id,
+      roster.items.find((item) => item.instance_id !== manager.instance_id)!.instance_id,
+      extraPart.instance_id
+    ]);
+    const active = await post<RunFixture>(second.url + "/execution", {
+      ...body,
+      expected_version: second.state.version,
+      composition_id: updatedRoster.composition_id
+    });
+    const secondGraph = active.execution.graph_id;
+    await post(`/api/v1/projects/${pid}/work-dags/${secondGraph}/control`, {
+      version: active.runtime.version,
+      action: "run_plan",
+      max_model_requests: 9,
+      acknowledge_cost: true
+    });
+    f.dag.advance();
+    const pending = f.dag.get(secondGraph, owner)!;
+    expect(pending.nodes.some((node) => node.status === "running")).toBe(true);
+    const callsBeforeCancel = f.calls.length;
+    const cancel = { expected_version: pending.version };
+    const cancelled = await post<RunFixture>(second.url + "/execution/cancel", cancel);
+    expect(
+      cancelled.runtime.nodes.every((node: { status: string }) => node.status === "cancelled")
+    ).toBe(true);
+    expect((await post<RunFixture>(second.url + "/execution/cancel", cancel)).runtime).toEqual(
+      cancelled.runtime
+    );
+    f.dag.advance();
+    expect(f.store.pending()).toHaveLength(0);
+    expect(f.calls).toHaveLength(callsBeforeCancel);
+    expect(f.dag.get(another.id, owner)).toEqual(another);
+  } finally {
+    await app.close();
+  }
+});
 
 describe("Work priorities and deadlines", () => {
   it("selects ready steps by priority after explicit launch, without bypassing dependencies", async () => {
@@ -1114,6 +1418,58 @@ describe("executable durable Work DAG", () => {
     for (const child of f.store.pending()) await f.coordinator.execute(child.id, owner);
     return f.dag.get(id, owner)!;
   }
+  it("runs two parts of an existing Agent Studio team through Work and exports both verified files", async () => {
+    const f = await fixture();
+    const adapter = new TeamGraphAdapter(f.dag, f.store);
+    const input = {
+      ownerId: owner,
+      actorId: owner,
+      projectId: f.project.id,
+      compositionId: "fixture-team",
+      parts: nodes.slice(0, 2).map((node) => ({
+        instanceId: "instance-" + node.id,
+        nodeId: node.id,
+        title: node.title,
+        goal: node.goal
+      }))
+    };
+    const { graphId } = adapter.createOrGet(input);
+    expect(adapter.createOrGet(input).graphId).toBe(graphId);
+    expect(f.calls).toHaveLength(0);
+    arm(f, f.dag.get(graphId, owner)!, 6);
+    await autoTick(f, graphId);
+    await autoTick(f, graphId);
+    const parts = adapter.nodesOf(graphId, owner, f.project.id);
+    expect(parts.map(({ id, status }) => ({ id, status }))).toEqual(
+      input.parts.map(({ nodeId }) => ({ id: nodeId, status: "completed" }))
+    );
+    expect(parts.every(({ workId }) => typeof workId === "string")).toBe(true);
+    expect(adapter.nodesOf(graphId, owner, "another-project")).toEqual([]);
+    const app = buildApp({
+      config: f.config,
+      database: f.db,
+      projectStore: f.projects,
+      managerWorkStore: f.store,
+      managerWorkCoordinator: f.coordinator
+    });
+    try {
+      const base = "/api/v1/projects/" + f.project.id + "/work-dags/" + graphId;
+      const response = await app.inject({ url: base + "/results" });
+      expect(response.statusCode).toBe(200);
+      const result = response.json<{
+        files: { node_id: string; content: string; sha256: string }[];
+      }>();
+      expect(result.files.map(({ node_id }) => node_id).sort()).toEqual(["brief", "document"]);
+      for (const file of result.files)
+        expect(createHash("sha256").update(file.content).digest("hex")).toBe(file.sha256);
+      const archive = await app.inject({ url: base + "/results.zip" });
+      expect(archive.statusCode).toBe(200);
+      expect(archive.rawPayload.readUInt32LE(0)).toBe(0x04034b50);
+    } finally {
+      await app.close();
+    }
+  });
+
   it("automatically follows dependencies, enforces requested Critic review and exports exact completed results", async () => {
     const f = await fixture();
     let graph = f.dag.create(f.project.id, owner, owner, {

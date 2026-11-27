@@ -521,6 +521,50 @@ test("an evicted page cannot update its replacement and manual clicks reclaim co
   );
   assert.equal(f.engine.state().tabs.at(-1).dirty, false);
 });
+test("manual takeover cancels an in-flight browser action and queued inputs", async (t) => {
+  const f = fixture(t);
+  await f.engine.open("https://example.test");
+  const signal = new AbortController().signal;
+  const before = await f.engine.observe(signal);
+  let resume;
+  let locateStarted;
+  const started = new Promise((resolve) => {
+    locateStarted = resolve;
+  });
+  f.setHook(async (method, args) => {
+    if (method !== "Runtime.callFunctionOn" || args.functionDeclaration !== documentCode.locate)
+      return;
+    await new Promise((resolve) => {
+      resume = resolve;
+      locateStarted();
+    });
+  });
+  const action = { kind: "browser_click", ref: "e1" };
+  const first = assert.rejects(
+    f.engine.execute(action, before, signal),
+    /COMPUTER_SESSION_STOPPED/
+  );
+  await started;
+  const queued = assert.rejects(
+    f.engine.execute(action, before, signal),
+    /COMPUTER_SESSION_STOPPED/
+  );
+  f.views[0].webContents.emit("before-mouse-event", {}, { type: "mouseDown" });
+  resume();
+  await Promise.all([first, queued]);
+  assert.equal(f.takeovers, 1);
+  assert.equal(
+    f.calls.some(({ method }) => method.startsWith("Input.")),
+    false
+  );
+  const fresh = await f.engine.observe(new AbortController().signal);
+  await assert.rejects(
+    f.engine.execute({ kind: "browser_read" }, fresh, signal),
+    /COMPUTER_SESSION_STOPPED/
+  );
+  await f.engine.execute({ kind: "browser_read" }, fresh, new AbortController().signal);
+});
+
 test("navigation, resize, tab changes and target changes invalidate old refs before input", async (t) => {
   for (const change of [
     (f) => f.engine.navigate("https://example.test/new"),

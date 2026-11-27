@@ -1,4 +1,9 @@
-import type { AgentTeamRunGraphPort, TeamGraphNode, ManagerWorkStore } from "@cosmora/db";
+import {
+  AgentTeamRunValidationError,
+  type AgentTeamRunGraphPort,
+  type TeamGraphNode,
+  type ManagerWorkStore
+} from "@cosmora/db";
 import type { WorkDagCoordinator } from "./work-dag-coordinator.js";
 import type { WorkDag } from "@cosmora/contracts";
 
@@ -11,21 +16,18 @@ export class TeamGraphAdapter implements AgentTeamRunGraphPort {
     private readonly works: ManagerWorkStore
   ) {}
 
-  createOrGet(input: {
-    ownerId: string;
-    actorId: string;
-    projectId: string;
-    compositionId: string;
-    parts: Array<{ instanceId: string; nodeId: string; title: string; goal: string }>;
-  }): { graphId: string; nodes: TeamGraphNode[] } {
+  createOrGet(
+    input: Parameters<AgentTeamRunGraphPort["createOrGet"]>[0]
+  ): ReturnType<AgentTeamRunGraphPort["createOrGet"]> {
     const graph = this.coordinator.create(input.projectId, input.ownerId, input.actorId, {
-      client_request_id: `team:${input.compositionId}`,
-      title: `Команда ${input.compositionId.slice(0, 8)}`,
+      client_request_id: input.runKey ?? `team:${input.compositionId}`,
+      title: input.title ?? `Команда ${input.compositionId.slice(0, 8)}`,
       nodes: input.parts.map((part) => ({
         id: part.nodeId,
         title: part.title,
         goal: part.goal,
-        depends_on: []
+        depends_on: part.dependsOn ?? [],
+        ...(part.requiresCritic ? { requires_critic: true } : {})
       }))
     });
     return {
@@ -34,9 +36,14 @@ export class TeamGraphAdapter implements AgentTeamRunGraphPort {
     };
   }
 
-  nodesOf(graphId: string, ownerId: string, projectId: string): TeamGraphNode[] {
+  nodesOf(graphId: string, ownerId: string, projectId: string, runKey?: string): TeamGraphNode[] {
     const graph = this.works.dag.get(graphId, ownerId);
     if (!graph || graph.project_id !== projectId) return [];
+    if (runKey && graph.client_request_id !== runKey) {
+      throw new AgentTeamRunValidationError(
+        "This team composition already belongs to another plan"
+      );
+    }
     return this.#nodesOfGraph(graph);
   }
 

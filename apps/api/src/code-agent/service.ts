@@ -1436,6 +1436,7 @@ export class CodeAgentService {
     input: { review_hash: string; check: "node-test" | "syntax"; approve: true }
   ) {
     const run = this.current(id, owner);
+    if (run.error === "GITHUB_BASE_CHANGED") throw new CodeAgentError(run.error);
     if (!["review", "checked", "failed"].includes(run.status))
       throw new CodeAgentError("STALE_REVIEW");
     this.reviewed(run, input.review_hash);
@@ -1795,6 +1796,18 @@ export class CodeAgentService {
               return { status: "uncertain" as const };
             }
             this.deps.drafts.release(draft.id, owner);
+            if (error instanceof GithubIntegrationError && error.code === "GITHUB_BASE_CHANGED") {
+              this.deps.store.save(
+                {
+                  ...this.current(id, owner),
+                  status: "checked",
+                  error: error.code,
+                  publication_token: undefined
+                },
+                "Публикация остановлена до записи: базовая ветка изменилась"
+              );
+              throw new CodeAgentError(error.code);
+            }
             this.deps.store.save(
               { ...this.current(id, owner), status: "checked" },
               "Публикация не началась"
@@ -1831,6 +1844,7 @@ export class CodeAgentService {
     const run = this.current(id, owner);
     if (run.status === "published") return this.view(run);
     if (run.status === "checked") {
+      if (run.error === "GITHUB_BASE_CHANGED") return this.view(run);
       // Invalidate any delayed request that carries the previous approval token.
       return this.view(
         this.deps.store.save(

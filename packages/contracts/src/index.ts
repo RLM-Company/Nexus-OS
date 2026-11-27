@@ -44,6 +44,8 @@ export * from "./work-schedule.js";
 export * from "./chat-memory.js";
 export * from "./context-memory.js";
 export * from "./memory-usage.js";
+export * from "./project-sources.js";
+export * from "./project-members.js";
 export * from "./history-compaction.js";
 export * from "./profile-candidates.js";
 export * from "./memory-sensitive.js";
@@ -74,3 +76,5 @@ export {
 export type { OfficeOperation, OfficeCursor } from "./office-workspace.js";
 
 export { DOCUMENT_LIBRARY_PDF_MAX_PAGES } from "./document-library.js";
+
+export * from "./studio-storyboard.js";

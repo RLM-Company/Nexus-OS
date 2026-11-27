@@ -1,9 +1,11 @@
 import { registerDocumentWorkspaceRoutes } from "./document-workspace-routes.js";
 import { registerGithubIssueRoutes } from "./github-issue-routes.js";
 import type { ContextMemoryRanker } from "@cosmora/contracts";
-import type { IndexedMemoryRecall } from "@cosmora/db";
+import type { IndexedMemoryRecall, ProjectMembershipStore } from "@cosmora/db";
 import { registerRuntimeClockRoutes } from "./runtime-clock-routes.js";
 import { registerContextMemoryRoutes } from "./context-memory-routes.js";
+import { registerProjectSourceRoutes } from "./project-source-routes.js";
+import { registerProjectMembershipRoutes } from "./project-membership-routes.js";
 import { registerHistoryCompactionRoutes } from "./history-compaction-routes.js";
 import { ComputerControlService } from "./computer-control/service.js";
 import { registerComputerControlRoutes } from "./computer-control/routes.js";
@@ -166,6 +168,7 @@ import {
   type UsageStore
 } from "@cosmora/db";
 import type { ScheduledDispatchStore } from "@cosmora/db";
+import type { ProjectCorrectionRuleStore, ProjectSourceStore } from "@cosmora/db";
 import {
   GatewayRunError,
   type ModelGateway,
@@ -204,6 +207,7 @@ import { GithubIntegration, type GithubDraftStore } from "./github-integration.j
 import { registerGithubRoutes } from "./github-routes.js";
 import { WebSearch, registerWebSearchRoutes } from "./web-search.js";
 import { registerProjectMaterialsRoutes } from "./project-materials-routes.js";
+import { projectAccess } from "./project-access.js";
 import { registerAccountRoutes } from "./account-settings/routes.js";
 import { registerPrivacyRoutes } from "./account-settings/privacy/routes.js";
 import type { OwnerPrivacyCoordinator } from "./account-settings/privacy/coordinator.js";
@@ -215,6 +219,7 @@ import { registerPresentationWorkRoutes } from "./presentation-work-routes.js";
 import { registerPresentationRoutes } from "./presentation-routes.js";
 import { registerNotificationRoutes } from "./notification-routes.js";
 import { registerScheduledDispatchRoutes } from "./scheduled-dispatch-routes.js";
+import { registerProjectCorrectionRuleRoutes } from "./project-correction-rule-routes.js";
 import { registerOwnerSkillRoutes } from "./owner-skill-routes.js";
 import { registerRegistrationRoutes, type RegistrationOptions } from "./registration-routes.js";
 import { registerGoogleDriveRoutes, safeDriveLogUrl } from "./cloud-storage/google-drive-routes.js";
@@ -261,10 +266,13 @@ export interface AppDependencies {
   accountModel?: { provider: string; model: string; capabilities: Record<string, boolean> };
   database: DatabaseHealth;
   scheduledDispatchStore?: ScheduledDispatchStore;
+  projectCorrectionRuleStore?: ProjectCorrectionRuleStore;
   identityStore?: IdentityStore;
   registration?: RegistrationOptions;
   generalChatStore?: GeneralChatStore;
   projectStore?: ProjectStore;
+  projectSourceStore?: ProjectSourceStore;
+  projectMembershipStore?: ProjectMembershipStore;
   demoManagerStore?: DemoManagerStore;
   demoManagerCoordinator?: DemoManagerCoordinator;
   managerWorkStore?: ManagerWorkStore;
@@ -723,6 +731,11 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
   const runObservers = new Set<AbortController>();
   const managerRunsExecuteInBackground = dependencies.managerRunExecutionMode === "background";
   const runtimeMetrics = dependencies.runtimeMetrics ?? new RuntimeMetrics();
+  const projectSourceStore =
+    dependencies.projectSourceStore ?? dependencies.managerWorkStore?.sources;
+  const projectMembershipStore = dependencies.projectMembershipStore;
+  const projectCorrectionRuleStore =
+    dependencies.projectCorrectionRuleStore ?? dependencies.managerWorkStore?.correctionRules;
   const requestIdentities = new WeakMap<FastifyRequest, IdentityContext>();
   const identityFor = (request: FastifyRequest): IdentityContext => {
     const identity = requestIdentities.get(request);
@@ -863,15 +876,21 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
     identityFor
   );
   registerRuntimeClockRoutes(app, dependencies.runtimeClock ?? new RuntimeClock());
-  registerConnectorRoutes(app, dependencies.policyStore, "owner", {
-    pilot: dependencies.mcpDiscovery,
-    projects: dependencies.projectStore,
-    stop: dependencies.emergencyStopStore,
-    ownerActive: (ownerId) =>
-      (dependencies.ownerPrivacy?.overview(ownerId).lifecycle ?? "active") === "active",
-    origin: dependencies.config.webOrigin,
-    identityFor
-  });
+  registerConnectorRoutes(
+    app,
+    dependencies.policyStore,
+    "owner",
+    {
+      pilot: dependencies.mcpDiscovery,
+      projects: dependencies.projectStore,
+      stop: dependencies.emergencyStopStore,
+      ownerActive: (ownerId) =>
+        (dependencies.ownerPrivacy?.overview(ownerId).lifecycle ?? "active") === "active",
+      origin: dependencies.config.webOrigin,
+      identityFor
+    },
+    dependencies.googleDrive
+  );
   if (dependencies.projectStore) registerApexRoutes(app, dependencies.projectStore, identityFor);
   if (dependencies.payStore)
     registerPayRoutes(app, {
@@ -979,6 +998,12 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
       ...(dependencies.managerWorkStore ? { works: dependencies.managerWorkStore } : {}),
       identityFor
     });
+  if (projectCorrectionRuleStore)
+    registerProjectCorrectionRuleRoutes({
+      app,
+      store: projectCorrectionRuleStore,
+      identityFor
+    });
   registerWebSearchRoutes(app, dependencies.webSearch ?? new WebSearch());
   if (dependencies.researchStore && dependencies.projectStore && dependencies.policyStore) {
     const coordinator = registerResearchRoutes({
@@ -991,6 +1016,13 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
       projects: dependencies.projectStore,
       policy: dependencies.policyStore,
       identityFor,
+      excludedSourceIds: (run) =>
+        new Set(
+          projectSourceStore
+            ?.exclusions(run.project_id, run.owner_id)
+            .items.filter((source) => source.source_kind === "research_page")
+            .map((source) => source.source_id)
+        ),
       ...(dependencies.emergencyStopStore ? { emergency: dependencies.emergencyStopStore } : {})
     });
     dependencies.researchCoordinatorCreated?.(coordinator);
@@ -999,7 +1031,12 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
   if (dependencies.mediaService) registerMediaRoutes(app, dependencies.mediaService, identityFor);
   if (dependencies.canvasStore) registerCanvasRoutes(app, dependencies.canvasStore, identityFor);
   if (dependencies.projectStore)
-    registerProjectMaterialsRoutes(app, dependencies.projectStore, identityFor);
+    registerProjectMaterialsRoutes(
+      app,
+      dependencies.projectStore,
+      identityFor,
+      projectMembershipStore
+    );
   if (dependencies.projectStore)
     registerProjectKnowledgeRoutes(
       app,
@@ -1491,6 +1528,7 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
     registerManagerWorkRoutes({
       app,
       store: dependencies.managerWorkStore,
+      ...(dependencies.generalChatStore ? { chats: dependencies.generalChatStore } : {}),
       coordinator: dependencies.managerWorkCoordinator,
       projects: dependencies.projectStore,
       nodeBudget: {
@@ -1505,6 +1543,10 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
     registerStarsMissionRoutes({
       app,
       store: dependencies.starsMissionStore,
+      ...(dependencies.projectStore ? { projects: dependencies.projectStore } : {}),
+      ...(dependencies.managerWorkCoordinator
+        ? { dag: dependencies.managerWorkCoordinator.dag }
+        : {}),
       ...(dependencies.agentTeamRunStore ? { teamRuns: dependencies.agentTeamRunStore } : {}),
       identityFor
     });
@@ -1544,7 +1586,19 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
     registerPrivacyRoutes(app, dependencies.ownerPrivacy, dependencies.accountStore, identityFor);
 
   if (dependencies.generalChatStore)
-    registerContextMemoryRoutes(app, dependencies.generalChatStore.contextMemory, identityFor);
+    registerContextMemoryRoutes(
+      app,
+      dependencies.generalChatStore.contextMemory,
+      identityFor,
+      (target, owner) =>
+        target.kind === "project" && projectSourceStore
+          ? projectSourceStore.excludedSourceIds(target.id, owner)
+          : []
+    );
+  if (projectSourceStore)
+    registerProjectSourceRoutes(app, projectSourceStore, identityFor, projectMembershipStore);
+  if (projectMembershipStore)
+    registerProjectMembershipRoutes(app, projectMembershipStore, identityFor);
   if (dependencies.generalChatStore && dependencies.modelGateway && dependencies.chat) {
     registerHistoryCompactionRoutes(
       app,
@@ -3077,14 +3131,21 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
             required: ["projectId"],
             additionalProperties: false
           },
+          querystring: Type.Object({
+            q: Type.Optional(Type.String({ minLength: 1, maxLength: 200 }))
+          }),
           response: { 200: ProjectDetailResponseSchema, 404: ApiErrorSchema }
         }
       },
       async (request, reply) => {
-        const ownerId = identityFor(request).owner_id;
-        const project = store.getProject(request.params.projectId, ownerId);
-        const chatId = store.getMainChatId(request.params.projectId, ownerId);
-        if (!project || !chatId) {
+        const access = projectAccess(
+          projectMembershipStore,
+          request.params.projectId,
+          identityFor(request).owner_id
+        );
+        const project = access && store.getProject(access.projectId, access.ownerId);
+        const chatId = access && store.getMainChatId(access.projectId, access.ownerId);
+        if (!access || !project || !chatId) {
           return reply
             .status(404)
             .send(errorBody(request.id, "PROJECT_NOT_FOUND", "Project not found"));
@@ -3092,8 +3153,14 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
         const response: ProjectDetailResponse = {
           project,
           chat_id: chatId,
-          messages: store.listMessages(project.id, ownerId)
+          messages: store.listMessages(project.id, access.ownerId)
         };
+        const query = request.query.q?.trim().toLocaleLowerCase();
+        if (query)
+          response.messages = response.messages.filter((message) =>
+            message.content.toLocaleLowerCase().includes(query)
+          );
+        reply.header("Cache-Control", "private, no-store");
         return response;
       }
     );

@@ -84,6 +84,19 @@ describe("BIZ-040 field register", () => {
     expect(conflicting[0]!.note).toContain("1200");
   });
 
+  it("shows conflicting values repeated on a single page and deduplicates equal matches", () => {
+    const repeated = { ...pages[0]!, text: "Сумма: 19700\nСумма: 19700\nСумма: 1200" };
+    const [row] = extractFieldRegister([repeated], [fields[1]!]);
+    expect(row).toMatchObject({ status: "contradiction", page: 2, value: "19700" });
+    expect(row?.note).toBe('Противоречие: "19700", "1200".');
+  });
+
+  it("cites the page that was actually verified against an image", () => {
+    const checked = { ...pages[2]!, text: "Сумма: 19700", image_verified: true };
+    const [row] = extractFieldRegister([pages[0]!, checked], [fields[1]!]);
+    expect(row).toMatchObject({ status: "image_verified", file_name: "scan.png.pdf", page: 1 });
+  });
+
   it("produces a downloadable CSV with value, file, page and status", () => {
     const csv = fieldRegisterCsv(extractFieldRegister(pages, fields));
     expect(

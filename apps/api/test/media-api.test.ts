@@ -132,6 +132,35 @@ describe("media gateway without paid network", () => {
     ).rejects.toMatchObject({ code: "INVALID_ASSET" });
     expect(calls).toEqual(["https://api.openai.com/v1/images/generations error"]);
   });
+  it("rejects URL-only image assets without requesting the artifact host", async () => {
+    const targets: string[] = [];
+    const adapter = new OpenAIMediaAdapter("fixture-only", async (input, setup) => {
+      targets.push(
+        typeof input === "string" ? input : input instanceof URL ? input.href : input.url
+      );
+      expect(setup).toMatchObject({ redirect: "error", credentials: "omit" });
+      return Response.json({ data: [{ url: "https://cdn.example.test/result.png?sig=fixture" }] });
+    });
+    await expect(
+      adapter.generateImage("fixture", "gpt-image-1", new AbortController().signal)
+    ).rejects.toMatchObject({ code: "INVALID_ASSET" });
+    expect(targets).toEqual(["https://api.openai.com/v1/images/generations"]);
+  });
+  it("rejects a provider redirect without contacting its destination", async () => {
+    const calls: string[] = [];
+    const adapter = new OpenAIMediaAdapter("fixture-only", async (input, setup) => {
+      calls.push(typeof input === "string" ? input : input instanceof URL ? input.href : input.url);
+      expect(setup).toMatchObject({ redirect: "error", credentials: "omit" });
+      return new Response(null, {
+        status: 302,
+        headers: { location: "https://cdn.example.test/result" }
+      });
+    });
+    await expect(
+      adapter.generateImage("fixture", "gpt-image-1", new AbortController().signal)
+    ).rejects.toThrow();
+    expect(calls).toEqual(["https://api.openai.com/v1/images/generations"]);
+  });
   it("enforces process stop and audio magic-byte checks", async () => {
     let stopped = true;
     const service = new MediaService({

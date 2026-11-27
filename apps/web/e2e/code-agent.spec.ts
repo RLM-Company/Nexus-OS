@@ -23,7 +23,12 @@ type CheckFixture = {
 async function scenario(
   page: Page,
   lostPublish:
-    false | "after-start" | "after-start-pending" | "after-commit" | "before-start" = false,
+    | false
+    | "after-start"
+    | "after-start-pending"
+    | "after-commit"
+    | "before-start"
+    | "base-changed" = false,
   proof: CheckFixture | ((check: number) => CheckFixture) = {},
   expectedReview: (review: number) => string = () => "export const value = 3;",
   repairCapability: boolean | number = false
@@ -222,6 +227,16 @@ async function scenario(
         publication_token: run.publication_token,
         approve: true
       });
+      if (lostPublish === "base-changed") {
+        run = {
+          ...run,
+          version: Number(run.version) + 1,
+          error: "GITHUB_BASE_CHANGED",
+          publication_token: undefined
+        };
+        await route.abort("failed");
+        return;
+      }
       if (lostPublish && lostPublish !== "after-commit" && publications === 1) {
         if (lostPublish !== "before-start")
           run = { ...run, status: "uncertain", error: "RECONCILIATION_REQUIRED" };
@@ -651,6 +666,26 @@ test("allows explicit read-only reconciliation when the first lookup cannot conf
   await expect(page.getByRole("link", { name: "Открыть созданный PR" })).toBeVisible();
   expect(state.publications()).toBe(1);
   expect(state.reconciliations()).toBe(2);
+});
+
+test("restores a definitive upstream branch conflict without retrying publication", async ({
+  page
+}) => {
+  const state = await scenario(page, "base-changed");
+  await prepare(page);
+  await page
+    .getByRole("checkbox", { name: "Подтверждаю создание этой ветки", exact: false })
+    .check();
+  const publish = page.getByRole("button", { name: "Создать черновик PR в GitHub" });
+  await publish.click({ clickCount: 2 });
+  const conflict = page.getByText("Базовая ветка изменилась.", { exact: false });
+  await expect(conflict).toBeVisible();
+  await page.reload();
+  await expect(conflict).toBeVisible();
+  await expect(publish).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Сверить результат с GitHub" })).toHaveCount(0);
+  expect(state.publications()).toBe(1);
+  expect(state.reconciliations()).toBe(0);
 });
 
 test("checks the model proposal, restores it after reload and shows an already created Draft PR after a lost response", async ({

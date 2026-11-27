@@ -4,6 +4,8 @@ import { AcceptedSkillView } from "./accepted-skill-view";
 import { CodeFiles } from "./ui/code-files";
 
 import Link from "next/link";
+import { WorkResultSources } from "./work-result-sources";
+import { SupplierWorkResult } from "./supplier-work-result";
 import { WorkManagerDag } from "./work-manager-dag";
 import { WorkManagerProgress } from "./work-manager-progress";
 import { WorkManagerMemory } from "./work-manager-memory";
@@ -12,6 +14,7 @@ import { useEffect, useRef, useState } from "react";
 import {
   MANAGER_WORK_CONTROL_EVENTS,
   type CreateManagerWork,
+  type ManagerWork,
   type WorkDag
 } from "@cosmora/contracts";
 import { startVisibleReadPolling } from "./visible-read-poller";
@@ -21,6 +24,10 @@ import { aiWorkChainGoal, aiWorkChainSource, requestsAiWorkChain } from "./ai-wo
 type Work = {
   id: string;
   request?: Pick<CreateManagerWork, "goal" | "output_contract">;
+  supplier_handoff?: ManagerWork["supplier_handoff"];
+  supplier_clarification?: ManagerWork["supplier_clarification"];
+  materials?: ManagerWork["materials"];
+  result_sources?: ManagerWork["result_sources"];
   version: number;
   status: string;
   stage: string;
@@ -86,7 +93,13 @@ const labels: Record<string, string> = {
   failed: "Остановлено с ошибкой",
   cancelled: "Отменено"
 };
+function workStatusLabel(work: Work): string {
+  return work.status === "blocked" && work.error_code === "SUPPLIER_ANSWER_REQUIRED"
+    ? "Нужно уточнение"
+    : (labels[work.status] ?? "Состояние неизвестно");
+}
 const errors: Record<string, string> = {
+  INVALID_SUPPLIER_ANSWER: "Добавьте недостающие данные в JSON. Исходные позиции сохраняются.",
   INVALID_BUSINESS_INPUT: "Проверьте исходные данные выбранного отчёта и запустите задачу снова.",
   BUSINESS_REPORT_TOO_LARGE:
     "Отчёт слишком большой. Сократите число позиций и запустите сравнение снова.",
@@ -218,6 +231,19 @@ function saveWorkSelection(key: string, id: string | null) {
   }
 }
 
+function workFromUrl(projectId: string): string | null {
+  const params = new URLSearchParams(window.location.search);
+  return params.get("project") === projectId ? params.get("work") : null;
+}
+
+function replaceSelectedWork(projectId: string, work: Work) {
+  const url = new URL(window.location.href);
+  if (work.supplier_handoff || workFromUrl(projectId)) {
+    url.searchParams.set("work", work.id);
+    window.history.replaceState(window.history.state, "", url);
+  }
+}
+
 export function ManagerWorkPanel({
   projectId,
   initialGoal,
@@ -240,6 +266,7 @@ export function ManagerWorkPanel({
   const [role, setRole] = useState<CreateManagerWork["worker_role"]>("analyst");
   const [critic, setCritic] = useState(true);
   const [work, setWork] = useState<Work | null>(null);
+  const [supplierAnswer, setSupplierAnswer] = useState({ workId: "", text: "" });
   const [works, setWorks] = useState<Work[]>([]);
   const [selectedWorkId, setSelectedWorkId] = useState<string | null>(null);
   const [historyLoaded, setHistoryLoaded] = useState(false);
@@ -308,7 +335,8 @@ export function ManagerWorkPanel({
           })
         ]);
         // History is bounded. Its window moving is not a change of selection.
-        const wanted = selectedWorkId ?? readWorkSelection(selectionKey);
+        const linked = workFromUrl(projectId);
+        const wanted = linked ?? selectedWorkId ?? readWorkSelection(selectionKey);
         const selected = wanted
           ? (list.items.find((item) => item.id === wanted) ??
             (await json<Work | null>(
@@ -325,7 +353,7 @@ export function ManagerWorkPanel({
         if (!signal.aborted && epoch === mutationEpoch.current && !lock.current) {
           if (wanted && !selected) saveWorkSelection(selectionKey, null);
           setSelectedWorkId(selected?.id ?? null);
-          const latest = selected ?? items[0] ?? null;
+          const latest = selected ?? (linked ? null : (items[0] ?? null));
           setWorks((current) =>
             items.map((item) => {
               const previous = current.find((candidate) => candidate.id === item.id);
@@ -339,7 +367,7 @@ export function ManagerWorkPanel({
           );
           setRuntime(model);
           setHistoryLoaded(true);
-          setReadError("");
+          setReadError(linked && !selected ? "Задача по этой ссылке недоступна." : "");
         }
       },
       {
@@ -347,7 +375,7 @@ export function ManagerWorkPanel({
         onError: () => setReadError("Состояние временно недоступно. Работа сохраняется на сервере.")
       }
     );
-  }, [base, selectedWorkId, selectionKey]);
+  }, [base, projectId, selectedWorkId, selectionKey]);
   const recordMutation = (updated: Work, epoch: number) => {
     setWorks((current) =>
       current.some((item) => item.id === updated.id)
@@ -360,6 +388,7 @@ export function ManagerWorkPanel({
     // updates its own history row without switching the selected task back.
     if (epoch === mutationEpoch.current) {
       saveWorkSelection(selectionKey, updated.id);
+      replaceSelectedWork(projectId, updated);
       setSelectedWorkId(updated.id);
       setWork((previous) =>
         previous?.id === updated.id && previous.version > updated.version ? previous : updated
@@ -574,6 +603,83 @@ export function ManagerWorkPanel({
       setBusy(false);
     }
   };
+  const answerSupplierQuestion = async (questionWork: Work, answer: string) => {
+    if (lock.current || executionGate !== "clear") return;
+    const epoch = ++mutationEpoch.current;
+    lock.current = true;
+    setBusy(true);
+    setError("");
+    const url = base + "/" + encodeURIComponent(questionWork.id);
+    try {
+      const updated = await json<Work>(url + "/supplier-answer", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ expected_version: questionWork.version, answer })
+      });
+      recordMutation(updated, epoch);
+    } catch (cause) {
+      if (!(cause instanceof WorkHttpError && cause.status < 500)) {
+        const current = await json<Work>(url).catch(() => null);
+        if (current?.id === questionWork.id && current.supplier_clarification?.answer === answer) {
+          recordMutation(current, epoch);
+          return;
+        }
+      }
+      if (epoch === mutationEpoch.current)
+        setError(cause instanceof Error ? cause.message : "Не удалось сохранить уточнение.");
+    } finally {
+      lock.current = false;
+      setBusy(false);
+    }
+  };
+  const resultControls =
+    work?.status === "completed" ? (
+      <>
+        <ul className="manager-work-files" aria-label="Готовые файлы">
+          {work.draft?.files.map((file) => (
+            <li key={file.name}>
+              <a
+                download
+                href={
+                  base +
+                  "/" +
+                  encodeURIComponent(work.id) +
+                  "/files/" +
+                  encodeURIComponent(file.name)
+                }
+              >
+                {file.name}
+              </a>
+            </li>
+          ))}
+        </ul>
+        {work.result_accepted_at ? (
+          <p className="manager-work-accepted" role="status">
+            Результат принят владельцем {new Date(work.result_accepted_at).toLocaleString("ru-RU")}.
+          </p>
+        ) : (
+          <button
+            className="manager-work-action primary"
+            disabled={busy || executionGate !== "clear"}
+            onClick={() => void acceptResult()}
+          >
+            Принять результат
+          </button>
+        )}
+      </>
+    ) : null;
+  const workIsSupplier = businessKind(work?.request) === "supplier_comparison";
+  const sourcePanel =
+    work?.status === "completed" ? (
+      <WorkResultSources
+        key={work.id}
+        projectId={projectId}
+        runIds={[
+          ...(workIsSupplier ? [work.id] : []),
+          ...(work.result_sources ?? []).map((source) => source.run_id)
+        ]}
+      />
+    ) : null;
   const active = work && isActive(work);
   const projectHasActiveWork = Boolean(active) || works.some(isActive);
   return (
@@ -584,7 +690,7 @@ export function ManagerWorkPanel({
           <strong>Создать результат с Manager</strong>
         </div>
         <span className={`manager-work-status ${work?.status ?? "new"}`} role="status">
-          {work ? labels[work.status] : "Новая задача"}
+          {work ? workStatusLabel(work) : "Новая задача"}
         </span>
       </header>
       <p className="manager-work-runtime">
@@ -812,6 +918,7 @@ export function ManagerWorkPanel({
                 onClick={() => {
                   mutationEpoch.current++;
                   saveWorkSelection(selectionKey, item.id);
+                  replaceSelectedWork(projectId, item);
                   setSelectedWorkId(item.id);
                   setWork(item);
                   setError("");
@@ -824,7 +931,7 @@ export function ManagerWorkPanel({
                       ? (aiWorkChainSource(item.request.goal) ?? item.request.goal)
                       : `Задача ${index + 1}`}
                 </span>
-                <small>{labels[item.status] ?? "Состояние неизвестно"}</small>
+                <small>{workStatusLabel(item)}</small>
               </button>
             ))}
           </div>
@@ -882,7 +989,7 @@ export function ManagerWorkPanel({
               Критик: {work.review.verdict}. {work.review.reason}
             </p>
           )}
-          {work.error_code && (
+          {work.error_code && work.error_code !== "SUPPLIER_ANSWER_REQUIRED" && (
             <p className="manager-work-error" role="alert">
               {errors[work.error_code] ??
                 "Работа остановлена. Сохранённые этапы доступны; автоматического повтора нет."}
@@ -906,15 +1013,16 @@ export function ManagerWorkPanel({
               {work.pause_requested ? "Ожидается пауза" : "Пауза"}
             </button>
           )}
-          {["paused", "blocked"].includes(work.status) && (
-            <button
-              className="manager-work-action primary"
-              disabled={busy || executionGate !== "clear"}
-              onClick={() => void act("resume")}
-            >
-              Продолжить
-            </button>
-          )}
+          {["paused", "blocked"].includes(work.status) &&
+            work.error_code !== "SUPPLIER_ANSWER_REQUIRED" && (
+              <button
+                className="manager-work-action primary"
+                disabled={busy || executionGate !== "clear"}
+                onClick={() => void act("resume")}
+              >
+                Продолжить
+              </button>
+            )}
           {active && (
             <button
               className="manager-work-action"
@@ -924,7 +1032,7 @@ export function ManagerWorkPanel({
               Остановить задачу
             </button>
           )}
-          {work.status === "blocked" && (
+          {work.status === "blocked" && work.error_code !== "SUPPLIER_ANSWER_REQUIRED" && (
             <Link
               className="manager-work-permissions"
               href={"/control-center?project=" + encodeURIComponent(projectId)}
@@ -932,40 +1040,61 @@ export function ManagerWorkPanel({
               Разрешения проекта
             </Link>
           )}
-          {work.status === "completed" && (
-            <>
-              <ul className="manager-work-files" aria-label="Готовые файлы">
-                {work.draft?.files.map((file) => (
-                  <li key={file.name}>
-                    <a
-                      download
-                      href={
-                        base +
-                        "/" +
-                        encodeURIComponent(work.id) +
-                        "/files/" +
-                        encodeURIComponent(file.name)
-                      }
-                    >
-                      {file.name}
-                    </a>
-                  </li>
-                ))}
-              </ul>
-              {work.result_accepted_at ? (
-                <p className="manager-work-accepted" role="status">
-                  Результат принят владельцем{" "}
-                  {new Date(work.result_accepted_at).toLocaleString("ru-RU")}.
-                </p>
-              ) : (
+          {work.status === "blocked" &&
+            work.error_code === "SUPPLIER_ANSWER_REQUIRED" &&
+            work.supplier_clarification && (
+              <form
+                aria-label="Уточнение сравнения поставщиков"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  if (supplierAnswer.workId === work.id && supplierAnswer.text.trim())
+                    void answerSupplierQuestion(work, supplierAnswer.text);
+                }}
+              >
+                <p>{work.supplier_clarification.question}</p>
+                <label>
+                  Недостающие данные JSON
+                  <textarea
+                    value={supplierAnswer.workId === work.id ? supplierAnswer.text : ""}
+                    maxLength={8000}
+                    onChange={(event) =>
+                      setSupplierAnswer({ workId: work.id, text: event.target.value })
+                    }
+                  />
+                </label>
                 <button
                   className="manager-work-action primary"
-                  disabled={busy || executionGate !== "clear"}
-                  onClick={() => void acceptResult()}
+                  disabled={
+                    busy ||
+                    executionGate !== "clear" ||
+                    supplierAnswer.workId !== work.id ||
+                    !supplierAnswer.text.trim()
+                  }
                 >
-                  Принять результат
+                  Продолжить сравнение
                 </button>
-              )}
+              </form>
+            )}
+          {workIsSupplier ? (
+            <SupplierWorkResult
+              projectId={projectId}
+              workId={work.id}
+              source={work.supplier_handoff}
+              instructions={work.materials?.instructions ?? ""}
+              evidence={
+                work.status === "completed"
+                  ? work.draft?.files.find((file) => file.name === "supplier-evidence.json")
+                      ?.content
+                  : undefined
+              }
+            >
+              {sourcePanel}
+              {resultControls}
+            </SupplierWorkResult>
+          ) : (
+            <>
+              {sourcePanel}
+              {resultControls}
             </>
           )}
         </>

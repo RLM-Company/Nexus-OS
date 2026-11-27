@@ -60,6 +60,7 @@ import {
 import { ProjectContextPanel } from "./project-context-panel";
 import { ProjectContextPreview } from "./project-context-preview";
 import { ManagerWorkPanel } from "./manager-work-panel";
+import { canStartSupplierWork, SupplierWorkHandoff } from "./supplier-work-handoff";
 import { useExecutionGate } from "./use-execution-gate";
 import { useLocalVaultContext } from "./use-local-vault";
 import { WorkspaceIcon } from "./workspace-icons";
@@ -249,6 +250,9 @@ const replaceConsoleRoute = (
   const planId = currentParams.get("plan");
   if (projectId && currentParams.get("project") === projectId && planId)
     route += `&plan=${encodeURIComponent(planId)}`;
+  const workId = currentParams.get("work");
+  if (projectId && view === "plan" && currentParams.get("project") === projectId && workId)
+    route += `&work=${encodeURIComponent(workId)}`;
   if (currentParams.get("context_preview") === "1")
     route += `${route.includes("?") ? "&" : "?"}context_preview=1`;
   window.history.replaceState(window.history.state, "", route);
@@ -531,6 +535,10 @@ const generalMessagePlaceholder = (id: string, chatId: string, runId: string): L
 };
 
 export default function Home() {
+  const [supplierSelection, setSupplierSelection] = useState<{
+    chatId: string;
+    messageId: string;
+  } | null>(null);
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
   const [activeProject, setActiveProject] = useState<Project | null>(null);
   const [canvasOpen, setCanvasOpen] = useState(false);
@@ -3518,6 +3526,45 @@ export default function Home() {
                         </button>
                       )}
                     <ChatMessageAttachments files={message.attachments ?? []} />
+                    {chatMode === "kosmora" &&
+                      activeLocalChatId &&
+                      message.role === "user" &&
+                      message.status === "completed" &&
+                      !localChats.find((chat) => chat.id === activeLocalChatId)?.confidential &&
+                      canStartSupplierWork(message) && (
+                        <>
+                          <button
+                            type="button"
+                            className="kosmora-actions-trigger"
+                            disabled={loading || executionGate !== "clear"}
+                            onClick={() =>
+                              setSupplierSelection({
+                                chatId: activeLocalChatId,
+                                messageId: message.id
+                              })
+                            }
+                          >
+                            Сравнить поставщиков в Koswork
+                          </button>
+                          {supplierSelection?.chatId === activeLocalChatId &&
+                            supplierSelection.messageId === message.id && (
+                              <SupplierWorkHandoff
+                                chatId={activeLocalChatId}
+                                message={message}
+                                projects={projects.filter(
+                                  (project) =>
+                                    project.status === "ACTIVE" || project.status === "DRAFT"
+                                )}
+                                restrictedProjectId={
+                                  localChats.find((chat) => chat.id === activeLocalChatId)
+                                    ?.project_id ?? null
+                                }
+                                disabled={loading || executionGate !== "clear"}
+                                onClose={() => setSupplierSelection(null)}
+                              />
+                            )}
+                        </>
+                      )}
                   </div>
                 </article>
               ))}

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import styles from "./media-panel.module.css";
 import { WorkspaceIcon } from "../workspace-icons";
-import type { ChatImageAttachment } from "@cosmora/contracts";
+import { CHAT_ATTACHMENT_LIMITS, type ChatImageAttachment } from "@cosmora/contracts";
 import {
   parseImageConstraints,
   resolveImageOptions,
@@ -25,12 +25,18 @@ export type MediaJob = {
   client_request_id?: string | null;
   parameters?: Record<string, unknown> | null;
 };
+type SpeechConstraints = {
+  voices: string[];
+  formats: string[];
+  minSpeed: number;
+  maxSpeed: number;
+};
 type Capability = { ready: boolean; model: string | null; reason: string | null };
 export type MediaCapabilities = {
   capabilities: {
     image_editing?: Capability;
     image_generation: Capability & { constraints: ImageConstraints | null };
-    speech: Capability;
+    speech: Capability & { constraints?: SpeechConstraints | null };
     transcription: Capability;
   };
 };
@@ -60,6 +66,8 @@ const mediaErrorName = (code: string | null) =>
       MEDIA_LIMIT: "Достигнут лимит операций.",
       IDEMPOTENCY_CONFLICT:
         "Для этого идентификатора запуска изменены описание или параметры. Новый платный запрос не выполнен.",
+      MEDIA_SOURCE_NOT_FOUND: "Исходное изображение удалено или недоступно.",
+      IMAGE_REFERENCES_INVALID: "Референс не соответствует формату или ограничениям размера.",
       IMAGE_EDITING_UNAVAILABLE: "Редактирование по референсу не подключено.",
       MEDIA_UNAVAILABLE: "Генерация сейчас недоступна.",
       CONSENT_REQUIRED: "Не подтверждён платный запуск.",
@@ -97,13 +105,28 @@ export function useMediaCapabilities() {
             model: typeof entry?.model === "string" ? entry.model : null,
             reason: typeof entry?.reason === "string" ? entry.reason : null
           });
+          const speech = value.capabilities?.speech?.constraints;
+          const speechConstraints =
+            speech &&
+            Array.isArray(speech.voices) &&
+            speech.voices.length &&
+            speech.voices.every((voice) => typeof voice === "string") &&
+            Array.isArray(speech.formats) &&
+            speech.formats.length &&
+            speech.formats.every((format) => ["mp3", "wav", "opus"].includes(format)) &&
+            Number.isFinite(speech.minSpeed) &&
+            Number.isFinite(speech.maxSpeed) &&
+            speech.minSpeed > 0 &&
+            speech.maxSpeed >= speech.minSpeed
+              ? speech
+              : null;
           setCapabilities({
             image_generation: {
               ...normalize(value.capabilities?.image_generation),
               constraints: parseImageConstraints(value.capabilities?.image_generation?.constraints)
             },
             image_editing: normalize(value.capabilities?.image_editing),
-            speech: normalize(value.capabilities?.speech),
+            speech: { ...normalize(value.capabilities?.speech), constraints: speechConstraints },
             transcription: normalize(value.capabilities?.transcription)
           });
         }
@@ -117,6 +140,20 @@ export function useMediaCapabilities() {
   }, []);
   return capabilities;
 }
+
+type MediaStart =
+  | {
+      kind: "image";
+      value: string;
+      references: readonly ChatImageAttachment[];
+      options?: ImageRequestOptions | undefined;
+      sourceId?: string | undefined;
+    }
+  | {
+      kind: "speech";
+      value: string;
+      options?: { voice?: string; speed: number; format: string } | undefined;
+    };
 
 export function useMediaJob(recoveryKind?: "image" | "speech") {
   const starting = useRef(false);
@@ -210,8 +247,13 @@ export function useMediaJob(recoveryKind?: "image" | "speech") {
           return (await response.json()) as MediaJob;
         })
         .then((next) => {
-          if (active) {
-            setJob(next);
+          if (active && next.id === job.id) {
+            setJob((current) =>
+              current?.id === job.id &&
+              (current.status === "queued" || current.status === "running")
+                ? next
+                : current
+            );
             setError(null);
           }
         })
@@ -227,12 +269,8 @@ export function useMediaJob(recoveryKind?: "image" | "speech") {
   }, [job]);
 
   const start = useCallback(
-    async (
-      kind: "image" | "speech",
-      value: string,
-      references: readonly ChatImageAttachment[] = [],
-      options?: ImageRequestOptions
-    ) => {
+    async (operation: MediaStart) => {
+      const { kind, value, options } = operation;
       if (
         starting.current ||
         recovering ||
@@ -275,9 +313,15 @@ export function useMediaJob(recoveryKind?: "image" | "speech") {
                   explicit_paid_consent: true,
                   client_request_id: requestId,
                   ...(options ?? {}),
-                  ...(references.length ? { references } : {})
+                  ...(operation.sourceId ? { source_job_id: operation.sourceId } : {}),
+                  ...(operation.references.length ? { references: operation.references } : {})
                 }
-              : { text: value, explicit_paid_consent: true, client_request_id: requestId }
+              : {
+                  text: value,
+                  explicit_paid_consent: true,
+                  client_request_id: requestId,
+                  ...options
+                }
           )
         });
         if (!response.ok) {
@@ -340,7 +384,9 @@ export function useMediaJob(recoveryKind?: "image" | "speech") {
         method: "DELETE"
       });
       if (!response.ok) throw new Error();
-      setJob((await response.json()) as MediaJob);
+      const cancelled = (await response.json()) as MediaJob;
+      if (cancelled.id !== job.id) throw new Error();
+      setJob((current) => (current?.id === cancelled.id ? cancelled : current));
     } catch {
       setError("Не удалось подтвердить отмену. Проверьте статус; новый запуск не выполнен.");
     }
@@ -374,6 +420,7 @@ export function MediaGenerationPanel({
   blockedReason,
   references = [],
   onUseResult,
+  sourceId,
   onRestoreParameters,
   capabilities,
   options
@@ -381,7 +428,8 @@ export function MediaGenerationPanel({
   prompt: string;
   blockedReason?: string | undefined;
   references?: readonly ChatImageAttachment[];
-  onUseResult?: (file: File) => Promise<void>;
+  onUseResult?: (item: MediaJob) => void;
+  sourceId?: string | undefined;
   onRestoreParameters?: (options: ImageRequestOptions) => void;
   capabilities: MediaCapabilities["capabilities"] | null;
   options: ImageRequestOptions | null;
@@ -404,18 +452,24 @@ export function MediaGenerationPanel({
   const [historyLoading, setHistoryLoading] = useState(true);
   const [historyLimit, setHistoryLimit] = useState(8);
   const [revision, setRevision] = useState(0);
-  const [referenceLoading, setReferenceLoading] = useState(false);
-  const [referenceError, setReferenceError] = useState("");
-  const referenceController = useRef<AbortController | null>(null);
-  useEffect(() => () => referenceController.current?.abort(), []);
+  const [compare, setCompare] = useState(false);
+  const editing = Boolean(sourceId || references.length);
+  const parent =
+    typeof job?.parameters?.source_job_id === "string"
+      ? history.find(
+          (candidate) =>
+            candidate.id === job.parameters?.source_job_id && candidate.status === "done"
+        )
+      : undefined;
   const constraints = caps?.image_generation.constraints;
   const ready =
-    (references.length ? caps?.image_editing : caps?.image_generation)?.ready === true &&
+    (editing ? caps?.image_editing : caps?.image_generation)?.ready === true &&
     Boolean(constraints) &&
     Boolean(options);
   const canReuse = (item: MediaJob) =>
     caps?.image_editing?.ready === true &&
     item.status === "done" &&
+    (item.asset?.bytes ?? Infinity) <= CHAT_ATTACHMENT_LIMITS.imageBytes &&
     (item.asset?.mime === "image/png" || item.asset?.mime === "image/jpeg");
   const showImage = (item: MediaJob) =>
     item.status === "done" && item.asset?.mime?.startsWith("image/") === true;
@@ -429,28 +483,6 @@ export function MediaGenerationPanel({
     });
     if (selected) onRestoreParameters(selected);
   };
-  async function reuseResult(id: string) {
-    if (!onUseResult || referenceLoading || caps?.image_editing?.ready !== true) return;
-    const controller = new AbortController();
-    referenceController.current = controller;
-    setReferenceLoading(true);
-    setReferenceError("");
-    try {
-      const response = await fetch(mediaAssetUrl(id), { signal: controller.signal });
-      const mime = response.headers.get("content-type")?.split(";")[0]?.trim();
-      if (!response.ok || (mime !== "image/png" && mime !== "image/jpeg")) throw Error();
-      const blob = await response.blob();
-      if (!controller.signal.aborted)
-        await onUseResult(
-          new File([blob], `kosmora-${id}.${mime === "image/png" ? "png" : "jpg"}`, { type: mime })
-        );
-    } catch {
-      if (!controller.signal.aborted)
-        setReferenceError("Не удалось подготовить изображение для редактирования.");
-    } finally {
-      if (!controller.signal.aborted) setReferenceLoading(false);
-    }
-  }
   useEffect(() => {
     let active = true;
     setHistoryLoading(true);
@@ -515,7 +547,7 @@ export function MediaGenerationPanel({
       <p role="status" className={styles.status}>
         {ready
           ? "Kosmora Studio · готово к генерации"
-          : references.length
+          : editing
             ? "Редактирование изображений пока недоступно"
             : unavailableName(caps?.image_generation?.reason ?? null)}
       </p>
@@ -535,13 +567,18 @@ export function MediaGenerationPanel({
             submitting ||
             recovering ||
             historyUnverified ||
-            referenceLoading ||
             !prompt.trim() ||
             prompt.trim().length > (constraints?.maxPromptLength ?? 2000) ||
             Boolean(job && ["queued", "running"].includes(job.status))
           }
           onClick={() => {
-            void start("image", prompt.trim(), references, options ?? undefined);
+            void start({
+              kind: "image",
+              value: prompt.trim(),
+              references,
+              options: options ?? undefined,
+              sourceId
+            });
           }}
         >
           <WorkspaceIcon name="images" />{" "}
@@ -551,7 +588,7 @@ export function MediaGenerationPanel({
               ? "Проверяем задачи…"
               : unknown
                 ? "Повторить с тем же ID"
-                : references.length
+                : editing
                   ? "Изменить изображение"
                   : "Сгенерировать изображение"}
         </button>
@@ -562,7 +599,7 @@ export function MediaGenerationPanel({
         )}
       </div>
       {error && <p role="alert">{error}</p>}
-      {referenceError && <p role="alert">{referenceError}</p>}
+
       {!job && (
         <div className={styles.emptyPreview}>
           <WorkspaceIcon name="images" />
@@ -594,21 +631,45 @@ export function MediaGenerationPanel({
                 Скачать {job.asset?.extension.toUpperCase()}
               </a>
               {onUseResult && canReuse(job) && (
-                <button
-                  type="button"
-                  disabled={referenceLoading}
-                  onClick={() => void reuseResult(job.id)}
-                >
-                  <WorkspaceIcon name="edit" />{" "}
-                  {referenceLoading ? "Готовим…" : "Продолжить редактирование"}
+                <button type="button" onClick={() => onUseResult(job)}>
+                  <WorkspaceIcon name="edit" /> Продолжить редактирование
                 </button>
               )}
               {onUseResult && !canReuse(job) && (
                 <p>
                   {caps?.image_editing?.ready === true
-                    ? "Для редактирования результата выберите PNG или JPEG при генерации."
+                    ? job.asset?.mime === "image/png" || job.asset?.mime === "image/jpeg"
+                      ? "Для правки исходник должен быть не больше 1 МБ."
+                      : "Для редактирования результата выберите PNG или JPEG при генерации."
                     : "Редактирование результата пока не подключено."}
                 </p>
+              )}
+              {parent && (
+                <>
+                  <button
+                    type="button"
+                    aria-expanded={compare}
+                    onClick={() => setCompare(!compare)}
+                  >
+                    Сравнить с исходником
+                  </button>
+                  {compare && (
+                    <figure>
+                      <img src={mediaAssetUrl(parent.id)} alt="Исходное изображение" />
+                      <figcaption>Версия до правки</figcaption>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCompare(false);
+                          setJob(parent);
+                          restoreParameters(parent);
+                        }}
+                      >
+                        Открыть исходную версию
+                      </button>
+                    </figure>
+                  )}
+                </>
               )}
               <button type="button" onClick={() => void remove(job.id)}>
                 Удалить
@@ -636,6 +697,7 @@ export function MediaGenerationPanel({
             <button
               type="button"
               onClick={() => {
+                setCompare(false);
                 setJob(item);
                 restoreParameters(item);
               }}

@@ -1,5 +1,7 @@
 import { parseGameProject, type GameProject } from "@cosmora/contracts/game-project";
 import { staticSiteDocument } from "../sites/site-preview";
+import type { GameProjectV2 } from "@cosmora/contracts/game-project-v2";
+import { createObjSceneDocument, gameProjectResources } from "./game-project-v2-preview";
 
 // Only this fixed program executes in the iframe. Project JavaScript executes in a worker,
 // which has no DOM/navigation/cookies and inherits the frame's network-denying CSP.
@@ -13,6 +15,9 @@ const log = document.getElementById('game-log');
 function report(kind, text) {
   if (log.childElementCount >= 100) log.firstElementChild.remove();
   const line = document.createElement('li'); line.textContent = kind + ': ' + String(text).slice(0,1000); log.append(line);
+}
+function diagnostic(text, workerLine) {
+  try { parent.postMessage({type:'kosmora-game-diagnostic',source:'game.js',line:workerLine,text:String(text||'').slice(0,1000)},'*'); } catch(e) {}
 }
 function stop(message) {
   cancelAnimationFrame(frame); clearInterval(timer);
@@ -35,7 +40,7 @@ function start() {
   try {
     url=URL.createObjectURL(new Blob([data.worker],{type:'text/javascript'}));
     worker=new Worker(url); URL.revokeObjectURL(url);
-    worker.onerror=(event)=>{ event.preventDefault(); report('Ошибка',event.message+' · строка '+event.lineno); stop('Ошибка в game.js'); };
+    worker.onerror=(event)=>{ event.preventDefault(); report('Ошибка',event.message+' · строка '+event.lineno); diagnostic(event.message+' · строка '+event.lineno,event.lineno); stop('Ошибка в game.js'); };
     worker.onmessage=(event)=>{
       if(!worker) return;
       const now=performance.now(); if(now-messageWindow>1000){messageWindow=now;windowMessages=0;}
@@ -45,7 +50,7 @@ function start() {
       if(!message || typeof message !== 'object') return;
       if(message.type==='ready') { status.textContent='Игра запущена'; waiting=false; last=0; frame=requestAnimationFrame(tick); }
       else if(message.type==='done') waiting=false;
-      else if(message.type==='error') { report('Ошибка',message.text); stop('Ошибка в game.js'); }
+      else if(message.type==='error') { report('Ошибка',message.text); diagnostic(message.text,message.worker_line); stop('Ошибка в game.js'); }
       else if(message.type==='log') report('Консоль',message.text);
     };
     stage.addEventListener('keydown',event=>{ event.preventDefault(); worker?.postMessage({type:'key',key:event.key.toLowerCase(),down:true}); });
@@ -92,14 +97,19 @@ self.onmessage=(event)=>{
     else if(game && message.type==='key') { if(message.down) game.keys.add(message.key); else game.keys.delete(message.key); game.onKey?.(message.key,message.down); }
     else if(game && message.type==='pointer') { Object.assign(game.pointer,{x:message.x,y:message.y,down:message.down}); game.onPointer?.(game.pointer); }
     else if(game && message.type==='reset-input') { game.keys.clear(); game.pointer.down=false; }
-  } catch(error) { send({type:'error',text:String(error?.stack || error).slice(0,1000)}); self.close(); }
+  } catch(error) { const stack=String(error?.stack || error); const m=/(?:blob:[^\s)]+|https?:\/\/[^\s)]+):(\d+):(\d+)/.exec(stack); send({type:'error',text:stack.slice(0,1000),worker_line:m?Number(m[1]):null}); self.close(); }
 };
 `
   );
 }
 
 /** Browser-only serializer: model HTML is inert/sanitized, CSS is a text node, JS stays worker data. */
-export function createGameProjectHtml(project: GameProject, autoStart = false): string {
+export function createGameProjectHtml(
+  project: GameProject,
+  autoStart = false,
+  v2?: GameProjectV2
+): string {
+  if (v2?.launch.runtime === "web3d_sandbox") return createObjSceneDocument(v2);
   const parsed = parseGameProject(JSON.stringify(project));
   const file = (name: string) => parsed.files.find((item) => item.name === name)!.content;
   const doc = document.implementation.createHTMLDocument("Kosmora Games");
@@ -133,6 +143,7 @@ export function createGameProjectHtml(project: GameProject, autoStart = false): 
   // User <style> content would share the trusted runtime document; all styling is in styles.css.
   for (const node of scene.querySelectorAll("style")) node.remove();
   doc.body.append(scene);
+  if (v2) doc.body.append(gameProjectResources(doc, v2));
   const controls = document.createElement("div");
   controls.innerHTML =
     '<button id="game-start">Запустить заново</button><button id="game-stop">Остановить</button><p id="game-status" role="status">Готово к запуску</p><canvas id="game-stage" width="800" height="500" tabindex="0" aria-label="Игровое поле"></canvas><ol id="game-log" aria-label="Консоль игры"></ol>';

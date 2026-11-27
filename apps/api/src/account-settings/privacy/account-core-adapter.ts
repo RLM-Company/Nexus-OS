@@ -138,6 +138,10 @@ export class AccountCorePrivacyAdapter implements PrivacyAdapter {
         "SELECT r.* FROM general_chat_runs r JOIN general_chats c ON c.id=r.chat_id WHERE c.owner_id=?"
       ),
       projects: select("SELECT * FROM projects WHERE owner_id=?"),
+      project_memberships: select(
+        "SELECT project_id, role, status, invited_at, accepted_at FROM project_members WHERE account_id=?"
+      ),
+      managed_project_memberships: select("SELECT * FROM project_members WHERE owner_id=?"),
       project_chats: select(
         "SELECT c.* FROM chats c JOIN projects p ON p.id=c.project_id WHERE p.owner_id=?"
       ),
@@ -150,6 +154,10 @@ export class AccountCorePrivacyAdapter implements PrivacyAdapter {
       materials: select(
         "SELECT m.* FROM project_materials m JOIN projects p ON p.id=m.project_id WHERE p.owner_id=?"
       ),
+      project_correction_rules: select("SELECT * FROM project_correction_rules WHERE owner_id=?"),
+      project_source_exclusions: select("SELECT * FROM project_source_exclusions WHERE owner_id=?"),
+      project_source_settings: select("SELECT * FROM project_source_settings WHERE owner_id=?"),
+      project_run_sources: select("SELECT * FROM project_run_sources WHERE owner_id=?"),
       project_limits: select("SELECT * FROM project_usage_limits WHERE owner_id=?"),
       github_drafts: select(
         "SELECT d.* FROM github_change_drafts d JOIN projects p ON p.id=d.project_id AND p.owner_id=d.owner_id WHERE d.owner_id=?"
@@ -265,6 +273,7 @@ export class AccountCorePrivacyAdapter implements PrivacyAdapter {
         "DELETE FROM chats WHERE project_id IN (SELECT id FROM projects WHERE owner_id=?)"
       );
       // Project-related items cascade only after their specialized adapters delete them.
+      deleted += n("DELETE FROM project_members WHERE account_id=?");
       deleted += n("DELETE FROM projects WHERE owner_id=?");
       deleted += n("DELETE FROM chat_folders WHERE owner_id=?");
       deleted += n("DELETE FROM navigation_pins WHERE owner_id=?");

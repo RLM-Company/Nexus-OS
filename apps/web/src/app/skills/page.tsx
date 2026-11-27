@@ -37,6 +37,7 @@ import { emptySkillHistory, recordSkillEdit, travelSkillHistory } from "./skill-
 import { SkillSearchPanel } from "./skill-search-panel";
 import { SkillCorrectionForm } from "./skill-correction-form";
 import type { SkillMatch } from "./skill-search";
+import { specializationDrafts } from "./specialization-drafts";
 const catalog = loadMockSkillCatalog();
 
 export default function SkillsPage() {
@@ -209,13 +210,13 @@ function SkillsLibrary({ ownerScope }: { ownerScope: string }) {
       }
     });
   };
-  const createNew = () => {
+  const createNew = (template: Draft = emptyDraft()) => {
     if (lock.current || uncertainCreation || !discard()) return;
     history.current = emptySkillHistory();
     editEpoch.current++;
     setSelected(null);
     setDetail(null);
-    setDraft(emptyDraft());
+    setDraft(template);
     setSaved(draftKey(emptyDraft()));
     setPreview(false);
     setReviewVersion(null);
@@ -392,10 +393,24 @@ function SkillsLibrary({ ownerScope }: { ownerScope: string }) {
           <aside className={styles.sidebar} aria-label="Мои Skills">
             <div className={styles.sidebarHeader}>
               <h2>Мои Skills</h2>
-              <button type="button" disabled={editorLocked || loading} onClick={createNew}>
+              <button type="button" disabled={editorLocked || loading} onClick={() => createNew()}>
                 Новая
               </button>
             </div>
+            <details>
+              <summary>Черновики специализаций</summary>
+              <p>Сохраните черновик как Skill и выберите его в чате или проекте.</p>
+              {specializationDrafts.map((template) => (
+                <button
+                  key={template.name}
+                  type="button"
+                  disabled={editorLocked || loading}
+                  onClick={() => createNew(template)}
+                >
+                  {template.name}
+                </button>
+              ))}
+            </details>
             <SkillImport
               busy={busy || loading}
               blocked={uncertainCreation}

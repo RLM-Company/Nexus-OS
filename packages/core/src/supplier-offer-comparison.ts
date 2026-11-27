@@ -161,7 +161,10 @@ function compareOffer(offer: Offer, requirements: Map<string, Requirement>) {
 }
 
 /** Align by exact, unique item IDs. Currency and unit conversions require explicit source data. */
-export function compareSupplierOffers(input: SupplierComparisonInput) {
+export function compareSupplierOffers(
+  input: SupplierComparisonInput,
+  options?: { separateDelivery: boolean }
+) {
   if (
     !input ||
     !Array.isArray(input.requirements) ||
@@ -197,7 +200,7 @@ export function compareSupplierOffers(input: SupplierComparisonInput) {
       "Итог",
       row.supplier,
       row.currency,
-      row.deliveryDays,
+      options?.separateDelivery ? null : row.deliveryDays,
       null,
       null,
       null,
@@ -209,6 +212,23 @@ export function compareSupplierOffers(input: SupplierComparisonInput) {
       row.total,
       `${row.complete ? "комплектно" : "есть расхождения"}; расходы ${row.additionalCostsStatus}`
     ]);
+    if (options?.separateDelivery)
+      records.push([
+        "Доставка",
+        row.supplier,
+        row.currency,
+        row.deliveryDays,
+        null,
+        "Срок поставки",
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        row.deliveryDays === null ? "срок не указан" : "указано"
+      ]);
     for (const line of row.lines)
       records.push([
         "Требование",

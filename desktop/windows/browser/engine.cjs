@@ -8,6 +8,7 @@ const { fitDocumentExcerpt } = require("../workspace/text-range.cjs");
 const { findText } = require("./find-text.cjs");
 const { actionProbe, actionEvidence } = require("./action-evidence.cjs");
 const { recordRecovery, recoveryHint } = require("./recovery.cjs");
+const { createTabOwnership, OWNERS } = require("./tab-ownership.cjs");
 
 const HOME = "about:blank";
 const unicodePrefix = (text, end) =>
@@ -35,6 +36,11 @@ function createBrowserEngine({
   now = Date.now
 }) {
   const tabs = new Map();
+  const ownership = createTabOwnership({ now });
+  const revoked = new WeakSet();
+  let screenQueue = Promise.resolve();
+  let handover = 0;
+  let dispatch = null;
   let viewQueue = Promise.resolve();
   let active = null,
     last = null,
@@ -68,6 +74,20 @@ function createBrowserEngine({
     tab.version++;
     tab.world = null;
     last = null;
+  }
+  function takeControl() {
+    handover++;
+    if (dispatch) {
+      revoked.add(dispatch.signal);
+      dispatch.controller.abort();
+    }
+    const tab = tabs.get(active);
+    if (tab) {
+      ownership.forget(tab.id);
+      ownership.claim(tab.id, OWNERS.HUMAN, context.owner);
+      invalidate(tab);
+    }
+    takeover();
   }
   function state() {
     return {
@@ -104,15 +124,22 @@ function createBrowserEngine({
     tab.view = null;
     invalidate(tab);
   }
-  function send(web, method, args) {
+  async function send(web, method, args) {
     let timer;
-    return Promise.race([
-      web.debugger.sendCommand(method, args),
-      new Promise((_, reject) => {
-        timer = setTimeout(() => reject(Error("BROWSER_DOM_TIMEOUT")), commandTimeout);
-        timer.unref?.();
-      })
-    ]).finally(() => clearTimeout(timer));
+    const sendsInput = method.startsWith("Input.");
+    if (sendsInput) automated++;
+    try {
+      return await Promise.race([
+        web.debugger.sendCommand(method, args),
+        new Promise((_, reject) => {
+          timer = setTimeout(() => reject(Error("BROWSER_DOM_TIMEOUT")), commandTimeout);
+          timer.unref?.();
+        })
+      ]);
+    } finally {
+      clearTimeout(timer);
+      if (sendsInput) automated--;
+    }
   }
   async function world(tab) {
     live();
@@ -283,7 +310,7 @@ function createBrowserEngine({
       )
         tab.dirty = true;
       if (!automated) {
-        takeover();
+        takeControl();
         if (
           input?.type === "keyDown" &&
           (input.control || input.meta) &&
@@ -295,7 +322,7 @@ function createBrowserEngine({
       }
     });
     listen("before-mouse-event", (_event, mouse) => {
-      if (!automated && ["mouseDown", "mouseWheel"].includes(mouse?.type)) takeover();
+      if (!automated && ["mouseDown", "mouseWheel"].includes(mouse?.type)) takeControl();
     });
     if (Menu && dialog)
       listen("context-menu", (_event, params) => {
@@ -305,7 +332,7 @@ function createBrowserEngine({
           {
             label: "Открыть ссылку в новой вкладке",
             click: () => {
-              takeover();
+              takeControl();
               void open(url).catch(() => {});
             }
           },
@@ -313,7 +340,7 @@ function createBrowserEngine({
             label: "Скачать ссылку в рабочую папку",
             click: async () => {
               try {
-                takeover();
+                takeControl();
                 const selected = workspace.snapshot(context);
                 if (!selected) throw Error("COMPUTER_WORKSPACE_UNAVAILABLE");
                 const answer = await dialog.showMessageBox(window, {
@@ -352,7 +379,7 @@ function createBrowserEngine({
       tab.error = "Вкладка остановлена. Её можно перезагрузить.";
       tab.dirty = true;
       invalidate(tab);
-      takeover();
+      takeControl();
       emit();
     });
     listen("will-prevent-unload", () => {
@@ -462,6 +489,7 @@ function createBrowserEngine({
     cancelDownloads(id);
     detach(tab);
     tabs.delete(id);
+    ownership.forget(id);
     if (active === id) {
       active = null;
       if (tabs.size) await activate([...tabs.keys()].at(-1), signal);
@@ -489,10 +517,11 @@ function createBrowserEngine({
     if (!node) throw Error("BROWSER_STALE");
     return node;
   }
-  async function target(action, observation) {
+  async function target(action, observation, guard) {
     const tab = expected(observation);
     const node = refNode(action, observation);
     const found = await evaluate(tab, documentCode.locate, [last.id, action.ref]);
+    guard();
     if (!found || found.blocked || found.info.signature !== node.signature) {
       const error = Error("BROWSER_ELEMENT_UNAVAILABLE");
       error.browserRecoveryReason = !found
@@ -676,6 +705,34 @@ function createBrowserEngine({
     return { site: tabs.get(active)?.url, target: node?.name, role: node?.role, path: action.path };
   }
   async function execute(action, observation, signal) {
+    const tabId = expected(observation).id;
+    const revision = handover;
+    const run = screenQueue.then(async () => {
+      if (signal.aborted || revoked.has(signal) || revision !== handover)
+        throw Error("COMPUTER_SESSION_STOPPED");
+      expected(observation);
+      // A new, expressly launched agent may reclaim a tab after user control.
+      ownership.release(tabId, OWNERS.HUMAN, context.owner);
+      ownership.claim(tabId, OWNERS.AGENT, signal);
+      const controller = new AbortController();
+      dispatch = { tabId, signal, revision, controller };
+      try {
+        return await executeOwned(
+          action,
+          observation,
+          AbortSignal.any([signal, controller.signal])
+        );
+      } finally {
+        dispatch = null;
+        // A close or transfer may have removed this lease while the action waited.
+        if (tabs.has(tabId) && revision === handover)
+          ownership.release(tabId, OWNERS.AGENT, signal);
+      }
+    });
+    screenQueue = run.catch(() => {});
+    return run;
+  }
+  async function executeOwned(action, observation, signal) {
     pendingRecovery = null;
     expected(observation);
     const probe = actionProbe(action, last.document),
@@ -701,6 +758,9 @@ function createBrowserEngine({
     expected(observation);
     const guard = () => {
       if (signal.aborted) throw Error("COMPUTER_SESSION_STOPPED");
+      if (!dispatch || dispatch.revision !== handover || revoked.has(dispatch.signal))
+        throw Error("COMPUTER_SESSION_STOPPED");
+      ownership.assertOwner(dispatch.tabId, OWNERS.AGENT, dispatch.signal);
       expected(observation);
     };
     let attemptedInput = false;
@@ -708,7 +768,6 @@ function createBrowserEngine({
       guard();
       attemptedInput = true;
     };
-    automated++;
     try {
       const tab = tabs.get(active),
         web = tab.view?.webContents;
@@ -845,13 +904,13 @@ function createBrowserEngine({
           tab.dirty = true;
           return { requested: true };
         case "browser_click": {
-          const t = await target(action, observation);
+          const t = await target(action, observation, guard);
           await clickPoint(t.web, t.found.x, t.found.y, inputGuard);
           tab.dirty ||= t.node.role !== "a";
           return { requested: true };
         }
         case "browser_fill": {
-          const t = await target(action, observation);
+          const t = await target(action, observation, guard);
           if (
             !["input", "textarea", "textbox"].includes(t.node.role) ||
             t.node.secret ||
@@ -881,7 +940,7 @@ function createBrowserEngine({
           return { requested: true, input_verified: verified === true };
         }
         case "browser_key": {
-          const t = await target(action, observation);
+          const t = await target(action, observation, guard);
           // Focusing must not click a submit button before pressing Enter.
           inputGuard();
           if ((await evaluate(tab, documentCode.focus, [last.id, action.ref])) !== true)
@@ -893,7 +952,7 @@ function createBrowserEngine({
           return { requested: true };
         }
         case "browser_upload": {
-          const t = await target(action, observation);
+          const t = await target(action, observation, guard);
           if (!t.node.upload) throw Error("BROWSER_ELEMENT_UNAVAILABLE");
           const selected = workspace.snapshot(context);
           const file = workspace.uploadFile(context, selected?.id, action.path);
@@ -916,7 +975,7 @@ function createBrowserEngine({
           return { attached: action.path };
         }
         case "browser_download": {
-          const t = await target(action, observation);
+          const t = await target(action, observation, guard);
           if (!safeUrl(t.node.href) || intents.size || activeDownloads() >= 3)
             throw Error("BROWSER_ELEMENT_UNAVAILABLE");
           const selected = workspace.snapshot(context);
@@ -940,8 +999,6 @@ function createBrowserEngine({
       if (attemptedInput)
         throw Error(signal.aborted ? "COMPUTER_SESSION_STOPPED" : "BROWSER_INPUT_UNCERTAIN");
       throw error;
-    } finally {
-      automated--;
     }
   }
   function onDownload(event, item, web) {
@@ -1141,6 +1198,7 @@ function createBrowserEngine({
     approvalKey,
     requiresConfirmation,
     describe,
+    takeControl,
     resize() {
       const t = tabs.get(active);
       if (t?.view) {
@@ -1203,6 +1261,7 @@ function createBrowserEngine({
       clearInterval(timer);
       browserSession.removeListener("will-download", onDownload);
       for (const tab of tabs.values()) {
+        ownership.forget(tab.id);
         try {
           detach(tab);
         } catch {

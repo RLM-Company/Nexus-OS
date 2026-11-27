@@ -25,9 +25,11 @@ import {
   PolicyStore,
   PatternLibraryStore,
   ScheduledDispatchStore,
+  ProjectCorrectionRuleStore,
   runMigrations,
   upgradeAccountProfileColumns,
   StepUpProofStore,
+  ProjectMembershipStore,
   UsageStore
 } from "@cosmora/db";
 import { validateAgentDelegation } from "@cosmora/policy-engine";
@@ -138,6 +140,7 @@ try {
   upgradeAccountProfileColumns(database.sqlite);
   const accountStore = new AccountStore(database.sqlite);
   const scheduledDispatchStore = new ScheduledDispatchStore(database.sqlite);
+  const projectCorrectionRuleStore = new ProjectCorrectionRuleStore(database.sqlite);
   const recoveredAccountHolds = accountStore.reconcileKnownCanonicalHolds();
   const modelRuntime = await buildModelRuntime(config, {
     clock: new RuntimeClock({ timeZone: process.env.KOSMORA_TIME_ZONE ?? "Europe/Moscow" }),
@@ -155,6 +158,7 @@ try {
   generalChatStore.contextMemory.indexedRecall = semanticIndex;
   const sharedBudget = new SharedOwnerBudget(accountStore, projectStore);
   const documentLibrary = new DocumentLibraryStore(database.sqlite);
+  const projectMembershipStore = new ProjectMembershipStore(database.sqlite);
   const canvasStore = new CanvasArtifactStore(database.sqlite);
   const documentAnswerStore = new DocumentAnswerStore(database.sqlite);
   const documentAnswerService = new DocumentAnswerService(
@@ -311,6 +315,7 @@ try {
   app = buildApp({
     mcpDiscovery: configuredMcpDiscovery(process.env),
     scheduledDispatchStore,
+    projectCorrectionRuleStore,
     indexedRecall: semanticIndex,
     semanticRanker,
     googleDrive,
@@ -328,6 +333,7 @@ try {
     },
     documentLibrary,
     documentAnswerService,
+    projectMembershipStore,
     chatHistorySearchStore,
     presentationStore,
     notificationStore,

@@ -318,3 +318,39 @@ test("switching reports cancels loading and a late response cannot open in anoth
     (await (await request.get(`/api/v1/projects/${secondProject}/canvas`)).json()).items
   ).toEqual([]);
 });
+
+test("shows Research evidence and excludes a source using the existing project API", async ({
+  page,
+  request
+}) => {
+  const projectId = await project(request);
+  const saved = {
+    ...run(projectId),
+    receipts: [
+      {
+        title: "Архив предложений",
+        url: "https://example.org/archive",
+        quote: "Итого 19 700, кроме доставки.",
+        claim: "Доставка оплачивается отдельно.",
+        checked_at: timestamp,
+        excerpt_sha256: "a".repeat(64),
+        project_source_id: "b".repeat(64)
+      }
+    ]
+  };
+  await routes(page, [saved], (route) => route.fulfill({ body: report }));
+  const receipts = page.getByText("Квитанции источников", { exact: true });
+  await receipts.click();
+  const archive = page.getByRole("link", { name: "Архив предложений" });
+  await expect(archive).toHaveAttribute("href", "https://example.org/archive");
+  await expect(page.getByText("Итого 19 700, кроме доставки.", { exact: true })).toBeVisible();
+  await expect(page.getByText("a".repeat(64), { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Исключить из новых исследований" }).click();
+  await expect(page.getByRole("status").filter({ hasText: "Источник исключён" })).toBeVisible();
+  const readback = await request.get(`/api/v1/projects/${projectId}/sources/exclusions`);
+  expect(readback.ok()).toBe(true);
+  expect((await readback.json()).items).toMatchObject([
+    { source_kind: "research_page", source_id: "b".repeat(64) }
+  ]);
+  await expect(archive).toBeVisible();
+});
