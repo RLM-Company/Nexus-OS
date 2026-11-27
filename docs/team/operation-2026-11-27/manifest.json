@@ -3,6 +3,23 @@
   "base_sha": "3af92583ccc8ceb49f44c0b8633955f40feaf59f",
   "status": "prepared",
   "dispatched": false,
+  "sprint": {
+    "instruction": "SPRINT_48H_RU.md",
+    "status": "prepared",
+    "automation_installed": false,
+    "start_reference_utc": "2026-11-27T12:56:58Z",
+    "main_finish_reference_utc": "2026-11-29T12:56:58Z",
+    "promotion_end_estimate_utc": "2026-11-29T15:56:58Z",
+    "promotion_end_source": "owner_report_not_provider_verified",
+    "accelerated_agents": [
+      "01_OPENCODE",
+      "02_OPENCODE",
+      "03_OPENCODE",
+      "04_HARNESS",
+      "05_HARNESS",
+      "06_HARNESS"
+    ]
+  },
   "integration_owner": "second_developer_gpt",
   "review_owner": "codex",
   "agents": [
