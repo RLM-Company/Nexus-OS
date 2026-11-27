@@ -3,7 +3,8 @@ import { registerChatWorkspaceRoutes } from "./chat-workspace-routes.js";
 import {
   ContextTooLargeError,
   MemoryContextIncompleteError,
-  contextMemoryUsage
+  contextMemoryUsage,
+  selectContextBundle
 } from "@cosmora/core";
 import { TypeBoxValidatorCompiler, type TypeBoxTypeProvider } from "@fastify/type-provider-typebox";
 import {
@@ -737,12 +738,19 @@ export const registerGeneralChatRoutes = (options: GeneralChatRouteOptions): voi
           runId: run.id,
           messages: await applyKosmoraActions(conversation, options.search, controller.signal),
           historyCompaction: options.store.historyCompactionForRun(run.id, identity.owner_id),
-          recalledMemory: await options.store.recallForRunAsync(
-            run.id,
-            identity.owner_id,
-            conversation.slice(-8).map((m) => m.id),
-            controller.signal
-          ),
+          recalledMemory: await (async () => {
+            const recalled = await options.store.recallForRunAsync(
+              run.id,
+              identity.owner_id,
+              conversation.slice(-8).map((m) => m.id),
+              controller.signal
+            );
+            const query =
+              [...conversation].reverse().find((message) => message.role === "user")?.content ?? "";
+            // Production path: owner scope, latest revision and honest matched
+            // evidence are selected before the memory is packed into the request.
+            return selectContextBundle(recalled, { owner: identity.owner_id, query });
+          })(),
           memoryNotes:
             options.store.getChatMemory(run.chat_id, identity.owner_id)?.memory_notes ?? "",
           ...(options.accountStore
