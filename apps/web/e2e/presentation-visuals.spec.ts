@@ -51,7 +51,9 @@ test("exports a native picture, table and notes while keeping the other slide pa
   await visual.getByLabel("Строка 1, столбец 2").fill("Сумма");
   await visual.getByLabel("Строка 2, столбец 1").fill("00123");
   await visual.getByLabel("Строка 2, столбец 2").fill("19 700 & НДС");
-  await editor.getByLabel("Заметки докладчика").fill("кроме доставки");
+  await editor
+    .getByRole("textbox", { name: "Заметки докладчика", exact: true })
+    .fill("кроме доставки");
   const table = editor.getByRole("table", { name: "Таблица на слайде" });
   await expect(table.getByText("00123", { exact: true })).toBeVisible();
   await table.screenshot({ path: info.outputPath("studio-presentation-table.png") });

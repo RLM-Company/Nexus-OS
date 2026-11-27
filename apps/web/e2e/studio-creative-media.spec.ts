@@ -115,6 +115,11 @@ for (const { kind, surface, title, label, action } of requests) {
       await expect
         .poll(() => media.evaluate((element) => (element as HTMLVideoElement).videoWidth))
         .toBe(160);
+    } else {
+      await media.evaluate((element) => (element as HTMLAudioElement).load());
+      await expect
+        .poll(() => media.evaluate((element) => (element as HTMLAudioElement).duration))
+        .toBeGreaterThan(0);
     }
     await page.reload();
     await panel.getByRole("button", { name: new RegExp(extension, "i") }).click();
