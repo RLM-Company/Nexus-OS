@@ -1,9 +1,7 @@
-import Fastify from "fastify";
 import { createRequire } from "node:module";
 import { afterEach, beforeEach, expect, it } from "vitest";
 import { loadServerConfig } from "@cosmora/config";
 import { openDatabase } from "@cosmora/db";
-import { registerDocumentWorkspaceRoutes } from "../src/document-workspace-routes.js";
 import { buildApp } from "../src/app.js";
 const require = createRequire(import.meta.url);
 const { buildOfficeDocument } =
