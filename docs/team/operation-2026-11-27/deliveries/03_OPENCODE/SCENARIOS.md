@@ -6,13 +6,15 @@
 
 ```
 # из apps/api
-node node_modules/vitest/vitest.mjs run test/developer-api.test.ts --testTimeout=60000   # 3/3
+node node_modules/vitest/vitest.mjs run test/developer-api.test.ts --testTimeout=60000                       # 4/4
+node node_modules/vitest/vitest.mjs run test/parallel-route.test.ts test/response-cache.test.ts --testTimeout=30000 # 5/5
 # из packages/db
-node node_modules/vitest/vitest.mjs run test/developer-api-store.test.ts --testTimeout=30000 # 3/3
+node node_modules/vitest/vitest.mjs run test/developer-api-store.test.ts --testTimeout=30000             # 3/3
 # из packages/model-gateway
-node node_modules/vitest/vitest.mjs run test/speed-profile.test.ts --testTimeout=30000    # 1/1
+node node_modules/vitest/vitest.mjs run test/speed-profile.test.ts --testTimeout=30000                   # 1/1
 tsc -p ... --noEmit   # 0
 eslint src test       # 0
+# CI PR #694: Verify monorepo / Browser acceptance / Code sandbox / identity — все pass
 ```
 
 Покрыто:

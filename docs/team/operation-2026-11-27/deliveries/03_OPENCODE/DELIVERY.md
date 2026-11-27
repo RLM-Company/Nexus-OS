@@ -14,10 +14,12 @@
 
 ## Результаты сценариев
 
-Fixture: 3 store + 3 API + 1 speed test зелёные, tsc/eslint clean. Чужой/отозванный ключ → 401; повтор задачи не создаёт вторую; HMAC-подпись проверяется, дубликат дедуплицируется; `mode:fast` явно выбирает latency-route в router fixture, текст и usage совпадают с baseline.
+Fixture: developer-api 4/4, developer-api-store 3/3, parallel-route 3/3, response-cache 2/2, speed-profile 1/1 (13/13); tsc/eslint clean; CI #694 4/4 green. Чужой/отозванный ключ → 401; повтор задачи не создаёт вторую; HMAC-подпись проверяется, дубликат дедуплицируется; `mode:fast` явно выбирает latency-route в router fixture, текст и usage совпадают с baseline; `mode:parallel` не делает fan-out для короткого входа и повторяет только помеченную часть; кеш изолирует owner/version и инвалидируется при смене instruction/tools/permissions.
 
 Fixtures и live разделены: все числа — fixture; живой provider-эффект не подтверждён.
 
 ## Ограничения
 
-Нет живого provider/session; в external API пока нет прямого вызова Stars/Koswork через интерфейсы владельцев (только tasks в собственном store), ledger correlation реализована на уровне `request_id/run_id` в ответе, но ещё не сверена с `usage-store` в full ledger; fast/strong/parallel fan-out и кеш не реализованы. Приёмка на живом入口 не выполнялась.
+- usage хранится в `developer_api_usage` с `request_id`/`run_id`, связанным с ключом и владельцем; запись в канонический `model_usage_ledger` и сверка с существующим ledger — следующий integration-срез (в этой ветке не выполнена).
+- Живой provider/run и полный внешний CLI-прогон не выполнялись: environment нет ключей/сессии, числа только fixture; ускорение end-to-end живым замером не подтверждено.
+- fast/strong/parallel реализован как opt-in pure orchestrator + fixture; кеш — owner/version-isolated механизм, но не включён в chat endpoint по умолчанию без live-проверки. Приёмка на живом入口 не выполнялась.
