@@ -43,7 +43,7 @@ function createOfficeWorkspace({ read, create, identity }) {
       }
       if (
         options.outputPath.toLowerCase() === options.relativePath.toLowerCase() ||
-        !/\.(docx|xlsx|pptx)$/i.test(options.relativePath) ||
+        !/\.(docx|xlsx|csv|pptx)$/i.test(options.relativePath) ||
         options.outputPath.split(".").at(-1).toLowerCase() !==
           options.relativePath.split(".").at(-1).toLowerCase()
       )
