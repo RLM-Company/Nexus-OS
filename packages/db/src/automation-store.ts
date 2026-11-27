@@ -8,6 +8,7 @@ import {
   type AutomationRunStatus,
   type AutomationEvent,
   type AutomationExternalAction,
+  type AutomationEventInbox,
   type CreateAutomationTrigger,
   type AutomationRunControl
 } from "@cosmora/contracts";
@@ -30,6 +31,7 @@ type TriggerRow = {
   schedule_json: string | null;
   event_json: string | null;
   event_key: string | null;
+  version_policy: "pinned" | "follow_latest";
   status: AutomationTrigger["status"];
   version: number;
   client_request_id: string;
@@ -69,6 +71,24 @@ type EventRow = {
   reason: string;
   actor: string;
 };
+type InboxRow = {
+  id: string;
+  owner_id: string;
+  receipt_id: string;
+  event_key: string;
+  source: string;
+  event_type: string;
+  event_id: string;
+  workflow_id: string;
+  definition_version: number;
+  project_id: string;
+  status: "accepted" | "duplicate" | "rejected";
+  reason: string;
+  trigger_id: string | null;
+  run_id: string | null;
+  received_at: string;
+  body_json: string;
+};
 type ActionRow = {
   id: string;
   owner_id: string;
@@ -96,6 +116,7 @@ const triggerView = (row: TriggerRow): AutomationTrigger => {
     inputs: JSON.parse(row.inputs_json) as AutomationTrigger["inputs"],
     ...(schedule !== undefined ? { schedule: schedule as AutomationTrigger["schedule"] } : {}),
     ...(event !== undefined ? { event: event as AutomationTrigger["event"] } : {}),
+    version_policy: row.version_policy,
     status: row.status,
     created_at: row.created_at,
     updated_at: row.updated_at,
@@ -206,8 +227,8 @@ export class AutomationStore {
       this.sql
         .prepare(
           `INSERT INTO automation_triggers
-           (id,owner_id,project_id,workflow_id,definition_version,kind,inputs_json,schedule_json,event_json,event_key,status,version,client_request_id,created_at,updated_at)
-           VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
+           (id,owner_id,project_id,workflow_id,definition_version,kind,version_policy,inputs_json,schedule_json,event_json,event_key,status,version,client_request_id,created_at,updated_at)
+           VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
         )
         .run(
           id,
@@ -216,6 +237,7 @@ export class AutomationStore {
           input.workflow_id,
           input.definition_version,
           input.kind,
+          input.version_policy ?? "pinned",
           JSON.stringify(input.inputs),
           input.schedule ? JSON.stringify(input.schedule) : null,
           input.event ? JSON.stringify(input.event) : null,
@@ -691,6 +713,184 @@ export class AutomationStore {
       status: next,
       reason: input.reason ?? `Control ${input.action}`,
       actor
+    });
+  }
+
+  /** Record an event receipt before any workflow lookup. The unique
+   * (owner, event_key) index guarantees at most one accepted run per event. */
+  recordEventReceipt(input: {
+    owner: string;
+    project: string;
+    receiptId: string;
+    source: string;
+    eventType: string;
+    eventId: string;
+    workflowId: string;
+    definitionVersion: number;
+    body: unknown;
+  }): { receipt: AutomationEventInbox; created: boolean; existing: AutomationEventInbox | null } {
+    return automationTransaction(this.sql, () => {
+      this.assertWritable(input.owner, input.project);
+      const eventKey = eventDedupeKey(input.source, input.eventId);
+      const existing = this.sql
+        .prepare("SELECT * FROM automation_event_inbox WHERE owner_id=? AND event_key=?")
+        .get(input.owner, eventKey) as InboxRow | undefined;
+      if (existing) {
+        if (
+          existing.workflow_id !== input.workflowId ||
+          existing.definition_version !== input.definitionVersion
+        )
+          throw new AutomationRunError("EVENT_BINDING_CONFLICT");
+        return {
+          receipt: this.eventInboxView(existing),
+          created: false,
+          existing: this.eventInboxView(existing)
+        };
+      }
+      const id = randomUUID(),
+        at = this.now();
+      const bodyJson = JSON.stringify(input.body ?? {});
+      if (bodyJson.length > 20000) throw new AutomationRunError("EVENT_BODY_TOO_LARGE");
+      this.sql
+        .prepare(
+          `INSERT INTO automation_event_inbox
+           (id,owner_id,receipt_id,event_key,source,event_type,event_id,workflow_id,definition_version,project_id,status,reason,trigger_id,run_id,received_at,body_json)
+           VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
+        )
+        .run(
+          id,
+          input.owner,
+          input.receiptId,
+          eventKey,
+          input.source,
+          input.eventType,
+          input.eventId,
+          input.workflowId,
+          input.definitionVersion,
+          input.project,
+          "accepted",
+          "Event accepted for processing",
+          null,
+          null,
+          at,
+          bodyJson
+        );
+      return { receipt: this.getEventReceipt(input.owner, id)!, created: true, existing: null };
+    });
+  }
+
+  private eventInboxView(row: InboxRow): AutomationEventInbox {
+    return {
+      id: row.id,
+      owner_id: row.owner_id,
+      receipt_id: row.receipt_id,
+      event_key: row.event_key,
+      source: row.source,
+      event_type: row.event_type,
+      event_id: row.event_id,
+      workflow_id: row.workflow_id,
+      definition_version: row.definition_version,
+      project_id: row.project_id,
+      status: row.status,
+      reason: row.reason,
+      ...(row.trigger_id ? { trigger_id: row.trigger_id } : {}),
+      ...(row.run_id ? { run_id: row.run_id } : {}),
+      received_at: row.received_at,
+      body_json: row.body_json
+    };
+  }
+
+  getEventReceipt(owner: string, id: string): AutomationEventInbox | null {
+    const row = this.sql
+      .prepare("SELECT * FROM automation_event_inbox WHERE id=? AND owner_id=?")
+      .get(id, owner) as InboxRow | undefined;
+    return row ? this.eventInboxView(row) : null;
+  }
+
+  getEventReceiptByKey(owner: string, eventKey: string): AutomationEventInbox | null {
+    const row = this.sql
+      .prepare("SELECT * FROM automation_event_inbox WHERE owner_id=? AND event_key=?")
+      .get(owner, eventKey) as InboxRow | undefined;
+    return row ? this.eventInboxView(row) : null;
+  }
+
+  listEventReceipts(owner: string, project?: string): AutomationEventInbox[] {
+    const rows = this.sql
+      .prepare(
+        `SELECT * FROM automation_event_inbox
+         WHERE owner_id=? AND (? IS NULL OR project_id=?)
+         ORDER BY received_at DESC, id LIMIT 200`
+      )
+      .all(owner, project ?? null, project ?? null) as InboxRow[];
+    return rows.map((row) => this.eventInboxView(row));
+  }
+
+  /** Link a receipt to the exact trigger/run it produced. */
+  linkEventReceipt(
+    owner: string,
+    id: string,
+    triggerId: string,
+    runId: string,
+    actor: string
+  ): AutomationEventInbox {
+    const current = this.getEventReceipt(owner, id);
+    if (!current) throw new AutomationRunError("EVENT_RECEIPT_NOT_FOUND");
+    this.sql
+      .prepare(
+        "UPDATE automation_event_inbox SET trigger_id=?, run_id=?, status='accepted', reason=? WHERE id=? AND owner_id=?"
+      )
+      .run(triggerId, runId, `Accepted by ${actor}`, id, owner);
+    return this.getEventReceipt(owner, id)!;
+  }
+
+  markEventReceipt(
+    owner: string,
+    id: string,
+    status: "rejected" | "duplicate",
+    reason: string
+  ): AutomationEventInbox {
+    const current = this.getEventReceipt(owner, id);
+    if (!current) throw new AutomationRunError("EVENT_RECEIPT_NOT_FOUND");
+    this.sql
+      .prepare(
+        "UPDATE automation_event_inbox SET status=?, reason=? WHERE id=? AND owner_id=? AND status='accepted'"
+      )
+      .run(status, reason.slice(0, 500), id, owner);
+    return this.getEventReceipt(owner, id)!;
+  }
+
+  /** Explicit version change with reason, recorded in the trigger's own journal. */
+  changeTriggerVersion(
+    owner: string,
+    project: string,
+    id: string,
+    expectedVersion: number,
+    definitionVersion: number,
+    policy: "pinned" | "follow_latest",
+    reason: string
+  ): AutomationTrigger {
+    return automationTransaction(this.sql, () => {
+      this.assertWritable(owner, project);
+      const current = this.getTrigger(owner, id);
+      if (!current || current.project_id !== project)
+        throw new AutomationRunError("TRIGGER_NOT_FOUND");
+      if (current.version !== expectedVersion) throw new AutomationRunError("STALE_TRIGGER");
+      const result = this.sql
+        .prepare(
+          `UPDATE automation_triggers SET definition_version=?, version_policy=?, last_change_reason=?, version=version+1, updated_at=?
+           WHERE id=? AND owner_id=? AND version=?`
+        )
+        .run(
+          definitionVersion,
+          policy,
+          reason.slice(0, 500),
+          this.now(),
+          id,
+          owner,
+          expectedVersion
+        );
+      if (!result.changes) throw new AutomationRunError("STALE_TRIGGER");
+      return this.getTrigger(owner, id)!;
     });
   }
 }

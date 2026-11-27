@@ -52,6 +52,45 @@ export const automationOccurrenceKey = (input: {
 export const eventDedupeKey = (source: string, eventId: string): string =>
   `${source}\u0000${eventId}`;
 
+export const EventInboxStatusSchema = Type.Union([
+  Type.Literal("accepted"),
+  Type.Literal("duplicate"),
+  Type.Literal("rejected")
+]);
+export type EventInboxStatus = Static<typeof EventInboxStatusSchema>;
+
+/** Every event receipt is recorded, including duplicates and rejections, so a
+ * connector can prove that one event produced at most one run. */
+export const AutomationEventInboxSchema = Type.Object(
+  {
+    id: id,
+    owner_id: Type.String({ minLength: 1, maxLength: 128 }),
+    receipt_id: id,
+    event_key: Type.String({ minLength: 1, maxLength: 400 }),
+    source: Type.String({ minLength: 1, maxLength: 128 }),
+    event_type: Type.String({ minLength: 1, maxLength: 128 }),
+    event_id: Type.String({ minLength: 1, maxLength: 200 }),
+    workflow_id: Type.String({ minLength: 1, maxLength: 128 }),
+    definition_version: Type.Integer({ minimum: 1 }),
+    project_id: Type.String({ minLength: 1, maxLength: 160 }),
+    status: EventInboxStatusSchema,
+    reason: Type.String({ maxLength: 500 }),
+    trigger_id: Type.Optional(id),
+    run_id: Type.Optional(id),
+    received_at: iso,
+    /** Original connector payload, kept only for an explicit safe replay. */
+    body_json: Type.String({ maxLength: 20000 })
+  },
+  { additionalProperties: false }
+);
+export type AutomationEventInbox = Static<typeof AutomationEventInboxSchema>;
+
+export const TriggerVersionPolicySchema = Type.Union([
+  Type.Literal("pinned"),
+  Type.Literal("follow_latest")
+]);
+export type TriggerVersionPolicy = Static<typeof TriggerVersionPolicySchema>;
+
 export const AutomationTriggerSchema = Type.Object(
   {
     id,
@@ -60,6 +99,8 @@ export const AutomationTriggerSchema = Type.Object(
     workflow_id: Type.String({ minLength: 1, maxLength: 128 }),
     definition_version: Type.Integer({ minimum: 1 }),
     kind: Type.Union([Type.Literal("manual"), Type.Literal("event"), Type.Literal("schedule")]),
+    /** pinned: run only the saved version; follow_latest: resolve current on each tick. */
+    version_policy: Type.Optional(TriggerVersionPolicySchema),
     inputs: Type.Record(
       Type.String({ maxLength: 100 }),
       Type.Union([Type.String({ maxLength: 2000 }), Type.Number(), Type.Boolean()])
@@ -199,6 +240,7 @@ export const CreateAutomationTriggerSchema = Type.Object(
     workflow_id: Type.String({ minLength: 1, maxLength: 128 }),
     definition_version: Type.Integer({ minimum: 1 }),
     kind: Type.Union([Type.Literal("manual"), Type.Literal("event"), Type.Literal("schedule")]),
+    version_policy: Type.Optional(TriggerVersionPolicySchema),
     inputs: AutomationTriggerSchema.properties.inputs,
     schedule: Type.Optional(AutomationTriggerSchema.properties.schedule),
     event: Type.Optional(AutomationTriggerSchema.properties.event)
@@ -235,3 +277,29 @@ export const AutomationRunControlSchema = Type.Object(
   { additionalProperties: false }
 );
 export type AutomationRunControl = Static<typeof AutomationRunControlSchema>;
+
+/** Explicit, audited version change for a saved procedure trigger. */
+export const AutomationTriggerVersionSchema = Type.Object(
+  {
+    expected_version: Type.Integer({ minimum: 1 }),
+    definition_version: Type.Integer({ minimum: 1 }),
+    version_policy: Type.Optional(TriggerVersionPolicySchema),
+    reason: Type.String({ minLength: 1, maxLength: 500 })
+  },
+  { additionalProperties: false }
+);
+export type AutomationTriggerVersion = Static<typeof AutomationTriggerVersionSchema>;
+
+/** Replay a rejected/duplicate event only by an explicit operator decision. */
+export const AutomationEventReplaySchema = Type.Object(
+  {
+    expected_status: Type.Union([
+      Type.Literal("rejected"),
+      Type.Literal("duplicate"),
+      Type.Literal("accepted")
+    ]),
+    reason: Type.String({ minLength: 1, maxLength: 500 })
+  },
+  { additionalProperties: false }
+);
+export type AutomationEventReplay = Static<typeof AutomationEventReplaySchema>;

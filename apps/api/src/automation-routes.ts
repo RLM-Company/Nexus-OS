@@ -8,7 +8,9 @@ import {
   type IdentityContext,
   type CreateAutomationTrigger,
   type AutomationRunControl,
-  type AutomationTriggerControl
+  type AutomationTriggerControl,
+  type AutomationTriggerVersion,
+  type AutomationEventReplay
 } from "@cosmora/contracts";
 import {
   AutomationRunError,
@@ -75,7 +77,11 @@ export function registerAutomationRoutes(options: {
       return fn();
     } catch (cause) {
       if (cause instanceof AutomationRunError) {
-        const conflict = cause.code.startsWith("STALE_") || cause.code === "IDEMPOTENCY_CONFLICT";
+        const conflict =
+          (cause.code.startsWith("STALE_") && cause.code !== "STALE_WORKFLOW_VERSION") ||
+          cause.code === "IDEMPOTENCY_CONFLICT" ||
+          cause.code === "EVENT_BINDING_CONFLICT" ||
+          cause.code === "EVENT_STATUS_CONFLICT";
         return reply
           .code(conflict ? 409 : 400)
           .send(errorBody(cause.code, "Автоматизация отклонена."));
@@ -235,17 +241,112 @@ export function registerAutomationRoutes(options: {
         };
         if (!projects.getProject(body.project_id, owner(request)))
           return reply.code(404).send(errorBody("PROJECT_NOT_FOUND", "Проект не найден."));
+        const received = runner.collectEvent(owner(request), body.project_id, actor(request), body);
+        return reply.code(received.duplicate ? 200 : 201).send({
+          trigger: received.trigger,
+          receipt: received.receipt,
+          dedupe: received.duplicate
+        });
+      })
+  );
+
+  app.get("/api/v1/automation/events", (request, reply) =>
+    guard(reply, () => ({
+      items: store.listEventReceipts(
+        owner(request),
+        (request.query as { project_id?: string }).project_id
+      )
+    }))
+  );
+
+  /** Explicit version change; existing runs keep their immutable snapshot. */
+  app.post<{ Params: { id: string }; Body: AutomationTriggerVersion }>(
+    "/api/v1/automation/triggers/:id/version",
+    {
+      validatorCompiler: TypeBoxValidatorCompiler,
+      schema: {
+        params,
+        body: Type.Object(
+          {
+            expected_version: Type.Integer({ minimum: 1 }),
+            definition_version: Type.Integer({ minimum: 1 }),
+            version_policy: Type.Optional(
+              Type.Union([Type.Literal("pinned"), Type.Literal("follow_latest")])
+            ),
+            reason: Type.String({ minLength: 1, maxLength: 500 })
+          },
+          { additionalProperties: false }
+        )
+      }
+    },
+    (request, reply) =>
+      guard(reply, () => {
+        const trigger = store.getTrigger(owner(request), request.params.id);
+        if (!trigger)
+          return reply.code(404).send(errorBody("TRIGGER_NOT_FOUND", "Триггер не найден."));
         const definition = workflows.workflows.get(
-          body.project_id,
+          trigger.project_id,
           owner(request),
-          body.workflow_id
+          trigger.workflow_id
         );
-        if (!definition || definition.version !== body.definition_version)
+        if (!definition || definition.version !== request.body.definition_version)
           return reply
             .code(400)
             .send(errorBody("STALE_WORKFLOW_VERSION", "Версия сценария устарела."));
-        const trigger = runner.collectEvent(owner(request), body.project_id, actor(request), body);
-        return reply.code(201).send({ trigger, dedupe: true });
+        return store.changeTriggerVersion(
+          owner(request),
+          trigger.project_id,
+          trigger.id,
+          request.body.expected_version,
+          request.body.definition_version,
+          request.body.version_policy ?? "pinned",
+          request.body.reason
+        );
+      })
+  );
+
+  /** Explicit replay decision for a rejected/duplicate event. */
+  app.post<{ Params: { id: string }; Body: AutomationEventReplay }>(
+    "/api/v1/automation/events/:id/replay",
+    {
+      validatorCompiler: TypeBoxValidatorCompiler,
+      schema: {
+        params,
+        body: Type.Object(
+          {
+            expected_status: Type.Union([
+              Type.Literal("rejected"),
+              Type.Literal("duplicate"),
+              Type.Literal("accepted")
+            ]),
+            reason: Type.String({ minLength: 1, maxLength: 500 })
+          },
+          { additionalProperties: false }
+        )
+      }
+    },
+    (request, reply) =>
+      guard(reply, () => {
+        const receipt = store.getEventReceipt(owner(request), request.params.id);
+        if (!receipt)
+          return reply
+            .code(404)
+            .send(errorBody("EVENT_RECEIPT_NOT_FOUND", "Квитанция не найдена."));
+        if (receipt.status !== request.body.expected_status)
+          return reply
+            .code(409)
+            .send(errorBody("EVENT_STATUS_CONFLICT", "Статус квитанции изменился."));
+        if (receipt.status === "accepted" && receipt.run_id)
+          return {
+            replayed: false,
+            run_id: receipt.run_id,
+            reason: "Event already accepted; no new run"
+          };
+        return {
+          replayed: false,
+          reason: "Replay requires a fresh event_id from the connector",
+          receipt
+        };
       })
   );
 

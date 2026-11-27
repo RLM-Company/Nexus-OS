@@ -151,7 +151,9 @@ describe("Automation triggers, schedules and dedupe", () => {
     const first = await f.call("POST", "/api/v1/automation/events", body);
     expect(first.statusCode).toBe(201);
     const second = await f.call("POST", "/api/v1/automation/events", body);
-    expect(second.statusCode).toBe(201);
+    expect(second.statusCode).toBe(200);
+    expect(second.json<{ dedupe: boolean }>().dedupe).toBe(true);
+    expect(second.json<{ receipt: { status: string } }>().receipt.status).toBe("accepted");
     expect(second.json<{ trigger: { id: string } }>().trigger.id).toBe(
       first.json<{ trigger: { id: string } }>().trigger.id
     );
@@ -173,6 +175,54 @@ describe("Automation triggers, schedules and dedupe", () => {
     });
     expect(stale.statusCode).toBe(400);
     expect(f.store.listTriggers(owner)).toHaveLength(2);
+    const inbox = await f.call("GET", "/api/v1/automation/events");
+    const receipts = inbox.json<{
+      items: {
+        id: string;
+        event_key: string;
+        status: string;
+        run_id?: string;
+        reason: string;
+      }[];
+    }>().items;
+    expect(receipts).toHaveLength(3);
+    expect(receipts.filter((r) => r.status === "accepted")).toHaveLength(2);
+    expect(receipts.find((r) => r.status === "rejected")?.reason).toBe("STALE_WORKFLOW_VERSION");
+    const accepted = receipts.find((r) => r.status === "accepted")!;
+    const replay = await f.call("POST", `/api/v1/automation/events/${accepted.id}/replay`, {
+      expected_status: "accepted",
+      reason: "Check"
+    });
+    expect(replay.statusCode).toBe(200);
+    expect(replay.json<{ replayed: boolean }>().replayed).toBe(false);
+  });
+
+  it("moves a pinned trigger to a new version explicitly while old runs keep their snapshot", async () => {
+    const f = await fixture();
+    const created = await createTrigger(f, {});
+    expect(created.statusCode).toBe(201);
+    const triggerId = created.json<{ id: string }>().id;
+    f.work.workflows.edit(f.projectId, owner, f.workflowId, 1, {
+      ...definition(),
+      name: "Changed procedure"
+    });
+    const changed = await f.call("POST", `/api/v1/automation/triggers/${triggerId}/version`, {
+      expected_version: 1,
+      definition_version: 2,
+      version_policy: "pinned",
+      reason: "Reviewed change"
+    });
+    expect(changed.statusCode).toBe(200);
+    expect(changed.json<{ version: number; definition_version: number }>()).toMatchObject({
+      version: 2,
+      definition_version: 2
+    });
+    const stale = await f.call("POST", `/api/v1/automation/triggers/${triggerId}/version`, {
+      expected_version: 1,
+      definition_version: 2,
+      reason: "Stale"
+    });
+    expect(stale.statusCode).toBe(409);
   });
 
   it("rejects a stale definition version at trigger creation", async () => {

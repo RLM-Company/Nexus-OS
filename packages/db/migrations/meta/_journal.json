@@ -526,6 +526,13 @@
       "when": 1795608000006,
       "tag": "0078_automation_runtime",
       "breakpoints": true
+    },
+    {
+      "idx": 79,
+      "version": "6",
+      "when": 1795608000007,
+      "tag": "0079_automation_event_inbox",
+      "breakpoints": true
     }
   ]
 }

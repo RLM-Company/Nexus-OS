@@ -5,7 +5,8 @@ import {
   type WorkflowDefinitionInput,
   type AutomationTrigger,
   type AutomationRun,
-  type AutomationExternalAction
+  type AutomationExternalAction,
+  type AutomationEventInbox
 } from "@cosmora/contracts";
 import { nextAutomationDueAt, isScheduleSpecValid, createStarsMission } from "@cosmora/core";
 import {
@@ -52,11 +53,36 @@ export class AutomationRunner {
       trigger.workflow_id
     );
     if (!definition) throw new AutomationRunError("WORKFLOW_NOT_FOUND");
-    if (definition.version !== trigger.definition_version)
+    if (
+      trigger.version_policy !== "follow_latest" &&
+      definition.version !== trigger.definition_version
+    )
       throw new AutomationRunError("STALE_WORKFLOW_VERSION");
     if (definition.archived_at) throw new AutomationRunError("WORKFLOW_ARCHIVED");
     validateWorkflowInputs(definition, trigger.inputs);
     return definition;
+  }
+
+  /** For follow_latest triggers, advance the saved version deterministically
+   * before enqueue so the run binds the exact current definition. */
+  private resolveVersion(owner: string, trigger: AutomationTrigger): AutomationTrigger {
+    if (trigger.version_policy !== "follow_latest") return trigger;
+    const definition = this.options.workflows.workflows.get(
+      trigger.project_id,
+      owner,
+      trigger.workflow_id
+    );
+    if (!definition) throw new AutomationRunError("WORKFLOW_NOT_FOUND");
+    if (definition.version === trigger.definition_version) return trigger;
+    return this.options.store.changeTriggerVersion(
+      owner,
+      trigger.project_id,
+      trigger.id,
+      trigger.version,
+      definition.version,
+      "follow_latest",
+      "Auto-resolved to current saved procedure version"
+    );
   }
 
   /** Resolve the next server-side due instant for a schedule. */
@@ -79,8 +105,9 @@ export class AutomationRunner {
       return null;
     const due = trigger.schedule.due_at;
     if (Date.parse(due) > Date.parse(this.now())) return null;
-    this.definitionFor(trigger);
-    const run = this.options.store.enqueue(owner, trigger.project_id, trigger, actor, {
+    const resolved = this.resolveVersion(owner, trigger);
+    this.definitionFor(resolved);
+    const run = this.options.store.enqueue(owner, trigger.project_id, resolved, actor, {
       dueAt: due
     });
     const next = nextAutomationDueAt(trigger.schedule, this.now());
@@ -107,7 +134,8 @@ export class AutomationRunner {
     return run;
   }
 
-  /** Enqueue an external event with dedupe by (source, event_id). */
+  /** Enqueue an external event with dedupe by (source, event_id). Every receipt
+   * is journaled first; duplicates reuse the exact same trigger and run. */
   collectEvent(
     owner: string,
     project: string,
@@ -121,11 +149,38 @@ export class AutomationRunner {
       event_id: string;
       bindings: Record<string, string>;
     }
-  ): AutomationTrigger {
+  ): { trigger: AutomationTrigger; receipt: AutomationEventInbox; duplicate: boolean } {
+    const receipt = this.options.store.recordEventReceipt({
+      owner,
+      project,
+      receiptId: input.client_request_id,
+      source: input.source,
+      eventType: input.event_type,
+      eventId: input.event_id,
+      workflowId: input.workflow_id,
+      definitionVersion: input.definition_version,
+      body: input.bindings
+    });
+    const duplicate = !receipt.created;
     const definition = this.options.workflows.workflows.get(project, owner, input.workflow_id);
-    if (!definition) throw new AutomationRunError("WORKFLOW_NOT_FOUND");
-    if (definition.version !== input.definition_version)
+    if (!definition) {
+      this.options.store.markEventReceipt(
+        owner,
+        receipt.receipt.id,
+        "rejected",
+        "WORKFLOW_NOT_FOUND"
+      );
+      throw new AutomationRunError("WORKFLOW_NOT_FOUND");
+    }
+    if (definition.version !== input.definition_version) {
+      this.options.store.markEventReceipt(
+        owner,
+        receipt.receipt.id,
+        "rejected",
+        "STALE_WORKFLOW_VERSION"
+      );
       throw new AutomationRunError("STALE_WORKFLOW_VERSION");
+    }
     const bindings = Object.fromEntries(
       Object.entries(input.bindings).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
     );
@@ -133,7 +188,17 @@ export class AutomationRunner {
     for (const parameter of definition.parameters) {
       if (Object.hasOwn(bindings, parameter.id)) inputs[parameter.id] = bindings[parameter.id]!;
     }
-    validateWorkflowInputs(definition, inputs);
+    try {
+      validateWorkflowInputs(definition, inputs);
+    } catch (cause) {
+      this.options.store.markEventReceipt(
+        owner,
+        receipt.receipt.id,
+        "rejected",
+        cause instanceof Error ? cause.message : "INVALID_WORKFLOW_INPUT"
+      );
+      throw cause;
+    }
     const trigger = this.options.store.createTrigger(owner, project, actor, {
       client_request_id: input.client_request_id,
       workflow_id: input.workflow_id,
@@ -147,8 +212,14 @@ export class AutomationRunner {
         bindings
       }
     });
-    if (trigger.kind === "event") this.options.store.enqueue(owner, project, trigger, actor);
-    return trigger;
+    let run = this.options.store.listRuns(owner, project, trigger.id)[0];
+    if (!run) run = this.options.store.enqueue(owner, project, trigger, actor);
+    this.options.store.linkEventReceipt(owner, receipt.receipt.id, trigger.id, run.id, actor);
+    return {
+      trigger,
+      receipt: this.options.store.getEventReceipt(owner, receipt.receipt.id)!,
+      duplicate
+    };
   }
 
   /** Execute one claimed run: build the WorkDag from the immutable snapshot and

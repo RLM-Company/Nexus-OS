@@ -57,8 +57,36 @@ describe("automation migration and durable runtime", () => {
       kind: "manual",
       inputs: {}
     });
+    expect(trigger.version_policy).toBe("pinned");
     const run = automation.enqueue("owner", project.id, trigger, "owner");
     expect(automation.getRun("owner", run.id)?.status).toBe("queued");
     expect(run.event_key).toBeUndefined();
+    // Migration 0079 adds the inbox; every receipt is journaled and deduped.
+    const receipt = automation.recordEventReceipt({
+      owner: "owner",
+      project: project.id,
+      receiptId: "receipt-1",
+      source: "harness3",
+      eventType: "file.updated",
+      eventId: "event-1",
+      workflowId: definition.id,
+      definitionVersion: 1,
+      body: { topic: "x" }
+    });
+    expect(receipt.created).toBe(true);
+    const replay = automation.recordEventReceipt({
+      owner: "owner",
+      project: project.id,
+      receiptId: "receipt-2",
+      source: "harness3",
+      eventType: "file.updated",
+      eventId: "event-1",
+      workflowId: definition.id,
+      definitionVersion: 1,
+      body: { topic: "x" }
+    });
+    expect(replay.created).toBe(false);
+    expect(replay.receipt.id).toBe(receipt.receipt.id);
+    expect(automation.listEventReceipts("owner")).toHaveLength(1);
   });
 });

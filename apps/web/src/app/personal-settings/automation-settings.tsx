@@ -18,7 +18,20 @@ type Trigger = {
     due_at: string;
   };
   event?: { source: string; event_type: string; event_id: string };
+  version_policy?: "pinned" | "follow_latest";
   version: number;
+};
+type Receipt = {
+  id: string;
+  source: string;
+  event_type: string;
+  event_id: string;
+  status: "accepted" | "duplicate" | "rejected";
+  reason: string;
+  workflow_id: string;
+  definition_version: number;
+  received_at: string;
+  run_id?: string;
 };
 type Run = {
   id: string;
@@ -92,11 +105,13 @@ export function AutomationSettings() {
   const [zone, setZone] = useState("Europe/Moscow");
   const [localTime, setLocalTime] = useState("09:00");
   const [due, setDue] = useState(localInput);
+  const [versionPolicy, setVersionPolicy] = useState<"pinned" | "follow_latest">("pinned");
   const [source, setSource] = useState("harness3");
   const [eventType, setEventType] = useState("file.updated");
   const [eventId, setEventId] = useState("");
   const [inputs, setInputs] = useState("{}");
   const [triggers, setTriggers] = useState<Trigger[]>([]);
+  const [receipts, setReceipts] = useState<Receipt[]>([]);
   const [nextRuns, setNextRuns] = useState<NextRun[]>([]);
   const [runs, setRuns] = useState<Run[]>([]);
   const [selectedRun, setSelectedRun] = useState<Run | null>(null);
@@ -106,11 +121,13 @@ export function AutomationSettings() {
 
   const reload = useCallback(async () => {
     try {
-      const [t, r] = await Promise.all([
+      const [t, r, inbox] = await Promise.all([
         api<{ items: Trigger[]; next_runs: NextRun[] }>("/triggers"),
-        api<{ items: Run[] }>("/runs")
+        api<{ items: Run[] }>("/runs"),
+        api<{ items: Receipt[] }>("/events")
       ]);
       setTriggers(t.items);
+      setReceipts(inbox.items);
       setNextRuns(t.next_runs ?? []);
       setRuns(r.items);
     } catch (cause) {
@@ -167,6 +184,7 @@ export function AutomationSettings() {
         workflow_id: workflowId,
         definition_version: workflow.version,
         kind,
+        version_policy: versionPolicy,
         inputs: parsed
       };
       if (kind === "schedule")
@@ -231,6 +249,16 @@ export function AutomationSettings() {
             <option value="manual">Вручную</option>
             <option value="event">По событию</option>
             <option value="schedule">По расписанию</option>
+          </select>
+        </label>
+        <label>
+          Версия сценария
+          <select
+            value={versionPolicy}
+            onChange={(e) => setVersionPolicy(e.target.value as typeof versionPolicy)}
+          >
+            <option value="pinned">Зафиксирована</option>
+            <option value="follow_latest">Следовать актуальной</option>
           </select>
         </label>
         {kind === "schedule" && (
@@ -308,7 +336,8 @@ export function AutomationSettings() {
                 {workflows.find((w) => w.id === t.workflow_id)?.name ?? t.workflow_id}
               </strong>
               <small>
-                {t.kind} · {t.status} · v{t.definition_version}
+                {t.kind} · {t.status} · v{t.definition_version} ·{" "}
+                {t.version_policy === "follow_latest" ? "актуальная версия" : "фиксированная"}
                 {t.schedule
                   ? ` · ${MODE_LABEL[t.schedule.mode]} ${t.schedule.local_time} (${t.schedule.time_zone})`
                   : ""}
@@ -336,7 +365,48 @@ export function AutomationSettings() {
                 >
                   {t.status === "enabled" ? "Пауза" : "Возобновить"}
                 </button>
+                {workflows.find(
+                  (w) => w.id === t.workflow_id && w.version !== t.definition_version
+                ) && (
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() =>
+                      void run(() =>
+                        api(`/triggers/${t.id}/version`, {
+                          expected_version: t.version,
+                          definition_version: workflows.find((w) => w.id === t.workflow_id)!
+                            .version,
+                          version_policy: t.version_policy ?? "pinned",
+                          reason: "Явное обновление версии пользователем"
+                        })
+                      )
+                    }
+                  >
+                    Обновить до v{workflows.find((w) => w.id === t.workflow_id)!.version}
+                  </button>
+                )}
               </div>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      <h3>Журнал приёма событий</h3>
+      {receipts.length === 0 ? (
+        <p className={styles.muted}>Событий пока нет.</p>
+      ) : (
+        <ul className={styles.scheduleList}>
+          {receipts.map((receipt) => (
+            <li key={receipt.id}>
+              <strong>
+                {receipt.source}:{receipt.event_type}
+              </strong>
+              <small>
+                {receipt.event_id} · v{receipt.definition_version} · {receipt.status} ·{" "}
+                {new Date(receipt.received_at).toLocaleString()}
+              </small>
+              <small>{receipt.reason}</small>
             </li>
           ))}
         </ul>
