@@ -12,6 +12,8 @@ import {
 import { registerMcpRoutes, type McpRouteDependencies } from "./mcp-routes.js";
 import { driveConnectorTransports } from "./drive-connector-transport.js";
 import type { GoogleDriveRuntime } from "./cloud-storage/google-drive-runtime.js";
+import type { GithubIntegration } from "./github-integration.js";
+import { githubConnectorTransports } from "./github-connector-transport.js";
 
 /** The general catalog lists descriptors. MCP uses its own project-scoped route. */
 export function registerConnectorRoutes(
@@ -20,7 +22,8 @@ export function registerConnectorRoutes(
   projectId: string,
   mcp: McpRouteDependencies,
   drive?: GoogleDriveRuntime,
-  http?: ConnectorTransport
+  http?: ConnectorTransport,
+  github?: GithubIntegration
 ) {
   const runtime = policyStore ? new GuardedToolRuntime(policyStore) : undefined;
   const registry = runtime ? new ConnectorRegistry(runtime) : undefined;
@@ -37,6 +40,11 @@ export function registerConnectorRoutes(
     );
   }
   if (http) registry?.bindTransport(connectorToolId("http-api", "call"), http);
+  if (github)
+    registry?.bindTransport(
+      connectorToolId("github", "read_file"),
+      githubConnectorTransports(github)
+    );
   registerMcpRoutes(app, registry, { ...mcp, policy: policyStore });
   registry?.bindToRuntime();
 

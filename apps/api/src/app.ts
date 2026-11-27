@@ -892,7 +892,8 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
       identityFor
     },
     dependencies.googleDrive,
-    dependencies.httpConnectorTransport
+    dependencies.httpConnectorTransport,
+    dependencies.githubIntegration
   );
   if (dependencies.projectStore) registerApexRoutes(app, dependencies.projectStore, identityFor);
   if (dependencies.payStore)
