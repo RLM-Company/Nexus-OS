@@ -14,3 +14,5 @@ pnpm check:core
 - Презентации. Проверка скачивает PPTX, сверяет исходную часть неизменённого слайда, поля таблицы, заметки и байты встроенного изображения. Сценарий оставляет экспорт `studio-presentation.pptx` и снимки предпросмотра. Для визуальной проверки самого экспорта выполните `soffice -env:UserInstallation=file:///tmp/nexus-studio-lo --headless --convert-to pdf --outdir /tmp <путь>/studio-presentation.pptx`. Затем откройте PDF или преобразуйте его страницы через `pdftoppm -png`.
 
 Фикстуры: `apps/api/test/fixtures/studio-effect.mp3` (синтетический шум, FFmpeg), `apps/api/test/fixtures/studio-clip.mp4` (3 с, H.264 160×90, FFmpeg) и `apps/web/e2e/fixtures/presentation-studio.png` (цветная шкала). Имена, описания и бизнес-значения синтетические. Эти файлы используются только тестами.
+
+Локальный рендер штатного экспортёра проверен в LibreOffice Impress 26.8. PDF содержит три слайда в 16:9. На втором видны нативная таблица, `00123` и `19 700 & НДС`, на третьем — встроенная цветная шкала. Заметка «кроме доставки» проверяется в части notesSlide2.xml. [Экспорт PPTX](./evidence/studio-presentation.pptx) · [Рендер PDF](./evidence/studio-presentation.pdf).

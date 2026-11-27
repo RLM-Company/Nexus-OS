@@ -1,4 +1,3 @@
-/* eslint-disable @next/next/no-img-element -- a locally embedded image already has strictly bounded bytes. */
 import type { Slide, Theme } from "./model";
 import styles from "./presentations.module.css";
 
