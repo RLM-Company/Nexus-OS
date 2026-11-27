@@ -54,11 +54,13 @@ const phases = {
 export function WorkManagerProgress({
   projectId,
   workId,
-  version
+  version,
+  goal
 }: {
   projectId: string;
   workId: string;
   version: number;
+  goal?: string | undefined;
 }) {
   const [state, setState] = useState<{ key: string; revision: number; detail: Detail } | null>(
     null
@@ -143,6 +145,12 @@ export function WorkManagerProgress({
   return (
     <section className={styles.panel} aria-label="Прогресс Work">
       <h3>План и результат</h3>
+      {goal && (
+        <details>
+          <summary>Текущая цель</summary>
+          <p>{goal}</p>
+        </details>
+      )}
       {error?.key === key && <SystemMessage>{error.text}</SystemMessage>}
       {!detail ? (
         <p>Загружаем этапы…</p>

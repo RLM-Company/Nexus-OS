@@ -128,6 +128,7 @@ export default function StarsPage() {
     if (!scope || creating || !goal.trim()) return;
     setCreating(true);
     setError("");
+    setReadIssue("");
     try {
       const created = await POST<Mission>("/api/v1/stars/missions", {
         client_request_id: crypto.randomUUID(),

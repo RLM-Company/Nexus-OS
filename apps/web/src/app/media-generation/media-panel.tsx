@@ -256,9 +256,9 @@ export function useMediaJob(recoveryKind?: "image" | "speech") {
           throw new Error("MEDIA_JOB_UNAVAILABLE");
         }
         if (!response.ok) throw new Error("MEDIA_READ_FAILED");
-        const next = (await response.json()) as MediaJob;
+        const [next] = parseMediaJobListResponse({ items: [await response.json()] });
         if (signal.aborted) return;
-        if (next.id !== activeJobId) throw new Error("MEDIA_READ_MISMATCH");
+        if (!next || next.id !== activeJobId) throw new Error("MEDIA_READ_MISMATCH");
         setJob((current) => (current && acceptsMediaProgress(current, next) ? next : current));
         setError(null);
       },

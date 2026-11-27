@@ -956,7 +956,12 @@ export function ManagerWorkPanel({
       <WorkManagerMemory key={projectId} projectId={projectId} />
       {work && (
         <>
-          <WorkManagerProgress projectId={projectId} workId={work.id} version={work.version} />
+          <WorkManagerProgress
+            projectId={projectId}
+            workId={work.id}
+            version={work.version}
+            goal={work.request?.goal}
+          />
           <AcceptedSkillView
             key={work.id}
             path={base + "/" + encodeURIComponent(work.id) + "/skills"}
