@@ -4,7 +4,7 @@
  * persist reserve/reconcile/uncertain in the canonical accounting database.
  * A missing adapter disables paid media entirely.
  */
-export type MediaKind = "image" | "speech" | "transcription" | "sfx" | "music";
+export type MediaKind = "image" | "speech" | "transcription" | "sfx" | "music" | "video";
 export type CanonicalMediaUsage = Readonly<{
   source: "provider";
   input_tokens: number;

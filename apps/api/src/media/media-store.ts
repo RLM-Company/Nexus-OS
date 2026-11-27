@@ -13,6 +13,7 @@ import { isAbsolute, join } from "node:path";
 import {
   sniffMediaBinary,
   isCreativeMp3,
+  MAX_STUDIO_VIDEO_BYTES,
   type MediaAssetExtension,
   type MediaAssetMime,
   type MediaBinary
@@ -29,7 +30,8 @@ const ALLOWED_ASSET_MIMES: readonly MediaAssetMime[] = [
   "image/gif",
   "audio/mpeg",
   "audio/wav",
-  "audio/ogg"
+  "audio/ogg",
+  "video/mp4"
 ];
 const ALLOWED_ASSET_EXTENSIONS: readonly MediaAssetExtension[] = [
   "png",
@@ -38,7 +40,8 @@ const ALLOWED_ASSET_EXTENSIONS: readonly MediaAssetExtension[] = [
   "gif",
   "mp3",
   "wav",
-  "ogg"
+  "ogg",
+  "mp4"
 ];
 
 export type MediaJobAsset = {
@@ -88,6 +91,9 @@ export interface CompleteTranscriptDetails {
   readonly usage?: CanonicalMediaUsage | null;
 }
 
+const maxAssetBytes = (kind: MediaKind) =>
+  kind === "video" ? MAX_STUDIO_VIDEO_BYTES : (kind === "image" ? 16 : 8) * 1024 * 1024;
+
 const isId = (value: string): boolean =>
   /^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/i.test(value);
 const sha256 = (bytes: Uint8Array): string => createHash("sha256").update(bytes).digest("hex");
@@ -100,7 +106,7 @@ const isJob = (value: unknown): value is MediaJob => {
     isId(item.id) &&
     typeof item.owner_id === "string" &&
     item.owner_id.length > 0 &&
-    ["image", "speech", "transcription", "sfx", "music"].includes(item.kind ?? "") &&
+    ["image", "speech", "transcription", "sfx", "music", "video"].includes(item.kind ?? "") &&
     ["queued", "running", "done", "failed", "cancelled"].includes(item.status ?? "") &&
     typeof item.created_at === "string" &&
     typeof item.updated_at === "string" &&
@@ -192,7 +198,7 @@ export class MediaFileStore {
         unlinkSync(path);
         continue;
       }
-      const match = /^([a-f0-9-]{36})\.(png|jpg|webp|gif|mp3|wav|ogg)$/i.exec(name);
+      const match = /^([a-f0-9-]{36})\.(png|jpg|webp|gif|mp3|wav|ogg|mp4)$/i.exec(name);
       if (match) {
         const job = this.jobs.get(match[1]!);
         if (job?.status !== "done" || job.asset?.extension !== match[2]?.toLowerCase()) {
@@ -312,13 +318,14 @@ export class MediaFileStore {
       !ALLOWED_ASSET_MIMES.includes(binary.mime) ||
       !ALLOWED_ASSET_EXTENSIONS.includes(binary.extension) ||
       !binary.bytes.length ||
-      binary.bytes.length > (job.kind === "image" ? 16 : 8) * 1024 * 1024
+      binary.bytes.length > maxAssetBytes(job.kind)
     )
       throw new Error("CORRUPT_MEDIA_BINARY");
     if (
       job.kind === "transcription" ||
       (job.kind === "image" && !binary.mime.startsWith("image/")) ||
       (job.kind === "speech" && !binary.mime.startsWith("audio/")) ||
+      (job.kind === "video" && binary.mime !== "video/mp4") ||
       ((job.kind === "sfx" || job.kind === "music") &&
         (binary.mime !== "audio/mpeg" || !isCreativeMp3(binary.bytes)))
     ) {
@@ -394,11 +401,7 @@ export class MediaFileStore {
     try {
       const path = join(this.directory, `${id}.${job.asset.extension}`);
       const info = lstatSync(path);
-      if (
-        !info.isFile() ||
-        info.size !== job.asset.bytes ||
-        info.size > (job.kind === "image" ? 16 : 8) * 1024 * 1024
-      )
+      if (!info.isFile() || info.size !== job.asset.bytes || info.size > maxAssetBytes(job.kind))
         return null;
       const bytes = readFileSync(path);
       if (

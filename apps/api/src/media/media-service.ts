@@ -2,6 +2,9 @@ import { createHash } from "node:crypto";
 import {
   MediaCapabilityError,
   AUDIO_CREATIVE_ROUTES,
+  VIDEO_CREATIVE_ROUTE,
+  type GeminiVideoMediaAdapter,
+  type VideoAspectRatio,
   type CreativeAudioKind,
   type ElevenLabsMediaAdapter,
   MediaCapabilityRegistry,
@@ -90,6 +93,7 @@ export interface MediaOptions {
   paidEnabled?: boolean;
   adapter?: MediaAdapter;
   creativeAudio?: Pick<ElevenLabsMediaAdapter, "generate">;
+  video?: Pick<GeminiVideoMediaAdapter, "generate">;
   ownerBudget?: OwnerMediaBudget;
   registry?: MediaCapabilityRegistry;
   emergencyStopped?: () => boolean;
@@ -138,6 +142,7 @@ export class MediaService {
   private readonly store: MediaFileStore | null;
   private readonly adapter: MediaAdapter | undefined;
   private readonly creativeAudio: MediaOptions["creativeAudio"];
+  private readonly video: MediaOptions["video"];
   private readonly registry: MediaCapabilityRegistry;
   private readonly budget: OwnerMediaBudget | undefined;
   private readonly running = new Map<
@@ -156,6 +161,7 @@ export class MediaService {
   constructor(options: MediaOptions = {}) {
     this.store = options.directory ? new MediaFileStore(options.directory) : null;
     this.creativeAudio = options.creativeAudio;
+    this.video = options.video;
     this.paidEnabled = options.paidEnabled === true;
     this.imageEditingEnabled = options.imageEditingEnabled === true;
     this.providerId = options.baseUrl?.startsWith("https://ru.cheapvibecode.ru/")
@@ -251,9 +257,10 @@ export class MediaService {
     return result;
   }
 
-  creativeCapability(kind: CreativeAudioKind) {
-    const route = AUDIO_CREATIVE_ROUTES[kind];
-    const reason = !this.creativeAudio
+  creativeCapability(kind: CreativeAudioKind | "video") {
+    const route = kind === "video" ? VIDEO_CREATIVE_ROUTE : AUDIO_CREATIVE_ROUTES[kind];
+    const adapter = kind === "video" ? this.video : this.creativeAudio;
+    const reason = !adapter
       ? "REGISTRY_UNAVAILABLE"
       : !this.store
         ? "STORAGE_UNAVAILABLE"
@@ -269,8 +276,8 @@ export class MediaService {
     return {
       ready: reason === null,
       reason,
-      model: this.creativeAudio ? route.model : null,
-      provider: this.creativeAudio ? route.provider : null,
+      model: adapter ? route.model : null,
+      provider: adapter ? route.provider : null,
       constraints: { minSeconds: route.minSeconds, maxSeconds: route.maxSeconds }
     };
   }
@@ -312,6 +319,66 @@ export class MediaService {
         binary: await this.creativeAudio!.generate(kind, prompt, seconds, instrumental, signal)
       }),
       kind === "music" ? 180_000 : 60_000
+    );
+  }
+
+  enqueueVideo(
+    ownerId: string,
+    request: {
+      prompt: string;
+      duration_seconds: number;
+      aspect_ratio: VideoAspectRatio;
+      explicit_paid_consent: boolean;
+      scene?: { id: string; version: number };
+    },
+    clientRequest?: string
+  ): MediaJob {
+    const prompt = request.prompt.trim();
+    const seconds = request.duration_seconds;
+    if (!prompt) throw Error("TEXT_REQUIRED");
+    if (
+      prompt.length > 1800 ||
+      !Number.isInteger(seconds) ||
+      seconds < VIDEO_CREATIVE_ROUTE.minSeconds ||
+      seconds > VIDEO_CREATIVE_ROUTE.maxSeconds ||
+      !["16:9", "9:16"].includes(request.aspect_ratio)
+    )
+      throw Error("CREATIVE_OPTIONS_INVALID");
+
+    const aspectRatio = request.aspect_ratio;
+    const sceneId = request.scene?.id;
+    const sceneVersion = request.scene?.version;
+    return this.submit(
+      ownerId,
+      "video",
+      request.explicit_paid_consent,
+      {
+        client_request_id: normalizeClientRequestId(clientRequest),
+        request_fingerprint: sha256Hex(
+          JSON.stringify([prompt, seconds, aspectRatio, sceneId, sceneVersion])
+        ),
+        parameters: {
+          duration_seconds: seconds,
+          aspect_ratio: aspectRatio,
+          resolution: VIDEO_CREATIVE_ROUTE.resolution,
+          ...(sceneId ? { scene_id: sceneId, scene_version: sceneVersion } : {}),
+          prompt_sha256: sha256Hex(prompt)
+        }
+      },
+      async (signal) => ({
+        binary: await this.video!.generate(prompt, seconds, aspectRatio, signal)
+      }),
+      240_000,
+      sceneId
+        ? () => {
+            const revision = this.storyboard(ownerId)
+              .scenes.find(({ id }) => id === sceneId)
+              ?.revisions.find(({ version }) => version === sceneVersion);
+            if (!revision) throw Error("STORYBOARD_SCENE_NOT_FOUND");
+            if (revision.description !== prompt || revision.duration_seconds !== seconds)
+              throw Error("STORYBOARD_CONFLICT");
+          }
+        : undefined
     );
   }
 
@@ -358,8 +425,13 @@ export class MediaService {
   ): MediaJob {
     const capability =
       kind === "image" ? "image_generation" : kind === "speech" ? "speech" : "transcription";
-    const creative = kind === "sfx" || kind === "music" ? AUDIO_CREATIVE_ROUTES[kind] : null;
-    if (kind === "sfx" || kind === "music") {
+    const creative =
+      kind === "video"
+        ? VIDEO_CREATIVE_ROUTE
+        : kind === "sfx" || kind === "music"
+          ? AUDIO_CREATIVE_ROUTES[kind]
+          : null;
+    if (kind === "sfx" || kind === "music" || kind === "video") {
       if (
         !this.creativeCapability(kind).ready ||
         this.closedOwners.has(ownerId) ||
@@ -727,7 +799,9 @@ export class MediaService {
         operationId: job.id,
         kind: job.kind,
         model,
-        ...(job.kind === "sfx" || job.kind === "music" ? { provider: job.provider! } : {})
+        ...(job.kind === "sfx" || job.kind === "music" || job.kind === "video"
+          ? { provider: job.provider! }
+          : {})
       });
       reserved = true;
       store.budget(job.id, job.owner_id, "reserved");

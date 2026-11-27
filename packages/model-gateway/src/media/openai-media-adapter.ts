@@ -1,3 +1,4 @@
+import { isMp4Video } from "./mp4-video.js";
 import { isValidChatAttachments, type ChatImageAttachment } from "@cosmora/contracts";
 import type {
   MediaAudioMime,
@@ -69,8 +70,8 @@ export type MediaCanonicalUsage = {
   total_tokens: number;
 };
 
-export type MediaAssetMime = MediaImageMime | MediaSpeechMime;
-export type MediaAssetExtension = "png" | "jpg" | "webp" | "gif" | "mp3" | "wav" | "ogg";
+export type MediaAssetMime = MediaImageMime | MediaSpeechMime | "video/mp4";
+export type MediaAssetExtension = "png" | "jpg" | "webp" | "gif" | "mp3" | "wav" | "ogg" | "mp4";
 
 export type MediaBinary = {
   bytes: Uint8Array;
@@ -205,7 +206,8 @@ export function sniffMediaBinary(
   if (isMp3Bytes(bytes)) return { mime: "audio/mpeg", extension: "mp3" };
   if (isOggBytes(bytes)) return { mime: "audio/ogg", extension: "ogg" };
   if (isWebmBytes(bytes)) return { mime: "audio/webm", extension: "webm" };
-  if (isMp4AudioBytes(bytes)) return { mime: "audio/mp4", extension: "mp4" };
+  if (isMp4AudioBytes(bytes))
+    return { mime: isMp4Video(bytes) ? "video/mp4" : "audio/mp4", extension: "mp4" };
   if (isWavBytes(bytes)) return { mime: "audio/wav", extension: "wav" };
   return null;
 }

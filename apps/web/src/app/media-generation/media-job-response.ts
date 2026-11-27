@@ -20,7 +20,8 @@ function isValidMediaJobSummary(value: unknown): boolean {
       item.kind === "speech" ||
       item.kind === "transcription" ||
       item.kind === "sfx" ||
-      item.kind === "music") &&
+      item.kind === "music" ||
+      item.kind === "video") &&
     (item.status === "queued" ||
       item.status === "running" ||
       item.status === "done" ||

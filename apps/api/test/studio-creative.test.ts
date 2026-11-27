@@ -4,13 +4,14 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
 import { loadServerConfig } from "@cosmora/config";
-import { ElevenLabsMediaAdapter } from "@cosmora/model-gateway";
+import { ElevenLabsMediaAdapter, GeminiVideoMediaAdapter } from "@cosmora/model-gateway";
 import { buildApp } from "../src/app.js";
 import { StaticIdentityResolver } from "../src/identity.js";
 import { MediaService } from "../src/media/media-service.js";
 import type { MediaJob } from "../src/media/media-store.js";
 
 const mp3 = readFileSync(new URL("./fixtures/studio-effect.mp3", import.meta.url));
+const mp4 = readFileSync(new URL("./fixtures/studio-clip.mp4", import.meta.url));
 const appInstances: ReturnType<typeof buildApp>[] = [];
 const directories: string[] = [];
 const prefix = "/api/v1/media";
@@ -178,4 +179,199 @@ it("rejects unknown input and late cancelled results, and fails closed on invali
     error_code: "corrupt_response"
   });
   expect(calls).toBe(2);
+});
+
+it("creates independently downloadable clips for immutable storyboard versions", async () => {
+  const calls: unknown[] = [];
+  const adapter = new GeminiVideoMediaAdapter("fixture-project", "fixture-only", (url, request) => {
+    expect(url).toBe(
+      "https://aiplatform.googleapis.com/v1beta1/projects/fixture-project/locations/global/interactions"
+    );
+    expect(request).toMatchObject({ method: "POST", redirect: "error", credentials: "omit" });
+    calls.push(JSON.parse(request?.body as string) as unknown);
+    return Promise.resolve(
+      Response.json({
+        status: "completed",
+        steps: [
+          {
+            type: "model_output",
+            content: [{ type: "video", mime_type: "video/mp4", data: mp4.toString("base64") }]
+          }
+        ]
+      })
+    );
+  });
+  const options = { directory: temp(), paidEnabled: true, ownerBudget, video: adapter };
+  const service = new MediaService(options);
+  const app = owned("owner-a", service);
+  const stranger = owned("owner-b", service);
+  const board = await app.inject({
+    method: "PUT",
+    url: prefix + "/storyboard",
+    payload: {
+      action: "add",
+      expected_version: 0,
+      operation_id: "292db926-60d5-4a2f-b9ac-25282db181d6",
+      description: "First scene",
+      duration_seconds: 5
+    }
+  });
+  expect(board.statusCode, board.body).toBe(200);
+  const id = board.json<{ scenes: { id: string }[] }>().scenes[0]!.id;
+  const payload = {
+    scene: { id, version: 1 },
+    prompt: "First scene",
+    duration_seconds: 5,
+    aspect_ratio: "16:9",
+    explicit_paid_consent: true,
+    client_request_id: "video-scene-1"
+  };
+  function request(target: ReturnType<typeof owned>, input = payload) {
+    return target.inject({
+      method: "POST",
+      url: prefix + "/video",
+      headers: { "x-kosmora-media-consent": "explicit" },
+      payload: input
+    });
+  }
+  expect((await request(stranger)).statusCode).toBe(404);
+  expect((await request(app, { ...payload, prompt: "Changed draft" })).statusCode).toBe(409);
+  expect(calls).toHaveLength(0);
+  const start = await request(app);
+  expect(start.statusCode, start.body).toBe(202);
+  const job = start.json<MediaJob>();
+  expect(await settle(app, job.id)).toMatchObject({
+    kind: "video",
+    status: "done",
+    provider: "google-cloud",
+    asset: { mime: "video/mp4", sha256: createHash("sha256").update(mp4).digest("hex") },
+    parameters: { scene_id: id, scene_version: 1 }
+  });
+  const changed = service.storyboard("owner-a", {
+    action: "revise",
+    expected_version: 1,
+    scene_id: id,
+    operation_id: "5c0712bd-b255-4a4a-b027-c74a0589b73a",
+    description: "Revised scene",
+    duration_seconds: 10
+  });
+  expect(changed.scenes[0]?.revisions).toHaveLength(2);
+  const revised = await request(app, {
+    ...payload,
+    scene: { id, version: 2 },
+    prompt: "Revised scene",
+    duration_seconds: 10,
+    aspect_ratio: "9:16",
+    client_request_id: "video-scene-2"
+  });
+  expect(revised.statusCode, revised.body).toBe(202);
+  expect(await settle(app, revised.json<MediaJob>().id)).toMatchObject({
+    status: "done",
+    parameters: { scene_version: 2 }
+  });
+  expect(calls).toEqual([
+    {
+      model: "gemini-omni-1.2-flash",
+      store: false,
+      input: [{ type: "text", text: "First scene" }],
+      response_format: [
+        {
+          type: "video",
+          delivery: "inline",
+          aspect_ratio: "16:9",
+          resolution: "360p",
+          duration: "5s"
+        }
+      ],
+      generation_config: { video_config: { task: "text_to_video" } }
+    },
+    expect.objectContaining({
+      input: [{ type: "text", text: "Revised scene" }],
+      response_format: [
+        {
+          type: "video",
+          delivery: "inline",
+          aspect_ratio: "9:16",
+          resolution: "360p",
+          duration: "10s"
+        }
+      ]
+    })
+  ]);
+  const reopened = owned("owner-a", new MediaService(options));
+  expect((await request(reopened)).json<MediaJob>().id).toBe(job.id);
+  expect(calls).toHaveLength(2);
+  const asset = prefix + "/assets/" + job.id;
+  expect((await stranger.inject(asset)).statusCode).toBe(404);
+  const download = await reopened.inject(asset + "?download=1");
+  expect(download.rawPayload).toEqual(mp4);
+  expect(download.headers["content-disposition"]).toMatch(/attachment;.*mp4/);
+  const ranged = await reopened.inject({ url: asset, headers: { range: "bytes=8-31" } });
+  expect(ranged.statusCode).toBe(206);
+  expect(ranged.rawPayload).toEqual(mp4.subarray(8, 32));
+  expect(
+    (await reopened.inject({ url: asset, headers: { range: "bytes=0-2,3-4" } })).statusCode
+  ).toBe(416);
+});
+
+it("refuses remote URLs, corrupt containers and timeout outcomes without resubmitting", async () => {
+  const fixtures = [
+    Response.json({
+      status: "completed",
+      steps: [
+        {
+          type: "model_output",
+          content: [
+            { type: "video", mime_type: "video/mp4", uri: "https://untrusted.example/video.mp4" }
+          ]
+        }
+      ]
+    }),
+    Response.json({
+      status: "completed",
+      steps: [
+        {
+          type: "model_output",
+          content: [
+            { type: "video", mime_type: "video/mp4", data: mp4.subarray(0, 32).toString("base64") }
+          ]
+        }
+      ]
+    }),
+    new Response(null, { status: 504 })
+  ];
+  const transport = vi.fn(() => Promise.resolve(fixtures.shift()!));
+  const app = owned(
+    "owner-a",
+    new MediaService({
+      directory: temp(),
+      ownerBudget,
+      paidEnabled: true,
+      video: new GeminiVideoMediaAdapter("fixture-project", "fixture-only", transport)
+    })
+  );
+  for (const [index, code] of ["corrupt_response", "corrupt_response", "timeout"].entries()) {
+    const options = {
+      method: "POST" as const,
+      url: prefix + "/video",
+      headers: { "x-kosmora-media-consent": "explicit" },
+      payload: {
+        prompt: "A clip",
+        aspect_ratio: "16:9",
+        duration_seconds: 3,
+        explicit_paid_consent: true,
+        client_request_id: `bad-video-${index}`
+      }
+    };
+    const result = await app.inject(options);
+    expect(result.statusCode, result.body).toBe(202);
+    const { id } = result.json<MediaJob>();
+    expect(await settle(app, id)).toMatchObject({
+      status: "failed",
+      error_code: code,
+      asset: null
+    });
+    expect((await app.inject(options)).json<MediaJob>().id).toBe(id);
+    expect(transport).toHaveBeenCalledTimes(index + 1);
+  }
 });

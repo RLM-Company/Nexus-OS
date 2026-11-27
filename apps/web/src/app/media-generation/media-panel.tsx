@@ -15,7 +15,7 @@ import { parseMediaJobListResponse } from "./media-job-response";
 
 export type MediaJob = {
   id: string;
-  kind: "image" | "speech" | "transcription" | "sfx" | "music";
+  kind: "image" | "speech" | "transcription" | "sfx" | "music" | "video";
   status: "queued" | "running" | "done" | "failed" | "cancelled";
   error_code: string | null;
   created_at: string;
@@ -43,6 +43,7 @@ export type MediaCapabilities = {
     transcription: Capability;
     sound_effects?: CreativeCapability;
     music_generation?: CreativeCapability;
+    video_generation?: CreativeCapability;
   };
 };
 export const mediaAssetUrl = (id: string) => `/api/v1/media/assets/${encodeURIComponent(id)}`;
@@ -72,6 +73,8 @@ const mediaErrorName = (code: string | null) =>
       IDEMPOTENCY_CONFLICT:
         "Для этого идентификатора запуска изменены описание или параметры. Новый платный запрос не выполнен.",
       MEDIA_SOURCE_NOT_FOUND: "Исходное изображение удалено или недоступно.",
+      STORYBOARD_SCENE_NOT_FOUND: "Версия сцены недоступна.",
+      STORYBOARD_CONFLICT: "Описание или длительность изменились. Сохраните новую версию сцены.",
       CREATIVE_OPTIONS_INVALID: "Проверьте длительность и параметры.",
       IMAGE_REFERENCES_INVALID: "Референс не соответствует формату или ограничениям размера.",
       IMAGE_EDITING_UNAVAILABLE: "Редактирование по референсу не подключено.",
@@ -150,7 +153,8 @@ export function useMediaCapabilities() {
             speech: { ...normalize(value.capabilities?.speech), constraints: speechConstraints },
             transcription: normalize(value.capabilities?.transcription),
             sound_effects: creative(value.capabilities?.sound_effects),
-            music_generation: creative(value.capabilities?.music_generation)
+            music_generation: creative(value.capabilities?.music_generation),
+            video_generation: creative(value.capabilities?.video_generation)
           });
         }
       })
@@ -176,6 +180,15 @@ type MediaStart =
       kind: "speech";
       value: string;
       options?: { voice?: string; speed: number; format: string } | undefined;
+    }
+  | {
+      kind: "video";
+      value: string;
+      options: {
+        duration_seconds: number;
+        aspect_ratio: "16:9" | "9:16";
+        scene?: { id: string; version: number };
+      };
     }
   | {
       kind: "sfx" | "music";
@@ -328,7 +341,13 @@ export function useMediaJob(recoveryKind?: Exclude<MediaJob["kind"], "transcript
       }
       try {
         const endpoint =
-          kind === "image" ? "images" : kind === "speech" ? "speech" : "creative-audio";
+          kind === "image"
+            ? "images"
+            : kind === "speech"
+              ? "speech"
+              : kind === "video"
+                ? "video"
+                : "creative-audio";
         const response = await fetch(`/api/v1/media/${endpoint}`, {
           method: "POST",
           headers: {
@@ -347,7 +366,11 @@ export function useMediaJob(recoveryKind?: Exclude<MediaJob["kind"], "transcript
                   ...(operation.references.length ? { references: operation.references } : {})
                 }
               : {
-                  ...(kind === "speech" ? { text: value } : { kind, prompt: value }),
+                  ...(kind === "speech"
+                    ? { text: value }
+                    : kind === "video"
+                      ? { prompt: value }
+                      : { kind, prompt: value }),
                   explicit_paid_consent: true,
                   client_request_id: requestId,
                   ...options
