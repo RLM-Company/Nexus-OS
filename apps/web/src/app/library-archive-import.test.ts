@@ -101,7 +101,7 @@ it("defers a bad CRC to its file, before the upload adapter is called", async ()
     new AbortController().signal,
     vi.fn()
   );
-  const stage = vi.fn((_file: File) => Promise.reject(new Error("fixture stage")));
+  const stage = vi.fn((file: File) => Promise.reject(new Error("fixture stage: " + file.name)));
   const extract = vi.fn();
   const rows = await runLibraryUploadQueue(
     result.files,
@@ -114,10 +114,8 @@ it("defers a bad CRC to its file, before the upload adapter is called", async ()
     new AbortController().signal,
     vi.fn()
   );
-  expect(rows[0]).toMatchObject({
-    state: "failed",
-    detail: expect.stringMatching(/контрольная сумма/)
-  });
+  expect(rows[0]?.state).toBe("failed");
+  expect(rows[0]?.detail).toMatch(/контрольная сумма/);
   expect(stage).toHaveBeenCalledTimes(1);
   expect(stage.mock.calls[0]?.[0].name).toBe("good.txt");
   expect(extract).not.toHaveBeenCalled();
