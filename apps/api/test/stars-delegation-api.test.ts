@@ -43,7 +43,7 @@ const setup = async () => {
       create: (owner: string, _actor: string, _owner: string, input: never) =>
         dagStore.create(project.id, owner, owner, input),
       get: (id: string, owner: string) => dagStore.get(id, owner),
-      control: (id: string, owner: string, _input: { version: number }) =>
+      control: (id: string, owner: string) =>
         dagStore.save(dagStore.get(id, owner)!, "run_plan accepted"),
       advance: () => undefined
     } as never,
