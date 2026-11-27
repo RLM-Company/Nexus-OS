@@ -63,3 +63,21 @@ it("a member can leave and cannot re-enter without a new invitation", async () =
     db.close();
   }
 });
+
+it("lists a shared project only after acceptance and removes it on revoke", async () => {
+  const { db, owner, members } = await setup();
+  try {
+    expect(members.sharedWith("owner-b")).toEqual([]);
+    members.invite(owner, "owner-a", { account_id: "owner-b", role: "editor" });
+    expect(members.sharedWith("owner-b")).toEqual([]); // link alone reveals nothing
+    members.accept(owner, "owner-b");
+    expect(members.sharedWith("owner-b")).toMatchObject([
+      { id: owner, title: "Shared doc", membership_role: "editor" }
+    ]);
+    expect(members.sharedWith("owner-a")).toEqual([]); // owner sees it in their own list
+    members.revoke(owner, "owner-a", "owner-b");
+    expect(members.sharedWith("owner-b")).toEqual([]);
+  } finally {
+    db.close();
+  }
+});

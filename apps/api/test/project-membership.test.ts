@@ -225,4 +225,26 @@ describe("project membership API", () => {
       ).statusCode
     ).toBe(404);
   });
+
+  it("shows an accepted shared project in the member's main project list, not before acceptance", async () => {
+    const base = `/api/v1/projects/${projectId}/members`;
+    const listed = async (app: typeof memberApp) =>
+      (await app.inject({ method: "GET", url: "/api/v1/projects" })).json<{
+        items: Array<{ id: string; membership_role?: string }>;
+      }>().items;
+    expect((await listed(memberApp)).some((item) => item.id === projectId)).toBe(false);
+    await ownerApp.inject({
+      method: "POST",
+      url: `${base}/invite`,
+      payload: { account_id: "owner-b", role: "viewer" }
+    });
+    expect((await listed(memberApp)).some((item) => item.id === projectId)).toBe(false);
+    await memberApp.inject({ method: "POST", url: `${base}/accept` });
+    expect((await listed(memberApp)).find((item) => item.id === projectId)).toMatchObject({
+      id: projectId,
+      membership_role: "viewer"
+    });
+    await ownerApp.inject({ method: "DELETE", url: `${base}/owner-b` });
+    expect((await listed(memberApp)).some((item) => item.id === projectId)).toBe(false);
+  });
 });

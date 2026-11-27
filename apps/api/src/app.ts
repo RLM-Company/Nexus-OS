@@ -2468,8 +2468,17 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
       "/api/v1/projects",
       { schema: { response: { 200: ProjectListResponseSchema } } },
       (request) => {
+        const owner = identityFor(request).owner_id;
+        const owned = store.listProjects(owner);
+        const membership = dependencies.projectMembershipStore;
+        const shared = membership
+          ? membership
+              .sharedWith(owner)
+              .filter((project) => !owned.some((item) => item.id === project.id))
+              .map((project) => project as ProjectListResponse["items"][number])
+          : [];
         const response: ProjectListResponse = {
-          items: store.listProjects(identityFor(request).owner_id)
+          items: [...owned, ...shared]
         };
         return response;
       }
