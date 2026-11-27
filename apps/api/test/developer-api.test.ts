@@ -117,6 +117,31 @@ describe("developer API external client", () => {
     expect(cancel.statusCode).toBe(404); // already finished, no live stream to abort
   });
 
+  it("keeps parallel fan-out opt-in and small tasks cheap", async () => {
+    const key = await issue(["chat.read", "chat.write"]);
+    const small = await app.inject({
+      method: "POST",
+      url: "/api/v1/developer/v1/chat/completions",
+      headers: headers(key.token),
+      payload: { mode: "parallel", messages: [{ role: "user", content: "Один.short question" }] }
+    });
+    expect(small.statusCode).toBe(200);
+    expect(small.json<{ parallel?: unknown }>().parallel).toBeUndefined();
+    const large = await app.inject({
+      method: "POST",
+      url: "/api/v1/developer/v1/chat/completions",
+      headers: headers(key.token),
+      payload: {
+        mode: "parallel",
+        messages: [{ role: "user", content: "Часть один\nЧасть два" }]
+      }
+    });
+    expect(large.statusCode).toBe(200);
+    const result = large.json<{ parallel?: { parts: unknown[]; review: { verdict: string } } }>();
+    expect(result.parallel?.parts).toHaveLength(2);
+    expect(["PASS", "RETRY"]).toContain(result.parallel?.review.verdict);
+  });
+
   it("replays a task after a lost response and verifies a signed webhook", async () => {
     const key = await issue(["tasks.read", "tasks.write", "webhooks.write"]);
     const task = await app.inject({

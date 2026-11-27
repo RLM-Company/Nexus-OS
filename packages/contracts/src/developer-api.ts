@@ -63,7 +63,9 @@ export const DeveloperChatRequestSchema = Type.Object(
     model: Type.Optional(Type.String({ minLength: 1, maxLength: 128 })),
     messages: Type.Array(DeveloperChatMessageSchema, { minItems: 1, maxItems: 60 }),
     stream: Type.Optional(Type.Boolean()),
-    mode: Type.Optional(Type.Union([Type.Literal("standard"), Type.Literal("fast")])),
+    mode: Type.Optional(
+      Type.Union([Type.Literal("standard"), Type.Literal("fast"), Type.Literal("parallel")])
+    ),
     client_request_id: Type.Optional(id)
   },
   { additionalProperties: false }

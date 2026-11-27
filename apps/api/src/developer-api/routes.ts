@@ -10,6 +10,7 @@ import {
   type IdentityContext
 } from "@cosmora/contracts";
 import { DeveloperApiStore, DeveloperApiError } from "@cosmora/db";
+import { runParallelRoute } from "./parallel-route.js";
 import type { ModelGateway } from "@cosmora/model-gateway";
 import type { ChatService } from "@cosmora/core";
 
@@ -139,6 +140,47 @@ export function registerDeveloperApiRoutes(deps: DeveloperApiDependencies) {
           reply.raw.end();
           activeStreams.delete(requestId);
           return reply;
+        }
+        if (body.mode === "parallel" && !body.stream) {
+          const userText = body.messages.map((m) => m.content).join("\n");
+          const parallel = await runParallelRoute({
+            text: userText,
+            signal: request.raw.aborted ? AbortSignal.abort() : new AbortController().signal,
+            execute: async ({ prompt }) => {
+              const partRequest = structuredClone(modelRequest);
+              partRequest.messages = [{ role: "user", content: prompt }];
+              let text = "";
+              for await (const event of gateway.stream(partRequest)) {
+                if (event.type === "text.delta") text += event.delta;
+                else if (event.type === "response.completed") {
+                  recordUsage({
+                    request_id: requestId,
+                    model: event.model,
+                    input_tokens: event.usage.inputTokens ?? 0,
+                    output_tokens: event.usage.outputTokens ?? 0,
+                    ...(event.timing ?? {})
+                  });
+                }
+              }
+              const verdict = /RETRY/u.test(text) && /part-/u.test(text) ? "RETRY" : "PASS";
+              return { text, verdict };
+            }
+          });
+          if (parallel) {
+            return {
+              id: requestId,
+              object: "chat.completion",
+              model: body.model ?? "kosmora-parallel",
+              choices: [
+                { index: 0, message: { role: "assistant", content: parallel.answer }, finish_reason: "stop" }
+              ],
+              parallel: {
+                parts: parallel.parts,
+                review: parallel.review,
+                total_ms: parallel.total_ms
+              }
+            };
+          }
         }
         let answer = "";
         let usage: {
