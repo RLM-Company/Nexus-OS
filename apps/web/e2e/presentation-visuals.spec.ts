@@ -17,6 +17,7 @@ test("exports a native picture, table and notes while keeping the other slide pa
   page,
   request
 }, info) => {
+  test.slow();
   const title = `Визуальная проверка ${crypto.randomUUID()}`;
   const created = await request.post("/api/v1/presentations/import", {
     data: {

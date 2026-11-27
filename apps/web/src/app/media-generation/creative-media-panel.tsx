@@ -1,5 +1,11 @@
 import { useEffect, useState } from "react";
-import { mediaAssetUrl, useMediaJob, type CreativeCapability, type MediaJob } from "./media-panel";
+import {
+  mediaAssetUrl,
+  mediaErrorName,
+  useMediaJob,
+  type CreativeCapability,
+  type MediaJob
+} from "./media-panel";
 import { parseMediaJobListResponse } from "./media-job-response";
 import { mediaBudgetNotice } from "./media-budget-status";
 import styles from "./media-workbench.module.css";
@@ -234,7 +240,7 @@ export function CreativeMediaPanel({
               cancelled: "Отменено"
             }[job.status]
           }
-          {job.error_code && ` · ${job.error_code}`}
+          {job.error_code && ` · ${mediaErrorName(job.error_code)}`}
         </p>
       )}
       {mediaBudgetNotice(job?.budget_state) && <p>{mediaBudgetNotice(job?.budget_state)}</p>}

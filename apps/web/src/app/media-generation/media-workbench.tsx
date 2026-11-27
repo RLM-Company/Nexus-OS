@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { CHAT_ATTACHMENT_LIMITS, type ChatImageAttachment } from "@cosmora/contracts";
 import { prepareChatImage } from "../prepare-chat-image";
 import { WorkspaceIcon } from "../workspace-icons";
@@ -41,7 +41,7 @@ export function MediaWorkbench({ surface }: { surface: "images" | "video" | "sou
   const [reading, setReading] = useState(false);
   const [hydrated, setHydrated] = useState(false);
   const draftKey = `kosmora:studio-settings:${surface}`;
-  useEffect(() => {
+  useLayoutEffect(() => {
     try {
       const raw = sessionStorage.getItem(draftKey);
       const saved: unknown = raw && raw.length < 12000 ? JSON.parse(raw) : null;
@@ -71,7 +71,7 @@ export function MediaWorkbench({ surface }: { surface: "images" | "video" | "sou
     }
     setHydrated(true);
   }, [draftKey]);
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!hydrated) return;
     try {
       sessionStorage.setItem(
@@ -182,6 +182,11 @@ export function MediaWorkbench({ surface }: { surface: "images" | "video" | "sou
           <h2>Sound</h2>
           <p>Озвучивание текста, прослушивание и сохранённые записи.</p>
         </header>
+        {capabilities?.speech.ready && (
+          <p className={styles.hint}>
+            Команда в чате: <code>/studio speech --paid: текст для озвучки</code>
+          </p>
+        )}
         <SpeechStudio />
         <CreativeMediaPanel kind="sfx" capability={capabilities?.sound_effects} />
       </section>

@@ -55,7 +55,7 @@ const statusName: Record<MediaJob["status"], string> = {
   failed: "Ошибка",
   cancelled: "Отменено"
 };
-const mediaErrorName = (code: string | null) =>
+export const mediaErrorName = (code: string | null) =>
   (
     ({
       timeout:

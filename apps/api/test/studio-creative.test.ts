@@ -441,7 +441,7 @@ it("writes one owned media file into a durable chat reply only on a confirmed St
     };
     const invalid = await submit("/studio video 5 16:9: A coast", "missing-consent");
     await app.inject(invalid.stream_url);
-    expect(store.getRun(invalid.run_id)?.error_code).toBe("STUDIO_COMMAND_INVALID");
+    expect(store.getAssistantMessage(invalid.run_id)?.error_code).toBe("STUDIO_COMMAND_INVALID");
     expect(generate).not.toHaveBeenCalled();
     const direct = await submit("/studio video 5 16:9 --paid: A coast", "approved-clip");
     const observers = await Promise.all([
