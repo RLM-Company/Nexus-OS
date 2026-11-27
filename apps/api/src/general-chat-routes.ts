@@ -1,4 +1,5 @@
 import { registerChatSkillRoutes } from "./chat-skill-routes.js";
+import { startChatStreamHeartbeat } from "./chat-stream-heartbeat.js";
 import { registerChatWorkspaceRoutes } from "./chat-workspace-routes.js";
 import {
   ContextTooLargeError,
@@ -109,12 +110,10 @@ const end = (reply: FastifyReply): void => {
   if (!reply.raw.destroyed && !reply.raw.writableEnded) reply.raw.end();
 };
 
-const replay = (
+const replayMessageSnapshot = (
   reply: FastifyReply,
   runId: string,
-  message: StoredGeneralChatMessage,
-  provider: string,
-  model: string
+  message: StoredGeneralChatMessage
 ): void => {
   sendEvent(reply, {
     type: "run.started",
@@ -130,6 +129,16 @@ const replay = (
       data: { run_id: runId, message_id: message.id, seq: 0, delta: message.content }
     });
   }
+};
+
+const replay = (
+  reply: FastifyReply,
+  runId: string,
+  message: StoredGeneralChatMessage,
+  provider: string,
+  model: string
+): void => {
+  replayMessageSnapshot(reply, runId, message);
   sendEvent(reply, {
     type: "message.completed",
     data: {
@@ -154,7 +163,9 @@ const waitForObserverPoll = async (signal: AbortSignal): Promise<void> => {
       resolve();
     };
     const timer = setTimeout(done, 50);
-    timer.unref?.();
+    // This wait belongs to an active response. Keep it referenced until the
+    // response closes; otherwise a final persisted state can wait for another
+    // unrelated handle to wake the event loop. Abort clears the timer above.
     signal.addEventListener("abort", done, { once: true });
   });
 };
@@ -200,14 +211,22 @@ const observePersistedRun = async (
 
   while (!signal.aborted && !reply.raw.destroyed && !reply.raw.writableEnded) {
     const run = store.getRun(initialRun.id, ownerId);
-    if (!run) break;
+    if (!run) {
+      sendEvent(reply, {
+        type: "run.failed",
+        data: { run_id: initialRun.id, error_code: "RUN_NOT_FOUND", retryable: false }
+      });
+      break;
+    }
     const message = store.getAssistantMessage(run.id, ownerId);
 
     if (run.status === "cancelled") {
+      if (message) observeMessage(run, message);
       sendEvent(reply, { type: "run.cancelled", data: { run_id: run.id } });
       break;
     }
     if (run.status === "failed") {
+      if (message) observeMessage(run, message);
       sendEvent(reply, {
         type: "run.failed",
         data: {
@@ -653,11 +672,13 @@ export const registerGeneralChatRoutes = (options: GeneralChatRouteOptions): voi
 
       const existing = options.store.getAssistantMessage(run.id, identity.owner_id);
       if (run.status === "cancelled") {
+        if (existing) replayMessageSnapshot(reply, run.id, existing);
         sendEvent(reply, { type: "run.cancelled", data: { run_id: run.id } });
         end(reply);
         return reply;
       }
       if (run.status === "failed") {
+        if (existing) replayMessageSnapshot(reply, run.id, existing);
         sendEvent(reply, {
           type: "run.failed",
           data: {
@@ -676,6 +697,7 @@ export const registerGeneralChatRoutes = (options: GeneralChatRouteOptions): voi
       }
 
       if (runsExecuteInBackground) {
+        const stopHeartbeat = startChatStreamHeartbeat(reply.raw);
         const observer = new AbortController();
         const stopObserving = (): void => observer.abort();
         options.runObservers.add(observer);
@@ -683,6 +705,7 @@ export const registerGeneralChatRoutes = (options: GeneralChatRouteOptions): voi
         try {
           await observePersistedRun(reply, options.store, run, identity.owner_id, observer.signal);
         } finally {
+          stopHeartbeat();
           reply.raw.off("close", stopObserving);
           options.runObservers.delete(observer);
         }
@@ -731,6 +754,7 @@ export const registerGeneralChatRoutes = (options: GeneralChatRouteOptions): voi
       });
       options.runtimeMetrics.runStarted();
       const mainHolds = new Map<number, string>();
+      const stopHeartbeat = startChatStreamHeartbeat(reply.raw);
       try {
         let modelRequest = options.chat.buildRequest({
           chatId: run.chat_id,
@@ -1024,6 +1048,7 @@ export const registerGeneralChatRoutes = (options: GeneralChatRouteOptions): voi
           }
         }
       } finally {
+        stopHeartbeat();
         for (const hold of mainHolds.values())
           options.accountStore?.uncertainReservation(hold, "main");
         options.activeRuns.delete(run.id);
