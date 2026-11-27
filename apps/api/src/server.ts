@@ -1,7 +1,12 @@
 import { EnvironmentSecretResolver, loadServerConfig } from "@cosmora/config";
 import { configuredMcpDiscovery } from "./mcp-discovery.js";
 import { WORK_EXECUTION_CONCURRENCY } from "@cosmora/contracts";
-import { ElevenLabsMediaAdapter, RuntimeClock } from "@cosmora/model-gateway";
+import {
+  ElevenLabsMediaAdapter,
+  GeminiVideoMediaAdapter,
+  RuntimeClock,
+  validGeminiVideoProject
+} from "@cosmora/model-gateway";
 import {
   AgentBlueprintStore,
   DocumentLibraryStore,
@@ -244,7 +249,15 @@ try {
     ownerBudget: sharedBudget
   });
   const elevenLabsCredential = process.env.KOSMORA_MEDIA_ELEVENLABS_API_KEY?.trim();
+  const videoProject = process.env.KOSMORA_MEDIA_GOOGLE_VIDEO_PROJECT?.trim();
+  const videoCredential = process.env.KOSMORA_MEDIA_GOOGLE_VIDEO_ACCESS_TOKEN?.trim();
   const mediaService = new MediaService({
+    ...(process.env.KOSMORA_MEDIA_GOOGLE_VIDEO_ENABLED === "true" &&
+    videoProject &&
+    validGeminiVideoProject(videoProject) &&
+    videoCredential
+      ? { video: new GeminiVideoMediaAdapter(videoProject, videoCredential) }
+      : {}),
     ...(process.env.KOSMORA_MEDIA_ELEVENLABS_ENABLED === "true" && elevenLabsCredential
       ? { creativeAudio: new ElevenLabsMediaAdapter(elevenLabsCredential) }
       : {}),
