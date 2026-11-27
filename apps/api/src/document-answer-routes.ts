@@ -1,3 +1,4 @@
+import { Readable } from "node:stream";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import type { IdentityContext } from "@cosmora/contracts";
 import { Type } from "typebox";
@@ -136,6 +137,55 @@ export function registerDocumentAnswerRoutes(
           retryRequestId
         );
         return reply.code(202).send(answer);
+      } catch (cause) {
+        return err(reply, cause);
+      }
+    }
+  );
+  app.get<{ Params: { projectId: string; id: string } }>(
+    `${base}/:id/analysis.ndjson`,
+    { schema: { params: item } },
+    (req, reply) => {
+      const owner = identityFor(req).owner_id;
+      const run = service.store.get(req.params.projectId, owner, req.params.id);
+      if (!run?.coverage) return reply.code(404).send({ error: { code: "NOT_FOUND" } });
+      function* records() {
+        if (!run) return;
+        yield JSON.stringify({
+          type: "coverage",
+          id: run.id,
+          retry_of: run.retry_of,
+          status: run.status,
+          question: run.question,
+          coverage: run.coverage,
+          summary: run.answer
+        }) + "\n";
+        for (const row of service.store.batches(run)) {
+          if (reply.raw.destroyed) return;
+          const { ordinal, input_hash } = row;
+          yield JSON.stringify({
+            type: row.verified ? "verified_batch" : "failed_batch",
+            ordinal,
+            input_hash,
+            result: JSON.parse(row.notes) as unknown
+          }) + "\n";
+        }
+      }
+      return reply
+        .header("Cache-Control", "private, no-store")
+        .header("X-Content-Type-Options", "nosniff")
+        .header("Content-Disposition", 'attachment; filename="kosmora-analysis.ndjson"')
+        .type("application/x-ndjson")
+        .send(Readable.from(records(), { objectMode: false }));
+    }
+  );
+  app.post<{ Params: { projectId: string; id: string } }>(
+    `${base}/:id/pause`,
+    { schema: { params: item } },
+    (req, reply) => {
+      try {
+        service.pause(req.params.projectId, identityFor(req).owner_id, req.params.id);
+        return { status: "paused" };
       } catch (cause) {
         return err(reply, cause);
       }

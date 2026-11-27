@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import type {
   ModelGateway,
   ModelGatewayStreamEvent,
@@ -95,6 +95,12 @@ export function validateDocumentAnswer(
 }
 
 type AnalysisNotes = { text: string; sources: AnswerSource[] };
+type AnalysisBatch = {
+  file_id: string;
+  fragments: Pick<AnswerSource, "ref" | "chunk_id" | "page" | "line_start" | "line_end">[];
+  notes: AnalysisNotes | null;
+  error?: "INVALID_EVIDENCE" | "BATCH_FAILED";
+};
 const NO_FINDINGS = "НЕТ РЕЛЕВАНТНЫХ ДАННЫХ";
 const ANALYSIS_WORKERS = 3;
 
@@ -160,6 +166,9 @@ export class DocumentAnswerService {
         phase: "reading",
         files: files.map((file) => ({
           name: file.name,
+          file_id: file.id,
+          bytes: file.bytes,
+          analyzed_pages: 0,
           chunks: file.chunks,
           analyzed_chunks: 0,
           failed_chunks: 0,
@@ -192,8 +201,8 @@ export class DocumentAnswerService {
   }
   /**
    * Explicitly retry a terminal deep run. Creates a NEW run with the same
-   * question/files and a fresh reading-phase coverage; the old run stays as
-   * history and keeps any uncertain cost hold (never silently re-dispatch).
+   * question/files. Verified input-identical batches are replayed from durable
+   * checkpoints. The old run keeps any uncertain cost hold.
    */
   // The async API captures synchronous validation errors before callers await the queued durable run.
   // eslint-disable-next-line @typescript-eslint/require-await
@@ -207,7 +216,19 @@ export class DocumentAnswerService {
     if (this.quiesced.has(ownerId)) throw new DocumentAnswerError("QUIESCED");
     const previous = this.store.get(projectId, ownerId, id);
     if (!previous) throw new DocumentAnswerError("NOT_FOUND");
-    if (!previous.coverage || !["cancelled", "failed"].includes(previous.status))
+    const replay =
+      retryRequestId && this.store.findByRetryRequest(projectId, ownerId, retryRequestId);
+    if (replay) {
+      if (replay.retry_of !== previous.id) throw new DocumentAnswerError("CONFLICT");
+      return replay;
+    }
+    if (
+      !previous.coverage ||
+      !(
+        ["cancelled", "failed"].includes(previous.status) ||
+        (previous.status === "done" && previous.coverage.failed_chunks > 0)
+      )
+    )
       throw new DocumentAnswerError("INVALID_SOURCES");
     // A cancelled/failed job can still be finishing its async cleanup in `active`;
     // the durable run is already fenced, so it must not block an explicit retry.
@@ -221,11 +242,13 @@ export class DocumentAnswerService {
       throw new DocumentAnswerError("CONFLICT");
     const coverage: DocumentAnalysisCoverage = {
       ...previous.coverage,
+      reused_chunks: 0,
       analyzed_chunks: 0,
       failed_chunks: 0,
       phase: "reading",
       files: previous.coverage.files.map((file) => ({
         ...file,
+        analyzed_pages: 0,
         analyzed_chunks: 0,
         failed_chunks: 0
       }))
@@ -428,7 +451,12 @@ export class DocumentAnswerService {
       });
     };
     const walk = this.packageBatches(run, coverage);
-    const collected: Array<AnalysisNotes | null> = [];
+    const pages = coverage.files.map(() => new Set<number>());
+    const recordPages = (fileIndex: number, sources: AnswerSource[]) => {
+      const completed = pages[fileIndex]!;
+      for (const source of sources) if (source.page !== null) completed.add(source.page);
+      coverage.files[fileIndex]!.analyzed_pages = completed.size;
+    };
     let nextBatch = 0;
     let stop: { error: unknown } | undefined;
     const rules =
@@ -441,37 +469,73 @@ export class DocumentAnswerService {
           ensureRunning();
           const batch = walk.next();
           if (batch.done) return;
-          const { file, sources } = batch.value;
+          const { file, sources, fileIndex } = batch.value;
           const index = nextBatch++;
-          try {
-            const output = await call(
-              rules +
-                " Разбери только эту часть. Это нормально, если она отвечает лишь на часть вопроса. Дай короткие независимые находки в один абзац. " +
-                "Если в партии нет ничего относящегося к вопросу, верни ровно: " +
-                NO_FINDINGS,
-              `Вопрос: ${run.question}\n\n` +
-                sources
-                  .map((source) => `[${source.ref}] ${sourceLabel(source)}\n${source.content}`)
-                  .join("\n\n")
-            );
-            ensureRunning();
-            if (output.trim() === NO_FINDINGS) collected[index] = null;
-            else {
-              const checked = validateDocumentAnswer(output, sources);
-              collected[index] = {
-                text: output,
-                sources: sources.filter((s) => checked.citations.includes(s.ref))
+          const hash = createHash("sha256")
+            .update(JSON.stringify([run.question, sources]))
+            .digest("hex");
+          let notes: AnalysisNotes | null = null;
+          const fileId = sources[0]!.file_id;
+          const fragments = sources.map(({ ref, chunk_id, page, line_start, line_end }) => ({
+            ref,
+            chunk_id,
+            page,
+            line_start,
+            line_end
+          }));
+          const existing =
+            run.retry_of && this.store.batch(run.project_id, run.owner_id, run.id, index, hash);
+          if (existing) {
+            notes = (JSON.parse(existing.notes) as AnalysisBatch).notes;
+            coverage.reused_chunks = (coverage.reused_chunks ?? 0) + sources.length;
+          } else {
+            try {
+              const output = await call(
+                rules +
+                  " Разбери только эту часть. Это нормально, если она отвечает лишь на часть вопроса. Дай короткие независимые находки в один абзац. " +
+                  "Если в партии нет ничего относящегося к вопросу, верни ровно: " +
+                  NO_FINDINGS,
+                `Вопрос: ${run.question}\n\n` +
+                  sources
+                    .map((source) => `[${source.ref}] ${sourceLabel(source)}\n${source.content}`)
+                    .join("\n\n")
+              );
+              ensureRunning();
+              if (output.trim() !== NO_FINDINGS) {
+                const checked = validateDocumentAnswer(output, sources);
+                notes = {
+                  text: output,
+                  sources: sources.filter((s) => checked.citations.includes(s.ref))
+                };
+              }
+            } catch (error) {
+              ensureRunning();
+              if (error instanceof Error && error.message === "OWNER_BUDGET_DENIED") throw error;
+              coverage.failed_chunks += sources.length;
+              file.failed_chunks += sources.length;
+              if (file.analyzed_chunks + file.failed_chunks === file.chunks)
+                pages[fileIndex]!.clear();
+              const problem =
+                error instanceof Error &&
+                /^(INVALID_CITATION|NO_VERIFIED_QUOTATIONS|UNVERIFIED_QUOTE)$/.test(error.message);
+              const failed: AnalysisBatch = {
+                file_id: fileId,
+                fragments,
+                notes: null,
+                error: problem ? "INVALID_EVIDENCE" : "BATCH_FAILED"
               };
+              if (!this.store.saveBatch(run, index, hash, JSON.stringify(failed), coverage, false))
+                throw new Error("CANCELLED");
+              continue;
             }
-            coverage.analyzed_chunks += sources.length;
-            file.analyzed_chunks += sources.length;
-          } catch (error) {
-            ensureRunning();
-            if (error instanceof Error && error.message === "OWNER_BUDGET_DENIED") throw error;
-            coverage.failed_chunks += sources.length;
-            file.failed_chunks += sources.length;
           }
-          saveProgress();
+          recordPages(fileIndex, sources);
+          coverage.analyzed_chunks += sources.length;
+          file.analyzed_chunks += sources.length;
+          if (file.analyzed_chunks + file.failed_chunks === file.chunks) pages[fileIndex]!.clear();
+          const payload: AnalysisBatch = { file_id: fileId, fragments, notes };
+          if (!this.store.saveBatch(run, index, hash, JSON.stringify(payload), coverage))
+            throw new Error("CANCELLED");
         } catch (error) {
           stop ??= { error };
         }
@@ -483,24 +547,33 @@ export class DocumentAnswerService {
     if (coverage.analyzed_chunks + coverage.failed_chunks !== coverage.total_chunks)
       throw new Error("INCOMPLETE_COVERAGE");
 
-    let notes = collected.filter((note): note is AnalysisNotes => note != null);
+    coverage.phase = "synthesis";
+    saveProgress();
+    // At most two groups per level are retained. The verified batch registry remains
+    // available even when the model omits a finding from the consolidated report.
+    const levels: AnalysisNotes[][] = [];
+    const accumulate = async (note: AnalysisNotes, level = 0): Promise<void> => {
+      const group = (levels[level] ??= []);
+      group.push(note);
+      if (group.length < 3) return;
+      levels[level] = [];
+      await accumulate(await this.mergeNotes(run.question, rules, group, call), level + 1);
+    };
+    for (const batch of this.store.batches(run)) {
+      ensureRunning();
+      const { notes: note } = JSON.parse(batch.notes) as AnalysisBatch;
+      if (note) await accumulate(note);
+    }
+    let notes = levels.reverse().flat();
     if (!notes.length)
       return {
         answer: "В обработанных фрагментах модель не нашла сведений по вопросу.",
         citations: [],
         sources: []
       };
-    coverage.phase = "synthesis";
-    saveProgress();
     while (notes.length > 3) {
-      const reduced: AnalysisNotes[] = [];
-      for (let offset = 0; offset < notes.length; offset += 3) {
-        const group = notes.slice(offset, offset + 3);
-        reduced.push(
-          group.length === 1 ? group[0]! : await this.mergeNotes(run.question, rules, group, call)
-        );
-      }
-      notes = reduced;
+      const group = notes.splice(0, 3);
+      notes.unshift(await this.mergeNotes(run.question, rules, group, call));
     }
     const merged = await this.mergeNotes(run.question, rules, notes, call, true);
     const verified = validateDocumentAnswer(merged.text, merged.sources);
@@ -542,7 +615,7 @@ export class DocumentAnswerService {
           const source = { ...row, ref: "S" + ++ref };
           const size = sourceLabel(source).length + source.content.length + 24;
           if (sources.length && characters + size > 12_000) {
-            yield { file, sources };
+            yield { file, sources, fileIndex: index };
             sources = [];
             characters = 0;
           }
@@ -551,7 +624,7 @@ export class DocumentAnswerService {
         }
       }
       if (afterOrdinal + 1 !== file.chunks) throw new Error("INCOMPLETE_COVERAGE");
-      if (sources.length) yield { file, sources };
+      if (sources.length) yield { file, sources, fileIndex: index };
     }
   }
 
@@ -564,6 +637,16 @@ export class DocumentAnswerService {
     this.active.get(id)?.controller.abort();
     return true;
   }
+  pause(projectId: string, ownerId: string, id: string): boolean {
+    const run = this.store.get(projectId, ownerId, id);
+    if (!run) throw new DocumentAnswerError("NOT_FOUND");
+    if (run.error_code === "PAUSED") return true;
+    if (!run.coverage || !this.store.cancel(projectId, ownerId, id, "PAUSED"))
+      throw new DocumentAnswerError("CONFLICT");
+    this.active.get(id)?.controller.abort();
+    return true;
+  }
+
   /** Coordinator calls this before export/delete, prevents late model writes and future starts in this process. */
   async quiesce(ownerId: string): Promise<void> {
     this.quiesced.add(ownerId);

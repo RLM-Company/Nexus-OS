@@ -36,10 +36,13 @@ export type AnswerReport = {
   coverage?: {
     total_chunks: number;
     analyzed_chunks: number;
+    reused_chunks?: number;
     failed_chunks: number;
     phase: "reading" | "synthesis" | "complete";
     files: Array<{
       name: string;
+      bytes?: number;
+      analyzed_pages?: number;
       chunks: number;
       analyzed_chunks: number;
       failed_chunks: number;
@@ -72,9 +75,13 @@ export function answerCoverageLines(coverage: AnswerReport["coverage"]): string[
       ". Не обработано: " +
       pending +
       ".",
+    ...(coverage.reused_chunks
+      ? [`Повторно использовано проверенных фрагментов: ${coverage.reused_chunks}.`]
+      : []),
     ...coverage.files.map(
       (file) =>
         file.name +
+        (file.bytes === undefined ? "" : ` (${file.bytes} байт)`) +
         " — " +
         file.analyzed_chunks +
         " из " +
@@ -89,7 +96,10 @@ export function answerCoverageLines(coverage: AnswerReport["coverage"]): string[
               " из " +
               file.total_pages +
               "."
-          : ".")
+          : ".") +
+        (file.is_pdf && file.analyzed_pages !== undefined
+          ? ` Страниц с разобранными фрагментами: ${file.analyzed_pages}.`
+          : "")
     )
   ];
 }
