@@ -4,7 +4,9 @@
 незакоммиченные изменения основного чата OpenCode 4.
 
 - Base SHA: `2b9a606cfa311ef8072903aa4b800eb44d57af20`
-- Head SHA: `64c7f383c91c96f58a5d09a60b3c60e8002a3a34`
+- Срез: `64c7f383c91c96f58a5d09a60b3c60e8002a3a34` (исправление) и
+  `327de3d75b970efe38392a08f76f48f03e5558c0` (форматирование).
+- Интегрированный head ветки: `54e5fa3a5a7cc2ddb1c29fa1673e02546a2fab9d`.
 - Branch: `feature/oc4-office-workbench-20261127`
 - Worktree: `C:/Users/Александр/.local/share/opencode/worktree/9ff80c/oc4-office-xlsx-slice`
 - Commit: `fix(office): quote active delimiter in CSV export and verify reopen`
