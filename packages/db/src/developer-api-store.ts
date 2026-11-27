@@ -8,7 +8,6 @@ import {
   type DeveloperKeyIssued,
   type DeveloperKeyView,
   type DeveloperScope,
-  type DeveloperTaskRequest,
   type DeveloperTaskView,
   type DeveloperWebhookSubscription
 } from "@cosmora/contracts";
@@ -159,7 +158,7 @@ export class DeveloperApiStore {
     this.active(ownerId);
     if (!Value.Check(DeveloperTaskRequestSchema, input))
       throw new DeveloperApiError("INVALID_REQUEST");
-    const request = input as DeveloperTaskRequest;
+    const request = input;
     const hash = bodyHash({ goal: request.goal, files: request.files ?? [] });
     const prior = this.db
       .prepare(
