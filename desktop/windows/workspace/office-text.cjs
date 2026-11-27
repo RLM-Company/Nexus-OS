@@ -479,4 +479,4 @@ function extractOfficeText(name, bytes, { workLimit = 16 * 1024 * 1024, allowEmp
     }
   };
 }
-module.exports = { extractOfficeText, unpack, xml, attr };
+module.exports = { extractOfficeText, unpack, xml, attr, text: utf8 };

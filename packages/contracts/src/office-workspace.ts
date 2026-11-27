@@ -11,7 +11,7 @@ export const OfficeOperationSchema = Type.Union([
   }),
   object({
     kind: Type.Literal("set_cell"),
-    target: Type.String({ pattern: "^sheet:[1-9][0-9]{0,2}$" }),
+    target: Type.String({ pattern: "^(sheet:[1-9][0-9]{0,2}|table:1)$" }),
     address: Type.String({ pattern: "^[A-Z]{1,3}[1-9][0-9]{0,5}$" }),
     value: Type.Union([
       Type.Null(),
@@ -23,7 +23,7 @@ export const OfficeOperationSchema = Type.Union([
   }),
   object({
     kind: Type.Literal("set_range"),
-    target: Type.String({ pattern: "^sheet:[1-9][0-9]{0,2}$" }),
+    target: Type.String({ pattern: "^(sheet:[1-9][0-9]{0,2}|table:1)$" }),
     start: Type.String({ pattern: "^[A-Z]{1,3}[1-9][0-9]{0,5}$" }),
     rows: Type.Array(
       Type.Array(

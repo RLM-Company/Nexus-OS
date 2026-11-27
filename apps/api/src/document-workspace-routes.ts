@@ -45,7 +45,7 @@ export function registerDocumentWorkspaceRoutes(
     name: Type.String({
       minLength: 1,
       maxLength: DRIVE_OFFICE_FILE_MAX_NAME,
-      pattern: "^[^/\\\\]+\\.([dD][oO][cC][xX]|[xX][lL][sS][xX]|[pP][pP][tT][xX])$"
+      pattern: "^[^/\\\\]+\\.([cC][sS][vV]|[dD][oO][cC][xX]|[xX][lL][sS][xX]|[pP][pP][tT][xX])$"
     }),
     bytes: Type.String({ minLength: 4, maxLength: 2796204, pattern: "^[A-Za-z0-9+/]+={0,2}$" })
   };

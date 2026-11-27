@@ -3,6 +3,7 @@
 const { unpack, xml, attr, extractOfficeText } = require("./office-text.cjs");
 const { zip, esc, formula, buildOfficeDocument } = require("./office-document.cjs");
 const { computeBufferVersion } = require("./version-backup.cjs");
+const { inspectCsv, editCsv, validateCsvEdits } = require("./office-csv.cjs");
 const W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
 const S = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
 const P = "http://schemas.openxmlformats.org/presentationml/2006/main";
@@ -191,7 +192,10 @@ function spreadsheetStrings(entries) {
         .join("")
     );
 }
-function inspectOffice(name, bytes, { cursor, expectedVersion = null, path: sourcePath } = {}) {
+const isCsv = (name) => /^[^/\\]+\.[cC][sS][vV]$/.test(String(name));
+function inspectOffice(name, bytes, options = {}) {
+  if (isCsv(name)) return inspectCsv(name, bytes, options);
+  const { cursor, expectedVersion = null, path: sourcePath } = options;
   const version = computeBufferVersion(bytes);
   if (expectedVersion !== null && expectedVersion !== version.version) fail("VERSION_CONFLICT");
   if (cursor && (cursor.target_offset > 0 || cursor.content_offset > 0) && expectedVersion === null)
@@ -245,6 +249,8 @@ function inspectOffice(name, bytes, { cursor, expectedVersion = null, path: sour
   );
 }
 function validateEdits(operations) {
+  if (Array.isArray(operations) && operations.some((op) => op && op.target === "table:1"))
+    return validateCsvEdits(operations);
   if (
     !Array.isArray(operations) ||
     !operations.length ||
@@ -643,6 +649,7 @@ function addSheet(entries, name) {
   entries.set(part, Buffer.from(`<worksheet ${ns}><sheetData></sheetData></worksheet>`));
 }
 function editOffice(name, bytes, operations) {
+  if (isCsv(name)) return editCsv(name, bytes, operations);
   validateEdits(operations);
   const { entries, representation, signed } = packageView(name, bytes),
     format = representation.format;

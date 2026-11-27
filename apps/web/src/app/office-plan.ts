@@ -48,7 +48,11 @@ export function validateEditableOfficePlan(
       names.add(op.name.toLowerCase());
       sheets++;
     } else if (op.kind === "set_cell" || op.kind === "set_range") {
-      if (!/^sheet:[1-9][0-9]{0,2}$/.test(op.target) || Number(op.target.slice(6)) > sheets)
+      const isTable = op.target === "table:1";
+      if (
+        !isTable &&
+        (!/^sheet:[1-9][0-9]{0,2}$/.test(op.target) || Number(op.target.slice(6)) > sheets)
+      )
         throw Error("Лист для правки должен существовать или быть добавлен раньше в этом плане.");
       if (op.kind === "set_cell") officeRangeOperation(op.target, op.address, [[""]], ["string"]);
     } else if (
