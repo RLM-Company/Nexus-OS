@@ -232,6 +232,54 @@ export function registerStarsMissionRoutes({
     );
   }
 
+  if (dag) {
+    app.post<{
+      Params: { id: string };
+      Body: { expected_version: number; max_model_requests: number };
+    }>(
+      base + "/:id/delegation/execute",
+      {
+        schema: {
+          params,
+          body: Type.Object(
+            {
+              expected_version: Type.Integer({ minimum: 1 }),
+              max_model_requests: Type.Integer({ minimum: 3, maximum: 96 })
+            },
+            { additionalProperties: false }
+          )
+        }
+      },
+      (request, reply) => {
+        const owner = identityFor(request).owner_id;
+        const mission = store.get(request.params.id, owner);
+        if (!mission) return reply.code(404).send({ error: "STARS_MISSION_NOT_FOUND" });
+        const delegation = mission.delegation as
+          { graph_id: string; project_id: string } | undefined;
+        if (!delegation) return reply.code(409).send({ error: "STARS_NOT_DELEGATED" });
+        if (mission.version !== request.body.expected_version)
+          return reply.code(409).send({ error: "STALE_MISSION_VERSION" });
+        try {
+          const armed = dag.control(delegation.graph_id, owner, {
+            version: dag.get(delegation.graph_id, owner, delegation.project_id)!.version,
+            action: "run_plan",
+            acknowledge_cost: true,
+            max_model_requests: request.body.max_model_requests
+          });
+          dag.advance();
+          return {
+            graph: dag.get(delegation.graph_id, owner, delegation.project_id),
+            armed_version: armed.version
+          };
+        } catch (cause) {
+          if (cause instanceof WorkDagConflict || cause instanceof StarsMissionStoreConflict)
+            return reply.code(409).send({ error: cause.message });
+          throw cause;
+        }
+      }
+    );
+  }
+
   app.post<{ Body: CreateStarsMission }>(
     base,
     {

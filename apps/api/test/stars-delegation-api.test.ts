@@ -42,7 +42,10 @@ const setup = async () => {
     dag: {
       create: (owner: string, _actor: string, _owner: string, input: never) =>
         dagStore.create(project.id, owner, owner, input),
-      get: (id: string, owner: string) => dagStore.get(id, owner)
+      get: (id: string, owner: string) => dagStore.get(id, owner),
+      control: (id: string, owner: string, _input: { version: number }) =>
+        dagStore.save(dagStore.get(id, owner)!, "run_plan accepted"),
+      advance: () => undefined
     } as never,
     identityFor: () => identity
   });
@@ -143,5 +146,14 @@ describe("Stars delegation into real WorkDAG store", () => {
       zones: { a1: "research" }
     });
     expect(replay.json<{ graph: { id: string } }>().graph.id).toBe(body.graph.id);
+
+    const executed = await post(app, `/api/v1/stars/missions/${mission.id}/delegation/execute`, {
+      expected_version: body.delegation.mission_version + 1,
+      max_model_requests: 12
+    });
+    expect(executed.statusCode, executed.body).toBe(200);
+    expect(executed.json<{ graph: { version: number } }>().graph.version).toBeGreaterThan(
+      body.graph.nodes.length ? 1 : 0
+    );
   }, 60_000);
 });
