@@ -117,6 +117,7 @@ export function registerDeveloperApiRoutes(deps: DeveloperApiDependencies) {
             .digest("hex");
         const recordUsage = (usage: {
           request_id: string;
+          run_id?: string;
           model: string;
           input_tokens: number;
           output_tokens: number;
@@ -183,48 +184,68 @@ export function registerDeveloperApiRoutes(deps: DeveloperApiDependencies) {
           return reply;
         }
         if (body.mode === "parallel" && !body.stream) {
-          const userText = body.messages.map((m) => m.content).join("\n");
-          const parallel = await runParallelRoute({
-            text: userText,
-            signal: request.raw.aborted ? AbortSignal.abort() : new AbortController().signal,
-            execute: async ({ prompt }) => {
-              const partRequest = structuredClone(modelRequest);
-              partRequest.messages = [{ role: "user", content: prompt }];
-              let text = "";
-              for await (const event of gateway.stream(partRequest)) {
-                if (event.type === "text.delta") text += event.delta;
-                else if (event.type === "response.completed") {
-                  recordUsage({
-                    request_id: requestId,
-                    model: event.model,
-                    input_tokens: event.usage.inputTokens ?? 0,
-                    output_tokens: event.usage.outputTokens ?? 0,
-                    ...(event.timing ?? {})
-                  });
+          const lastMessage = body.messages.at(-1);
+          const userText = lastMessage?.role === "user" ? lastMessage.content : "";
+          const controller = new AbortController();
+          const onClose = () => controller.abort();
+          reply.raw.once("close", onClose);
+          if (request.raw.aborted) controller.abort();
+          const partAttempts = new Map<string, number>();
+          try {
+            const parallel = await runParallelRoute({
+              text: userText,
+              signal: controller.signal,
+              execute: async ({ part, prompt, signal }) => {
+                const partRequest = structuredClone(modelRequest);
+                partRequest.messages = [
+                  ...modelRequest.messages.slice(0, -1),
+                  { role: "user", content: prompt }
+                ];
+                const attempt = (partAttempts.get(part.id) ?? 0) + 1;
+                partAttempts.set(part.id, attempt);
+                const childId = executionId + ":" + part.id + ":" + attempt;
+                partRequest.request_id = childId;
+                partRequest.idempotency_key = childId;
+                let text = "";
+                for await (const event of gateway.stream(partRequest, signal)) {
+                  signal.throwIfAborted();
+                  if (event.type === "text.delta") text += event.delta;
+                  else if (event.type === "response.completed") {
+                    recordUsage({
+                      request_id: childId,
+                      run_id: requestId,
+                      model: event.model,
+                      input_tokens: event.usage.inputTokens ?? 0,
+                      output_tokens: event.usage.outputTokens ?? 0,
+                      ...(event.timing ?? {})
+                    });
+                  }
                 }
+                const verdict = /^PASS\b/u.test(text.trim()) ? "PASS" : "RETRY";
+                return { text, verdict };
               }
-              const verdict = /RETRY/u.test(text) && /part-/u.test(text) ? "RETRY" : "PASS";
-              return { text, verdict };
+            });
+            if (parallel) {
+              return {
+                id: requestId,
+                object: "chat.completion",
+                model: body.model ?? "kosmora-parallel",
+                choices: [
+                  {
+                    index: 0,
+                    message: { role: "assistant", content: parallel.answer },
+                    finish_reason: "stop"
+                  }
+                ],
+                parallel: {
+                  parts: parallel.parts,
+                  review: parallel.review,
+                  total_ms: parallel.total_ms
+                }
+              };
             }
-          });
-          if (parallel) {
-            return {
-              id: requestId,
-              object: "chat.completion",
-              model: body.model ?? "kosmora-parallel",
-              choices: [
-                {
-                  index: 0,
-                  message: { role: "assistant", content: parallel.answer },
-                  finish_reason: "stop"
-                }
-              ],
-              parallel: {
-                parts: parallel.parts,
-                review: parallel.review,
-                total_ms: parallel.total_ms
-              }
-            };
+          } finally {
+            reply.raw.off("close", onClose);
           }
         }
         let answer = "";

@@ -304,6 +304,114 @@ describe("developer API external client", () => {
     expect(["PASS", "RETRY"]).toContain(result.parallel?.review.verdict);
   });
 
+  it("keeps instructions and history while assigning unique child generation IDs", async () => {
+    const key = await issue(["chat.write"]);
+    const calls: Array<{
+      id: string;
+      key: string;
+      signal: AbortSignal | undefined;
+      messages: unknown;
+    }> = [];
+    const context = [
+      { role: "system", content: "Keep all requirements\nIncluding this second line" },
+      { role: "user", content: "Earlier question" },
+      { role: "assistant", content: "Earlier answer" }
+    ];
+    vi.spyOn(gateway, "stream").mockImplementation(async function* (request, signal) {
+      calls.push({
+        id: request.request_id,
+        key: request.idempotency_key,
+        signal,
+        messages: request.messages
+      });
+      await Promise.resolve();
+      const prompt = String(request.messages.at(-1)?.content);
+      yield { type: "text.delta", delta: prompt.startsWith("Проверь") ? "PASS" : "result" };
+    });
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/v1/developer/v1/chat/completions",
+      headers: headers(key.token),
+      payload: {
+        mode: "parallel",
+        messages: [...context, { role: "user", content: "Part A\nPart B" }]
+      }
+    });
+    expect(response.statusCode, response.body).toBe(200);
+    expect(calls).toHaveLength(3);
+    expect(new Set(calls.map((call) => call.id)).size).toBe(3);
+    for (const call of calls) {
+      expect(call.key).toBe(call.id);
+      expect(call.signal).toBeInstanceOf(AbortSignal);
+      expect((call.messages as unknown[]).slice(0, -1)).toEqual(context);
+    }
+    expect(
+      response.json<{ parallel: { review: { verdict: string } } }>().parallel.review.verdict
+    ).toBe("PASS");
+  });
+
+  it("never splits system instructions or chat history into independent tasks", async () => {
+    const key = await issue(["chat.write"]);
+    const generate = vi.spyOn(gateway, "stream");
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/v1/developer/v1/chat/completions",
+      headers: headers(key.token),
+      payload: {
+        mode: "parallel",
+        messages: [
+          { role: "system", content: "Instruction one\nInstruction two" },
+          { role: "user", content: "One short question" }
+        ]
+      }
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json<{ parallel?: unknown }>().parallel).toBeUndefined();
+    expect(generate).toHaveBeenCalledTimes(1);
+  });
+
+  it("cancels active child generations when the HTTP client disconnects", async () => {
+    const key = await issue(["chat.write"]);
+    const started = Promise.withResolvers<void>();
+    const stopped = Promise.withResolvers<void>();
+    let starts = 0;
+    let stops = 0;
+    vi.spyOn(gateway, "stream").mockImplementation(async function* (_request, signal) {
+      if (!signal) throw new Error("Missing child signal");
+      if (++starts === 2) started.resolve();
+      yield { type: "text.delta", delta: "partial" };
+      await new Promise<void>((resolve) =>
+        signal.addEventListener(
+          "abort",
+          () => {
+            if (++stops === 2) stopped.resolve();
+            resolve();
+          },
+          { once: true }
+        )
+      );
+      signal.throwIfAborted();
+    });
+    const origin = await app.listen({ port: 0, host: "127.0.0.1" });
+    const controller = new AbortController();
+    const pending = fetch(origin + "/api/v1/developer/v1/chat/completions", {
+      method: "POST",
+      signal: controller.signal,
+      headers: { ...headers(key.token), "content-type": "application/json" },
+      body: JSON.stringify({ mode: "parallel", messages: [{ role: "user", content: "A\nB" }] })
+    }).catch(() => null);
+    try {
+      await started.promise;
+      controller.abort();
+      await stopped.promise;
+      expect(starts).toBe(2);
+      expect(stops).toBe(2);
+    } finally {
+      controller.abort();
+      await pending;
+    }
+  });
+
   it("replays a task after a lost response and verifies a signed webhook", async () => {
     const key = await issue(["tasks.read", "tasks.write", "webhooks.write"]);
     const task = await app.inject({
