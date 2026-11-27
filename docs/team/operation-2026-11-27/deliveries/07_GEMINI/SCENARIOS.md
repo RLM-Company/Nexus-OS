@@ -6,6 +6,8 @@
 pnpm --filter @cosmora/api exec vitest run --maxWorkers=2 test/studio-creative.test.ts test/studio-candidate.test.ts test/chat-images.test.ts test/presentations.test.ts test/presentation-work.test.ts test/presentation-history.test.ts
 pnpm --filter @cosmora/db exec vitest run test/project-intake-upgrade.test.ts test/presentation-upgrade.test.ts test/presentation-work-upgrade.test.ts
 KOSMORA_E2E_PRODUCTION=1 pnpm --filter @cosmora/web exec playwright test --workers=1 e2e/studio-creative-media.spec.ts e2e/studio-storyboard.spec.ts e2e/studio-music.spec.ts e2e/presentation-visuals.spec.ts e2e/presentation-work.spec.ts e2e/image-editing.spec.ts e2e/owner-ui-media.spec.ts
+pnpm --filter @cosmora/web exec vitest run src/app/media-generation src/app/presentations
+pnpm test:media-acceptance
 pnpm check:core
 ```
 
