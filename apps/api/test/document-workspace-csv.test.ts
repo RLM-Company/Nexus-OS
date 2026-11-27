@@ -85,6 +85,44 @@ it("runs the full CSV chain: inspect → preview → commit → independent read
   expect(reopened.json<{ version: string }>().version).toBe(result.version);
 });
 
+it("keeps a value containing the file's own separator as one cell through the full API chain", async () => {
+  const name = "semicolon.csv";
+  const source = ["id;title;amount", "00123;Old;19700", "002;Other;19800"].join("\n") + "\n";
+  const bytes = Buffer.from(source, "utf8").toString("base64");
+  const call = (mode: string, payload: Record<string, unknown>) =>
+    app.inject({ method: "POST", url: `/api/v1/document-workspace/${mode}`, payload });
+  const opened = await call("inspect", { name, bytes });
+  expect(opened.statusCode, opened.body).toBe(200);
+  const input = {
+    name,
+    bytes,
+    expected_version: opened.json<{ version: string }>().version,
+    operations: [
+      { kind: "set_cell", target: "table:1", address: "B2", value: "Company; A" }
+    ]
+  };
+  const preview = await call("preview", input);
+  expect(preview.statusCode, preview.body).toBe(200);
+  const token = preview.json<{ expires: number; preview_token: string; version: string }>();
+  const saved = await call("commit", {
+    ...input,
+    expires: token.expires,
+    preview_token: token.preview_token
+  });
+  expect(saved.statusCode, saved.body).toBe(200);
+  const result = saved.json<{ bytes: string; version: string; readback: { version: string } }>();
+  expect(result.readback.version).toBe(result.version);
+  const output = Buffer.from(result.bytes, "base64").toString("utf8");
+  expect(output).toContain('"Company; A"');
+  const reopened = await call("inspect", { name, bytes: result.bytes });
+  expect(reopened.statusCode, reopened.body).toBe(200);
+  const cells = reopened.json<{ targets: Array<{ cells: Array<{ address: string; text: string }> }> }>()
+    .targets[0]!.cells;
+  expect(cells.find((c) => c.address === "B2")?.text).toBe("Company; A");
+  expect(cells.find((c) => c.address === "C2")?.text).toBe("19700");
+  expect(cells.find((c) => c.address === "A3")?.text).toBe("002");
+});
+
 it("rejects CSV formula injection and owner mismatch on commit", async () => {
   const isolated = Fastify();
   registerDocumentWorkspaceRoutes(isolated, (request) => ({

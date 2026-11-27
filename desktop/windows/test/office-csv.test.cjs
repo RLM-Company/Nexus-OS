@@ -191,3 +191,37 @@ test("round-trip with semicolon and tab delimiters keeps the detected delimiter"
     assert.equal(parseCsv(read(result.buffer)).rows[1][1], "updated");
   }
 });
+
+test("values containing the active delimiter are quoted and reopen unchanged", () => {
+  for (const delimiter of [",", ";", "\t", "|"]) {
+    const rows = [
+      ["id", "title", "amount"],
+      ["00123", "Old", "19700"],
+      ["002", "Other", "19800"]
+    ];
+    const original = serializeCsv({ delimiter, bom: false, rows, width: 3 });
+    const result = editCsv("delim.csv", original, [
+      { kind: "set_cell", target: "table:1", address: "B2", value: `Company${delimiter} A` },
+      { kind: "set_cell", target: "table:1", address: "C2", value: 'has "quotes" too' }
+    ]);
+    const table = parseCsv(read(result.buffer));
+    assert.equal(table.delimiter, delimiter);
+    assert.equal(table.rows[1][1], `Company${delimiter} A`);
+    assert.equal(table.rows[1][2], 'has "quotes" too');
+    // Untouched cells and source bytes survive the round-trip.
+    assert.equal(table.rows[2][1], "Other");
+    assert.equal(table.rows[0][0], "id");
+    assert.equal(parseCsv(read(original)).rows[1][1], "Old");
+
+    // A different supported separator inside the value must not confuse the
+    // reader's delimiter detection on reopen.
+    const other = [",", ";", "\t", "|"].find((d) => d !== delimiter);
+    const cross = editCsv("cross.csv", original, [
+      { kind: "set_cell", target: "table:1", address: "B2", value: `mixed${other}value` }
+    ]);
+    const reopened = parseCsv(read(cross.buffer));
+    assert.equal(reopened.delimiter, delimiter);
+    assert.equal(reopened.rows[1][1], `mixed${other}value`);
+  }
+});
+

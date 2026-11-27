@@ -147,13 +147,30 @@ function coordinate(address) {
   return { column, row };
 }
 
-function csvField(value) {
-  // Values are already in exported form; only quoting for delimiters/newlines.
-  return /[,"\r\n]/u.test(value) ? `"${value.replaceAll('"', '""')}"` : value;
+function needsQuoting(value, delimiter) {
+  // Quote on any supported separator, not just the active one: the reader
+  // re-detects the delimiter heuristically, so a bare ';' in a comma file (or
+  // a bare ',' in a semicolon file) must stay one field on reopen. Quoting all
+  // candidates also preserves the engine's historical comma-quoting behavior.
+  for (const character of value)
+    if (
+      DELIMITERS.includes(character) ||
+      character === delimiter ||
+      character === '"' ||
+      character === "\r" ||
+      character === "\n"
+    )
+      return true;
+  return false;
+}
+function csvField(value, delimiter) {
+  return needsQuoting(value, delimiter) ? `"${value.replaceAll('"', '""')}"` : value;
 }
 
 function serialize(table) {
-  const lines = table.rows.map((row) => row.map(csvField).join(table.delimiter));
+  const lines = table.rows.map((row) =>
+    row.map((value) => csvField(value, table.delimiter)).join(table.delimiter)
+  );
   const body = lines.join("\n");
   return table.bom
     ? Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from(body, "utf8")])
