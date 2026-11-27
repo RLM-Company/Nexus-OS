@@ -1,7 +1,13 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import { Type } from "typebox";
+import { TypeBoxValidatorCompiler } from "@fastify/type-provider-typebox";
 import type { IdentityContext } from "@cosmora/contracts";
-import { ChatImageAttachmentSchema, type ChatImageAttachment } from "@cosmora/contracts";
+import {
+  ChatImageAttachmentSchema,
+  StudioStoryboardChangeSchema,
+  type StudioStoryboardChange,
+  type ChatImageAttachment
+} from "@cosmora/contracts";
 import { MediaCapabilityError, type MediaAudioMime } from "@cosmora/model-gateway";
 import type { MediaService } from "./media-service.js";
 
@@ -14,6 +20,7 @@ const bad = (
 
 const params = Type.Object({ id: Type.String({ format: "uuid" }) });
 type Id = { id: string };
+const unsupported = { ready: false, model: null, reason: "REGISTRY_UNAVAILABLE" } as const;
 
 const extractHeaderRequestId = (request: FastifyRequest): string | undefined => {
   const ids = [
@@ -32,6 +39,7 @@ const mapMediaRouteError = (reply: FastifyReply, error: unknown, fallbackCode: s
     return bad(reply, 400, error.code, error.reason);
   }
   const code = error instanceof Error ? error.message : fallbackCode;
+  if (code === "MEDIA_SOURCE_NOT_FOUND") return bad(reply, 404, code);
   if (code === "CONSENT_REQUIRED") return bad(reply, 403, code);
   if (code === "MEDIA_BUSY" || code === "IDEMPOTENCY_CONFLICT") return bad(reply, 409, code);
   if (
@@ -57,6 +65,17 @@ const mapMediaRouteError = (reply: FastifyReply, error: unknown, fallbackCode: s
   return bad(reply, fallbackCode === "TRANSCRIPTION_FAILED" ? 400 : 503, fallbackCode);
 };
 
+/** Audio is already bounded and verified by the store before serving a single byte range. */
+function audioRange(value: string, size: number) {
+  const match = /^bytes=(\d{0,16})-(\d{0,16})$/.exec(value);
+  if (!match || (!match[1] && !match[2])) return null;
+  const first = match[1] ? Number(match[1]) : Math.max(0, size - Number(match[2]));
+  const last = match[1] && match[2] ? Math.min(size - 1, Number(match[2])) : size - 1;
+  if (!Number.isSafeInteger(first) || !Number.isSafeInteger(last) || first > last || first >= size)
+    return null;
+  return { first, last };
+}
+
 export function registerMediaRoutes(
   app: FastifyInstance,
   service: MediaService,
@@ -81,7 +100,14 @@ export function registerMediaRoutes(
   });
 
   app.get("/api/v1/media/capabilities", () => ({
-    capabilities: service.capabilities(),
+    capabilities: {
+      ...service.capabilities(),
+      image_region_editing: unsupported,
+      video_generation: unsupported,
+      video_scene_regeneration: unsupported,
+      sound_effects: unsupported,
+      music_generation: unsupported
+    },
     browser: {
       speech_recognition: "client-detected",
       speech_synthesis: "client-detected",
@@ -89,6 +115,47 @@ export function registerMediaRoutes(
       server_voice_assistant: false
     }
   }));
+
+  const storyboardError = (reply: FastifyReply, error: unknown) => {
+    const code = error instanceof Error ? error.message : "";
+    if (code === "STORYBOARD_CONFLICT") return bad(reply, 409, code);
+    if (code === "STORYBOARD_LIMIT") return bad(reply, 409, code);
+    if (code === "STORYBOARD_SCENE_NOT_FOUND") return bad(reply, 404, code);
+    return bad(reply, 503, "STORYBOARD_UNAVAILABLE");
+  };
+  app.get<{ Querystring: { download?: string } }>(
+    "/api/v1/media/storyboard",
+    {
+      schema: {
+        querystring: Type.Object(
+          { download: Type.Optional(Type.Literal("1")) },
+          { additionalProperties: false }
+        )
+      }
+    },
+    (request, reply) => {
+      try {
+        const board = service.storyboard(identityFor(request).owner_id);
+        if (request.query.download === "1")
+          reply.header("Content-Disposition", 'attachment; filename="kosmora-storyboard.json"');
+        reply.header("X-Content-Type-Options", "nosniff");
+        return board;
+      } catch (error) {
+        return storyboardError(reply, error);
+      }
+    }
+  );
+  app.put<{ Body: StudioStoryboardChange }>(
+    "/api/v1/media/storyboard",
+    { validatorCompiler: TypeBoxValidatorCompiler, schema: { body: StudioStoryboardChangeSchema } },
+    (request, reply) => {
+      try {
+        return service.storyboard(identityFor(request).owner_id, request.body);
+      } catch (error) {
+        return storyboardError(reply, error);
+      }
+    }
+  );
 
   app.get("/api/v1/media/jobs", (request) => ({
     items: service.list(identityFor(request).owner_id)
@@ -102,6 +169,7 @@ export function registerMediaRoutes(
           {
             prompt: Type.String({ minLength: 1, maxLength: 2000 }),
             references: Type.Optional(Type.Array(ChatImageAttachmentSchema, { maxItems: 2 })),
+            source_job_id: Type.Optional(Type.String({ format: "uuid" })),
             explicit_paid_consent: Type.Boolean(),
             client_request_id: Type.Optional(Type.String({ minLength: 1, maxLength: 128 })),
             size: Type.Optional(Type.String({ minLength: 1, maxLength: 32 })),
@@ -124,6 +192,7 @@ export function registerMediaRoutes(
       const body = request.body as {
         prompt: string;
         references?: ChatImageAttachment[];
+        source_job_id?: string;
         explicit_paid_consent: boolean;
         client_request_id?: string;
         size?: string;
@@ -147,6 +216,7 @@ export function registerMediaRoutes(
           body.explicit_paid_consent,
           {
             client_request_id: extractHeaderRequestId(request),
+            source_job_id: body.source_job_id,
             size: body.size,
             resolution: body.resolution,
             aspect_ratio: body.aspect_ratio,
@@ -318,6 +388,22 @@ export function registerMediaRoutes(
           "Content-Disposition",
           `attachment; filename="kosmora-${request.params.id}.${asset.extension}"`
         );
+      if (asset.mime.startsWith("audio/")) {
+        reply.header("Accept-Ranges", "bytes");
+        if (request.headers.range && !request.headers["if-range"]) {
+          const selected = audioRange(request.headers.range, asset.bytes.length);
+          if (!selected)
+            return reply.code(416).header("Content-Range", `bytes */${asset.bytes.length}`).send();
+          return reply
+            .code(206)
+            .type(asset.mime)
+            .header(
+              "Content-Range",
+              `bytes ${selected.first}-${selected.last}/${asset.bytes.length}`
+            )
+            .send(asset.bytes.subarray(selected.first, selected.last + 1));
+        }
+      }
       return reply.type(asset.mime).send(asset.bytes);
     }
   );

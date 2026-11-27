@@ -98,6 +98,11 @@ test("lost image POST response restores owned job without another paid request",
 test("an explicitly cancelled image is never silently restarted", async ({ page }) => {
   let posts = 0;
   let cancels = 0;
+  let polling = false;
+  let releasePoll: () => void = () => {};
+  const late = new Promise<void>((resolve) => {
+    releasePoll = resolve;
+  });
   const running = {
     id: jobId,
     kind: "image",
@@ -111,11 +116,13 @@ test("an explicitly cancelled image is never silently restarted", async ({ page 
     route.fulfill({ json: capabilityResponse })
   );
   await page.route("**/api/v1/media/jobs", (route) => route.fulfill({ json: { items: [] } }));
-  await page.route(`**/api/v1/media/jobs/${jobId}`, (route) => {
+  await page.route(`**/api/v1/media/jobs/${jobId}`, async (route) => {
     if (route.request().method() === "DELETE") {
       cancels++;
       return route.fulfill({ json: { ...running, status: "cancelled" } });
     }
+    polling = true;
+    await late;
     return route.fulfill({ json: running });
   });
   await page.route("**/api/v1/media/images", (route) => {
@@ -126,8 +133,11 @@ test("an explicitly cancelled image is never silently restarted", async ({ page 
   await page.getByLabel("Описание изображения", { exact: true }).fill("Лунная станция");
   await page.getByRole("button", { name: "Сгенерировать изображение" }).click();
   await expect(page.getByRole("button", { name: "Отменить" })).toBeVisible();
+  await expect.poll(() => polling).toBe(true);
   await page.getByRole("button", { name: "Отменить" }).click();
   await expect(page.getByText("Отменено", { exact: true })).toBeVisible();
+  releasePoll();
+  await expect(page.getByRole("button", { name: "Отменить" })).toHaveCount(0);
   expect(posts).toBe(1);
   expect(cancels).toBe(1);
 });
@@ -358,4 +368,157 @@ test("Sound distinguishes unavailable owned MP3 history from an empty history", 
   await page.goto("/?surface=sound");
   await expect(page.getByText(/Не удалось загрузить историю MP3/)).toBeVisible();
   await expect(page.getByText("Сохранённых записей пока нет.")).toHaveCount(0);
+});
+
+test("selects a saved image as an exact source and compares both versions after reload", async ({
+  page
+}) => {
+  const revisedId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+  const snapshot = {
+    id: jobId,
+    kind: "image",
+    status: "done",
+    error_code: null,
+    created_at: "2026-11-26T13:00:00.000Z",
+    asset: { mime: "image/png", extension: "png", bytes: 69 }
+  };
+  let revised:
+    | (typeof snapshot & { parameters: { source_job_id: string }; client_request_id: string })
+    | undefined;
+  const red = Buffer.from(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC",
+    "base64"
+  );
+  const blue = Buffer.from(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGNgYPgPAAEDAQAIicLsAAAAAElFTkSuQmCC",
+    "base64"
+  );
+  await page.route("**/api/v1/media/capabilities", (route) =>
+    route.fulfill({
+      json: {
+        capabilities: {
+          ...capabilityResponse.capabilities,
+          image_editing: { ready: true, model: "gpt-image-1", reason: null }
+        }
+      }
+    })
+  );
+  await page.route("**/api/v1/media/jobs", (route) =>
+    route.fulfill({ json: { items: revised ? [revised, snapshot] : [snapshot] } })
+  );
+  await page.route(`**/api/v1/media/jobs/${revisedId}`, (route) =>
+    route.fulfill({ json: revised })
+  );
+  await page.route("**/api/v1/media/assets/**", (route) =>
+    route.fulfill({
+      contentType: "image/png",
+      body: route.request().url().includes(revisedId) ? blue : red
+    })
+  );
+  await page.route("**/api/v1/media/images", (route) => {
+    const body = route.request().postDataJSON() as {
+      source_job_id?: string;
+      references?: unknown;
+      client_request_id: string;
+    };
+    expect(body.source_job_id).toBe(jobId);
+    expect(body.references).toBeUndefined();
+    revised = {
+      ...snapshot,
+      id: revisedId,
+      created_at: "2026-11-26T13:01:00.000Z",
+      parameters: { source_job_id: jobId },
+      client_request_id: body.client_request_id
+    };
+    return route.fulfill({ status: 202, json: revised });
+  });
+  page.on("dialog", (dialog) => void dialog.accept());
+  await page.goto("/?surface=images");
+  const open = async (id: string) => {
+    await page.locator(`button:has(img[src="/api/v1/media/assets/${id}"])`).click();
+  };
+  await open(jobId);
+  await page.getByRole("button", { name: "Продолжить редактирование" }).click();
+  await expect(page.getByRole("img", { name: "Исходник для правки" })).toBeVisible();
+  await page.getByLabel("Описание изображения", { exact: true }).fill("Измени цвет");
+  await page.getByRole("button", { name: "Изменить изображение", exact: true }).click();
+  await expect(page.getByRole("img", { name: "Сгенерированное изображение" })).toHaveAttribute(
+    "src",
+    new RegExp(revisedId)
+  );
+  await page.reload();
+  await open(revisedId);
+  await page.getByRole("button", { name: "Сравнить с исходником" }).click();
+  await expect(page.getByRole("img", { name: "Исходное изображение" })).toHaveAttribute(
+    "src",
+    new RegExp(jobId)
+  );
+  await page.getByRole("button", { name: "Открыть исходную версию" }).click();
+  await expect(page.getByRole("link", { name: "Скачать PNG" })).toHaveAttribute(
+    "href",
+    new RegExp(jobId)
+  );
+});
+
+test("sends Studio speech options and opens the returned audio format", async ({ page }) => {
+  const existing = {
+    client_request_id: "",
+    id: jobId,
+    kind: "speech",
+    status: "done",
+    error_code: null,
+    created_at: "2026-11-26T13:00:00.000Z",
+    asset: { mime: "audio/wav", extension: "wav", bytes: 44 }
+  };
+  let written = false;
+  await page.route("**/api/v1/media/capabilities", (route) =>
+    route.fulfill({
+      json: {
+        capabilities: {
+          ...capabilityResponse.capabilities,
+          speech: {
+            ready: true,
+            model: "gpt-4o-mini-tts",
+            reason: null,
+            constraints: {
+              voices: ["alloy", "nova"],
+              formats: ["mp3", "wav"],
+              minSpeed: 0.25,
+              maxSpeed: 4
+            }
+          }
+        }
+      }
+    })
+  );
+  await page.route("**/api/v1/media/jobs", (route) =>
+    route.fulfill({ json: { items: written ? [existing] : [] } })
+  );
+  await page.route("**/api/v1/media/speech", (route) => {
+    const request = route.request().postDataJSON() as { client_request_id: string };
+    expect(request).toMatchObject({
+      text: "Проверочный текст",
+      voice: "nova",
+      speed: 1.5,
+      format: "wav",
+      explicit_paid_consent: true
+    });
+    existing.client_request_id = request.client_request_id;
+    written = true;
+    return route.fulfill({ status: 202, json: existing });
+  });
+  await page.goto("/?surface=sound");
+  await page.getByLabel("Текст для озвучивания").fill("Проверочный текст");
+  await page.getByLabel("Голос провайдера").selectOption("nova");
+  await page.getByLabel("Формат записи").selectOption("wav");
+  await page.getByLabel("Скорость озвучивания").fill("1.5");
+  await page.getByLabel(/Разрешаю этот платный вызов/).check();
+  await page.getByRole("button", { name: "Создать WAV на сервере" }).click();
+  await expect(page.getByRole("link", { name: "Скачать WAV" }).first()).toHaveAttribute(
+    "href",
+    new RegExp(jobId)
+  );
+  await expect(page.locator("audio").first()).toHaveAttribute("src", new RegExp(jobId));
+  await page.reload();
+  await expect(page.getByRole("status").filter({ hasText: "Статус WAV: done" })).toBeVisible();
 });

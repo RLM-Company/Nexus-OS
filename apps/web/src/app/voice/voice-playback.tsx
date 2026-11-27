@@ -12,6 +12,13 @@ import { WorkspaceIcon } from "../workspace-icons";
 import { mediaBudgetLabel, mediaBudgetNotice } from "../media-generation/media-budget-status";
 import { parseMediaJobListResponse } from "../media-generation/media-job-response";
 
+function audioFormat(job: MediaJob | null): string | undefined {
+  const mime = job?.asset?.mime;
+  if (mime === "audio/mpeg") return "MP3";
+  if (mime === "audio/wav") return "WAV";
+  if (mime === "audio/ogg") return "Opus";
+}
+
 export function CompactVoicePlayback({ text }: { text: string }) {
   const [available, setAvailable] = useState(false);
   const [speaking, setSpeaking] = useState(false);
@@ -71,6 +78,11 @@ function ExpandedPlayback({
   const { job, start, cancel, error, recovering, unknown, historyUnverified, checkUnknown } =
     useMediaJob(recoverServerJob ? "speech" : undefined);
   const [consent, setConsent] = useState(false);
+  const [voice, setVoice] = useState("");
+  const [speed, setSpeed] = useState(1);
+  const [format, setFormat] = useState("mp3");
+  const constraints = recoverServerJob ? caps?.speech.constraints : null;
+  const resultFormat = audioFormat(job);
   const [speaking, setSpeaking] = useState(false);
   const [browserAvailable, setBrowserAvailable] = useState(false);
   const audioRef = useRef<HTMLAudioElement>(null);
@@ -111,16 +123,26 @@ function ExpandedPlayback({
               !consent ||
               !text.trim() ||
               text.length > 4096 ||
+              Boolean(
+                constraints &&
+                (speed < constraints.minSpeed ||
+                  speed > constraints.maxSpeed ||
+                  !constraints.formats.includes(format))
+              ) ||
               recovering ||
               historyUnverified ||
               Boolean(job && ["queued", "running"].includes(job.status))
             }
             onClick={() => {
-              void start("speech", text);
+              void start({
+                kind: "speech",
+                value: text,
+                options: constraints ? { ...(voice ? { voice } : {}), speed, format } : undefined
+              });
               setConsent(false);
             }}
           >
-            Создать MP3 на сервере
+            Создать {format.toUpperCase()} на сервере
           </button>
         )}
         {job && ["queued", "running"].includes(job.status) && (
@@ -136,6 +158,58 @@ function ExpandedPlayback({
       </div>
       {text.length > 4096 && (
         <small role="alert">Для MP3 используйте текст не длиннее 4096 символов.</small>
+      )}
+      {constraints && caps?.speech.ready && (
+        <div className={styles.row}>
+          <label>
+            Голос провайдера
+            <select
+              value={voice}
+              disabled={unknown}
+              onChange={(event) => {
+                setVoice(event.target.value);
+                setConsent(false);
+              }}
+            >
+              <option value="">По умолчанию</option>
+              {constraints.voices.map((name) => (
+                <option key={name}>{name}</option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Формат записи
+            <select
+              value={format}
+              disabled={unknown}
+              onChange={(event) => {
+                setFormat(event.target.value);
+                setConsent(false);
+              }}
+            >
+              {constraints.formats.map((option) => (
+                <option key={option} value={option}>
+                  {option.toUpperCase()}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Скорость озвучивания
+            <input
+              type="number"
+              min={constraints.minSpeed}
+              max={constraints.maxSpeed}
+              step={0.05}
+              value={speed}
+              disabled={unknown}
+              onChange={(event) => {
+                setSpeed(event.target.valueAsNumber || 1);
+                setConsent(false);
+              }}
+            />
+          </label>
+        </div>
       )}
       {caps?.speech.ready ? (
         <label className={styles.consent}>
@@ -166,7 +240,12 @@ function ExpandedPlayback({
       {recoverServerJob && recovering && <small role="status">Проверяем историю MP3…</small>}
       {job && (
         <small role="status">
-          Статус MP3: {job.status}
+          Статус{" "}
+          {resultFormat ??
+            (typeof job.parameters?.format === "string"
+              ? job.parameters.format.toUpperCase()
+              : "MP3")}
+          : {job.status}
           {job.error_code ? ` · ${job.error_code}` : ""}
         </small>
       )}
@@ -175,7 +254,7 @@ function ExpandedPlayback({
           {mediaBudgetNotice(job?.budget_state)}
         </small>
       )}
-      {job?.status === "done" && job.asset?.mime === "audio/mpeg" && (
+      {job?.status === "done" && resultFormat && (
         <>
           <audio ref={audioRef} controls preload="none" src={mediaAssetUrl(job.id)}>
             Браузер не поддерживает аудио.
@@ -184,7 +263,7 @@ function ExpandedPlayback({
             <button type="button" onClick={stop}>
               Стоп
             </button>
-            <a href={`${mediaAssetUrl(job.id)}?download=1`}>Скачать MP3</a>
+            <a href={`${mediaAssetUrl(job.id)}?download=1`}>Скачать {resultFormat}</a>
           </div>
         </>
       )}
@@ -273,10 +352,10 @@ function SavedSpeech() {
             {new Date(item.created_at).toLocaleString("ru")} · {item.status}
             {mediaBudgetLabel(item.budget_state) ? ` · ${mediaBudgetLabel(item.budget_state)}` : ""}
           </small>
-          {item.status === "done" && item.asset?.mime === "audio/mpeg" && (
+          {item.status === "done" && audioFormat(item) && (
             <>
               <audio controls preload="none" src={mediaAssetUrl(item.id)} />
-              <a href={`${mediaAssetUrl(item.id)}?download=1`}>Скачать MP3</a>
+              <a href={`${mediaAssetUrl(item.id)}?download=1`}>Скачать {audioFormat(item)}</a>
             </>
           )}
           {["queued", "running"].includes(item.status) && (
@@ -336,8 +415,8 @@ export function SpeechStudio() {
     <section className={styles.studio}>
       <h3>Озвучивание текста</h3>
       <p>
-        Проверяйте голос на готовом тексте. Браузер может озвучить бесплатно; сервер может создать
-        сохраняемый MP3 при наличии разрешённой модели.
+        Проверяйте голос на готовом тексте. Браузер может озвучить бесплатно; сервер сохраняет
+        запись в формате, который объявляет подключённый провайдер.
       </p>
       <label>
         Текст для озвучивания

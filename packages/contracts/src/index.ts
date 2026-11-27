@@ -76,3 +76,5 @@ export {
 export type { OfficeOperation, OfficeCursor } from "./office-workspace.js";
 
 export { DOCUMENT_LIBRARY_PDF_MAX_PAGES } from "./document-library.js";
+
+export * from "./studio-storyboard.js";

@@ -61,12 +61,34 @@ test("generates a durable presentation through Work, reviews it and exports edit
   expect(strFromU8(zip["ppt/notesSlides/notesSlide1.xml"]!)).toContain(
     "Заметки &amp; &lt;текст&gt;"
   );
+  await editor.getByRole("button", { name: /Второй закон/ }).click();
+  await expect(editor.getByLabel("Заголовок", { exact: true })).toHaveValue("Второй закон");
+  await editor.getByLabel("Заголовок", { exact: true }).fill("Второй закон · проверенная правка");
+  const saved = page.waitForResponse(
+    (response) =>
+      response.request().method() === "PUT" && response.url().includes("/api/v1/presentations/")
+  );
+  await page.getByRole("button", { name: "Сохранить", exact: true }).click();
+  expect((await saved).status()).toBe(200);
+  const editedDownload = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Скачать PPTX", exact: true }).click();
+  const edited = unzipSync(new Uint8Array(await readFile((await (await editedDownload).path())!)));
+  expect(edited["ppt/slides/slide1.xml"]).toEqual(zip["ppt/slides/slide1.xml"]);
+  expect(edited["ppt/slides/slide3.xml"]).toEqual(zip["ppt/slides/slide3.xml"]);
+  expect(edited["ppt/notesSlides/notesSlide1.xml"]).toEqual(zip["ppt/notesSlides/notesSlide1.xml"]);
+  expect(strFromU8(edited["ppt/slides/slide2.xml"]!)).toContain(
+    "Второй закон · проверенная правка"
+  );
   await page.reload();
   await page
     .getByRole("button", { name: /Проверка слайдов/ })
     .first()
     .click();
   await expect(editor.getByLabel("Заголовок", { exact: true })).toHaveValue("Законы Ньютона");
+  await editor.getByRole("button", { name: /Второй закон · проверенная правка/ }).click();
+  await expect(editor.getByLabel("Заголовок", { exact: true })).toHaveValue(
+    "Второй закон · проверенная правка"
+  );
   const works = (
     (await (await request.get(`/api/v1/projects/${project.id}/work`)).json()) as {
       items: { model_requests: number }[];
