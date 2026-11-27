@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/require-await -- No network in the provider fixture. */
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -284,10 +283,13 @@ it("continues a multi-format package after restart and exports the exact retaine
     const sourceUrl = artifact.fragments[0]!.current_fragment_url;
     const originalSource = await restarted.inject(sourceUrl);
     expect(originalSource.statusCode, originalSource.body).toBe(200);
-    expect(originalSource.json()).toMatchObject({
-      page: 1,
-      content: expect.stringContaining("00123")
-    });
+    const location = originalSource.json<{ page: number; content: string }>();
+    expect(location.page).toBe(1);
+    expect(location.content).toContain("00123");
+    expect(
+      (await restarted.inject(sourceUrl.replace(/sha256=[a-f0-9]+/u, "sha256=" + "b".repeat(64))))
+        .statusCode
+    ).toBe(410);
     expect((await restarted.inject(sourceUrl.replace(project, "another-project"))).statusCode).toBe(
       404
     );

@@ -1,3 +1,4 @@
+import { documentFragmentHash } from "./document-source-proof.js";
 import { createHash, randomUUID } from "node:crypto";
 import type {
   ModelGateway,
@@ -97,7 +98,9 @@ export function validateDocumentAnswer(
 type AnalysisNotes = { text: string; sources: AnswerSource[] };
 type AnalysisBatch = {
   file_id: string;
-  fragments: Pick<AnswerSource, "ref" | "chunk_id" | "page" | "line_start" | "line_end">[];
+  fragments: (Pick<AnswerSource, "ref" | "chunk_id" | "page" | "line_start" | "line_end"> & {
+    sha256: string;
+  })[];
   notes: AnalysisNotes | null;
   error?: "INVALID_EVIDENCE" | "BATCH_FAILED";
 };
@@ -476,12 +479,13 @@ export class DocumentAnswerService {
             .digest("hex");
           let notes: AnalysisNotes | null = null;
           const fileId = sources[0]!.file_id;
-          const fragments = sources.map(({ ref, chunk_id, page, line_start, line_end }) => ({
-            ref,
-            chunk_id,
-            page,
-            line_start,
-            line_end
+          const fragments = sources.map((source) => ({
+            ref: source.ref,
+            chunk_id: source.chunk_id,
+            page: source.page,
+            line_start: source.line_start,
+            line_end: source.line_end,
+            sha256: documentFragmentHash(source)
           }));
           const existing =
             run.retry_of && this.store.batch(run.project_id, run.owner_id, run.id, index, hash);

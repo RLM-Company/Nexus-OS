@@ -149,6 +149,8 @@ export function registerDocumentAnswerRoutes(
       const owner = identityFor(req).owner_id;
       const run = service.store.get(req.params.projectId, owner, req.params.id);
       if (!run?.coverage) return reply.code(404).send({ error: { code: "NOT_FOUND" } });
+      if (["queued", "running"].includes(run.status))
+        return reply.code(409).send({ error: { code: "ANALYSIS_IN_PROGRESS" } });
       function* records() {
         if (!run) return;
         yield JSON.stringify({
@@ -165,7 +167,7 @@ export function registerDocumentAnswerRoutes(
           const { ordinal, input_hash } = row;
           const result = JSON.parse(row.notes) as {
             file_id: string;
-            fragments: Array<{ chunk_id: number }>;
+            fragments: Array<{ chunk_id: number; sha256: string }>;
           };
           const fileUrl = `/api/v1/projects/${encodeURIComponent(run.project_id)}/document-library/${encodeURIComponent(result.file_id)}`;
           yield JSON.stringify({
@@ -177,7 +179,8 @@ export function registerDocumentAnswerRoutes(
               original_url: fileUrl + "/download",
               fragments: result.fragments.map((fragment) => ({
                 ...fragment,
-                current_fragment_url: fileUrl + "/fragments/" + fragment.chunk_id
+                current_fragment_url:
+                  fileUrl + "/fragments/" + fragment.chunk_id + "?sha256=" + fragment.sha256
               }))
             }
           }) + "\n";

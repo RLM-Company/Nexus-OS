@@ -1,3 +1,4 @@
+import { documentFragmentHash } from "./document-source-proof.js";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { Type } from "typebox";
 import { DOCUMENT_LIBRARY_PDF_MAX_PAGES, type IdentityContext } from "@cosmora/contracts";
@@ -209,7 +210,7 @@ export function registerDocumentLibraryRoutes(
     }
   );
 
-  app.get<{ Params: FileScope & { chunkId: number } }>(
+  app.get<{ Params: FileScope & { chunkId: number }; Querystring: { sha256?: string } }>(
     `${base}/:fileId/fragments/:chunkId`,
     {
       schema: {
@@ -219,6 +220,10 @@ export function registerDocumentLibraryRoutes(
             chunkId: Type.Integer({ minimum: 1, maximum: Number.MAX_SAFE_INTEGER })
           },
           { additionalProperties: false }
+        ),
+        querystring: Type.Object(
+          { sha256: Type.Optional(Type.String({ pattern: "^[a-f0-9]{64}$" })) },
+          { additionalProperties: false }
         )
       }
     },
@@ -226,6 +231,8 @@ export function registerDocumentLibraryRoutes(
       const { projectId, fileId, chunkId } = request.params;
       const chunk = store.chunk(projectId, identityFor(request).owner_id, fileId, chunkId);
       if (!chunk) return reply.code(404).send({ error: { code: "NOT_FOUND" } });
+      if (request.query.sha256 && documentFragmentHash(chunk) !== request.query.sha256)
+        return reply.code(410).send({ error: { code: "SOURCE_CHANGED" } });
       return reply
         .header("Cache-Control", "private, no-store")
         .header("X-Content-Type-Options", "nosniff")
