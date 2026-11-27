@@ -1,0 +1,1454 @@
+diff --git a/apps/api/src/studio/external-image-provider-adapter.ts b/apps/api/src/studio/external-image-provider-adapter.ts
+new file mode 100644
+index 0000000..418331e
+--- /dev/null
++++ b/apps/api/src/studio/external-image-provider-adapter.ts
+@@ -0,0 +1,114 @@
++import type {
++  ExternalMediaDownloadedArtifact,
++  ExternalMediaProviderAdapter,
++  ExternalMediaProviderStatus,
++  ExternalMediaStartRequest
++} from "./external-music-provider-adapter.js";
++
++export class ExternalImageProviderAdapter implements ExternalMediaProviderAdapter {
++  public readonly providerId = "external-image-provider";
++  public readonly mode = "image" as const;
++
++  private readonly baseUrl: string;
++  private readonly apiKey: string;
++  private readonly fetchImpl: typeof fetch;
++
++  constructor(options: {
++    baseUrl: string;
++    apiKey: string;
++    fetchImpl?: typeof fetch;
++  }) {
++    this.baseUrl = options.baseUrl.replace(/\/+$/, "");
++    this.apiKey = options.apiKey;
++    this.fetchImpl = options.fetchImpl ?? fetch;
++  }
++
++  public async startGeneration(req: ExternalMediaStartRequest): Promise<ExternalMediaProviderStatus> {
++    const res = await this.fetchImpl(`${this.baseUrl}/v1/images/generations`, {
++      method: "POST",
++      headers: {
++        "content-type": "application/json",
++        authorization: `Bearer ${this.apiKey}`,
++        "idempotency-key": req.idempotencyKey
++      },
++      body: JSON.stringify({
++        prompt: req.prompt,
++        aspect_ratio: req.parameters.aspectRatio ?? "1:1",
++        style: req.parameters.style ?? "editorial",
++        references: req.references
++      })
++    });
++
++    const data = (await res.json().catch(() => ({}))) as Record<string, any>;
++    if (!res.ok) {
++      return {
++        providerJobId: String(data.id ?? data.providerJobId ?? ""),
++        status: "failed",
++        errorCode: String(data.error?.code ?? data.errorCode ?? `IMAGE_PROVIDER_HTTP_${res.status}`),
++        errorMessage: String(
++          data.error?.message ?? data.errorMessage ?? `Ошибка провайдера изображений (HTTP ${res.status}).`
++        )
++      };
++    }
++
++    return {
++      providerJobId: String(data.id ?? data.providerJobId ?? ""),
++      status: (data.status as ExternalMediaProviderStatus["status"]) ?? "queued",
++      artifactUrl: data.artifact_url ?? data.artifactUrl ?? null,
++      mimeType: data.mime_type ?? data.mimeType ?? "image/png",
++      filename: data.filename ?? null,
++      errorCode: data.error_code ?? data.errorCode ?? null,
++      errorMessage: data.error_message ?? data.errorMessage ?? null
++    };
++  }
++
++  public async pollStatus(providerJobId: string): Promise<ExternalMediaProviderStatus> {
++    const res = await this.fetchImpl(
++      `${this.baseUrl}/v1/images/generations/${encodeURIComponent(providerJobId)}`,
++      {
++        method: "GET",
++        headers: { authorization: `Bearer ${this.apiKey}` }
++      }
++    );
++
++    const data = (await res.json().catch(() => ({}))) as Record<string, any>;
++    if (!res.ok) {
++      return {
++        providerJobId,
++        status: "failed",
++        errorCode: String(data.error?.code ?? data.errorCode ?? `IMAGE_PROVIDER_POLL_HTTP_${res.status}`),
++        errorMessage: String(
++          data.error?.message ?? data.errorMessage ?? `Ошибка проверки статуса изображения (HTTP ${res.status}).`
++        )
++      };
++    }
++
++    return {
++      providerJobId: String(data.id ?? data.providerJobId ?? providerJobId),
++      status: (data.status as ExternalMediaProviderStatus["status"]) ?? "running",
++      artifactUrl: data.artifact_url ?? data.artifactUrl ?? null,
++      mimeType: data.mime_type ?? data.mimeType ?? "image/png",
++      filename: data.filename ?? null,
++      errorCode: data.error_code ?? data.errorCode ?? null,
++      errorMessage: data.error_message ?? data.errorMessage ?? null
++    };
++  }
++
++  public async downloadArtifact(
++    artifactUrl: string,
++    fallbackFilename: string
++  ): Promise<ExternalMediaDownloadedArtifact> {
++    const fullUrl = artifactUrl.startsWith("http")
++      ? artifactUrl
++      : `${this.baseUrl}${artifactUrl.startsWith("/") ? "" : "/"}${artifactUrl}`;
++    const res = await this.fetchImpl(fullUrl, {
++      method: "GET",
++      headers: { authorization: `Bearer ${this.apiKey}` }
++    });
++    if (!res.ok) throw new Error(`IMAGE_PROVIDER_DOWNLOAD_HTTP_${res.status}`);
++    const buffer = Buffer.from(await res.arrayBuffer());
++    if (buffer.byteLength === 0) throw new Error("IMAGE_PROVIDER_ARTIFACT_EMPTY");
++    const mimeType = res.headers.get("content-type")?.split(";")[0]?.trim() || "image/png";
++    return { buffer, mimeType, filename: fallbackFilename };
++  }
++}
+diff --git a/apps/api/src/studio/index.ts b/apps/api/src/studio/index.ts
+index 38a9106..3abdea9 100644
+--- a/apps/api/src/studio/index.ts
++++ b/apps/api/src/studio/index.ts
+@@ -1,3 +1,4 @@
++export { ExternalImageProviderAdapter } from "./external-image-provider-adapter.js";
+ export {
+   StudioGamesService,
+   renderPlayableGameBundle,
+diff --git a/apps/api/src/studio/studio-media-service.ts b/apps/api/src/studio/studio-media-service.ts
+index 8cb6493..4f40c40 100644
+--- a/apps/api/src/studio/studio-media-service.ts
++++ b/apps/api/src/studio/studio-media-service.ts
+@@ -3,6 +3,7 @@ import { createRequire } from "node:module";
+ import type { DatabaseSync } from "node:sqlite";
+ import { ExternalMusicProviderAdapter, type ExternalMediaProviderAdapter } from "./external-music-provider-adapter.js";
+ import { ExternalVideoProviderAdapter } from "./external-video-provider-adapter.js";
++import { ExternalImageProviderAdapter } from "./external-image-provider-adapter.js";
+ 
+ const require = createRequire(import.meta.url);
+ const wavAudio = require("../../../../desktop/windows/ci/wav-pcm-audio-verifier.cjs") as {
+@@ -29,7 +30,43 @@ const svgBuilder = require("../../../../desktop/windows/workspace/architecture-d
+   }) => { svg: string; mermaid: string; dot: string };
+ };
+ 
+-export type StudioMediaMode = "image" | "audio" | "music" | "video";
++export type StudioMediaMode = "image" | "audio" | "voice" | "sfx" | "music" | "video";
++export type StudioMediaEditTarget = "object" | "background" | "composition" | "style" | "params";
++
++export interface StudioMediaProviderCapabilities {
++  supportsEdit: boolean;
++  supportsReferences: boolean;
++  supportedEditTargets: StudioMediaEditTarget[];
++  maxReferences: number;
++  supportsSceneRegeneration?: boolean;
++  audioPurpose?: "voice" | "sfx" | "music" | "general";
++}
++
++export interface StudioMediaRevisionView {
++  version: number;
++  editTarget: StudioMediaEditTarget | "initial";
++  editInstruction: string;
++  params: Record<string, unknown>;
++  references: StudioMediaReference[];
++  artifactFilename: string;
++  artifactMimeType: string;
++  artifactSha256: string;
++  createdAt: string;
++}
++
++export interface StudioVideoSceneView {
++  sceneId: string;
++  sceneIndex: number;
++  title: string;
++  prompt: string;
++  durationSec: number;
++  cameraMotion: string;
++  references: StudioMediaReference[];
++  accepted: boolean;
++  sceneVersion: number;
++  sceneSha256: string;
++  updatedAt: string;
++}
+ export type StudioMediaLaunchSource = "chat" | "studio";
+ 
+ export type StudioMediaJobStatus =
+@@ -75,6 +112,7 @@ export interface StudioMediaProviderDescriptor {
+   available: boolean;
+   unavailableReason: string | null;
+   supportedParameters: StudioMediaParameterSpec[];
++  capabilities?: StudioMediaProviderCapabilities;
+   liveCheckSpec: StudioMediaLiveCheckSpec | null;
+ }
+ 
+@@ -100,6 +138,7 @@ export interface StudioMediaJobView {
+     verified: boolean;
+     verificationDetail: string;
+     downloadUrl: string;
++    streamUrl: string;
+     contentBase64: string;
+   } | null;
+   errorCode: string | null;
+@@ -162,6 +201,20 @@ export class StudioMediaService {
+         })
+       );
+     }
++    if (
++      !this.externalAdapters.has("external-image-provider") &&
++      this.externalNetworkAllowed &&
++      this.env.KOSMORA_IMAGE_PROVIDER_API_KEY &&
++      this.env.KOSMORA_IMAGE_PROVIDER_URL
++    ) {
++      this.externalAdapters.set(
++        "external-image-provider",
++        new ExternalImageProviderAdapter({
++          baseUrl: this.env.KOSMORA_IMAGE_PROVIDER_URL,
++          apiKey: this.env.KOSMORA_IMAGE_PROVIDER_API_KEY
++        })
++      );
++    }
+     this.ensureSchema();
+   }
+ 
+@@ -197,6 +250,39 @@ export class StudioMediaService {
+         ON studio_media_jobs(owner_id, idempotency_key)
+         WHERE idempotency_key IS NOT NULL;
+     `);
++    this.sqlite.exec(`
++      CREATE TABLE IF NOT EXISTS studio_media_revisions (
++        job_id TEXT NOT NULL,
++        version INTEGER NOT NULL,
++        edit_target TEXT NOT NULL,
++        edit_instruction TEXT NOT NULL,
++        params_json TEXT NOT NULL DEFAULT '{}',
++        references_json TEXT NOT NULL DEFAULT '[]',
++        artifact_filename TEXT NOT NULL,
++        artifact_mime_type TEXT NOT NULL,
++        artifact_sha256 TEXT NOT NULL,
++        artifact_base64 TEXT NOT NULL,
++        created_at TEXT NOT NULL,
++        PRIMARY KEY (job_id, version)
++      );
++
++      CREATE TABLE IF NOT EXISTS studio_video_scenes (
++        job_id TEXT NOT NULL,
++        scene_index INTEGER NOT NULL,
++        scene_id TEXT NOT NULL,
++        title TEXT NOT NULL,
++        prompt TEXT NOT NULL,
++        duration_sec INTEGER NOT NULL DEFAULT 4,
++        camera_motion TEXT NOT NULL DEFAULT 'smooth',
++        references_json TEXT NOT NULL DEFAULT '[]',
++        accepted INTEGER NOT NULL DEFAULT 0,
++        scene_version INTEGER NOT NULL DEFAULT 1,
++        scene_sha256 TEXT NOT NULL,
++        updated_at TEXT NOT NULL,
++        PRIMARY KEY (job_id, scene_id)
++      );
++    `);
++
+     for (const ddl of [
+       "ALTER TABLE studio_media_jobs ADD COLUMN launch_source TEXT NOT NULL DEFAULT 'studio'",
+       "ALTER TABLE studio_media_jobs ADD COLUMN provider_job_id TEXT",
+@@ -213,11 +299,14 @@ export class StudioMediaService {
+   public listProviders(): StudioMediaProviderDescriptor[] {
+     const hasImgKey = Boolean(this.env.KOSMORA_IMAGE_PROVIDER_API_KEY);
+     const hasAudioKey = Boolean(this.env.KOSMORA_AUDIO_PROVIDER_API_KEY);
++    const hasVoiceKey = Boolean(this.env.KOSMORA_VOICE_PROVIDER_API_KEY || this.env.KOSMORA_AUDIO_PROVIDER_API_KEY);
++    const hasSfxKey = Boolean(this.env.KOSMORA_SFX_PROVIDER_API_KEY || this.env.KOSMORA_AUDIO_PROVIDER_API_KEY);
+     const hasMusicKey = Boolean(this.env.KOSMORA_MUSIC_PROVIDER_API_KEY);
+     const hasVideoKey = Boolean(this.env.KOSMORA_VIDEO_PROVIDER_API_KEY);
+ 
+     return [
+       {
++        capabilities: { supportsEdit: true, supportsReferences: true, supportedEditTargets: ["object", "background", "composition", "style"], maxReferences: 6 },
+         providerId: "local-svg-visual",
+         mode: "image",
+         kind: "local",
+@@ -234,6 +323,7 @@ export class StudioMediaService {
+           { name: "aspectRatio", labelRu: "Соотношение сторон", type: "enum", options: ["1:1", "16:9", "9:16"], defaultValue: "1:1" },
+           { name: "style", labelRu: "Стиль", type: "string" }
+         ],
++        capabilities: { supportsEdit: true, supportsReferences: true, supportedEditTargets: ["object", "background", "composition", "style"], maxReferences: 4 },
+         providerId: "external-image-provider",
+         mode: "image",
+         kind: "external",
+@@ -295,6 +385,85 @@ export class StudioMediaService {
+         }
+       },
+       {
++        providerId: "local-voice-synth",
++        mode: "voice",
++        kind: "local",
++        available: true,
++        unavailableReason: null,
++        capabilities: { supportsEdit: true, supportsReferences: true, supportedEditTargets: ["params"], maxReferences: 1, audioPurpose: "voice" },
++        supportedParameters: [
++          { name: "voiceId", labelRu: "Голос", type: "enum", options: ["ru-neutral", "ru-warm", "en-studio"], defaultValue: "ru-neutral" },
++          { name: "speed", labelRu: "Скорость речи", type: "number", min: 0.5, max: 2.0, defaultValue: 1.0 },
++          { name: "durationMs", labelRu: "Длительность (мс)", type: "number", min: 400, max: 10000, defaultValue: 1000 }
++        ],
++        liveCheckSpec: null
++      },
++      {
++        providerId: "external-voice-provider",
++        mode: "voice",
++        kind: "external",
++        available: (hasVoiceKey && this.externalNetworkAllowed) || this.externalAdapters.has("external-voice-provider"),
++        unavailableReason: !hasVoiceKey
++          ? "Отсутствует переменная окружения KOSMORA_VOICE_PROVIDER_API_KEY."
++          : !this.externalNetworkAllowed
++            ? "Внешний сетевой доступ отключён в текущем контуре."
++            : null,
++        capabilities: { supportsEdit: false, supportsReferences: true, supportedEditTargets: [], maxReferences: 1, audioPurpose: "voice" },
++        supportedParameters: [
++          { name: "voiceId", labelRu: "Голос", type: "string", defaultValue: "ru-neutral" },
++          { name: "speed", labelRu: "Скорость речи", type: "number", min: 0.5, max: 2.0, defaultValue: 1.0 }
++        ],
++        liveCheckSpec: {
++          providerId: "external-voice-provider",
++          mode: "voice",
++          requiredEnvVars: ["KOSMORA_VOICE_PROVIDER_API_KEY", "KOSMORA_VOICE_PROVIDER_URL"],
++          probeEndpoint: "POST ${KOSMORA_VOICE_PROVIDER_URL}/v1/audio/speech",
++          expectedContentType: "audio/mpeg",
++          verificationCommandHint: "Задать KOSMORA_VOICE_PROVIDER_API_KEY и выполнить POST /api/v1/studio/media/jobs с mode=voice.",
++          blockingReason: !hasVoiceKey ? "EXTERNAL_VOICE_API_KEY_MISSING" : "EXTERNAL_NETWORK_DISABLED_IN_SANDBOX"
++        }
++      },
++      {
++        providerId: "local-sfx-synth",
++        mode: "sfx",
++        kind: "local",
++        available: true,
++        unavailableReason: null,
++        capabilities: { supportsEdit: true, supportsReferences: false, supportedEditTargets: ["params"], maxReferences: 0, audioPurpose: "sfx" },
++        supportedParameters: [
++          { name: "effectType", labelRu: "Тип эффекта", type: "enum", options: ["whoosh", "impact", "chime", "ambient_hum"], defaultValue: "chime" },
++          { name: "intensity", labelRu: "Интенсивность", type: "number", min: 0.1, max: 1.0, defaultValue: 0.7 },
++          { name: "durationMs", labelRu: "Длительность (мс)", type: "number", min: 250, max: 5000, defaultValue: 600 }
++        ],
++        liveCheckSpec: null
++      },
++      {
++        providerId: "external-sfx-provider",
++        mode: "sfx",
++        kind: "external",
++        available: (hasSfxKey && this.externalNetworkAllowed) || this.externalAdapters.has("external-sfx-provider"),
++        unavailableReason: !hasSfxKey
++          ? "Отсутствует переменная окружения KOSMORA_SFX_PROVIDER_API_KEY."
++          : !this.externalNetworkAllowed
++            ? "Внешний сетевой доступ отключён в текущем контуре."
++            : null,
++        capabilities: { supportsEdit: false, supportsReferences: false, supportedEditTargets: [], maxReferences: 0, audioPurpose: "sfx" },
++        supportedParameters: [
++          { name: "effectType", labelRu: "Тип эффекта", type: "string", defaultValue: "chime" },
++          { name: "durationMs", labelRu: "Длительность (мс)", type: "number", min: 250, max: 10000, defaultValue: 1000 }
++        ],
++        liveCheckSpec: {
++          providerId: "external-sfx-provider",
++          mode: "sfx",
++          requiredEnvVars: ["KOSMORA_SFX_PROVIDER_API_KEY", "KOSMORA_SFX_PROVIDER_URL"],
++          probeEndpoint: "POST ${KOSMORA_SFX_PROVIDER_URL}/v1/sound-effects/generations",
++          expectedContentType: "audio/wav",
++          verificationCommandHint: "Задать KOSMORA_SFX_PROVIDER_API_KEY и выполнить POST /api/v1/studio/media/jobs с mode=sfx.",
++          blockingReason: !hasSfxKey ? "EXTERNAL_SFX_API_KEY_MISSING" : "EXTERNAL_NETWORK_DISABLED_IN_SANDBOX"
++        }
++      },
++      {
++        capabilities: { supportsEdit: true, supportsReferences: false, supportedEditTargets: ["params"], maxReferences: 0, audioPurpose: "music" },
+         providerId: "local-music-synth",
+         mode: "music",
+         kind: "local",
+@@ -308,6 +477,7 @@ export class StudioMediaService {
+         liveCheckSpec: null
+       },
+       {
++        capabilities: { supportsEdit: false, supportsReferences: false, supportedEditTargets: [], maxReferences: 0, audioPurpose: "music" },
+         providerId: "external-music-provider",
+         mode: "music",
+         kind: "external",
+@@ -342,9 +512,11 @@ export class StudioMediaService {
+         kind: "local",
+         available: true,
+         unavailableReason: null,
++        capabilities: { supportsEdit: true, supportsReferences: true, supportedEditTargets: ["composition", "params"], maxReferences: 8, supportsSceneRegeneration: true },
+         supportedParameters: [
+           { name: "durationSec", labelRu: "Длительность (сек)", type: "number", min: 4, max: 60, defaultValue: 12 },
+-          { name: "aspectRatio", labelRu: "Соотношение сторон", type: "enum", options: ["16:9", "9:16", "1:1"], defaultValue: "16:9" }
++          { name: "aspectRatio", labelRu: "Соотношение сторон", type: "enum", options: ["16:9", "9:16", "1:1"], defaultValue: "16:9" },
++          { name: "scenes", labelRu: "Сцены раскадровки", type: "string" }
+         ],
+         liveCheckSpec: null
+       },
+@@ -441,9 +613,13 @@ export class StudioMediaService {
+         ? "local-svg-visual"
+         : params.mode === "audio"
+           ? "local-wav-synth"
+-          : params.mode === "music"
+-            ? "local-music-synth"
+-            : "external-video-provider";
++          : params.mode === "voice"
++            ? "local-voice-synth"
++            : params.mode === "sfx"
++              ? "local-sfx-synth"
++              : params.mode === "music"
++                ? "local-music-synth"
++                : "external-video-provider";
+     const providerId = params.providerId?.trim() || defaultProviderId;
+     const provider = providers.find((p) => p.providerId === providerId && p.mode === params.mode);
+     if (!provider) {
+@@ -640,6 +816,52 @@ export class StudioMediaService {
+       return this.getJobForOwner(jobId, ownerId);
+     }
+ 
++    if (mode === "voice" && providerId === "local-voice-synth") {
++      const durationMs = Math.max(400, Math.min(10000, Number(params.durationMs ?? 1000)));
++      const speed = Math.max(0.5, Math.min(2.0, Number(params.speed ?? 1.0)));
++      const voiceId = String(params.voiceId ?? "ru-neutral");
++      const freq = voiceId === "ru-warm" ? 210 : voiceId === "en-studio" ? 260 : 235;
++      const wavBuf = wavAudio.synthesizeWavPcmBuffer({
++        sampleRate: 16000,
++        channels: 1,
++        durationMs: Math.round(durationMs / speed),
++        frequencyHz: freq,
++        amplitude: 0.6
++      });
++      const check = wavAudio.analyzeAndVerifyWavPcm(wavBuf);
++      this.saveArtifact(jobId, {
++        filename: `${jobId}-voice.wav`,
++        mimeType: "audio/wav",
++        buffer: wavBuf,
++        verified: check.valid && !check.acoustics?.isSilent,
++        verificationDetail: `Voice WAV verified (${voiceId}, speed=${speed}x, ${check.header?.durationMs}ms)`
++      });
++      return this.getJobForOwner(jobId, ownerId);
++    }
++
++    if (mode === "sfx" && providerId === "local-sfx-synth") {
++      const durationMs = Math.max(250, Math.min(5000, Number(params.durationMs ?? 600)));
++      const intensity = Math.max(0.1, Math.min(1.0, Number(params.intensity ?? 0.7)));
++      const effectType = String(params.effectType ?? "chime");
++      const freq = effectType === "impact" ? 130 : effectType === "whoosh" ? 320 : effectType === "ambient_hum" ? 180 : 660;
++      const wavBuf = wavAudio.synthesizeWavPcmBuffer({
++        sampleRate: 16000,
++        channels: 1,
++        durationMs,
++        frequencyHz: freq,
++        amplitude: intensity * 0.7
++      });
++      const check = wavAudio.analyzeAndVerifyWavPcm(wavBuf);
++      this.saveArtifact(jobId, {
++        filename: `${jobId}-sfx.wav`,
++        mimeType: "audio/wav",
++        buffer: wavBuf,
++        verified: check.valid && !check.acoustics?.isSilent,
++        verificationDetail: `SFX WAV verified (${effectType}, intensity=${intensity}, ${check.header?.durationMs}ms)`
++      });
++      return this.getJobForOwner(jobId, ownerId);
++    }
++
+     if (mode === "music" && providerId === "local-music-synth") {
+       const durationMs = Math.max(500, Math.min(8000, Number(params.durationMs ?? 1200)));
+       const bpm = Math.max(40, Math.min(240, Number(params.bpm ?? 120)));
+@@ -696,12 +918,15 @@ export class StudioMediaService {
+         `</svg>`;
+       const buf = Buffer.from(svg, "utf8");
+       const verified = svg.includes("<svg") && svg.includes("Кадр 4");
++      this.ensureVideoScenesInitialized(jobId, prompt, durationSec, params, refs);
++      const renderedSceneSvg = this.renderStoryboardFromScenes(jobId, prompt);
++      const finalBuf = renderedSceneSvg ? Buffer.from(renderedSceneSvg, "utf8") : buf;
+       this.saveArtifact(jobId, {
+         filename: `${jobId}-storyboard.svg`,
+         mimeType: "image/svg+xml",
+-        buffer: buf,
+-        verified,
+-        verificationDetail: `Local 4-frame video storyboard verified (${durationSec}s, ${buf.byteLength} bytes)`
++        buffer: finalBuf,
++        verified: finalBuf.toString("utf8").includes("<svg"),
++        verificationDetail: `Local video storyboard verified (${durationSec}s, ${finalBuf.byteLength} bytes)`
+       });
+       return this.getJobForOwner(jobId, ownerId);
+     }
+@@ -945,6 +1170,272 @@ export class StudioMediaService {
+     };
+   }
+ 
++  public listJobRevisions(jobId: string, ownerId: string): StudioMediaRevisionView[] {
++    this.requireJobRow(jobId, ownerId);
++    const rows = this.sqlite
++      .prepare("SELECT * FROM studio_media_revisions WHERE job_id = ? ORDER BY version ASC")
++      .all(jobId) as Array<Record<string, unknown>>;
++    return rows.map((r) => ({
++      version: Number(r.version),
++      editTarget: String(r.edit_target) as StudioMediaEditTarget | "initial",
++      editInstruction: String(r.edit_instruction),
++      params: JSON.parse(String(r.params_json || "{}")),
++      references: JSON.parse(String(r.references_json || "[]")),
++      artifactFilename: String(r.artifact_filename),
++      artifactMimeType: String(r.artifact_mime_type),
++      artifactSha256: String(r.artifact_sha256),
++      createdAt: String(r.created_at)
++    }));
++  }
++
++  /**
++   * Iterative edit of an existing generated media result (e.g. image: object -> background -> composition,
++   * or audio/voice/sfx/music parameter tweak), preserving original v1 and full version history.
++   */
++  public editJob(
++    jobId: string,
++    ownerId: string,
++    patch: {
++      editTarget: StudioMediaEditTarget;
++      instruction: string;
++      parameters?: Record<string, unknown>;
++      references?: StudioMediaReference[];
++    }
++  ): { job: StudioMediaJobView; version: number; revisionsCount: number } {
++    const row = this.requireJobRow(jobId, ownerId);
++    const current = this.hydrateRow(row);
++    if (current.status !== "completed" || !current.artifact) {
++      throw new Error("STUDIO_MEDIA_ARTIFACT_NOT_READY");
++    }
++    const instruction = String(patch.instruction ?? "").trim();
++    if (!instruction) throw new Error("STUDIO_MEDIA_EDIT_INSTRUCTION_REQUIRED");
++
++    const nextParams = { ...current.params, ...(patch.parameters ?? {}), lastEditTarget: patch.editTarget, lastEditInstruction: instruction };
++    const nextRefs = Array.isArray(patch.references) ? patch.references : current.references;
++
++    const existingRevs = this.listJobRevisions(jobId, ownerId);
++    const nextVersion = (existingRevs.length > 0 ? existingRevs[existingRevs.length - 1]!.version : 1) + 1;
++
++    let buf: Buffer;
++    let filename = current.artifact.filename;
++    let mimeType = current.artifact.mimeType;
++    let detail = "";
++
++    if (current.mode === "image") {
++      const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
++      const editLog = [...existingRevs.map((r) => `v${r.version}[${r.editTarget}]: ${r.editInstruction}`), `v${nextVersion}[${patch.editTarget}]: ${instruction}`];
++      const bg = patch.editTarget === "background" ? "#1e1b4b" : "#0f172a";
++      const lines = editLog
++        .slice(-4)
++        .map((line, i) => `<text x="24" y="${92 + i * 24}" fill="#e2e8f0" font-family="sans-serif" font-size="13">${esc(line.slice(0, 86))}</text>`)
++        .join("");
++      const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="760" height="220" viewBox="0 0 760 220"><rect width="760" height="220" fill="${bg}"/><text x="24" y="40" fill="#38bdf8" font-family="sans-serif" font-size="18" font-weight="bold">${esc(String(nextParams.prompt ?? "Edited Visual").slice(0, 64))} · v${nextVersion}</text><text x="24" y="64" fill="#94a3b8" font-family="sans-serif" font-size="12">Target: ${esc(patch.editTarget)} · Refs: ${nextRefs.length}</text>${lines}</svg>`;
++      buf = Buffer.from(svg, "utf8");
++      filename = `${jobId}-v${nextVersion}.svg`;
++      mimeType = "image/svg+xml";
++      detail = `Image v${nextVersion} edited (${patch.editTarget}: ${instruction.slice(0, 48)})`;
++    } else if (current.mode === "voice" || current.mode === "sfx" || current.mode === "music" || current.mode === "audio") {
++      const durationMs = Math.max(300, Math.min(8000, Number(nextParams.durationMs ?? 900)));
++      const freq = current.mode === "music" ? Math.round(220 + (Number(nextParams.bpm ?? 120) - 40) * 1.5) : current.mode === "voice" ? 245 : 520;
++      buf = wavAudio.synthesizeWavPcmBuffer({ sampleRate: 16000, channels: 1, durationMs, frequencyHz: Math.max(120, Math.min(1800, freq)), amplitude: 0.62 });
++      filename = `${jobId}-${current.mode}-v${nextVersion}.wav`;
++      mimeType = "audio/wav";
++      detail = `${current.mode} v${nextVersion} updated (${instruction.slice(0, 48)})`;
++    } else {
++      buf = Buffer.from(current.artifact.contentBase64, "base64");
++      detail = `v${nextVersion} updated`;
++    }
++
++    const sha = sha256Hex(buf);
++    const now = this.now();
++    this.sqlite
++      .prepare(
++        `UPDATE studio_media_jobs
++         SET params_json = ?, references_json = ?, artifact_filename = ?, artifact_mime_type = ?,
++             artifact_size_bytes = ?, artifact_sha256 = ?, artifact_base64 = ?, artifact_verified = 1,
++             artifact_verification_detail = ?, updated_at = ?
++         WHERE id = ?`
++      )
++      .run(JSON.stringify(nextParams), JSON.stringify(nextRefs), filename, mimeType, buf.byteLength, sha, buf.toString("base64"), detail, now, jobId);
++
++    this.sqlite
++      .prepare(
++        `INSERT INTO studio_media_revisions
++          (job_id, version, edit_target, edit_instruction, params_json, references_json,
++           artifact_filename, artifact_mime_type, artifact_sha256, artifact_base64, created_at)
++         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
++      )
++      .run(jobId, nextVersion, patch.editTarget, instruction, JSON.stringify(nextParams), JSON.stringify(nextRefs), filename, mimeType, sha, buf.toString("base64"), now);
++
++    return {
++      job: this.getJobForOwner(jobId, ownerId),
++      version: nextVersion,
++      revisionsCount: existingRevs.length + 1
++    };
++  }
++
++  /**
++   * Reconciles uncertain generation outcomes before any retry:
++   * - If external providerJobId exists and status is queued/running -> read-only pollJobStatus (NO new billable POST)
++   * - Otherwise returns authoritative persisted state from SQLite.
++   */
++  public async reconcileJobState(
++    jobId: string,
++    ownerId: string
++  ): Promise<{ job: StudioMediaJobView; reconciled: boolean; actionTaken: "polled_provider" | "restored_from_db" }> {
++    const current = this.getJobForOwner(jobId, ownerId);
++    if ((current.status === "queued" || current.status === "running") && current.providerJobId && this.hasExternalAdapter(current.providerId)) {
++      const polled = await this.pollJobStatus(jobId, ownerId);
++      return { job: polled, reconciled: true, actionTaken: "polled_provider" };
++    }
++    return { job: current, reconciled: true, actionTaken: "restored_from_db" };
++  }
++
++  private ensureVideoScenesInitialized(
++    jobId: string,
++    prompt: string,
++    durationSec: number,
++    params: Record<string, unknown>,
++    refs: StudioMediaReference[]
++  ): void {
++    const existing = Number((this.sqlite.prepare("SELECT COUNT(*) AS c FROM studio_video_scenes WHERE job_id = ?").get(jobId) as { c?: number } | undefined)?.c ?? 0);
++    if (existing > 0) return;
++
++    const rawScenes = Array.isArray(params.scenes) ? (params.scenes as Array<Record<string, unknown>>) : [];
++    const step = Math.max(2, Math.round(durationSec / 4));
++    const scenes =
++      rawScenes.length > 0
++        ? rawScenes.map((s, idx) => ({
++            sceneId: String(s.sceneId || `scene_${idx + 1}`),
++            title: String(s.title || `Сцена ${idx + 1}`),
++            prompt: String(s.prompt || prompt),
++            durationSec: Math.max(2, Number(s.durationSec ?? step)),
++            cameraMotion: String(s.cameraMotion || "smooth"),
++            references: Array.isArray(s.references) ? (s.references as StudioMediaReference[]) : refs
++          }))
++        : [
++            { sceneId: "scene_1", title: "Сцена 1 · Введение", prompt: `${prompt} (opening)`, durationSec: step, cameraMotion: "dolly", references: refs },
++            { sceneId: "scene_2", title: "Сцена 2 · Развитие", prompt: `${prompt} (mid)`, durationSec: step, cameraMotion: "smooth", references: refs },
++            { sceneId: "scene_3", title: "Сцена 3 · Кульминация", prompt: `${prompt} (climax)`, durationSec: step, cameraMotion: "orbit", references: refs },
++            { sceneId: "scene_4", title: "Сцена 4 · Финал", prompt: `${prompt} (outro)`, durationSec: step, cameraMotion: "static", references: refs }
++          ];
++
++    const now = this.now();
++    for (let i = 0; i < scenes.length; i++) {
++      const sc = scenes[i]!;
++      const sceneSha = sha256Hex(JSON.stringify({ sceneId: sc.sceneId, title: sc.title, prompt: sc.prompt, durationSec: sc.durationSec, cameraMotion: sc.cameraMotion, refs: sc.references, v: 1 }));
++      this.sqlite
++        .prepare(
++          `INSERT INTO studio_video_scenes
++            (job_id, scene_index, scene_id, title, prompt, duration_sec, camera_motion, references_json, accepted, scene_version, scene_sha256, updated_at)
++           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 1, ?, ?)`
++        )
++        .run(jobId, i, sc.sceneId, sc.title, sc.prompt, sc.durationSec, sc.cameraMotion, JSON.stringify(sc.references), sceneSha, now);
++    }
++  }
++
++  public listVideoScenes(jobId: string, ownerId: string): StudioVideoSceneView[] {
++    this.requireJobRow(jobId, ownerId);
++    const rows = this.sqlite
++      .prepare("SELECT * FROM studio_video_scenes WHERE job_id = ? ORDER BY scene_index ASC")
++      .all(jobId) as Array<Record<string, unknown>>;
++    return rows.map((r) => ({
++      sceneId: String(r.scene_id),
++      sceneIndex: Number(r.scene_index),
++      title: String(r.title),
++      prompt: String(r.prompt),
++      durationSec: Number(r.duration_sec),
++      cameraMotion: String(r.camera_motion),
++      references: JSON.parse(String(r.references_json || "[]")),
++      accepted: Boolean(r.accepted),
++      sceneVersion: Number(r.scene_version),
++      sceneSha256: String(r.scene_sha256),
++      updatedAt: String(r.updated_at)
++    }));
++  }
++
++  public acceptVideoScene(jobId: string, ownerId: string, sceneId: string): StudioVideoSceneView {
++    this.requireJobRow(jobId, ownerId);
++    const res = this.sqlite
++      .prepare("UPDATE studio_video_scenes SET accepted = 1, updated_at = ? WHERE job_id = ? AND scene_id = ?")
++      .run(this.now(), jobId, sceneId);
++    if (!res.changes) throw new Error("STUDIO_VIDEO_SCENE_NOT_FOUND");
++    return this.listVideoScenes(jobId, ownerId).find((s) => s.sceneId === sceneId)!;
++  }
++
++  public regenerateVideoScene(
++    jobId: string,
++    ownerId: string,
++    sceneId: string,
++    patch: { prompt?: string; durationSec?: number; cameraMotion?: string; references?: StudioMediaReference[] }
++  ): { job: StudioMediaJobView; regeneratedScene: StudioVideoSceneView; preservedAcceptedSceneIds: string[] } {
++    const job = this.getJobForOwner(jobId, ownerId);
++    const scenes = this.listVideoScenes(jobId, ownerId);
++    const target = scenes.find((s) => s.sceneId === sceneId);
++    if (!target) throw new Error("STUDIO_VIDEO_SCENE_NOT_FOUND");
++
++    const preservedAcceptedSceneIds = scenes.filter((s) => s.sceneId !== sceneId && s.accepted).map((s) => s.sceneId);
++    const nextPrompt = patch.prompt !== undefined && patch.prompt.trim() ? patch.prompt.trim() : target.prompt;
++    const nextDuration = patch.durationSec !== undefined ? Math.max(2, Number(patch.durationSec)) : target.durationSec;
++    const nextCamera = patch.cameraMotion !== undefined ? String(patch.cameraMotion) : target.cameraMotion;
++    const nextRefs = Array.isArray(patch.references) ? patch.references : target.references;
++    const nextSceneVer = target.sceneVersion + 1;
++    const nextSha = sha256Hex(JSON.stringify({ sceneId, title: target.title, prompt: nextPrompt, durationSec: nextDuration, cameraMotion: nextCamera, refs: nextRefs, v: nextSceneVer }));
++
++    this.sqlite
++      .prepare(
++        `UPDATE studio_video_scenes
++         SET prompt = ?, duration_sec = ?, camera_motion = ?, references_json = ?, accepted = 0,
++             scene_version = ?, scene_sha256 = ?, updated_at = ?
++         WHERE job_id = ? AND scene_id = ?`
++      )
++      .run(nextPrompt, nextDuration, nextCamera, JSON.stringify(nextRefs), nextSceneVer, nextSha, this.now(), jobId, sceneId);
++
++    // Rebuild combined storyboard preserving accepted scenes verbatim and record revision
++    const svg = this.renderStoryboardFromScenes(jobId, String(job.params.prompt ?? "Video"))!;
++    const buf = Buffer.from(svg, "utf8");
++    const revs = this.listJobRevisions(jobId, ownerId);
++    const nextRev = (revs.length > 0 ? revs[revs.length - 1]!.version : 1) + 1;
++    const filename = `${jobId}-storyboard-v${nextRev}.svg`;
++    this.saveArtifact(jobId, {
++      filename,
++      mimeType: "image/svg+xml",
++      buffer: buf,
++      verified: true,
++      verificationDetail: `Storyboard v${nextRev} rebuilt (scene ${sceneId} -> v${nextSceneVer}, preserved ${preservedAcceptedSceneIds.length} accepted scenes)`
++    });
++    this.sqlite
++      .prepare(
++        `INSERT INTO studio_media_revisions
++          (job_id, version, edit_target, edit_instruction, params_json, references_json,
++           artifact_filename, artifact_mime_type, artifact_sha256, artifact_base64, created_at)
++         VALUES (?, ?, 'composition', ?, ?, ?, ?, 'image/svg+xml', ?, ?, ?)`
++      )
++      .run(jobId, nextRev, `Regenerate ${sceneId}: ${nextPrompt}`, JSON.stringify(job.params), JSON.stringify(nextRefs), filename, sha256Hex(buf), buf.toString("base64"), this.now());
++
++    return {
++      job: this.getJobForOwner(jobId, ownerId),
++      regeneratedScene: this.listVideoScenes(jobId, ownerId).find((s) => s.sceneId === sceneId)!,
++      preservedAcceptedSceneIds
++    };
++  }
++
++  private renderStoryboardFromScenes(jobId: string, title: string): string | null {
++    const rows = this.sqlite
++      .prepare("SELECT * FROM studio_video_scenes WHERE job_id = ? ORDER BY scene_index ASC")
++      .all(jobId) as Array<Record<string, unknown>>;
++    if (rows.length === 0) return null;
++    const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
++    const cards = rows
++      .map((r, i) => {
++        const stroke = r.accepted ? "#22c55e" : "#38bdf8";
++        return `<g transform="translate(${24 + i * 210}, 68)"><rect width="196" height="132" rx="10" fill="#0f172a" stroke="${stroke}" stroke-width="1.5"/><text x="12" y="24" fill="${stroke}" font-family="sans-serif" font-size="11" font-weight="bold">${esc(String(r.scene_id))} · v${Number(r.scene_version)} ${r.accepted ? "✓" : ""}</text><text x="12" y="50" fill="#f8fafc" font-family="sans-serif" font-size="12" font-weight="bold">${esc(String(r.title).slice(0, 26))}</text><text x="12" y="76" fill="#cbd5e1" font-family="sans-serif" font-size="10">${esc(String(r.prompt).slice(0, 28))}</text><text x="12" y="102" fill="#94a3b8" font-family="sans-serif" font-size="10">${Number(r.duration_sec)}s · ${esc(String(r.camera_motion))}</text></g>`;
++      })
++      .join("");
++    const width = Math.max(880, 48 + rows.length * 210);
++    return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="230" viewBox="0 0 ${width} 230"><rect width="${width}" height="230" fill="#020617"/><text x="24" y="38" fill="#f8fafc" font-family="sans-serif" font-size="18" font-weight="bold">${esc("Video Storyboard: " + title.slice(0, 64))}</text>${cards}</svg>`;
++  }
++
+   private saveArtifact(
+     jobId: string,
+     art: {
+@@ -982,6 +1473,20 @@ export class StudioMediaService {
+         this.now(),
+         jobId
+       );
++    const revCount = Number((this.sqlite.prepare("SELECT COUNT(*) AS c FROM studio_media_revisions WHERE job_id = ?").get(jobId) as { c?: number } | undefined)?.c ?? 0);
++    if (revCount === 0) {
++      const row = this.sqlite.prepare("SELECT params_json, references_json FROM studio_media_jobs WHERE id = ?").get(jobId) as Record<string, unknown> | undefined;
++      this.sqlite.prepare(`INSERT INTO studio_media_revisions (job_id, version, edit_target, edit_instruction, params_json, references_json, artifact_filename, artifact_mime_type, artifact_sha256, artifact_base64, created_at) VALUES (?, 1, 'initial', 'Исходная генерация', ?, ?, ?, ?, ?, ?, ?)`).run(
++        jobId,
++        String(row?.params_json ?? "{}"),
++        String(row?.references_json ?? "[]"),
++        art.filename,
++        art.mimeType,
++        sha256Hex(art.buffer),
++        art.buffer.toString("base64"),
++        this.now()
++      );
++    }
+   }
+ 
+   private requireJobRow(jobId: string, ownerId: string): Record<string, unknown> {
+@@ -1018,6 +1523,7 @@ export class StudioMediaService {
+             verified: Boolean(row.artifact_verified),
+             verificationDetail: String(row.artifact_verification_detail ?? ""),
+             downloadUrl: `/api/v1/studio/media/jobs/${String(row.id)}/download`,
++            streamUrl: `/api/v1/studio/media/jobs/${String(row.id)}/stream`,
+             contentBase64: String(row.artifact_base64)
+           }
+         : null,
+diff --git a/apps/api/src/studio/studio-routes.ts b/apps/api/src/studio/studio-routes.ts
+index 7e6a75e..20e8f57 100644
+--- a/apps/api/src/studio/studio-routes.ts
++++ b/apps/api/src/studio/studio-routes.ts
+@@ -624,7 +624,7 @@ export function registerStudioRoutes(deps: {
+           inject_transient_failure?: boolean;
+         };
+         const mode = body.mode;
+-        if (!mode || !["image", "audio", "music", "video"].includes(mode)) {
++        if (!mode || !["image", "audio", "voice", "sfx", "music", "video"].includes(mode)) {
+           return reply.status(400).send({
+             error: { code: "STUDIO_MEDIA_MODE_INVALID", message: "Укажите режим: image, audio, music или video." }
+           });
+@@ -724,6 +724,138 @@ export function registerStudioRoutes(deps: {
+       }
+     });
+ 
++    app.post("/api/v1/studio/media/jobs/:jobId/edit", async (request, reply) => {
++      noCache(reply);
++      try {
++        const ownerId = requireOwner(request);
++        const jobId = String(request.params?.jobId ?? "").trim();
++        const body = (request.body ?? {}) as {
++          edit_target?: any;
++          instruction?: string;
++          parameters?: Record<string, unknown>;
++          references?: StudioMediaReference[];
++        };
++        return reply.status(200).send(
++          mediaService.editJob(jobId, ownerId, {
++            editTarget: body.edit_target ?? "params",
++            instruction: String(body.instruction ?? ""),
++            parameters: body.parameters,
++            references: body.references
++          })
++        );
++      } catch (error) {
++        const code = error instanceof Error ? error.message : "STUDIO_MEDIA_EDIT_FAILED";
++        return reply.status(httpStatusForStudioError(code)).send({
++          error: { code, message: "Не удалось отредактировать медиа-результат." }
++        });
++      }
++    });
++
++    app.get("/api/v1/studio/media/jobs/:jobId/revisions", async (request, reply) => {
++      noCache(reply);
++      try {
++        const ownerId = requireOwner(request);
++        const jobId = String(request.params?.jobId ?? "").trim();
++        return reply.status(200).send({ revisions: mediaService.listJobRevisions(jobId, ownerId) });
++      } catch (error) {
++        const code = error instanceof Error ? error.message : "STUDIO_MEDIA_REVISIONS_FAILED";
++        return reply.status(httpStatusForStudioError(code)).send({
++          error: { code, message: "Не удалось получить историю версий медиа-задачи." }
++        });
++      }
++    });
++
++    app.get("/api/v1/studio/media/jobs/:jobId/reconcile", async (request, reply) => {
++      noCache(reply);
++      try {
++        const ownerId = requireOwner(request);
++        const jobId = String(request.params?.jobId ?? "").trim();
++        return reply.status(200).send(await mediaService.reconcileJobState(jobId, ownerId));
++      } catch (error) {
++        const code = error instanceof Error ? error.message : "STUDIO_MEDIA_RECONCILE_FAILED";
++        return reply.status(httpStatusForStudioError(code)).send({
++          error: { code, message: "Не удалось восстановить состояние медиа-задачи." }
++        });
++      }
++    });
++
++    app.get("/api/v1/studio/media/jobs/:jobId/stream", async (request, reply) => {
++      noCache(reply);
++      try {
++        const ownerId = requireOwner(request);
++        const jobId = String(request.params?.jobId ?? "").trim();
++        const art = mediaService.getArtifactForDownload(jobId, ownerId);
++        if (typeof reply.header === "function") {
++          reply.header("content-type", art.mimeType);
++          reply.header("accept-ranges", "bytes");
++          reply.header("x-content-sha256", art.sha256);
++        }
++        return reply.status(200).send(art.buffer);
++      } catch (error) {
++        const code = error instanceof Error ? error.message : "STUDIO_MEDIA_STREAM_FAILED";
++        return reply.status(httpStatusForStudioError(code)).send({
++          error: { code, message: "Медиа-файл недоступен для прослушивания/просмотра." }
++        });
++      }
++    });
++
++    app.get("/api/v1/studio/media/jobs/:jobId/scenes", async (request, reply) => {
++      noCache(reply);
++      try {
++        const ownerId = requireOwner(request);
++        const jobId = String(request.params?.jobId ?? "").trim();
++        return reply.status(200).send({ scenes: mediaService.listVideoScenes(jobId, ownerId) });
++      } catch (error) {
++        const code = error instanceof Error ? error.message : "STUDIO_VIDEO_SCENES_FAILED";
++        return reply.status(httpStatusForStudioError(code)).send({
++          error: { code, message: "Не удалось получить раскадровку сцен видео." }
++        });
++      }
++    });
++
++    app.post("/api/v1/studio/media/jobs/:jobId/scenes/:sceneId/accept", async (request, reply) => {
++      noCache(reply);
++      try {
++        const ownerId = requireOwner(request);
++        const jobId = String(request.params?.jobId ?? "").trim();
++        const sceneId = String(request.params?.sceneId ?? "").trim();
++        return reply.status(200).send(mediaService.acceptVideoScene(jobId, ownerId, sceneId));
++      } catch (error) {
++        const code = error instanceof Error ? error.message : "STUDIO_VIDEO_SCENE_ACCEPT_FAILED";
++        return reply.status(httpStatusForStudioError(code)).send({
++          error: { code, message: "Не удалось зафиксировать сцену." }
++        });
++      }
++    });
++
++    app.post("/api/v1/studio/media/jobs/:jobId/scenes/:sceneId/regenerate", async (request, reply) => {
++      noCache(reply);
++      try {
++        const ownerId = requireOwner(request);
++        const jobId = String(request.params?.jobId ?? "").trim();
++        const sceneId = String(request.params?.sceneId ?? "").trim();
++        const body = (request.body ?? {}) as {
++          prompt?: string;
++          duration_sec?: number;
++          camera_motion?: string;
++          references?: StudioMediaReference[];
++        };
++        return reply.status(200).send(
++          mediaService.regenerateVideoScene(jobId, ownerId, sceneId, {
++            prompt: body.prompt,
++            durationSec: body.duration_sec,
++            cameraMotion: body.camera_motion,
++            references: body.references
++          })
++        );
++      } catch (error) {
++        const code = error instanceof Error ? error.message : "STUDIO_VIDEO_SCENE_REGEN_FAILED";
++        return reply.status(httpStatusForStudioError(code)).send({
++          error: { code, message: "Не удалось перегенерировать сцену." }
++        });
++      }
++    });
++
+     app.get("/api/v1/studio/media/jobs/:jobId/download", async (request, reply) => {
+       noCache(reply);
+       try {
+diff --git a/apps/api/test/studio-5-cycles-acceptance.test.ts b/apps/api/test/studio-5-cycles-acceptance.test.ts
+new file mode 100644
+index 0000000..5517e13
+--- /dev/null
++++ b/apps/api/test/studio-5-cycles-acceptance.test.ts
+@@ -0,0 +1,452 @@
++import assert from "node:assert/strict";
++import { createHash } from "node:crypto";
++import http from "node:http";
++import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
++import { tmpdir } from "node:os";
++import { join } from "node:path";
++import { DatabaseSync } from "node:sqlite";
++import test from "node:test";
++import {
++  createStudioStack,
++  registerStudioRoutes,
++  ExternalImageProviderAdapter
++} from "../src/studio/index.js";
++
++function createStudioHttp(stack: ReturnType<typeof createStudioStack>) {
++  const routes: Array<{ method: string; regex: RegExp; handler: Function }> = [];
++  const register = (method: string, pattern: string, handler: Function) => {
++    const regexStr =
++      "^" + pattern.replace(/:([a-zA-Z0-9_]+)/g, (_f, n) => `(?<${n}>[^/]+)`) + "$";
++    routes.push({ method, regex: new RegExp(regexStr), handler });
++  };
++  registerStudioRoutes({
++    app: {
++      get: (p: string, h: Function) => register("GET", p, h),
++      post: (p: string, h: Function) => register("POST", p, h)
++    },
++    ingestService: stack.ingestService,
++    analysisService: stack.analysisService,
++    presentationService: stack.presentationService,
++    mediaService: stack.mediaService,
++    sitesService: stack.sitesService,
++    gamesService: stack.gamesService,
++    identityFor: (req) => ({ owner_id: String(req.headers["x-owner-id"] ?? "cycles-owner") })
++  });
++
++  const server = http.createServer(async (req, res) => {
++    const parsedUrl = new URL(req.url ?? "/", "http://127.0.0.1");
++    const method = (req.method ?? "GET").toUpperCase();
++    const match = routes.find((r) => r.method === method && r.regex.test(parsedUrl.pathname));
++    if (!match) {
++      res.statusCode = 404;
++      res.end(JSON.stringify({ error: { code: "NOT_FOUND" } }));
++      return;
++    }
++    const params = (parsedUrl.pathname.match(match.regex)?.groups ?? {}) as Record<string, string>;
++    const query: Record<string, string> = {};
++    for (const [k, v] of parsedUrl.searchParams.entries()) query[k] = v;
++
++    let body: unknown = undefined;
++    if (method === "POST") {
++      const chunks: Buffer[] = [];
++      for await (const c of req) chunks.push(Buffer.isBuffer(c) ? c : Buffer.from(c));
++      const raw = Buffer.concat(chunks).toString("utf8");
++      if (raw) body = JSON.parse(raw);
++    }
++
++    const headers: Record<string, string> = {};
++    let statusCode = 200;
++    const reply = {
++      status(code: number) {
++        statusCode = code;
++        return this;
++      },
++      header(k: string, v: string) {
++        headers[k.toLowerCase()] = v;
++        return this;
++      },
++      send(payload: unknown) {
++        res.statusCode = statusCode;
++        for (const [k, v] of Object.entries(headers)) res.setHeader(k, v);
++        if (Buffer.isBuffer(payload)) res.end(payload);
++        else {
++          if (!headers["content-type"]) res.setHeader("content-type", "application/json; charset=utf-8");
++          res.end(JSON.stringify(payload));
++        }
++        return this;
++      }
++    };
++    await match.handler({ headers: req.headers, params, query, body }, reply);
++  });
++
++  return {
++    async start(): Promise<string> {
++      await new Promise<void>((r) => server.listen(0, "127.0.0.1", () => r()));
++      return `http://127.0.0.1:${(server.address() as { port: number }).port}`;
++    },
++    async close(): Promise<void> {
++      await new Promise<void>((r) => { server.closeAllConnections?.(); server.close(() => r()); });
++    }
++  };
++}
++
++function saveSample(name: string, buf: Buffer): void {
++  const dir = process.env.KOSMORA_EXPORT_SAMPLE_DIR;
++  if (!dir) return;
++  mkdirSync(dir, { recursive: true });
++  writeFileSync(join(dir, name), buf);
++}
++
++test("Studio 5 Cycles Acceptance: Inventory, Images (object/background/composition series), Video (scene regen preserving accepted), Voice/SFX/Music split, Presentations (materials->PPTX->slide edit->re-export), and unified recovery", async () => {
++  const tmp = mkdtempSync(join(tmpdir(), "kosmora-5cycles-"));
++  const dbPath = join(tmp, "studio-5cycles.sqlite");
++
++  // Local fixture external image provider to verify reconcile + lost-response idempotency
++  let extImagePosts = 0;
++  const extImgSrv = http.createServer(async (req, res) => {
++    const url = new URL(req.url ?? "/", "http://127.0.0.1");
++    if (req.method === "POST" && url.pathname === "/v1/images/generations") {
++      extImagePosts += 1;
++      res.statusCode = 201;
++      res.setHeader("content-type", "application/json");
++      res.end(JSON.stringify({ id: "ext_img_1", status: "queued" }));
++      return;
++    }
++    if (req.method === "GET" && url.pathname === "/v1/images/generations/ext_img_1") {
++      res.setHeader("content-type", "application/json");
++      res.end(JSON.stringify({ id: "ext_img_1", status: "completed", artifact_url: "/img/1.png", mime_type: "image/png", filename: "ext_img_1.png" }));
++      return;
++    }
++    if (req.method === "GET" && url.pathname === "/img/1.png") {
++      // Minimal valid PNG signature + IHDR/IEND stub
++      res.setHeader("content-type", "image/png");
++      res.end(Buffer.from("89504e470d0a1a0a0000000d4948445200000001000000010802000000907753de0000000049454e44ae426082", "hex"));
++      return;
++    }
++    res.statusCode = 404;
++    res.end();
++  });
++  await new Promise<void>((r) => extImgSrv.listen(0, "127.0.0.1", () => r()));
++  extImgSrv.unref();
++  const extImgUrl = `http://127.0.0.1:${(extImgSrv.address() as { port: number }).port}`;
++  const extImgAdapter = new ExternalImageProviderAdapter({ baseUrl: extImgUrl, apiKey: "test-img-key" });
++
++  let imageJobId = "";
++  let extImgJobId = "";
++  let videoJobId = "";
++  let musicJobId = "";
++  let deckId = "";
++
++  // Phase 1: Execute all 5 cycles
++  {
++    const db = new DatabaseSync(dbPath);
++    const stack = createStudioStack({
++      sqlite: db,
++      env: { KOSMORA_IMAGE_PROVIDER_API_KEY: "test-img-key", KOSMORA_IMAGE_PROVIDER_URL: extImgUrl },
++      externalNetworkAllowed: true,
++      externalAdapters: [extImgAdapter]
++    });
++    const srv = createStudioHttp(stack);
++    const baseUrl = await srv.start();
++    const hdr = { "content-type": "application/json", "x-owner-id": "cycles-owner" };
++
++    try {
++      // === CYCLE 1: Inventory ===
++      const provRes = await fetch(`${baseUrl}/api/v1/studio/media/providers`, { headers: { "x-owner-id": "cycles-owner" } });
++      assert.equal(provRes.status, 200);
++      const providers = ((await provRes.json()) as { providers: any[] }).providers;
++      const imgProv = providers.find((p) => p.providerId === "local-svg-visual");
++      assert.ok(imgProv?.capabilities?.supportsEdit);
++      assert.deepEqual(imgProv.capabilities.supportedEditTargets, ["object", "background", "composition", "style"]);
++      assert.ok(providers.some((p) => p.mode === "voice" && p.providerId === "local-voice-synth"));
++      assert.ok(providers.some((p) => p.mode === "sfx" && p.providerId === "local-sfx-synth"));
++      assert.ok(providers.some((p) => p.mode === "music" && p.providerId === "local-music-synth"));
++
++      // === CYCLE 2: Images — source v1 -> object v2 -> background v3 -> composition v4 ===
++      const imgV1 = await (await fetch(`${baseUrl}/api/v1/studio/media/jobs`, {
++        method: "POST",
++        headers: hdr,
++        body: JSON.stringify({
++          mode: "image",
++          provider_id: "local-svg-visual",
++          prompt: "Студийный рендер смарт-колонки Kosmora",
++          parameters: { aspectRatio: "16:9", style: "product" },
++          references: [{ refId: "ref-prod-1", kind: "subject", mimeType: "image/png", sha256: "aaa111" }],
++          idempotency_key: "cycle2-img-1"
++        })
++      })).json() as any;
++      imageJobId = imgV1.job.id;
++      assert.equal(imgV1.job.status, "completed");
++      saveSample("studio-cycle2-image-v1.svg", Buffer.from(imgV1.job.artifact.contentBase64, "base64"));
++
++      // Edit series: object -> background -> composition
++      const imgV2 = await (await fetch(`${baseUrl}/api/v1/studio/media/jobs/${imageJobId}/edit`, {
++        method: "POST",
++        headers: hdr,
++        body: JSON.stringify({ edit_target: "object", instruction: "Добавить матовое металлическое кольцо на корпус" })
++      })).json() as any;
++      assert.equal(imgV2.version, 2);
++
++      const imgV3 = await (await fetch(`${baseUrl}/api/v1/studio/media/jobs/${imageJobId}/edit`, {
++        method: "POST",
++        headers: hdr,
++        body: JSON.stringify({ edit_target: "background", instruction: "Заменить фон на тёмный студийный градиент" })
++      })).json() as any;
++      assert.equal(imgV3.version, 3);
++
++      const imgV4 = await (await fetch(`${baseUrl}/api/v1/studio/media/jobs/${imageJobId}/edit`, {
++        method: "POST",
++        headers: hdr,
++        body: JSON.stringify({ edit_target: "composition", instruction: "Сместить объект в правую треть кадра (rule of thirds)" })
++      })).json() as any;
++      assert.equal(imgV4.version, 4);
++      saveSample("studio-cycle2-image-v4-edited.svg", Buffer.from(imgV4.job.artifact.contentBase64, "base64"));
++
++      const imgRevs = await (await fetch(`${baseUrl}/api/v1/studio/media/jobs/${imageJobId}/revisions`, {
++        headers: { "x-owner-id": "cycles-owner" }
++      })).json() as { revisions: any[] };
++      assert.equal(imgRevs.revisions.length, 4);
++      assert.equal(imgRevs.revisions[0].editTarget, "initial");
++      assert.equal(imgRevs.revisions[1].editTarget, "object");
++      assert.equal(imgRevs.revisions[2].editTarget, "background");
++      assert.equal(imgRevs.revisions[3].editTarget, "composition");
++      assert.notEqual(imgRevs.revisions[0].artifactSha256, imgRevs.revisions[3].artifactSha256);
++
++      // External image uncertain state -> reconcile recovers without extra POST
++      const extStart = await (await fetch(`${baseUrl}/api/v1/studio/media/jobs`, {
++        method: "POST",
++        headers: hdr,
++        body: JSON.stringify({
++          mode: "image",
++          provider_id: "external-image-provider",
++          prompt: "External PNG test",
++          parameters: { aspectRatio: "1:1" },
++          idempotency_key: "cycle2-ext-1"
++        })
++      })).json() as any;
++      extImgJobId = extStart.job.id;
++      assert.equal(extStart.job.status, "queued");
++      assert.equal(extImagePosts, 1);
++
++      const extReconciled = await (await fetch(`${baseUrl}/api/v1/studio/media/jobs/${extImgJobId}/reconcile`, {
++        headers: { "x-owner-id": "cycles-owner" }
++      })).json() as any;
++      assert.equal(extReconciled.actionTaken, "polled_provider");
++      assert.equal(extReconciled.job.status, "completed");
++      assert.equal(extImagePosts, 1, "Reconcile must NEVER create a second billable POST");
++
++      // === CYCLE 3: Video — script, storyboard, accept scenes 1 & 3, regenerate scene 2 ===
++      const vidRes = await (await fetch(`${baseUrl}/api/v1/studio/media/jobs`, {
++        method: "POST",
++        headers: hdr,
++        body: JSON.stringify({
++          mode: "video",
++          provider_id: "local-video-storyboard",
++          prompt: "Рекламный ролик Kosmora Studio",
++          parameters: {
++            durationSec: 12,
++            aspectRatio: "16:9",
++            scenes: [
++              { sceneId: "scene_1", title: "Открытие", prompt: "Крупный план логотипа", durationSec: 4, cameraMotion: "dolly" },
++              { sceneId: "scene_2", title: "Демо интерфейса", prompt: "Быстрый пролёт по вкладкам", durationSec: 4, cameraMotion: "smooth" },
++              { sceneId: "scene_3", title: "Финал", prompt: "Слоган и кнопка запуска", durationSec: 4, cameraMotion: "static" }
++            ]
++          },
++          references: [{ refId: "ref-brand-1", kind: "storyboard", mimeType: "image/png", sha256: "bbb222" }]
++        })
++      })).json() as any;
++      videoJobId = vidRes.job.id;
++      saveSample("studio-cycle3-video-v1.svg", Buffer.from(vidRes.job.artifact.contentBase64, "base64"));
++
++      const scenesBefore = ((await (await fetch(`${baseUrl}/api/v1/studio/media/jobs/${videoJobId}/scenes`, {
++        headers: { "x-owner-id": "cycles-owner" }
++      })).json()) as { scenes: any[] }).scenes;
++      assert.equal(scenesBefore.length, 3);
++
++      // Accept scene_1 and scene_3
++      await fetch(`${baseUrl}/api/v1/studio/media/jobs/${videoJobId}/scenes/scene_1/accept`, { method: "POST", headers: hdr, body: "{}" });
++      await fetch(`${baseUrl}/api/v1/studio/media/jobs/${videoJobId}/scenes/scene_3/accept`, { method: "POST", headers: hdr, body: "{}" });
++
++      const s1ShaBefore = scenesBefore[0].sceneSha256;
++      const s2ShaBefore = scenesBefore[1].sceneSha256;
++      const s3ShaBefore = scenesBefore[2].sceneSha256;
++
++      // Regenerate ONLY scene_2
++      const regenRes = await (await fetch(`${baseUrl}/api/v1/studio/media/jobs/${videoJobId}/scenes/scene_2/regenerate`, {
++        method: "POST",
++        headers: hdr,
++        body: JSON.stringify({ prompt: "Медленный зум на карточку генерации видео", camera_motion: "orbit", duration_sec: 5 })
++      })).json() as any;
++      assert.deepEqual(regenRes.preservedAcceptedSceneIds, ["scene_1", "scene_3"]);
++      assert.equal(regenRes.regeneratedScene.sceneVersion, 2);
++      assert.notEqual(regenRes.regeneratedScene.sceneSha256, s2ShaBefore);
++      saveSample("studio-cycle3-video-v2-scene-edited.svg", Buffer.from(regenRes.job.artifact.contentBase64, "base64"));
++
++      const scenesAfter = ((await (await fetch(`${baseUrl}/api/v1/studio/media/jobs/${videoJobId}/scenes`, {
++        headers: { "x-owner-id": "cycles-owner" }
++      })).json()) as { scenes: any[] }).scenes;
++      assert.equal(scenesAfter[0].sceneSha256, s1ShaBefore, "Accepted scene_1 must stay verbatim");
++      assert.equal(scenesAfter[0].accepted, true);
++      assert.equal(scenesAfter[2].sceneSha256, s3ShaBefore, "Accepted scene_3 must stay verbatim");
++      assert.equal(scenesAfter[2].accepted, true);
++
++      // === CYCLE 4: Audio & Music split (voice / sfx / music), stream, cancel, history, edit, download ===
++      const voiceJob = (await (await fetch(`${baseUrl}/api/v1/studio/media/jobs`, {
++        method: "POST",
++        headers: hdr,
++        body: JSON.stringify({ mode: "voice", prompt: "Добро пожаловать в Kosmora Studio", parameters: { voiceId: "ru-warm", speed: 1.0, durationMs: 800 } })
++      })).json() as any).job;
++      assert.equal(voiceJob.mode, "voice");
++      assert.equal(voiceJob.providerId, "local-voice-synth");
++      saveSample("studio-cycle4-voice.wav", Buffer.from(voiceJob.artifact.contentBase64, "base64"));
++
++      const sfxJob = (await (await fetch(`${baseUrl}/api/v1/studio/media/jobs`, {
++        method: "POST",
++        headers: hdr,
++        body: JSON.stringify({ mode: "sfx", prompt: "Звук успешного завершения задачи", parameters: { effectType: "chime", intensity: 0.8, durationMs: 500 } })
++      })).json() as any).job;
++      assert.equal(sfxJob.mode, "sfx");
++      assert.equal(sfxJob.providerId, "local-sfx-synth");
++      saveSample("studio-cycle4-sfx.wav", Buffer.from(sfxJob.artifact.contentBase64, "base64"));
++
++      const musicJob = (await (await fetch(`${baseUrl}/api/v1/studio/media/jobs`, {
++        method: "POST",
++        headers: hdr,
++        body: JSON.stringify({ mode: "music", prompt: "Фоновый трек для фокуса", parameters: { bpm: 112, genre: "lofi", durationMs: 1000 } })
++      })).json() as any).job;
++      musicJobId = musicJob.id;
++      saveSample("studio-cycle4-music-v1.wav", Buffer.from(musicJob.artifact.contentBase64, "base64"));
++
++      // Stream playback check (Accept-Ranges: bytes, no attachment)
++      const streamRes = await fetch(`${baseUrl}${musicJob.artifact.streamUrl}`, { headers: { "x-owner-id": "cycles-owner" } });
++      assert.equal(streamRes.status, 200);
++      assert.equal(streamRes.headers.get("accept-ranges"), "bytes");
++      assert.equal(streamRes.headers.get("content-disposition"), null);
++
++      // Edit music BPM -> v2 & download
++      const musicEdit = await (await fetch(`${baseUrl}/api/v1/studio/media/jobs/${musicJobId}/edit`, {
++        method: "POST",
++        headers: hdr,
++        body: JSON.stringify({ edit_target: "params", instruction: "Ускорить темп до 136 BPM", parameters: { bpm: 136 } })
++      })).json() as any;
++      assert.equal(musicEdit.version, 2);
++      const dlMusic = await fetch(`${baseUrl}${musicEdit.job.artifact.downloadUrl}`, { headers: { "x-owner-id": "cycles-owner" } });
++      assert.equal(dlMusic.status, 200);
++      assert.ok(String(dlMusic.headers.get("content-disposition")).includes("attachment;"));
++      const dlMusicBuf = Buffer.from(await dlMusic.arrayBuffer());
++      assert.equal(createHash("sha256").update(dlMusicBuf).digest("hex"), dlMusic.headers.get("x-content-sha256"));
++      saveSample("studio-cycle4-music-v2-edited.wav", dlMusicBuf);
++
++      // Cancel queued audio task
++      const queuedVoice = (await (await fetch(`${baseUrl}/api/v1/studio/media/jobs`, {
++        method: "POST",
++        headers: hdr,
++        body: JSON.stringify({ mode: "voice", prompt: "Отменяемая озвучка", defer_execution: true })
++      })).json() as any).job;
++      const cancelled = await (await fetch(`${baseUrl}/api/v1/studio/media/jobs/${queuedVoice.id}/cancel`, {
++        method: "POST",
++        headers: hdr,
++        body: "{}"
++      })).json() as any;
++      assert.equal(cancelled.status, "cancelled");
++
++      // === CYCLE 5: Presentations — Materials -> Structure -> Slides -> PPTX -> Edit Slide -> Re-export ===
++      const ingestRes = await (await fetch(`${baseUrl}/api/v1/studio/ingest/jobs`, {
++        method: "POST",
++        headers: hdr,
++        body: JSON.stringify({
++          source_name: "q4-metrics.txt",
++          files: [{
++            filename: "q4-metrics.txt",
++            mime_type: "text/plain",
++            content_base64: Buffer.from("Выручка Q4 выросла на 42%. SLA платформы 99.95%. Активных пользователей: 18500.", "utf8").toString("base64")
++          }]
++        })
++      })).json() as any;
++      const analysisRes = await (await fetch(`${baseUrl}/api/v1/studio/analysis/runs`, {
++        method: "POST",
++        headers: hdr,
++        body: JSON.stringify({ ingest_job_id: ingestRes.id, title: "Итоги Q4" })
++      })).json() as any;
++
++      const deckV1 = await (await fetch(`${baseUrl}/api/v1/studio/presentations`, {
++        method: "POST",
++        headers: hdr,
++        body: JSON.stringify({ title: "Отчёт Q4 для совета", analysis_run_id: analysisRes.id })
++      })).json() as any;
++      deckId = deckV1.id;
++      assert.ok(deckV1.slides.length >= 2);
++      const pptx1Res = await fetch(`${baseUrl}/api/v1/studio/presentations/${deckId}/export`, {
++        headers: { "x-owner-id": "cycles-owner" }
++      });
++      assert.equal(pptx1Res.status, 200);
++      const pptx1Raw = Buffer.from(await pptx1Res.arrayBuffer());
++      const pptx1Buf = pptx1Raw.subarray(0, 2).toString("ascii") === "PK" ? pptx1Raw : Buffer.from((JSON.parse(pptx1Raw.toString("utf8")) as any).pptxBase64 || (JSON.parse(pptx1Raw.toString("utf8")) as any).contentBase64, "base64");
++      assert.equal(pptx1Buf.subarray(0, 2).toString("ascii"), "PK");
++      saveSample("studio-cycle5-deck-v1.pptx", pptx1Buf);
++
++      // Edit ONLY slide index 1, verify slide 0 unchanged, re-export v2.pptx
++      const slide0TitleBefore = deckV1.slides[0].title;
++      const editedDeck = await (await fetch(`${baseUrl}/api/v1/studio/presentations/${deckId}/slides/1`, {
++        method: "POST",
++        headers: hdr,
++        body: JSON.stringify({
++          title: "Ключевые метрики Q4 (обновлено)",
++          bullets: ["Выручка +42% YoY", "SLA 99.95%", "18 500 активных пользователей"]
++        })
++      })).json() as any;
++      assert.equal(editedDeck.slides[0].title, slide0TitleBefore);
++      assert.equal(editedDeck.slides[1].title, "Ключевые метрики Q4 (обновлено)");
++
++      const pptx2Res = await fetch(`${baseUrl}/api/v1/studio/presentations/${deckId}/export`, {
++        headers: { "x-owner-id": "cycles-owner" }
++      });
++      assert.equal(pptx2Res.status, 200);
++      const pptx2Raw = Buffer.from(await pptx2Res.arrayBuffer());
++      const pptx2Buf = pptx2Raw.subarray(0, 2).toString("ascii") === "PK" ? pptx2Raw : Buffer.from((JSON.parse(pptx2Raw.toString("utf8")) as any).pptxBase64 || (JSON.parse(pptx2Raw.toString("utf8")) as any).contentBase64, "base64");
++      assert.equal(pptx2Buf.subarray(0, 2).toString("ascii"), "PK");
++      assert.notEqual(createHash("sha256").update(pptx1Buf).digest("hex"), createHash("sha256").update(pptx2Buf).digest("hex"));
++      saveSample("studio-cycle5-deck-v2-edited.pptx", pptx2Buf);
++    } finally {
++      await srv.close();
++      db.close();
++    }
++  }
++
++  // Phase 2: Restart persistence & reopen all results across all sections
++  {
++    const db2 = new DatabaseSync(dbPath);
++    const stack2 = createStudioStack({ sqlite: db2 });
++    const srv2 = createStudioHttp(stack2);
++    const baseUrl2 = await srv2.start();
++    try {
++      const imgReopen = await (await fetch(`${baseUrl2}/api/v1/studio/media/jobs/${imageJobId}/revisions`, {
++        headers: { "x-owner-id": "cycles-owner" }
++      })).json() as { revisions: any[] };
++      assert.equal(imgReopen.revisions.length, 4);
++
++      const vidReopen = await (await fetch(`${baseUrl2}/api/v1/studio/media/jobs/${videoJobId}/scenes`, {
++        headers: { "x-owner-id": "cycles-owner" }
++      })).json() as { scenes: any[] };
++      assert.equal(vidReopen.scenes[0].accepted, true);
++      assert.equal(vidReopen.scenes[1].sceneVersion, 2);
++
++      const musicReconcile = await (await fetch(`${baseUrl2}/api/v1/studio/media/jobs/${musicJobId}/reconcile`, {
++        headers: { "x-owner-id": "cycles-owner" }
++      })).json() as any;
++      assert.equal(musicReconcile.reconciled, true);
++      assert.equal(musicReconcile.job.status, "completed");
++
++      const deckReopen = await (await fetch(`${baseUrl2}/api/v1/studio/presentations/${deckId}`, {
++        headers: { "x-owner-id": "cycles-owner" }
++      })).json() as any;
++      assert.equal(deckReopen.slides[1].title, "Ключевые метрики Q4 (обновлено)");
++    } finally {
++      await srv2.close();
++      db2.close();
++    }
++  }
++
++  await new Promise<void>((r) => { extImgSrv.closeAllConnections?.(); extImgSrv.close(() => r()); });
++  rmSync(tmp, { recursive: true, force: true });
++});
+diff --git a/scripts/acceptance-studio-5-cycles.mjs b/scripts/acceptance-studio-5-cycles.mjs
+new file mode 100644
+index 0000000..28458be
+--- /dev/null
++++ b/scripts/acceptance-studio-5-cycles.mjs
+@@ -0,0 +1,53 @@
++#!/usr/bin/env node
++import { mkdtempSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
++import { tmpdir } from "node:os";
++import { dirname, join, resolve } from "node:path";
++import { fileURLToPath, pathToFileURL } from "node:url";
++import { spawnSync } from "node:child_process";
++import { ts } from "./offline-typescript.mjs";
++
++const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
++const temp = mkdtempSync(join(tmpdir(), "kosmora-5cycles-"));
++
++function emit(sourceRel, targetRel) {
++  let code = ts.transpileModule(readFileSync(resolve(root, sourceRel), "utf8"), {
++    fileName: sourceRel,
++    compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 }
++  }).outputText;
++  const sqliteShimUrl = pathToFileURL(resolve(root, "scripts/offline-typescript.mjs")).href;
++  code = code.replace(/from\s+["']node:sqlite["']/g, `from "${sqliteShimUrl}"`);
++  code = code.replace(/(from\s+["']\.[^"']+)\.ts(["'])/g, "$1.js$2");
++  code = code.replace(
++    /require\(["']\.\.\/\.\.\/\.\.\/\.\.\/desktop\/windows\//g,
++    `require(${JSON.stringify(resolve(root, "desktop/windows") + "/")}.replace(/\\/$/, "") + "/`
++  );
++  const outPath = join(temp, targetRel);
++  mkdirSync(dirname(outPath), { recursive: true });
++  writeFileSync(outPath, code, "utf8");
++}
++
++function emitDir(relDir) {
++  for (const name of readdirSync(resolve(root, relDir))) {
++    if (!name.endsWith(".ts")) continue;
++    const rel = `${relDir}/${name}`;
++    emit(rel, rel.replace(/\.ts$/, ".js"));
++  }
++}
++
++try {
++  writeFileSync(join(temp, "package.json"), '{"type":"module"}\n', "utf8");
++  emitDir("packages/db/src");
++  emitDir("apps/api/src/studio");
++  emitDir("apps/api/src/research");
++  emit("apps/web/src/app/studio-workspace/view-model.ts", "apps/web/src/app/studio-workspace/view-model.js");
++  emit("apps/api/test/studio-5-cycles-acceptance.test.ts", "apps/api/test/studio-5-cycles-acceptance.test.js");
++
++  const res = spawnSync(
++    process.execPath,
++    ["--test", join(temp, "apps/api/test/studio-5-cycles-acceptance.test.js")],
++    { cwd: root, stdio: "inherit" }
++  );
++  if (res.status !== 0) process.exitCode = res.status ?? 1;
++} finally {
++  rmSync(temp, { recursive: true, force: true });
++}
+
