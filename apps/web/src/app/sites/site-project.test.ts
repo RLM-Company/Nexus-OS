@@ -39,11 +39,13 @@ describe("addressable site project", () => {
     });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
+    const parsed = parseSiteProject(source);
     expect(result.project.resources).toHaveLength(2);
-    expect(result.project.blocks).toEqual(JSON.parse(source).blocks);
+    expect(result.project.blocks).toEqual(parsed.blocks);
   });
 
   it("refuses an unknown block, a script in html and a duplicate id", () => {
+    const parsed = parseSiteProject(source);
     expect(editSiteBlock(source, "missing", { title: "x", html: "y" })).toMatchObject({
       ok: false,
       error: "BLOCK_NOT_FOUND"
@@ -60,7 +62,7 @@ describe("addressable site project", () => {
       parseSiteProject(
         JSON.stringify({
           ...JSON.parse(source),
-          blocks: [JSON.parse(source).blocks[0], JSON.parse(source).blocks[0]]
+          blocks: [parsed.blocks[0], parsed.blocks[0]]
         })
       )
     ).toThrow("INVALID_SITE_PROJECT");

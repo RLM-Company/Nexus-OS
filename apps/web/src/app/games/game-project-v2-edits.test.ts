@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { parseGameProjectV2 } from "@cosmora/contracts/game-project-v2";
 import { applyV2FieldEdit, readV2Editable } from "./game-project-v2-edits";
 
 const source = JSON.stringify({
@@ -58,7 +59,7 @@ describe("addressable v2 project edits", () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.project.launch).toEqual({ runtime: "canvas2d_worker", auto_start: true });
-    expect(result.project.files).toEqual(JSON.parse(source).files);
+    expect(result.project.files).toEqual(parseGameProjectV2(source).files);
   });
 
   it("refuses an unknown scene and an invalid result without overwriting", () => {

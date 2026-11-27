@@ -48,12 +48,11 @@ export function ThreeGameView({
       frame.current = null;
       renderer.dispose();
       scene.traverse((object) => {
-        if (object instanceof THREE.Mesh) {
-          object.geometry.dispose();
-          const material = object.material;
-          if (Array.isArray(material)) material.forEach((item) => item.dispose());
-          else material.dispose();
-        }
+        if (!(object instanceof THREE.Mesh)) return;
+        const geometry = object.geometry as { dispose: () => void };
+        geometry.dispose();
+        const materials = Array.isArray(object.material) ? object.material : [object.material];
+        for (const material of materials) (material as { dispose: () => void }).dispose();
       });
       renderer.domElement.remove();
     };
