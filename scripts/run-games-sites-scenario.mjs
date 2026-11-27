@@ -198,7 +198,7 @@ async function main() {
       "site.project.json": strToU8(siteJson),
       "index.html": strToU8(site.html),
       "README.txt": strToU8(
-        "Koskora Games+Sites export; source of truth is project.json and site.project.json.\n"
+        "Kosmora Games+Sites export; source of truth is project.json and site.project.json.\n"
       )
     };
     // Fixed mtime makes the archive byte-for-byte reproducible.

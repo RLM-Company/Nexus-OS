@@ -1,4 +1,4 @@
-# Воспроизводимая приёмка: новая 3D-игра + продающий сайт
+﻿# Воспроизводимая приёмка: новая 3D-игра + продающий сайт
 
 **Команда:**
 
@@ -12,7 +12,7 @@ node scripts/run-games-sites-scenario.mjs --out=<dedicated temp dir>
 Артефакты: [result.json](ACCEPTANCE/result.json),
 [actions.jsonl](ACCEPTANCE/actions.jsonl),
 [games-sites-export.zip](ACCEPTANCE/games-sites-export.zip) (SHA256
-`e8a29eaf85a7ccaaa676ecaf42aaeab35b37baad3a0655fbfdac82b44699b84f`).
+`a837333db66501bc002700f3fe82563234ff46feef97a91c4e766ef1f5964407`).
 Архив детерминирован: фиксированный `mtime`, два независимых прогона дают
 одинаковый SHA256; проверка `NON_DETERMINISTIC_ZIP` встроена в сценарий.
 

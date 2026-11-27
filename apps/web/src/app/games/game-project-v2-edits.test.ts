@@ -107,6 +107,31 @@ describe("addressable v2 project edits", () => {
     expect(result.project.files).toEqual(parseGameProjectV2(source).files);
   });
 
+  it("adds and removes a linked game asset without touching scenes or sources", () => {
+    const added = applyV2FieldEdit(source, {
+      field: "asset_add",
+      value: { name: "hud.png", media_type: "image/png", data_base64: "iVBORw0KGgo=" }
+    });
+    expect(added.ok).toBe(true);
+    if (!added.ok) return;
+    expect(added.project.assets.map((asset) => asset.name)).toEqual(["logo.png", "hud.png"]);
+    expect(added.project.scenes).toEqual(parseGameProjectV2(source).scenes);
+    expect(added.project.files).toEqual(parseGameProjectV2(source).files);
+    const existing = added.project.assets[0];
+    if (!existing) throw Error("ASSET_MISSING");
+    expect(applyV2FieldEdit(added.json, { field: "asset_add", value: existing })).toMatchObject({
+      ok: false,
+      error: "ASSET_EXISTS"
+    });
+    const removed = applyV2FieldEdit(added.json, { field: "asset_remove", name: "hud.png" });
+    expect(removed.ok).toBe(true);
+    if (!removed.ok) return;
+    expect(removed.project.assets).toEqual(parseGameProjectV2(source).assets);
+    const reopened = readV2Editable(removed.json);
+    expect(reopened.ok).toBe(true);
+    if (reopened.ok) expect(reopened.assets).toEqual(parseGameProjectV2(source).assets);
+  });
+
   it("refuses an unknown scene and an invalid result without overwriting", () => {
     expect(
       applyV2FieldEdit(source, { field: "scene", id: "missing", value: { title: "x", html: "y" } })

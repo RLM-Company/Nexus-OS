@@ -1,6 +1,38 @@
 .editor {
   min-width: 0;
 }
+.workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 340px);
+  gap: 18px;
+  align-items: start;
+}
+.sources {
+  min-width: 0;
+}
+.scenePanel {
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--line, #ddd);
+  border-radius: 10px;
+  background: var(--surface, #fafafa);
+}
+.assetRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 0;
+  font-size: 12px;
+}
+.assetRow button {
+  flex: none;
+}
+@media (max-width: 900px) {
+  .workspace {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
 .tabs {
   display: flex;
   flex-wrap: wrap;

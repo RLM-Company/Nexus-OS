@@ -1,5 +1,9 @@
 import { describe, expect, test } from "vitest";
-import { gameErrorMessage, mapWorkerErrorToGameLine } from "./game-error-diagnostic";
+import {
+  gameErrorMessage,
+  gameSourceVersion,
+  mapWorkerErrorToGameLine
+} from "./game-error-diagnostic";
 import { gameWorkerSource } from "./game-project-runtime";
 
 describe("worker error to game.js source mapping", () => {
@@ -37,5 +41,27 @@ describe("worker error to game.js source mapping", () => {
     expect(gameErrorMessage("Error: boom\n    at x")).toBe("Error: boom");
     expect(gameErrorMessage("")).toBe("Ошибка в game.js");
     expect(gameErrorMessage("x".repeat(1000)).length).toBe(300);
+  });
+
+  test("binds a diagnostic to the exact source version and reuses the fixed version on re-run", () => {
+    const before = { text: code, version: gameSourceVersion(code) };
+    const fixed = "game.onUpdate=()=>{ game.ctx.clearRect(0,0,1,1); };";
+    const after = { text: fixed, version: gameSourceVersion(fixed) };
+    expect(after.version).not.toBe(before.version);
+
+    // The error was produced by the OLD source; the OLD runtime is the one that maps.
+    const oldRuntime = gameWorkerSource(before.text);
+    const preambleLines =
+      oldRuntime.slice(0, oldRuntime.indexOf(before.text)).split("\n").length - 1;
+    const stack = `Error: boom\n    at blob:x:${preambleLines + 2}:3`;
+    expect(mapWorkerErrorToGameLine(oldRuntime, before.text, stack)).toBe(2);
+    // A stale diagnostic must not be attributed to the fixed version.
+    expect(mapWorkerErrorToGameLine(gameWorkerSource(after.text), after.text, stack)).toBeNull();
+
+    // Re-run builds the document from the FIXED source, so the old line no longer maps.
+    const newRuntime = gameWorkerSource(after.text);
+    expect(newRuntime).toContain(after.text);
+    expect(newRuntime).not.toContain("fillRect");
+    expect(gameSourceVersion(after.text)).toBe(after.version);
   });
 });

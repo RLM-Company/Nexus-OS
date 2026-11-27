@@ -11,7 +11,19 @@ export type GameDiagnostic = {
   source: "game.js";
   line: number | null;
   message: string;
+  /** Short hash of the exact game.js bytes that produced the error. */
+  sourceVersion: string;
 };
+
+/** Stable, bounded version label for the source that produced a diagnostic. */
+export function gameSourceVersion(gameSource: string): string {
+  let hash = 2166136261;
+  for (let i = 0; i < gameSource.length; i += 1) {
+    hash ^= gameSource.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(16).padStart(8, "0");
+}
 
 const STACK_LINE = /(?:blob:[^\s)]+|https?:\/\/[^\s)]+):(\d+):(\d+)/;
 

@@ -18,7 +18,9 @@ export type V2FieldEdit =
   | { field: "launch"; value: GameProjectV2["launch"] }
   | { field: "scene"; id: string; value: { title: string; html: string } }
   | { field: "model_transform"; name: string; value: ModelTransform }
-  | { field: "model_render"; name: string; value: RenderSettings };
+  | { field: "model_render"; name: string; value: RenderSettings }
+  | { field: "asset_add"; value: GameProjectV2["assets"][number] }
+  | { field: "asset_remove"; name: string };
 
 export type V2EditResult =
   { ok: true; json: string; project: GameProjectV2 } | { ok: false; error: string };
@@ -123,6 +125,18 @@ export function applyV2FieldEdit(source: string, edit: V2FieldEdit): V2EditResul
       };
       break;
     }
+    case "asset_add": {
+      if (next.assets.some((asset) => asset.name === edit.value.name))
+        return { ok: false, error: "ASSET_EXISTS" };
+      next.assets = [...next.assets, edit.value];
+      break;
+    }
+    case "asset_remove": {
+      if (!next.assets.some((asset) => asset.name === edit.name))
+        return { ok: false, error: "ASSET_NOT_FOUND" };
+      next.assets = next.assets.filter((asset) => asset.name !== edit.name);
+      break;
+    }
   }
   const json = JSON.stringify(next, null, 2);
   try {
@@ -187,6 +201,7 @@ export function readV2Editable(source: string):
       transform: ModelTransform | null;
       render: RenderSettings | null;
       modelName: string | null;
+      assets: GameProjectV2["assets"];
     }
   | { ok: false; error: string } {
   let project: GameProjectV2;
@@ -203,6 +218,7 @@ export function readV2Editable(source: string):
     scenes: project.scenes,
     transform: markers?.transform ?? null,
     render: markers?.render ?? null,
-    modelName: project.model?.name ?? null
+    modelName: project.model?.name ?? null,
+    assets: project.assets
   };
 }

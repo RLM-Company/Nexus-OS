@@ -1,6 +1,7 @@
 import type { GameProjectV2 } from "@cosmora/contracts/game-project-v2";
 import { staticSiteDocument } from "../sites/site-preview";
 import { render3D } from "./game-3d-renderer";
+import { v2SceneDescriptor } from "./game-project-v2-edits";
 
 export function gameProjectResources(doc: Document, project: GameProjectV2): HTMLElement {
   const extra = doc.createElement("section");
@@ -59,9 +60,14 @@ export function createObjSceneDocument(project: GameProjectV2): string {
   const context = canvas.getContext("2d");
   if (!context) throw new Error("Браузер не поддерживает Canvas 2D.");
   try {
+    const descriptor = v2SceneDescriptor(project);
     render3D(
       context,
-      { model: { ...model, format: "obj-lite" }, rotation: { x: 0.25, y: 0.45 }, scale: 1 },
+      {
+        model: { ...model, format: "obj-lite" },
+        rotation: descriptor.rotation,
+        scale: descriptor.scale
+      },
       canvas.width,
       canvas.height
     );
@@ -76,7 +82,7 @@ export function createObjSceneDocument(project: GameProjectV2): string {
   image.width = 800;
   image.height = 500;
   const status = doc.createElement("p");
-  status.textContent = "Статический просмотр OBJ-lite";
+  status.textContent = "Снимок сцены на момент экспорта (с учётом поворота и масштаба из проекта)";
   doc.body.append(status, image, gameProjectResources(doc, project));
   return "<!doctype html>" + doc.documentElement.outerHTML;
 }

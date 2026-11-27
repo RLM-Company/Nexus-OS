@@ -1,8 +1,8 @@
-# DELIVERY — 02_OPENCODE
+﻿# DELIVERY — 02_OPENCODE
 
 **База:** `3af92583ccc8ceb49f44c0b8633955f40feaf59f`.
 **Ветка:** `feature/oc2-games-sites-workspace-20261127`. **PR:** #693.
-**Head (на момент обновления):** `908f6381de7ff5a11e67453a268833b991fd2a53`.
+**Head (на момент обновления):** `7eb7d09f86ac1aea2091bddddf1172e756c2b139` + незакоммиченные аудит-фиксы.
 
 ## Что реально добавлено
 
@@ -19,6 +19,12 @@
   вместо статического PNG; изоляция worker-игр сохранена.
 - `apps/web/src/app/sites/site-project.ts` — проект сайта со связанными
   ресурсами и адресными блоками, с запретом исполняемых имен и script/iframe/form.
+- Диагностика ошибки запуска привязана к версии `game.js` (хэш исходника);
+  тест проверяет, что после правки повторный запуск использует исправленную
+  версию и старый диагностический маппинг больше не применяется.
+- `V2ScenePanel` вынесен в правую рабочую колонку `game-source-editor.tsx`
+  (адаптивный grid); в панели редактируются связанные ресурсы Games.
+- Статический snapshot экспорта учитывает поворот/масштаб из проекта.
 - `scripts/run-games-sites-scenario.mjs` — воспроизводимая приёмка: новая
   3D-игра «Космический курьер» и продающий сайт, три независимые правки,
   детерминированный экспорт/распаковка/открытие заново, отказы.
@@ -27,7 +33,7 @@
 ## Проверки
 
 ```
-pnpm --filter @cosmora/web exec vitest run src/app/games src/app/sites/site-project.test.ts   # 25/25
+pnpm --filter @cosmora/web exec vitest run src/app/games src/app/sites/site-project.test.ts   # 27/27
 pnpm --filter @cosmora/web lint                                                              # exit 0
 pnpm --filter @cosmora/web typecheck                                                         # exit 0
 pnpm --filter @cosmora/web build                                                             # exit 0
@@ -35,7 +41,7 @@ node scripts/run-games-sites-scenario.mjs                                       
 ```
 
 SHA256 экспорта (детерминирован, подтверждено двумя прогонами):
-`e8a29eaf85a7ccaaa676ecaf42aaeab35b37baad3a0655fbfdac82b44699b84f`.
+`a837333db66501bc002700f3fe82563234ff46feef97a91c4e766ef1f5964407`.
 
 ## Ограничения и границы
 

@@ -1,7 +1,7 @@
 {
   "passed": true,
   "suite": "koswork-games-sites-scenario",
-  "at": "2026-11-27T14:35:23.426Z",
+  "at": "2026-11-27T15:01:31.056Z",
   "base": "real edit modules + real three.js scene + real site validator + verified ZIP round-trip",
   "checks": [
     {
@@ -27,7 +27,7 @@
     {
       "name": "05 save + export ZIP with verified paths, unzip and reopen same sources",
       "status": "pass",
-      "detail": "zip bytes=1970, sha256=e8a29eaf85a7"
+      "detail": "zip bytes=1970, sha256=a837333db665"
     },
     {
       "name": "06 bad resource / unsupported format / empty block are refused",
@@ -37,7 +37,7 @@
   ],
   "artifact": {
     "file": "games-sites-export.zip",
-    "sha256": "e8a29eaf85a7ccaaa676ecaf42aaeab35b37baad3a0655fbfdac82b44699b84f"
+    "sha256": "a837333db66501bc002700f3fe82563234ff46feef97a91c4e766ef1f5964407"
   },
   "limits": [
     "No paid model, network or Electron GUI used; scene is built and validated in Node, WebGL component is exercised by project build.",

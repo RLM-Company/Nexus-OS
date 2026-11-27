@@ -1,4 +1,4 @@
-# CHECKPOINT — 02_OPENCODE
+﻿# CHECKPOINT — 02_OPENCODE
 
 **Обновлено:** 27 ноября 2026. **База:** `3af92583`.
 **Ветка:** `feature/oc2-games-sites-workspace-20261127`.
@@ -21,12 +21,12 @@
 ## Проверки (последний прогон)
 
 - `pnpm --filter @cosmora/web exec vitest run src/app/games src/app/sites/site-project.test.ts`
-  → 25/25;
+  → 27/27;
 - `pnpm --filter @cosmora/web lint` → exit 0;
 - `pnpm --filter @cosmora/web typecheck` → exit 0;
 - `pnpm --filter @cosmora/web build` → exit 0;
 - `node scripts/run-games-sites-scenario.mjs` → 6/6, exit 0, детерминированный
-  SHA256 `e8a29eaf85a7ccaaa676ecaf42aaeab35b37baad3a0655fbfdac82b44699b84f`
+  SHA256 `a837333db66501bc002700f3fe82563234ff46feef97a91c4e766ef1f5964407`
   (проверено двумя независимыми прогонами).
 
 ## Точка продолжения

@@ -6,6 +6,7 @@ import { readGameSources } from "./game-project-sources";
 import { createGameProjectHtml, gameWorkerSource } from "./game-project-runtime";
 import {
   gameErrorMessage,
+  gameSourceVersion,
   mapWorkerErrorToGameLine,
   type GameDiagnostic
 } from "./game-error-diagnostic";
@@ -13,7 +14,7 @@ import styles from "../sites/sites.module.css";
 import { v2SceneDescriptor } from "./game-project-v2-edits";
 import { ThreeGameView } from "./three-game-view";
 
-type RuntimeDiagnostic = { line: number | null; message: string };
+type RuntimeDiagnostic = { line: number | null; message: string; sourceVersion: string };
 
 export function GameSourcePreview({
   content,
@@ -60,10 +61,11 @@ export function GameSourcePreview({
       const next: GameDiagnostic = {
         source: "game.js",
         line,
-        message: gameErrorMessage(payload.text ?? "")
+        message: gameErrorMessage(payload.text ?? ""),
+        sourceVersion: gameSourceVersion(gameSource)
       };
       setDiagnostic(next);
-      onDiagnostic?.({ line: next.line, message: next.message });
+      onDiagnostic?.({ line: next.line, message: next.message, sourceVersion: next.sourceVersion });
     };
     window.addEventListener("message", listener);
     return () => window.removeEventListener("message", listener);
@@ -183,7 +185,10 @@ export function GameSourcePreview({
             Ошибка в game.js{diagnostic.line ? `, строка ${diagnostic.line}` : ""}:{" "}
             {diagnostic.message}
           </p>
-          <p>Исправьте game.js и нажмите «Запустить игру» для повторного запуска.</p>
+          <p>
+            Версия исходника: {diagnostic.sourceVersion}. Исправьте game.js и нажмите «Запустить
+            игру» для повторного запуска.
+          </p>
         </div>
       )}
     </section>

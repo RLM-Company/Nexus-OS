@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import { applyV2FieldEdit, readV2Editable } from "./game-project-v2-edits";
 import styles from "./game-source.module.css";
 
-/** Minimal right-side workspace panel for addressable v2 scene/mechanic edits. */
+/** Compact settings form for the right workspace panel of a v2 game project. */
 export function V2ScenePanel({
   content,
   disabled,
@@ -17,8 +17,10 @@ export function V2ScenePanel({
   const editable = useMemo(() => readV2Editable(content), [content]);
   const [error, setError] = useState("");
   const [sceneId, setSceneId] = useState("");
+  const [assetName, setAssetName] = useState("");
+  const [assetData, setAssetData] = useState("");
   if (!editable.ok) return null;
-  const { title, launch, scenes, transform, render, modelName } = editable;
+  const { title, launch, scenes, transform, render, modelName, assets } = editable;
   const current = scenes.find((scene) => scene.id === sceneId) ?? scenes[0];
   const apply = (edit: Parameters<typeof applyV2FieldEdit>[1]) => {
     const result = applyV2FieldEdit(content, edit);
@@ -212,6 +214,60 @@ export function V2ScenePanel({
           </label>
         </div>
       )}
+      <div>
+        <p>Связанные ресурсы проекта ({assets.length})</p>
+        {assets.map((asset) => (
+          <div key={asset.name} className={styles.assetRow}>
+            <span>
+              {asset.name} — {asset.media_type}
+            </span>
+            <button
+              type="button"
+              disabled={disabled}
+              onClick={() => apply({ field: "asset_remove", name: asset.name })}
+            >
+              Удалить
+            </button>
+          </div>
+        ))}
+        <label>
+          Имя ресурса (png/jpg/webp/txt)
+          <input
+            value={assetName}
+            disabled={disabled}
+            onChange={(event) => setAssetName(event.target.value)}
+          />
+        </label>
+        <label>
+          Данные в base64
+          <textarea
+            value={assetData}
+            disabled={disabled}
+            onChange={(event) => setAssetData(event.target.value)}
+          />
+        </label>
+        <button
+          type="button"
+          disabled={disabled || !assetName || !assetData}
+          onClick={() => {
+            const media_type = assetName.toLowerCase().endsWith(".txt")
+              ? "text/plain"
+              : assetName.toLowerCase().endsWith(".jpg")
+                ? "image/jpeg"
+                : assetName.toLowerCase().endsWith(".webp")
+                  ? "image/webp"
+                  : "image/png";
+            apply({
+              field: "asset_add",
+              value: { name: assetName, media_type, data_base64: assetData }
+            });
+            setAssetName("");
+            setAssetData("");
+          }}
+        >
+          Добавить ресурс
+        </button>
+      </div>
       {error && <p role="alert">{error}</p>}
     </section>
   );

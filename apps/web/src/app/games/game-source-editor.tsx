@@ -185,124 +185,128 @@ export function GameSourceEditor({
     emit(replaceSource(project, selected, previous));
   };
   return (
-    <section className={styles.editor} aria-label="Файлы игры">
-      {isV2 && (
-        <V2ScenePanel
-          content={content}
-          disabled={disabled}
-          onChange={(value) => {
-            setHistories({});
-            lastInput.current = null;
-            emit(value);
-          }}
-        />
-      )}
-      <div className={styles.tabs} role="group" aria-label="Исходники игры">
-        {project?.files.map((item) => (
+    <section className={`${styles.editor} ${isV2 ? styles.workspace : ""}`} aria-label="Файлы игры">
+      <div className={styles.sources}>
+        <div className={styles.tabs} role="group" aria-label="Исходники игры">
+          {project?.files.map((item) => (
+            <button
+              key={item.name}
+              type="button"
+              aria-pressed={!raw && item.name === selected}
+              onClick={() => {
+                setSelected(item.name);
+                setRaw(false);
+                lastInput.current = null;
+              }}
+            >
+              {item.name}
+            </button>
+          ))}
           <button
-            key={item.name}
             type="button"
-            aria-pressed={!raw && item.name === selected}
+            aria-pressed={raw || !project}
             onClick={() => {
-              setSelected(item.name);
-              setRaw(false);
+              setRaw(true);
               lastInput.current = null;
             }}
           >
-            {item.name}
+            Пакет JSON
           </button>
-        ))}
-        <button
-          type="button"
-          aria-pressed={raw || !project}
-          onClick={() => {
-            setRaw(true);
-            lastInput.current = null;
-          }}
-        >
-          Пакет JSON
-        </button>
-        <button
-          type="button"
-          disabled={disabled || raw || !file || !history?.past.length}
-          onClick={() => travel("undo")}
-        >
-          Отменить правку файла
-        </button>
-        <button
-          type="button"
-          disabled={disabled || raw || !file || !history?.future.length}
-          onClick={() => travel("redo")}
-        >
-          Повторить правку файла
-        </button>
-        <button
-          type="button"
-          aria-pressed={showDiff}
-          disabled={raw || !file || !original}
-          onClick={() => setShowDiff((visible) => !visible)}
-        >
-          Сравнить файл
-        </button>
+          <button
+            type="button"
+            disabled={disabled || raw || !file || !history?.past.length}
+            onClick={() => travel("undo")}
+          >
+            Отменить правку файла
+          </button>
+          <button
+            type="button"
+            disabled={disabled || raw || !file || !history?.future.length}
+            onClick={() => travel("redo")}
+          >
+            Повторить правку файла
+          </button>
+          <button
+            type="button"
+            aria-pressed={showDiff}
+            disabled={raw || !file || !original}
+            onClick={() => setShowDiff((visible) => !visible)}
+          >
+            Сравнить файл
+          </button>
+        </div>
+        <label>
+          {!raw && file ? selected : "Исходный пакет игры"}
+          <textarea
+            spellCheck={false}
+            disabled={disabled}
+            value={!raw && file ? file.content : content}
+            onChange={(event) => {
+              if (!raw && project && file)
+                changeSelected(event.target.value, (event.nativeEvent as InputEvent).inputType);
+              else {
+                setHistories({});
+                lastInput.current = null;
+                emit(event.target.value);
+              }
+            }}
+          />
+        </label>
+        {showDiff && !raw && file && original && (
+          <CanvasComparison
+            before={{
+              label: `Основа файла ${selected}`,
+              title: selected,
+              format: "code",
+              content: original.content
+            }}
+            after={{
+              label: `Черновик файла ${selected}`,
+              title: selected,
+              format: "code",
+              content: file.content
+            }}
+          />
+        )}
+        <label>
+          Восстановить экспортированный проект
+          <input
+            type="file"
+            accept=".zip,application/zip"
+            aria-label="Восстановить ZIP проекта"
+            disabled={disabled || restoring}
+            onChange={(event) => {
+              const archive = event.currentTarget.files?.[0];
+              event.currentTarget.value = "";
+              if (archive) void restoreArchive(archive);
+            }}
+          />
+        </label>
+        {restoreError && <p role="alert">{restoreError}</p>}
+        {restoring && <p role="status">Проверяю архив…</p>}
+        <p>ZIP восстанавливает исходники без выполнения кода. Сохраните новую версию в Canvas.</p>
+        <p>
+          Отмена и повтор действуют только для выбранного файла до переключения версии; сохранённые
+          версии доступны в истории Canvas. Не более {HISTORY_LIMIT} локальных шагов на файл.
+        </p>
+        <p>
+          JavaScript: game.ctx, game.keys, game.pointer и game.onUpdate(dt). Поле 800 × 500. Код
+          выполняется в отдельном Worker; DOM и внешние зависимости недоступны.
+        </p>
       </div>
-      <label>
-        {!raw && file ? selected : "Исходный пакет игры"}
-        <textarea
-          spellCheck={false}
-          disabled={disabled}
-          value={!raw && file ? file.content : content}
-          onChange={(event) => {
-            if (!raw && project && file)
-              changeSelected(event.target.value, (event.nativeEvent as InputEvent).inputType);
-            else {
+      {isV2 && (
+        <aside className={styles.scenePanel} aria-label="Правая панель сцены и механики">
+          <V2ScenePanel
+            content={content}
+            disabled={disabled}
+            onChange={(value) => {
               setHistories({});
               lastInput.current = null;
-              emit(event.target.value);
-            }
-          }}
-        />
-      </label>
-      {showDiff && !raw && file && original && (
-        <CanvasComparison
-          before={{
-            label: `Основа файла ${selected}`,
-            title: selected,
-            format: "code",
-            content: original.content
-          }}
-          after={{
-            label: `Черновик файла ${selected}`,
-            title: selected,
-            format: "code",
-            content: file.content
-          }}
-        />
+              emit(value);
+            }}
+          />
+        </aside>
       )}
-      <label>
-        Восстановить экспортированный проект
-        <input
-          type="file"
-          accept=".zip,application/zip"
-          aria-label="Восстановить ZIP проекта"
-          disabled={disabled || restoring}
-          onChange={(event) => {
-            const archive = event.currentTarget.files?.[0];
-            event.currentTarget.value = "";
-            if (archive) void restoreArchive(archive);
-          }}
-        />
-      </label>
-      {restoreError && <p role="alert">{restoreError}</p>}
-      {restoring && <p role="status">Проверяю архив…</p>}
-      <p>ZIP восстанавливает исходники без выполнения кода. Сохраните новую версию в Canvas.</p>
-      <p>
-        Отмена и повтор действуют только для выбранного файла до переключения версии; сохранённые
-        версии доступны в истории Canvas. Не более {HISTORY_LIMIT} локальных шагов на файл.
-      </p>
-      <p>
-        JavaScript: game.ctx, game.keys, game.pointer и game.onUpdate(dt). Поле 800 × 500. Код
-        выполняется в отдельном Worker; DOM и внешние зависимости недоступны.
-      </p>
     </section>
   );
 }

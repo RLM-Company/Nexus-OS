@@ -1,11 +1,14 @@
-# Сценарии поставки 02_OPENCODE
+﻿# Сценарии поставки 02_OPENCODE
 
 ## Текущее состояние
 
 - [x] Инвентаризация: create → source editor → preview → save → reopen; найдены
       разрывы v2 (только raw JSON), статический OBJ-lite, Sites как одна HTML-строка.
 - [x] Адресная правка v2-проекта: сцена/механика/трансформа модели, камера,
-      свет и материал меняются без перезаписи остальных полей; 5 целевых тестов.
+      свет, материал и связанные ресурсы меняются без перезаписи остальных полей;
+      7 целевых тестов.
+- [x] Ошибка запуска привязана к версии `game.js` (хэш), тест подтверждает,
+      что правка устраняет ошибку и повторный запуск берёт исправленный исходник.
 - [x] Закреплён настоящий 3D runtime (three.js 0.187.0, MIT) и построена
       редактируемая сцена: объект, трансформации, камера, свет, материал из
       v2-маркеров; WebGL-просмотр вместо статического PNG для `web3d_sandbox`.
@@ -25,7 +28,7 @@
 ## Проверенный срез (последний прогон)
 
 ```
-pnpm --filter @cosmora/web exec vitest run src/app/games src/app/sites/site-project.test.ts   # 25/25
+pnpm --filter @cosmora/web exec vitest run src/app/games src/app/sites/site-project.test.ts   # 27/27
 pnpm --filter @cosmora/web lint            # exit 0
 pnpm --filter @cosmora/web typecheck       # exit 0
 pnpm --filter @cosmora/web build           # exit 0

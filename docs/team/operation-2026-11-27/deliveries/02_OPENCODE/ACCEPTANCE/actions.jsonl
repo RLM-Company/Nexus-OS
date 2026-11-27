@@ -1,6 +1,6 @@
-{"at":"2026-11-27T14:35:23.404Z","event":"check","name":"01 create a new 3D game and a sales site from one dataset","status":"pass"}
-{"at":"2026-11-27T14:35:23.406Z","event":"check","name":"02 edit game mechanic (launch mode and source) without losing model","status":"pass"}
-{"at":"2026-11-27T14:35:23.416Z","event":"check","name":"03 edit scene object transform; original model vertices preserved","status":"pass"}
-{"at":"2026-11-27T14:35:23.417Z","event":"check","name":"04 edit one site block; other blocks and resources stay byte-identical","status":"pass"}
-{"at":"2026-11-27T14:35:23.424Z","event":"check","name":"05 save + export ZIP with verified paths, unzip and reopen same sources","status":"pass"}
-{"at":"2026-11-27T14:35:23.425Z","event":"check","name":"06 bad resource / unsupported format / empty block are refused","status":"pass"}
+{"at":"2026-11-27T15:01:30.764Z","event":"check","name":"01 create a new 3D game and a sales site from one dataset","status":"pass"}
+{"at":"2026-11-27T15:01:30.782Z","event":"check","name":"02 edit game mechanic (launch mode and source) without losing model","status":"pass"}
+{"at":"2026-11-27T15:01:30.895Z","event":"check","name":"03 edit scene object transform; original model vertices preserved","status":"pass"}
+{"at":"2026-11-27T15:01:30.896Z","event":"check","name":"04 edit one site block; other blocks and resources stay byte-identical","status":"pass"}
+{"at":"2026-11-27T15:01:31.021Z","event":"check","name":"05 save + export ZIP with verified paths, unzip and reopen same sources","status":"pass"}
+{"at":"2026-11-27T15:01:31.054Z","event":"check","name":"06 bad resource / unsupported format / empty block are refused","status":"pass"}
