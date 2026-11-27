@@ -1,0 +1,351 @@
+.workspaceContext {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 42px;
+  padding: 2px 3px;
+  color: var(--muted, #777);
+  border-bottom: 1px solid var(--line, #e5e5e5);
+  font-size: 12px;
+}
+.workspaceContext > span,
+.workspaceContext > a {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+.workspaceContext svg {
+  width: 15px;
+  height: 15px;
+  flex-shrink: 0;
+}
+.workspaceContext a {
+  color: var(--text, #171717);
+  text-decoration: none;
+}
+.workspaceContext a:hover {
+  text-decoration: underline;
+}
+.root {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  gap: 16px;
+  color: var(--text, #171717);
+  font-size: 13px;
+}
+.root svg {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+}
+.root button,
+.root a {
+  color: inherit;
+  font: inherit;
+}
+.root button {
+  cursor: pointer;
+}
+.root button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.root button:focus-visible,
+.root a:focus-visible,
+.search:focus-within {
+  outline: 2px solid var(--text, #171717);
+  outline-offset: 2px;
+}
+.root .newSession {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  min-height: 38px;
+  border: 1px solid var(--line, #dedede);
+  border-radius: 9px;
+  background: var(--bg, #fff);
+  padding: 8px 10px;
+  text-align: left;
+}
+.newSession span {
+  flex: 1;
+}
+.newSession svg:last-child {
+  width: 15px;
+  height: 15px;
+  color: var(--muted, #777);
+}
+.search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  padding: 0 8px;
+  border-radius: 7px;
+  color: var(--muted, #777);
+}
+.search > svg {
+  width: 15px;
+  height: 15px;
+}
+.root .search input {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  outline: none;
+  padding: 5px 0;
+  background: transparent;
+  color: var(--text, #171717);
+  font: inherit;
+  font-size: 12px;
+}
+.search button,
+.sectionHeading button,
+.collapse,
+.projectNew {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 24px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+}
+.search button svg,
+.sectionHeading button svg,
+.projectNew svg {
+  width: 15px;
+  height: 15px;
+}
+.shortcuts {
+  display: grid;
+  gap: 3px;
+}
+.shortcuts a {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 9px;
+  border-radius: 7px;
+  text-decoration: none;
+}
+.shortcuts a:hover,
+.projectHeading:hover,
+.sessionRow:hover {
+  background: var(--surface-hover, #eaeaea);
+}
+.projects {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 90px;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  padding-bottom: 12px;
+}
+.sectionHeading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 2px 8px 8px;
+  color: var(--muted, #777);
+  font-size: 12px;
+  font-weight: 550;
+}
+.project {
+  margin-bottom: 12px;
+}
+.projectHeading {
+  display: flex;
+  align-items: center;
+  min-height: 32px;
+  border-radius: 6px;
+}
+.collapse {
+  color: var(--muted, #777);
+  width: 19px;
+}
+.collapse span {
+  font-size: 19px;
+  transition: transform 0.15s;
+}
+.collapse[aria-expanded="true"] span {
+  transform: rotate(90deg);
+}
+.projectName {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  padding: 4px 0;
+  background: transparent;
+  text-align: left;
+  text-decoration: none;
+  font-weight: 550 !important;
+}
+.projectName span,
+.sessionName {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.projectName svg {
+  width: 16px;
+  height: 16px;
+  color: var(--muted, #777);
+}
+.projectNew {
+  margin-right: 3px;
+  opacity: 0;
+}
+.projectHeading:hover .projectNew,
+.projectHeading:focus-within .projectNew {
+  opacity: 1;
+}
+.projectSessions {
+  border-left: 1px solid var(--line, #ddd);
+  margin: 4px 0 0 26px;
+  padding-left: 6px;
+}
+.sessionRow {
+  display: flex;
+  align-items: center;
+  border-radius: 6px;
+  min-width: 0;
+}
+.sessionRow[data-selected] {
+  background: var(--surface-hover, #e5e5e5);
+}
+.root .session {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex: 1;
+  width: 100%;
+  min-width: 0;
+  min-height: 32px;
+  padding: 6px 7px;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  font-weight: 450;
+}
+.session svg {
+  width: 14px;
+  height: 14px;
+  color: var(--muted, #777);
+}
+.sessionName {
+  flex: 1;
+}
+.session small {
+  color: var(--muted, #777);
+  font-size: 10px;
+}
+.sessionRow > :last-child:not(.session) {
+  flex-shrink: 0;
+}
+.projectWorkspace {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 5px;
+  padding: 6px 8px;
+  font-size: 11px !important;
+  color: var(--muted, #777) !important;
+  text-decoration: none;
+}
+.projectWorkspace svg {
+  width: 12px;
+  height: 12px;
+}
+.projectWorkspace:hover {
+  color: var(--text, #171717) !important;
+}
+.emptyProject {
+  display: block;
+  padding: 6px 8px;
+  color: var(--muted, #777);
+  font-size: 11px;
+}
+.loose {
+  margin-top: 20px;
+}
+.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 5px;
+  padding: 15px 10px;
+  color: var(--muted, #777);
+  font-size: 11px;
+  line-height: 1.6;
+}
+.empty p {
+  margin: 5px 0 0;
+  color: var(--text, #171717);
+  font-size: 13px;
+}
+.repository {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 12px 8px 4px;
+  border-top: 1px solid var(--line, #dedede);
+}
+.repository > div {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+.repository strong,
+.repository span {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 11px;
+  font-weight: 450;
+}
+.repository span {
+  color: var(--muted, #777);
+}
+.state {
+  width: 8px;
+  height: 8px;
+  flex-shrink: 0;
+  border: 1px solid var(--muted, #777);
+  border-radius: 50%;
+  margin: 0 3px;
+}
+.state[data-working] {
+  border-color: var(--text, #171717);
+  background: var(--text, #171717);
+  animation: breath 1.8s ease-in-out infinite;
+}
+@keyframes breath {
+  50% {
+    opacity: 0.35;
+  }
+}
+@media (hover: none) {
+  .projectNew {
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .state[data-working] {
+    animation: none;
+  }
+  .collapse span {
+    transition: none;
+  }
+}
