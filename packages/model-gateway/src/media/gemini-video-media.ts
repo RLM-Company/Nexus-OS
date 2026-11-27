@@ -17,7 +17,7 @@ export function validGeminiVideoProject(project: string): boolean {
 }
 
 const invalidVideo = () =>
-  new MediaProviderError("INVALID_VIDEO_RESULT", "Invalid inline video result", {
+  new MediaProviderError("INVALID_ASSET", "Invalid inline video result", {
     normalizedCode: "corrupt_response"
   });
 
@@ -71,21 +71,17 @@ export class GeminiVideoMediaAdapter {
     });
     if (!response.ok) {
       await response.body?.cancel().catch(() => undefined);
-      throw new MediaProviderError(
-        "VIDEO_PROVIDER_FAILURE",
-        "Video provider rejected the request",
-        {
-          status: response.status,
-          normalizedCode:
-            response.status === 401 || response.status === 403
-              ? "invalid_key"
-              : response.status === 429
-                ? "rate_limit"
-                : response.status === 408 || response.status === 504
-                  ? "timeout"
-                  : "provider_error"
-        }
-      );
+      throw new MediaProviderError("PROVIDER_ERROR", "Video provider rejected the request", {
+        status: response.status,
+        normalizedCode:
+          response.status === 401 || response.status === 403
+            ? "invalid_key"
+            : response.status === 429
+              ? "rate_limit"
+              : response.status === 408 || response.status === 504
+                ? "timeout"
+                : "provider_error"
+      });
     }
     if (response.headers.get("content-type")?.split(";")[0]?.trim() !== "application/json") {
       await response.body?.cancel().catch(() => undefined);
