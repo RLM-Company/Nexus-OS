@@ -224,4 +224,3 @@ test("values containing the active delimiter are quoted and reopen unchanged", (
     assert.equal(reopened.rows[1][1], `mixed${other}value`);
   }
 });
-

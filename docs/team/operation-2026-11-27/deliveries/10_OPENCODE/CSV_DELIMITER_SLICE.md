@@ -31,7 +31,7 @@
   ( Including new regression for all four delimiters and independent reader tests).
 - `node --test test/office-csv-native.test.cjs` — 2/2 pass.
 - `pnpm --filter @cosmora/api exec vitest run test/document-workspace-csv.test.ts
-  test/document-workspace-api.test.ts test/document-workspace-docx-cell.test.ts` — 10/10 pass.
+test/document-workspace-api.test.ts test/document-workspace-docx-cell.test.ts` — 10/10 pass.
 - Новый API-тест проходит полный путь inspect → preview → commit → inspect
   для `;`-файла со значением `Company; A` и проверяет, что ячейка B2 осталась
   одной ячейкой, а соседние значения не сдвинулись.

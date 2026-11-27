@@ -97,9 +97,7 @@ it("keeps a value containing the file's own separator as one cell through the fu
     name,
     bytes,
     expected_version: opened.json<{ version: string }>().version,
-    operations: [
-      { kind: "set_cell", target: "table:1", address: "B2", value: "Company; A" }
-    ]
+    operations: [{ kind: "set_cell", target: "table:1", address: "B2", value: "Company; A" }]
   };
   const preview = await call("preview", input);
   expect(preview.statusCode, preview.body).toBe(200);
@@ -116,8 +114,9 @@ it("keeps a value containing the file's own separator as one cell through the fu
   expect(output).toContain('"Company; A"');
   const reopened = await call("inspect", { name, bytes: result.bytes });
   expect(reopened.statusCode, reopened.body).toBe(200);
-  const cells = reopened.json<{ targets: Array<{ cells: Array<{ address: string; text: string }> }> }>()
-    .targets[0]!.cells;
+  const cells = reopened.json<{
+    targets: Array<{ cells: Array<{ address: string; text: string }> }>;
+  }>().targets[0]!.cells;
   expect(cells.find((c) => c.address === "B2")?.text).toBe("Company; A");
   expect(cells.find((c) => c.address === "C2")?.text).toBe("19700");
   expect(cells.find((c) => c.address === "A3")?.text).toBe("002");
