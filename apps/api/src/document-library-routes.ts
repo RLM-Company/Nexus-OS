@@ -209,6 +209,30 @@ export function registerDocumentLibraryRoutes(
     }
   );
 
+  app.get<{ Params: FileScope & { chunkId: number } }>(
+    `${base}/:fileId/fragments/:chunkId`,
+    {
+      schema: {
+        params: Type.Object(
+          {
+            ...fileParams.properties,
+            chunkId: Type.Integer({ minimum: 1, maximum: Number.MAX_SAFE_INTEGER })
+          },
+          { additionalProperties: false }
+        )
+      }
+    },
+    (request, reply) => {
+      const { projectId, fileId, chunkId } = request.params;
+      const chunk = store.chunk(projectId, identityFor(request).owner_id, fileId, chunkId);
+      if (!chunk) return reply.code(404).send({ error: { code: "NOT_FOUND" } });
+      return reply
+        .header("Cache-Control", "private, no-store")
+        .header("X-Content-Type-Options", "nosniff")
+        .send(chunk);
+    }
+  );
+
   app.post<{ Params: Scope; Body: { question: string; file_ids: string[] } }>(
     `${base}/search`,
     {

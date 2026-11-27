@@ -212,7 +212,6 @@ export class DocumentAnswerService {
     id: string,
     retryRequestId?: string
   ): Promise<DocumentAnswer> {
-    this.assertAvailable();
     if (this.quiesced.has(ownerId)) throw new DocumentAnswerError("QUIESCED");
     const previous = this.store.get(projectId, ownerId, id);
     if (!previous) throw new DocumentAnswerError("NOT_FOUND");
@@ -222,6 +221,7 @@ export class DocumentAnswerService {
       if (replay.retry_of !== previous.id) throw new DocumentAnswerError("CONFLICT");
       return replay;
     }
+    this.assertAvailable();
     if (
       !previous.coverage ||
       !(
@@ -525,7 +525,7 @@ export class DocumentAnswerService {
                 error: problem ? "INVALID_EVIDENCE" : "BATCH_FAILED"
               };
               if (!this.store.saveBatch(run, index, hash, JSON.stringify(failed), coverage, false))
-                throw new Error("CANCELLED");
+                throw new Error("CANCELLED", { cause: error });
               continue;
             }
           }
@@ -564,7 +564,7 @@ export class DocumentAnswerService {
       const { notes: note } = JSON.parse(batch.notes) as AnalysisBatch;
       if (note) await accumulate(note);
     }
-    let notes = levels.reverse().flat();
+    const notes = levels.reverse().flat();
     if (!notes.length)
       return {
         answer: "В обработанных фрагментах модель не нашла сведений по вопросу.",

@@ -76,6 +76,7 @@ it("continues a multi-format package after restart and exports the exact retaine
   let readers = 0;
   let inFlight = 0;
   let peak = 0;
+  let releasePaused: (() => void) | undefined;
   const gateway: DocumentAnswerTransport = {
     assertRoute: () => undefined,
     async *stream(request) {
@@ -88,7 +89,11 @@ it("continues a multi-format package after restart and exports the exact retaine
         readers++;
         inFlight++;
         peak = Math.max(peak, inFlight);
-        await new Promise<void>((resolve) => setImmediate(resolve));
+        if (input.includes("Проверка паузы") && input.includes("Line a-1 item")) {
+          await new Promise<void>((resolve) => {
+            releasePaused = resolve;
+          });
+        } else await new Promise<void>((resolve) => setImmediate(resolve));
         inFlight--;
         const hit = /\[(S\d+)\] [^\n]+\n([^\n]+)/u.exec(input)!;
         delta =
@@ -273,11 +278,49 @@ it("continues a multi-format package after restart and exports the exact retaine
     const lines = exported.body.trim().split("\n");
     expect(lines).toHaveLength(firstReaders + 1);
     expect(lines.at(-1)).toContain("кроме доставки");
+    const { result: artifact } = JSON.parse(lines[1]!) as {
+      result: { fragments: Array<{ page: number; current_fragment_url: string }> };
+    };
+    const sourceUrl = artifact.fragments[0]!.current_fragment_url;
+    const originalSource = await restarted.inject(sourceUrl);
+    expect(originalSource.statusCode, originalSource.body).toBe(200);
+    expect(originalSource.json()).toMatchObject({
+      page: 1,
+      content: expect.stringContaining("00123")
+    });
+    expect((await restarted.inject(sourceUrl.replace(project, "another-project"))).statusCode).toBe(
+      404
+    );
     expect(lines[0]).toContain('"analyzed_pages":128');
     expect([...reloaded.batches({ ...last, owner_id: "other-owner" })]).toEqual([]);
     process.stdout.write(
       `Large document fixture: ${size} bytes, 512 PDF pages, 514 chunks, ${firstReaders} analysis batches, 1 replay dispatch\n`
     );
+    const pauseRun = await restarted.inject({
+      method: "POST",
+      url: base + "/answers",
+      payload: {
+        mode: "deep",
+        question: "Проверка паузы.",
+        file_ids: [fileIds[0]!]
+      }
+    });
+    expect(pauseRun.statusCode).toBe(202);
+    const { id: pausedId } = pauseRun.json<{ id: string }>();
+    await vi.waitFor(() => {
+      expect(releasePaused).toBeTypeOf("function");
+      expect(reloaded.get(project, owner, pausedId)!.coverage!.analyzed_chunks).toBeGreaterThan(0);
+    });
+    const pausePath = `${base}/answers/${pausedId}/pause`;
+    expect((await restarted.inject({ method: "POST", url: pausePath })).json()).toEqual({
+      status: "paused"
+    });
+    const confirmed = reloaded.get(project, owner, pausedId)!;
+    expect(confirmed.error_code).toBe("PAUSED");
+    releasePaused?.();
+    await vi.waitFor(() => expect(inFlight).toBe(0));
+    expect(reloaded.get(project, owner, pausedId)).toEqual(confirmed);
+    releasePaused = undefined;
   } finally {
     await app?.close();
     if (connection) db.close();

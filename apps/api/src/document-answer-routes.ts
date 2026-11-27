@@ -163,11 +163,23 @@ export function registerDocumentAnswerRoutes(
         for (const row of service.store.batches(run)) {
           if (reply.raw.destroyed) return;
           const { ordinal, input_hash } = row;
+          const result = JSON.parse(row.notes) as {
+            file_id: string;
+            fragments: Array<{ chunk_id: number }>;
+          };
+          const fileUrl = `/api/v1/projects/${encodeURIComponent(run.project_id)}/document-library/${encodeURIComponent(result.file_id)}`;
           yield JSON.stringify({
             type: row.verified ? "verified_batch" : "failed_batch",
             ordinal,
             input_hash,
-            result: JSON.parse(row.notes) as unknown
+            result: {
+              ...result,
+              original_url: fileUrl + "/download",
+              fragments: result.fragments.map((fragment) => ({
+                ...fragment,
+                current_fragment_url: fileUrl + "/fragments/" + fragment.chunk_id
+              }))
+            }
           }) + "\n";
         }
       }
