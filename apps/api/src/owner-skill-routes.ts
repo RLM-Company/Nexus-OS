@@ -6,9 +6,10 @@ import { OwnerSkillError, type OwnerSkillStore } from "@cosmora/db";
 import {
   AcceptSkillCorrectionSchema,
   SkillCorrectionProposalSchema,
-  SkillResultEvaluationSchema
+  SkillResultEvaluationSchema,
+  SpecializationSetupSchema
 } from "@cosmora/contracts";
-import { evaluateSkillResult, proposeSkillCorrection } from "@cosmora/core";
+import { compileSpecialization, evaluateSkillResult, proposeSkillCorrection } from "@cosmora/core";
 import {
   exportOwnerSkillPackage,
   verifyOwnerSkillPackage,
@@ -75,6 +76,22 @@ export function registerOwnerSkillRoutes(
         return { draft: proposeSkillCorrection(request.body.correction) };
       } catch {
         return reply.code(400).send({ error: { code: "INVALID_CORRECTION" } });
+      }
+    }
+  );
+  // Inert specialization setup: compiles the owner's own fields into a SkillDraft
+  // and stores NOTHING. The draft must be accepted through the existing skill API.
+  app.post(
+    `${base}/specializations/compile`,
+    { schema: { body: SpecializationSetupSchema } },
+    (request, reply) => {
+      reply.header("Cache-Control", "private, no-store");
+      try {
+        return {
+          draft: compileSpecialization(request.body as Parameters<typeof compileSpecialization>[0])
+        };
+      } catch {
+        return reply.code(400).send({ error: { code: "INVALID_SPECIALIZATION" } });
       }
     }
   );

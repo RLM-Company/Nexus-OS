@@ -41,3 +41,5 @@ export * from "./project-correction-rules.js";
 export * from "./graph-evidence-comparison.js";
 export * from "./graph-source-usage.js";
 export * from "./graph-citation-refresh.js";
+export * from "./specialization-compiler.js";
+export * from "./business-scenarios.js";
