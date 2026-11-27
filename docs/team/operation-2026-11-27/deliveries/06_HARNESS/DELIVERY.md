@@ -4,9 +4,8 @@
 Изолированный worktree: `.../ds3-collaboration`.
 База: `3af92583ccc8ceb49f44c0b8633955f40feaf59f`.
 PR: #691 (https://github.com/RLM-Company/Nexus-OS/pull/691).
-Точный head: `689e326881f5fa75fb91936125af92f8e2210a94`.
-CI точного head: Browser acceptance pass (15m32s), Verify monorepo pass (8m24s),
-Code sandbox isolation pass, identity-tests pass — run `46024763658`.
+Точный code head: `742f07f168fcd06544fb370496c76cf1258dd6af`; doc head `6b56eaea84843e8d1f7b7c08213cb72add1c93d7`.
+CI code head: Browser/Verify/Sandbox/identity all pass — run `46052675473`.
 
 ## Фактические возможности
 
