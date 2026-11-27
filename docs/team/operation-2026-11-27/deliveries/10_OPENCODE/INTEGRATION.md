@@ -26,8 +26,9 @@ exports/config/lockfile) **не изменены**. Нового хранили�
 - `desktop/windows/workspace/office-edit.cjs` — тонкий dispatch на `.csv`.
 - `desktop/windows/workspace/office-text.cjs` — экспорт `text` (fatal UTF-8 decode).
 - `apps/web/src/app/office-document-workspace.tsx` — file picker `.csv`,
-  error-copy, скрытие «добавить лист», адреса ячеек.
-- `apps/web/src/app/office-plan.ts` — разрешён `table:1` в валидаторе плана.
+  error-copy, скрытие «добавить лист», адреса ячеек, замена ячейки DOCX.
+- `apps/web/src/app/office-plan.ts` — разрешены `table:1` и `table:N/row:R/cell:C`.
+- `apps/web/src/app/office-plan-editor.tsx` — отображение и редактирование `set_docx_cell`.
 
 ### Проверено
 

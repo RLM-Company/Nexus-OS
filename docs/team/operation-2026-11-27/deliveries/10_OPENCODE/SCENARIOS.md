@@ -24,11 +24,21 @@
 8. **Разделители/BOM**: `,`/`;`/`\t`/`|` и UTF-8 BOM сохраняются
    при экспорте; ведущие нули остаются текстом.
 
+## Срез 2 — DOCX: замена ячейки таблицы целиком
+
+1. DOCX с таблицей → `inspect` показывает цели `table:1/row:1/cell:1`.
+2. План `set_docx_cell` (ячейка → «Новая цена») → preview → commit →
+   readback; соседняя ячейка `00123` и стиль `<w:rPr><w:b/></w:rPr>`
+   сохранены, все остальные части пакета побайтово равны.
+3. Отказ: неверный target, перенос строки, объект-формула, отсутствующее
+   значение; сложные объекты (field/revision/drawing) не трогаются.
+
 ## Запуск
 
 ```
+node --test desktop/windows/test/office-docx-cell.test.cjs
 node --test desktop/windows/test/office-csv.test.cjs
-pnpm --filter @cosmora/api exec vitest run test/document-workspace-csv.test.ts test/document-workspace-api.test.ts
+pnpm --filter @cosmora/api exec vitest run test/document-workspace-docx-cell.test.ts test/document-workspace-csv.test.ts test/document-workspace-api.test.ts
 pnpm --filter @cosmora/web exec vitest run
 pnpm --filter @cosmora/web typecheck
 pnpm --filter @cosmora/api build   # проверяет копирование engine в dist
@@ -36,8 +46,8 @@ pnpm --filter @cosmora/api build   # проверяет копирование e
 
 ## Статус
 
-- Engine: 58/58 desktop Office тестов (включая 10 новых CSV).
-- API: 8/8 targeted тестов (DOCX/XLSX/PPTX + CSV).
+- Engine: 61/61 desktop Office тестов (10 CSV + 3 DOCX-cell).
+- API: 9/9 targeted тестов (DOCX/XLSX/PPTX + CSV + DOCX-cell).
 - Web: 463/463 unit-тестов, typecheck зелёный.
 - E2E Playwright (браузер) и живая приёмка Windows — **не запускались**
   (нет назначенного доступа к device/браузеру; отдельный срез).
