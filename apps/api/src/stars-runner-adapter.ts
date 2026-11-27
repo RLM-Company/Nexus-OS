@@ -36,7 +36,8 @@ export function dispatchIsolatedRunner(
   mkdirSync(workspace, { recursive: true });
   if (
     existsSync(join(workspace, "status.json")) &&
-    JSON.parse(readFileSync(join(workspace, "status.json"), "utf8")).status === "completed"
+    (JSON.parse(readFileSync(join(workspace, "status.json"), "utf8")) as { status?: string })
+      .status === "completed"
   )
     throw new IsolatedRunnerError("ALREADY_DONE");
   const completed: string[] = [];
