@@ -226,6 +226,38 @@ describe("project membership API", () => {
     ).toBe(404);
   });
 
+  it("records the acting editor as author, conflicts on stale version and refuses viewer writes", async () => {
+    const base = `/api/v1/projects/${projectId}`;
+    await ownerApp.inject({
+      method: "POST",
+      url: `${base}/members/invite`,
+      payload: { account_id: "owner-b", role: "editor" }
+    });
+    await memberApp.inject({ method: "POST", url: `${base}/members/accept` });
+    await ownerApp.inject({
+      method: "POST",
+      url: `${base}/members/invite`,
+      payload: { account_id: "owner-c", role: "viewer" }
+    });
+    await thirdApp.inject({ method: "POST", url: `${base}/members/accept` });
+    const payload = { version: 0, instructions: "Материал от редактора", attachments: [] };
+    const saved = await memberApp.inject({ method: "PUT", url: `${base}/materials`, payload });
+    expect(saved.statusCode).toBe(200);
+    expect(saved.json()).toMatchObject({ version: 1, updated_by: "owner-b" });
+    expect(
+      (await memberApp.inject({ method: "PUT", url: `${base}/materials`, payload })).statusCode
+    ).toBe(409);
+    expect(
+      (
+        await thirdApp.inject({
+          method: "PUT",
+          url: `${base}/materials`,
+          payload: { ...payload, version: 1 }
+        })
+      ).statusCode
+    ).toBe(404);
+  });
+
   it("shows an accepted shared project in the member's main project list, not before acceptance", async () => {
     const base = `/api/v1/projects/${projectId}/members`;
     const listed = async (app: typeof memberApp) =>
