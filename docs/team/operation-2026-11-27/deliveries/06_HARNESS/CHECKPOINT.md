@@ -1,7 +1,7 @@
 # CHECKPOINT — 06_HARNESS (2026-11-27)
 
 Ветка `feature/ds3-collaboration-connectors-20261127`, база `3af92583`.
-PR #691. Точный code head `1f3f08f1ca4828279413012136a8c263825deea7`.
+PR #691. Точный code head `a54547f72ba8a18624f657b6a43b6969c64cac38`.
 
 ## Выполнено
 
