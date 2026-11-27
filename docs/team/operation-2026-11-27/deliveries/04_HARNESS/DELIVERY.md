@@ -1,8 +1,10 @@
 # DELIVERY — 04_HARNESS, Stars hierarchy first slice
 
-- **База:** main `3af92583ccc8ceb49f44c0b8633955f40feaf59f` (refs обновлены).
+- **Статус:** готово к интеграции; PR [#695](https://github.com/RLM-Company/Nexus-OS/pull/695), `CLEAN / MERGEABLE / OPEN`.
+- **База:** main `3af92583ccc8ceb49f44c0b8633955f40feaf59f`.
 - **Ветка:** `feature/ds1-stars-hierarchy-runtime-20261127`, изолированный worktree `stars-hierarchy`.
-- **Статус:** готово к интеграции; PR # и точный HEAD SHA — в финальной передаче.
+- **HEAD SHA:** `ae9ebea9fb32660270fd45adf11f285c7085fdf6` (предыдущие: `304250cb`, `ea3dc0a9`).
+- **CI точного SHA:** `46024119355` — 4/4 pass (`Browser acceptance` 16m5s, `Verify monorepo` 6m30s, sandbox, identity).
 
 ## Что сделано (цикл 1 иерархии)
 
