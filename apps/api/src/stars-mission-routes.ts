@@ -13,6 +13,7 @@ import {
   changeStarsOrg,
   createStarsMission,
   createStarsOrg,
+  delegateMission,
   StarsMissionConflict,
   StarsOrgConflict
 } from "@cosmora/core";
@@ -138,6 +139,93 @@ export function registerStarsMissionRoutes({
         } catch (cause) {
           if (cause instanceof StarsOrgConflict || cause instanceof StarsOrgStoreConflict)
             return reply.code(409).send({ error: { code: cause.code } });
+          throw cause;
+        }
+      }
+    );
+  }
+  if (orgStore && dag) {
+    app.post<{
+      Params: { id: string };
+      Body: { project_id: string; zones: Record<string, string> };
+    }>(
+      base + "/:id/delegation",
+      {
+        schema: {
+          params,
+          body: Type.Object(
+            {
+              project_id: Type.String({ minLength: 1, maxLength: 120 }),
+              zones: Type.Record(Type.String(), Type.String(), { maxProperties: 32 })
+            },
+            { additionalProperties: false }
+          )
+        }
+      },
+      (request, reply) => {
+        reply.header("cache-control", "private, no-store");
+        const owner = identityFor(request).owner_id;
+        const mission = store.get(request.params.id, owner);
+        if (!mission) return reply.code(404).send({ error: "STARS_MISSION_NOT_FOUND" });
+        const org = orgStore.current(mission.team_scope, owner);
+        if (!org) return reply.code(404).send({ error: "STARS_ORG_NOT_FOUND" });
+        if (!projects?.getProject(request.body.project_id, owner))
+          return reply.code(404).send({ error: "STARS_PROJECT_NOT_FOUND" });
+        const plan = delegateMission(
+          mission as never,
+          org as never,
+          request.body.project_id,
+          request.body.zones
+        );
+        if (!plan.nodes.length)
+          return reply.code(422).send({ error: "NO_ASSIGNEES", skipped: plan.skipped });
+        const planDigest = createHash("sha256")
+          .update(
+            JSON.stringify({
+              project_id: request.body.project_id,
+              composition_version: plan.composition_version,
+              nodes: plan.nodes
+            })
+          )
+          .digest("hex");
+        const existing = mission.delegation as
+          | {
+              graph_id: string;
+              project_id: string;
+              plan_digest?: string;
+              mission_version: number;
+              composition_version: number;
+            }
+          | undefined;
+        if (existing && existing.plan_digest === planDigest)
+          return {
+            delegation: existing,
+            graph: dag.get(existing.graph_id, owner, request.body.project_id),
+            plan
+          };
+        try {
+          const graph = dag.create(owner, owner, owner, {
+            client_request_id: `stars-delegation:${mission.id}:${plan.mission_version}:${plan.composition_version}`,
+            title:
+              typeof mission.goal === "string" && mission.goal ? mission.goal : "Stars mission",
+            nodes: plan.nodes
+          });
+          const delegation = {
+            graph_id: graph.id,
+            project_id: request.body.project_id,
+            plan_digest: planDigest,
+            mission_version: plan.mission_version,
+            composition_version: plan.composition_version
+          };
+          const saved = store.save(
+            { ...mission, version: mission.version + 1, delegation },
+            owner,
+            mission.version
+          );
+          return { delegation, mission_version: saved.version, graph, plan };
+        } catch (cause) {
+          if (cause instanceof StarsMissionStoreConflict || cause instanceof WorkDagConflict)
+            return reply.code(409).send({ error: cause.message });
           throw cause;
         }
       }
