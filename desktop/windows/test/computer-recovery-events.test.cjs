@@ -38,6 +38,21 @@ test("device disconnection is non-retryable so no blind replay occurs", () => {
   assert.equal(event.retryable, false);
 });
 
+test("device lease takeover/disconnect become typed recovery events", () => {
+  assert.deepEqual(classifyDeviceFailure(Error("DEVICE_LEASE_TAKEN_OVER")), {
+    kind: "user_input_active",
+    reason: "DEVICE_LEASE_TAKEN_OVER",
+    retryable: true
+  });
+  assert.equal(classifyDeviceFailure(Error("DEVICE_LEASE_LOST")).kind, "user_input_active");
+  assert.deepEqual(classifyDeviceFailure({ code: "DEVICE_STOPPED" }), {
+    kind: "device_disconnected",
+    reason: "DEVICE_STOPPED",
+    retryable: false
+  });
+  assert.equal(classifyDeviceFailure(Error("DEVICE_LEASE_ABORTED")).retryable, false);
+});
+
 test("unknown errors are not classified and remain fail-closed", () => {
   assert.equal(classifyDeviceFailure(Error("COMPUTER_INPUT_REJECTED")), null);
   assert.equal(classifyDeviceFailure(null), null);

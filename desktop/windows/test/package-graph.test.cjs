@@ -16,6 +16,11 @@ test("граф пакета полный: каждый достижимый requ
 
 test("новые модули включены в пакет явно, а не wildcard'ом", () => {
   const files = require("../package.json").build.files;
-  for (const entry of ["diagnostics.cjs", "session-cleanup.cjs", "computer-console.cjs"])
+  for (const entry of [
+    "diagnostics.cjs",
+    "session-cleanup.cjs",
+    "computer-console.cjs",
+    "browser/device-lease.cjs"
+  ])
     assert.ok(files.includes(entry), `${entry} отсутствует в build.files`);
 });
