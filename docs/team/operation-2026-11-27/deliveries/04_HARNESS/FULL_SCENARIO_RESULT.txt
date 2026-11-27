@@ -1,0 +1,9 @@
+Stars full acceptance — synthetic fixtures
+composition version: 1; checksum: e67fe7ea5a772024390e8f10236dcff87056b4fb5801d2ef8977f58c1af8eee5
+mission version: 13; stage: completed
+stop reason: CONFLICTING_INSTRUCTIONS; human acceptance: owner
+replacement: a1 → a1b; handoff: извлечь
+p1 delegation: a1
+p2 delegation: a2<-a1
+shared result: Общий итог: Поставщик А 250 ₽; доставка: 5 дней
+runner transfer: local → remote (isolated test boundary)

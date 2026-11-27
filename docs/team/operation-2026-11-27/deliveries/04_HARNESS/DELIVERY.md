@@ -21,14 +21,34 @@
 ## Проверки
 
 ```
-packages/core test/stars-hierarchy.test.ts   3/3
-packages/db   test/stars-org-upgrade.test.ts 1/1 (13.4s, timeout 60s)
-apps/api      test/stars-org-api.test.ts     1/1
-typecheck core/db/api/web 0 · lint core/db/api/web 0 · prettier · check-secrets
+packages/core test/stars-hierarchy.test.ts       4/4
+packages/core test/stars-mission.test.ts         9/9
+packages/core test/stars-lifecycle-core.test.ts  3/3
+packages/core test/stars-full-scenario.test.ts   1/1
+packages/db   test/stars-org-upgrade.test.ts     1/1 (13.4s, timeout 60s)
+apps/api      test/stars-org-api.test.ts         1/1
+typecheck/lint core/db/api/web 0 · prettier · check-secrets
 ```
+
+## Полный сценарий (фикстурный)
+
+`packages/core/test/stars-full-scenario.test.ts` проходит: два проекта, chief,
+два submanager, исполнители; параллельные и зависимые delegation-ноды;
+отказ `a1` и замена `a1b` с handoff-пакетом; конфликт указаний → пауза с
+`stop_reason`; возобновление после решения; недоступный executor → видимый
+skip; устаревшая версия состава → conflict; разделение контекстов; отмена
+отдельного поручения; проверка старшим, отдельное принятие человеком; поздний
+результат не оживляет завершённую задачу; restart через replay состояния;
+local→remote на изолированном runner boundary.
+
+Артефакты: `FULL_SCENARIO_RESULT.txt`, `FULL_SCENARIO_STATE.json`.
 
 ## Границы
 
-Права людей — Harness 3, память/skills — Harness 2, device/browser — OpenCode 1,
-product API — OpenCode 3: не тронуты. VPS/deploy не выполнялись. Общие
-`app.ts/server.ts` изменены минимально и описаны в INTEGRATION.md.
+`delegateMission()` выдаёт настоящие входные узлы контракта WorkDAG с
+зависимостями, но в этом срезе **не запускал реальный WorkDAG coordinator** —
+исполнение проверено существующими тестами WorkDAG, а здесь проверено только
+преобразование delegation. Remote runner — контрактная граница с изолированным
+тестовым leases, не облачная эксплуатация. Живые провайдеры/VPS/устройства не
+использовались. Права Harness 3, память Harness 2, device OpenCode 1, product
+API OpenCode 3 не тронуты.

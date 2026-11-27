@@ -1,0 +1,205 @@
+{
+  "composition": {
+    "team_scope": "stars-wave",
+    "version": 1,
+    "nodes": [
+      {
+        "id": "owner",
+        "role": "owner",
+        "manager_id": null,
+        "responsibility_zones": ["*"],
+        "project_ids": ["p1", "p2"],
+        "status": "active",
+        "effective_from": "2026-11-27T12:00:00.000Z"
+      },
+      {
+        "id": "chief",
+        "role": "chief",
+        "manager_id": "owner",
+        "responsibility_zones": ["*"],
+        "project_ids": ["p1", "p2"],
+        "status": "active",
+        "effective_from": "2026-11-27T12:00:00.000Z"
+      },
+      {
+        "id": "sub1",
+        "role": "submanager",
+        "manager_id": "chief",
+        "responsibility_zones": ["research"],
+        "project_ids": ["p1"],
+        "status": "active",
+        "effective_from": "2026-11-27T12:00:00.000Z"
+      },
+      {
+        "id": "sub2",
+        "role": "submanager",
+        "manager_id": "chief",
+        "responsibility_zones": ["delivery"],
+        "project_ids": ["p2"],
+        "status": "active",
+        "effective_from": "2026-11-27T12:00:00.000Z"
+      },
+      {
+        "id": "a1",
+        "role": "executor",
+        "manager_id": "sub1",
+        "responsibility_zones": ["research"],
+        "project_ids": [],
+        "status": "active",
+        "effective_from": "2026-11-27T12:00:00.000Z"
+      },
+      {
+        "id": "a2",
+        "role": "executor",
+        "manager_id": "sub2",
+        "responsibility_zones": ["delivery"],
+        "project_ids": [],
+        "status": "active",
+        "effective_from": "2026-11-27T12:00:00.000Z"
+      },
+      {
+        "id": "senior",
+        "role": "senior",
+        "manager_id": "chief",
+        "responsibility_zones": ["review"],
+        "project_ids": [],
+        "status": "active",
+        "effective_from": "2026-11-27T12:00:00.000Z"
+      }
+    ],
+    "checksum": "e67fe7ea5a772024390e8f10236dcff87056b4fb5801d2ef8977f58c1af8eee5"
+  },
+  "accepted": {
+    "id": "shared",
+    "team_scope": "stars-wave",
+    "version": 13,
+    "goal": "Сравнить поставщиков двух бизнесов",
+    "brief": {
+      "author": "owner",
+      "responsible": "chief",
+      "input_versions": ["materials@4", "org@1"],
+      "criteria": ["доставка отдельной строкой", "общий итог проверен старшим"],
+      "acceptance_rules": ["человек принимает общий итог отдельно"]
+    },
+    "stage": "completed",
+    "agents": [
+      {
+        "id": "chief",
+        "role": "manager",
+        "task": "координировать",
+        "context_scopes": ["stars-wave"],
+        "status": "assigned",
+        "replaced_by": null,
+        "handoff": null
+      },
+      {
+        "id": "a1",
+        "role": "executor",
+        "task": "извлечь",
+        "context_scopes": ["stars-wave", "a1-private"],
+        "status": "replaced",
+        "replaced_by": "a1b",
+        "handoff": "извлечь"
+      },
+      {
+        "id": "a2",
+        "role": "executor",
+        "task": "сверить",
+        "context_scopes": ["stars-wave", "a2-private"],
+        "status": "completed",
+        "replaced_by": null,
+        "handoff": null
+      },
+      {
+        "id": "senior",
+        "role": "senior",
+        "task": "проверить",
+        "context_scopes": ["stars-wave"],
+        "status": "assigned",
+        "replaced_by": null,
+        "handoff": null
+      },
+      {
+        "id": "a1b",
+        "role": "executor",
+        "task": "извлечь",
+        "context_scopes": ["stars-wave", "a1-private"],
+        "status": "completed",
+        "replaced_by": null,
+        "handoff": "извлечь"
+      }
+    ],
+    "dependencies": {
+      "a2": ["a1b"]
+    },
+    "messages": [],
+    "results": [
+      {
+        "agent_id": "a1b",
+        "summary": "извлечено",
+        "artifact_ref": null,
+        "verification": "verified",
+        "verified_by": "senior"
+      },
+      {
+        "agent_id": "a2",
+        "summary": "сверено; доставка 5 дней",
+        "artifact_ref": null,
+        "verification": "verified",
+        "verified_by": "senior"
+      }
+    ],
+    "combined_result": "Общий итог: Поставщик А 250 ₽; доставка: 5 дней",
+    "accepted_by_human": "owner",
+    "stop_reason": "CONFLICTING_INSTRUCTIONS",
+    "conflicts": [
+      {
+        "from": "sub2",
+        "text": "Сменить приоритет на отчёт по p2",
+        "at": 1795791738889
+      }
+    ],
+    "question": null,
+    "history": [
+      "mission created",
+      "goal accepted",
+      "plan accepted: one manager and executors assigned",
+      "a1 failed: EXECUTOR_DOWN",
+      "replacement a1b received unfinished work",
+      "conflict recorded from sub2",
+      "mission resumed",
+      "result from a1b",
+      "result from a2",
+      "a1b result verified by senior",
+      "a2 result verified by senior",
+      "senior combined the verified results",
+      "human acceptance by owner"
+    ]
+  },
+  "handoff": {
+    "format": "kosmora.stars-handoff.v1",
+    "mission_id": "shared",
+    "mission_version": 4,
+    "composition_version": 1,
+    "from": "a1",
+    "to": "a1b",
+    "unfinished": [
+      {
+        "agent_id": "a1",
+        "task": "извлечь",
+        "reason": "executor_failed"
+      },
+      {
+        "agent_id": "a2",
+        "task": "сверить",
+        "reason": "unfinished"
+      }
+    ],
+    "completed_results": [],
+    "dependencies": {
+      "a2": ["a1b"]
+    },
+    "context_scopes": ["stars-wave", "a1-private"],
+    "created_at": "2026-11-27T12:00:00.000Z"
+  }
+}
