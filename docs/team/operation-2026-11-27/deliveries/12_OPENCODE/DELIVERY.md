@@ -3,7 +3,7 @@
 ## Точные SHA
 
 - base: `3af92583ccc8ceb49f44c0b8633955f40feaf59f`
-- head (промежуточный PR): `ef5890ae0b02ffc92d06aec3556555b178d9a7f0`
+- head (промежуточный PR): `1f67827a8f3d5c60c94577b314eb99228bf22073`
 - branch: `feature/oc6-workflows-automation-20261127`
 - PR: https://github.com/RLM-Company/Nexus-OS/pull/703
 - worktree: `C:\Users\Александр\Documents\Codex\2026-11-27\kosmora-oc6-workflows`
