@@ -3,8 +3,8 @@
 - **Статус:** готово к интеграции; PR [#695](https://github.com/RLM-Company/Nexus-OS/pull/695), `CLEAN / MERGEABLE / OPEN`.
 - **База:** main `3af92583ccc8ceb49f44c0b8633955f40feaf59f`.
 - **Ветка:** `feature/ds1-stars-hierarchy-runtime-20261127`, изолированный worktree `stars-hierarchy`.
-- **HEAD SHA:** `5fed8e14` ( code: `304250cb` → `ea3dc0a9` → `ae9ebea9` → `79eadea8` → format-only `5fed8e14` ).
-- **CI точного SHA:** run `46042379413` — 4/4 pass (`Browser acceptance` 14m9s, `Verify monorepo` 7m26s, sandbox, identity).
+- **HEAD SHA:** `624b2d84` ( code: `304250cb` → `ea3dc0a9` → `ae9ebea9` → `79eadea8` → `70b91796` → `624b2d84` ).
+- **CI точного SHA:** run `46048584519` — 4/4 pass (`Browser acceptance` 12m24s, `Verify monorepo` 6m44s, sandbox, identity).
 
 ## Что сделано (цикл 1 иерархии)
 
@@ -30,6 +30,14 @@
 
 Проверено: `apps/api/test/stars-delegation-api.test.ts` 1/1 на реальном
 `WorkDagStore` (in-memory SQLite) с project/org/mission fixture.
+
+## Isolated runner boundary
+
+`apps/api/src/stars-runner-adapter.ts` — настоящий изолированный runner для
+тестовой среды: рабочая папка, dispatch, checkpoint, cancel, реальные файлы
+артефакта и SHA-256; `resumeIsolatedRunner()` продолжает с checkpoint, не
+повторяя завершённые шаги. Это **не облако** и не VPS; production remote runner
+подключается на том же lease boundary через адаптер.
 
 ## Проверки
 
