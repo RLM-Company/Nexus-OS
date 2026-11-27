@@ -12,6 +12,7 @@ import {
 import { isAbsolute, join } from "node:path";
 import {
   sniffMediaBinary,
+  isCreativeMp3,
   type MediaAssetExtension,
   type MediaAssetMime,
   type MediaBinary
@@ -99,7 +100,7 @@ const isJob = (value: unknown): value is MediaJob => {
     isId(item.id) &&
     typeof item.owner_id === "string" &&
     item.owner_id.length > 0 &&
-    ["image", "speech", "transcription"].includes(item.kind ?? "") &&
+    ["image", "speech", "transcription", "sfx", "music"].includes(item.kind ?? "") &&
     ["queued", "running", "done", "failed", "cancelled"].includes(item.status ?? "") &&
     typeof item.created_at === "string" &&
     typeof item.updated_at === "string" &&
@@ -317,7 +318,9 @@ export class MediaFileStore {
     if (
       job.kind === "transcription" ||
       (job.kind === "image" && !binary.mime.startsWith("image/")) ||
-      (job.kind === "speech" && !binary.mime.startsWith("audio/"))
+      (job.kind === "speech" && !binary.mime.startsWith("audio/")) ||
+      ((job.kind === "sfx" || job.kind === "music") &&
+        (binary.mime !== "audio/mpeg" || !isCreativeMp3(binary.bytes)))
     ) {
       throw new Error("MEDIA_TYPE_MISMATCH");
     }

@@ -4,7 +4,7 @@
  * persist reserve/reconcile/uncertain in the canonical accounting database.
  * A missing adapter disables paid media entirely.
  */
-export type MediaKind = "image" | "speech" | "transcription";
+export type MediaKind = "image" | "speech" | "transcription" | "sfx" | "music";
 export type CanonicalMediaUsage = Readonly<{
   source: "provider";
   input_tokens: number;
@@ -13,7 +13,13 @@ export type CanonicalMediaUsage = Readonly<{
 }>;
 export interface OwnerMediaBudget {
   reserve(
-    input: Readonly<{ ownerId: string; operationId: string; kind: MediaKind; model: string }>
+    input: Readonly<{
+      ownerId: string;
+      operationId: string;
+      kind: MediaKind;
+      model: string;
+      provider?: string;
+    }>
   ): Promise<void>;
   reconcile(
     input: Readonly<{ ownerId: string; operationId: string; usage: CanonicalMediaUsage }>

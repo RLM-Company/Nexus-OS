@@ -5,6 +5,7 @@ type Row = {
   owner_id: string;
   kind: string;
   model_id: string;
+  provider_id: string;
   hold_id: string;
   status: string;
   input_tokens: number | null;
@@ -21,7 +22,9 @@ export class AccountMediaBudget implements OwnerMediaBudget {
     operationId: string;
     kind: MediaKind;
     model: string;
+    provider?: string;
   }): Promise<void> {
+    const provider = input.provider ?? this.provider;
     const prior = this.account.sqlite
       .prepare("SELECT * FROM kosmora_media_usage WHERE operation_id=?")
       .get(input.operationId) as Row | undefined;
@@ -30,6 +33,7 @@ export class AccountMediaBudget implements OwnerMediaBudget {
         prior.owner_id !== input.ownerId ||
         prior.kind !== input.kind ||
         prior.model_id !== input.model ||
+        prior.provider_id !== provider ||
         prior.status !== "reserved"
       )
         throw Error("MEDIA_RESERVATION_CONFLICT");
@@ -44,7 +48,7 @@ export class AccountMediaBudget implements OwnerMediaBudget {
       reserved,
       "main",
       "",
-      this.provider,
+      provider,
       input.model
     );
     this.account.sqlite
@@ -55,7 +59,7 @@ export class AccountMediaBudget implements OwnerMediaBudget {
         input.operationId,
         input.ownerId,
         input.kind,
-        this.provider,
+        provider,
         input.model,
         hold,
         reserved,

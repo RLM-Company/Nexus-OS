@@ -51,6 +51,7 @@ const mapMediaRouteError = (reply: FastifyReply, error: unknown, fallbackCode: s
   if (
     code === "TEXT_REQUIRED" ||
     code === "IMAGE_REFERENCES_INVALID" ||
+    code === "CREATIVE_OPTIONS_INVALID" ||
     code === "REQUEST_ID_CONFLICT" ||
     code === "INVALID_CLIENT_REQUEST_ID" ||
     code === "AUDIO_SIZE_INVALID" ||
@@ -105,8 +106,8 @@ export function registerMediaRoutes(
       image_region_editing: unsupported,
       video_generation: unsupported,
       video_scene_regeneration: unsupported,
-      sound_effects: unsupported,
-      music_generation: unsupported
+      sound_effects: service.creativeCapability("sfx"),
+      music_generation: service.creativeCapability("music")
     },
     browser: {
       speech_recognition: "client-detected",
@@ -160,6 +161,55 @@ export function registerMediaRoutes(
   app.get("/api/v1/media/jobs", (request) => ({
     items: service.list(identityFor(request).owner_id)
   }));
+
+  app.post<{
+    Body: {
+      kind: "sfx" | "music";
+      prompt: string;
+      duration_seconds: number;
+      instrumental?: boolean;
+      explicit_paid_consent: boolean;
+      client_request_id?: string;
+    };
+  }>(
+    "/api/v1/media/creative-audio",
+    {
+      validatorCompiler: TypeBoxValidatorCompiler,
+      schema: {
+        body: Type.Object(
+          {
+            kind: Type.Union([Type.Literal("sfx"), Type.Literal("music")]),
+            prompt: Type.String({ minLength: 1, maxLength: 1800 }),
+            duration_seconds: Type.Integer({ minimum: 1, maximum: 60 }),
+            instrumental: Type.Optional(Type.Boolean()),
+            explicit_paid_consent: Type.Boolean(),
+            client_request_id: Type.Optional(Type.String({ minLength: 1, maxLength: 128 }))
+          },
+          { additionalProperties: false }
+        )
+      }
+    },
+    (request, reply) => {
+      const body = request.body;
+      try {
+        return reply
+          .code(202)
+          .send(
+            service.enqueueCreativeAudio(
+              identityFor(request).owner_id,
+              body.kind,
+              body.prompt,
+              body.duration_seconds,
+              body.instrumental ?? false,
+              body.explicit_paid_consent,
+              extractHeaderRequestId(request)
+            )
+          );
+      } catch (error) {
+        return mapMediaRouteError(reply, error, "MEDIA_FAILURE");
+      }
+    }
+  );
 
   app.post(
     "/api/v1/media/images",

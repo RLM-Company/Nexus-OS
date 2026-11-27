@@ -15,7 +15,7 @@ import { parseMediaJobListResponse } from "./media-job-response";
 
 export type MediaJob = {
   id: string;
-  kind: "image" | "speech" | "transcription";
+  kind: "image" | "speech" | "transcription" | "sfx" | "music";
   status: "queued" | "running" | "done" | "failed" | "cancelled";
   error_code: string | null;
   created_at: string;
@@ -31,6 +31,9 @@ type SpeechConstraints = {
   minSpeed: number;
   maxSpeed: number;
 };
+export type CreativeCapability = Capability & {
+  constraints: { minSeconds: number; maxSeconds: number } | null;
+};
 type Capability = { ready: boolean; model: string | null; reason: string | null };
 export type MediaCapabilities = {
   capabilities: {
@@ -38,6 +41,8 @@ export type MediaCapabilities = {
     image_generation: Capability & { constraints: ImageConstraints | null };
     speech: Capability & { constraints?: SpeechConstraints | null };
     transcription: Capability;
+    sound_effects?: CreativeCapability;
+    music_generation?: CreativeCapability;
   };
 };
 export const mediaAssetUrl = (id: string) => `/api/v1/media/assets/${encodeURIComponent(id)}`;
@@ -67,6 +72,7 @@ const mediaErrorName = (code: string | null) =>
       IDEMPOTENCY_CONFLICT:
         "Для этого идентификатора запуска изменены описание или параметры. Новый платный запрос не выполнен.",
       MEDIA_SOURCE_NOT_FOUND: "Исходное изображение удалено или недоступно.",
+      CREATIVE_OPTIONS_INVALID: "Проверьте длительность и параметры.",
       IMAGE_REFERENCES_INVALID: "Референс не соответствует формату или ограничениям размера.",
       IMAGE_EDITING_UNAVAILABLE: "Редактирование по референсу не подключено.",
       MEDIA_UNAVAILABLE: "Генерация сейчас недоступна.",
@@ -120,6 +126,21 @@ export function useMediaCapabilities() {
             speech.maxSpeed >= speech.minSpeed
               ? speech
               : null;
+          const creative = (entry: CreativeCapability | undefined): CreativeCapability => {
+            const limits = entry?.constraints;
+            return {
+              ...normalize(entry),
+              constraints:
+                limits &&
+                Number.isInteger(limits.minSeconds) &&
+                Number.isInteger(limits.maxSeconds) &&
+                limits.minSeconds > 0 &&
+                limits.maxSeconds >= limits.minSeconds &&
+                limits.maxSeconds <= 60
+                  ? limits
+                  : null
+            };
+          };
           setCapabilities({
             image_generation: {
               ...normalize(value.capabilities?.image_generation),
@@ -127,7 +148,9 @@ export function useMediaCapabilities() {
             },
             image_editing: normalize(value.capabilities?.image_editing),
             speech: { ...normalize(value.capabilities?.speech), constraints: speechConstraints },
-            transcription: normalize(value.capabilities?.transcription)
+            transcription: normalize(value.capabilities?.transcription),
+            sound_effects: creative(value.capabilities?.sound_effects),
+            music_generation: creative(value.capabilities?.music_generation)
           });
         }
       })
@@ -153,9 +176,14 @@ type MediaStart =
       kind: "speech";
       value: string;
       options?: { voice?: string; speed: number; format: string } | undefined;
+    }
+  | {
+      kind: "sfx" | "music";
+      value: string;
+      options: { duration_seconds: number; instrumental?: boolean };
     };
 
-export function useMediaJob(recoveryKind?: "image" | "speech") {
+export function useMediaJob(recoveryKind?: Exclude<MediaJob["kind"], "transcription">) {
   const starting = useRef(false);
   const pendingId = useRef<string | null>(null);
   const storageKey = recoveryKind ? "kosmora:media:pending:" + recoveryKind : null;
@@ -299,7 +327,9 @@ export function useMediaJob(recoveryKind?: "image" | "speech") {
         }
       }
       try {
-        const response = await fetch(`/api/v1/media/${kind === "image" ? "images" : "speech"}`, {
+        const endpoint =
+          kind === "image" ? "images" : kind === "speech" ? "speech" : "creative-audio";
+        const response = await fetch(`/api/v1/media/${endpoint}`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -317,7 +347,7 @@ export function useMediaJob(recoveryKind?: "image" | "speech") {
                   ...(operation.references.length ? { references: operation.references } : {})
                 }
               : {
-                  text: value,
+                  ...(kind === "speech" ? { text: value } : { kind, prompt: value }),
                   explicit_paid_consent: true,
                   client_request_id: requestId,
                   ...options

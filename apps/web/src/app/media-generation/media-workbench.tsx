@@ -11,6 +11,7 @@ import {
 } from "./media-panel";
 import { IMAGE_SIZE_FOR_RATIO, resolveImageOptions } from "./media-image-options";
 import { SpeechStudio } from "../voice/voice-playback";
+import { CreativeAudioPanel } from "./creative-audio-panel";
 import { VideoStoryboard } from "./video-storyboard";
 import styles from "./media-workbench.module.css";
 
@@ -159,16 +160,9 @@ export function MediaWorkbench({ surface }: { surface: "images" | "video" | "sou
             Kosmora Studio
           </span>
           <h2>Music</h2>
-          <p>Музыка и атмосфера. Генерация появится после подключения провайдера.</p>
+          <p>Создавайте и сохраняйте композиции по описанию.</p>
         </header>
-        <div className={styles.empty} role="status">
-          <WorkspaceIcon name="sound" />
-          <h3>Генерация музыки не подключена</h3>
-          <p>Пока создание аудиофайлов доступно для озвучивания текста в Sound.</p>
-          <button type="button" disabled>
-            Сгенерировать музыку
-          </button>
-        </div>
+        <CreativeAudioPanel kind="music" capability={capabilities?.music_generation} />
       </section>
     );
   if (surface === "sound")
@@ -183,7 +177,7 @@ export function MediaWorkbench({ surface }: { surface: "images" | "video" | "sou
           <p>Озвучивание текста, прослушивание и сохранённые записи.</p>
         </header>
         <SpeechStudio />
-        <p role="status">Генерация звуковых эффектов (SFX) пока не подключена.</p>
+        <CreativeAudioPanel kind="sfx" capability={capabilities?.sound_effects} />
       </section>
     );
   const imageConstraints = capabilities?.image_generation.constraints;

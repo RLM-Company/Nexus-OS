@@ -276,7 +276,7 @@ const isTimeoutSignal = (signal: AbortSignal, error?: unknown): boolean => {
   return false;
 };
 
-const readBounded = async (
+export const readBounded = async (
   response: Response,
   maximum: number,
   signal: AbortSignal
