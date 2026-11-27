@@ -5,6 +5,8 @@
   "dispatched": false,
   "sprint": {
     "instruction": "SPRINT_48H_RU.md",
+    "work_queue_instruction": "MAX_WORK_QUEUE_RU.md",
+    "intensity": "high_continuous_scoped_delivery",
     "status": "prepared",
     "automation_installed": false,
     "start_reference_utc": "2026-11-27T12:56:58Z",
