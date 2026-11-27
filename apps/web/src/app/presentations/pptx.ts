@@ -1,6 +1,8 @@
 import { strToU8, zipSync } from "fflate";
 import type { Deck, Slide, Theme } from "./model";
 import { slideOverflow } from "./model";
+import { parsePresentationVisual } from "@cosmora/contracts/presentation-package";
+import { presentationImageBytes, visualXml } from "./pptx-visual";
 
 const esc = (value: string) =>
   value.replace(
@@ -125,7 +127,7 @@ const slideXml = (slide: Slide, index: number, theme: Theme) => {
       900000,
       1940000,
       slide.layout === "two-column" ? 4900000 : 10400000,
-      3800000,
+      slide.visual ? 1350000 : 3800000,
       2300,
       p.foreground
     );
@@ -142,6 +144,7 @@ const slideXml = (slide: Slide, index: number, theme: Theme) => {
         p.foreground
       );
   }
+  if (slide.visual) shapes += visualXml(slide.visual, esc, p.foreground);
   shapes += textShape(
     5,
     "Page",
@@ -186,6 +189,11 @@ const notesImage =
 /** Generates an editable OOXML presentation with one slide master and four layout variants. */
 export function createPptx(deck: Pick<Deck, "title" | "theme" | "slides">): Uint8Array {
   if (!deck.slides.length || deck.slides.length > 50) throw Error("INVALID_DECK");
+  for (const slide of deck.slides) {
+    if (!slide.visual) continue;
+    if (slide.layout !== "content") throw new Error("Изображения и таблицы требуют макет «Текст».");
+    parsePresentationVisual(slide.visual);
+  }
   const allText = [
     deck.title,
     ...deck.slides.flatMap((slide) => [slide.title, slide.body, slide.aside, slide.notes])
@@ -213,7 +221,7 @@ export function createPptx(deck: Pick<Deck, "title" | "theme" | "slides">): Uint
   put(
     "[Content_Types].xml",
     xml(
-      `<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/ppt/presentation.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml"/><Override PartName="/ppt/slideMasters/slideMaster1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideMaster+xml"/><Override PartName="/ppt/slideLayouts/slideLayout1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideLayout+xml"/><Override PartName="/ppt/theme/theme1.xml" ContentType="application/vnd.openxmlformats-officedocument.theme+xml"/><Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/>${deck.slides.map((_, i) => `<Override PartName="/ppt/slides/slide${i + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slide+xml"/>`).join("")}<Override PartName="/ppt/notesMasters/notesMaster1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.notesMaster+xml"/>${deck.slides.map((_, i) => `<Override PartName="/ppt/notesSlides/notesSlide${i + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.notesSlide+xml"/>`).join("")}</Types>`
+      `<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Default Extension="png" ContentType="image/png"/><Default Extension="jpg" ContentType="image/jpeg"/><Override PartName="/ppt/presentation.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml"/><Override PartName="/ppt/slideMasters/slideMaster1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideMaster+xml"/><Override PartName="/ppt/slideLayouts/slideLayout1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideLayout+xml"/><Override PartName="/ppt/theme/theme1.xml" ContentType="application/vnd.openxmlformats-officedocument.theme+xml"/><Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/>${deck.slides.map((_, i) => `<Override PartName="/ppt/slides/slide${i + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slide+xml"/>`).join("")}<Override PartName="/ppt/notesMasters/notesMaster1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.notesMaster+xml"/>${deck.slides.map((_, i) => `<Override PartName="/ppt/notesSlides/notesSlide${i + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.notesSlide+xml"/>`).join("")}</Types>`
     )
   );
   put(
@@ -286,12 +294,16 @@ export function createPptx(deck: Pick<Deck, "title" | "theme" | "slides">): Uint
     rels([{ id: 1, type: "theme", target: "../theme/theme1.xml" }])
   );
   deck.slides.forEach((slide, i) => {
+    const image = slide.visual?.kind === "image" ? slide.visual : undefined;
+    const imageName = image && `image${i + 1}.${image.mime === "image/png" ? "png" : "jpg"}`;
+    if (image && imageName) entries[`ppt/media/${imageName}`] = presentationImageBytes(image);
     put(`ppt/slides/slide${i + 1}.xml`, slideXml(slide, i, deck.theme));
     put(
       `ppt/slides/_rels/slide${i + 1}.xml.rels`,
       rels([
         { id: 1, type: "slideLayout", target: "../slideLayouts/slideLayout1.xml" },
-        { id: 2, type: "notesSlide", target: `../notesSlides/notesSlide${i + 1}.xml` }
+        { id: 2, type: "notesSlide", target: `../notesSlides/notesSlide${i + 1}.xml` },
+        ...(imageName ? [{ id: 3, type: "image", target: `../media/${imageName}` }] : [])
       ])
     );
     put(

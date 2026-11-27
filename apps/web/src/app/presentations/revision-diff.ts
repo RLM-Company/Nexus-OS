@@ -1,13 +1,24 @@
 import type { DeckRevision, Slide } from "./model";
 export type RevisionContent = Pick<DeckRevision, "title" | "theme" | "slides">;
 export type RevisionChange = { label: string; before: string; after: string };
-const fields: { key: keyof Omit<Slide, "id">; label: string }[] = [
+const fields: { key: keyof Omit<Slide, "id" | "visual">; label: string }[] = [
   { key: "layout", label: "Макет" },
   { key: "title", label: "Заголовок" },
   { key: "body", label: "Основной текст" },
   { key: "aside", label: "Вторая колонка" },
   { key: "notes", label: "Заметки" }
 ];
+function visualDescription(visual: Slide["visual"]): string {
+  if (!visual) return "";
+  return visual.kind === "image"
+    ? `Изображение · ${visual.alt}`
+    : visual.rows.map((row) => row.join(" | ")).join("\n");
+}
+
+function slideDescription(slide: Slide): string {
+  return JSON.stringify({ ...slide, visual: visualDescription(slide.visual) }, null, 2);
+}
+
 /** Compare stable slide identities. Identical text on distinct slides is not conflated. */
 export function compareRevisions(
   before: RevisionContent,
@@ -24,7 +35,7 @@ export function compareRevisions(
     if (!next.has(slide.id))
       changes.push({
         label: `Удалён слайд ${index + 1}`,
-        before: JSON.stringify(slide, null, 2),
+        before: slideDescription(slide),
         after: ""
       });
   }
@@ -34,7 +45,7 @@ export function compareRevisions(
       changes.push({
         label: `Добавлен слайд ${index + 1}`,
         before: "",
-        after: JSON.stringify(slide, null, 2)
+        after: slideDescription(slide)
       });
       continue;
     }
@@ -44,6 +55,13 @@ export function compareRevisions(
         before: String(old.index + 1),
         after: String(index + 1)
       });
+    if (JSON.stringify(old.slide.visual) !== JSON.stringify(slide.visual)) {
+      changes.push({
+        label: `Слайд ${index + 1} · Изображение или таблица`,
+        before: visualDescription(old.slide.visual),
+        after: visualDescription(slide.visual)
+      });
+    }
     for (const field of fields) {
       if (old.slide[field.key] !== slide[field.key])
         changes.push({

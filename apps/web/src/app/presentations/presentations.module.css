@@ -619,3 +619,29 @@
   font-size: 13px;
   overflow-wrap: anywhere;
 }
+
+.slideVisual {
+  width: 100%;
+  height: 42%;
+  min-height: 0;
+  object-fit: contain;
+  overflow: auto;
+}
+
+.visualTable {
+  width: 100%;
+  table-layout: fixed;
+  border-collapse: collapse;
+  font-size: clamp(10px, 1.2vw, 18px);
+}
+
+.visualTable :is(th, td) {
+  border: 1px solid currentColor;
+  overflow-wrap: anywhere;
+  padding: 0.15em 0.4em;
+}
+
+.visualTable input {
+  width: 100%;
+  min-width: 0;
+}
