@@ -20,6 +20,7 @@
 ### Procedure version (расширение сохранённой версии)
 
 `WorkflowDefinitionInput` получает добавочные поля:
+
 - `conditions`: массив `{ id, description, kind: "source_allowlist"|"result_check" }` —
   проверяемые условия procedure; source allowlist ссылается на уже разрешённые
   файлы проекта и не расширяет доступ.
@@ -32,6 +33,7 @@
 ### Triggers
 
 `AutomationTrigger` (owner, project, workflow_id, definition_version):
+
 - `kind: "manual" | "event" | "schedule"`;
 - `inputs`: снимок входных данных процедуры, проверенный `validateWorkflowInputs`;
 - `event`: `{ source, event_type, bindings, dedupe_key }` — события приходят

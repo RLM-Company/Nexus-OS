@@ -33,10 +33,15 @@
 - Неизвестный исход external action не повторяется automatik; требуется явная
   верификация через коннектор.
 
+## Промежуточный PR
+
+- PR #703: https://github.com/RLM-Company/Nexus-OS/pull/703
+- head: `ef5890ae0b02ffc92d06aec3556555b178d9a7f0`
+
 ## Следующий шаг
 
-Реализация: contracts + storage + routes + runner/coordinator + UI + migration,
-затем проверки трёх обязательных процедур и сценариев отказов.
+Продолжить событийные процедуры и версионирование: расширитьede event bindings,
+добавить проверку условий по снимку результата, затем regression.
 
 ## Время
 

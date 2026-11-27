@@ -7,7 +7,6 @@ type TestResponse = {
 };
 import {
   AutomationStore,
-  AutomationRunError,
   ManagerWorkStore,
   ProjectStore,
   StarsMissionStore,
@@ -166,6 +165,14 @@ describe("Automation triggers, schedules and dedupe", () => {
     expect(other.statusCode).toBe(201);
     expect(f.store.listTriggers(owner)).toHaveLength(2);
     expect(f.store.listRuns(owner)).toHaveLength(2);
+    const stale = await f.call("POST", "/api/v1/automation/events", {
+      ...body,
+      client_request_id: "evt-stale",
+      event_id: "event-44",
+      definition_version: 99
+    });
+    expect(stale.statusCode).toBe(400);
+    expect(f.store.listTriggers(owner)).toHaveLength(2);
   });
 
   it("rejects a stale definition version at trigger creation", async () => {

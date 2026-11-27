@@ -185,13 +185,16 @@ export function registerAutomationRoutes(options: {
             if (runner.collectSchedule(ownerId, trigger.id, actor(request))) collected += 1;
         }
         for (const run of store.listRuns(ownerId)) {
-          if (run.status === "queued")
-            try {
-              runner.start(ownerId, run.id, actor(request));
-              executed += 1;
-            } catch (cause) {
-              if (!(cause instanceof AutomationRunError)) throw cause;
-            }
+          if (["queued", "claimed", "running"].includes(run.status)) {
+            const reconciled = runner.reconcile(ownerId, run.id, actor(request));
+            if (reconciled.status === "queued")
+              try {
+                runner.start(ownerId, run.id, actor(request));
+                executed += 1;
+              } catch (cause) {
+                if (!(cause instanceof AutomationRunError)) throw cause;
+              }
+          }
         }
         return { checked: true, collected, executed };
       })
@@ -362,6 +365,15 @@ export function registerAutomationRoutes(options: {
           request.body
         )
       }))
+  );
+
+  /** Explicit reconciliation against the authoritative Work DAG. */
+  app.get<{ Params: { id: string } }>("/api/v1/automation/runs/:id/reconcile", (request, reply) =>
+    guard(reply, () => {
+      const run = store.getRun(owner(request), request.params.id);
+      if (!run) return reply.code(404).send(errorBody("RUN_NOT_FOUND", "Запуск не найден."));
+      return runner.reconcile(owner(request), run.id, actor(request));
+    })
   );
 
   app.post(

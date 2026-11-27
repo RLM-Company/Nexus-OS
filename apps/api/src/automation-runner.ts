@@ -133,6 +133,7 @@ export class AutomationRunner {
     for (const parameter of definition.parameters) {
       if (Object.hasOwn(bindings, parameter.id)) inputs[parameter.id] = bindings[parameter.id]!;
     }
+    validateWorkflowInputs(definition, inputs);
     const trigger = this.options.store.createTrigger(owner, project, actor, {
       client_request_id: input.client_request_id,
       workflow_id: input.workflow_id,
@@ -349,6 +350,52 @@ export class AutomationRunner {
     }
     this.options.store.recordEvent(runId, owner, "stars_mission_consumer", id, actor);
     return id;
+  }
+
+  /** Reconcile a running automation run with the authoritative Work DAG state.
+   * Never claims completion from a model message: only published byte-verified
+   * artifacts and terminal DAG mode can change the run status. */
+  reconcile(owner: string, runId: string, actor = "system"): AutomationRun {
+    const run = this.options.store.getRun(owner, runId);
+    if (!run) throw new AutomationRunError("RUN_NOT_FOUND");
+    if (!run.dag_id || !["running", "queued", "claimed"].includes(run.status)) return run;
+    const graph = this.options.coordinator.dag.get(run.dag_id, owner);
+    if (!graph) throw new AutomationRunError("DAG_NOT_FOUND");
+    const definition = this.options.workflows.workflows.get(run.project_id, owner, run.workflow_id);
+    const version = definition?.version;
+    const expected = definition?.expected_results ?? [];
+    const bundle = this.options.coordinator.dag.results(run.dag_id, owner);
+    const literal = expected.filter((name) =>
+      /^[a-zA-Z0-9][a-zA-Z0-9_-]*\.(md|txt|json|csv)$/.test(name)
+    );
+    const found = new Set(bundle.files.filter((file) => file.published).map((file) => file.name));
+    const allPresent = literal.every((name) => found.has(name));
+    const allCompleted =
+      graph.nodes.length > 0 && graph.nodes.every((n) => n.status === "completed");
+    if (graph.mode === "cancelled")
+      return this.options.store.transition(owner, run.id, run.version, {
+        status: "cancelled",
+        reason: "Work plan cancelled",
+        actor
+      });
+    if (allCompleted && allPresent && literal.length > 0)
+      return this.options.store.transition(owner, run.id, run.version, {
+        status: "succeeded",
+        reason: "Published artifact bytes verified against immutable expectations",
+        actor
+      });
+    if (graph.nodes.some((n) => n.status === "failed"))
+      return this.options.store.transition(owner, run.id, run.version, {
+        status: "failed",
+        reason: "Work plan reported a failed step",
+        errorCode: "WORK_STEP_FAILED",
+        ...(graph.nodes.find((n) => n.status === "failed")?.blocked_reason
+          ? { errorReason: graph.nodes.find((n) => n.status === "failed")!.blocked_reason! }
+          : {}),
+        actor
+      });
+    void version;
+    return run;
   }
 
   /** Server recovery on restart: leases with expired deadlines return to queue. */

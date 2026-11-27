@@ -4,7 +4,7 @@
 
 - `apps/api/src/app.ts`: импорт `registerAutomationRoutes`, опция `automationStore`,
   регистрация при наличии `automationStore + projectStore + managerWorkStore +
-  managerWorkCoordinator`. Существующие `/workflows` и `/scheduled-dispatches`
+managerWorkCoordinator`. Существующие `/workflows` и `/scheduled-dispatches`
   не changing.
 - `apps/api/src/server.ts`: создать `AutomationStore(database.sqlite)` и передать
   в `buildApp`. Нового процесса/таймера нет.
@@ -12,7 +12,7 @@
   `workflows.ts` получает опциональные `conditions`/`confirmations`.
 - `packages/core/src/index.ts`: `export * from "./automation.js"`.
 - `packages/db/src/index.ts`: `export * from "./automation-store.js"`.
--Миграция `0078_automation_runtime.sql` + запись в `_journal.json` (idx 78).
+  -Миграция `0078_automation_runtime.sql` + запись в `_journal.json` (idx 78).
 
 ## Границы
 
