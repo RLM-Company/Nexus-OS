@@ -48,9 +48,19 @@
 (`set_docx_cell`); кросс-форматные операции при восстановлении отклоняются.
 Ранее черновик для `.csv` и ячеек DOCX отвергался и терялся при переключении.
 
+## Срез 5 — native workspace CSV и кавычки разделителя
+
+- `office-workspace.cjs` теперь разрешает `.csv` в preview; тест
+  `office-csv-native.test.cjs` проходит preview → commit → readback,
+  stale-version conflict и отказ несовместимых операций.
+- Экспорт CSV экранирует **все** поддерживаемые разделители (`,`/`;`/`\t`/`|`),
+  чтобы повторное открытие с авто-детекцией не разорвало поле; проверено
+  в engine и API тестах (параллельный срез, интегрирован rebase).
+
 ## Запуск
 
 ```
+node --test desktop/windows/test/office-csv-native.test.cjs
 node --test desktop/windows/test/office-independent-readback.test.cjs
 node --test desktop/windows/test/office-docx-cell.test.cjs
 node --test desktop/windows/test/office-csv.test.cjs
@@ -63,7 +73,7 @@ pnpm --filter @cosmora/api build   # проверяет копирование e
 
 ## Статус
 
-- Engine: 65/65 desktop Office тестов (10 CSV + 3 DOCX-cell + 4 independent).
+- Engine: 68/68 desktop Office тестов (10 CSV + 3 DOCX-cell + 4 independent + 2 native).
 - API: 9/9 targeted тестов (DOCX/XLSX/PPTX + CSV + DOCX-cell).
 - Web: 464/464 unit-тестов, typecheck зелёный.
 - E2E Playwright (браузер) и живая приёмка Windows — **не запускались**
