@@ -68,7 +68,7 @@ describe("integrations status endpoint", () => {
     }).token;
     const transport = createHttpConnectorTransport({
       baseUrl: "https://fixture.example/v1/",
-      fetchImpl: async () => ({ status: 200, text: async () => "{}" })
+      fetchImpl: () => Promise.resolve({ status: 200, text: () => Promise.resolve("{}") })
     });
     const app = buildApp({
       config: loadServerConfig({ NODE_ENV: "test" }),
