@@ -20,6 +20,17 @@
 - Read-only панель состава в `apps/web/src/app/stars/stars-org-panel.tsx`
   и подключение в Stars page; без изменений sidebar/главного чата/общего CSS.
 
+## Delegation → реальный WorkDAG
+
+`POST /api/v1/stars/missions/:id/delegation` берёт текущий versioned org snapshot
+и mission, строит `delegateMission()`-план, создаёт **настоящий WorkDAG** через
+существующий `WorkDagCoordinator.create()` и сохраняет `plan_digest` + версии
+состава/миссии на миссии. Повтор того же плана возвращает тот же graph и не
+создаёт второй. Зависимости и входные версии переносятся в `goal` node.
+
+Проверено: `apps/api/test/stars-delegation-api.test.ts` 1/1 на реальном
+`WorkDagStore` (in-memory SQLite) с project/org/mission fixture.
+
 ## Проверки
 
 ```

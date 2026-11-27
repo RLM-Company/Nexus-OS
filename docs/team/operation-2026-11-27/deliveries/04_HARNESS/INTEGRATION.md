@@ -8,5 +8,9 @@
 - `StarsOrgStore` и Pure `stars-hierarchy.ts` не дублируют память/Skills
   (Harness 2), права (Harness 3) или device lease (OpenCode 1).
 - Stars page читает org API; новый UI не трогает sidebar/chat/global CSS.
-- Перед финальной сдачей должны быть подключены delegation в WorkDAG,
-  handoff/checkpoint, context scope, event wait, senior review и remote boundary.
+- `packages/contracts/src/stars-mission.ts` расширен обратно совместимо:
+  опциональные поля brief (`author`, `responsible`, `input_versions`,
+  `criteria`, `acceptance_rules`), роль `senior` в plan, события `conflict`
+  и `accept`. Старые клиенты и старые события остаются валидными.
+- `POST /api/v1/stars/missions/:id/delegation` использует уже зарегистрированный
+  Stars route и реальный WorkDAG coordinator; нового scheduler нет.
