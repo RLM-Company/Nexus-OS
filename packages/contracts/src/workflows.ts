@@ -5,6 +5,7 @@ import {
   validateWorkDag,
   type WorkDagNodeInput
 } from "@cosmora/contracts/work-dag";
+import { WorkflowConditionSchema, WorkflowConfirmationSchema } from "./automation.js";
 
 const id = Type.String({ minLength: 1, maxLength: 100, pattern: "^[a-zA-Z0-9_-]+$" });
 export const WorkflowParameterSchema = Type.Object(
@@ -41,7 +42,9 @@ export const WorkflowDefinitionInputSchema = Type.Object(
       maxItems: 16,
       uniqueItems: true
     }),
-    expected_results: Type.Array(Type.String({ minLength: 1, maxLength: 200 }), { maxItems: 16 })
+    expected_results: Type.Array(Type.String({ minLength: 1, maxLength: 200 }), { maxItems: 16 }),
+    conditions: Type.Optional(Type.Array(WorkflowConditionSchema, { maxItems: 16 })),
+    confirmations: Type.Optional(Type.Array(WorkflowConfirmationSchema, { maxItems: 16 }))
   },
   { additionalProperties: false }
 );
@@ -116,6 +119,27 @@ export function validateWorkflowDefinition(
         return match;
       });
   validateWorkDag(value.nodes);
+  const nodeIds = new Set(value.nodes.map((node) => node.id));
+  const conditionIds = new Set<string>();
+  for (const condition of value.conditions ?? []) {
+    if (conditionIds.has(condition.id)) throw new Error("INVALID_WORKFLOW_CONDITION");
+    conditionIds.add(condition.id);
+    if (
+      condition.kind === "source_allowlist" &&
+      (!condition.file_ids || condition.file_ids.length === 0)
+    )
+      throw new Error("INVALID_WORKFLOW_CONDITION");
+  }
+  const confirmationIds = new Set<string>();
+  for (const confirmation of value.confirmations ?? []) {
+    if (
+      confirmationIds.has(confirmation.id) ||
+      !nodeIds.has(confirmation.node_id) ||
+      !confirmation.external_action.trim()
+    )
+      throw new Error("INVALID_WORKFLOW_CONFIRMATION");
+    confirmationIds.add(confirmation.id);
+  }
 }
 export function validateWorkflowInputs(
   definition: WorkflowDefinitionInput,
@@ -172,5 +196,6 @@ export function parseWorkflowPackage(value: unknown): WorkflowDefinitionInput {
   if (!Value.Check(WorkflowPackageSchema, value)) throw new Error("INVALID_WORKFLOW_PACKAGE");
   validateWorkflowDefinition(value.definition);
   // Connection permissions, values and previous execution state are never imported.
+  // Conditions and confirmation points are part of the portable procedure definition.
   return structuredClone(value.definition);
 }

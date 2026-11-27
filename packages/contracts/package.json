@@ -108,6 +108,11 @@
       "development": "./src/workflows.ts",
       "types": "./src/workflows.ts",
       "default": "./dist/workflows.js"
+    },
+    "./automation": {
+      "development": "./src/automation.ts",
+      "types": "./src/automation.ts",
+      "default": "./dist/automation.js"
     }
   },
   "files": [

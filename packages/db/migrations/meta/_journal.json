@@ -519,6 +519,13 @@
       "when": 1795608000005,
       "tag": "0077_project_intake_schema",
       "breakpoints": true
+    },
+    {
+      "idx": 78,
+      "version": "6",
+      "when": 1795608000006,
+      "tag": "0078_automation_runtime",
+      "breakpoints": true
     }
   ]
 }
