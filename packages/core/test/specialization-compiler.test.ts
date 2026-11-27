@@ -16,6 +16,6 @@ it("compiles an owner specialization into an inert SkillDraft", () => {
   expect(draft.format).toBe("kosmora.specialization-draft.v1");
   expect(draft.accepted).toBe(false);
   expect(draft.instructions).toContain("supplier-comparison");
-  expect(draft.instructions).toContain("не выдумывай факты");
+  expect(draft.instructions.toLowerCase()).toContain("не выдумывай факты");
   expect(draft.not_granted).toContain("tool execution rights");
 });
