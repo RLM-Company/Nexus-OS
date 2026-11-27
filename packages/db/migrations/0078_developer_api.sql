@@ -43,6 +43,22 @@ CREATE TABLE IF NOT EXISTS developer_api_webhooks (
 );
 
 --> statement-breakpoint
+CREATE TABLE IF NOT EXISTS developer_api_usage (
+  usage_id TEXT PRIMARY KEY,
+  owner_id TEXT NOT NULL,
+  key_id TEXT NOT NULL,
+  request_id TEXT NOT NULL,
+  run_id TEXT,
+  model TEXT NOT NULL,
+  input_tokens INTEGER NOT NULL,
+  output_tokens INTEGER NOT NULL,
+  first_token_ms INTEGER,
+  total_ms INTEGER,
+  created_at TEXT NOT NULL,
+  UNIQUE(owner_id, request_id)
+);
+
+--> statement-breakpoint
 CREATE TABLE IF NOT EXISTS developer_api_deliveries (
   delivery_id TEXT PRIMARY KEY,
   webhook_id TEXT NOT NULL,

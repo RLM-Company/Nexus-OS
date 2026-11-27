@@ -88,6 +88,14 @@ export function registerDeveloperApiRoutes(deps: DeveloperApiDependencies) {
         const body = request.body as DeveloperChatRequest;
         const requestId = body.client_request_id ?? "dchat_" + createHash("sha256").update(JSON.stringify(body)).digest("hex").slice(0, 24);
         const identity = identityFor(request);
+        const recordUsage = (usage: {
+          request_id: string;
+          model: string;
+          input_tokens: number;
+          output_tokens: number;
+          first_token_ms?: number;
+          total_ms?: number;
+        }) => store.recordUsage(identity.owner_id, identity.actor_id, usage);
         const modelRequest = chat.buildRequest({
           chatId: "developer:" + identity.owner_id,
           runId: requestId,
@@ -124,6 +132,7 @@ export function registerDeveloperApiRoutes(deps: DeveloperApiDependencies) {
                 ...(event.timing ?? {})
               };
               if (!(await usageValid(usage))) continue;
+              recordUsage(usage);
               reply.raw.write(`event: run.completed\ndata: ${JSON.stringify({ usage })}\n\n`);
             }
           }
@@ -132,7 +141,14 @@ export function registerDeveloperApiRoutes(deps: DeveloperApiDependencies) {
           return reply;
         }
         let answer = "";
-        let usage: Record<string, unknown> | null = null;
+        let usage: {
+          request_id: string;
+          model: string;
+          input_tokens: number;
+          output_tokens: number;
+          first_token_ms?: number;
+          total_ms?: number;
+        } | null = null;
         for await (const event of gateway.stream(modelRequest)) {
           if (event.type === "text.delta") answer += event.delta;
           else if (event.type === "response.completed") {
@@ -143,6 +159,7 @@ export function registerDeveloperApiRoutes(deps: DeveloperApiDependencies) {
               output_tokens: event.usage.outputTokens ?? 0,
               ...(event.timing ?? {})
             };
+            recordUsage(usage);
           }
         }
         return {
@@ -154,6 +171,11 @@ export function registerDeveloperApiRoutes(deps: DeveloperApiDependencies) {
         };
       }
     );
+
+    routes.get(`${base}/usage`, (request) => {
+      const identity = scopes(request, "chat.read");
+      return { usage: store.listUsage(identity.owner_id) };
+    });
 
     routes.post(
       `${base}/chat/completions/:requestId/cancel`,

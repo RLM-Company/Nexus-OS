@@ -64,9 +64,16 @@ describe("developer API external client", () => {
       payload: { messages: [{ role: "user", content: "Привет" }] }
     });
     expect(answer.statusCode, answer.body).toBe(200);
-    const body = answer.json<{ choices: Array<{ message: { content: string } }>; usage: { input_tokens: number } }>();
+    const body = answer.json<{ id: string; choices: Array<{ message: { content: string } }>; usage: { input_tokens: number } }>();
     expect(body.choices[0]?.message.content).toBeTruthy();
     expect(body.usage.input_tokens).toBeGreaterThanOrEqual(0);
+    const usage = await app.inject({
+      method: "GET",
+      url: "/api/v1/developer/v1/usage",
+      headers: headers(key.token)
+    });
+    expect(usage.statusCode).toBe(200);
+    expect(usage.json<{ usage: Array<{ request_id: string }> }>().usage[0]?.request_id).toBe(body.id);
 
     const foreign = await app.inject({
       method: "POST",

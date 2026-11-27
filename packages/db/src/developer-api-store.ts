@@ -235,6 +235,48 @@ export class DeveloperApiStore {
     return row ? Buffer.from(row.secret_hash, "hex") : null;
   }
 
+  recordUsage(
+    ownerId: string,
+    keyId: string,
+    usage: {
+      request_id: string;
+      run_id?: string;
+      model: string;
+      input_tokens: number;
+      output_tokens: number;
+      first_token_ms?: number;
+      total_ms?: number;
+    }
+  ) {
+    this.active(ownerId);
+    this.db
+      .prepare(
+        "INSERT OR IGNORE INTO developer_api_usage(usage_id,owner_id,key_id,request_id,run_id,model,input_tokens,output_tokens,first_token_ms,total_ms,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)"
+      )
+      .run(
+        "du_" + randomBytes(12).toString("hex"),
+        ownerId,
+        keyId,
+        usage.request_id,
+        usage.run_id ?? null,
+        usage.model,
+        usage.input_tokens,
+        usage.output_tokens,
+        usage.first_token_ms ?? null,
+        usage.total_ms ?? null,
+        new Date().toISOString()
+      );
+  }
+
+  listUsage(ownerId: string) {
+    this.active(ownerId);
+    return this.db
+      .prepare(
+        "SELECT request_id,run_id,model,input_tokens,output_tokens,first_token_ms,total_ms,created_at FROM developer_api_usage WHERE owner_id=? ORDER BY created_at DESC LIMIT 100"
+      )
+      .all(ownerId);
+  }
+
   ownerOfWebhook(webhookId: string): string | null {
     const row = this.db
       .prepare("SELECT owner_id FROM developer_api_webhooks WHERE webhook_id=? AND revoked_at IS NULL")
