@@ -122,6 +122,30 @@ it("keeps a value containing the file's own separator as one cell through the fu
   expect(cells.find((c) => c.address === "A3")?.text).toBe("002");
 });
 
+it("commit is idempotent on a lost response: the same token replays identical bytes", async () => {
+  const name = "retry.csv";
+  const bytes = Buffer.from(csvSource, "utf8").toString("base64");
+  const call = (mode: string, payload: Record<string, unknown>) =>
+    app.inject({ method: "POST", url: `/api/v1/document-workspace/${mode}`, payload });
+  const opened = await call("inspect", { name, bytes });
+  const input = {
+    name,
+    bytes,
+    expected_version: opened.json<{ version: string }>().version,
+    operations: [{ kind: "set_cell", target: "table:1", address: "A2", value: "00456" }]
+  };
+  const preview = await call("preview", input);
+  const token = preview.json<{ expires: number; preview_token: string; version: string }>();
+  const confirmation = { ...input, expires: token.expires, preview_token: token.preview_token };
+  const first = await call("commit", confirmation);
+  const replay = await call("commit", confirmation); // response lost after first commit
+  expect(first.statusCode).toBe(200);
+  expect(replay.statusCode, replay.body).toBe(200);
+  expect(first.json<{ bytes: string; version: string }>()).toEqual(
+    replay.json<{ bytes: string; version: string }>()
+  );
+});
+
 it("rejects CSV formula injection and owner mismatch on commit", async () => {
   const isolated = Fastify();
   registerDocumentWorkspaceRoutes(isolated, (request) => ({
