@@ -19,6 +19,7 @@ import {
   DemoManagerStore,
   ManagerWorkStore,
   StarsMissionStore,
+  StarsOrgStore,
   EmergencyStopStore,
   IdentityStore,
   openDatabase,
@@ -405,6 +406,7 @@ try {
     demoManagerStore,
     managerWorkStore,
     starsMissionStore: new StarsMissionStore(database.sqlite),
+    starsOrgStore: new StarsOrgStore(database.sqlite),
     projectAutomationStore: new ProjectAutomationStore(database.sqlite),
     // Merchant activation is a separate release. This integration exposes read-only accounting and a disabled checkout.
     payStore: new PayStore(database.sqlite),

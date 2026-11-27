@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import styles from "./stars.module.css";
 import { StarsExecution, type MissionExecution } from "./stars-execution";
+import { StarsOrgPanel } from "./stars-org-panel";
 
 type MissionAgent = {
   id: string;
@@ -203,6 +204,7 @@ export default function StarsPage() {
             </span>
             <span>версия: {mission.version}</span>
           </section>
+          <StarsOrgPanel scope={mission?.team_scope ?? scope} />
           <StarsExecution
             key={mission.id}
             mission={mission}

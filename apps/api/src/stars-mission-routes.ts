@@ -8,18 +8,27 @@ import {
   type IdentityContext,
   type StarsMissionEvent
 } from "@cosmora/contracts";
-import { applyStarsMissionEvent, createStarsMission, StarsMissionConflict } from "@cosmora/core";
+import {
+  applyStarsMissionEvent,
+  changeStarsOrg,
+  createStarsMission,
+  createStarsOrg,
+  StarsMissionConflict,
+  StarsOrgConflict
+} from "@cosmora/core";
 import {
   AgentInstanceValidationError,
   AgentTeamRunNotFoundError,
   AgentTeamRunValidationError,
   StarsMissionConflict as StarsMissionStoreConflict,
+  StarsOrgStoreConflict,
   WorkDagConflict,
   ManagerWorkConflict,
   type ProjectStore,
   type AgentTeamRunStore,
   type StarsMissionStore,
-  type StoredStarsMission
+  type StoredStarsMission,
+  type StarsOrgStore
 } from "@cosmora/db";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { Type } from "typebox";
@@ -39,6 +48,7 @@ export function registerStarsMissionRoutes({
   teamRuns,
   projects,
   dag,
+  orgStore,
   identityFor
 }: {
   app: FastifyInstance;
@@ -46,10 +56,93 @@ export function registerStarsMissionRoutes({
   teamRuns?: AgentTeamRunStore;
   projects?: ProjectStore;
   dag?: WorkDagCoordinator;
+  orgStore?: StarsOrgStore;
   identityFor: (request: FastifyRequest) => IdentityContext;
 }): void {
   const base = "/api/v1/stars/missions";
   const params = Type.Object({ id: EntityIdSchema });
+  const orgParams = Type.Object({ teamScope: Type.String({ minLength: 1, maxLength: 120 }) });
+
+  if (orgStore) {
+    app.get<{ Params: { teamScope: string } }>(
+      "/api/v1/stars/org/:teamScope",
+      { schema: { params: orgParams } },
+      (request, reply) => {
+        const owner = identityFor(request).owner_id;
+        const current = orgStore.current(request.params.teamScope, owner);
+        return current ?? reply.code(404).send({ error: { code: "ORG_NOT_FOUND" } });
+      }
+    );
+    app.post<{
+      Params: { teamScope: string };
+      Body: {
+        nodes: Array<{
+          id: string;
+          role: "owner" | "chief" | "submanager" | "executor" | "senior";
+          manager_id: string | null;
+          responsibility_zones: string[];
+          project_ids: string[];
+          effective_from: string;
+        }>;
+      };
+    }>("/api/v1/stars/org/:teamScope", { schema: { params: orgParams } }, (request, reply) => {
+      const owner = identityFor(request).owner_id;
+      if (orgStore.current(request.params.teamScope, owner))
+        return reply.code(409).send({ error: { code: "ORG_EXISTS" } });
+      try {
+        const created = createStarsOrg(
+          request.params.teamScope,
+          request.body.nodes.map((node) => ({ ...node, status: "active" as const }))
+        );
+        return reply.code(201).send(orgStore.save(created, owner, 0));
+      } catch (cause) {
+        if (cause instanceof StarsOrgConflict)
+          return reply.code(422).send({ error: { code: cause.code } });
+        throw cause;
+      }
+    });
+    app.post<{
+      Params: { teamScope: string };
+      Body: {
+        expected_version: number;
+        changes: Array<{
+          op: "add" | "update" | "remove";
+          node: {
+            id: string;
+            role: "owner" | "chief" | "submanager" | "executor" | "senior";
+            manager_id: string | null;
+            responsibility_zones: string[];
+            project_ids: string[];
+            status?: "active" | "removed";
+            effective_from: string;
+          };
+        }>;
+      };
+    }>(
+      "/api/v1/stars/org/:teamScope/change",
+      { schema: { params: orgParams } },
+      (request, reply) => {
+        const owner = identityFor(request).owner_id;
+        const current = orgStore.current(request.params.teamScope, owner);
+        if (!current) return reply.code(404).send({ error: { code: "ORG_NOT_FOUND" } });
+        try {
+          const next = changeStarsOrg(
+            current as never,
+            request.body.expected_version,
+            request.body.changes.map((change) => ({
+              ...change,
+              node: { ...change.node, status: change.node.status ?? "active" }
+            }))
+          );
+          return orgStore.save(next, owner, current.version);
+        } catch (cause) {
+          if (cause instanceof StarsOrgConflict || cause instanceof StarsOrgStoreConflict)
+            return reply.code(409).send({ error: { code: cause.code } });
+          throw cause;
+        }
+      }
+    );
+  }
 
   app.post<{ Body: CreateStarsMission }>(
     base,
