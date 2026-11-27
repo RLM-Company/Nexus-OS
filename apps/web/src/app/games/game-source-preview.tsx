@@ -35,6 +35,7 @@ export function GameSourcePreview({
   );
   const [error, setError] = useState("");
   const [diagnostic, setDiagnostic] = useState<GameDiagnostic | null>(null);
+  const [viewMode, setViewMode] = useState<"static" | "webgl">("static");
   // Accept diagnostics only from the running sandboxed frame of this session.
   useEffect(() => {
     const listener = (event: MessageEvent) => {
@@ -77,6 +78,7 @@ export function GameSourcePreview({
     setSession(null);
     setError("");
     setDiagnostic(null);
+    setViewMode("static");
   }, [content]);
   const running = !!project && session?.source === content;
   const objScene = project?.v2?.launch.runtime === "web3d_sandbox";
@@ -113,6 +115,29 @@ export function GameSourcePreview({
         <button type="button" disabled={!running} onClick={() => setSession(null)}>
           Остановить игру
         </button>
+        {objScene && (
+          <button
+            type="button"
+            disabled={!project}
+            onClick={() => {
+              if (!project) return;
+              setSession({
+                source: content,
+                document: createGameProjectHtml(
+                  { format: "kosmora.game-project.v1", files: project.files },
+                  true,
+                  project.v2
+                ),
+                id: crypto.randomUUID()
+              });
+              setViewMode("webgl");
+              setError("");
+              setDiagnostic(null);
+            }}
+          >
+            3D-просмотр (WebGL)
+          </button>
+        )}
         <button
           type="button"
           disabled={!project}
@@ -154,13 +179,15 @@ export function GameSourcePreview({
       </div>
       <p className={styles.caption}>
         {objScene
-          ? "Редактируемая 3D-сцена на three.js: модель, поворот, масштаб, камера и свет берутся из проекта. Код game.js в этом режиме не выполняется."
+          ? viewMode === "webgl"
+            ? "Редактируемая 3D-сцена на three.js: модель, поворот, масштаб, камера и свет берутся из проекта. game.js в этом режиме не выполняется."
+            : "Статический снимок OBJ-lite с учётом поворота и масштаба проекта. Для настоящего WebGL-просмотра нажмите «3D-просмотр (WebGL)»."
           : "Запуск без запросов к ИИ. Изменение исходников останавливает предпросмотр. Ошибки и консоль отображаются под игровым полем."}
       </p>
       {error && <p role="alert">{error}</p>}
       {!project ? (
         <p>Откройте поддерживаемый пакет игры или проверьте исходный JSON.</p>
-      ) : running && session && objScene && threeModel && descriptor ? (
+      ) : running && session && objScene && threeModel && descriptor && viewMode === "webgl" ? (
         <div className={styles.frame} role="region" aria-label="3D-сцена Kosmora">
           <ThreeGameView model={threeModel} descriptor={descriptor} />
           <p>Настоящий 3D-рантайм three.js. Исходная модель не изменяется.</p>
@@ -172,7 +199,7 @@ export function GameSourcePreview({
           className={`${styles.frame} ${styles.desktop}`}
           style={{ height: 760 }}
           title="Проект игры Kosmora"
-          sandbox="allow-scripts"
+          sandbox={objScene ? "" : "allow-scripts"}
           referrerPolicy="no-referrer"
           srcDoc={session.document}
         />
