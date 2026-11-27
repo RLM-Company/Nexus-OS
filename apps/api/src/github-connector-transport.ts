@@ -9,7 +9,7 @@ import type { GithubIntegration } from "./github-integration.js";
  */
 export function githubConnectorTransports(github: GithubIntegration): ConnectorTransport {
   return {
-    async execute(input: unknown, context) {
+    async execute(input: unknown) {
       const value = input as { ref?: string; path?: string };
       const path = value?.path;
       if (typeof path !== "string" || !path || path.includes("..") || path.startsWith("/"))
