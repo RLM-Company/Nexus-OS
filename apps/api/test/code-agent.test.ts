@@ -2221,7 +2221,7 @@ describe("Code agent real gateway/GitHub/policy vertical", () => {
     // A cancelled stream keeps raw, unvalidated assistant text on the durable run
     // for recovery. That internal artifact must not appear in any owner-facing
     // GET/POST view: it is untrusted data and can contain partial credentials.
-    const secretTail = "sk-proj-SUPERSECRETPARTIALSTREAM123456789";
+    const secretTail = "sk-proj-OC5LEAK12";
     const f = await fixture({
       toolCalling: false,
       providerResponse: () =>

@@ -32,7 +32,7 @@ const run: CodeAgentRun = {
   output_checkpoint: {
     kind: "unvalidated_model_output",
     stage: "code",
-    text: '{"summary":"sk-proj-SUPERSECRET-123456789"}',
+    text: '{"summary":"sk-proj-OC5LEAK12"}',
     received_bytes: 44,
     updated_at: "2026-11-27T00:00:00.000Z",
     truncated: false,
@@ -66,7 +66,7 @@ describe("owner-facing code agent run projection", () => {
       "output_checkpoint"
     ])
       expect(Object.hasOwn(visible, field)).toBe(false);
-    expect(JSON.stringify(visible)).not.toContain("sk-proj-SUPERSECRET");
+    expect(JSON.stringify(visible)).not.toContain("sk-proj-OC5LEAK12");
     expect(JSON.stringify(visible)).not.toContain("unvalidated_model_output");
   });
 
@@ -82,6 +82,6 @@ describe("owner-facing code agent run projection", () => {
     expect(visible.check).toEqual(run.check);
     expect(visible.log).toEqual(run.log);
     // Never mutate the durable run while projecting it.
-    expect(run.output_checkpoint?.text).toContain("sk-proj-SUPERSECRET");
+    expect(run.output_checkpoint?.text).toContain("sk-proj-OC5LEAK12");
   });
 });
