@@ -7,13 +7,8 @@
         "id": "owner",
         "role": "owner",
         "manager_id": null,
-        "responsibility_zones": [
-          "*"
-        ],
-        "project_ids": [
-          "p1",
-          "p2"
-        ],
+        "responsibility_zones": ["*"],
+        "project_ids": ["p1", "p2"],
         "status": "active",
         "effective_from": "2026-11-27T12:00:00.000Z"
       },
@@ -21,13 +16,8 @@
         "id": "chief",
         "role": "chief",
         "manager_id": "owner",
-        "responsibility_zones": [
-          "*"
-        ],
-        "project_ids": [
-          "p1",
-          "p2"
-        ],
+        "responsibility_zones": ["*"],
+        "project_ids": ["p1", "p2"],
         "status": "active",
         "effective_from": "2026-11-27T12:00:00.000Z"
       },
@@ -35,12 +25,8 @@
         "id": "sub1",
         "role": "submanager",
         "manager_id": "chief",
-        "responsibility_zones": [
-          "research"
-        ],
-        "project_ids": [
-          "p1"
-        ],
+        "responsibility_zones": ["research"],
+        "project_ids": ["p1"],
         "status": "active",
         "effective_from": "2026-11-27T12:00:00.000Z"
       },
@@ -48,12 +34,8 @@
         "id": "sub2",
         "role": "submanager",
         "manager_id": "chief",
-        "responsibility_zones": [
-          "delivery"
-        ],
-        "project_ids": [
-          "p2"
-        ],
+        "responsibility_zones": ["delivery"],
+        "project_ids": ["p2"],
         "status": "active",
         "effective_from": "2026-11-27T12:00:00.000Z"
       },
@@ -61,9 +43,7 @@
         "id": "a1",
         "role": "executor",
         "manager_id": "sub1",
-        "responsibility_zones": [
-          "research"
-        ],
+        "responsibility_zones": ["research"],
         "project_ids": [],
         "status": "active",
         "effective_from": "2026-11-27T12:00:00.000Z"
@@ -72,9 +52,7 @@
         "id": "a2",
         "role": "executor",
         "manager_id": "sub2",
-        "responsibility_zones": [
-          "delivery"
-        ],
+        "responsibility_zones": ["delivery"],
         "project_ids": [],
         "status": "active",
         "effective_from": "2026-11-27T12:00:00.000Z"
@@ -83,9 +61,7 @@
         "id": "senior",
         "role": "senior",
         "manager_id": "chief",
-        "responsibility_zones": [
-          "review"
-        ],
+        "responsibility_zones": ["review"],
         "project_ids": [],
         "status": "active",
         "effective_from": "2026-11-27T12:00:00.000Z"
@@ -101,17 +77,9 @@
     "brief": {
       "author": "owner",
       "responsible": "chief",
-      "input_versions": [
-        "materials@4",
-        "org@1"
-      ],
-      "criteria": [
-        "доставка отдельной строкой",
-        "общий итог проверен старшим"
-      ],
-      "acceptance_rules": [
-        "человек принимает общий итог отдельно"
-      ]
+      "input_versions": ["materials@4", "org@1"],
+      "criteria": ["доставка отдельной строкой", "общий итог проверен старшим"],
+      "acceptance_rules": ["человек принимает общий итог отдельно"]
     },
     "stage": "completed",
     "agents": [
@@ -119,9 +87,7 @@
         "id": "chief",
         "role": "manager",
         "task": "координировать",
-        "context_scopes": [
-          "stars-wave"
-        ],
+        "context_scopes": ["stars-wave"],
         "status": "assigned",
         "replaced_by": null,
         "handoff": null
@@ -130,10 +96,7 @@
         "id": "a1",
         "role": "executor",
         "task": "извлечь",
-        "context_scopes": [
-          "stars-wave",
-          "a1-private"
-        ],
+        "context_scopes": ["stars-wave", "a1-private"],
         "status": "replaced",
         "replaced_by": "a1b",
         "handoff": "извлечь"
@@ -142,10 +105,7 @@
         "id": "a2",
         "role": "executor",
         "task": "сверить",
-        "context_scopes": [
-          "stars-wave",
-          "a2-private"
-        ],
+        "context_scopes": ["stars-wave", "a2-private"],
         "status": "completed",
         "replaced_by": null,
         "handoff": null
@@ -154,9 +114,7 @@
         "id": "senior",
         "role": "senior",
         "task": "проверить",
-        "context_scopes": [
-          "stars-wave"
-        ],
+        "context_scopes": ["stars-wave"],
         "status": "assigned",
         "replaced_by": null,
         "handoff": null
@@ -165,19 +123,14 @@
         "id": "a1b",
         "role": "executor",
         "task": "извлечь",
-        "context_scopes": [
-          "stars-wave",
-          "a1-private"
-        ],
+        "context_scopes": ["stars-wave", "a1-private"],
         "status": "completed",
         "replaced_by": null,
         "handoff": "извлечь"
       }
     ],
     "dependencies": {
-      "a2": [
-        "a1b"
-      ]
+      "a2": ["a1b"]
     },
     "messages": [],
     "results": [
@@ -244,14 +197,9 @@
     ],
     "completed_results": [],
     "dependencies": {
-      "a2": [
-        "a1b"
-      ]
+      "a2": ["a1b"]
     },
-    "context_scopes": [
-      "stars-wave",
-      "a1-private"
-    ],
+    "context_scopes": ["stars-wave", "a1-private"],
     "created_at": "2026-11-27T12:00:00.000Z"
   }
 }
