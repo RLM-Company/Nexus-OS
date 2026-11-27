@@ -1,0 +1,74 @@
+{
+  "wave": "2026-11-27",
+  "base_sha": "3af92583ccc8ceb49f44c0b8633955f40feaf59f",
+  "status": "prepared",
+  "dispatched": false,
+  "integration_owner": "second_developer_gpt",
+  "review_owner": "codex",
+  "agents": [
+    {
+      "id": "01_OPENCODE",
+      "scope": "device_browser_desktop",
+      "instruction": "01_OPENCODE_DEVICE_BROWSER_RU.md",
+      "status": "prepared",
+      "head_sha": null,
+      "pr": null
+    },
+    {
+      "id": "02_OPENCODE",
+      "scope": "games_sites",
+      "instruction": "02_OPENCODE_GAMES_SITES_RU.md",
+      "status": "prepared",
+      "head_sha": null,
+      "pr": null
+    },
+    {
+      "id": "03_OPENCODE",
+      "scope": "developer_api_performance",
+      "instruction": "03_OPENCODE_API_SPEED_RU.md",
+      "status": "prepared",
+      "head_sha": null,
+      "pr": null
+    },
+    {
+      "id": "04_HARNESS",
+      "scope": "stars_hierarchy_execution",
+      "instruction": "04_HARNESS_STARS_RU.md",
+      "status": "prepared",
+      "head_sha": null,
+      "pr": null
+    },
+    {
+      "id": "05_HARNESS",
+      "scope": "memory_skills_business",
+      "instruction": "05_HARNESS_MEMORY_SKILLS_RU.md",
+      "status": "prepared",
+      "head_sha": null,
+      "pr": null
+    },
+    {
+      "id": "06_HARNESS",
+      "scope": "collaboration_connectors",
+      "instruction": "06_HARNESS_COLLAB_CONNECTORS_RU.md",
+      "status": "prepared",
+      "head_sha": null,
+      "pr": null
+    },
+    {
+      "id": "07_GEMINI",
+      "scope": "media_presentations",
+      "instruction": "07_GEMINI_MEDIA_RU.md",
+      "status": "prepared",
+      "head_sha": null,
+      "pr": null
+    },
+    {
+      "id": "08_GROK",
+      "scope": "voice_meetings",
+      "instruction": "08_GROK_VOICE_MEETINGS_RU.md",
+      "status": "prepared",
+      "head_sha": null,
+      "pr": null
+    }
+  ]
+}
