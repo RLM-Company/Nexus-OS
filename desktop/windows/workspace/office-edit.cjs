@@ -193,6 +193,55 @@ function spreadsheetStrings(entries) {
     );
 }
 const isCsv = (name) => /^[^/\\]+\.[cC][sS][vV]$/.test(String(name));
+function setDocxCell(t, op) {
+  // Whole-cell text replacement: keep the first paragraph/run and its style,
+  // drop all other text runs in the cell. Fields/revisions/drawings refuse.
+  if (
+    t.doc.nodes.some(
+      (n) =>
+        n.tagStart >= t.node.tagStart &&
+        n.end <= t.node.end &&
+        [
+          "fld",
+          "fldChar",
+          "fldSimple",
+          "sdt",
+          "instrText",
+          "del",
+          "ins",
+          "drawing",
+          "object",
+          "graphicFrame"
+        ].includes(n.local)
+    )
+  )
+    fail();
+  const paragraphs = children(t.node, t.uri, "p");
+  if (!paragraphs.length) fail("TARGET_NOT_FOUND");
+  const runs = paragraphs.flatMap((p) => descendants(p, t.uri, "r"));
+  const texts = paragraphs.flatMap((p) => descendants(p, t.uri, "t"));
+  if (!texts.length) fail();
+  const before = texts.map((n) => n.text).join("");
+  const first = texts[0];
+  // Replace the first text node, blank all subsequent text nodes.
+  const patches = [];
+  const opening = t.doc.source
+    .slice(first.tagStart, first.tagEnd)
+    .replace(/\s+xml:space\s*=\s*(?:"[^"]*"|'[^']*')/, "")
+    .replace(/>$/, ' xml:space="preserve">');
+  patches.push([first.tagStart, first.closeStart, opening + esc(op.value)]);
+  for (const n of texts.slice(1)) {
+    const blank = t.doc.source
+      .slice(n.tagStart, n.tagEnd)
+      .replace(/\s+xml:space\s*=\s*(?:"[^"]*"|'[^']*')/, "")
+      .replace(/>$/, ' xml:space="preserve">');
+    patches.push([n.tagStart, n.closeStart, blank]);
+  }
+  let source = t.doc.source;
+  for (const [a, b, value] of patches.reverse())
+    source = source.slice(0, a) + value + source.slice(b);
+  return { source, before, after: op.value };
+}
 function inspectOffice(name, bytes, options = {}) {
   if (isCsv(name)) return inspectCsv(name, bytes, options);
   const { cursor, expectedVersion = null, path: sourcePath } = options;
@@ -276,9 +325,11 @@ function validateEdits(operations) {
           ? ["kind", "target", "address", "value"]
           : op.kind === "add_sheet"
             ? ["kind", "name"]
-            : op.kind === "set_range"
-              ? ["kind", "target", "start", "rows"]
-              : [];
+            : op.kind === "set_docx_cell"
+              ? ["kind", "target", "value"]
+              : op.kind === "set_range"
+                ? ["kind", "target", "start", "rows"]
+                : [];
     if (
       !keys.length ||
       Object.keys(op).length !== keys.length ||
@@ -300,6 +351,13 @@ function validateEdits(operations) {
       literal(op.find);
       literal(op.replace);
       if (!op.find) fail("INVALID");
+    }
+    if (op.kind === "set_docx_cell") {
+      literal(op.target);
+      literal(op.value);
+      if (/[\r\n\t]/.test(op.value)) fail("INVALID");
+      if (!/^table:[1-9][0-9]{0,2}\/row:[1-9][0-9]{0,4}\/cell:[1-9][0-9]{0,3}$/.test(op.target))
+        fail("INVALID");
     }
     if (op.kind === "add_sheet") {
       buildOfficeDocument({
@@ -669,9 +727,15 @@ function editOffice(name, bytes, operations) {
     }
     const t = targets(entries, format).find((t) => t.id === op.target);
     if (!t) fail("TARGET_NOT_FOUND");
-    if ((format === "xlsx") !== (op.kind === "set_cell")) fail();
+    if (op.kind === "set_docx_cell") {
+      if (format !== "docx" || !/^table:/.test(op.target)) fail();
+    } else if ((format === "xlsx") !== (op.kind === "set_cell")) fail();
     const result =
-      op.kind === "replace_text" ? replaceText(t, op) : setCell(t, op, spreadsheetStrings(entries));
+      op.kind === "replace_text"
+        ? replaceText(t, op)
+        : op.kind === "set_docx_cell"
+          ? setDocxCell(t, op)
+          : setCell(t, op, spreadsheetStrings(entries));
     entries.set(t.part, t.doc.encode(result.source));
     diff.push({ ...op, before: result.before, after: result.after });
   }

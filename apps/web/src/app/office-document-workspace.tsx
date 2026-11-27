@@ -122,6 +122,7 @@ export function OfficeDocumentWorkspace() {
   const [target, setTarget] = useState("");
   const [find, setFind] = useState("");
   const [replace, setReplace] = useState("");
+  const [docxCellValue, setDocxCellValue] = useState("");
   const [address, setAddress] = useState("A1");
   const [valueType, setValueType] = useState<RangeType>("string");
   const [sheetName, setSheetName] = useState("");
@@ -304,6 +305,9 @@ export function OfficeDocumentWorkspace() {
   };
   const xlsx = /\.xlsx$/i.test(source?.name ?? "") || /\.csv$/i.test(source?.name ?? "");
   const csv = /\.csv$/i.test(source?.name ?? "");
+  const docxCell = /^table:[1-9][0-9]{0,2}\/row:[1-9][0-9]{0,4}\/cell:[1-9][0-9]{0,3}$/.test(
+    target
+  );
   const saveToDrive = () => {
     if (!result?.drive || result.drive.verified || busy) return;
     const { name, drive } = result;
@@ -568,6 +572,30 @@ export function OfficeDocumentWorkspace() {
                 >
                   Добавить замену в план
                 </button>
+                {docxCell && (
+                  <>
+                    <label>
+                      Заменить всё содержимое ячейки{" "}
+                      <input
+                        value={docxCellValue}
+                        onChange={(e) => setDocxCellValue(e.target.value)}
+                      />
+                    </label>
+                    <button
+                      type="button"
+                      disabled={editingIndex !== null}
+                      onClick={() =>
+                        queue({
+                          kind: "set_docx_cell",
+                          target,
+                          value: docxCellValue
+                        })
+                      }
+                    >
+                      Добавить замену ячейки
+                    </button>
+                  </>
+                )}
               </>
             )}
             <OfficePlanEditor

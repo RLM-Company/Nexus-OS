@@ -39,7 +39,14 @@ export const OfficeOperationSchema = Type.Union([
       { minItems: 1, maxItems: 10 }
     )
   }),
-  object({ kind: Type.Literal("add_sheet"), name: Type.String({ minLength: 1, maxLength: 31 }) })
+  object({ kind: Type.Literal("add_sheet"), name: Type.String({ minLength: 1, maxLength: 31 }) }),
+  object({
+    kind: Type.Literal("set_docx_cell"),
+    target: Type.String({
+      pattern: "^table:[1-9][0-9]{0,2}/row:[1-9][0-9]{0,4}/cell:[1-9][0-9]{0,3}$"
+    }),
+    value: text(4000)
+  })
 ]);
 export const OfficeOperationsSchema = Type.Array(OfficeOperationSchema, {
   minItems: 1,
