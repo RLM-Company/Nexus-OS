@@ -585,8 +585,8 @@ test("browser Back can be cancelled with edits visible, then explicitly confirme
 }) => {
   await page.goto("/?surface=code");
   const link = page
-    .locator(".coscode-space-tools")
-    .getByRole("link", { name: "Репозиторий и изменения", exact: true });
+    .locator("aside.sidebar")
+    .getByRole("link", { name: "Рабочая область", exact: true });
   await expect(link).toHaveAttribute("href", "/code-agent");
   const state = await scenario(page);
   await link.click();
@@ -1721,4 +1721,56 @@ test("Code refresh accepts a new proposal when the editor has no unsaved changes
     "export const value = 44;"
   );
   expect(state.publications()).toBe(0);
+});
+
+test("Koscode workbench uses a project-session sidebar and real diff workspace", async ({
+  page
+}) => {
+  await scenario(page);
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.goto("/code-agent");
+  const sidebar = page.getByRole("complementary", { name: "Рабочее пространство Koscode" });
+  await expect(sidebar.getByRole("button", { name: "Проект", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Новая задача", exact: true })).toBeVisible();
+  await page.getByLabel("Задача", { exact: true }).fill("Исправь неверный результат");
+  await page.getByRole("button", { name: "Предложить исправление", exact: true }).click();
+  await expect(page.getByLabel("+ Итоговое содержимое: src/value.js")).toBeVisible();
+  await expect(sidebar.getByRole("button", { name: /Исправь неверный результат/ })).toHaveAttribute(
+    "aria-current",
+    "page"
+  );
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.screenshot({ path: "../../qa/koscode-workbench-desktop.png", fullPage: true });
+});
+
+test("Koscode sidebar navigation preserves the unsaved-edit confirmation", async ({ page }) => {
+  await scenario(page);
+  await prepare(page);
+  await page.getByLabel("+ Итоговое содержимое: src/value.js").fill("export const value = 99;");
+  page.once("dialog", (dialog) => dialog.dismiss());
+  await page
+    .getByRole("complementary", { name: "Рабочее пространство Koscode" })
+    .getByRole("link", { name: "Репозитории GitHub" })
+    .click();
+  await expect(page).toHaveURL(/code-agent/);
+  await expect(page.getByLabel("+ Итоговое содержимое: src/value.js")).toHaveValue(
+    "export const value = 99;"
+  );
+});
+
+test("Koscode mobile navigation opens and closes without horizontal overflow", async ({ page }) => {
+  await scenario(page);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/code-agent");
+  await page.getByRole("button", { name: "Развернуть боковую панель", exact: true }).click();
+  const sidebar = page.getByRole("complementary", { name: "Рабочее пространство Koscode" });
+  await expect(sidebar.getByRole("button", { name: "Новая задача", exact: true })).toBeVisible();
+  await sidebar.getByRole("button", { name: "Скрыть навигацию Koscode" }).click();
+  await expect(
+    page.getByRole("button", { name: "Развернуть боковую панель", exact: true })
+  ).toBeVisible();
+  expect(
+    await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)
+  ).toBe(true);
+  await page.screenshot({ path: "../../qa/koscode-workbench-mobile.png", fullPage: true });
 });
