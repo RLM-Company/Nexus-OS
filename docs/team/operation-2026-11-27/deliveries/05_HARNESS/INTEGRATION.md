@@ -40,6 +40,29 @@ registerBusinessScenarioRoutes({ app, identityFor }); // Harness 2 wiring (line 
 (`compileSpecialization`, `evaluateSkillResult`, `OwnerSkillStore`,
 `ChatSkillStore`), но не поднимает HTTP-сервер.
 
+## Подключение к обычному запросу (факт)
+
+`selectContextBundle()` из `@cosmora/core` вызывается в
+`apps/api/src/general-chat-routes.ts` и
+`apps/api/src/general-chat-background-run-coordinator.ts` перед `buildRequest()`.
+Она применяет `selectContextScope()` (владелец, удаление, актуальная ревизия,
+несовпадающие элементы) и сохраняет честные `answer_evidence`/`matched_items`.
+Это не отдельный benchmark helper.
+
+## Узкий мост к user-owned Drive (Harness 3)
+
+Добавлены endpoint'ы в `apps/api/src/context-memory-routes.ts`:
+
+- `GET /api/v1/memory/drive-manifest?scope=all|personal|chat|project` — из
+  `localSnapshot(owner)` собирается инертный манифест `kosmora.memory-drive-manifest.v1`
+  с явным scope, версиями записей и выбором пользователя; ключи и секреты не включаются.
+- `POST /api/v1/memory/drive-manifest/verify` — проверяет SHA-256 манифеста
+  при возврате из Storage; изменение содержимого отклоняется кодом 409.
+
+Это подготовка совместимого с Drive файла-переноса, а не загрузка в облако:
+сама передача/restore остаётся в зоне Harness 3. Формулировка продукта честная:
+наличие файла в личном Drive не означает, что данные не обрабатывает провайдер модели.
+
 ## Реальные vs фикстурные зависимости
 
 | Компонент                                                                             | Статус            | Комментарий                              |
@@ -57,8 +80,8 @@ registerBusinessScenarioRoutes({ app, identityFor }); // Harness 2 wiring (line 
 
 ## Ограничение интеграции
 
-`selectContextScope` остаётся core-функцией; этот harness проверяет её поведение
-нативно, но не изменяет production recall path (`INTERFACES.md` и `SCENARIOS.md`
-не трогались). Любая будущая подстановка её в `ContextMemoryStore.resolve`
-должна сохранить текущие проверки exclude/owner/version и честные счётчики
-`answer_evidence`/`matched_items`.
+`selectContextBundle` подключён к production recall path, но сам `ContextMemoryStore`
+остаётся владельцем owner/exclude-фильтрации; core-слой — дополнительная защита,
+а не замена серверных проверок. HTTP-слой проверен отдельными API-тестами
+(`business-scenario-routes.test.ts`, `memory-drive-manifest.test.ts`);
+живой HTTP-прогон с реальным провайдером в этой поставке не проводился.
