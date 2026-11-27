@@ -17,7 +17,10 @@ const sha256 = (value: string) => createHash("sha256").update(value).digest("hex
  * cached; an external action result is never used as permission to repeat it.
  */
 export class DeveloperResponseCache {
-  private readonly entries = new Map<string, { value: string; expiresAt: number; context: CacheContext }>();
+  private readonly entries = new Map<
+    string,
+    { value: string; expiresAt: number; context: CacheContext }
+  >();
 
   constructor(private readonly now = () => Date.now()) {}
 

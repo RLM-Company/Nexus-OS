@@ -14,7 +14,6 @@ import { runParallelRoute } from "./parallel-route.js";
 import type { ModelGateway } from "@cosmora/model-gateway";
 import type { ChatService } from "@cosmora/core";
 
-
 export interface DeveloperApiDependencies {
   app: FastifyInstance;
   store: DeveloperApiStore;
@@ -32,14 +31,27 @@ export function registerDeveloperApiRoutes(deps: DeveloperApiDependencies) {
     routes.setValidatorCompiler(TypeBoxValidatorCompiler);
     routes.setErrorHandler((error, request, reply) => {
       if (error instanceof DeveloperApiError) {
-        const status = error.code === "SCOPE_DENIED" ? 403 : error.code === "TASK_CONFLICT" ? 409 : error.code.startsWith("KEY_") ? 401 : 400;
-        return reply.code(status).send({ error: { type: "developer_api_error", code: error.code, message: error.message } });
+        const status =
+          error.code === "SCOPE_DENIED"
+            ? 403
+            : error.code === "TASK_CONFLICT"
+              ? 409
+              : error.code.startsWith("KEY_")
+                ? 401
+                : 400;
+        return reply.code(status).send({
+          error: { type: "developer_api_error", code: error.code, message: error.message }
+        });
       }
-      return reply.code(500).send({ error: { type: "server_error", code: "INTERNAL", message: "Internal error" } });
+      return reply
+        .code(500)
+        .send({ error: { type: "server_error", code: "INTERNAL", message: "Internal error" } });
     });
     routes.addHook("onSend", async (request, reply, payload) => {
       if (request.routeOptions.url?.startsWith(base))
-        reply.header("Cache-Control", "private, no-store").header("X-Content-Type-Options", "nosniff");
+        reply
+          .header("Cache-Control", "private, no-store")
+          .header("X-Content-Type-Options", "nosniff");
       return payload;
     });
 
@@ -51,8 +63,7 @@ export function registerDeveloperApiRoutes(deps: DeveloperApiDependencies) {
     };
     const ownerOnly = (request: FastifyRequest) => {
       const identity = identityFor(request);
-      if (identity.actor_id !== identity.owner_id)
-        throw new Error("SCOPE_DENIED");
+      if (identity.actor_id !== identity.owner_id) throw new Error("SCOPE_DENIED");
       return identity.owner_id;
     };
 
@@ -76,10 +87,14 @@ export function registerDeveloperApiRoutes(deps: DeveloperApiDependencies) {
       }
     );
     routes.get(`${base}/keys`, (request) => ({ keys: store.list(ownerOnly(request)) }));
-    routes.delete(`${base}/keys/:keyId`, { schema: { params: Type.Object({ keyId: Type.String() }) } }, (request) => {
-      const owner = ownerOnly(request);
-      return store.revoke(owner, (request.params as { keyId: string }).keyId);
-    });
+    routes.delete(
+      `${base}/keys/:keyId`,
+      { schema: { params: Type.Object({ keyId: Type.String() }) } },
+      (request) => {
+        const owner = ownerOnly(request);
+        return store.revoke(owner, (request.params as { keyId: string }).keyId);
+      }
+    );
 
     routes.post(
       `${base}/chat/completions`,
@@ -87,7 +102,9 @@ export function registerDeveloperApiRoutes(deps: DeveloperApiDependencies) {
       async (request, reply) => {
         scopes(request, "chat.write");
         const body = request.body as DeveloperChatRequest;
-        const requestId = body.client_request_id ?? "dchat_" + createHash("sha256").update(JSON.stringify(body)).digest("hex").slice(0, 24);
+        const requestId =
+          body.client_request_id ??
+          "dchat_" + createHash("sha256").update(JSON.stringify(body)).digest("hex").slice(0, 24);
         const identity = identityFor(request);
         const recordUsage = (usage: {
           request_id: string;
@@ -123,7 +140,9 @@ export function registerDeveloperApiRoutes(deps: DeveloperApiDependencies) {
           for await (const event of gateway.stream(modelRequest, controller.signal)) {
             if (controller.signal.aborted) break;
             if (event.type === "text.delta")
-              reply.raw.write(`event: message.delta\ndata: ${JSON.stringify({ delta: event.delta })}\n\n`);
+              reply.raw.write(
+                `event: message.delta\ndata: ${JSON.stringify({ delta: event.delta })}\n\n`
+              );
             else if (event.type === "response.completed") {
               const usage = {
                 request_id: requestId,
@@ -172,7 +191,11 @@ export function registerDeveloperApiRoutes(deps: DeveloperApiDependencies) {
               object: "chat.completion",
               model: body.model ?? "kosmora-parallel",
               choices: [
-                { index: 0, message: { role: "assistant", content: parallel.answer }, finish_reason: "stop" }
+                {
+                  index: 0,
+                  message: { role: "assistant", content: parallel.answer },
+                  finish_reason: "stop"
+                }
               ],
               parallel: {
                 parts: parallel.parts,
@@ -208,7 +231,9 @@ export function registerDeveloperApiRoutes(deps: DeveloperApiDependencies) {
           id: requestId,
           object: "chat.completion",
           model: body.model ?? "kosmora-default",
-          choices: [{ index: 0, message: { role: "assistant", content: answer }, finish_reason: "stop" }],
+          choices: [
+            { index: 0, message: { role: "assistant", content: answer }, finish_reason: "stop" }
+          ],
           usage
         };
       }
@@ -246,10 +271,14 @@ export function registerDeveloperApiRoutes(deps: DeveloperApiDependencies) {
       const identity = scopes(request, "tasks.read");
       return { tasks: store.listTasks(identity.owner_id) };
     });
-    routes.get(`${base}/tasks/:taskId`, { schema: { params: Type.Object({ taskId: Type.String() }) } }, (request) => {
-      const identity = scopes(request, "tasks.read");
-      return store.getTask(identity.owner_id, (request.params as { taskId: string }).taskId);
-    });
+    routes.get(
+      `${base}/tasks/:taskId`,
+      { schema: { params: Type.Object({ taskId: Type.String() }) } },
+      (request) => {
+        const identity = scopes(request, "tasks.read");
+        return store.getTask(identity.owner_id, (request.params as { taskId: string }).taskId);
+      }
+    );
     routes.post(
       `${base}/tasks/:taskId/cancel`,
       { schema: { params: Type.Object({ taskId: Type.String() }) } },
@@ -269,7 +298,10 @@ export function registerDeveloperApiRoutes(deps: DeveloperApiDependencies) {
         schema: {
           body: Type.Object({
             url: Type.String({ minLength: 8, maxLength: 2048 }),
-            events: Type.Array(Type.String({ minLength: 1, maxLength: 64 }), { minItems: 1, maxItems: 20 })
+            events: Type.Array(Type.String({ minLength: 1, maxLength: 64 }), {
+              minItems: 1,
+              maxItems: 20
+            })
           })
         }
       },
@@ -283,11 +315,15 @@ export function registerDeveloperApiRoutes(deps: DeveloperApiDependencies) {
       const identity = scopes(request, "webhooks.write");
       return { subscriptions: store.subscriptions(identity.owner_id) };
     });
-    routes.delete(`${base}/webhooks/:webhookId`, { schema: { params: Type.Object({ webhookId: Type.String() }) } }, (request) => {
-      const identity = scopes(request, "webhooks.write");
-      store.revokeWebhook(identity.owner_id, (request.params as { webhookId: string }).webhookId);
-      return { ok: true };
-    });
+    routes.delete(
+      `${base}/webhooks/:webhookId`,
+      { schema: { params: Type.Object({ webhookId: Type.String() }) } },
+      (request) => {
+        const identity = scopes(request, "webhooks.write");
+        store.revokeWebhook(identity.owner_id, (request.params as { webhookId: string }).webhookId);
+        return { ok: true };
+      }
+    );
 
     /** Verified inbound delivery receiver: HMAC over raw body, no owner identity required. */
     routes.post(
@@ -297,7 +333,8 @@ export function registerDeveloperApiRoutes(deps: DeveloperApiDependencies) {
         const webhookId = (request.params as { webhookId: string }).webhookId;
         const key = store.signingKey(webhookId);
         const signature = request.headers["x-kosmora-signature"];
-        if (!key || typeof signature !== "string") return reply.code(401).send({ error: { code: "INVALID_SIGNATURE" } });
+        if (!key || typeof signature !== "string")
+          return reply.code(401).send({ error: { code: "INVALID_SIGNATURE" } });
         const raw = JSON.stringify(request.body ?? {});
         const expected = createHmac("sha256", key).update(raw).digest("hex");
         if (!DeveloperApiStore.safeEqual(signature, expected))

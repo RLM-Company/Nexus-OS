@@ -1,5 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { openDatabase, runMigrations, DeveloperApiStore, EmergencyStopStore, ProjectStore } from "@cosmora/db";
+import {
+  openDatabase,
+  runMigrations,
+  DeveloperApiStore,
+  EmergencyStopStore,
+  ProjectStore
+} from "@cosmora/db";
 import { loadServerConfig } from "@cosmora/config";
 import { buildApp } from "../src/app.js";
 import { StaticIdentityResolver } from "../src/identity.js";
@@ -28,15 +34,18 @@ describe("developer API external client", () => {
       modelGateway: runtime.gateway,
       chat: runtime.chat,
       developerApiStore: store,
-      identityResolver: createDeveloperIdentityResolver(store, new StaticIdentityResolver({
-        owner_id: "owner-a",
-        actor_id: "owner-a",
-        actor_kind: "owner",
-        session_id: "owner-session",
-        assurance: "local",
-        authenticated_at: "2026-11-27T00:00:00.000Z",
-        expires_at: "9999-12-31T23:59:59.999Z"
-      }))
+      identityResolver: createDeveloperIdentityResolver(
+        store,
+        new StaticIdentityResolver({
+          owner_id: "owner-a",
+          actor_id: "owner-a",
+          actor_kind: "owner",
+          session_id: "owner-session",
+          assurance: "local",
+          authenticated_at: "2026-11-27T00:00:00.000Z",
+          expires_at: "9999-12-31T23:59:59.999Z"
+        })
+      )
     });
   });
   afterEach(async () => {
@@ -64,7 +73,11 @@ describe("developer API external client", () => {
       payload: { messages: [{ role: "user", content: "Привет" }] }
     });
     expect(answer.statusCode, answer.body).toBe(200);
-    const body = answer.json<{ id: string; choices: Array<{ message: { content: string } }>; usage: { input_tokens: number } }>();
+    const body = answer.json<{
+      id: string;
+      choices: Array<{ message: { content: string } }>;
+      usage: { input_tokens: number };
+    }>();
     expect(body.choices[0]?.message.content).toBeTruthy();
     expect(body.usage.input_tokens).toBeGreaterThanOrEqual(0);
     const usage = await app.inject({
@@ -73,7 +86,9 @@ describe("developer API external client", () => {
       headers: headers(key.token)
     });
     expect(usage.statusCode).toBe(200);
-    expect(usage.json<{ usage: Array<{ request_id: string }> }>().usage[0]?.request_id).toBe(body.id);
+    expect(usage.json<{ usage: Array<{ request_id: string }> }>().usage[0]?.request_id).toBe(
+      body.id
+    );
 
     const foreign = await app.inject({
       method: "POST",
@@ -157,7 +172,9 @@ describe("developer API external client", () => {
       headers: headers(key.token),
       payload: { goal: "Подготовить отчёт", client_request_id: "client-1" }
     });
-    expect(replay.json<{ task_id: string }>().task_id).toBe(task.json<{ task_id: string }>().task_id);
+    expect(replay.json<{ task_id: string }>().task_id).toBe(
+      task.json<{ task_id: string }>().task_id
+    );
 
     const subscription = await app.inject({
       method: "POST",
@@ -174,7 +191,12 @@ describe("developer API external client", () => {
     const keyBytes = store.signingKey(webhook_id)!;
     expect(keyBytes.toString("hex")).toBe(createHash("sha256").update(secret).digest("hex"));
     const payload = { event: "task.completed", attempt: 1 };
-    const signature = createHmac("sha256", Buffer.from(createHash("sha256").update(secret).digest("hex"), "hex")).update(JSON.stringify(payload)).digest("hex");
+    const signature = createHmac(
+      "sha256",
+      Buffer.from(createHash("sha256").update(secret).digest("hex"), "hex")
+    )
+      .update(JSON.stringify(payload))
+      .digest("hex");
     const delivered = await app.inject({
       method: "POST",
       url: `/api/v1/developer/v1/webhooks/receive/${webhook_id}`,

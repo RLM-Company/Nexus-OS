@@ -16,9 +16,11 @@ export type ParallelRouteResult = {
   total_ms: number;
 };
 
-export type ParallelExecute = (
-  input: { part: ParallelPart; prompt: string; signal: AbortSignal },
-) => Promise<{ text: string; verdict?: "PASS" | "RETRY" }>;
+export type ParallelExecute = (input: {
+  part: ParallelPart;
+  prompt: string;
+  signal: AbortSignal;
+}) => Promise<{ text: string; verdict?: "PASS" | "RETRY" }>;
 
 const sha256 = (value: string) => createHash("sha256").update(value).digest("hex");
 
@@ -68,7 +70,8 @@ export async function runParallelRoute(options: {
     prompt: `Проверь итог по частям и ответь PASS или RETRY с указанием части: ${merged}`,
     signal: options.signal
   });
-  const flagged = review.verdict === "RETRY" ? attempts.find((a) => review.text.includes(a.part_id)) : undefined;
+  const flagged =
+    review.verdict === "RETRY" ? attempts.find((a) => review.text.includes(a.part_id)) : undefined;
   if (flagged) {
     const retryStart = now();
     const retried = await options.execute({

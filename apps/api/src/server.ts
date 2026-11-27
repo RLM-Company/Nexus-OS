@@ -201,10 +201,7 @@ try {
     config.nodeEnv === "production"
       ? new BearerSessionIdentityResolver(identityStore)
       : new StaticIdentityResolver(LOCAL_DEVELOPMENT_IDENTITY);
-  const identityResolver = createDeveloperIdentityResolver(
-    developerApiStore,
-    baseIdentityResolver
-  );
+  const identityResolver = createDeveloperIdentityResolver(developerApiStore, baseIdentityResolver);
   if (config.runtimeEmergencyStop) {
     emergencyStopStore.activateProcess(
       "RUNTIME_EMERGENCY_STOP environment switch",

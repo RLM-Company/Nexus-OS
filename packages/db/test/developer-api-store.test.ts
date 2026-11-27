@@ -49,16 +49,30 @@ it("replays a task after a lost response without creating a second one", async (
 it("stores webhook subscriptions and deduplicates signed deliveries", async () => {
   const { db, store } = await setup();
   try {
-    const { subscription, secret } = store.subscribe(
-      "owner-a",
-      "https://client.example/hooks",
-      ["task.completed"]
-    );
+    const { subscription, secret } = store.subscribe("owner-a", "https://client.example/hooks", [
+      "task.completed"
+    ]);
     expect(secret).toMatch(/^whsec_/);
     expect(store.subscriptions("owner-a")).toHaveLength(1);
     expect(store.signingKey(subscription.webhook_id)?.length).toBe(32);
-    expect(store.recordDelivery("owner-a", subscription.webhook_id, "task.completed", { task_id: "t1" }, 1)).toBe(true);
-    expect(store.recordDelivery("owner-a", subscription.webhook_id, "task.completed", { task_id: "t1" }, 1)).toBe(false);
+    expect(
+      store.recordDelivery(
+        "owner-a",
+        subscription.webhook_id,
+        "task.completed",
+        { task_id: "t1" },
+        1
+      )
+    ).toBe(true);
+    expect(
+      store.recordDelivery(
+        "owner-a",
+        subscription.webhook_id,
+        "task.completed",
+        { task_id: "t1" },
+        1
+      )
+    ).toBe(false);
     store.revokeWebhook("owner-a", subscription.webhook_id);
     expect(store.subscriptions("owner-a")).toHaveLength(0);
     expect(store.signingKey(subscription.webhook_id)).toBeNull();

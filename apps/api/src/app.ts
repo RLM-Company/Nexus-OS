@@ -751,10 +751,7 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
     const path = request.url.split("?", 1)[0] ?? "";
     if (path === "/api/v1/health") return;
     // Signed inbound webhook deliveries authenticate with HMAC inside the route.
-    if (
-      request.method === "POST" &&
-      path.startsWith("/api/v1/developer/v1/webhooks/receive/")
-    )
+    if (request.method === "POST" && path.startsWith("/api/v1/developer/v1/webhooks/receive/"))
       return;
     if (
       dependencies.registration &&
