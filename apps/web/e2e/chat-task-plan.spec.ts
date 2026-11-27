@@ -207,6 +207,10 @@ test("switching the pinned plan in the same project fences a late snapshot and r
     window.dispatchEvent(new PopStateEvent("popstate"));
   }, second.id);
   await expect(card).toContainText(second.title);
+  await expect(card.getByRole("link", { name: "Открыть управление планом" })).toHaveAttribute(
+    "href",
+    `/?project=${project.id}&view=plan&plan=${second.id}`
+  );
   release();
   let online = false;
   await page.route("**" + base + "/" + second.id, (route) =>

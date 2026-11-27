@@ -27,7 +27,7 @@ test("reopens an exact saved Stars mission and never substitutes a recent missio
   await page.reload();
   await expect(page.getByText(one, { exact: true })).toBeVisible();
   await page.goto(`/stars?mission=${crypto.randomUUID()}`);
-  await expect(page.getByRole("alert")).toHaveText("Сохранённая миссия недоступна.");
+  await expect(page.getByText("Сохранённая миссия недоступна.", { exact: true })).toBeVisible();
   await expect(page.getByText(one, { exact: true })).toHaveCount(0);
   await expect(page.getByText(two, { exact: true })).toHaveCount(0);
 });

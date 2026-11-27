@@ -1,4 +1,5 @@
 "use client";
+import Link from "next/link";
 import {
   formatDuration,
   planSummary,
@@ -104,6 +105,11 @@ export function ChatTaskPlanPanel({
               </li>
             ))}
           </ol>
+          <Link
+            href={`/?project=${encodeURIComponent(plan.scope)}&view=plan&plan=${encodeURIComponent(plan.id)}`}
+          >
+            Открыть управление планом
+          </Link>
           <div className={styles.timing} aria-label="Время по событиям">
             {(Object.keys(TIMING_LABEL) as TimingKind[]).map((kind) => (
               <span
