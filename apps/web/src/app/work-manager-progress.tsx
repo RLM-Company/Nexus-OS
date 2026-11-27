@@ -4,11 +4,14 @@ import type {
   WorkCheckpointRecord,
   WorkRuntimeProgress
 } from "@cosmora/contracts";
+import { formatDuration } from "./chat-task-plan";
+import { computeWorkEvidence } from "./task-runtime-evidence";
 import { useEffect, useState } from "react";
 import styles from "./work-manager.module.css";
 import { AgentPipeline, SystemMessage } from "./ui/kosmora-controls";
 
 type Detail = {
+  version?: number;
   progress: WorkRuntimeProgress;
   checkpoints: WorkCheckpointRecord[];
   artifacts: WorkArtifactVersion[];
@@ -40,6 +43,14 @@ const decisions = {
     "Последний запрос имеет неопределённый результат. Автоматического повтора нет; сохранённые этапы доступны."
 };
 
+const phases = {
+  queue: "Очередь",
+  model: "Вызов модели",
+  review: "Проверка",
+  save: "Сохранение",
+  wait: "Ожидание решения",
+  pause: "Пауза"
+};
 export function WorkManagerProgress({
   projectId,
   workId,
@@ -49,8 +60,10 @@ export function WorkManagerProgress({
   workId: string;
   version: number;
 }) {
-  const [state, setState] = useState<{ key: string; detail: Detail } | null>(null);
-  const [error, setError] = useState("");
+  const [state, setState] = useState<{ key: string; revision: number; detail: Detail } | null>(
+    null
+  );
+  const [error, setError] = useState<{ key: string; text: string } | null>(null);
   const key = projectId + "/" + workId;
   const base = "/api/v1/projects/" + encodeURIComponent(projectId);
   useEffect(() => {
@@ -69,16 +82,34 @@ export function WorkManagerProgress({
           cache: "no-store",
           signal: AbortSignal.any([controller.signal, AbortSignal.timeout(6000)])
         });
+        if ([401, 403, 404, 410].includes(response.status) && !controller.signal.aborted) {
+          setState((current) => (current?.key === key ? null : current));
+          setError({ key, text: "Состояние задачи недоступно." });
+          return;
+        }
         if (!response.ok) throw new Error("Состояние этапов временно недоступно");
         const detail = (await response.json()) as Detail;
-        if (!controller.signal.aborted) {
-          setState({ key, detail });
-          setError("");
-          retryDelay = 2000;
-        }
+        if (controller.signal.aborted) return;
+        const evidence = computeWorkEvidence(workId, detail.checkpoints);
+        const revision = detail.version ?? evidence?.latest.version ?? version;
+        if (
+          detail.progress.work_id !== workId ||
+          !Number.isSafeInteger(revision) ||
+          revision < version ||
+          detail.checkpoints.some((point) => point.work_id !== workId)
+        )
+          throw new Error("Несовпадение версии задачи");
+        setState((current) =>
+          current?.key === key && current.revision > revision ? current : { key, revision, detail }
+        );
+        setError(null);
+        retryDelay = 2000;
       } catch {
         if (!controller.signal.aborted) {
-          setError("Не удалось обновить этапы. Сохранённые данные могут быть устаревшими.");
+          setError({
+            key,
+            text: "Не удалось обновить этапы. Сохранённые данные могут быть устаревшими."
+          });
           retry = true;
         }
       } finally {
@@ -108,10 +139,11 @@ export function WorkManagerProgress({
     };
   }, [base, key, workId, version]);
   const detail = state?.key === key ? state.detail : null;
+  const evidence = detail && computeWorkEvidence(workId, detail.checkpoints);
   return (
     <section className={styles.panel} aria-label="Прогресс Work">
       <h3>План и результат</h3>
-      {error && <SystemMessage>{error}</SystemMessage>}
+      {error?.key === key && <SystemMessage>{error.text}</SystemMessage>}
       {!detail ? (
         <p>Загружаем этапы…</p>
       ) : (
@@ -125,6 +157,25 @@ export function WorkManagerProgress({
             max={detail.progress.total}
           />
           {detail.progress.waiting_decision && <p>{decisions[detail.progress.waiting_decision]}</p>}
+          {evidence && (
+            <div aria-label="Измеренные фазы Work">
+              <p>
+                Фаза:{" "}
+                {evidence.current
+                  ? phases[evidence.current]
+                  : workStatusLabels[evidence.latest.status]}
+              </p>
+              {evidence.samples.size > 0 && (
+                <ul>
+                  {[...evidence.samples].map(([phase, duration]) => (
+                    <li key={phase}>
+                      {phases[phase]}: {duration === 0 ? "0 мс" : formatDuration(duration)}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
           <AgentPipeline
             steps={detail.progress.tasks.map((task) => ({
               id: task.task_id,
