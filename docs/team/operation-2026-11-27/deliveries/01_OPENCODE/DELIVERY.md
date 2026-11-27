@@ -27,10 +27,13 @@
 node --test --test-timeout=15000 desktop/windows/test/browser*.test.cjs \
   desktop/windows/test/device-lease.test.cjs
 # tests 70, pass 70, fail 0
+pnpm --dir desktop/windows check                      # 484 passed, 0 failed
 node --check desktop/windows/browser/engine.cjs
 node --check desktop/windows/browser/device-lease.cjs
 node scripts/check-secrets.mjs
 git diff --check
+pnpm --filter @cosmora/api exec vitest run test/computer-control.test.ts \
+  test/document-workspace-api.test.ts --maxWorkers=2   # 94 passed, 0 failed
 ```
 
 Обязательный сценарий двух агентов на одно окно — в
@@ -38,6 +41,23 @@ git diff --check
 deadlock в takeover-тесте (два агента с одним signal и acquire вне queue);
 исправлено путём пер-action holder и acquisition внутри screen queue. Ошибка
 не скрыта повторным запуском.
+
+## Живой блок (НЕ закрыт fixture-прогоном)
+
+Обязательная живая приёмка волны — документная задача, браузерная с тестовой
+формой и скачиванием, human takeover во время ожидания, отмена,
+disconnect/reconnect, проверка отсутствия позднего ввода/чужого доступа/дублей
+результата — **требует настоящего Windows-клиента и GUI**, которого в этом
+окружении нет. Что подготовлено:
+
+- `browser/native-acceptance.cjs` — runnable packaged-Electron сценарий с
+  формой, upload, download, возвратом в Koswork; дополнен проверками device
+  lease и human takeover на реальном Electron-транспорте. Выполняется в
+  GitHub Windows job (gui-acceptance), а не в этом чате.
+- Обязательный сценарий двух агентов на одно native окно оформлен в
+  `browser.test.cjs` (engine-level fixture).
+- Fixture-прогон 484/484 desktop + 94/94 API **не** заменяет живой пункт и
+  не объявляет его пройденным.
 
 ## Ограничения и живые пункты
 
