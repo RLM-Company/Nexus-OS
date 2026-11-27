@@ -30,6 +30,8 @@ export function registerDeveloperApiRoutes(deps: DeveloperApiDependencies) {
   app.register((routes) => {
     routes.setValidatorCompiler(TypeBoxValidatorCompiler);
     routes.setErrorHandler((error, request, reply) => {
+      if (typeof error === "object" && error !== null && "validation" in error)
+        return reply.code(400).send({ error: { code: "INVALID_REQUEST" } });
       if (error instanceof DeveloperApiError) {
         const status =
           error.code === "SCOPE_DENIED"
@@ -63,7 +65,8 @@ export function registerDeveloperApiRoutes(deps: DeveloperApiDependencies) {
     };
     const ownerOnly = (request: FastifyRequest) => {
       const identity = identityFor(request);
-      if (identity.actor_id !== identity.owner_id) throw new Error("SCOPE_DENIED");
+      if (identity.actor_kind !== "owner" || identity.session_id.startsWith("developer:"))
+        throw new DeveloperApiError("SCOPE_DENIED");
       return identity.owner_id;
     };
 
@@ -106,6 +109,12 @@ export function registerDeveloperApiRoutes(deps: DeveloperApiDependencies) {
           body.client_request_id ??
           "dchat_" + createHash("sha256").update(JSON.stringify(body)).digest("hex").slice(0, 24);
         const identity = identityFor(request);
+        // Client request IDs are only unique within one key, never globally.
+        const executionId =
+          "developer_" +
+          createHash("sha256")
+            .update(JSON.stringify([identity.owner_id, identity.actor_id, requestId]))
+            .digest("hex");
         const recordUsage = (usage: {
           request_id: string;
           model: string;
@@ -116,48 +125,61 @@ export function registerDeveloperApiRoutes(deps: DeveloperApiDependencies) {
         }) => store.recordUsage(identity.owner_id, identity.actor_id, usage);
         const modelRequest = chat.buildRequest({
           chatId: "developer:" + identity.owner_id,
-          runId: requestId,
+          runId: executionId,
           messages: []
         });
         modelRequest.messages = body.messages.map((m) => ({ role: m.role, content: m.content }));
         if (body.mode === "fast") modelRequest.routing.optimize_for = "latency";
-        modelRequest.request_id = requestId;
-        modelRequest.idempotency_key = requestId;
+        modelRequest.request_id = executionId;
+        modelRequest.idempotency_key = executionId;
 
         if (body.stream) {
+          if (activeStreams.has(executionId))
+            return reply.code(409).send({ error: { code: "STREAM_CONFLICT" } });
+          const controller = new AbortController();
+          activeStreams.set(executionId, controller);
+          const onClose = () => controller.abort();
+          reply.raw.once("close", onClose);
           reply.hijack();
           reply.raw.writeHead(200, {
             "Content-Type": "text/event-stream",
-            "Cache-Control": "no-store",
+            "Cache-Control": "private, no-store",
+            "X-Content-Type-Options": "nosniff",
             Connection: "keep-alive"
           });
-          const controller = new AbortController();
-          activeStreams.set(requestId, controller);
-          request.raw.on("close", () => {
-            controller.abort();
-            activeStreams.delete(requestId);
-          });
-          for await (const event of gateway.stream(modelRequest, controller.signal)) {
-            if (controller.signal.aborted) break;
-            if (event.type === "text.delta")
-              reply.raw.write(
-                `event: message.delta\ndata: ${JSON.stringify({ delta: event.delta })}\n\n`
-              );
-            else if (event.type === "response.completed") {
-              const usage = {
-                request_id: requestId,
-                model: event.model,
-                input_tokens: event.usage.inputTokens ?? 0,
-                output_tokens: event.usage.outputTokens ?? 0,
-                ...(event.timing ?? {})
-              };
-              if (!(await usageValid(usage))) continue;
-              recordUsage(usage);
-              reply.raw.write(`event: run.completed\ndata: ${JSON.stringify({ usage })}\n\n`);
+          try {
+            for await (const event of gateway.stream(modelRequest, controller.signal)) {
+              if (controller.signal.aborted) break;
+              if (event.type === "text.delta")
+                reply.raw.write(
+                  `event: message.delta\ndata: ${JSON.stringify({ delta: event.delta })}\n\n`
+                );
+              else if (event.type === "response.completed") {
+                const usage = {
+                  request_id: requestId,
+                  model: event.model,
+                  input_tokens: event.usage.inputTokens ?? 0,
+                  output_tokens: event.usage.outputTokens ?? 0,
+                  ...(event.timing ?? {})
+                };
+                if (!(await usageValid(usage))) continue;
+                recordUsage(usage);
+                reply.raw.write(`event: run.completed\ndata: ${JSON.stringify({ usage })}\n\n`);
+              }
             }
+          } catch {
+            // The HTTP response is already streaming; never expose provider diagnostics.
+            if (!controller.signal.aborted && !reply.raw.destroyed)
+              reply.raw.write(
+                'event: run.failed\ndata: {"error":{"code":"GENERATION_FAILED"}}\n\n'
+              );
+          } finally {
+            if (controller.signal.aborted && !reply.raw.destroyed)
+              reply.raw.write('event: run.cancelled\ndata: {"cancelled":true}\n\n');
+            activeStreams.delete(executionId);
+            reply.raw.off("close", onClose);
+            reply.raw.end();
           }
-          reply.raw.end();
-          activeStreams.delete(requestId);
           return reply;
         }
         if (body.mode === "parallel" && !body.stream) {
@@ -248,12 +270,17 @@ export function registerDeveloperApiRoutes(deps: DeveloperApiDependencies) {
       `${base}/chat/completions/:requestId/cancel`,
       { schema: { params: Type.Object({ requestId: Type.String() }) } },
       (request, reply) => {
-        scopes(request, "chat.write");
+        const identity = scopes(request, "chat.write");
         const id = (request.params as { requestId: string }).requestId;
-        const controller = activeStreams.get(id);
+        const executionId =
+          "developer_" +
+          createHash("sha256")
+            .update(JSON.stringify([identity.owner_id, identity.actor_id, id]))
+            .digest("hex");
+        const controller = activeStreams.get(executionId);
         if (!controller) return reply.code(404).send({ error: { code: "STREAM_NOT_FOUND" } });
         controller.abort();
-        activeStreams.delete(id);
+        // The streaming handler releases the slot after the generator stops.
         return { request_id: id, cancelled: true };
       }
     );

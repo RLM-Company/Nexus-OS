@@ -3,10 +3,25 @@ import type { DeveloperApiStore } from "@cosmora/db";
 import type { IdentityContext } from "@cosmora/contracts";
 import type { RequestIdentityResolver } from "../identity.js";
 
+// Match Fastify's registered route, never a user-controlled URL prefix/query.
+// New endpoints must explicitly opt in to client-key authentication.
+const CLIENT_ROUTES = new Set([
+  "POST /api/v1/developer/v1/chat/completions",
+  "POST /api/v1/developer/v1/chat/completions/:requestId/cancel",
+  "GET /api/v1/developer/v1/usage",
+  "POST /api/v1/developer/v1/tasks",
+  "GET /api/v1/developer/v1/tasks",
+  "GET /api/v1/developer/v1/tasks/:taskId",
+  "POST /api/v1/developer/v1/tasks/:taskId/cancel",
+  "POST /api/v1/developer/v1/webhooks",
+  "GET /api/v1/developer/v1/webhooks",
+  "DELETE /api/v1/developer/v1/webhooks/:webhookId"
+]);
+
 /**
- * Developer-key Bearer resolver. Returns an owner-bound identity so the existing
- * owner gate applies; `actor_id` identifies the key for correlation only.
- * Session tokens keep working through the delegated resolver.
+ * Client credentials only authenticate explicitly listed external routes, whose
+ * handlers enforce key scopes. They never authenticate internal owner routes or
+ * key administration. Session tokens use the existing session resolver.
  */
 export function createDeveloperIdentityResolver(
   keys: DeveloperApiStore,
@@ -16,8 +31,13 @@ export function createDeveloperIdentityResolver(
   return {
     async resolve(request: FastifyRequest): Promise<IdentityContext | null> {
       const header = request.headers.authorization;
-      if (typeof header !== "string" || !/^Bearer cdev_[A-Za-z0-9_-]+$/u.test(header))
+      if (typeof header !== "string" || !/^Bearer\s+cdev_/iu.test(header))
         return sessions.resolve(request);
+      if (
+        !/^Bearer cdev_[A-Za-z0-9_-]+$/u.test(header) ||
+        !CLIENT_ROUTES.has(`${request.method} ${request.routeOptions.url}`)
+      )
+        return null;
       const key = keys.resolve(header.slice("Bearer ".length), now());
       return {
         owner_id: key.owner_id,
