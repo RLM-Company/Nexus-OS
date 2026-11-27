@@ -1,3 +1,4 @@
+import { registerBusinessScenarioRoutes } from "./business-scenario-routes.js"; // Harness 2 wiring (2 lines)
 import { registerDocumentWorkspaceRoutes } from "./document-workspace-routes.js";
 import { registerGithubIssueRoutes } from "./github-issue-routes.js";
 import type { ContextMemoryRanker } from "@cosmora/contracts";
@@ -812,6 +813,7 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
     });
   }
 
+  registerBusinessScenarioRoutes({ app, identityFor }); // Harness 2 wiring (line 2 of 2)
   app.get(
     "/api/v1/navigation-context",
     {
