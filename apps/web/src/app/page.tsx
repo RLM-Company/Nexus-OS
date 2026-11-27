@@ -29,7 +29,7 @@ import { ProfileOnboarding } from "./profile-onboarding";
 import { greetingByAssistantGender, type GreetingProfile } from "./profile-onboarding-core";
 import { ClarificationCardPanel } from "./clarification-card";
 import { ChatTaskPlanPanel } from "./chat-task-plan-panel";
-import { emitChatTaskEvent, useChatTaskPlan } from "./use-chat-task-plan";
+import { useChatTaskPlan } from "./use-chat-task-plan";
 import { ChatSearchTrigger } from "./chat-search-trigger";
 import { ProjectTitleEditor } from "./project-title-editor";
 import { QuickSwitcher } from "./quick-switcher";
@@ -658,9 +658,6 @@ export default function Home() {
   const composerDraftKey = pendingProjectId
     ? `${COMPOSER_DRAFT_STORAGE_PREFIX}project-new-chat:${pendingProjectId}`
     : composerDraftStorageKey(activeProject?.id ?? selectedProjectRef.current, activeLocalChatId);
-  const taskPlanScope = activeProject?.id ?? activeLocalChatId ?? "new-chat";
-  const taskPlanScopeRef = useRef(taskPlanScope);
-  taskPlanScopeRef.current = taskPlanScope;
   const taskPlan = useChatTaskPlan(
     activeProject?.id ?? null,
     projectView === "chat" && surface === "manager"
@@ -1496,16 +1493,6 @@ export default function Home() {
         setRunPhase("running");
       });
 
-      source.addEventListener("queued", () => {
-        if (!isCurrent()) return;
-        emitChatTaskEvent(taskPlanScopeRef.current, { type: "queue" });
-      });
-
-      source.addEventListener("tool.call", () => {
-        if (!isCurrent()) return;
-        emitChatTaskEvent(taskPlanScopeRef.current, { type: "tool" });
-      });
-
       source.addEventListener("message.started", (raw) => {
         if (!isCurrent()) return;
         const event = JSON.parse(String(raw.data)) as {
@@ -1653,14 +1640,6 @@ export default function Home() {
         if (!isCurrent()) return;
         setError(null);
         setRunPhase("running");
-      });
-      source.addEventListener("queued", () => {
-        if (!isCurrent()) return;
-        emitChatTaskEvent(taskPlanScopeRef.current, { type: "queue" });
-      });
-      source.addEventListener("tool.call", () => {
-        if (!isCurrent()) return;
-        emitChatTaskEvent(taskPlanScopeRef.current, { type: "tool" });
       });
       source.addEventListener("message.started", (raw) => {
         if (!isCurrent()) return;
@@ -3655,6 +3634,7 @@ export default function Home() {
         {taskPlan.plan && (
           <ChatTaskPlanPanel
             plan={taskPlan.plan}
+            stale={taskPlan.stale}
             onChange={(plan) => taskPlan.setCollapsed(plan.collapsed)}
           />
         )}
