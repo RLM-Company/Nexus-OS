@@ -22,7 +22,7 @@ type Mission = MissionExecution & {
   stage: string;
   agents: MissionAgent[];
   dependencies: Record<string, string[]>;
-  messages: Array<{ from: string; to: string; text: string; at: number }>;
+  messages: Array<{ id: string; from: string; to: string; text: string; at: number }>;
   results: Array<{ agent_id: string; summary: string; verification: string }>;
   combined_result: string | null;
   question: string | null;
@@ -50,6 +50,7 @@ export default function StarsPage() {
   const [error, setError] = useState("");
   const [selected, setSelected] = useState<string | null>(null);
   const [address, setAddress] = useState("");
+  const [replacement, setReplacement] = useState("");
 
   useEffect(() => {
     const controller = new AbortController();
@@ -247,6 +248,15 @@ export default function StarsPage() {
                 </ul>
                 {mission.combined_result && <p>Общий итог: {mission.combined_result}</p>}
                 {mission.question && <p role="status">Вопрос: {mission.question}</p>}
+                {mission.messages.length > 0 && (
+                  <ul aria-label="История сообщений команды">
+                    {mission.messages.map((message) => (
+                      <li key={message.id}>
+                        {message.from} → {message.to}: {message.text}
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </section>
               {selected && (
                 <section className={styles.address}>
@@ -267,6 +277,36 @@ export default function StarsPage() {
                   </button>
                   <button type="button" onClick={() => void event({ type: "cancel" })}>
                     Отмена
+                  </button>
+                  <input
+                    value={replacement}
+                    onChange={(e) => setReplacement(e.target.value)}
+                    placeholder="ID заменяющего агента"
+                    aria-label="ID заменяющего агента"
+                  />
+                  <button
+                    type="button"
+                    onClick={() =>
+                      void event({ type: "fail", agent_id: selected, reason: "owner_stop" })
+                    }
+                  >
+                    Остановить агента
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!replacement.trim()}
+                    onClick={() =>
+                      void event({
+                        type: "replace",
+                        failed_agent_id: selected,
+                        replacement_id: replacement.trim()
+                      })
+                    }
+                  >
+                    Заменить
+                  </button>
+                  <button type="button" onClick={() => void event({ type: "resume" })}>
+                    Повторить
                   </button>
                 </section>
               )}
