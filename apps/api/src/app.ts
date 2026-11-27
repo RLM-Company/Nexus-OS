@@ -1534,6 +1534,9 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
       ...(dependencies.generalChatStore ? { chats: dependencies.generalChatStore } : {}),
       coordinator: dependencies.managerWorkCoordinator,
       projects: dependencies.projectStore,
+      ...(dependencies.projectMembershipStore
+        ? { membership: dependencies.projectMembershipStore }
+        : {}),
       nodeBudget: {
         max_input_tokens: Math.min(3_000_000, (dependencies.modelContextWindowTokens ?? 32000) * 3),
         max_output_tokens: Math.min(300_000, dependencies.config.managerMaxOutputTokens * 3)

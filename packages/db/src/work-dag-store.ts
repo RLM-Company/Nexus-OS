@@ -171,6 +171,14 @@ export class WorkDagStore {
       return graph;
     });
   }
+  /** Resolve a DAG's data scope by id only. Returns identifiers, never graph content. */
+  scope(id: string): { ownerId: string; projectId: string } | null {
+    const row = this.sqlite
+      .prepare("SELECT owner_id, project_id FROM work_dags WHERE id = ?")
+      .get(id) as { owner_id: string; project_id: string } | undefined;
+    return row ? { ownerId: row.owner_id, projectId: row.project_id } : null;
+  }
+
   get(id: string, owner: string): WorkDag | null {
     const row = this.sqlite
       .prepare(
