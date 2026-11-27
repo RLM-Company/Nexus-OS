@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/require-await -- Deterministic local fixtures. */
 import { randomUUID } from "node:crypto";
 import type { IdentityContext } from "@cosmora/contracts";
 import { loadServerConfig } from "@cosmora/config";
