@@ -197,6 +197,8 @@ import {
   autonomyProfileStepUpChallenge,
   projectUsageLimitStepUpChallenge
 } from "./step-up-challenge.js";
+import { registerDeveloperApiRoutes } from "./developer-api/routes.js";
+import type { DeveloperApiStore } from "@cosmora/db";
 import { registerGeneralChatRoutes, type ActiveModelRun } from "./general-chat-routes.js";
 import { registerCodeAgentRoutes } from "./code-agent/routes.js";
 import { CodeAgentService } from "./code-agent/service.js";
@@ -292,6 +294,7 @@ export interface AppDependencies {
   agentTeamStore?: AgentTeamStore;
   agentTeamRunStore?: AgentTeamRunStore;
   modelGateway?: ModelGateway;
+  developerApiStore?: DeveloperApiStore;
   chat?: ChatService;
   manager?: ManagerService;
   modelRegistryVersion?: string;
@@ -722,7 +725,8 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
               "req.headers.authorization",
               "req.headers.cookie",
               "req.headers.x-step-up-token",
-              "req.headers.x-kosmora-computer-token"
+              "req.headers.x-kosmora-computer-token",
+              "req.headers.x-api-key"
             ]
           }
   }).withTypeProvider<TypeBoxTypeProvider>();
@@ -744,8 +748,14 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
   };
 
   app.addHook("onRequest", async (request, reply) => {
-    const path = request.url.split("?", 1)[0];
+    const path = request.url.split("?", 1)[0] ?? "";
     if (path === "/api/v1/health") return;
+    // Signed inbound webhook deliveries authenticate with HMAC inside the route.
+    if (
+      request.method === "POST" &&
+      path.startsWith("/api/v1/developer/v1/webhooks/receive/")
+    )
+      return;
     if (
       dependencies.registration &&
       (path === "/login" ||
@@ -1599,6 +1609,15 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
     registerProjectSourceRoutes(app, projectSourceStore, identityFor, projectMembershipStore);
   if (projectMembershipStore)
     registerProjectMembershipRoutes(app, projectMembershipStore, identityFor);
+  if (dependencies.developerApiStore && dependencies.modelGateway && dependencies.chat) {
+    registerDeveloperApiRoutes({
+      app,
+      store: dependencies.developerApiStore,
+      identityFor,
+      gateway: dependencies.modelGateway,
+      chat: dependencies.chat
+    });
+  }
   if (dependencies.generalChatStore && dependencies.modelGateway && dependencies.chat) {
     registerHistoryCompactionRoutes(
       app,

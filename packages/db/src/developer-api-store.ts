@@ -235,6 +235,13 @@ export class DeveloperApiStore {
     return row ? Buffer.from(row.secret_hash, "hex") : null;
   }
 
+  ownerOfWebhook(webhookId: string): string | null {
+    const row = this.db
+      .prepare("SELECT owner_id FROM developer_api_webhooks WHERE webhook_id=? AND revoked_at IS NULL")
+      .get(webhookId) as { owner_id: string } | undefined;
+    return row?.owner_id ?? null;
+  }
+
   recordDelivery(ownerId: string, webhookId: string, event: string, payload: unknown, attempt: number) {
     this.active(ownerId);
     const digest = bodyHash(payload);
