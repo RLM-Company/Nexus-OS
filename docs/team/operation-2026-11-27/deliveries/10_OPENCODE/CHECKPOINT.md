@@ -8,8 +8,8 @@
 | Base SHA | `3af92583ccc8ceb49f44c0b8633955f40feaf59f`                         |
 | Branch   | `feature/oc4-office-workbench-20261127`                            |
 | Worktree | `C:/Users/Александр/Documents/Codex/2026-11-27/kosmora-oc4-office` |
-| Head SHA | _устанавливается после коммита_                                    |
-| PR       | _Создаётся после push_                                             |
+| Head SHA | `3cd8742143d1a6d85057946c3fcfa7b0240508f2`                         |
+| PR       | [#696](https://github.com/RLM-Company/Nexus-OS/pull/696)           |
 
 ### Законченный пользовательский сценарий
 
