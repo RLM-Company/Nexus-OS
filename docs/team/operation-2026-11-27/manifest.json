@@ -19,7 +19,13 @@
       "03_OPENCODE",
       "04_HARNESS",
       "05_HARNESS",
-      "06_HARNESS"
+      "06_HARNESS",
+      "10_OPENCODE",
+      "11_OPENCODE",
+      "12_OPENCODE",
+      "13_HARNESS",
+      "14_HARNESS",
+      "15_HARNESS"
     ]
   },
   "integration_owner": "second_developer_gpt",
@@ -88,6 +94,54 @@
       "status": "prepared",
       "head_sha": null,
       "pr": null
+    },
+    {
+      "pr": null,
+      "id": "10_OPENCODE",
+      "head_sha": null,
+      "scope": "office_documents_spreadsheets",
+      "instruction": "10_OPENCODE_OFFICE_RU.md",
+      "status": "prepared"
+    },
+    {
+      "pr": null,
+      "id": "11_OPENCODE",
+      "head_sha": null,
+      "scope": "koscode_workbench",
+      "instruction": "11_OPENCODE_KOSCODE_RU.md",
+      "status": "prepared"
+    },
+    {
+      "pr": null,
+      "id": "12_OPENCODE",
+      "head_sha": null,
+      "scope": "workflows_automation",
+      "instruction": "12_OPENCODE_AUTOMATIONS_RU.md",
+      "status": "prepared"
+    },
+    {
+      "pr": null,
+      "id": "13_HARNESS",
+      "head_sha": null,
+      "scope": "research_web_search",
+      "instruction": "13_HARNESS_RESEARCH_RU.md",
+      "status": "prepared"
+    },
+    {
+      "pr": null,
+      "id": "14_HARNESS",
+      "head_sha": null,
+      "scope": "large_file_analysis",
+      "instruction": "14_HARNESS_FILE_ANALYSIS_RU.md",
+      "status": "prepared"
+    },
+    {
+      "pr": null,
+      "id": "15_HARNESS",
+      "head_sha": null,
+      "scope": "task_control_observability",
+      "instruction": "15_HARNESS_TASK_CONTROL_RU.md",
+      "status": "prepared"
     }
   ]
 }

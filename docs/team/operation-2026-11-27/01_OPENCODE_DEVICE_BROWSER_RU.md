@@ -1,5 +1,8 @@
 # 01_OPENCODE — Компьютер, браузер и надёжный Windows-клиент
 
+Уточнение команды: Office-* editor/workspace принадлежит OpenCode 4.
+Общий driver/IPC/browser остаётся в твоей зоне. См. EXTRA_CHATS_RU.md.
+
 Твой блок — полноценная реализация, подключение и доведение до приёмки.
 Сначала прочитай docs/team/operation-2026-11-27/00_COMMON_RULES_RU.md.
 База — main 3af92583ccc8ceb49f44c0b8633955f40feaf59f; обнови refs.
