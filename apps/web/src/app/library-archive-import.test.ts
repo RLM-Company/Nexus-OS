@@ -1,6 +1,10 @@
 import { strToU8, zipSync } from "fflate";
-import { expect, it, vi } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
+import { runLibraryUploadQueue } from "./library-upload-queue";
+import { BoundedZip } from "./bounded-zip";
 import { prepareLibraryUpload } from "./library-archive-import";
+
+afterEach(() => vi.restoreAllMocks());
 
 function zip(entries: Record<string, Uint8Array>) {
   const bytes = new Uint8Array(zipSync(entries));
@@ -15,11 +19,15 @@ it("imports distinct documents from folders and reports skipped formats", async 
     "preview.png": strToU8("ignored")
   });
   const callback = vi.fn();
+  const read = vi.spyOn(BoundedZip.prototype, "read");
   const result = await prepareLibraryUpload([archive], new AbortController().signal, callback);
   expect(result.skipped).toBe(1);
+  expect(read).not.toHaveBeenCalled();
   expect(callback).toHaveBeenCalledWith("package.zip");
   expect(result.files.map((file) => file.name)).toEqual(["a › report.txt", "b › report.txt"]);
-  expect(await Promise.all(result.files.map((file) => file.text()))).toEqual(["alpha", "beta"]);
+  expect(
+    await Promise.all(result.files.map((file) => ("open" in file ? file.open() : file).text()))
+  ).toEqual(["alpha", "beta"]);
 });
 
 it("rejects a package exceeding the upload file count before staging anything", async () => {
@@ -62,7 +70,9 @@ it("expands one nested ZIP level with a breadcrumb label", async () => {
     "outer › letter.txt",
     "outer › inner.zip › note.txt"
   ]);
-  expect(await Promise.all(result.files.map((file) => file.text()))).toEqual(["снаружи", "внутри"]);
+  expect(
+    await Promise.all(result.files.map((file) => ("open" in file ? file.open() : file).text()))
+  ).toEqual(["снаружи", "внутри"]);
 });
 
 it("reports nested archives beyond the depth limit as skipped, not silently dropped", async () => {
@@ -77,4 +87,38 @@ it("reports nested archives beyond the depth limit as skipped, not silently drop
   // level2 expands, mid.txt is imported; level3 exceeds MAX_ARCHIVE_DEPTH and is skipped.
   expect(result.files.map((file) => file.name)).toEqual(["level2.zip › mid.txt"]);
   expect(result.skipped).toBe(1);
+});
+
+it("defers a bad CRC to its file, before the upload adapter is called", async () => {
+  const bytes = zipSync(
+    { "bad.txt": strToU8("unique-content"), "good.txt": strToU8("valid") },
+    { level: 0 }
+  );
+  const offset = 30 + "bad.txt".length;
+  bytes[offset] = bytes[offset]! ^ 1;
+  const result = await prepareLibraryUpload(
+    [new File([new Uint8Array(bytes)], "package.zip")],
+    new AbortController().signal,
+    vi.fn()
+  );
+  const stage = vi.fn((_file: File) => Promise.reject(new Error("fixture stage")));
+  const extract = vi.fn();
+  const rows = await runLibraryUploadQueue(
+    result.files,
+    {
+      stage,
+      extract,
+      index: vi.fn(),
+      settle: vi.fn()
+    },
+    new AbortController().signal,
+    vi.fn()
+  );
+  expect(rows[0]).toMatchObject({
+    state: "failed",
+    detail: expect.stringMatching(/контрольная сумма/)
+  });
+  expect(stage).toHaveBeenCalledTimes(1);
+  expect(stage.mock.calls[0]?.[0].name).toBe("good.txt");
+  expect(extract).not.toHaveBeenCalled();
 });

@@ -1,3 +1,4 @@
+import type { DeferredLibraryFile } from "./library-upload-queue";
 import { BoundedZip } from "./bounded-zip";
 
 const ARCHIVE_LIMITS = {
@@ -11,7 +12,7 @@ const MAX_ARCHIVE_DEPTH = 2;
 const MAX_NESTED_ARCHIVES = 8;
 
 /**
- * Expand ZIP archives into library documents. The outer archive may contain one
+ * Plan extraction by member; the queue opens one file at a time. The outer archive may contain one
  * nested level of archives; deeper or broken nested archives are counted as
  * skipped (never silently dropped) so the owner sees honest coverage.
  */
@@ -19,14 +20,14 @@ export async function prepareLibraryUpload(
   selected: readonly File[],
   signal: AbortSignal,
   onArchive: (name: string) => void
-): Promise<{ files: File[]; skipped: number }> {
+): Promise<{ files: (File | DeferredLibraryFile)[]; skipped: number }> {
   if (selected.length > 100 || selected.reduce((sum, file) => sum + file.size, 0) > 100_000_000)
     throw new Error("В одном пакете может быть до 100 файлов общим размером до 100 МБ.");
-  const files: File[] = [];
+  const files: (File | DeferredLibraryFile)[] = [];
   let bytes = 0;
   let skipped = 0;
   let nestedArchives = 0;
-  const add = (file: File) => {
+  const add = (file: File | DeferredLibraryFile) => {
     if (files.length >= 100 || bytes + file.size > 100_000_000)
       throw new Error(
         "После распаковки в пакете может быть до 100 файлов общим размером до 100 МБ."
@@ -82,10 +83,14 @@ export async function prepareLibraryUpload(
       if (name.length > 180 || /[\u0000-\u001f\u007f]/u.test(name) || names.has(name.toLowerCase()))
         throw new Error("ZIP содержит слишком длинные или пересекающиеся имена документов.");
       names.add(name.toLowerCase());
-      const content = archive.read(path);
-      const data = new Uint8Array(content.length);
-      data.set(content);
-      add(new File([data], name, { lastModified }));
+      add({
+        name,
+        size: archive.uncompressedSize(path),
+        open() {
+          const data = new Uint8Array(archive.read(path));
+          return new File([data], name, { lastModified });
+        }
+      });
       supported++;
       // Yield between entries so cancellation and progress remain responsive.
       await new Promise<void>((resolve) => setTimeout(resolve, 0));

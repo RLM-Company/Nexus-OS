@@ -207,6 +207,11 @@ export class BoundedZip {
   has(name: string) {
     return this.entries.has(name);
   }
+  uncompressedSize(name: string): number {
+    const entry = this.entries.get(name);
+    assert(entry, `В ZIP отсутствует ${name}.`);
+    return entry.size;
+  }
   read(name: string): Uint8Array {
     const entry = this.entries.get(name);
     assert(entry, `В ZIP отсутствует ${name}.`);
