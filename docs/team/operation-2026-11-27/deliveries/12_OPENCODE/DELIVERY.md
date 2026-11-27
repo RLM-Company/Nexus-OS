@@ -3,7 +3,7 @@
 ## Точные SHA
 
 - base: `3af92583ccc8ceb49f44c0b8633955f40feaf59f`
-- head (промежуточный PR): `1f67827a8f3d5c60c94577b314eb99228bf22073`
+- head (промежуточный PR): `4d798ac0f663a1bc36511c54f9d7872f9d6c40d4`
 - branch: `feature/oc6-workflows-automation-20261127`
 - PR: https://github.com/RLM-Company/Nexus-OS/pull/703
 - worktree: `C:\Users\Александр\Documents\Codex\2026-11-27\kosmora-oc6-workflows`
@@ -16,7 +16,7 @@
 
 - `packages/contracts/src/automation.ts`, `workflows.ts`, `index.ts`, `package.json`
 - `packages/core/src/automation.ts`, `index.ts`
-- `packages/db/src/automation-store.ts`, `workflow-store.ts`, `index.ts`, migration `0078_automation_runtime.sql`, `_journal.json`
+- `packages/db/src/automation-store.ts`, `workflow-store.ts`, `index.ts`, migrations `0078_automation_runtime.sql` + `0079_automation_event_inbox.sql`, `_journal.json`
 - `apps/api/src/automation-routes.ts`, `automation-runner.ts`, `app.ts`, `server.ts`, `workflow-routes.ts`
 - `apps/web/src/app/personal-settings/automation-settings.tsx`, `page.tsx`, `apps/web/src/app/workflow-panel.tsx`
 - тесты: `apps/api/test/automation.test.ts`, `automation-real-path.test.ts`, `packages/{db,core,contracts}/test/automation.test.ts`
@@ -40,8 +40,16 @@ cd packages/contracts && ../../node_modules/.bin/vitest run test/automation.test
 
 - typecheck: contracts/core/db/api/web — пройден.
 - eslint изменённых исходников — пройден.
-- vitest api: 19/19 (18 + 1 real-path), db: 11/11, core: 8/8, contracts: 6/6.
-- Миграция 0078: повторный запуск на БД с данными, сохранение определений и проектов.
+- vitest api: 21/21 (automation, automation-real-path, workflows, scheduled-dispatch, stars), db: 11/11, core: 8/8, contracts: 6/6.
+- Миграции 0078/0079: повторный запуск на БД с данными, сохранение определений и проектов, inbox с дедупликацией.
+
+## Дополнительный срез — событийные процедуры и версионирование
+
+- Каждое событие коннектора фиксируется в `automation_event_inbox` до поиска сценария; уникальный `(owner,event_key)` гарантирует не более одного принятого запуска.
+- Повтор события возвращает ту же квитанцию и не создаёт второй run; rejected-события сохраняют причину. Явный replay не создаёт новый run без нового `event_id`.
+- Политики версии `pinned` (фиксированная версия) и `follow_latest` (детерминированный переход к текущей перед enqueue).
+- Смена версии триггера — только явным запросом с `expected_version` и причиной; старые запуски сохраняют неизменяемый снимок.
+- UI показывает журнал приёма событий, политику версии и кнопку обновления до актуальной версии.
 
 ## Реальные связи vs фикстуры
 

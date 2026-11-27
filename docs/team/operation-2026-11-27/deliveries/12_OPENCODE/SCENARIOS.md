@@ -31,13 +31,13 @@
 
 ## Отказы и права
 
-| Проверка                   | Место                        | Результат                                                                                    |
-| -------------------------- | ---------------------------- | -------------------------------------------------------------------------------------------- |
-| Повтор события             | automation.test.ts           | 1 trigger, 1 run на event_id                                                                 |
-| Рестарт/lease              | automation.test.ts           | истёкший lease → queued, attempt сохраняется, второй process не захватывает                  |
-| Смена версии               | automation-real-path.test.ts | run хранит definition_version=1 после правки до v2                                           |
-| Отзыв доступа              | automation.test.ts           | `OWNER_DATA_FENCED`, новых записей нет                                                       |
-| Отмена во время исполнения | automation.test.ts           | CAS-переход в cancelled, повтор resume запрещён                                              |
-| Потеря ответа              | automation.test.ts           | `unknown` + `unknown_external`; повторное действие переиспользует operation_key; verify явно |
-| Часовой пояс               | core/test/automation.test.ts | 09:30 local сохранено, неверная зона отклонена, weekday → Monday                             |
-| Миграция                   | db/test/automation.test.ts   | данные сохраняются, повторный запуск миграции безопасен                                      |
+| Проверка                   | Место                                            | Результат                                                                                    |
+| -------------------------- | ------------------------------------------------ | -------------------------------------------------------------------------------------------- |
+| Повтор события             | automation.test.ts                               | 1 квитанция, 1 trigger, 1 run; повтор возвращает ту же квитанцию, 200                        |
+| Рестарт/lease              | automation.test.ts                               | истёкший lease → queued, attempt сохраняется, второй process не захватывает                  |
+| Смена версии               | automation.test.ts, automation-real-path.test.ts | pinned CAS, старый run хранит v1, follow_latest resolves перед enqueue                       |
+| Отзыв доступа              | automation.test.ts                               | `OWNER_DATA_FENCED`, новых записей нет                                                       |
+| Отмена во время исполнения | automation.test.ts                               | CAS-переход в cancelled, повтор resume запрещён                                              |
+| Потеря ответа              | automation.test.ts                               | `unknown` + `unknown_external`; повторное действие переиспользует operation_key; verify явно |
+| Часовой пояс               | core/test/automation.test.ts                     | 09:30 local сохранено, неверная зона отклонена, weekday → Monday                             |
+| Миграция                   | db/test/automation.test.ts                       | данные сохраняются, повторный запуск миграции безопасен                                      |
