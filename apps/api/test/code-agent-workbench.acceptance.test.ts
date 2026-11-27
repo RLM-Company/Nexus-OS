@@ -125,10 +125,10 @@ async function harness(runner: CodeAgentWorkspaceRunner) {
       else if (path === "/git/commits" && method === "POST")
         value = { sha: "d".repeat(40) };
       else if (path === "/git/refs" && method === "POST") {
-        const body = JSON.parse(String(init?.body)) as { ref: string };
+        const body = JSON.parse(typeof init?.body === "string" ? init.body : "{}") as { ref: string };
         value = { ref: body.ref, object: { type: "commit", sha: "d".repeat(40) } };
       } else if (path === "/pulls" && method === "POST") {
-        const body = JSON.parse(String(init?.body)) as { head: string; base: string };
+        const body = JSON.parse(typeof init?.body === "string" ? init.body : "{}") as { head: string; base: string };
         value = {
           html_url: "https://github.com/RLM-Company/Nexus-OS/pull/901",
           draft: true,
@@ -227,7 +227,7 @@ describe("OC5 Koscode workbench local acceptance", () => {
           for (const file of input.files)
             await writeFile(join(repo.directory, file.path), file.content, "utf8");
           let exitCode = 0;
-          let stdout = "";
+          let stdout: string;
           try {
             stdout = execFileSync(process.execPath, ["--test", "src/add.test.mjs"], {
               cwd: repo.directory,
