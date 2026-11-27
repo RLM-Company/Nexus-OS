@@ -20,7 +20,8 @@ test("новые модули включены в пакет явно, а не w
     "diagnostics.cjs",
     "session-cleanup.cjs",
     "computer-console.cjs",
-    "browser/device-lease.cjs"
+    "browser/device-lease.cjs",
+    "executor-target.cjs"
   ])
     assert.ok(files.includes(entry), `${entry} отсутствует в build.files`);
 });

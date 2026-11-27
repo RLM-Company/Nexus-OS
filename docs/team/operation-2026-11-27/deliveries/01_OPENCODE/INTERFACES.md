@@ -52,3 +52,12 @@
   коды ошибок; их бизнес-логика не копируется в driver.
 - `tab-ownership.cjs` остаётся источником истины для конкретной вкладки; device lease
   добавляет device-wide порядок, не заменяя его.
+
+### `desktop/windows/executor-target.cjs` (новый, portable interface)
+
+Описатель executor target для local и будущего remote runner: явные
+`capabilities` (`native_focus`, `dom_read`, `dom_input`, `files`, `browser`,
+`downloads`), `authorize(target, operation, {ownerId, operationKind})`,
+`requiresNativeLease(operation)` и `portableCheckpoint()`. Target — данные, не
+живое соединение; `credentials:{}` и `device_grants:[]` не переносятся при
+передаче чекпоинта Harness 1. Тесты — `executor-target.test.cjs`.

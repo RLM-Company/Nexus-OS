@@ -38,6 +38,7 @@
       "computer-recovery-events.cjs",
       "browser/tab-ownership.cjs",
       "browser/device-lease.cjs",
+      "executor-target.cjs",
       "work-retry-guard.cjs",
       "computer-policy.cjs",
       "computer-preload.cjs",

@@ -25,7 +25,18 @@
   disconnect, поздний ответ) в driver/session.
 - Цикл 3: расширение browser (tabs, upload, profiles, handover) поверх
   существующего ownership.
-- Цикл 5/6: desktop UX и portable executor target (local/remote capabilities).
+- Цикл 5: desktop UX (вход/сессия, переподключение, папка, скачивания, ошибки).
+
+## Сделано после первого коммита
+
+- `b8284ce` — packaged native acceptance: lease + human takeover на реальном
+  Electron-транспорте (GUI CI).
+- `dfcb3a0` — typed recovery для lease-ошибок (`DEVICE_LEASE_TAKEN_OVER` →
+  `user_input_active`, `DEVICE_STOPPED` → `device_disconnected`), что исключает
+  blind replay; упаковка lease-модуля в `build.files`.
+- `executor-target.cjs` — portable capability-aware interface (local/remote),
+  portable checkpoint без cookies/паролей/grants; 5 тестов.
+- Полный `pnpm --dir desktop/windows check`: **484/484 PASS**.
 
 ## Живые пункты
 
