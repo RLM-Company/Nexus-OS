@@ -3,8 +3,8 @@
 - **Статус:** готово к интеграции; PR [#695](https://github.com/RLM-Company/Nexus-OS/pull/695), `CLEAN / MERGEABLE / OPEN`.
 - **База:** main `3af92583ccc8ceb49f44c0b8633955f40feaf59f`.
 - **Ветка:** `feature/ds1-stars-hierarchy-runtime-20261127`, изолированный worktree `stars-hierarchy`.
-- **HEAD SHA:** `624b2d84` ( code: `304250cb` → `ea3dc0a9` → `ae9ebea9` → `79eadea8` → `70b91796` → `624b2d84` ).
-- **CI точного SHA:** run `46048584519` — 4/4 pass (`Browser acceptance` 12m24s, `Verify monorepo` 6m44s, sandbox, identity).
+- **HEAD SHA:** `41fe5cd3` ( последние code-шаги: `79eadea8` delegation, `624b2d84` isolated runner, `96c4cce4` execution route, `41fe5cd3` map controls).
+- **CI точного SHA:** run `46059273474` — 4/4 pass (`Browser acceptance` 12m34s, `Verify monorepo` 8m17s, sandbox, identity).
 
 ## Что сделано (цикл 1 иерархии)
 
