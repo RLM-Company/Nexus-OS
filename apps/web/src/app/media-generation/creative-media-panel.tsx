@@ -82,6 +82,18 @@ export function CreativeMediaPanel({
         </h3>
       )}
       {ready && (
+        <p className={styles.hint}>
+          Команда в чате:{" "}
+          <code>
+            {video
+              ? "/studio video 5 16:9 --paid: описание"
+              : music
+                ? "/studio music 12 instrumental --paid: описание"
+                : "/studio sfx 5 --paid: описание"}
+          </code>
+        </p>
+      )}
+      {ready && (
         <>
           {!video && (
             <>

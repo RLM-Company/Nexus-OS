@@ -3,6 +3,14 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
+import { AccountMediaBudget } from "../src/media/account-media-budget.js";
+import { AccountStore } from "../src/account-settings/account-store.js";
+import { runChatStudio } from "../src/media/chat-studio.js";
+import { GeneralChatRuntimeStore } from "../src/general-chat-runtime-store.js";
+import { GeneralChatBackgroundRunCoordinator } from "../src/general-chat-background-run-coordinator.js";
+import { buildModelRuntime } from "../src/model-runtime.js";
+import { RuntimeMetrics } from "../src/operations.js";
+import { openDatabase, runMigrations } from "@cosmora/db";
 import { loadServerConfig } from "@cosmora/config";
 import { ElevenLabsMediaAdapter, GeminiVideoMediaAdapter } from "@cosmora/model-gateway";
 import { buildApp } from "../src/app.js";
@@ -373,5 +381,89 @@ it("refuses remote URLs, corrupt containers and timeout outcomes without resubmi
     });
     expect((await app.inject(options)).json<MediaJob>().id).toBe(id);
     expect(transport).toHaveBeenCalledTimes(index + 1);
+  }
+});
+
+it("writes one owned media file into a durable chat reply only on a confirmed Studio command", async () => {
+  const database = openDatabase(":memory:");
+  await runMigrations(database);
+  const config = loadServerConfig({ NODE_ENV: "test" });
+  const runtime = await buildModelRuntime(config);
+  const store = new GeneralChatRuntimeStore(database.sqlite);
+  const account = new AccountStore(database.sqlite);
+  account.migrate();
+  const generate = vi.fn(() =>
+    Promise.resolve({
+      bytes: mp4,
+      mime: "video/mp4" as const,
+      extension: "mp4" as const
+    })
+  );
+  const mediaService = new MediaService({
+    directory: temp(),
+    paidEnabled: true,
+    video: { generate },
+    ownerBudget: new AccountMediaBudget(account, "fixture")
+  });
+  const metrics = new RuntimeMetrics();
+  const coordinator = new GeneralChatBackgroundRunCoordinator({
+    store,
+    modelGateway: runtime.gateway,
+    chat: runtime.chat,
+    runtimeMetrics: metrics,
+    studio: (owner, run, body, signal) => runChatStudio(mediaService, owner, run, body, signal),
+    accountStore: account,
+    pollIntervalMs: 10
+  });
+  const stream = vi.spyOn(runtime.gateway, "stream");
+  const app = buildApp({
+    database,
+    config,
+    generalChatStore: store,
+    modelGateway: runtime.gateway,
+    chat: runtime.chat,
+    manager: runtime.manager,
+    mediaService,
+    runtimeMetrics: metrics,
+    accountStore: account,
+    generalChatRunExecutionMode: "background"
+  });
+  coordinator.start();
+  try {
+    const submit = async (initial_message: string, client_message_id: string) => {
+      const response = await app.inject({
+        method: "POST",
+        url: "/api/v1/chats",
+        payload: { initial_message, client_message_id }
+      });
+      expect(response.statusCode, response.body).toBe(201);
+      return response.json<{ run_id: string; stream_url: string }>();
+    };
+    const invalid = await submit("/studio video 5 16:9: A coast", "missing-consent");
+    await app.inject(invalid.stream_url);
+    expect(store.getRun(invalid.run_id)?.error_code).toBe("STUDIO_COMMAND_INVALID");
+    expect(generate).not.toHaveBeenCalled();
+    const direct = await submit("/studio video 5 16:9 --paid: A coast", "approved-clip");
+    const observers = await Promise.all([
+      app.inject(direct.stream_url),
+      app.inject(direct.stream_url)
+    ]);
+    expect(observers.every((observer) => observer.body.includes("event: run.completed"))).toBe(
+      true
+    );
+    expect(generate).toHaveBeenCalledTimes(1);
+    expect(generate.mock.calls[0]).toEqual(["A coast", 5, "16:9", expect.any(AbortSignal)]);
+    expect(stream).not.toHaveBeenCalled();
+    const job = mediaService.list("local-owner")[0]!;
+    expect(job.client_request_id).toBe(`chat-studio:${direct.run_id}`);
+    expect(store.getAssistantMessage(direct.run_id)?.content).toContain(
+      `/api/v1/media/assets/${job.id}?download=1`
+    );
+    expect((await app.inject(prefix + "/assets/" + job.id)).rawPayload).toEqual(mp4);
+    expect(mediaService.asset(job.id, "other-owner")).toBeNull();
+  } finally {
+    await coordinator.stop();
+    await app.close();
+    database.close();
   }
 });
