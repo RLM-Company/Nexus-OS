@@ -4,7 +4,9 @@
 Изолированный worktree: `.../ds3-collaboration`.
 База: `3af92583ccc8ceb49f44c0b8633955f40feaf59f`.
 PR: #691 (https://github.com/RLM-Company/Nexus-OS/pull/691).
-Head будет зафиксирован в финальном сообщении и CHECKPOINT.md.
+Точный head: `689e326881f5fa75fb91936125af92f8e2210a94`.
+CI точного head: Browser acceptance pass (15m32s), Verify monorepo pass (8m24s),
+Code sandbox isolation pass, identity-tests pass — run `46024763658`.
 
 ## Фактические возможности
 
