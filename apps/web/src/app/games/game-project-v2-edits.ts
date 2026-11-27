@@ -13,10 +13,10 @@ export type V2FieldEdit =
 export type V2EditResult =
   { ok: true; json: string; project: GameProjectV2 } | { ok: false; error: string };
 
-const TRANSFORM_MARKER = "<!-- kosmora-transform:";
+const TRANSFORM_MARKER = "# kosmora-transform:";
 
 function transformFromHtml(html: string): { rotation: string; scale: string } {
-  const match = /<!-- kosmora-transform:([^>]*?)-->/.exec(html);
+  const match = /# kosmora-transform:([^\r\n]*)/.exec(html);
   if (!match) return { rotation: "0.25,0.45", scale: "1" };
   const rotation = /rotation=([^;\s]+)/.exec(match[1] ?? "")?.[1] ?? "0.25,0.45";
   const scale = /scale=([^;\s]+)/.exec(match[1] ?? "")?.[1] ?? "1";
@@ -24,8 +24,8 @@ function transformFromHtml(html: string): { rotation: string; scale: string } {
 }
 
 function applyTransform(html: string, value: { rotation: string; scale: string }): string {
-  const marker = `${TRANSFORM_MARKER}rotation=${value.rotation};scale=${value.scale}-->`;
-  const without = html.replace(/<!-- kosmora-transform:[^>]*?-->\s*/g, "");
+  const marker = `${TRANSFORM_MARKER}rotation=${value.rotation};scale=${value.scale}`;
+  const without = html.replace(/# kosmora-transform:[^\r\n]*\r?\n?/g, "");
   return `${marker}\n${without}`;
 }
 

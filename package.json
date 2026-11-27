@@ -13,6 +13,7 @@
     "demo:rehearse": "node scripts/presentation-demo.mjs --check",
     "test:presentation-demo": "node --test scripts/test/presentation-demo.test.mjs",
     "test:koswork-local-cycle": "node scripts/run-koswork-local-cycle.mjs",
+    "test:games-sites-scenario": "node scripts/run-games-sites-scenario.mjs",
     "manager:demo-smoke": "node scripts/manager-demo-smoke.mjs",
     "manager:preflight": "node --env-file-if-exists=.env scripts/manager-live-preflight.mjs",
     "manager:smoke": "node --env-file-if-exists=.env scripts/manager-live-smoke.mjs",
