@@ -7,11 +7,8 @@ const fs = require("node:fs"),
 const { createKosworkWorkspaceService } = require("../workspace/workspace-service.cjs");
 const { parseCsv } = require("../workspace/office-csv.cjs");
 
-const source = [
-  "id,title,amount",
-  '"00123","Company, A",19700',
-  "002,Ünïcode,19800"
-].join("\r\n") + "\n";
+const source =
+  ["id,title,amount", '"00123","Company, A",19700', "002,Ünïcode,19800"].join("\r\n") + "\n";
 
 async function setup(t) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "office-csv-native-"));
@@ -78,9 +75,7 @@ test("native workspace rejects mismatched CSV output extension and unsafe operat
     expectedVersion: opened.version,
     operations: [{ kind: "set_cell", target: "table:1", address: "A1", value: "x" }]
   };
-  assert.throws(() =>
-    service.previewOfficeDocument({ ...base, outputPath: "result.docx" })
-  );
+  assert.throws(() => service.previewOfficeDocument({ ...base, outputPath: "result.docx" }));
   assert.throws(() =>
     service.previewOfficeDocument({
       ...base,
