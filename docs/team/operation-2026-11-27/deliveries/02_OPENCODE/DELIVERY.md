@@ -2,7 +2,7 @@
 
 **База:** `3af92583ccc8ceb49f44c0b8633955f40feaf59f`.
 **Ветка:** `feature/oc2-games-sites-workspace-20261127`. **PR:** #693.
-**Head (на момент обновления):** `dfc63319fd5963c97c69f3e154db7021854cbeb4`.
+**Head (на момент обновления):** `833352c63954b6685fe94c07ea07ada4092f70f3`.
 
 ## Что реально добавлено
 
@@ -51,5 +51,7 @@ SHA256 экспорта (детерминирован, подтверждено 
 - Отмена/reload/unsaved для v1 покрыты существующими e2e; v2 — повторным
   открытием из ZIP. Нативный адаптер OpenCode 1 не требуется при выбранном
   веб-рантайме. Общий sidebar/чат/logo не менялись.
-- CI PR #693: `Verify monorepo` и `Browser acceptance` — см. актуальный статус
-  в GitHub; локальные lint/typecheck/tests/build зелёные.
+- CI PR #693 (head `833352c6`): `Verify monorepo` — SUCCESS,
+  `Browser acceptance` — SUCCESS (все e2e, включая OBJ-lite/Games),
+  `Code sandbox isolation` — SUCCESS. `mergeStateStatus: CLEAN`,
+  `mergeable: MERGEABLE`. Мерж в main не выполнялся — по решению владельца/интегратора.

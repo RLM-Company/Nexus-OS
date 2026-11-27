@@ -31,6 +31,7 @@
 
 ## Точка продолжения
 
-CI PR #693 (Verify monorepo / Browser acceptance) и финальная сверка head SHA
-в DELIVERY.md. Нативный адаптер OpenCode 1 не требуется при выбранном
-веб-рантайме; общий sidebar/чат/logo не менялись.
+PR #693: все проверки CI зелёные (`Verify monorepo`, `Browser acceptance`,
+`Code sandbox isolation`), `mergeStateStatus: CLEAN`. Мерж в main не выполнялся —
+ожидает решения владельца/интегратора. Нативный адаптер OpenCode 1 не требуется
+при выбранном веб-рантайме; общий sidebar/чат/logo не менялись.

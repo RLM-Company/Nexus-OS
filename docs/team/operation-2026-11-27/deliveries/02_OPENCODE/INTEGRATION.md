@@ -2,14 +2,23 @@
 
 ## Общие файлы
 
-Пока не изменены: `app.ts`, `server.ts`, корневые exports/config/lockfile и общие
-контракты не тронуты. Изменения ограничены `apps/web/src/app/games/` и папкой поставки.
+Затронуты только:`apps/web/src/app/games/`, `apps/web/src/app/sites/`,
+`apps/web/src/app/games/RUNTIME_DECISION.md`, `apps/web/THIRD_PARTY_NOTICES.md`,
+`apps/web/package.json`, `pnpm-lock.yaml`, корневой `package.json` (npm-скрипт),
+`scripts/run-games-sites-scenario.mjs` и папка поставки. Общие `app.ts`,
+`server.ts`, exports/config и контракты в `packages/contracts` не изменены.
 
-## Подключение среза 1
+## Подключение
 
-`V2ScenePanel` импортирован в `game-source-editor.tsx` и рендерится только при
-`format === "kosmora.game-project.v2"`. Новый subpath/контракт не добавлялся:
-используется существующий `@cosmora/contracts/game-project-v2`.
+- `V2ScenePanel` импортирован в `game-source-editor.tsx` и рендерится в правой
+  колонке только при `format === "kosmora.game-project.v2"`;
+- `ThreeGameView` подключён в `game-source-preview.tsx` отдельным режимом
+  «3D-просмотр (WebGL)»; прежний изолированный статический OBJ-lite iframe
+  сохранён по умолчанию (e2e `game-development.spec.ts:332` проходит);
+- `three@0.187.0` и `@types/three@0.187.0` — зафиксированные зависимости
+  `apps/web` с MIT-уведомлением в `THIRD_PARTY_NOTICES.md`;
+- `site-project.ts` использует существующий `@cosmora/contracts/website-document`
+  для валидации HTML; новый общий контракт не добавлялся.
 
 ## Совместимость
 
@@ -18,8 +27,10 @@
 - Старые/ZIP-проекты и квитанции остаются совместимыми: сериализация v2 идёт
   через существующий `parseGameProjectV2`.
 - UI_RULES: общий sidebar, основной чат, logo и стиль не переделывались.
+- CSP и изоляция iframe/Worker сохранены; сетевые/нативные права не расширялись.
 
-## Следующий integration-коммит
+## CI
 
-Если понадобится backend/SDK 3D runtime или новый общий контракт, вынести в
-отдельный минимальный commit и описать здесь.
+PR #693 на head `833352c6`: `Verify monorepo`, `Browser acceptance`,
+`Code sandbox isolation` — SUCCESS; `mergeStateStatus: CLEAN`. Мерж в main не
+выполнялся — ожидает решения владельца/интегратора.
