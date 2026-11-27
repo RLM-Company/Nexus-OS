@@ -13,11 +13,12 @@ describe("explicit parallel route", () => {
       text: "Часть один\nЧасть два",
       now: () => tick++,
       signal: new AbortController().signal,
-      execute: async ({ part, prompt }) => {
+      execute: ({ part }) => {
         calls.push(part.id);
-        if (part.id === "review") return { text: "RETRY part-1", verdict: "RETRY" };
+        if (part.id === "review")
+          return Promise.resolve({ text: "RETRY part-1", verdict: "RETRY" as const });
         const retried = calls.filter((id) => id === part.id).length > 1;
-        return { text: `${part.text}${retried ? " (исправлено)" : ""}` };
+        return Promise.resolve({ text: `${part.text}${retried ? " (исправлено)" : ""}` });
       }
     });
     expect(result).not.toBeNull();
@@ -30,15 +31,14 @@ describe("explicit parallel route", () => {
     expect(result!.total_ms).toBeGreaterThanOrEqual(0);
   });
 
-  it("stops when the caller aborts", async () => {
+  it("trusts the executor to honour an aborted signal", async () => {
     const controller = new AbortController();
     controller.abort();
-    await expect(
-      runParallelRoute({
-        text: "A\nB",
-        signal: controller.signal,
-        execute: async () => ({ text: "x" })
-      })
-    ).resolves.not.toBeNull(); // the pure coordinator trusts the executor to honour the signal
+    const result = await runParallelRoute({
+      text: "A\nB",
+      signal: controller.signal,
+      execute: () => Promise.resolve({ text: "x" })
+    });
+    expect(result?.parts).toHaveLength(2);
   });
 });
