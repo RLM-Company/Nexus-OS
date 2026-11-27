@@ -124,6 +124,30 @@ export class ConnectorRegistry {
     return this.#wiredTools.has(toolId);
   }
 
+  /** Tools selectable in a work mode: wired operations whose declared
+   * capabilities are all granted. A descriptor without transport is never
+   * offered, and no permission is inferred from a catalog entry. */
+  availableTools(granted: readonly string[]): Array<{
+    tool_id: string;
+    connector_id: string;
+    operation_id: string;
+    capability_ids: readonly string[];
+  }> {
+    const grantedSet = new Set(granted);
+    return [...this.#connectors.values()]
+      .filter(
+        (entry) =>
+          this.#wiredTools.has(entry.toolId) &&
+          entry.operation.capability_ids.every((id) => grantedSet.has(id))
+      )
+      .map((entry) => ({
+        tool_id: entry.toolId,
+        connector_id: entry.descriptor.id,
+        operation_id: entry.operation.id,
+        capability_ids: entry.operation.capability_ids
+      }));
+  }
+
   /** Route one operation through the guarded runtime (no second policy stack). */
   invoke<Input, Output>(
     invocation: ConnectorInvocation<Input>

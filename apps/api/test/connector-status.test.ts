@@ -87,6 +87,20 @@ describe("integrations status endpoint", () => {
       const body = response.json<{ connectors: Array<{ id: string; transport_wired: boolean }> }>();
       expect(body.connectors.find((item) => item.id === "http-api")?.transport_wired).toBe(true);
       expect(response.body).not.toMatch(/fixture\.example|token|secret/i);
+      const tools = await app.inject({
+        method: "GET",
+        url: "/api/v1/integrations/tools?capabilities=context.project.read,integration.private.use",
+        headers: { authorization: `Bearer ${token}` }
+      });
+      expect(
+        tools.json<{ tools: Array<{ tool_id: string }> }>().tools.map((item) => item.tool_id)
+      ).toContain("integration.http-api.call");
+      const denied = await app.inject({
+        method: "GET",
+        url: "/api/v1/integrations/tools?capabilities=context.project.read",
+        headers: { authorization: `Bearer ${token}` }
+      });
+      expect(denied.json<{ tools: unknown[] }>().tools).toEqual([]);
     } finally {
       await app.close();
       database.close();

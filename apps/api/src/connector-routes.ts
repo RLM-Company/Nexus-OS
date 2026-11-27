@@ -1,4 +1,5 @@
 import type { FastifyInstance } from "fastify";
+import { Type } from "typebox";
 import { ConnectorStatusSchema } from "@cosmora/contracts";
 import type { PolicyStore } from "@cosmora/db";
 import {
@@ -38,6 +39,25 @@ export function registerConnectorRoutes(
   if (http) registry?.bindTransport(connectorToolId("http-api", "call"), http);
   registerMcpRoutes(app, registry, { ...mcp, policy: policyStore });
   registry?.bindToRuntime();
+
+  app.get<{ Querystring: { capabilities?: string } }>(
+    "/api/v1/integrations/tools",
+    {
+      schema: {
+        querystring: Type.Object({ capabilities: Type.Optional(Type.String({ maxLength: 1000 })) })
+      }
+    },
+    (_request, reply) => {
+      reply.header("Cache-Control", "no-store");
+      const granted = (_request.query.capabilities ?? "")
+        .split(",")
+        .map((item) => item.trim())
+        .filter(Boolean);
+      return {
+        tools: registry?.availableTools(granted) ?? []
+      };
+    }
+  );
 
   app.get(
     "/api/v1/integrations/status",
