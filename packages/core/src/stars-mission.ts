@@ -38,23 +38,43 @@ export type MissionResult = {
 export type MissionStage =
   "briefing" | "planning" | "working" | "verifying" | "completed" | "paused" | "cancelled";
 
+export type MissionBrief = {
+  author: string;
+  responsible: string;
+  input_versions: string[];
+  criteria: string[];
+  acceptance_rules: string[];
+};
 export type StarsMission = {
   id: string;
   team_scope: string;
   version: number;
   goal: string;
+  brief: MissionBrief | null;
   stage: MissionStage;
   agents: MissionAgent[];
   dependencies: Record<string, string[]>;
   messages: MissionMessage[];
   results: MissionResult[];
   combined_result: string | null;
+  accepted_by_human: string | null;
+  stop_reason: string | null;
+  conflicts: Array<{ from: string; text: string; at: number }>;
   question: string | null;
   history: string[];
 };
 
 export type StarsMissionEvent =
-  | { type: "brief"; goal: string; expected_version?: number }
+  | {
+      type: "brief";
+      goal: string;
+      author?: string;
+      responsible?: string;
+      input_versions?: string[];
+      criteria?: string[];
+      acceptance_rules?: string[];
+      expected_version?: number;
+    }
   | { type: "clarify"; question: string; expected_version?: number }
   | {
       type: "plan";
@@ -82,6 +102,8 @@ export type StarsMissionEvent =
   | { type: "replace"; failed_agent_id: string; replacement_id: string; expected_version?: number }
   | { type: "handoff"; from: string; to: string; task: string; expected_version?: number }
   | { type: "combine"; summary: string; expected_version?: number }
+  | { type: "conflict"; from: string; text: string; expected_version?: number }
+  | { type: "accept"; actor: string; expected_version?: number }
   | { type: "pause"; expected_version?: number }
   | { type: "resume"; expected_version?: number }
   | { type: "cancel"; expected_version?: number };
@@ -104,12 +126,16 @@ export function createStarsMission(input: {
     team_scope: input.team_scope,
     version: 1,
     goal: input.goal?.trim() ?? "",
+    brief: null,
     stage: "briefing",
     agents: [],
     dependencies: {},
     messages: [],
     results: [],
     combined_result: null,
+    accepted_by_human: null,
+    stop_reason: null,
+    conflicts: [],
     question: null,
     history: ["mission created"]
   };
@@ -127,6 +153,8 @@ const check = (state: StarsMission, expected?: number) => {
 };
 
 const agent = (state: StarsMission, id: string) => state.agents.find((a) => a.id === id);
+const terminal = (state: StarsMission) =>
+  state.stage === "completed" || state.stage === "cancelled";
 
 /** A context scope is granted only when it is the team scope or listed on the
  * agent. Human/owner scopes are never inferred from mission membership. */
@@ -154,7 +182,17 @@ export function applyStarsMissionEvent(
     case "brief": {
       const goal = event.goal.trim();
       if (!goal) return state;
-      return bump({ ...state, goal, stage: "planning", question: null }, "goal accepted");
+      const brief: MissionBrief | null =
+        event.author && event.responsible
+          ? {
+              author: event.author,
+              responsible: event.responsible,
+              input_versions: [...(event.input_versions ?? [])],
+              criteria: [...(event.criteria ?? [])],
+              acceptance_rules: [...(event.acceptance_rules ?? [])]
+            }
+          : state.brief;
+      return bump({ ...state, goal, brief, stage: "planning", question: null }, "goal accepted");
     }
     case "clarify": {
       const question = event.question.trim();
@@ -223,6 +261,7 @@ export function applyStarsMissionEvent(
       );
     }
     case "result": {
+      if (terminal(state)) return state;
       const member = agent(state, event.agent_id);
       if (!member || member.status === "failed" || member.status === "replaced") return state;
       return bump(
@@ -246,6 +285,7 @@ export function applyStarsMissionEvent(
       );
     }
     case "verify": {
+      if (terminal(state)) return state;
       if (!state.results.some((r) => r.agent_id === event.agent_id)) return state;
       return bump(
         {
@@ -334,6 +374,27 @@ export function applyStarsMissionEvent(
           question: null
         },
         "senior combined the verified results"
+      );
+    }
+    case "conflict": {
+      if (terminal(state)) return state;
+      return bump(
+        {
+          ...state,
+          stage: "paused",
+          stop_reason: "CONFLICTING_INSTRUCTIONS",
+          conflicts: [...state.conflicts, { from: event.from, text: event.text, at: now }],
+          question: `Нужно решение ответственного: конфликт указаний от ${event.from}`
+        },
+        `conflict recorded from ${event.from}`
+      );
+    }
+    case "accept": {
+      if (state.stage !== "completed" || !state.results.some((r) => r.verification === "verified"))
+        return state;
+      return bump(
+        { ...state, accepted_by_human: event.actor },
+        `human acceptance by ${event.actor}`
       );
     }
     case "pause":

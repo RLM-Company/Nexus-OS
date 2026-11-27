@@ -132,4 +132,88 @@ describe("Stars team mission", () => {
       applyStarsMissionEvent(state, { type: "pause", expected_version: state.version + 1 })
     ).toThrow(StarsMissionConflict);
   });
+
+  it("records the accepted brief with author, responsible and input versions", () => {
+    const state = applyStarsMissionEvent(createStarsMission({ id: "m-2", team_scope: "team" }), {
+      type: "brief",
+      goal: "Сравнить поставщиков",
+      author: "owner",
+      responsible: "manager",
+      input_versions: ["materials@3", "policy@2"],
+      criteria: ["доставка отдельной строкой"],
+      acceptance_rules: ["проверка старшим"]
+    });
+    expect(state.brief).toEqual({
+      author: "owner",
+      responsible: "manager",
+      input_versions: ["materials@3", "policy@2"],
+      criteria: ["доставка отдельной строкой"],
+      acceptance_rules: ["проверка старшим"]
+    });
+    expect(brief("без метаданных").brief).toBeNull();
+  });
+
+  it("records conflicting instructions separately from human acceptance", () => {
+    let state = plan(brief("Сравнить предложения"));
+    state = applyStarsMissionEvent(state, {
+      type: "conflict",
+      from: "sub-b",
+      text: "Изменить приоритет"
+    });
+    expect(state.stage).toBe("paused");
+    expect(state.stop_reason).toBe("CONFLICTING_INSTRUCTIONS");
+    expect(state.question?.toLowerCase()).toContain("нужно решение");
+    expect(state.conflicts[0]).toMatchObject({ from: "sub-b" });
+    expect(applyStarsMissionEvent(state, { type: "accept", actor: "owner" })).toBe(state);
+    state = applyStarsMissionEvent(state, { type: "resume" });
+    state = applyStarsMissionEvent(state, {
+      type: "result",
+      agent_id: "a1",
+      summary: "извлечено"
+    });
+    state = applyStarsMissionEvent(state, {
+      type: "verify",
+      agent_id: "a1",
+      verdict: "verified",
+      verified_by: "senior"
+    });
+    state = applyStarsMissionEvent(state, { type: "combine", summary: "итог" });
+    const accepted = applyStarsMissionEvent(state, { type: "accept", actor: "owner" });
+    expect(accepted.accepted_by_human).toBe("owner");
+    expect(accepted.results[0]!.verified_by).toBe("senior");
+    expect(accepted.stop_reason).toBe("CONFLICTING_INSTRUCTIONS");
+  });
+
+  it("does not revive a completed mission with a late result or verification", () => {
+    let state = plan(brief("Сравнить предложения"));
+    state = applyStarsMissionEvent(state, {
+      type: "result",
+      agent_id: "a1",
+      summary: "извлечено"
+    });
+    state = applyStarsMissionEvent(state, {
+      type: "verify",
+      agent_id: "a1",
+      verdict: "verified",
+      verified_by: "manager"
+    });
+    state = applyStarsMissionEvent(state, { type: "combine", summary: "итог" });
+    expect(state.stage).toBe("completed");
+    const completed = state;
+    expect(
+      applyStarsMissionEvent(state, {
+        type: "result",
+        agent_id: "a1",
+        summary: "поздний результат"
+      })
+    ).toBe(completed);
+    expect(
+      applyStarsMissionEvent(state, {
+        type: "verify",
+        agent_id: "a1",
+        verdict: "rejected",
+        verified_by: "manager"
+      })
+    ).toBe(completed);
+  });
 });

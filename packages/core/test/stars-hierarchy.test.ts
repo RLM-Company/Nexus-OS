@@ -3,10 +3,12 @@ import {
   accountableManager,
   changeStarsOrg,
   createStarsOrg,
+  delegateMission,
   resolveAssignee,
   StarsOrgConflict,
   type StarsOrgNode
-} from "../src/stars-hierarchy.js";
+} from "../src/index.js";
+import { applyStarsMissionEvent, createStarsMission } from "../src/stars-mission.js";
 
 const at = "2026-11-27T10:00:00.000Z";
 const node = (
@@ -68,5 +70,39 @@ describe("Stars org hierarchy", () => {
     expect(resolveAssignee(second, "sub-a", "research")?.id).toBe("carol");
     expect(first.nodes.find((n) => n.id === "alice")?.status).toBe("active");
     expect(() => changeStarsOrg(second, 1, [])).toThrow("STALE_VERSION");
+  });
+
+  it("delegates through the accountable manager into real WorkDAG node inputs", () => {
+    const org = createStarsOrg("stars-team", roster());
+    let mission = createStarsMission({ id: "m-delegate", team_scope: "stars-team" });
+    mission = applyStarsMissionEvent(mission, {
+      type: "brief",
+      goal: "Сравнить предложения",
+      author: "owner",
+      responsible: "sub-a",
+      input_versions: ["materials@3"],
+      criteria: ["доставка отдельной строкой"],
+      acceptance_rules: ["проверка старшим"]
+    });
+    mission = applyStarsMissionEvent(mission, {
+      type: "plan",
+      agents: [
+        { id: "manager", role: "manager", task: "координировать", context_scopes: [] },
+        { id: "alice", role: "executor", task: "извлечь", context_scopes: [] }
+      ],
+      dependencies: {}
+    });
+    const plan = delegateMission(mission, org, "project-a", { alice: "research" });
+    expect(plan.composition_version).toBe(1);
+    expect(plan.mission_version).toBe(mission.version);
+    expect(plan.nodes).toHaveLength(1);
+    expect(plan.nodes[0]).toMatchObject({ id: "alice", depends_on: [] });
+    expect(plan.nodes[0]!.goal).toContain("materials@3");
+    expect(plan.nodes[0]!.goal).toContain("доставка отдельной строкой");
+    expect(plan.skipped).toEqual([]);
+    // Ambiguous or unauthorized executor is skipped with a visible reason.
+    const blocked = delegateMission(mission, org, "project-a", { alice: "delivery" });
+    expect(blocked.nodes).toEqual([]);
+    expect(blocked.skipped[0]!.reason).toContain("зоне");
   });
 });
