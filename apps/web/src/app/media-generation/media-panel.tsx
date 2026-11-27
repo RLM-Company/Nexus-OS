@@ -428,7 +428,7 @@ export function MediaGenerationPanel({
   prompt: string;
   blockedReason?: string | undefined;
   references?: readonly ChatImageAttachment[];
-  onUseResult?: (id: string) => void;
+  onUseResult?: (item: MediaJob) => void;
   sourceId?: string | undefined;
   onRestoreParameters?: (options: ImageRequestOptions) => void;
   capabilities: MediaCapabilities["capabilities"] | null;
@@ -631,7 +631,7 @@ export function MediaGenerationPanel({
                 Скачать {job.asset?.extension.toUpperCase()}
               </a>
               {onUseResult && canReuse(job) && (
-                <button type="button" onClick={() => onUseResult(job.id)}>
+                <button type="button" onClick={() => onUseResult(job)}>
                   <WorkspaceIcon name="edit" /> Продолжить редактирование
                 </button>
               )}

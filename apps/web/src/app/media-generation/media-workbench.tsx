@@ -24,7 +24,8 @@ export function MediaWorkbench({ surface }: { surface: "images" | "video" | "sou
   const capabilities = useMediaCapabilities();
   const [style, setStyle] = useState("Авто");
   const [duration, setDuration] = useState("5");
-  const [sourceId, setSourceId] = useState<string>();
+  const [source, setSource] = useState<{ id: string; name: string }>();
+  const sourceId = source?.id;
   const [references, setReferences] = useState<Reference[]>([]);
   const refs = useRef<Reference[]>([]);
   const input = useRef<HTMLInputElement>(null);
@@ -113,14 +114,17 @@ export function MediaWorkbench({ surface }: { surface: "images" | "video" | "sou
     },
     [sourceId]
   );
-  const selectSource = useCallback((id: string) => {
+  const selectSource = useCallback((job: MediaJob) => {
     epoch.current++;
     refs.current.forEach((file) => URL.revokeObjectURL(file.url));
     refs.current = [];
     setReferences([]);
     setReading(false);
     setError("");
-    setSourceId(id);
+    setSource({
+      id: job.id,
+      name: `kosmora-${job.id}.${job.asset?.mime === "image/jpeg" ? "jpg" : "png"}`
+    });
   }, []);
   useEffect(() => {
     if (surface !== "images" || capabilities?.image_editing?.ready !== true) return;
@@ -138,7 +142,8 @@ export function MediaWorkbench({ surface }: { surface: "images" | "video" | "sou
           (job.asset?.bytes ?? Infinity) > CHAT_ATTACHMENT_LIMITS.imageBytes
         )
           throw Error();
-        if (!controller.signal.aborted) selectSource(id);
+        if (job.id !== id) throw Error();
+        if (!controller.signal.aborted) selectSource(job);
       })
       .catch(() => {
         if (!controller.signal.aborted) setError("Исходное изображение недоступно для правки.");
@@ -288,10 +293,14 @@ export function MediaWorkbench({ surface }: { surface: "images" | "video" | "sou
                 {reading ? "Проверяем…" : "Добавить референсы"}
                 <small>PNG, JPEG · до 20 МБ</small>
               </button>
-              {sourceId && (
+              {source && (
                 <div>
-                  <img src={mediaAssetUrl(sourceId)} alt="Исходник для правки" width={96} />
-                  <button type="button" onClick={() => setSourceId(undefined)}>
+                  <img src={mediaAssetUrl(source.id)} alt="Исходник для правки" width={96} />
+                  <button
+                    type="button"
+                    aria-label={`Убрать референс ${source.name}`}
+                    onClick={() => setSource(undefined)}
+                  >
                     Убрать исходник
                   </button>
                 </div>

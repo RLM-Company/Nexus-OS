@@ -144,9 +144,29 @@ test("editing a chat image opens Studio with an owned source without generating 
   await page.route("**/api/v1/media/assets/**", (route) =>
     route.fulfill({ contentType: "image/png", body: png })
   );
+  let checked = 0;
+  await page.route(`**/api/v1/media/jobs/${id}`, (route) => {
+    expect(route.request().method()).toBe("GET");
+    checked++;
+    return route.fulfill({
+      json: {
+        id,
+        kind: "image",
+        status: "done",
+        error_code: null,
+        created_at: new Date().toISOString(),
+        asset: { mime: "image/png", extension: "png", bytes: png.length }
+      }
+    });
+  });
   await page.goto(`/?surface=images&reference=${id}`);
   await expect(
     page.getByRole("button", { name: `Убрать референс kosmora-${id}.png`, exact: true })
   ).toBeVisible();
+  await expect(page.getByRole("img", { name: "Исходник для правки" })).toHaveAttribute(
+    "src",
+    "/api/v1/media/assets/" + id
+  );
+  expect(checked).toBe(1);
   expect(posted).toBe(false);
 });
