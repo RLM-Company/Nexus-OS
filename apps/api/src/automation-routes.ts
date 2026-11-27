@@ -27,10 +27,19 @@ const id = Type.String({ minLength: 1, maxLength: 128 });
 const params = Type.Object({ id }, { additionalProperties: false });
 const errorBody = (code: string, message: string) => ({ error: { code, message } });
 
-const CreateTriggerBody = Type.Intersect([
-  CreateAutomationTriggerSchema,
-  Type.Object({ project_id: Type.String({ minLength: 1, maxLength: 160 }) })
-]);
+const CreateTriggerBody = Type.Object(
+  {
+    client_request_id: id,
+    project_id: Type.String({ minLength: 1, maxLength: 160 }),
+    workflow_id: Type.String({ minLength: 1, maxLength: 128 }),
+    definition_version: Type.Integer({ minimum: 1 }),
+    kind: Type.Union([Type.Literal("manual"), Type.Literal("event"), Type.Literal("schedule")]),
+    inputs: CreateAutomationTriggerSchema.properties.inputs,
+    schedule: Type.Optional(CreateAutomationTriggerSchema.properties.schedule),
+    event: Type.Optional(CreateAutomationTriggerSchema.properties.event)
+  },
+  { additionalProperties: false }
+);
 
 export function registerAutomationRoutes(options: {
   app: FastifyInstance;
@@ -42,7 +51,8 @@ export function registerAutomationRoutes(options: {
   identityFor(request: FastifyRequest): IdentityContext;
   nodeBudget?: { max_input_tokens: number; max_output_tokens: number };
 }): void {
-  const { app, store, workflows, projects, identityFor } = options;
+  const { app, store, workflows, projects } = options;
+  const identityFor = (request: FastifyRequest) => options.identityFor(request);
   const runner = new AutomationRunner({
     store,
     workflows,
@@ -66,7 +76,9 @@ export function registerAutomationRoutes(options: {
     } catch (cause) {
       if (cause instanceof AutomationRunError) {
         const conflict = cause.code.startsWith("STALE_") || cause.code === "IDEMPOTENCY_CONFLICT";
-        return reply.code(conflict ? 409 : 400).send(errorBody(cause.code, "Автоматизация отклонена."));
+        return reply
+          .code(conflict ? 409 : 400)
+          .send(errorBody(cause.code, "Автоматизация отклонена."));
       }
       if (
         cause instanceof WorkflowStoreConflict ||
@@ -102,11 +114,26 @@ export function registerAutomationRoutes(options: {
       guard(reply, () => {
         if (!projects.getProject(request.body.project_id, owner(request)))
           return reply.code(404).send(errorBody("PROJECT_NOT_FOUND", "Проект не найден."));
+        const definition = workflows.workflows.get(
+          request.body.project_id,
+          owner(request),
+          request.body.workflow_id
+        );
+        if (!definition)
+          return reply.code(404).send(errorBody("WORKFLOW_NOT_FOUND", "Сценарий не найден."));
+        if (definition.version !== request.body.definition_version)
+          return reply
+            .code(400)
+            .send(errorBody("STALE_WORKFLOW_VERSION", "Версия сценария устарела."));
+        if (definition.archived_at)
+          return reply.code(400).send(errorBody("WORKFLOW_ARCHIVED", "Сценарий в архиве."));
         const { project_id: _projectId, ...input } = request.body;
         void _projectId;
         return reply
           .code(201)
-          .send(store.createTrigger(owner(request), request.body.project_id, actor(request), input));
+          .send(
+            store.createTrigger(owner(request), request.body.project_id, actor(request), input)
+          );
       })
   );
 
@@ -132,7 +159,8 @@ export function registerAutomationRoutes(options: {
     (request, reply) =>
       guard(reply, () => {
         const trigger = store.getTrigger(owner(request), request.params.id);
-        if (!trigger) return reply.code(404).send(errorBody("TRIGGER_NOT_FOUND", "Триггер не найден."));
+        if (!trigger)
+          return reply.code(404).send(errorBody("TRIGGER_NOT_FOUND", "Триггер не найден."));
         return store.controlTrigger(
           owner(request),
           trigger.project_id,
@@ -204,6 +232,15 @@ export function registerAutomationRoutes(options: {
         };
         if (!projects.getProject(body.project_id, owner(request)))
           return reply.code(404).send(errorBody("PROJECT_NOT_FOUND", "Проект не найден."));
+        const definition = workflows.workflows.get(
+          body.project_id,
+          owner(request),
+          body.workflow_id
+        );
+        if (!definition || definition.version !== body.definition_version)
+          return reply
+            .code(400)
+            .send(errorBody("STALE_WORKFLOW_VERSION", "Версия сценария устарела."));
         const trigger = runner.collectEvent(owner(request), body.project_id, actor(request), body);
         return reply.code(201).send({ trigger, dedupe: true });
       })
@@ -240,7 +277,9 @@ export function registerAutomationRoutes(options: {
         if (body.action === "verify_external") {
           const run = store.getRun(owner(request), request.params.id);
           if (!run?.external_action_id)
-            return reply.code(404).send(errorBody("EXTERNAL_ACTION_NOT_FOUND", "Нет внешнего действия."));
+            return reply
+              .code(404)
+              .send(errorBody("EXTERNAL_ACTION_NOT_FOUND", "Нет внешнего действия."));
           const verified = store.verifyExternal(
             owner(request),
             run.external_action_id,
@@ -257,7 +296,7 @@ export function registerAutomationRoutes(options: {
           owner(request),
           request.params.id,
           actor(request),
-          body.action as "pause" | "resume" | "cancel",
+          body.action,
           body.reason
         );
       })
@@ -316,7 +355,12 @@ export function registerAutomationRoutes(options: {
     },
     (request, reply) =>
       guard(reply, () => ({
-        mission_id: runner.starsConsumer(owner(request), request.params.id, actor(request), request.body)
+        mission_id: runner.starsConsumer(
+          owner(request),
+          request.params.id,
+          actor(request),
+          request.body
+        )
       }))
   );
 

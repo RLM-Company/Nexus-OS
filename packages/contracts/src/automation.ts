@@ -59,11 +59,7 @@ export const AutomationTriggerSchema = Type.Object(
     project_id: Type.String({ minLength: 1, maxLength: 160 }),
     workflow_id: Type.String({ minLength: 1, maxLength: 128 }),
     definition_version: Type.Integer({ minimum: 1 }),
-    kind: Type.Union([
-      Type.Literal("manual"),
-      Type.Literal("event"),
-      Type.Literal("schedule")
-    ]),
+    kind: Type.Union([Type.Literal("manual"), Type.Literal("event"), Type.Literal("schedule")]),
     inputs: Type.Record(
       Type.String({ maxLength: 100 }),
       Type.Union([Type.String({ maxLength: 2000 }), Type.Number(), Type.Boolean()])

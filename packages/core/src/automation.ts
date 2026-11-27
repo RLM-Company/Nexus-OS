@@ -1,8 +1,5 @@
 /** Pure automation scheduling helpers. No timers, no model calls, no I/O. */
-export {
-  automationOccurrenceKey,
-  eventDedupeKey
-} from "@cosmora/contracts/automation";
+export { automationOccurrenceKey, eventDedupeKey } from "@cosmora/contracts/automation";
 
 const DAY_MS = 86_400_000;
 const ISO = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
@@ -48,7 +45,10 @@ const localParts = (date: Date, timeZone: string) => {
     hourCycle: "h23"
   });
   const parts = Object.fromEntries(
-    fmt.formatToParts(date).filter((p) => p.type !== "literal").map((p) => [p.type, p.value])
+    fmt
+      .formatToParts(date)
+      .filter((p) => p.type !== "literal")
+      .map((p) => [p.type, p.value])
   ) as Record<string, string>;
   return {
     year: Number(parts.year),
@@ -71,17 +71,23 @@ const fromLocal = (
   minute: number
 ): string => {
   const desired = Date.UTC(year, month - 1, day, hour, minute, 0, 0);
-  const guess = new Date(desired);
-  const actual = localParts(guess, timeZone);
-  let shiftMs =
-    Date.UTC(actual.year, actual.month - 1, actual.day, actual.hour, actual.minute, 0, 0) -
-    desired;
-  // Re-evaluate: the offset may itself change across the DST boundary.
-  const adjusted = new Date(desired - shiftMs);
-  const check = localParts(adjusted, timeZone);
-  shiftMs =
-    Date.UTC(check.year, check.month - 1, check.day, check.hour, check.minute, 0, 0) - desired;
-  return new Date(desired - shiftMs).toISOString();
+  // Iterate to a fixed point: find the UTC instant whose wall-clock fields in
+  // the zone equal the requested local fields. Converges across DST boundaries.
+  let candidate = desired;
+  for (let i = 0; i < 3; i += 1) {
+    const actual = localParts(new Date(candidate), timeZone);
+    const actualUtc = Date.UTC(
+      actual.year,
+      actual.month - 1,
+      actual.day,
+      actual.hour,
+      actual.minute,
+      0,
+      0
+    );
+    candidate += desired - actualUtc;
+  }
+  return new Date(candidate).toISOString();
 };
 
 /** Next UTC instant strictly after `nowIso`, computed from the configured local
@@ -93,7 +99,8 @@ export function nextAutomationDueAt(
   timeZoneOverride?: string
 ): string | null {
   if (spec.mode === "once") return null;
-  const zone = timeZoneOverride && isValidTimeZone(timeZoneOverride) ? timeZoneOverride : spec.time_zone;
+  const zone =
+    timeZoneOverride && isValidTimeZone(timeZoneOverride) ? timeZoneOverride : spec.time_zone;
   const now = Date.parse(nowIso);
   if (!Number.isFinite(now) || !isScheduleSpecValid(spec)) return null;
   const [hour, minute] = spec.local_time.split(":").map(Number) as [number, number];
@@ -102,7 +109,7 @@ export function nextAutomationDueAt(
   const today = localParts(new Date(now), zone);
   const dayOrdinal = (p: { year: number; month: number; day: number }) =>
     Math.floor(Date.UTC(p.year, p.month - 1, p.day) / DAY_MS);
-  let candidateDay = dayOrdinal(start);
+  const candidateDay = dayOrdinal(start);
   const nowDay = dayOrdinal(today);
   // Earliest day whose occurrence is strictly in the future.
   let steps = Math.max(0, Math.floor((nowDay - candidateDay) / stepDays));
@@ -138,5 +145,4 @@ export const formatAutomationDue = (iso: string, timeZone: string): string => {
   }
 };
 
-export const padLocalTime = (hour: number, minute: number): string =>
-  `${pad(hour)}:${pad(minute)}`;
+export const padLocalTime = (hour: number, minute: number): string => `${pad(hour)}:${pad(minute)}`;

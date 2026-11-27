@@ -83,8 +83,10 @@ type ActionRow = {
   updated_at: string;
 };
 
-const triggerView = (row: TriggerRow): AutomationTrigger =>
-  ({
+const triggerView = (row: TriggerRow): AutomationTrigger => {
+  const schedule = row.schedule_json ? (JSON.parse(row.schedule_json) as unknown) : undefined;
+  const event = row.event_json ? (JSON.parse(row.event_json) as unknown) : undefined;
+  return {
     id: row.id,
     owner_id: row.owner_id,
     project_id: row.project_id,
@@ -92,13 +94,14 @@ const triggerView = (row: TriggerRow): AutomationTrigger =>
     definition_version: row.definition_version,
     kind: row.kind,
     inputs: JSON.parse(row.inputs_json) as AutomationTrigger["inputs"],
-    ...(row.schedule_json ? { schedule: JSON.parse(row.schedule_json) } : {}),
-    ...(row.event_json ? { event: JSON.parse(row.event_json) } : {}),
+    ...(schedule !== undefined ? { schedule: schedule as AutomationTrigger["schedule"] } : {}),
+    ...(event !== undefined ? { event: event as AutomationTrigger["event"] } : {}),
     status: row.status,
     created_at: row.created_at,
     updated_at: row.updated_at,
     version: row.version
-  }) as AutomationTrigger;
+  } as AutomationTrigger;
+};
 const runView = (row: RunRow): AutomationRun => ({
   id: row.id,
   trigger_id: row.trigger_id,
@@ -172,9 +175,7 @@ export class AutomationStore {
     return automationTransaction(this.sql, () => {
       this.assertWritable(owner, project);
       const previous = this.sql
-        .prepare(
-          "SELECT * FROM automation_triggers WHERE owner_id=? AND client_request_id=?"
-        )
+        .prepare("SELECT * FROM automation_triggers WHERE owner_id=? AND client_request_id=?")
         .get(owner, input.client_request_id) as TriggerRow | undefined;
       const eventKey = input.event
         ? eventDedupeKey(input.event.source, input.event.event_id)
@@ -187,7 +188,8 @@ export class AutomationStore {
           previous.kind === input.kind &&
           previous.inputs_json === JSON.stringify(input.inputs) &&
           previous.event_key === eventKey &&
-          (previous.schedule_json ?? null) === (input.schedule ? JSON.stringify(input.schedule) : null);
+          (previous.schedule_json ?? null) ===
+            (input.schedule ? JSON.stringify(input.schedule) : null);
         if (!same) throw new AutomationRunError("IDEMPOTENCY_CONFLICT");
         return triggerView(previous);
       }
@@ -236,18 +238,20 @@ export class AutomationStore {
     return row ? triggerView(row) : null;
   }
 
-  listTriggers(
-    owner: string,
-    project?: string,
-    workflowId?: string
-  ): AutomationTrigger[] {
+  listTriggers(owner: string, project?: string, workflowId?: string): AutomationTrigger[] {
     const rows = this.sql
       .prepare(
         `SELECT * FROM automation_triggers
          WHERE owner_id=? AND (? IS NULL OR project_id=?) AND (? IS NULL OR workflow_id=?)
          ORDER BY updated_at DESC, id LIMIT 200`
       )
-      .all(owner, project ?? null, project ?? null, workflowId ?? null, workflowId ?? null) as TriggerRow[];
+      .all(
+        owner,
+        project ?? null,
+        project ?? null,
+        workflowId ?? null,
+        workflowId ?? null
+      ) as TriggerRow[];
     return rows.map(triggerView);
   }
 
@@ -263,8 +267,7 @@ export class AutomationStore {
       const current = this.getTrigger(owner, id);
       if (!current || current.project_id !== project)
         throw new AutomationRunError("TRIGGER_NOT_FOUND");
-      if (current.version !== expectedVersion)
-        throw new AutomationRunError("STALE_TRIGGER");
+      if (current.version !== expectedVersion) throw new AutomationRunError("STALE_TRIGGER");
       const result = this.sql
         .prepare(
           `UPDATE automation_triggers SET status=?, version=?, updated_at=?
@@ -350,12 +353,24 @@ export class AutomationStore {
          WHERE owner_id=? AND (? IS NULL OR project_id=?) AND (? IS NULL OR trigger_id=?)
          ORDER BY created_at DESC, id LIMIT 200`
       )
-      .all(owner, project ?? null, project ?? null, triggerId ?? null, triggerId ?? null) as RunRow[];
+      .all(
+        owner,
+        project ?? null,
+        project ?? null,
+        triggerId ?? null,
+        triggerId ?? null
+      ) as RunRow[];
     return rows.map(runView);
   }
 
   /** Lease claim. Only one server process can own a queued run until the lease expires. */
-  claim(owner: string, id: string, leaseOwner: string, leaseMs: number, actor: string): AutomationRun | null {
+  claim(
+    owner: string,
+    id: string,
+    leaseOwner: string,
+    leaseMs: number,
+    actor: string
+  ): AutomationRun | null {
     return automationTransaction(this.sql, () => {
       this.assertWritable(owner, this.runProject(owner, id));
       const current = this.getRun(owner, id);
@@ -402,7 +417,13 @@ export class AutomationStore {
           )
           .run(now, row.id, owner, row.version);
         if (result.changes) {
-          this.recordEvent(row.id, owner, "lease_expired", "Lease expired; queued for recovery", actor);
+          this.recordEvent(
+            row.id,
+            owner,
+            "lease_expired",
+            "Lease expired; queued for recovery",
+            actor
+          );
           recovered.push(this.getRun(owner, row.id)!);
         }
       }
@@ -448,9 +469,13 @@ export class AutomationStore {
           (next.dagId === undefined ? current.dag_id : next.dagId) ?? null,
           (next.nodeId === undefined ? current.node_id : next.nodeId) ?? null,
           (next.leaseOwner === undefined ? current.lease_owner : next.leaseOwner) ?? null,
-          (next.leaseExpiresAt === undefined ? current.lease_expires_at : next.leaseExpiresAt) ?? null,
-          (next.confirmationId === undefined ? current.confirmation_id : next.confirmationId) ?? null,
-          (next.externalActionId === undefined ? current.external_action_id : next.externalActionId) ?? null,
+          (next.leaseExpiresAt === undefined ? current.lease_expires_at : next.leaseExpiresAt) ??
+            null,
+          (next.confirmationId === undefined ? current.confirmation_id : next.confirmationId) ??
+            null,
+          (next.externalActionId === undefined
+            ? current.external_action_id
+            : next.externalActionId) ?? null,
           id,
           owner,
           expectedVersion
@@ -467,7 +492,13 @@ export class AutomationStore {
     });
   }
 
-  recordEvent(runId: string, owner: string, kind: string, reason: string, actor: string): AutomationEvent {
+  recordEvent(
+    runId: string,
+    owner: string,
+    kind: string,
+    reason: string,
+    actor: string
+  ): AutomationEvent {
     const id = randomUUID(),
       at = this.now();
     this.sql
@@ -565,7 +596,11 @@ export class AutomationStore {
         .run(this.now(), id, owner);
       if (!result.changes) throw new AutomationRunError("EXTERNAL_ACTION_TERMINAL");
       const run = this.getRun(owner, current.run_id);
-      if (run && run.external_action_id === id && run.status !== "cancelled")
+      if (
+        run &&
+        !["cancelled", "succeeded", "failed", "unknown_external"].includes(run.status) &&
+        (!run.external_action_id || run.external_action_id === id)
+      )
         this.transition(owner, run.id, run.version, {
           status: "unknown_external",
           reason: "External result unknown; verification required before any retry",
@@ -589,7 +624,9 @@ export class AutomationStore {
         throw new AutomationRunError("EXTERNAL_ACTION_TERMINAL");
       const status = verified ? "verified" : "failed";
       this.sql
-        .prepare("UPDATE automation_external_actions SET status=?, updated_at=? WHERE id=? AND owner_id=?")
+        .prepare(
+          "UPDATE automation_external_actions SET status=?, updated_at=? WHERE id=? AND owner_id=?"
+        )
         .run(status, this.now(), id, owner);
       const run = this.getRun(owner, current.run_id);
       if (run && run.status === "unknown_external")
@@ -604,7 +641,12 @@ export class AutomationStore {
   }
 
   /** Persist an advanced schedule due date without touching status. */
-  updateScheduleDue(owner: string, id: string, expectedVersion: number, nextDueAt: string): AutomationTrigger {
+  updateScheduleDue(
+    owner: string,
+    id: string,
+    expectedVersion: number,
+    nextDueAt: string
+  ): AutomationTrigger {
     return automationTransaction(this.sql, () => {
       const current = this.getTrigger(owner, id);
       if (!current || !current.schedule) throw new AutomationRunError("TRIGGER_NOT_FOUND");
@@ -624,8 +666,7 @@ export class AutomationStore {
   controlRun(owner: string, id: string, input: AutomationRunControl, actor: string): AutomationRun {
     const current = this.getRun(owner, id);
     if (!current) throw new AutomationRunError("RUN_NOT_FOUND");
-    if (current.version !== input.expected_version)
-      throw new AutomationRunError("STALE_RUN");
+    if (current.version !== input.expected_version) throw new AutomationRunError("STALE_RUN");
     const status: Record<string, AutomationRunStatus> = {
       run: "queued",
       pause: "queued",

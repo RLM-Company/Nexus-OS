@@ -2,7 +2,6 @@ import { randomUUID } from "node:crypto";
 import {
   validateWorkflowInputs,
   renderWorkflowNodes,
-  type IdentityContext,
   type WorkflowDefinitionInput,
   type AutomationTrigger,
   type AutomationRun,
@@ -11,7 +10,7 @@ import {
 import { nextAutomationDueAt, isScheduleSpecValid, createStarsMission } from "@cosmora/core";
 import {
   AutomationRunError,
-  AutomationStore,
+  type AutomationStore,
   ManagerWorkConflict,
   WorkDagConflict,
   WorkflowStoreConflict,
@@ -62,8 +61,7 @@ export class AutomationRunner {
 
   /** Resolve the next server-side due instant for a schedule. */
   nextDue(trigger: AutomationTrigger): string | null {
-    if (!trigger.schedule || !isScheduleSpecValid(trigger.schedule))
-      return null;
+    if (!trigger.schedule || !isScheduleSpecValid(trigger.schedule)) return null;
     if (trigger.schedule.mode === "once") return trigger.schedule.due_at;
     return nextAutomationDueAt(trigger.schedule, this.now());
   }
@@ -72,20 +70,39 @@ export class AutomationRunner {
    * caller passes the scheduled due_at snapshot that was actually collected. */
   collectSchedule(owner: string, triggerId: string, actor: string): AutomationRun | null {
     const trigger = this.options.store.getTrigger(owner, triggerId);
-    if (!trigger || trigger.kind !== "schedule" || trigger.status !== "enabled" || !trigger.schedule)
+    if (
+      !trigger ||
+      trigger.kind !== "schedule" ||
+      trigger.status !== "enabled" ||
+      !trigger.schedule
+    )
       return null;
     const due = trigger.schedule.due_at;
     if (Date.parse(due) > Date.parse(this.now())) return null;
     this.definitionFor(trigger);
-    const run = this.options.store.enqueue(owner, trigger.project_id, trigger, actor, { dueAt: due });
+    const run = this.options.store.enqueue(owner, trigger.project_id, trigger, actor, {
+      dueAt: due
+    });
     const next = nextAutomationDueAt(trigger.schedule, this.now());
     if (next !== null) {
-      const updated = this.options.store.controlTrigger(owner, trigger.project_id, triggerId, trigger.version, "enabled");
+      const updated = this.options.store.controlTrigger(
+        owner,
+        trigger.project_id,
+        triggerId,
+        trigger.version,
+        "enabled"
+      );
       // Persist the next due date via a minimal direct statement: this is a
       // schedule field update, not a status change.
       this.options.store.updateScheduleDue(owner, triggerId, updated.version, next);
     } else {
-      this.options.store.controlTrigger(owner, trigger.project_id, triggerId, trigger.version, "cancelled");
+      this.options.store.controlTrigger(
+        owner,
+        trigger.project_id,
+        triggerId,
+        trigger.version,
+        "cancelled"
+      );
     }
     return run;
   }
@@ -129,14 +146,18 @@ export class AutomationRunner {
         bindings
       }
     });
-    if (trigger.kind === "event")
-      this.options.store.enqueue(owner, project, trigger, actor);
+    if (trigger.kind === "event") this.options.store.enqueue(owner, project, trigger, actor);
     return trigger;
   }
 
   /** Execute one claimed run: build the WorkDag from the immutable snapshot and
    * apply the confirmation gate before any plan starts. */
-  start(owner: string, runId: string, actor: string, leaseOwner = `automation-${process.pid}`): StartResult {
+  start(
+    owner: string,
+    runId: string,
+    actor: string,
+    leaseOwner = `automation-${process.pid}`
+  ): StartResult {
     const claimed = this.options.store.claim(owner, runId, leaseOwner, LEASE_MS, actor);
     if (!claimed) throw new AutomationRunError("RUN_NOT_CLAIMABLE");
     const trigger = this.options.store.getTrigger(owner, claimed.trigger_id);
@@ -208,7 +229,12 @@ export class AutomationRunner {
 
   /** Owner approval for a confirmation gate. Approval records an external
    * action with a stable key; the connector may verify it but never blind-retry. */
-  confirm(owner: string, runId: string, actor: string, connector = "manual"): AutomationExternalAction | null {
+  confirm(
+    owner: string,
+    runId: string,
+    actor: string,
+    connector = "manual"
+  ): AutomationExternalAction | null {
     const run = this.options.store.getRun(owner, runId);
     if (!run || run.status !== "awaiting_confirmation")
       throw new AutomationRunError("NOT_AWAITING_CONFIRMATION");
@@ -231,7 +257,13 @@ export class AutomationRunner {
   }
 
   /** Pause/resume/cancel go through the same DAG control as manual work. */
-  control(owner: string, runId: string, actor: string, action: "pause" | "resume" | "cancel", reason?: string): AutomationRun {
+  control(
+    owner: string,
+    runId: string,
+    actor: string,
+    action: "pause" | "resume" | "cancel",
+    reason?: string
+  ): AutomationRun {
     const run = this.options.store.getRun(owner, runId);
     if (!run) throw new AutomationRunError("RUN_NOT_FOUND");
     if (action === "cancel") {
@@ -266,7 +298,14 @@ export class AutomationRunner {
   }
 
   /** Mark an external attempt with an unknown outcome. No blind retry. */
-  unknownExternal(owner: string, runId: string, connector: string, operation: string, operationKey: string, actor = "system"): AutomationExternalAction {
+  unknownExternal(
+    owner: string,
+    runId: string,
+    connector: string,
+    operation: string,
+    operationKey: string,
+    actor = "system"
+  ): AutomationExternalAction {
     const run = this.options.store.getRun(owner, runId);
     if (!run) throw new AutomationRunError("RUN_NOT_FOUND");
     const action = this.options.store.externalAction({
@@ -278,6 +317,13 @@ export class AutomationRunner {
       operationKey,
       ...(run.confirmation_id !== undefined ? { confirmationId: run.confirmation_id } : {})
     });
+    if (run.external_action_id !== action.id)
+      this.options.store.transition(owner, run.id, run.version, {
+        status: run.status,
+        reason: "External action bound to run",
+        externalActionId: action.id,
+        actor
+      });
     return this.options.store.markExternalUnknown(owner, action.id, actor);
   }
 
