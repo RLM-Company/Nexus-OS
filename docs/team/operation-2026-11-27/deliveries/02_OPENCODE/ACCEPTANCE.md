@@ -36,7 +36,7 @@ node scripts/run-games-sites-scenario.mjs --out=<dedicated temp dir>
 прежние ZIP-конвенции. Без платной модели, сети и Electron GUI; WebGL-компонент
 проверен сборкой приложения. Игра «Ночная смена» не использовалась.
 
-CI PR #693 на head `833352c6`: `Verify monorepo`, `Browser acceptance` и
+CI PR #693 на head `8dc31b56`: `Verify monorepo`, `Browser acceptance` и
 `Code sandbox isolation` — SUCCESS; `mergeStateStatus: CLEAN`. WebGL-режим
 добавлен отдельной кнопкой, не ломая прежний изолированный статический просмотр
 OBJ-lite, который проверяется e2e `game-development.spec.ts:332`.
