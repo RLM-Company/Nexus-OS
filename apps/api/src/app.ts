@@ -255,6 +255,10 @@ export interface AppDependencies {
   googleDrive?: GoogleDriveRuntime;
   /** Owner-approved HTTP connector transport; injected by the server, never from descriptors. */
   httpConnectorTransport?: ConnectorTransport;
+  /** Fixture-only Calendar/Mail transports for controlled test contours. */
+  fixtureServiceAdapters?: {
+    transports: Record<string, ConnectorTransport>;
+  };
   computerControl?: { enabled: boolean };
   runtimeClock?: RuntimeClock;
   config: ServerConfig;
@@ -906,7 +910,8 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
     },
     dependencies.googleDrive,
     dependencies.httpConnectorTransport,
-    dependencies.githubIntegration
+    dependencies.githubIntegration,
+    dependencies.fixtureServiceAdapters
   );
   if (dependencies.projectStore) registerApexRoutes(app, dependencies.projectStore, identityFor);
   if (dependencies.payStore)

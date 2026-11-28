@@ -6,6 +6,7 @@ import {
   ConnectorRegistry,
   connectorToolId,
   FIRST_SLICE_CONNECTORS,
+  FIXTURE_SERVICE_CONNECTORS,
   GuardedToolRuntime,
   type ConnectorTransport
 } from "@cosmora/tool-runtime";
@@ -23,7 +24,8 @@ export function registerConnectorRoutes(
   mcp: McpRouteDependencies,
   drive?: GoogleDriveRuntime,
   http?: ConnectorTransport,
-  github?: GithubIntegration
+  github?: GithubIntegration,
+  fixtures?: { transports: Record<string, ConnectorTransport> }
 ) {
   const runtime = policyStore ? new GuardedToolRuntime(policyStore) : undefined;
   const registry = runtime ? new ConnectorRegistry(runtime) : undefined;
@@ -45,6 +47,11 @@ export function registerConnectorRoutes(
       connectorToolId("github", "read_file"),
       githubConnectorTransports(github)
     );
+  if (fixtures) {
+    registry?.register(FIXTURE_SERVICE_CONNECTORS);
+    for (const [toolId, transport] of Object.entries(fixtures.transports))
+      registry?.bindTransport(toolId, transport);
+  }
   registerMcpRoutes(app, registry, { ...mcp, policy: policyStore });
   registry?.bindToRuntime();
 

@@ -29,6 +29,8 @@ PR #691. Точный code head `742f07f168fcd06544fb370496c76cf1258dd6af`.
   OAuth/transport и тестовыми аккаунтами.
 - Живые OAuth/отправки и VPS — отдельно по разрешённым действиям пользователя.
 - Web-e2e для отзыва во время открытого экрана и fenced downloads — отдельный срез.
+  Повторная попытка 28.11: production webServer снова timeout 180s при next build
+  в изолированном worktree; CI Browser acceptance для SHA 742f07f1 green.
 - Полный A/B/C сценарий с персональными агентами — зависит от Harness 1.
 
 ## Следующий шаг

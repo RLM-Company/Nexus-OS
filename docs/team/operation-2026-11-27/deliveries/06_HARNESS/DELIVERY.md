@@ -4,8 +4,8 @@
 Изолированный worktree: `.../ds3-collaboration`.
 База: `3af92583ccc8ceb49f44c0b8633955f40feaf59f`.
 PR: #691 (https://github.com/RLM-Company/Nexus-OS/pull/691).
-Точный code head: `742f07f168fcd06544fb370496c76cf1258dd6af`; doc head `6b56eaea84843e8d1f7b7c08213cb72add1c93d7`.
-CI code head: Browser/Verify/Sandbox/identity all pass — run `46052675473`.
+Точный code head: `7762f34631cab404ae74ca38b27d0f471bbb21fe`; doc head `84d2364ea836f06de16845aec480e235fcfc17f6`.
+CI code head: Browser/Verify/Sandbox/identity all pass — run ?? head `84d2364e`: Verify/Browser/Sandbox/identity ??? success.
 
 ## Фактические возможности
 
@@ -33,9 +33,14 @@ tool-runtime 4 passed, typecheck 0, check-secrets green.
 
 ## Что НЕ проверено / blocker
 
-- Calendar, Mail, Docs/Sheets, Telegram, Slack: готовых production-адаптеров в базе
-  `3af92583` нет; фикстуры не выдаются за подключённые сервисы. Нужны отдельные
-  срезы с реальными OAuth/transport и тестовыми аккаунтами.
+- Calendar/Mail: добавлены **только fixture-адаптеры** (`calendar-fixture`,
+  `mail-fixture`) с полным lifecycle в контролируемом транспорте: connect →
+  capabilities → read → prepare (с подтверждением) → journal → revoke. Они не
+  используют OAuth, токены, внешние аккаунты или реальные отправки и не выдаются
+  за подключённые production-сервисы. Для живых Connector нужен отдельный срез с
+  тестовыми аккаунтами и разрешёнными действиями пользователя.
+- Docs/Sheets, Telegram, Slack: готовых production-адаптеров в базе `3af92583`
+  нет; фикстуры для них не создавались.
 - Живые OAuth, реальные отправки/изменения внешних данных и VPS — отдельные
   разрешённые действия пользователя; не выполнялись.
 - Полный A/B/C e2e с персональными агентами зависит от Harness 1; граница личных

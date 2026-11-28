@@ -110,10 +110,69 @@ const httpApi: ConnectorDescriptor = parseConnectorDescriptor({
   ]
 });
 
+/** Fixture-safe Calendar contract. A real OAuth/calendar transport is not
+ * present in this base; descriptor never claims a connection. */
+const calendarFixture: ConnectorDescriptor = parseConnectorDescriptor({
+  id: "calendar-fixture",
+  version: 1,
+  app: "Calendar (test contour)",
+  implementation: "packages/tool-runtime/src/fixture-service-adapters.ts",
+  auth_kind: "server.token",
+  state: "not_connected",
+  operations: [
+    {
+      id: "read_events",
+      kind: "read",
+      summary: "Read events from a controlled test calendar through the guarded runtime.",
+      capability_ids: ["context.project.read", "integration.private.use"],
+      result_checks: ["fresh_observation"]
+    },
+    {
+      id: "prepare_change",
+      kind: "write",
+      summary: "Prepare an event change; execution requires owner confirmation.",
+      capability_ids: ["integration.private.use", "external.communicate"],
+      result_checks: ["version"]
+    }
+  ]
+});
+
+/** Fixture-safe Mail contract. Sending is separated from preparation. */
+const mailFixture: ConnectorDescriptor = parseConnectorDescriptor({
+  id: "mail-fixture",
+  version: 1,
+  app: "Mail (test contour)",
+  implementation: "packages/tool-runtime/src/fixture-service-adapters.ts",
+  auth_kind: "server.token",
+  state: "not_connected",
+  operations: [
+    {
+      id: "read_messages",
+      kind: "read",
+      summary: "Read messages from a controlled test mailbox through the guarded runtime.",
+      capability_ids: ["context.project.read", "integration.private.use"],
+      result_checks: ["fresh_observation"]
+    },
+    {
+      id: "prepare_send",
+      kind: "write",
+      summary: "Prepare a message; sending requires owner confirmation.",
+      capability_ids: ["integration.private.use", "external.communicate"],
+      result_checks: ["version"]
+    }
+  ]
+});
+
 /** Frozen, validated first-slice catalog; never pretend a grant is connected. */
 export const FIRST_SLICE_CONNECTORS: readonly ConnectorDescriptor[] = Object.freeze([
   github,
   drive,
   office,
   httpApi
+]);
+
+/** Explicit test injection only; never part of the production catalog. */
+export const FIXTURE_SERVICE_CONNECTORS: readonly ConnectorDescriptor[] = Object.freeze([
+  calendarFixture,
+  mailFixture
 ]);

@@ -463,5 +463,11 @@
     "patch": "ds4-research-search-20261127.patch",
     "status": "source_not_received",
     "follow_up_owner": "second_developer_gpt"
+  },
+  "late_delivery": {
+    "pr": 691,
+    "head": "a0f981a0f0078e441bec90d6e7d6bce921d18897",
+    "previous_head": "6cddbd4822fe0e5ab8ff1cac2079f09f378326c8",
+    "disposition": "Calendar and Mail fixture lifecycle accepted only through explicit test injection. Production server does not create these adapters; production catalog excludes them."
   }
 }
