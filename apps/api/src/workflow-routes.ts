@@ -102,7 +102,9 @@ const portable = (d: WorkflowDefinitionInput): WorkflowDefinitionInput => ({
   parameters: d.parameters,
   nodes: d.nodes,
   requirements: d.requirements,
-  expected_results: d.expected_results
+  expected_results: d.expected_results,
+  ...(d.conditions ? { conditions: d.conditions } : {}),
+  ...(d.confirmations ? { confirmations: d.confirmations } : {})
 });
 
 export function registerWorkflowRoutes(options: {

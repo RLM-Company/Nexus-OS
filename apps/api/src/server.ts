@@ -31,6 +31,7 @@ import {
   PolicyStore,
   PatternLibraryStore,
   ScheduledDispatchStore,
+  AutomationStore,
   ProjectCorrectionRuleStore,
   runMigrations,
   upgradeAccountProfileColumns,
@@ -149,6 +150,7 @@ try {
   upgradeAccountProfileColumns(database.sqlite);
   const accountStore = new AccountStore(database.sqlite);
   const scheduledDispatchStore = new ScheduledDispatchStore(database.sqlite);
+  const automationStore = new AutomationStore(database.sqlite);
   const projectCorrectionRuleStore = new ProjectCorrectionRuleStore(database.sqlite);
   const recoveredAccountHolds = accountStore.reconcileKnownCanonicalHolds();
   const modelRuntime = await buildModelRuntime(config, {
@@ -338,6 +340,7 @@ try {
   app = buildApp({
     mcpDiscovery: configuredMcpDiscovery(process.env),
     scheduledDispatchStore,
+    automationStore,
     projectCorrectionRuleStore,
     indexedRecall: semanticIndex,
     semanticRanker,

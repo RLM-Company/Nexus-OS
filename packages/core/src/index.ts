@@ -38,6 +38,7 @@ export * from "./version-change-report.js";
 export * from "./project-knowledge.js";
 export * from "./project-automation.js";
 export * from "./scheduled-dispatch.js";
+export * from "./automation.js";
 export * from "./work-admission-snapshot.js";
 export * from "./work-timeline.js";
 export * from "./biz040-field-register.js";

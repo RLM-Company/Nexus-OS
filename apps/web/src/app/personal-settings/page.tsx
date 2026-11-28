@@ -8,6 +8,7 @@ import { Switch, SystemMessage } from "../ui/kosmora-controls";
 import { ModelPicker } from "../ui/model-picker";
 import { InterfaceSettings } from "./interface-settings";
 import { ScheduledDispatches } from "./scheduled-dispatches";
+import { AutomationSettings } from "./automation-settings";
 import { LocalVaultSettings } from "./local-vault-settings";
 import { GoogleDriveSettings } from "./google-drive-settings";
 
@@ -309,6 +310,7 @@ export default function PersonalSettings() {
           </section>
           <InterfaceSettings />
           <ScheduledDispatches />
+          <AutomationSettings />
           <LocalVaultSettings />
           <GoogleDriveSettings />
           <div id="account-data">

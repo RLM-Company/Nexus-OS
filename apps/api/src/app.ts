@@ -169,6 +169,8 @@ import {
   type UsageStore
 } from "@cosmora/db";
 import type { ScheduledDispatchStore } from "@cosmora/db";
+import type { AutomationStore } from "@cosmora/db";
+import { registerAutomationRoutes } from "./automation-routes.js";
 import type { ProjectCorrectionRuleStore, ProjectSourceStore } from "@cosmora/db";
 import {
   GatewayRunError,
@@ -271,6 +273,7 @@ export interface AppDependencies {
   accountModel?: { provider: string; model: string; capabilities: Record<string, boolean> };
   database: DatabaseHealth;
   scheduledDispatchStore?: ScheduledDispatchStore;
+  automationStore?: AutomationStore;
   projectCorrectionRuleStore?: ProjectCorrectionRuleStore;
   identityStore?: IdentityStore;
   registration?: RegistrationOptions;
@@ -1010,6 +1013,21 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
       chats: dependencies.generalChatStore,
       projects: dependencies.projectStore,
       ...(dependencies.managerWorkStore ? { works: dependencies.managerWorkStore } : {}),
+      identityFor
+    });
+  if (
+    dependencies.automationStore &&
+    dependencies.projectStore &&
+    dependencies.managerWorkStore &&
+    dependencies.managerWorkCoordinator
+  )
+    registerAutomationRoutes({
+      app,
+      store: dependencies.automationStore,
+      workflows: dependencies.managerWorkStore,
+      projects: dependencies.projectStore,
+      coordinator: dependencies.managerWorkCoordinator,
+      ...(dependencies.starsMissionStore ? { stars: dependencies.starsMissionStore } : {}),
       identityFor
     });
   if (projectCorrectionRuleStore)

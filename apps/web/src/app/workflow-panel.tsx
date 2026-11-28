@@ -647,6 +647,146 @@ export function WorkflowPanel({ projectId }: { projectId: string }) {
                   </div>
                 </div>
               ))}
+              <h4>Условия и подтверждения</h4>
+              <p>
+                Условия проверяются по неизменяемому снимку версии. Подтверждение указывается перед
+                внешним действием и не заменяет разрешение пользователя.
+              </p>
+              {(draft.conditions ?? []).map((condition, index) => (
+                <div key={condition.id} className={styles.entry}>
+                  <label>
+                    Описание условия
+                    <input
+                      value={condition.description}
+                      maxLength={400}
+                      onChange={(e) =>
+                        update({
+                          conditions: (draft.conditions ?? []).map((c, i) =>
+                            i === index ? { ...c, description: e.target.value } : c
+                          )
+                        })
+                      }
+                    />
+                  </label>
+                  <label>
+                    Вид условия
+                    <select
+                      value={condition.kind}
+                      onChange={(e) =>
+                        update({
+                          conditions: (draft.conditions ?? []).map((c, i) =>
+                            i === index
+                              ? {
+                                  ...c,
+                                  kind: e.target.value as (typeof c)["kind"],
+                                  ...(e.target.value === "source_allowlist"
+                                    ? { file_ids: c.file_ids ?? [] }
+                                    : {})
+                                }
+                              : c
+                          )
+                        })
+                      }
+                    >
+                      <option value="source_allowlist">Разрешённые файлы</option>
+                      <option value="result_check">Проверка результата</option>
+                      <option value="review">Ручная проверка</option>
+                    </select>
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      update({ conditions: (draft.conditions ?? []).filter((_, i) => i !== index) })
+                    }
+                  >
+                    Удалить условие {index + 1}
+                  </button>
+                </div>
+              ))}
+              <button
+                type="button"
+                disabled={(draft.conditions?.length ?? 0) >= 16}
+                onClick={() =>
+                  update({
+                    conditions: [
+                      ...(draft.conditions ?? []),
+                      {
+                        id: `c${crypto.randomUUID().slice(0, 8)}`,
+                        description: "Новое условие",
+                        kind: "result_check"
+                      }
+                    ]
+                  })
+                }
+              >
+                Добавить условие
+              </button>
+              {(draft.confirmations ?? []).map((confirmation, index) => (
+                <div key={confirmation.id} className={styles.entry}>
+                  <label>
+                    Внешнее действие
+                    <input
+                      value={confirmation.external_action}
+                      maxLength={400}
+                      onChange={(e) =>
+                        update({
+                          confirmations: (draft.confirmations ?? []).map((c, i) =>
+                            i === index ? { ...c, external_action: e.target.value } : c
+                          )
+                        })
+                      }
+                    />
+                  </label>
+                  <label>
+                    Шаг
+                    <select
+                      value={confirmation.node_id}
+                      onChange={(e) =>
+                        update({
+                          confirmations: (draft.confirmations ?? []).map((c, i) =>
+                            i === index ? { ...c, node_id: e.target.value } : c
+                          )
+                        })
+                      }
+                    >
+                      {draft.nodes.map((n) => (
+                        <option key={n.id} value={n.id}>
+                          {n.title}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      update({
+                        confirmations: (draft.confirmations ?? []).filter((_, i) => i !== index)
+                      })
+                    }
+                  >
+                    Удалить подтверждение {index + 1}
+                  </button>
+                </div>
+              ))}
+              <button
+                type="button"
+                disabled={(draft.confirmations?.length ?? 0) >= 16 || draft.nodes.length === 0}
+                onClick={() =>
+                  update({
+                    confirmations: [
+                      ...(draft.confirmations ?? []),
+                      {
+                        id: `q${crypto.randomUUID().slice(0, 8)}`,
+                        node_id: draft.nodes[0]!.id,
+                        description: "Подтверждение внешнего действия",
+                        external_action: "Описание действия"
+                      }
+                    ]
+                  })
+                }
+              >
+                Добавить подтверждение
+              </button>
               <div className={styles.actions}>
                 <button
                   type="button"
