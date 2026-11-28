@@ -1,0 +1,46 @@
+{
+  "passed": true,
+  "suite": "koswork-games-sites-scenario",
+  "at": "2026-11-27T15:01:31.056Z",
+  "base": "real edit modules + real three.js scene + real site validator + verified ZIP round-trip",
+  "checks": [
+    {
+      "name": "01 create a new 3D game and a sales site from one dataset",
+      "status": "pass",
+      "detail": "game blocks=1, site blocks=2"
+    },
+    {
+      "name": "02 edit game mechanic (launch mode and source) without losing model",
+      "status": "pass",
+      "detail": "launch=canvas2d_worker, auto_start=true"
+    },
+    {
+      "name": "03 edit scene object transform; original model vertices preserved",
+      "status": "pass",
+      "detail": "rotation=0.8,1.4 scale=2, camera/light/material applied, vertices unchanged"
+    },
+    {
+      "name": "04 edit one site block; other blocks and resources stay byte-identical",
+      "status": "pass",
+      "detail": "features updated, hero and poster.png preserved"
+    },
+    {
+      "name": "05 save + export ZIP with verified paths, unzip and reopen same sources",
+      "status": "pass",
+      "detail": "zip bytes=1970, sha256=a837333db665"
+    },
+    {
+      "name": "06 bad resource / unsupported format / empty block are refused",
+      "status": "pass",
+      "detail": "bad name, script html and non-obj model rejected"
+    }
+  ],
+  "artifact": {
+    "file": "games-sites-export.zip",
+    "sha256": "a837333db66501bc002700f3fe82563234ff46feef97a91c4e766ef1f5964407"
+  },
+  "limits": [
+    "No paid model, network or Electron GUI used; scene is built and validated in Node, WebGL component is exercised by project build.",
+    "Owner-tested 'Ночная смена' game was not reused."
+  ]
+}
