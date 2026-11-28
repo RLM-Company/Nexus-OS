@@ -39,9 +39,11 @@ const mapMediaRouteError = (reply: FastifyReply, error: unknown, fallbackCode: s
     return bad(reply, 400, error.code, error.reason);
   }
   const code = error instanceof Error ? error.message : fallbackCode;
-  if (code === "MEDIA_SOURCE_NOT_FOUND") return bad(reply, 404, code);
+  if (code === "MEDIA_SOURCE_NOT_FOUND" || code === "STORYBOARD_SCENE_NOT_FOUND")
+    return bad(reply, 404, code);
   if (code === "CONSENT_REQUIRED") return bad(reply, 403, code);
-  if (code === "MEDIA_BUSY" || code === "IDEMPOTENCY_CONFLICT") return bad(reply, 409, code);
+  if (code === "MEDIA_BUSY" || code === "IDEMPOTENCY_CONFLICT" || code === "STORYBOARD_CONFLICT")
+    return bad(reply, 409, code);
   if (
     code === "MEDIA_LIMIT" ||
     (error as { code?: unknown } | null)?.code === "USAGE_LIMIT_EXCEEDED"
@@ -51,6 +53,7 @@ const mapMediaRouteError = (reply: FastifyReply, error: unknown, fallbackCode: s
   if (
     code === "TEXT_REQUIRED" ||
     code === "IMAGE_REFERENCES_INVALID" ||
+    code === "CREATIVE_OPTIONS_INVALID" ||
     code === "REQUEST_ID_CONFLICT" ||
     code === "INVALID_CLIENT_REQUEST_ID" ||
     code === "AUDIO_SIZE_INVALID" ||
@@ -65,8 +68,8 @@ const mapMediaRouteError = (reply: FastifyReply, error: unknown, fallbackCode: s
   return bad(reply, fallbackCode === "TRANSCRIPTION_FAILED" ? 400 : 503, fallbackCode);
 };
 
-/** Audio is already bounded and verified by the store before serving a single byte range. */
-function audioRange(value: string, size: number) {
+/** Media is already bounded and verified by the store before serving a single byte range. */
+function mediaRange(value: string, size: number) {
   const match = /^bytes=(\d{0,16})-(\d{0,16})$/.exec(value);
   if (!match || (!match[1] && !match[2])) return null;
   const first = match[1] ? Number(match[1]) : Math.max(0, size - Number(match[2]));
@@ -103,10 +106,10 @@ export function registerMediaRoutes(
     capabilities: {
       ...service.capabilities(),
       image_region_editing: unsupported,
-      video_generation: unsupported,
+      video_generation: service.creativeCapability("video"),
       video_scene_regeneration: unsupported,
-      sound_effects: unsupported,
-      music_generation: unsupported
+      sound_effects: service.creativeCapability("sfx"),
+      music_generation: service.creativeCapability("music")
     },
     browser: {
       speech_recognition: "client-detected",
@@ -160,6 +163,97 @@ export function registerMediaRoutes(
   app.get("/api/v1/media/jobs", (request) => ({
     items: service.list(identityFor(request).owner_id)
   }));
+
+  app.post<{
+    Body: {
+      kind: "sfx" | "music";
+      prompt: string;
+      duration_seconds: number;
+      instrumental?: boolean;
+      explicit_paid_consent: boolean;
+      client_request_id?: string;
+    };
+  }>(
+    "/api/v1/media/creative-audio",
+    {
+      validatorCompiler: TypeBoxValidatorCompiler,
+      schema: {
+        body: Type.Object(
+          {
+            kind: Type.Union([Type.Literal("sfx"), Type.Literal("music")]),
+            prompt: Type.String({ minLength: 1, maxLength: 1800 }),
+            duration_seconds: Type.Integer({ minimum: 1, maximum: 60 }),
+            instrumental: Type.Optional(Type.Boolean()),
+            explicit_paid_consent: Type.Boolean(),
+            client_request_id: Type.Optional(Type.String({ minLength: 1, maxLength: 128 }))
+          },
+          { additionalProperties: false }
+        )
+      }
+    },
+    (request, reply) => {
+      const body = request.body;
+      try {
+        return reply
+          .code(202)
+          .send(
+            service.enqueueCreativeAudio(
+              identityFor(request).owner_id,
+              body.kind,
+              body.prompt,
+              body.duration_seconds,
+              body.instrumental ?? false,
+              body.explicit_paid_consent,
+              extractHeaderRequestId(request)
+            )
+          );
+      } catch (error) {
+        return mapMediaRouteError(reply, error, "MEDIA_FAILURE");
+      }
+    }
+  );
+
+  app.post<{
+    Body: Parameters<MediaService["enqueueVideo"]>[1] & { client_request_id?: string };
+  }>(
+    "/api/v1/media/video",
+    {
+      validatorCompiler: TypeBoxValidatorCompiler,
+      schema: {
+        body: Type.Object(
+          {
+            prompt: Type.String({ minLength: 1, maxLength: 1800 }),
+            duration_seconds: Type.Integer({ minimum: 3, maximum: 15 }),
+            aspect_ratio: Type.Union([Type.Literal("16:9"), Type.Literal("9:16")]),
+            explicit_paid_consent: Type.Boolean(),
+            client_request_id: Type.Optional(Type.String({ minLength: 1, maxLength: 128 })),
+            scene: Type.Optional(
+              Type.Object(
+                {
+                  id: Type.String({ format: "uuid" }),
+                  version: Type.Integer({ minimum: 1, maximum: 12 })
+                },
+                { additionalProperties: false }
+              )
+            )
+          },
+          { additionalProperties: false }
+        )
+      }
+    },
+    (request, reply) => {
+      try {
+        const job = service.enqueueVideo(
+          identityFor(request).owner_id,
+          request.body,
+          extractHeaderRequestId(request)
+        );
+        return reply.code(202).send(job);
+      } catch (error) {
+        return mapMediaRouteError(reply, error, "MEDIA_FAILURE");
+      }
+    }
+  );
 
   app.post(
     "/api/v1/media/images",
@@ -388,10 +482,10 @@ export function registerMediaRoutes(
           "Content-Disposition",
           `attachment; filename="kosmora-${request.params.id}.${asset.extension}"`
         );
-      if (asset.mime.startsWith("audio/")) {
+      if (asset.mime.startsWith("audio/") || asset.mime === "video/mp4") {
         reply.header("Accept-Ranges", "bytes");
         if (request.headers.range && !request.headers["if-range"]) {
-          const selected = audioRange(request.headers.range, asset.bytes.length);
+          const selected = mediaRange(request.headers.range, asset.bytes.length);
           if (!selected)
             return reply.code(416).header("Content-Range", `bytes */${asset.bytes.length}`).send();
           return reply

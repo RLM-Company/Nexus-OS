@@ -30,14 +30,23 @@ export async function generateChatImage(
   owner: string,
   prompt: string,
   signal: AbortSignal,
-  references: readonly ChatImageAttachment[] = []
+  references: readonly ChatImageAttachment[] = [],
+  runId?: string
 ): Promise<string> {
   if (prompt.length > 2000) throw new ChatImageError("IMAGE_PROMPT_TOO_LONG");
   if (!service.capabilities().image_generation.ready) throw new ChatImageError("MEDIA_UNAVAILABLE");
   // Consent is scoped to the explicit user request, never a background suggestion.
   if (references.length && !service.capabilities().image_editing.ready)
     throw new ChatImageError("IMAGE_REFERENCES_UNSUPPORTED");
-  const job = service.enqueue(owner, "image", prompt, true, references);
+  signal.throwIfAborted();
+  const job = service.enqueue(
+    owner,
+    "image",
+    prompt,
+    true,
+    runId ? { client_request_id: `chat-image:${runId}` } : {},
+    references
+  );
   const cancel = () => {
     service.cancel(job.id, owner);
   };

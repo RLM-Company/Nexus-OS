@@ -1,7 +1,12 @@
 import { EnvironmentSecretResolver, loadServerConfig } from "@cosmora/config";
 import { configuredMcpDiscovery } from "./mcp-discovery.js";
 import { WORK_EXECUTION_CONCURRENCY } from "@cosmora/contracts";
-import { RuntimeClock } from "@cosmora/model-gateway";
+import {
+  ElevenLabsMediaAdapter,
+  GeminiVideoMediaAdapter,
+  RuntimeClock,
+  validGeminiVideoProject
+} from "@cosmora/model-gateway";
 import {
   AgentBlueprintStore,
   DocumentLibraryStore,
@@ -56,6 +61,7 @@ import { AccountStore } from "./account-settings/account-store.js";
 import { loadModelRegistryDocument } from "./model-runtime.js";
 import { ResearchStore } from "./research/research-store.js";
 import { MediaService } from "./media/media-service.js";
+import { runChatStudio } from "./media/chat-studio.js";
 import { generateChatImage } from "./media/chat-images.js";
 import { AccountMediaBudget } from "./media/account-media-budget.js";
 import { resolve } from "node:path";
@@ -244,7 +250,19 @@ try {
     runner: configuredCodeAgentExecutor(),
     ownerBudget: sharedBudget
   });
+  const elevenLabsCredential = process.env.KOSMORA_MEDIA_ELEVENLABS_API_KEY?.trim();
+  const videoProject = process.env.KOSMORA_MEDIA_GOOGLE_VIDEO_PROJECT?.trim();
+  const videoCredential = process.env.KOSMORA_MEDIA_GOOGLE_VIDEO_ACCESS_TOKEN?.trim();
   const mediaService = new MediaService({
+    ...(process.env.KOSMORA_MEDIA_GOOGLE_VIDEO_ENABLED === "true" &&
+    videoProject &&
+    validGeminiVideoProject(videoProject) &&
+    videoCredential
+      ? { video: new GeminiVideoMediaAdapter(videoProject, videoCredential) }
+      : {}),
+    ...(process.env.KOSMORA_MEDIA_ELEVENLABS_ENABLED === "true" && elevenLabsCredential
+      ? { creativeAudio: new ElevenLabsMediaAdapter(elevenLabsCredential) }
+      : {}),
     imageEditingEnabled: process.env.KOSMORA_MEDIA_EDIT_ENABLED === "true",
     ownerBudget: new AccountMediaBudget(
       accountStore,
@@ -461,8 +479,9 @@ try {
     logger: app.log
   });
   generalChatBackgroundCoordinator = new GeneralChatBackgroundRunCoordinator({
-    imageGeneration: (owner, prompt, signal, references) =>
-      generateChatImage(mediaService, owner, prompt, signal, references),
+    studio: (owner, run, prompt, signal) => runChatStudio(mediaService, owner, run, prompt, signal),
+    imageGeneration: (owner, prompt, signal, references, run) =>
+      generateChatImage(mediaService, owner, prompt, signal, references, run),
     search: new WebSearch(process.env.WEB_SEARCH_ORIGIN),
     store: generalChatStore,
     modelGateway: modelRuntime.gateway,

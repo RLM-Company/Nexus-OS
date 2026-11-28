@@ -1,20 +1,15 @@
 import { randomUUID } from "node:crypto";
-import type {
-  PresentationWorkReference,
-  PresentationWorkSource
+import {
+  parsePresentationVisual,
+  type PresentationSlide,
+  type PresentationWorkReference,
+  type PresentationWorkSource
 } from "@cosmora/contracts/presentation-package";
 import type { DatabaseSync } from "node:sqlite";
 
 export type SlideLayout = "title" | "content" | "two-column" | "quote";
 export type PresentationTheme = "paper" | "night" | "ocean";
-export type PresentationSlide = {
-  id: string;
-  layout: SlideLayout;
-  title: string;
-  body: string;
-  aside: string;
-  notes: string;
-};
+export type { PresentationSlide } from "@cosmora/contracts/presentation-package";
 export type PresentationSummary = {
   id: string;
   title: string;
@@ -103,6 +98,14 @@ export function validatePresentation(input: unknown): asserts input is {
       !text(slide.notes, 4000)
     )
       throw new PresentationError("INVALID_DECK");
+    if (slide.visual !== undefined) {
+      if (slide.layout !== "content") throw new PresentationError("INVALID_DECK");
+      try {
+        parsePresentationVisual(slide.visual);
+      } catch {
+        throw new PresentationError("INVALID_DECK");
+      }
+    }
     ids.add(slide.id);
   }
   if (Buffer.byteLength(JSON.stringify(value.slides), "utf8") > 300_000)

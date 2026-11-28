@@ -1,14 +1,10 @@
-import type { PresentationWorkSource } from "@cosmora/contracts/presentation-package";
+import type {
+  PresentationSlide,
+  PresentationWorkSource
+} from "@cosmora/contracts/presentation-package";
 export type Layout = "title" | "content" | "two-column" | "quote";
 export type Theme = "paper" | "night" | "ocean";
-export type Slide = {
-  id: string;
-  layout: Layout;
-  title: string;
-  body: string;
-  aside: string;
-  notes: string;
-};
+export type Slide = PresentationSlide;
 export type Deck = {
   id: string;
   title: string;

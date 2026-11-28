@@ -8,7 +8,7 @@ test("saves, accepts, revises and downloads a text storyboard through Studio and
   await page.goto("/?surface=video");
   const board = page.getByRole("region", { name: "Раскадровка" });
   const description = page.getByRole("textbox", { name: "Описание сцены" });
-  await expect(board.getByRole("button", { name: "Сгенерировать видео" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Сгенерировать видео" })).toBeDisabled();
   await description.fill("Камера приближается к станции");
   let writes = 0;
   await page.route("**/api/v1/media/storyboard", async (route) => {

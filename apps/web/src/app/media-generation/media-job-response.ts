@@ -16,7 +16,12 @@ function isValidMediaJobSummary(value: unknown): boolean {
   return (
     typeof item.id === "string" &&
     /^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/i.test(item.id) &&
-    (item.kind === "image" || item.kind === "speech" || item.kind === "transcription") &&
+    (item.kind === "image" ||
+      item.kind === "speech" ||
+      item.kind === "transcription" ||
+      item.kind === "sfx" ||
+      item.kind === "music" ||
+      item.kind === "video") &&
     (item.status === "queued" ||
       item.status === "running" ||
       item.status === "done" ||

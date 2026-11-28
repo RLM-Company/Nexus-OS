@@ -1,3 +1,4 @@
+import type { ChatStudioKind } from "./media/chat-studio.js";
 import type { DatabaseSync } from "node:sqlite";
 import { GeneralChatStore, type StoredGeneralChatMessage } from "@cosmora/db";
 
@@ -46,8 +47,25 @@ export class GeneralChatRuntimeStore extends GeneralChatStore {
     return Number(result.changes) === 1;
   }
   completeImageRun(runId: string, ownerId: string, assetId: string): boolean {
+    return this.completeMediaRun(runId, ownerId, "image", assetId);
+  }
+
+  completeStudioRun(
+    runId: string,
+    ownerId: string,
+    result: { kind: ChatStudioKind; id: string }
+  ): boolean {
+    return this.completeMediaRun(runId, ownerId, result.kind, result.id);
+  }
+
+  private completeMediaRun(
+    runId: string,
+    ownerId: string,
+    kind: "image" | ChatStudioKind,
+    assetId: string
+  ): boolean {
     if (!/^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/i.test(assetId))
-      throw new Error("Invalid image asset ID");
+      throw new Error("Invalid media asset ID");
     this.#runtimeSqlite.exec("BEGIN IMMEDIATE");
     try {
       const run = this.getRun(runId, ownerId);
@@ -56,18 +74,22 @@ export class GeneralChatRuntimeStore extends GeneralChatStore {
         return false;
       }
       const now = new Date().toISOString();
-      const image = `![Сгенерированное изображение](/api/v1/media/assets/${assetId})`;
+      const url = `/api/v1/media/assets/${assetId}`;
+      const content =
+        kind === "image"
+          ? `![Сгенерированное изображение](${url})`
+          : `[${{ video: "Открыть видео", speech: "Прослушать речь", sfx: "Прослушать звуковой эффект", music: "Прослушать музыку" }[kind]}](${url}) · [Скачать файл](${url}?download=1)`;
       const changed = this.#runtimeSqlite
         .prepare(
           "UPDATE general_chat_messages SET content=?,status='completed',updated_at=? WHERE run_id=? AND role='assistant' AND status='streaming'"
         )
-        .run(image, now, runId);
-      if (Number(changed.changes) !== 1) throw new Error("Missing image response");
+        .run(content, now, runId);
+      if (Number(changed.changes) !== 1) throw new Error("Missing media response");
       this.#runtimeSqlite
         .prepare(
-          "UPDATE general_chat_runs SET status='succeeded',provider='media',model_resolved='image_generation',updated_at=? WHERE id=?"
+          "UPDATE general_chat_runs SET status='succeeded',provider='media',model_resolved=?,updated_at=? WHERE id=?"
         )
-        .run(now, runId);
+        .run(kind === "image" ? "image_generation" : `studio_${kind}`, now, runId);
       this.#runtimeSqlite
         .prepare("UPDATE general_chats SET updated_at=? WHERE id=? AND owner_id=?")
         .run(now, run.chat_id, ownerId);

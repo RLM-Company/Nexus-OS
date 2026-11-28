@@ -479,6 +479,21 @@ const displayedGeneralContent = (message: LocalChatMessage): string | null => {
       : message.error_code === "IMAGE_PROMPT_TOO_LONG"
         ? "Сократите описание изображения до 2000 символов."
         : "Не удалось создать изображение. Автоматического повторного списания не было; можно повторить запрос вручную.";
+  if (message.status === "failed" && message.error_code?.startsWith("STUDIO_")) {
+    return (
+      (
+        {
+          STUDIO_COMMAND_INVALID:
+            "Проверьте команду Studio, её параметры и отметку --paid:. Команды не принимают вложения.",
+          STUDIO_UNAVAILABLE: "Провайдер этой операции Studio сейчас недоступен.",
+          STUDIO_BUSY: "Другая задача Studio выполняется. Проверьте историю.",
+          STUDIO_OUTCOME_UNKNOWN:
+            "Исход операции у провайдера неизвестен. Проверьте историю Studio перед повторным запуском.",
+          STUDIO_GENERATION_FAILED: "Studio не смогла получить файл. Проверьте историю."
+        } as Record<string, string>
+      )[message.error_code] ?? "Не удалось выполнить команду Studio."
+    );
+  }
   if (message.status === "failed" && message.error_code === "MEDIA_UNAVAILABLE")
     return "Генерация изображений сейчас недоступна. Текстовый чат продолжает работать.";
   if (message.status === "cancelled") return "Ответ остановлен владельцем.";
