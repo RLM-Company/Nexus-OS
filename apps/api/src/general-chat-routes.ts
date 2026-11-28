@@ -52,7 +52,7 @@ import { EmergencyStopActivatedError, type RuntimeMetrics } from "./operations.j
 import type { AccountStore } from "./account-settings/account-store.js";
 import { ownerIdentityPrompt } from "./account-settings/owner-identity.js";
 import type { WebSearch } from "./web-search.js";
-import { applyKosmoraActions, ChatActionError } from "./kosmora-actions.js";
+import { applyKosmoraActions, ChatActionError, searchSourcesMarkdown } from "./kosmora-actions.js";
 import { projectChatContext } from "./project-chat-context.js";
 import {
   QuotaExceededError,
@@ -771,10 +771,18 @@ export const registerGeneralChatRoutes = (options: GeneralChatRouteOptions): voi
       const mainHolds = new Map<number, string>();
       const stopHeartbeat = startChatStreamHeartbeat(reply.raw);
       try {
+        let searchSources = "";
         let modelRequest = options.chat.buildRequest({
           chatId: run.chat_id,
           runId: run.id,
-          messages: await applyKosmoraActions(conversation, options.search, controller.signal),
+          messages: await applyKosmoraActions(
+            conversation,
+            options.search,
+            controller.signal,
+            (result) => {
+              searchSources = searchSourcesMarkdown(result);
+            }
+          ),
           historyCompaction: options.store.historyCompactionForRun(run.id, identity.owner_id),
           recalledMemory: await (async () => {
             const recalled = await options.store.recallForRunAsync(
@@ -978,6 +986,20 @@ export const registerGeneralChatRoutes = (options: GeneralChatRouteOptions): voi
           sendEvent(reply, {
             type: "message.delta",
             data: { run_id: run.id, message_id: assistant.id, seq: sequence++, delta: translated }
+          });
+        }
+        controller.signal.throwIfAborted();
+        if (searchSources) {
+          options.store.appendAssistantDelta(assistant.id, searchSources);
+          size += searchSources.length;
+          sendEvent(reply, {
+            type: "message.delta",
+            data: {
+              run_id: run.id,
+              message_id: assistant.id,
+              seq: sequence++,
+              delta: searchSources
+            }
           });
         }
         options.store.completeRun(run.id, completed.provider, completed.model, completed.usage, {

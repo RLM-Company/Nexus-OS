@@ -19,7 +19,7 @@ describe("Kosmora actions in the real chat dispatch", () => {
         results: [
           {
             title: "Фикстурный источник",
-            url: "https://example.test/source",
+            url: "https://example.org/source",
             content: "Сумма 19 700 ₽"
           }
         ]
@@ -87,7 +87,7 @@ describe("Kosmora actions in the real chat dispatch", () => {
   it("does not search without the explicit action", async () => {
     const body = await send({});
     expect(body).not.toContain("kosmora_web_search");
-    expect(body).not.toContain("example.test");
+    expect(body).not.toContain("example.org");
   });
 
   it("injects search results and a text action into the same model request", async () => {
@@ -96,7 +96,7 @@ describe("Kosmora actions in the real chat dispatch", () => {
       text_action: { kind: "explain", selection: "19 700 ₽" }
     });
     expect(body).toContain("kosmora_web_search");
-    expect(body).toContain("https://example.test/source");
+    expect(body).toContain("https://example.org/source");
     expect(body).toContain("19 700 ₽");
     expect(body).toContain("kosmora_text_action");
     expect(body).toContain("kind: explain");
@@ -115,6 +115,12 @@ describe("Kosmora actions in the real chat dispatch", () => {
       web_search: true,
       text_action: { kind: "hint" }
     });
+    expect(messages.findLast((m) => m.role === "assistant")?.content).toContain(
+      "[Фикстурный источник](<https://example.org/source>)"
+    );
+    expect(db.sqlite.prepare("SELECT COUNT(*) AS total FROM research_v1_runs").get()).toMatchObject(
+      { total: 0 }
+    );
     expect(latestUser.content).not.toContain("kosmora_");
     expect(
       db.sqlite
