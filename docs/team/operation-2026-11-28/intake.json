@@ -1,0 +1,467 @@
+{
+  "base_sha": "3af92583ccc8ceb49f44c0b8633955f40feaf59f",
+  "branch": "integration/release-intake-20261128",
+  "prs": [
+    {
+      "number": 689,
+      "title": "Studio media generation and editable presentations (wave 07)",
+      "head": "df714f5496488d38376c19eca8446b3af690631c",
+      "base": "main",
+      "checks": [
+        {
+          "name": "identity-tests",
+          "conclusion": "SUCCESS",
+          "url": "https://github.com/RLM-Company/Nexus-OS/actions/runs/46007504480/job/140534299866"
+        },
+        {
+          "name": "Verify monorepo",
+          "conclusion": "SUCCESS",
+          "url": "https://github.com/RLM-Company/Nexus-OS/actions/runs/46007504546/job/140537836409"
+        },
+        {
+          "name": "Browser acceptance",
+          "conclusion": "SUCCESS",
+          "url": "https://github.com/RLM-Company/Nexus-OS/actions/runs/46007504546/job/140537833955"
+        },
+        {
+          "name": "Code sandbox isolation",
+          "conclusion": "SUCCESS",
+          "url": "https://github.com/RLM-Company/Nexus-OS/actions/runs/46007504546/job/140537837143"
+        }
+      ]
+    },
+    {
+      "number": 690,
+      "title": "feat(device): shared native-focus lease with human takeover and two-agent contention",
+      "head": "a440afa630d5ce23e84827028d0fe60e1e720b8b",
+      "base": "main",
+      "checks": [
+        {
+          "name": "Verify monorepo",
+          "conclusion": "SUCCESS",
+          "url": "https://github.com/RLM-Company/Nexus-OS/actions/runs/46009123886/job/140539940498"
+        },
+        {
+          "name": "Test, build and lifecycle-test NSIS installer",
+          "conclusion": "SUCCESS",
+          "url": "https://github.com/RLM-Company/Nexus-OS/actions/runs/46009124034/job/140539877584"
+        },
+        {
+          "name": "Browser acceptance",
+          "conclusion": "SUCCESS",
+          "url": "https://github.com/RLM-Company/Nexus-OS/actions/runs/46009123886/job/140539941019"
+        },
+        {
+          "name": "Live server acceptance smoke",
+          "conclusion": "SUCCESS",
+          "url": "https://github.com/RLM-Company/Nexus-OS/actions/runs/46009124034/job/140542355669"
+        },
+        {
+          "name": "Code sandbox isolation",
+          "conclusion": "SUCCESS",
+          "url": "https://github.com/RLM-Company/Nexus-OS/actions/runs/46009123886/job/140539940892"
+        }
+      ]
+    },
+    {
+      "number": 691,
+      "title": "feat(members): accepted shared projects appear in participant list",
+      "head": "6cddbd4822fe0e5ab8ff1cac2079f09f378326c8",
+      "base": "main",
+      "checks": [
+        {
+          "name": "identity-tests",
+          "conclusion": "SUCCESS",
+          "url": "https://github.com/RLM-Company/Nexus-OS/actions/runs/46055710115/job/140697568485"
+        },
+        {
+          "name": "Verify monorepo",
+          "conclusion": "SUCCESS",
+          "url": "https://github.com/RLM-Company/Nexus-OS/actions/runs/46055710296/job/140697683585"
+        },
+        {
+          "name": "Browser acceptance",
+          "conclusion": "SUCCESS",
+          "url": "https://github.com/RLM-Company/Nexus-OS/actions/runs/46055710296/job/140697683611"
+        },
+        {
+          "name": "Code sandbox isolation",
+          "conclusion": "SUCCESS",
+          "url": "https://github.com/RLM-Company/Nexus-OS/actions/runs/46055710296/job/140697683169"
+        }
+      ]
+    },
+    {
+      "number": 692,
+      "title": "feat(memory): scope-aware selection in ordinary chat requests",
+      "head": "387eceedfb6c3d3f96de1449e0a61c3b05ece4c9",
+      "base": "main",
+      "checks": [
+        {
+          "name": "identity-tests",
+          "conclusion": "SUCCESS",
+          "url": "https://github.com/RLM-Company/Nexus-OS/actions/runs/46026324499/job/140598532087"
+        },
+        {
+          "name": "Verify monorepo",
+          "conclusion": "SUCCESS",
+          "url": "https://github.com/RLM-Company/Nexus-OS/actions/runs/46026325101/job/140598535665"
+        },
+        {
+          "name": "Browser acceptance",
+          "conclusion": "SUCCESS",
+          "url": "https://github.com/RLM-Company/Nexus-OS/actions/runs/46026325101/job/140598535212"
+        },
+        {
+          "name": "Code sandbox isolation",
+          "conclusion": "SUCCESS",
+          "url": "https://github.com/RLM-Company/Nexus-OS/actions/runs/46026325101/job/140598535572"
+        }
+      ]
+    },
+    {
+      "number": 693,
+      "title": "feat(games,sites): editable 3D projects and addressable site resources",
+      "head": "9002c5e2a261433549634c470e4d9d1742d27cee",
+      "base": "main",
+      "checks": [
+        {
+          "name": "Verify monorepo",
+          "conclusion": "SUCCESS",
+          "url": "https://github.com/RLM-Company/Nexus-OS/actions/runs/46033975396/job/140624589962"
+        },
+        {
+          "name": "Browser acceptance",
+          "conclusion": "SUCCESS",
+          "url": "https://github.com/RLM-Company/Nexus-OS/actions/runs/46033975396/job/140624590438"
+        },
+        {
+          "name": "Code sandbox isolation",
+          "conclusion": "SUCCESS",
+          "url": "https://github.com/RLM-Company/Nexus-OS/actions/runs/46033975396/job/140624590340"
+        }
+      ]
+    },
+    {
+      "number": 694,
+      "title": "Stage wave 27: developer API v1 and measured speed profile",
+      "head": "48862d7809e306ada8ac40776c53be02cf434a3c",
+      "base": "main",
+      "checks": [
+        {
+          "name": "identity-tests",
+          "conclusion": "SUCCESS",
+          "url": "https://github.com/RLM-Company/Nexus-OS/actions/runs/46029315511/job/140608755327"
+        },
+        {
+          "name": "Verify monorepo",
+          "conclusion": "SUCCESS",
+          "url": "https://github.com/RLM-Company/Nexus-OS/actions/runs/46029315466/job/140608755946"
+        },
+        {
+          "name": "Browser acceptance",
+          "conclusion": "SUCCESS",
+          "url": "https://github.com/RLM-Company/Nexus-OS/actions/runs/46029315466/job/140608755430"
+        },
+        {
+          "name": "Code sandbox isolation",
+          "conclusion": "SUCCESS",
+          "url": "https://github.com/RLM-Company/Nexus-OS/actions/runs/46029315466/job/140608756033"
+        }
+      ]
+    },
+    {
+      "number": 695,
+      "title": "feat(stars): durable team hierarchy with versioned composition",
+      "head": "9a28426db9552af46dbe021f5de3f024cea70ea0",
+      "base": "main",
+      "checks": [
+        {
+          "name": "identity-tests",
+          "conclusion": "SUCCESS",
+          "url": "https://github.com/RLM-Company/Nexus-OS/actions/runs/46061056300/job/140715143769"
+        },
+        {
+          "name": "Verify monorepo",
+          "conclusion": "SUCCESS",
+          "url": "https://github.com/RLM-Company/Nexus-OS/actions/runs/46061056293/job/140715144489"
+        },
+        {
+          "name": "Browser acceptance",
+          "conclusion": "SUCCESS",
+          "url": "https://github.com/RLM-Company/Nexus-OS/actions/runs/46061056293/job/140715144691"
+        },
+        {
+          "name": "Code sandbox isolation",
+          "conclusion": "SUCCESS",
+          "url": "https://github.com/RLM-Company/Nexus-OS/actions/runs/46061056293/job/140715144089"
+        }
+      ]
+    },
+    {
+      "number": 696,
+      "title": "OpenCode 4 Office CSV workbench",
+      "head": "75b77331e18375290df567d5553af99c3eb9f6ed",
+      "base": "main",
+      "checks": [
+        {
+          "name": "identity-tests",
+          "conclusion": "SUCCESS",
+          "url": "https://github.com/RLM-Company/Nexus-OS/actions/runs/46039899550/job/140644665614"
+        },
+        {
+          "name": "Verify monorepo",
+          "conclusion": "SUCCESS",
+          "url": "https://github.com/RLM-Company/Nexus-OS/actions/runs/46039899574/job/140644665815"
+        },
+        {
+          "name": "Test, build and lifecycle-test NSIS installer",
+          "conclusion": "SUCCESS",
+          "url": "https://github.com/RLM-Company/Nexus-OS/actions/runs/46039899521/job/140644665656"
+        },
+        {
+          "name": "Browser acceptance",
+          "conclusion": "FAILURE",
+          "url": "https://github.com/RLM-Company/Nexus-OS/actions/runs/46039899574/job/140644666296"
+        },
+        {
+          "name": "Live server acceptance smoke",
+          "conclusion": "SUCCESS",
+          "url": "https://github.com/RLM-Company/Nexus-OS/actions/runs/46039899521/job/140646802399"
+        },
+        {
+          "name": "Code sandbox isolation",
+          "conclusion": "SUCCESS",
+          "url": "https://github.com/RLM-Company/Nexus-OS/actions/runs/46039899574/job/140644666173"
+        }
+      ]
+    },
+    {
+      "number": 697,
+      "title": "Resume large document analysis from verified checkpoints (wave 14)",
+      "head": "a6d58c4b220bdc0b870111e0c2b78251b20d449c",
+      "base": "main",
+      "checks": [
+        {
+          "name": "identity-tests",
+          "conclusion": "SUCCESS",
+          "url": "https://github.com/RLM-Company/Nexus-OS/actions/runs/46030641764/job/140613241460"
+        },
+        {
+          "name": "Verify monorepo",
+          "conclusion": "SUCCESS",
+          "url": "https://github.com/RLM-Company/Nexus-OS/actions/runs/46030641792/job/140613381931"
+        },
+        {
+          "name": "Browser acceptance",
+          "conclusion": "SUCCESS",
+          "url": "https://github.com/RLM-Company/Nexus-OS/actions/runs/46030641792/job/140613382138"
+        },
+        {
+          "name": "Code sandbox isolation",
+          "conclusion": "SUCCESS",
+          "url": "https://github.com/RLM-Company/Nexus-OS/actions/runs/46030641792/job/140613381441"
+        }
+      ]
+    },
+    {
+      "number": 698,
+      "title": "Recover and observe versioned task progress (wave 15)",
+      "head": "b6e825cc81c42f8344893eb118305f1c78a8bdf1",
+      "base": "main",
+      "checks": [
+        {
+          "name": "identity-tests",
+          "conclusion": "SUCCESS",
+          "url": "https://github.com/RLM-Company/Nexus-OS/actions/runs/46030001218/job/140611082254"
+        },
+        {
+          "name": "Verify monorepo",
+          "conclusion": "SUCCESS",
+          "url": "https://github.com/RLM-Company/Nexus-OS/actions/runs/46030001447/job/140611216473"
+        },
+        {
+          "name": "Browser acceptance",
+          "conclusion": "SUCCESS",
+          "url": "https://github.com/RLM-Company/Nexus-OS/actions/runs/46030001447/job/140611216591"
+        },
+        {
+          "name": "Code sandbox isolation",
+          "conclusion": "SUCCESS",
+          "url": "https://github.com/RLM-Company/Nexus-OS/actions/runs/46030001447/job/140611216002"
+        }
+      ]
+    },
+    {
+      "number": 699,
+      "title": "fix(api): isolate developer credentials and streaming ownership",
+      "head": "849457ae64f5250b635fdcc0d104cdb702c91f39",
+      "base": "feature/oc3-developer-api-performance-20261127",
+      "checks": [
+        {
+          "name": "identity-tests",
+          "conclusion": "SUCCESS",
+          "url": "https://github.com/RLM-Company/Nexus-OS/actions/runs/46034848648/job/140627540118"
+        },
+        {
+          "name": "Verify monorepo",
+          "conclusion": "SUCCESS",
+          "url": "https://github.com/RLM-Company/Nexus-OS/actions/runs/46034848614/job/140627540833"
+        },
+        {
+          "name": "Browser acceptance",
+          "conclusion": "SUCCESS",
+          "url": "https://github.com/RLM-Company/Nexus-OS/actions/runs/46034848614/job/140627540930"
+        },
+        {
+          "name": "Code sandbox isolation",
+          "conclusion": "SUCCESS",
+          "url": "https://github.com/RLM-Company/Nexus-OS/actions/runs/46034848614/job/140627540496"
+        }
+      ]
+    },
+    {
+      "number": 700,
+      "title": "fix(api): run independent parts concurrently and preserve cancellation/context",
+      "head": "76a911d0bfe1bb77e727edf93cc8dd5bc3c3e39e",
+      "base": "fix/developer-api-boundary-20261127",
+      "checks": [
+        {
+          "name": "identity-tests",
+          "conclusion": "SUCCESS",
+          "url": "https://github.com/RLM-Company/Nexus-OS/actions/runs/46036443037/job/140632937053"
+        },
+        {
+          "name": "Verify monorepo",
+          "conclusion": "SUCCESS",
+          "url": "https://github.com/RLM-Company/Nexus-OS/actions/runs/46036443102/job/140632937635"
+        },
+        {
+          "name": "Browser acceptance",
+          "conclusion": "SUCCESS",
+          "url": "https://github.com/RLM-Company/Nexus-OS/actions/runs/46036443102/job/140632937753"
+        },
+        {
+          "name": "Code sandbox isolation",
+          "conclusion": "SUCCESS",
+          "url": "https://github.com/RLM-Company/Nexus-OS/actions/runs/46036443102/job/140632937882"
+        }
+      ]
+    },
+    {
+      "number": 701,
+      "title": "OpenCode 5: Koscode workbench redaction and full-loop acceptance",
+      "head": "6619a3498a1d9d06fc9ba9095044b84069bb158c",
+      "base": "main",
+      "checks": [
+        {
+          "name": "identity-tests",
+          "conclusion": "SUCCESS",
+          "url": "https://github.com/RLM-Company/Nexus-OS/actions/runs/46053793512/job/140691282697"
+        },
+        {
+          "name": "Verify monorepo",
+          "conclusion": "SUCCESS",
+          "url": "https://github.com/RLM-Company/Nexus-OS/actions/runs/46053793545/job/140691283047"
+        },
+        {
+          "name": "Browser acceptance",
+          "conclusion": "SUCCESS",
+          "url": "https://github.com/RLM-Company/Nexus-OS/actions/runs/46053793545/job/140691283594"
+        },
+        {
+          "name": "Code sandbox isolation",
+          "conclusion": "SUCCESS",
+          "url": "https://github.com/RLM-Company/Nexus-OS/actions/runs/46053793545/job/140691283434"
+        }
+      ]
+    },
+    {
+      "number": 702,
+      "title": "fix(chat): recover durable terminal state and reconnect without duplicate generation",
+      "head": "75370e66422c4508362a1f86b722781776989fee",
+      "base": "main",
+      "checks": [
+        {
+          "name": "identity-tests",
+          "conclusion": "SUCCESS",
+          "url": "https://github.com/RLM-Company/Nexus-OS/actions/runs/46046381072/job/140666574833"
+        },
+        {
+          "name": "Verify monorepo",
+          "conclusion": "SUCCESS",
+          "url": "https://github.com/RLM-Company/Nexus-OS/actions/runs/46046381086/job/140666686862"
+        },
+        {
+          "name": "Browser acceptance",
+          "conclusion": "SUCCESS",
+          "url": "https://github.com/RLM-Company/Nexus-OS/actions/runs/46046381086/job/140666687399"
+        },
+        {
+          "name": "Code sandbox isolation",
+          "conclusion": "SUCCESS",
+          "url": "https://github.com/RLM-Company/Nexus-OS/actions/runs/46046381086/job/140666687313"
+        }
+      ]
+    },
+    {
+      "number": 703,
+      "title": "OC6: repeatable workflows, events and schedules",
+      "head": "69783a883e3595726155330a6e1315338900c730",
+      "base": "main",
+      "checks": [
+        {
+          "name": "identity-tests",
+          "conclusion": "SUCCESS",
+          "url": "https://github.com/RLM-Company/Nexus-OS/actions/runs/46056422449/job/140699904891"
+        },
+        {
+          "name": "Verify monorepo",
+          "conclusion": "SUCCESS",
+          "url": "https://github.com/RLM-Company/Nexus-OS/actions/runs/46056422466/job/140700013417"
+        },
+        {
+          "name": "Browser acceptance",
+          "conclusion": "SUCCESS",
+          "url": "https://github.com/RLM-Company/Nexus-OS/actions/runs/46056422466/job/140700013699"
+        },
+        {
+          "name": "Code sandbox isolation",
+          "conclusion": "SUCCESS",
+          "url": "https://github.com/RLM-Company/Nexus-OS/actions/runs/46056422466/job/140700013781"
+        }
+      ]
+    },
+    {
+      "number": 704,
+      "title": "Koscode: dedicated project/session sidebar and development workspace",
+      "head": "d1bc06ca9ab7156aeb843b1e948433ed5ec8a569",
+      "base": "main",
+      "checks": [
+        {
+          "name": "Verify monorepo",
+          "conclusion": "SUCCESS",
+          "url": "https://github.com/RLM-Company/Nexus-OS/actions/runs/46058444148/job/140706563724"
+        },
+        {
+          "name": "Browser acceptance",
+          "conclusion": "FAILURE",
+          "url": "https://github.com/RLM-Company/Nexus-OS/actions/runs/46058444148/job/140706564085"
+        },
+        {
+          "name": "Code sandbox isolation",
+          "conclusion": "SUCCESS",
+          "url": "https://github.com/RLM-Company/Nexus-OS/actions/runs/46058444148/job/140706564061"
+        }
+      ]
+    }
+  ],
+  "unavailable_source": {
+    "reported_author": "Grok",
+    "scope": "research",
+    "sha": "f23e8756c52522db35f647108199c0cd3a2de578",
+    "patch": "ds4-research-search-20261127.patch",
+    "status": "source_not_received",
+    "follow_up_owner": "second_developer_gpt"
+  }
+}

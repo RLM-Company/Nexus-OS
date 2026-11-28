@@ -1,0 +1,9 @@
+{
+  "source": "https://docs.google.com/document/d/1RbAYl2awQVvzB-ujQk-suJPfMRgb0ZJaMl6UV53F95U/edit",
+  "reported_commit": "1dbe069",
+  "sha256": "f5c78d915ad81c29695111409119509e161797b23a75bde68d0a73b9121b1189",
+  "disposition": "archive_only",
+  "active_delivery_pr": 689,
+  "active_delivery_sha": "df714f5496488d38376c19eca8446b3af690631c",
+  "reason": "Overlapping alternative patch. Active delivery retains integrated provider adapters, file validation, presentation visuals and chat lifecycle; do not apply duplicate registry over it."
+}

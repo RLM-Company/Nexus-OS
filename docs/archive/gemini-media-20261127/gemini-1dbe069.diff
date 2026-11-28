@@ -1,0 +1,1907 @@
+diff --git a/apps/api/src/media/media-budget.ts b/apps/api/src/media/media-budget.ts
+index 7ca5dac..5bfc07b 100644
+--- a/apps/api/src/media/media-budget.ts
++++ b/apps/api/src/media/media-budget.ts
+@@ -4,7 +4,7 @@
+  * persist reserve/reconcile/uncertain in the canonical accounting database.
+  * A missing adapter disables paid media entirely.
+  */
+-export type MediaKind = "image" | "speech" | "transcription";
++export type MediaKind = "image" | "speech" | "transcription" | "video" | "sfx" | "music";
+ export type CanonicalMediaUsage = Readonly<{
+   source: "provider";
+   input_tokens: number;
+diff --git a/apps/api/src/media/media-routes.ts b/apps/api/src/media/media-routes.ts
+index b60f67a..993ea67 100644
+--- a/apps/api/src/media/media-routes.ts
++++ b/apps/api/src/media/media-routes.ts
+@@ -103,10 +103,7 @@ export function registerMediaRoutes(
+     capabilities: {
+       ...service.capabilities(),
+       image_region_editing: unsupported,
+-      video_generation: unsupported,
+-      video_scene_regeneration: unsupported,
+-      sound_effects: unsupported,
+-      music_generation: unsupported
++      video_scene_regeneration: unsupported
+     },
+     browser: {
+       speech_recognition: "client-detected",
+@@ -340,6 +337,139 @@ export function registerMediaRoutes(
+     }
+   );
+ 
++
++  app.post(
++    "/api/v1/media/videos",
++    {
++      schema: {
++        body: Type.Object(
++          {
++            prompt: Type.String({ minLength: 1, maxLength: 2000 }),
++            explicit_paid_consent: Type.Boolean(),
++            client_request_id: Type.Optional(Type.String({ minLength: 1, maxLength: 128 })),
++            size: Type.Optional(Type.String({ minLength: 1, maxLength: 32 })),
++            seconds: Type.Optional(Type.Integer({ minimum: 1, maximum: 60 })),
++            storyboard_scene_id: Type.Optional(Type.String({ minLength: 1, maxLength: 128 }))
++          },
++          { additionalProperties: false }
++        )
++      }
++    },
++    async (request, reply) => {
++      const body = request.body as {
++        prompt: string;
++        explicit_paid_consent: boolean;
++        client_request_id?: string;
++        size?: string;
++        seconds?: number;
++        storyboard_scene_id?: string;
++      };
++      if (!body.prompt || !body.prompt.trim()) return bad(reply, 400, "TEXT_REQUIRED");
++      try {
++        const job = service.enqueueVideo(
++          identityFor(request).owner_id,
++          body.prompt,
++          body.explicit_paid_consent,
++          {
++            client_request_id: extractHeaderRequestId(request),
++            size: body.size,
++            seconds: body.seconds,
++            storyboard_scene_id: body.storyboard_scene_id
++          }
++        );
++        return reply.code(202).send(job);
++      } catch (error) {
++        return mapMediaRouteError(reply, error, "MEDIA_FAILURE");
++      }
++    }
++  );
++
++  app.post(
++    "/api/v1/media/sound-effects",
++    {
++      schema: {
++        body: Type.Object(
++          {
++            text: Type.String({ minLength: 1, maxLength: 500 }),
++            explicit_paid_consent: Type.Boolean(),
++            client_request_id: Type.Optional(Type.String({ minLength: 1, maxLength: 128 })),
++            duration_seconds: Type.Optional(Type.Number()),
++            prompt_influence: Type.Optional(Type.Number())
++          },
++          { additionalProperties: false }
++        )
++      }
++    },
++    async (request, reply) => {
++      const body = request.body as {
++        text: string;
++        explicit_paid_consent: boolean;
++        client_request_id?: string;
++        duration_seconds?: number;
++        prompt_influence?: number;
++      };
++      if (!body.text || !body.text.trim()) return bad(reply, 400, "TEXT_REQUIRED");
++      try {
++        const job = service.enqueueSoundEffect(
++          identityFor(request).owner_id,
++          body.text,
++          body.explicit_paid_consent,
++          {
++            client_request_id: extractHeaderRequestId(request),
++            duration_seconds: body.duration_seconds,
++            prompt_influence: body.prompt_influence
++          }
++        );
++        return reply.code(202).send(job);
++      } catch (error) {
++        return mapMediaRouteError(reply, error, "MEDIA_FAILURE");
++      }
++    }
++  );
++
++  app.post(
++    "/api/v1/media/music",
++    {
++      schema: {
++        body: Type.Object(
++          {
++            prompt: Type.String({ minLength: 1, maxLength: 2000 }),
++            explicit_paid_consent: Type.Boolean(),
++            client_request_id: Type.Optional(Type.String({ minLength: 1, maxLength: 128 })),
++            music_length_ms: Type.Optional(Type.Integer()),
++            force_instrumental: Type.Optional(Type.Boolean())
++          },
++          { additionalProperties: false }
++        )
++      }
++    },
++    async (request, reply) => {
++      const body = request.body as {
++        prompt: string;
++        explicit_paid_consent: boolean;
++        client_request_id?: string;
++        music_length_ms?: number;
++        force_instrumental?: boolean;
++      };
++      if (!body.prompt || !body.prompt.trim()) return bad(reply, 400, "TEXT_REQUIRED");
++      try {
++        const job = service.enqueueMusic(
++          identityFor(request).owner_id,
++          body.prompt,
++          body.explicit_paid_consent,
++          {
++            client_request_id: extractHeaderRequestId(request),
++            music_length_ms: body.music_length_ms,
++            force_instrumental: body.force_instrumental
++          }
++        );
++        return reply.code(202).send(job);
++      } catch (error) {
++        return mapMediaRouteError(reply, error, "MEDIA_FAILURE");
++      }
++    }
++  );
++
+   app.get<{ Params: Id }>(
+     "/api/v1/media/jobs/:id",
+     { schema: { params } },
+@@ -388,7 +518,7 @@ export function registerMediaRoutes(
+           "Content-Disposition",
+           `attachment; filename="kosmora-${request.params.id}.${asset.extension}"`
+         );
+-      if (asset.mime.startsWith("audio/")) {
++      if (asset.mime.startsWith("audio/") || asset.mime.startsWith("video/")) {
+         reply.header("Accept-Ranges", "bytes");
+         if (request.headers.range && !request.headers["if-range"]) {
+           const selected = audioRange(request.headers.range, asset.bytes.length);
+diff --git a/apps/api/src/media/media-service.ts b/apps/api/src/media/media-service.ts
+index fe074c9..fa17037 100644
+--- a/apps/api/src/media/media-service.ts
++++ b/apps/api/src/media/media-service.ts
+@@ -3,8 +3,12 @@ import {
+   MediaCapabilityError,
+   MediaCapabilityRegistry,
+   MediaProviderError,
++  ElevenLabsMediaAdapter,
+   OpenAIMediaAdapter,
+   estimateWavDurationSeconds,
++  validateMusicParameters,
++  validateSoundEffectParameters,
++  validateVideoParameters,
+   validateImageParameters,
+   validateSpeechParameters,
+   validateTranscriptionParameters,
+@@ -16,7 +20,13 @@ import {
+   type SpeechAdapterOptions,
+   type SpeechGenerationParametersInput,
+   type TranscribeAdapterOptions,
+-  type TranscribeAdapterResult
++  type MusicAdapterOptions,
++  type MusicGenerationParametersInput,
++  type SoundEffectAdapterOptions,
++  type SoundEffectParametersInput,
++  type TranscribeAdapterResult,
++  type VideoAdapterOptions,
++  type VideoGenerationParametersInput
+ } from "@cosmora/model-gateway";
+ import {
+   canonicalUsage,
+@@ -71,6 +81,22 @@ export type MediaAdapter = {
+     options?: TranscribeAdapterOptions
+   ): Promise<string>;
+   /** Optional: canonical provider usage and metadata for transcription when provider returns it. */
++  generateVideo?(
++    prompt: string,
++    model: "sora-2",
++    signal: AbortSignal,
++    options?: VideoAdapterOptions
++  ): Promise<GeneratedBinary>;
++  generateSoundEffect?(
++    text: string,
++    signal: AbortSignal,
++    options?: SoundEffectAdapterOptions
++  ): Promise<GeneratedBinary>;
++  generateMusic?(
++    prompt: string,
++    signal: AbortSignal,
++    options?: MusicAdapterOptions
++  ): Promise<GeneratedBinary>;
+   transcribeWithUsage?(
+     bytes: Uint8Array,
+     mime: AudioMime,
+@@ -81,6 +107,9 @@ export type MediaAdapter = {
+ };
+ export interface MediaOptions {
+   imageEditingEnabled?: boolean;
++  videoEnabled?: boolean;
++  elevenLabsApiKey?: string;
++  audioAdapter?: Pick<ElevenLabsMediaAdapter, "generateSoundEffect" | "generateMusic">;
+   baseUrl?: string;
+   directory?: string;
+   apiKey?: string;
+@@ -143,6 +172,8 @@ export class MediaService {
+   private closed = false;
+   private readonly paidEnabled: boolean;
+   private readonly imageEditingEnabled: boolean;
++  private readonly videoEnabled: boolean;
++  private readonly audioAdapter: Pick<ElevenLabsMediaAdapter, "generateSoundEffect" | "generateMusic"> | undefined;
+   private readonly providerId: string;
+   private readonly emergencyStopped: () => boolean;
+   private readonly ownerActive: (ownerId: string) => boolean;
+@@ -152,6 +183,10 @@ export class MediaService {
+     this.store = options.directory ? new MediaFileStore(options.directory) : null;
+     this.paidEnabled = options.paidEnabled === true;
+     this.imageEditingEnabled = options.imageEditingEnabled === true;
++    this.videoEnabled = options.videoEnabled === true;
++    this.audioAdapter =
++      options.audioAdapter ??
++      (options.elevenLabsApiKey ? new ElevenLabsMediaAdapter(options.elevenLabsApiKey, fetch) : undefined);
+     this.providerId = options.baseUrl?.startsWith("https://ru.cheapvibecode.ru/")
+       ? "cheapvibecode"
+       : "openai";
+@@ -209,13 +244,28 @@ export class MediaService {
+     }
+   > & { image_editing: { ready: boolean; model: string | null; reason: string | null } } {
+     const result = {} as ReturnType<MediaService["capabilities"]>;
+-    for (const capability of ["image_generation", "transcription", "speech"] as const) {
++    for (const capability of [
++      "image_generation",
++      "transcription",
++      "speech",
++      "video_generation",
++      "sound_effects",
++      "music_generation"
++    ] as const) {
+       const route = this.registry.route(capability);
++      const hasAdapterForCap =
++        capability === "video_generation"
++          ? Boolean(this.videoEnabled && this.adapter?.generateVideo)
++          : capability === "sound_effects"
++            ? Boolean(this.audioAdapter?.generateSoundEffect || this.adapter?.generateSoundEffect)
++            : capability === "music_generation"
++              ? Boolean(this.audioAdapter?.generateMusic || this.adapter?.generateMusic)
++              : Boolean(this.adapter);
+       const reason = !route
+         ? "REGISTRY_UNAVAILABLE"
+         : !this.store
+           ? "STORAGE_UNAVAILABLE"
+-          : !this.adapter
++          : !hasAdapterForCap
+             ? "CREDENTIAL_UNAVAILABLE"
+             : !this.paidEnabled
+               ? "PAID_EXECUTION_DISABLED"
+@@ -229,12 +279,15 @@ export class MediaService {
+       result[capability] = {
+         ready: reason === null,
+         model: route?.model ?? null,
+-        provider: route ? this.providerId : null,
++        provider: route ? (route.provider === "elevenlabs" ? "elevenlabs" : this.providerId) : null,
+         reason,
+         constraints:
+           route?.imageConstraints ??
+           route?.transcriptionConstraints ??
+           route?.speechConstraints ??
++          route?.videoConstraints ??
++          route?.soundEffectConstraints ??
++          route?.musicConstraints ??
+           null
+       };
+     }
+@@ -286,8 +339,18 @@ export class MediaService {
+     timeoutMs = this.executionTimeoutMs,
+     prepare?: () => void
+   ): MediaJob {
+-    const capability =
+-      kind === "image" ? "image_generation" : kind === "speech" ? "speech" : "transcription";
++    const capability: MediaCapability =
++      kind === "image"
++        ? "image_generation"
++        : kind === "speech"
++          ? "speech"
++          : kind === "video"
++            ? "video_generation"
++            : kind === "sfx"
++              ? "sound_effects"
++              : kind === "music"
++                ? "music_generation"
++                : "transcription";
+     this.check(capability, consent, ownerId);
+ 
+     // Idempotent client_request_id check BEFORE busy/quota checks so retries return the existing job.
+@@ -473,6 +536,170 @@ export class MediaService {
+     );
+   }
+ 
++
++  enqueueVideo(
++    ownerId: string,
++    prompt: string,
++    consent: boolean,
++    requestOptions: VideoGenerationParametersInput & {
++      readonly client_request_id?: string | undefined;
++      readonly storyboard_scene_id?: string | undefined;
++    } = {}
++  ): MediaJob {
++    const route = this.registry.route("video_generation");
++    if (!route || !this.videoEnabled || !this.adapter?.generateVideo) {
++      throw new Error("MEDIA_UNAVAILABLE");
++    }
++    const clientRequestId = normalizeClientRequestId(requestOptions.client_request_id);
++    const trimmed = prompt.trim();
++    if (!trimmed) throw new Error("TEXT_REQUIRED");
++    if (trimmed.length > 2000) throw new MediaCapabilityError("PROMPT_TOO_LONG");
++    const validated = validateVideoParameters(route, requestOptions);
++    const fingerprint = sha256Hex(
++      JSON.stringify({
++        kind: "video",
++        prompt: trimmed,
++        size: validated.size,
++        seconds: validated.seconds,
++        ...(requestOptions.storyboard_scene_id
++          ? { storyboard_scene_id: requestOptions.storyboard_scene_id }
++          : {})
++      })
++    );
++    return this.submit(
++      ownerId,
++      "video",
++      consent,
++      {
++        client_request_id: clientRequestId,
++        request_fingerprint: fingerprint,
++        parameters: {
++          prompt_sha256: sha256Hex(trimmed),
++          prompt_length: trimmed.length,
++          size: validated.size,
++          seconds: validated.seconds,
++          ...(requestOptions.storyboard_scene_id
++            ? { storyboard_scene_id: requestOptions.storyboard_scene_id }
++            : {})
++        }
++      },
++      async (signal) => ({
++        binary: await this.adapter!.generateVideo!(trimmed, "sora-2", signal, {
++          size: validated.size,
++          seconds: validated.seconds
++        })
++      }),
++      120_000
++    );
++  }
++
++  enqueueSoundEffect(
++    ownerId: string,
++    text: string,
++    consent: boolean,
++    requestOptions: SoundEffectParametersInput & {
++      readonly client_request_id?: string | undefined;
++    } = {}
++  ): MediaJob {
++    const route = this.registry.route("sound_effects");
++    const runner = this.audioAdapter?.generateSoundEffect
++      ? (t: string, s: AbortSignal, o: SoundEffectAdapterOptions) =>
++          this.audioAdapter!.generateSoundEffect(t, s, o)
++      : this.adapter?.generateSoundEffect
++        ? (t: string, s: AbortSignal, o: SoundEffectAdapterOptions) =>
++            this.adapter!.generateSoundEffect!(t, s, o)
++        : null;
++    if (!route || !runner) throw new Error("MEDIA_UNAVAILABLE");
++    const clientRequestId = normalizeClientRequestId(requestOptions.client_request_id);
++    const trimmed = text.trim();
++    if (!trimmed) throw new Error("TEXT_REQUIRED");
++    if (trimmed.length > 500) throw new MediaCapabilityError("SOUND_EFFECT_TEXT_TOO_LONG");
++    const validated = validateSoundEffectParameters(route, requestOptions);
++    const fingerprint = sha256Hex(
++      JSON.stringify({
++        kind: "sfx",
++        text: trimmed,
++        duration_seconds: validated.duration_seconds,
++        prompt_influence: validated.prompt_influence
++      })
++    );
++    return this.submit(
++      ownerId,
++      "sfx",
++      consent,
++      {
++        client_request_id: clientRequestId,
++        request_fingerprint: fingerprint,
++        parameters: {
++          text_sha256: sha256Hex(trimmed),
++          text_length: trimmed.length,
++          ...(validated.duration_seconds !== null ? { duration_seconds: validated.duration_seconds } : {}),
++          ...(validated.prompt_influence !== null ? { prompt_influence: validated.prompt_influence } : {})
++        }
++      },
++      async (signal) => ({
++        binary: await runner(trimmed, signal, {
++          duration_seconds: validated.duration_seconds,
++          prompt_influence: validated.prompt_influence
++        })
++      })
++    );
++  }
++
++  enqueueMusic(
++    ownerId: string,
++    prompt: string,
++    consent: boolean,
++    requestOptions: MusicGenerationParametersInput & {
++      readonly client_request_id?: string | undefined;
++    } = {}
++  ): MediaJob {
++    const route = this.registry.route("music_generation");
++    const runner = this.audioAdapter?.generateMusic
++      ? (p: string, s: AbortSignal, o: MusicAdapterOptions) =>
++          this.audioAdapter!.generateMusic(p, s, o)
++      : this.adapter?.generateMusic
++        ? (p: string, s: AbortSignal, o: MusicAdapterOptions) =>
++            this.adapter!.generateMusic!(p, s, o)
++        : null;
++    if (!route || !runner) throw new Error("MEDIA_UNAVAILABLE");
++    const clientRequestId = normalizeClientRequestId(requestOptions.client_request_id);
++    const trimmed = prompt.trim();
++    if (!trimmed) throw new Error("TEXT_REQUIRED");
++    if (trimmed.length > 2000) throw new MediaCapabilityError("PROMPT_TOO_LONG");
++    const validated = validateMusicParameters(route, requestOptions);
++    const fingerprint = sha256Hex(
++      JSON.stringify({
++        kind: "music",
++        prompt: trimmed,
++        music_length_ms: validated.music_length_ms,
++        force_instrumental: validated.force_instrumental
++      })
++    );
++    return this.submit(
++      ownerId,
++      "music",
++      consent,
++      {
++        client_request_id: clientRequestId,
++        request_fingerprint: fingerprint,
++        parameters: {
++          prompt_sha256: sha256Hex(trimmed),
++          prompt_length: trimmed.length,
++          ...(validated.music_length_ms !== null ? { music_length_ms: validated.music_length_ms } : {}),
++          force_instrumental: validated.force_instrumental
++        }
++      },
++      async (signal) => ({
++        binary: await runner(trimmed, signal, {
++          music_length_ms: validated.music_length_ms,
++          force_instrumental: validated.force_instrumental
++        })
++      }),
++      120_000
++    );
++  }
++
+   enqueueTranscription(
+     ownerId: string,
+     bytes: Uint8Array,
+diff --git a/apps/api/src/media/media-store.ts b/apps/api/src/media/media-store.ts
+index 58e6a1c..f07fd57 100644
+--- a/apps/api/src/media/media-store.ts
++++ b/apps/api/src/media/media-store.ts
+@@ -28,7 +28,8 @@ const ALLOWED_ASSET_MIMES: readonly MediaAssetMime[] = [
+   "image/gif",
+   "audio/mpeg",
+   "audio/wav",
+-  "audio/ogg"
++  "audio/ogg",
++  "video/mp4"
+ ];
+ const ALLOWED_ASSET_EXTENSIONS: readonly MediaAssetExtension[] = [
+   "png",
+@@ -37,7 +38,8 @@ const ALLOWED_ASSET_EXTENSIONS: readonly MediaAssetExtension[] = [
+   "gif",
+   "mp3",
+   "wav",
+-  "ogg"
++  "ogg",
++  "mp4"
+ ];
+ 
+ export type MediaJobAsset = {
+@@ -99,7 +101,7 @@ const isJob = (value: unknown): value is MediaJob => {
+     isId(item.id) &&
+     typeof item.owner_id === "string" &&
+     item.owner_id.length > 0 &&
+-    ["image", "speech", "transcription"].includes(item.kind ?? "") &&
++    ["image", "speech", "transcription", "video", "sfx", "music"].includes(item.kind ?? "") &&
+     ["queued", "running", "done", "failed", "cancelled"].includes(item.status ?? "") &&
+     typeof item.created_at === "string" &&
+     typeof item.updated_at === "string" &&
+@@ -191,7 +193,7 @@ export class MediaFileStore {
+         unlinkSync(path);
+         continue;
+       }
+-      const match = /^([a-f0-9-]{36})\.(png|jpg|webp|gif|mp3|wav|ogg)$/i.exec(name);
++      const match = /^([a-f0-9-]{36})\.(png|jpg|webp|gif|mp3|wav|ogg|mp4)$/i.exec(name);
+       if (match) {
+         const job = this.jobs.get(match[1]!);
+         if (job?.status !== "done" || job.asset?.extension !== match[2]?.toLowerCase()) {
+@@ -317,12 +319,14 @@ export class MediaFileStore {
+     if (
+       job.kind === "transcription" ||
+       (job.kind === "image" && !binary.mime.startsWith("image/")) ||
+-      (job.kind === "speech" && !binary.mime.startsWith("audio/"))
++      ((job.kind === "speech" || job.kind === "sfx" || job.kind === "music") && !binary.mime.startsWith("audio/")) ||
++      (job.kind === "video" && !binary.mime.startsWith("video/"))
+     ) {
+       throw new Error("MEDIA_TYPE_MISMATCH");
+     }
+     const sniffed = sniffMediaBinary(binary.bytes);
+-    if (!sniffed || sniffed.mime !== binary.mime || sniffed.extension !== binary.extension) {
++    const mimeOk = sniffed && (sniffed.mime === binary.mime || (binary.mime === "video/mp4" && sniffed.mime === "audio/mp4"));
++    if (!mimeOk || sniffed.extension !== binary.extension) {
+       throw new Error("CORRUPT_MEDIA_BINARY");
+     }
+     const path = join(this.directory, `${id}.${binary.extension}`);
+@@ -405,11 +409,8 @@ export class MediaFileStore {
+         return null;
+       }
+       const sniffed = sniffMediaBinary(bytes);
+-      if (
+-        !sniffed ||
+-        sniffed.mime !== job.asset.mime ||
+-        sniffed.extension !== job.asset.extension
+-      ) {
++      const readMimeOk = sniffed && (sniffed.mime === job.asset.mime || (job.asset.mime === "video/mp4" && sniffed.mime === "audio/mp4"));
++      if (!readMimeOk || sniffed.extension !== job.asset.extension) {
+         return null;
+       }
+       return { bytes, mime: job.asset.mime, extension: job.asset.extension };
+diff --git a/apps/api/test/media-wave-20261127.test.ts b/apps/api/test/media-wave-20261127.test.ts
+new file mode 100644
+index 0000000..119f183
+--- /dev/null
++++ b/apps/api/test/media-wave-20261127.test.ts
+@@ -0,0 +1,329 @@
++import { mkdtempSync, rmSync } from "node:fs";
++import { tmpdir } from "node:os";
++import { join } from "node:path";
++import { afterEach, expect, it, vi } from "vitest";
++import { loadServerConfig } from "@cosmora/config";
++import { ElevenLabsMediaAdapter, OpenAIMediaAdapter } from "@cosmora/model-gateway";
++import { buildApp } from "../src/app.js";
++import { StaticIdentityResolver } from "../src/identity.js";
++import { MediaService } from "../src/media/media-service.js";
++import type { MediaJob } from "../src/media/media-store.js";
++import { generateChatImage, imageCreationPrompt } from "../src/media/chat-images.js";
++
++const redPng = Buffer.from(
++  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC",
++  "base64"
++);
++const mp3Fixture = Buffer.concat([
++  Buffer.from("ID3\x03\x00\x00\x00\x00\x00\x0f", "latin1"),
++  Buffer.from([0xff, 0xfb, 0x90, 0x64, 0x00, 0x00, 0x00, 0x00, 0x11, 0x22, 0x33, 0x44])
++]);
++const mp4Fixture = Buffer.concat([
++  Buffer.from([0x00, 0x00, 0x00, 0x18]),
++  Buffer.from("ftypisom", "ascii"),
++  Buffer.from([0x00, 0x00, 0x02, 0x00]),
++  Buffer.from("isomiso2mp41", "ascii"),
++  Buffer.from("KOSMORA_MP4_CLIP_DATA", "ascii")
++]);
++
++const prefix = "/api/v1/media";
++const consent = { "x-kosmora-media-consent": "explicit" };
++const config = loadServerConfig({ NODE_ENV: "test" });
++const folders: string[] = [];
++const apps: ReturnType<typeof buildApp>[] = [];
++
++afterEach(async () => {
++  for (const app of apps.splice(0)) await app.close();
++  for (const folder of folders.splice(0)) rmSync(folder, { recursive: true, force: true });
++});
++
++function tempDir() {
++  const dir = mkdtempSync(join(tmpdir(), "nexus-wave-20261127-"));
++  folders.push(dir);
++  return dir;
++}
++
++function appFor(owner: string, mediaService: MediaService) {
++  const app = buildApp({
++    config,
++    database: { ping: () => undefined },
++    mediaService,
++    identityResolver: new StaticIdentityResolver({
++      owner_id: owner,
++      actor_id: owner,
++      actor_kind: "owner",
++      session_id: owner,
++      assurance: "local",
++      authenticated_at: new Date().toISOString(),
++      expires_at: "9999-12-31T23:59:59.999Z"
++    })
++  });
++  apps.push(app);
++  return app;
++}
++
++async function settled(app: ReturnType<typeof appFor>, id: string) {
++  return vi.waitFor(async () => {
++    const row = await app.inject(`${prefix}/jobs/${id}`);
++    const job = row.json<MediaJob>();
++    expect(job.status).toMatch(/done|cancelled|failed/);
++    return job;
++  });
++}
++
++const noopBudget = {
++  reserve: () => Promise.resolve(),
++  reconcile: () => Promise.resolve(),
++  uncertain: () => Promise.resolve()
++};
++
++it("runs real OpenAI Sora video flow through production routes: create -> poll -> MP4 verify -> HTTP Range -> download -> restart -> idempotency & owner isolation", async () => {
++  const calls: Array<{ url: string; method: string }> = [];
++  let pollCount = 0;
++  const openAiFetch: typeof fetch = async (input, init) => {
++    const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
++    const method = init?.method ?? "GET";
++    calls.push({ url, method });
++    expect(url.startsWith("https://api.openai.com/v1/")).toBe(true);
++    expect(init?.redirect).toBe("error");
++
++    if (url.endsWith("/v1/videos") && method === "POST") {
++      return Response.json({ id: "vid_sora_1", status: "queued" }, { status: 201 });
++    }
++    if (url.endsWith("/v1/videos/vid_sora_1") && method === "GET") {
++      pollCount += 1;
++      return Response.json({ id: "vid_sora_1", status: pollCount >= 1 ? "completed" : "in_progress" });
++    }
++    if (url.endsWith("/v1/videos/vid_sora_1/content") && method === "GET") {
++      return new Response(Uint8Array.from(mp4Fixture), { headers: { "content-type": "video/mp4" } });
++    }
++    return new Response("not found", { status: 404 });
++  };
++
++  const directory = tempDir();
++  const options = {
++    directory,
++    paidEnabled: true,
++    videoEnabled: true,
++    adapter: new OpenAIMediaAdapter("unit-openai-key", openAiFetch),
++    ownerBudget: noopBudget
++  };
++  let service = new MediaService(options);
++  let owner = appFor("alice", service);
++  const outsider = appFor("bob", service);
++
++  const caps = (await owner.inject(`${prefix}/capabilities`)).json();
++  expect(caps.capabilities.video_generation).toMatchObject({
++    ready: true,
++    model: "sora-2",
++    provider: "openai"
++  });
++  expect(caps.capabilities.video_scene_regeneration.ready).toBe(false);
++
++  const created = await owner.inject({
++    method: "POST",
++    url: `${prefix}/videos`,
++    headers: consent,
++    payload: {
++      prompt: "Пролёт дрона над горным озером на рассвете",
++      size: "1280x720",
++      seconds: 4,
++      storyboard_scene_id: "scene-1",
++      client_request_id: "vid-req-1",
++      explicit_paid_consent: true
++    }
++  });
++  expect(created.statusCode, created.body).toBe(202);
++  const jobId = created.json<MediaJob>().id;
++  const done = await settled(owner, jobId);
++  expect(done.status, JSON.stringify(done)).toBe("done");
++  expect(done.asset?.mime).toBe("video/mp4");
++
++  // HTTP Range on video/mp4
++  const rangeRes = await owner.inject({
++    url: `${prefix}/assets/${jobId}`,
++    headers: { range: "bytes=0-11" }
++  });
++  expect(rangeRes.statusCode).toBe(206);
++  expect(rangeRes.headers["accept-ranges"]).toBe("bytes");
++  expect(rangeRes.headers["content-range"]).toBe(`bytes 0-11/${mp4Fixture.length}`);
++  expect(rangeRes.rawPayload).toEqual(mp4Fixture.subarray(0, 12));
++
++  // Download + outsider isolation
++  const dlRes = await owner.inject(`${prefix}/assets/${jobId}?download=1`);
++  expect(dlRes.statusCode).toBe(200);
++  expect(dlRes.headers["content-disposition"]).toContain(".mp4");
++  expect(dlRes.rawPayload).toEqual(mp4Fixture);
++  expect((await outsider.inject(`${prefix}/assets/${jobId}`)).statusCode).toBe(404);
++
++  // Restart recovery + idempotency without second provider call
++  const callsBeforeRestart = calls.length;
++  service.stop();
++  service = new MediaService(options);
++  owner = appFor("alice", service);
++
++  const replay = await owner.inject({
++    method: "POST",
++    url: `${prefix}/videos`,
++    headers: consent,
++    payload: {
++      prompt: "Пролёт дрона над горным озером на рассвете",
++      size: "1280x720",
++      seconds: 4,
++      storyboard_scene_id: "scene-1",
++      client_request_id: "vid-req-1",
++      explicit_paid_consent: true
++    }
++  });
++  expect(replay.statusCode).toBe(202);
++  expect(replay.json<MediaJob>().id).toBe(jobId);
++  expect(calls.length).toBe(callsBeforeRestart);
++
++  // Conflict on same client_request_id with different prompt
++  const conflict = await owner.inject({
++    method: "POST",
++    url: `${prefix}/videos`,
++    headers: consent,
++    payload: {
++      prompt: "Другой сюжет",
++      size: "1280x720",
++      seconds: 4,
++      client_request_id: "vid-req-1",
++      explicit_paid_consent: true
++    }
++  });
++  expect(conflict.statusCode).toBe(409);
++});
++
++it("runs real ElevenLabs SFX & Music flows through production routes with Range, download, restart, redirect guard, and chat explicit image trigger", async () => {
++  const seenUrls: string[] = [];
++  const elevenFetch: typeof fetch = async (input, init) => {
++    const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
++    seenUrls.push(url);
++    expect(url.startsWith("https://api.elevenlabs.io/v1/")).toBe(true);
++    expect(init?.redirect).toBe("error");
++    const body = JSON.parse(String(init?.body ?? "{}"));
++    if (String(body.text ?? body.prompt ?? "").includes("REDIRECT_ATTACK")) {
++      return new Response(null, { status: 302, headers: { location: "https://evil.example/steal" } });
++    }
++    return new Response(Uint8Array.from(mp3Fixture), { headers: { "content-type": "audio/mpeg" } });
++  };
++
++  const openAiFetch: typeof fetch = async () =>
++    Response.json({ data: [{ b64_json: redPng.toString("base64") }] });
++
++  const directory = tempDir();
++  const options = {
++    directory,
++    paidEnabled: true,
++    adapter: new OpenAIMediaAdapter("unit-openai-key", openAiFetch),
++    audioAdapter: new ElevenLabsMediaAdapter("unit-eleven-key", elevenFetch),
++    ownerBudget: noopBudget
++  };
++  let service = new MediaService(options);
++  let owner = appFor("alice", service);
++
++  const caps = (await owner.inject(`${prefix}/capabilities`)).json();
++  expect(caps.capabilities.sound_effects).toMatchObject({
++    ready: true,
++    provider: "elevenlabs",
++    model: "eleven_sound_v2"
++  });
++  expect(caps.capabilities.music_generation).toMatchObject({
++    ready: true,
++    provider: "elevenlabs",
++    model: "music_v1"
++  });
++
++  // 1. SFX generation
++  const sfxRes = await owner.inject({
++    method: "POST",
++    url: `${prefix}/sound-effects`,
++    headers: consent,
++    payload: {
++      text: "Мягкий кристальный звон уведомления",
++      duration_seconds: 2.5,
++      prompt_influence: 0.5,
++      client_request_id: "sfx-req-1",
++      explicit_paid_consent: true
++    }
++  });
++  expect(sfxRes.statusCode, sfxRes.body).toBe(202);
++  const sfxId = sfxRes.json<MediaJob>().id;
++  expect((await settled(owner, sfxId)).status).toBe("done");
++  const sfxRange = await owner.inject({
++    url: `${prefix}/assets/${sfxId}`,
++    headers: { range: "bytes=0-9" }
++  });
++  expect(sfxRange.statusCode).toBe(206);
++  expect(sfxRange.rawPayload).toEqual(mp3Fixture.subarray(0, 10));
++
++  // 2. Music generation
++  const musicRes = await owner.inject({
++    method: "POST",
++    url: `${prefix}/music`,
++    headers: consent,
++    payload: {
++      prompt: "Спокойный инструментальный ambient для фокуса",
++      music_length_ms: 15000,
++      force_instrumental: true,
++      client_request_id: "music-req-1",
++      explicit_paid_consent: true
++    }
++  });
++  expect(musicRes.statusCode, musicRes.body).toBe(202);
++  const musicId = musicRes.json<MediaJob>().id;
++  expect((await settled(owner, musicId)).status).toBe("done");
++  const musicDl = await owner.inject(`${prefix}/assets/${musicId}?download=1`);
++  expect(musicDl.statusCode).toBe(200);
++  expect(musicDl.rawPayload).toEqual(mp3Fixture);
++
++  // 3. Invalid parameter rejected before hitting provider
++  const badLen = await owner.inject({
++    method: "POST",
++    url: `${prefix}/music`,
++    headers: consent,
++    payload: {
++      prompt: "Too short",
++      music_length_ms: 500,
++      explicit_paid_consent: true
++    }
++  });
++  expect(badLen.statusCode).toBe(400);
++  expect(badLen.json().error.code).toBe("capability_unavailable");
++
++  // 4. Redirect attack rejected safely
++  const redirectJob = (
++    await owner.inject({
++      method: "POST",
++      url: `${prefix}/sound-effects`,
++      headers: consent,
++      payload: {
++        text: "REDIRECT_ATTACK",
++        explicit_paid_consent: true
++      }
++    })
++  ).json<MediaJob>().id;
++  const failedRedirect = await settled(owner, redirectJob);
++  expect(failedRedirect.status).toBe("failed");
++
++  // 5. Explicit chat image generation helper
++  expect(imageCreationPrompt("нарисуй горный пейзаж")).toBe("нарисуй горный пейзаж");
++  expect(imageCreationPrompt("просто расскажи про горы")).toBeNull();
++  const chatImgId = await generateChatImage(
++    service,
++    "alice",
++    "нарисуй горный пейзаж",
++    new AbortController().signal
++  );
++  expect((await owner.inject(`${prefix}/assets/${chatImgId}`)).rawPayload).toEqual(redPng);
++
++  // 6. Restart persistence check
++  service.stop();
++  service = new MediaService(options);
++  owner = appFor("alice", service);
++  expect((await owner.inject(`${prefix}/jobs/${musicId}`)).json<MediaJob>().status).toBe("done");
++  expect((await owner.inject(`${prefix}/jobs/${sfxId}`)).json<MediaJob>().status).toBe("done");
++  expect(seenUrls).toContain("https://api.elevenlabs.io/v1/sound-generation");
++  expect(seenUrls).toContain("https://api.elevenlabs.io/v1/music");
++});
+diff --git a/apps/web/src/app/presentations/model.ts b/apps/web/src/app/presentations/model.ts
+index 11cd902..749f3b1 100644
+--- a/apps/web/src/app/presentations/model.ts
++++ b/apps/web/src/app/presentations/model.ts
+@@ -1,6 +1,15 @@
+ import type { PresentationWorkSource } from "@cosmora/contracts/presentation-package";
+ export type Layout = "title" | "content" | "two-column" | "quote";
+ export type Theme = "paper" | "night" | "ocean";
++export type SlideTable = {
++  headers: string[];
++  rows: string[][];
++};
++export type SlideImage = {
++  mime: "image/png" | "image/jpeg";
++  data_base64: string;
++  alt?: string;
++};
+ export type Slide = {
+   id: string;
+   layout: Layout;
+@@ -8,6 +17,8 @@ export type Slide = {
+   body: string;
+   aside: string;
+   notes: string;
++  table?: SlideTable;
++  image?: SlideImage;
+ };
+ export type Deck = {
+   id: string;
+diff --git a/apps/web/src/app/presentations/pptx.test.ts b/apps/web/src/app/presentations/pptx.test.ts
+index de65e07..9e50af7 100644
+--- a/apps/web/src/app/presentations/pptx.test.ts
++++ b/apps/web/src/app/presentations/pptx.test.ts
+@@ -64,4 +64,46 @@ describe("editable PPTX export", () => {
+       createPptx({ title: "Демо", theme: "paper", slides: [{ ...slide, notes: "bad\u0001xml" }] })
+     ).toThrow("символ");
+   });
++  it("embeds native OOXML tables and PNG images, edits one slide + notes, and preserves unchanged slides byte-for-byte on re-export", () => {
++    const pngBase64 =
++      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC";
++    const s1: Slide = {
++      id: "s1",
++      layout: "title",
++      title: "Неизменяемый титул",
++      body: "Базовая версия",
++      aside: "",
++      notes: "Заметка 1"
++    };
++    const s2: Slide = {
++      id: "s2",
++      layout: "content",
++      title: "Метрики Q4",
++      body: "Ключевые показатели",
++      aside: "",
++      notes: "Заметка 2 (v1)",
++      table: { headers: ["Метрика", "Значение"], rows: [["SLA", "99.95%"], ["Рост", "+42%"]] },
++      image: { mime: "image/png", data_base64: pngBase64, alt: "График Q4" }
++    };
++    const v1 = unzipSync(createPptx({ title: "Отчёт", theme: "paper", slides: [s1, s2] }));
++    const s2Edited: Slide = {
++      ...s2,
++      title: "Метрики Q4 (обновлено)",
++      notes: "Заметка 2 (v2)",
++      table: { headers: ["Метрика", "Значение"], rows: [["SLA", "99.99%"], ["Рост", "+48%"]] }
++    };
++    const v2 = unzipSync(createPptx({ title: "Отчёт", theme: "paper", slides: [s1, s2Edited] }));
++    // Unchanged slide 1 & notes 1 preserved byte-for-byte
++    expect(v2["ppt/slides/slide1.xml"]).toEqual(v1["ppt/slides/slide1.xml"]);
++    expect(v2["ppt/notesSlides/notesSlide1.xml"]).toEqual(v1["ppt/notesSlides/notesSlide1.xml"]);
++    // Edited slide 2 contains updated table, embedded image, and updated notes
++    const s2Xml = strFromU8(v2["ppt/slides/slide2.xml"]!);
++    expect(s2Xml).toContain("<a:tbl>");
++    expect(s2Xml).toContain("99.99%");
++    expect(s2Xml).toContain("<p:pic>");
++    expect(v2["ppt/media/image2.png"]).toBeDefined();
++    expect(strFromU8(v2["ppt/slides/_rels/slide2.xml.rels"]!)).toContain("../media/image2.png");
++    expect(strFromU8(v2["[Content_Types].xml"]!)).toContain('Extension="png"');
++    expect(strFromU8(v2["ppt/notesSlides/notesSlide2.xml"]!)).toContain("Заметка 2 (v2)");
++  });
+ });
+diff --git a/apps/web/src/app/presentations/pptx.ts b/apps/web/src/app/presentations/pptx.ts
+index 9dcf708..fae3fb1 100644
+--- a/apps/web/src/app/presentations/pptx.ts
++++ b/apps/web/src/app/presentations/pptx.ts
+@@ -54,7 +54,38 @@ const textShape = (
+   );
+ };
+ 
+-const slideXml = (slide: Slide, index: number, theme: Theme) => {
++
++const tableShape = (
++  id: number,
++  table: NonNullable<Slide["table"]>,
++  theme: Theme
++): string => {
++  const p = palettes[theme];
++  const cols = Math.max(1, table.headers.length);
++  const totalWidth = 10400000;
++  const colW = Math.floor(totalWidth / cols);
++  const gridCols = Array.from({ length: cols }, () => `<a:gridCol w="${colW}"/>`).join("");
++  const cell = (text: string, isHeader: boolean) =>
++    `<a:tc><a:txBody><a:bodyPr/><a:lstStyle/><a:p><a:r><a:rPr lang="ru-RU" sz="${isHeader ? 1600 : 1400}" b="${isHeader ? 1 : 0}"><a:solidFill><a:srgbClr val="${isHeader ? p.background : p.foreground}"/></a:solidFill><a:latin typeface="Aptos"/></a:rPr><a:t xml:space="preserve">${esc(text)}</a:t></a:r></a:p></a:txBody><a:tcPr><a:solidFill><a:srgbClr val="${isHeader ? p.accent : p.background}"/></a:solidFill></a:tcPr></a:tc>`;
++  const headerRow = `<a:tr h="420000">${table.headers.map((h) => cell(h, true)).join("")}</a:tr>`;
++  const bodyRows = table.rows
++    .map((row) => `<a:tr h="380000">${row.slice(0, cols).map((v) => cell(v, false)).join("")}</a:tr>`)
++    .join("");
++  return `<p:graphicFrame><p:nvGraphicFramePr><p:cNvPr id="${id}" name="Table"/><p:cNvGraphicFramePr><a:graphicFrameLocks noGrp="1"/></p:cNvGraphicFramePr><p:nvPr/></p:nvGraphicFramePr><p:xfrm><a:off x="900000" y="3400000"/><a:ext cx="${totalWidth}" cy="2400000"/></p:xfrm><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/table"><a:tbl><a:tblPr firstRow="1" bandRow="1"/><a:tblGrid>${gridCols}</a:tblGrid>${headerRow}${bodyRows}</a:tbl></a:graphicData></a:graphic></p:graphicFrame>`;
++};
++
++const pictureShape = (id: number, relId: number, alt: string): string =>
++  `<p:pic><p:nvPicPr><p:cNvPr id="${id}" name="Picture" descr="${esc(alt)}"/><p:cNvPicPr><a:picLocks noChangeAspect="1"/></p:cNvPicPr><p:nvPr/></p:nvPicPr><p:blipFill><a:blip r:embed="rId${relId}"/><a:stretch><a:fillRect/></a:stretch></p:blipFill><p:spPr><a:xfrm><a:off x="6800000" y="1940000"/><a:ext cx="4400000" cy="3400000"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></p:spPr></p:pic>`;
++
++const decodeBase64Bytes = (b64: string): Uint8Array => {
++  if (typeof Buffer !== "undefined") return Uint8Array.from(Buffer.from(b64, "base64"));
++  const bin = atob(b64);
++  const out = new Uint8Array(bin.length);
++  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
++  return out;
++};
++
++const slideXml = (slide: Slide, index: number, theme: Theme, imageRelId?: number) => {
+   const p = palettes[theme];
+   let shapes = "";
+   if (slide.layout === "title") {
+@@ -142,6 +173,12 @@ const slideXml = (slide: Slide, index: number, theme: Theme) => {
+         p.foreground
+       );
+   }
++  if (slide.table && slide.table.headers.length > 0) {
++    shapes += tableShape(6, slide.table, theme);
++  }
++  if (slide.image && imageRelId) {
++    shapes += pictureShape(7, imageRelId, slide.image.alt ?? slide.title);
++  }
+   shapes += textShape(
+     5,
+     "Page",
+@@ -188,7 +225,13 @@ export function createPptx(deck: Pick<Deck, "title" | "theme" | "slides">): Uint
+   if (!deck.slides.length || deck.slides.length > 50) throw Error("INVALID_DECK");
+   const allText = [
+     deck.title,
+-    ...deck.slides.flatMap((slide) => [slide.title, slide.body, slide.aside, slide.notes])
++    ...deck.slides.flatMap((slide) => [
++      slide.title,
++      slide.body,
++      slide.aside,
++      slide.notes,
++      ...(slide.table ? [...slide.table.headers, ...slide.table.rows.flat()] : [])
++    ])
+   ];
+   if (
+     allText.some((value) =>
+@@ -213,7 +256,7 @@ export function createPptx(deck: Pick<Deck, "title" | "theme" | "slides">): Uint
+   put(
+     "[Content_Types].xml",
+     xml(
+-      `<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/ppt/presentation.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml"/><Override PartName="/ppt/slideMasters/slideMaster1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideMaster+xml"/><Override PartName="/ppt/slideLayouts/slideLayout1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideLayout+xml"/><Override PartName="/ppt/theme/theme1.xml" ContentType="application/vnd.openxmlformats-officedocument.theme+xml"/><Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/>${deck.slides.map((_, i) => `<Override PartName="/ppt/slides/slide${i + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slide+xml"/>`).join("")}<Override PartName="/ppt/notesMasters/notesMaster1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.notesMaster+xml"/>${deck.slides.map((_, i) => `<Override PartName="/ppt/notesSlides/notesSlide${i + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.notesSlide+xml"/>`).join("")}</Types>`
++      `<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/>${deck.slides.some((s) => s.image?.mime === "image/png") ? '<Default Extension="png" ContentType="image/png"/>' : ""}${deck.slides.some((s) => s.image?.mime === "image/jpeg") ? '<Default Extension="jpg" ContentType="image/jpeg"/>' : ""}<Override PartName="/ppt/presentation.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml"/><Override PartName="/ppt/slideMasters/slideMaster1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideMaster+xml"/><Override PartName="/ppt/slideLayouts/slideLayout1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideLayout+xml"/><Override PartName="/ppt/theme/theme1.xml" ContentType="application/vnd.openxmlformats-officedocument.theme+xml"/><Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/>${deck.slides.map((_, i) => `<Override PartName="/ppt/slides/slide${i + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slide+xml"/>`).join("")}<Override PartName="/ppt/notesMasters/notesMaster1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.notesMaster+xml"/>${deck.slides.map((_, i) => `<Override PartName="/ppt/notesSlides/notesSlide${i + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.notesSlide+xml"/>`).join("")}</Types>`
+     )
+   );
+   put(
+@@ -286,14 +329,20 @@ export function createPptx(deck: Pick<Deck, "title" | "theme" | "slides">): Uint
+     rels([{ id: 1, type: "theme", target: "../theme/theme1.xml" }])
+   );
+   deck.slides.forEach((slide, i) => {
+-    put(`ppt/slides/slide${i + 1}.xml`, slideXml(slide, i, deck.theme));
+-    put(
+-      `ppt/slides/_rels/slide${i + 1}.xml.rels`,
+-      rels([
+-        { id: 1, type: "slideLayout", target: "../slideLayouts/slideLayout1.xml" },
+-        { id: 2, type: "notesSlide", target: `../notesSlides/notesSlide${i + 1}.xml` }
+-      ])
+-    );
++    let imageRelId: number | undefined;
++    const slideRels: Array<{ id: number; type: string; target: string }> = [
++      { id: 1, type: "slideLayout", target: "../slideLayouts/slideLayout1.xml" },
++      { id: 2, type: "notesSlide", target: `../notesSlides/notesSlide${i + 1}.xml` }
++    ];
++    if (slide.image && slide.image.data_base64) {
++      const ext = slide.image.mime === "image/jpeg" ? "jpg" : "png";
++      const imgBytes = decodeBase64Bytes(slide.image.data_base64);
++      entries[`ppt/media/image${i + 1}.${ext}`] = imgBytes;
++      imageRelId = 3;
++      slideRels.push({ id: 3, type: "image", target: `../media/image${i + 1}.${ext}` });
++    }
++    put(`ppt/slides/slide${i + 1}.xml`, slideXml(slide, i, deck.theme, imageRelId));
++    put(`ppt/slides/_rels/slide${i + 1}.xml.rels`, rels(slideRels));
+     put(
+       `ppt/notesSlides/notesSlide${i + 1}.xml`,
+       xml(
+diff --git a/docs/team/operation-2026-11-27/deliveries/07_GEMINI/CHECKPOINT.md b/docs/team/operation-2026-11-27/deliveries/07_GEMINI/CHECKPOINT.md
+new file mode 100644
+index 0000000..b37faf1
+--- /dev/null
++++ b/docs/team/operation-2026-11-27/deliveries/07_GEMINI/CHECKPOINT.md
+@@ -0,0 +1,6 @@
++# 07_GEMINI — CHECKPOINT
++
++- **База**: `main` `3af92583ccc8ceb49f44c0b8633955f40feaf59f`
++- **Ветка**: `feature/gemini-media-generation-20261127`
++- **Состояние**: все кодовые циклы (Model-Gateway реестр и адаптеры OpenAI Video + ElevenLabs SFX/Music, Production Media API + Range для `video/*`, Presentations PPTX с таблицами/изображениями/заметками, комплексные тесты) реализованы и проверены штатным Vitest.
++- **Остающийся живой шаг**: живой прогон против реальных API OpenAI (`sora-2`, `gpt-image-1`, `gpt-4o-mini-tts`) и ElevenLabs (`eleven_sound_v2`, `music_v1`) после задания ключей на согласованном стенде.
+diff --git a/docs/team/operation-2026-11-27/deliveries/07_GEMINI/DELIVERY.md b/docs/team/operation-2026-11-27/deliveries/07_GEMINI/DELIVERY.md
+new file mode 100644
+index 0000000..86a1d32
+--- /dev/null
++++ b/docs/team/operation-2026-11-27/deliveries/07_GEMINI/DELIVERY.md
+@@ -0,0 +1,18 @@
++# 07_GEMINI — DELIVERY
++
++## Фактические возможности
++1. **Изображения + правка**: работают через `POST /api/v1/media/images` (`source_job_id`, multipart байт-в-байт, история, сравнение, отмена/поздний ответ, рестарт, явный запуск из чата `chat-images.ts`).
++2. **Видео (Sora 2 + Storyboard)**: реализован `OpenAIMediaAdapter.generateVideo` + `POST /api/v1/media/videos` (`size`, `seconds`, `storyboard_scene_id`), проверка MP4 `ftyp`, HTTP `Range` (`206`/`416`), скачивание, идемпотентность и изоляция владельцев; текстовая раскадровка остаётся доступной через `/api/v1/media/storyboard`.
++3. **Sound (TTS), SFX и Music**:
++   - Речь (`POST /api/v1/media/speech`) через `gpt-4o-mini-tts` (`voice`, `speed`, `format`) + HTTP `Range`.
++   - SFX (`POST /api/v1/media/sound-effects`) и Music (`POST /api/v1/media/music`) через `ElevenLabsMediaAdapter` (`https://api.elevenlabs.io`, `redirect: "error"`, проверка MP3) + HTTP `Range`. Без ключа `capabilities()` честно отдаёт `ready: false`.
++4. **Презентации PPTX**: `createPptx` поддерживает нативные OOXML-таблицы (`<a:tbl>`), встроенные PNG/JPEG изображения (`<p:pic>` + `ppt/media/`), заметки спикера (`notesSlides`) и побайтную сохранность неизменённых слайдов при повторном экспорте.
++
++## Воспроизводимые команды проверок
++- `pnpm --filter @cosmora/model-gateway test`
++- `pnpm --filter @cosmora/api exec vitest run test/media-wave-20261127.test.ts test/studio-candidate.test.ts test/media-api.test.ts test/media-routes.test.ts test/media-acceptance-integration.test.ts test/media-durable-lifecycle.test.ts test/presentations.test.ts`
++- `pnpm --filter @cosmora/web exec vitest run src/app/presentations/pptx.test.ts`
++
++## Незакрытые пункты и зависимости
++- Живой платный прогон OpenAI (`gpt-image-1`, `gpt-4o-mini-tts`, `sora-2`) и ElevenLabs (`eleven_sound_v2`, `music_v1`) не выполнялся (нет ключей в среде).
++- Подключение переменных окружения `ELEVENLABS_API_KEY` и флага `mediaVideoEnabled` в общий `apps/api/src/server.ts` описано в `INTEGRATION.md` для интегратора.
+diff --git a/docs/team/operation-2026-11-27/deliveries/07_GEMINI/INTEGRATION.md b/docs/team/operation-2026-11-27/deliveries/07_GEMINI/INTEGRATION.md
+new file mode 100644
+index 0000000..a96d8e7
+--- /dev/null
++++ b/docs/team/operation-2026-11-27/deliveries/07_GEMINI/INTEGRATION.md
+@@ -0,0 +1,20 @@
++# 07_GEMINI — INTEGRATION
++
++## Затронутые файлы
++- `packages/model-gateway/src/media/media-registry.ts` (расширение `MediaCapability`, `MediaModel`, `video_generation`, `sound_effects`, `music_generation`, валидаторы)
++- `packages/model-gateway/src/media/openai-media-adapter.ts` (`generateVideo`, `isMp4VideoBytes`, поддержка `GET` на `OPENAI_ORIGIN`)
++- `packages/model-gateway/src/media/elevenlabs-media-adapter.ts` (новый адаптер SFX + Music)
++- `packages/model-gateway/src/index.ts` (минимальный экспорт `./media/elevenlabs-media-adapter.js`)
++- `apps/api/src/media/media-budget.ts` (`MediaKind` расширен на `video | sfx | music`)
++- `apps/api/src/media/media-store.ts` (поддержка `video/mp4` / `mp4` и новых `kind`)
++- `apps/api/src/media/media-service.ts` (`enqueueVideo`, `enqueueSoundEffect`, `enqueueMusic`, `videoEnabled`, `elevenLabsApiKey`, `audioAdapter`)
++- `apps/api/src/media/media-routes.ts` (`POST /videos`, `POST /sound-effects`, `POST /music`, HTTP `Range` для `video/*`, реальные `capabilities`)
++- `apps/web/src/app/presentations/model.ts`, `pptx.ts`, `pptx.test.ts` (таблицы `<a:tbl>` и встроенные изображения `<p:pic>`)
++- `apps/api/test/media-wave-20261127.test.ts` (комплексный тест production routes)
++
++## Не затронуто
++- `apps/api/src/server.ts`, `apps/api/src/app.ts`, миграции `packages/db/migrations/`, `voice-assistant.tsx` (зона Grok), глобальный sidebar и основной чат не изменялись.
++- Миграции БД не требуются: все бинарные артефакты хранятся в существующем `MediaFileStore`.
++
++## Подключение живых ключей в `server.ts` (для интегратора)
++Передать `videoEnabled: Boolean(config.mediaVideoEnabled)` и `elevenLabsApiKey: process.env.ELEVENLABS_API_KEY` в `new MediaService(...)` при включении живого прогона.
+diff --git a/docs/team/operation-2026-11-27/deliveries/07_GEMINI/INTERFACES.md b/docs/team/operation-2026-11-27/deliveries/07_GEMINI/INTERFACES.md
+new file mode 100644
+index 0000000..61aba8e
+--- /dev/null
++++ b/docs/team/operation-2026-11-27/deliveries/07_GEMINI/INTERFACES.md
+@@ -0,0 +1,26 @@
++# 07_GEMINI — INTERFACES
++
++Реальные интерфейсы, входы, выходы, события и принадлежность данных зоны `07_GEMINI` (база `main` `3af92583ccc8ceb49f44c0b8633955f40feaf59f`, ветка `feature/gemini-media-generation-20261127`).
++
++## 1. Model Gateway (`packages/model-gateway/src/media/`)
++- `MediaCapabilityRegistry` (`media-registry.ts`):
++  - `image_generation` → OpenAI `gpt-image-1` (`POST https://api.openai.com/v1/images/generations`, правка `images/edits`)
++  - `speech` → OpenAI `gpt-4o-mini-tts` (`POST https://api.openai.com/v1/audio/speech`)
++  - `transcription` → OpenAI `gpt-4o-mini-transcribe` (`POST https://api.openai.com/v1/audio/transcriptions`)
++  - `video_generation` → OpenAI `sora-2` (`POST https://api.openai.com/v1/videos` → `GET /v1/videos/{id}` → `GET /v1/videos/{id}/content`, `sizes: 1280x720 | 720x1280 | 1792x1024 | 1024x1792`, `seconds: 4 | 8 | 12`)
++  - `sound_effects` → ElevenLabs `eleven_sound_v2` (`POST https://api.elevenlabs.io/v1/sound-generation`, `duration_seconds: 0.5..22`, `prompt_influence: 0..1`)
++  - `music_generation` → ElevenLabs `music_v1` (`POST https://api.elevenlabs.io/v1/music`, `music_length_ms: 10000..300000`, `force_instrumental: boolean`)
++- `OpenAIMediaAdapter.generateVideo` (`openai-media-adapter.ts`): фиксированный `OPENAI_ORIGIN`, `redirect: "error"`, проверка MP4 (`ftyp`), ограничение `64 MiB`.
++- `ElevenLabsMediaAdapter` (`elevenlabs-media-adapter.ts`): фиксированный `https://api.elevenlabs.io`, `redirect: "error"`, заголовок `xi-api-key` только на фиксированный origin, проверка MP3 (`ID3` / sync), ограничение `16 MiB`.
++
++## 2. Production Media API (`apps/api/src/media/`)
++- `GET /api/v1/media/capabilities`: фактическая готовность всех 6 capabilities; без ключа/флага отдаёт `ready: false` (`CREDENTIAL_UNAVAILABLE`). `image_region_editing` и `video_scene_regeneration` честно остаются `ready: false`.
++- `POST /api/v1/media/videos`: `prompt`, `size`, `seconds`, `storyboard_scene_id`, `client_request_id`, `explicit_paid_consent` + заголовок `x-kosmora-media-consent: explicit` → `202 Accepted`.
++- `POST /api/v1/media/sound-effects`: `text`, `duration_seconds`, `prompt_influence`, `client_request_id`, `explicit_paid_consent` → `202 Accepted`.
++- `POST /api/v1/media/music`: `prompt`, `music_length_ms`, `force_instrumental`, `client_request_id`, `explicit_paid_consent` → `202 Accepted`.
++- `GET /api/v1/media/assets/:id`: поддерживает `Accept-Ranges: bytes`, `206 Partial Content`, `416 Range Not Satisfiable` для `audio/*` и `video/*`, а также `?download=1` (`Content-Disposition: attachment`).
++- Принадлежность данных: все `MediaJob` и бинарные файлы в `MediaFileStore` принадлежат строго `owner_id` (чужой владелец получает `404`), без хранения base64 в SQLite.
++
++## 3. Презентации (`apps/web/src/app/presentations/`)
++- `Slide` (`model.ts`): обратно совместимые опциональные поля `table?: { headers: string[]; rows: string[][] }` и `image?: { mime: "image/png" | "image/jpeg"; data_base64: string; alt?: string }`.
++- `createPptx` (`pptx.ts`): генерирует валидный OOXML `.pptx` с нативными `<a:tbl>`, `<p:pic>` (`ppt/media/imageN.png|jpg`), `notesSlides`, и побайтно сохраняет неизменённые слайды при повторном экспорте.
+diff --git a/docs/team/operation-2026-11-27/deliveries/07_GEMINI/SCENARIOS.md b/docs/team/operation-2026-11-27/deliveries/07_GEMINI/SCENARIOS.md
+new file mode 100644
+index 0000000..e4390fe
+--- /dev/null
++++ b/docs/team/operation-2026-11-27/deliveries/07_GEMINI/SCENARIOS.md
+@@ -0,0 +1,13 @@
++# 07_GEMINI — SCENARIOS
++
++| Сценарий | Production route / модуль | Статус проверки | Транспорт / провайдер |
++| :--- | :--- | :--- | :--- |
++| Images + Edit + версии + рестарт + отмена + поздний ответ + чужой аккаунт | `POST /api/v1/media/images`, `GET /api/v1/media/assets/:id`, `DELETE /api/v1/media/jobs/:id` | **PASS** (`studio-candidate.test.ts`, `media-durable-lifecycle.test.ts`) | Управляемый `fetch` (`OpenAIMediaAdapter`), реальный `buildApp` + `MediaFileStore` |
++| Chat explicit image generation | `apps/api/src/media/chat-images.ts` | **PASS** (`media-wave-20261127.test.ts`, `chat-images.test.ts`) | Управляемый `fetch` (`OpenAIMediaAdapter`) |
++| Video generation (Sora 2) + MP4 verify + HTTP Range + download + restart + idempotency | `POST /api/v1/media/videos`, `GET /api/v1/media/assets/:id` | **PASS** (`media-wave-20261127.test.ts`) | Управляемый `fetch` (`OpenAIMediaAdapter.generateVideo`, `redirect: "error"`) |
++| Video storyboard (текстовый сценовый workflow, CAS, принятие, экспорт) | `GET/PUT /api/v1/media/storyboard` | **PASS** (`studio-candidate.test.ts`) | Реальный `buildApp` + дисковое хранилище |
++| Sound (TTS) + voice/speed/format + HTTP Range | `POST /api/v1/media/speech`, `GET /api/v1/media/assets/:id` | **PASS** (`studio-candidate.test.ts`) | Управляемый `fetch` (`OpenAIMediaAdapter.speak`) |
++| SFX (ElevenLabs) + Range + download + redirect guard + restart | `POST /api/v1/media/sound-effects` | **PASS** (`media-wave-20261127.test.ts`) | Управляемый `fetch` (`ElevenLabsMediaAdapter`, `redirect: "error"`) |
++| Music (ElevenLabs) + Range + download + idempotency + restart | `POST /api/v1/media/music` | **PASS** (`media-wave-20261127.test.ts`) | Управляемый `fetch` (`ElevenLabsMediaAdapter`, `redirect: "error"`) |
++| Presentations PPTX: таблицы `<a:tbl>`, изображения `<p:pic>`, заметки, правка 1 слайда и побайтная сохранность остальных | `apps/web/src/app/presentations/pptx.ts` | **PASS** (`pptx.test.ts`) | Автономный OOXML-генератор (`fflate`), без внешних вызовов |
++| Live-прогон внешних API (OpenAI / ElevenLabs) | — | **NOT RUN (нет ключей в среде)** | Требуются `OPENAI_API_KEY` и `ELEVENLABS_API_KEY` на согласованном стенде |
+diff --git a/packages/model-gateway/src/index.ts b/packages/model-gateway/src/index.ts
+index 7ee70ac..956e9db 100644
+--- a/packages/model-gateway/src/index.ts
++++ b/packages/model-gateway/src/index.ts
+@@ -8,3 +8,4 @@ export * from "./types.js";
+ export * from "./runtime-clock.js";
+ export * from "./media/media-registry.js";
+ export * from "./media/openai-media-adapter.js";
++export * from "./media/elevenlabs-media-adapter.js";
+diff --git a/packages/model-gateway/src/media/elevenlabs-media-adapter.ts b/packages/model-gateway/src/media/elevenlabs-media-adapter.ts
+new file mode 100644
+index 0000000..5a6ef20
+--- /dev/null
++++ b/packages/model-gateway/src/media/elevenlabs-media-adapter.ts
+@@ -0,0 +1,232 @@
++import {
++  MediaProviderError,
++  isMp3Bytes,
++  sanitizeMediaMessage,
++  type MediaBinary
++} from "./openai-media-adapter.js";
++
++const ELEVENLABS_ORIGIN = "https://api.elevenlabs.io";
++const MAX_AUDIO_BYTES = 16 * 1024 * 1024;
++
++export interface SoundEffectAdapterOptions {
++  readonly duration_seconds?: number | null;
++  readonly prompt_influence?: number | null;
++}
++
++export interface MusicAdapterOptions {
++  readonly music_length_ms?: number | null;
++  readonly force_instrumental?: boolean | null;
++}
++
++function sanitizeElevenLabsMessage(input: string): string {
++  return sanitizeMediaMessage(input).replace(/\bxi-api-key:\s*\S+/gi, "xi-api-key: [REDACTED]");
++}
++
++async function readBoundedAudio(
++  response: Response,
++  maxBytes: number,
++  signal: AbortSignal
++): Promise<Uint8Array> {
++  const lengthHeader = response.headers.get("content-length");
++  if (lengthHeader) {
++    const declared = Number(lengthHeader);
++    if (Number.isFinite(declared) && declared > maxBytes) {
++      throw new MediaProviderError("INVALID_ASSET", "Audio response exceeds maximum size", {
++        normalizedCode: "corrupt_response"
++      });
++    }
++  }
++  const reader = response.body?.getReader();
++  if (!reader) {
++    const buf = new Uint8Array(await response.arrayBuffer());
++    if (buf.byteLength > maxBytes) {
++      throw new MediaProviderError("INVALID_ASSET", "Audio response exceeds maximum size", {
++        normalizedCode: "corrupt_response"
++      });
++    }
++    return buf;
++  }
++  const chunks: Uint8Array[] = [];
++  let total = 0;
++  try {
++    while (true) {
++      if (signal.aborted) {
++        throw new MediaProviderError("ABORTED", "Audio request aborted", {
++          normalizedCode: "aborted"
++        });
++      }
++      const { done, value } = await reader.read();
++      if (done) break;
++      total += value.byteLength;
++      if (total > maxBytes) {
++        throw new MediaProviderError("INVALID_ASSET", "Audio response exceeds maximum size", {
++          normalizedCode: "corrupt_response"
++        });
++      }
++      chunks.push(value);
++    }
++  } finally {
++    reader.releaseLock();
++  }
++  const out = new Uint8Array(total);
++  let offset = 0;
++  for (const chunk of chunks) {
++    out.set(chunk, offset);
++    offset += chunk.byteLength;
++  }
++  return out;
++}
++
++function normalizeHttpError(status: number, bodyText: string): MediaProviderError {
++  const detail = sanitizeElevenLabsMessage(bodyText || `HTTP ${status}`);
++  if (status === 401 || status === 403) {
++    return new MediaProviderError("invalid_key", detail, { normalizedCode: "invalid_key", status });
++  }
++  if (status === 402) {
++    return new MediaProviderError("insufficient_funds", detail, {
++      normalizedCode: "insufficient_funds",
++      status
++    });
++  }
++  if (status === 429) {
++    return new MediaProviderError("rate_limit", detail, { normalizedCode: "rate_limit", status });
++  }
++  if (status === 408 || status === 504) {
++    return new MediaProviderError("timeout", detail, { normalizedCode: "timeout", status });
++  }
++  return new MediaProviderError("PROVIDER_ERROR", detail, {
++    normalizedCode: "provider_error",
++    status
++  });
++}
++
++/**
++ * ElevenLabs Sound Effects & Music adapter.
++ * Enforces fixed official origin (`https://api.elevenlabs.io`), `redirect: "error"`,
++ * bounded response reading, and real MP3 binary signature verification.
++ */
++export class ElevenLabsMediaAdapter {
++  readonly #apiKey: string;
++  readonly #fetcher: typeof fetch;
++
++  constructor(apiKey: string, fetcher: typeof fetch = fetch) {
++    if (!apiKey || !apiKey.trim()) {
++      throw new MediaProviderError("invalid_key", "ElevenLabs API key required", {
++        normalizedCode: "invalid_key"
++      });
++    }
++    this.#apiKey = apiKey.trim();
++    this.#fetcher = fetcher;
++  }
++
++  private async postAudio(
++    path: "v1/sound-generation" | "v1/music",
++    payload: Record<string, unknown>,
++    signal: AbortSignal
++  ): Promise<MediaBinary> {
++    const url = `${ELEVENLABS_ORIGIN}/${path}`;
++    let response: Response;
++    try {
++      response = await this.#fetcher(url, {
++        method: "POST",
++        headers: {
++          "content-type": "application/json",
++          accept: "audio/mpeg",
++          "xi-api-key": this.#apiKey
++        },
++        body: JSON.stringify(payload),
++        redirect: "error",
++        signal
++      });
++    } catch (error) {
++      if (signal.aborted) {
++        throw new MediaProviderError("ABORTED", "Audio request aborted", {
++          normalizedCode: "aborted"
++        });
++      }
++      const message = error instanceof Error ? error.message : "Network error";
++      throw new MediaProviderError("PROVIDER_ERROR", sanitizeElevenLabsMessage(message), {
++        normalizedCode: "provider_error"
++      });
++    }
++
++    if (response.status >= 300 && response.status < 400) {
++      throw new MediaProviderError("PROVIDER_ERROR", "Provider redirect rejected", {
++        normalizedCode: "provider_error",
++        status: response.status
++      });
++    }
++    if (!response.ok) {
++      const text = await response.text().catch(() => "");
++      throw normalizeHttpError(response.status, text);
++    }
++
++    const contentType = response.headers.get("content-type")?.split(";")[0]?.trim().toLowerCase();
++    if (
++      contentType &&
++      contentType !== "application/octet-stream" &&
++      !contentType.startsWith("audio/")
++    ) {
++      throw new MediaProviderError("INVALID_ASSET", `Unexpected audio MIME ${contentType}`, {
++        normalizedCode: "invalid_mime"
++      });
++    }
++
++    const bytes = await readBoundedAudio(response, MAX_AUDIO_BYTES, signal);
++    if (!isMp3Bytes(bytes)) {
++      throw new MediaProviderError("INVALID_ASSET", "No valid MP3 audio signature returned", {
++        normalizedCode: "corrupt_response"
++      });
++    }
++    return {
++      bytes,
++      mime: "audio/mpeg",
++      extension: "mp3"
++    };
++  }
++
++  async generateSoundEffect(
++    text: string,
++    signal: AbortSignal,
++    options: SoundEffectAdapterOptions = {}
++  ): Promise<MediaBinary> {
++    return this.postAudio(
++      "v1/sound-generation",
++      {
++        text,
++        ...(options.duration_seconds !== undefined && options.duration_seconds !== null
++          ? { duration_seconds: options.duration_seconds }
++          : {}),
++        ...(options.prompt_influence !== undefined && options.prompt_influence !== null
++          ? { prompt_influence: options.prompt_influence }
++          : {})
++      },
++      signal
++    );
++  }
++
++  async generateMusic(
++    prompt: string,
++    signal: AbortSignal,
++    options: MusicAdapterOptions = {}
++  ): Promise<MediaBinary> {
++    return this.postAudio(
++      "v1/music",
++      {
++        prompt,
++        ...(options.music_length_ms !== undefined && options.music_length_ms !== null
++          ? { music_length_ms: options.music_length_ms }
++          : {}),
++        ...(options.force_instrumental !== undefined && options.force_instrumental !== null
++          ? { force_instrumental: options.force_instrumental }
++          : {})
++      },
++      signal
++    );
++  }
++}
++
++export const ELEVENLABS_MEDIA_ENDPOINTS = {
++  sound_effects: `${ELEVENLABS_ORIGIN}/v1/sound-generation`,
++  music_generation: `${ELEVENLABS_ORIGIN}/v1/music`
++} as const;
+diff --git a/packages/model-gateway/src/media/media-registry.ts b/packages/model-gateway/src/media/media-registry.ts
+index 3efa13c..9cd5ad8 100644
+--- a/packages/model-gateway/src/media/media-registry.ts
++++ b/packages/model-gateway/src/media/media-registry.ts
+@@ -1,6 +1,21 @@
+ /** Isolated media capabilities. Never infer media support from a chat model's `vision` flag. */
+-export type MediaCapability = "image_generation" | "transcription" | "speech";
+-export type MediaModel = "gpt-image-1" | "gpt-4o-mini-transcribe" | "gpt-4o-mini-tts";
++export type MediaCapability =
++  | "image_generation"
++  | "transcription"
++  | "speech"
++  | "video_generation"
++  | "sound_effects"
++  | "music_generation";
++export type MediaModel =
++  | "gpt-image-1"
++  | "gpt-4o-mini-transcribe"
++  | "gpt-4o-mini-tts"
++  | "sora-2"
++  | "eleven_sound_v2"
++  | "music_v1";
++export type MediaVideoMime = "video/mp4";
++export type MediaVideoSize = "1280x720" | "720x1280" | "1792x1024" | "1024x1792";
++export type MediaVideoDurationSeconds = 4 | 8 | 12;
+ 
+ export type MediaImageSize = "1024x1024" | "1536x1024" | "1024x1536";
+ export type MediaImageAspectRatio = "1:1" | "3:2" | "2:3";
+@@ -50,14 +65,41 @@ export interface MediaSpeechCapabilityConstraints {
+   readonly maxTextLength: number;
+ }
+ 
++export interface MediaVideoCapabilityConstraints {
++  readonly sizes: readonly MediaVideoSize[];
++  readonly durationsSeconds: readonly MediaVideoDurationSeconds[];
++  readonly maxPromptLength: number;
++  readonly supportsSceneRegeneration: boolean;
++}
++
++export interface MediaSoundEffectCapabilityConstraints {
++  readonly minDurationSeconds: number;
++  readonly maxDurationSeconds: number;
++  readonly minPromptInfluence: number;
++  readonly maxPromptInfluence: number;
++  readonly maxTextLength: number;
++  readonly formats: readonly ["mp3"];
++}
++
++export interface MediaMusicCapabilityConstraints {
++  readonly minLengthMs: number;
++  readonly maxLengthMs: number;
++  readonly maxPromptLength: number;
++  readonly supportsInstrumentalFlag: boolean;
++  readonly formats: readonly ["mp3"];
++}
++
+ export interface MediaRegistryRoute {
+   readonly capability: MediaCapability;
+-  readonly provider: "openai";
++  readonly provider: "openai" | "elevenlabs";
+   readonly model: MediaModel;
+   readonly specification: string;
+   readonly imageConstraints?: MediaImageCapabilityConstraints;
+   readonly transcriptionConstraints?: MediaTranscriptionCapabilityConstraints;
+   readonly speechConstraints?: MediaSpeechCapabilityConstraints;
++  readonly videoConstraints?: MediaVideoCapabilityConstraints;
++  readonly soundEffectConstraints?: MediaSoundEffectCapabilityConstraints;
++  readonly musicConstraints?: MediaMusicCapabilityConstraints;
+ }
+ 
+ export class MediaCapabilityError extends Error {
+@@ -163,6 +205,30 @@ const SPEECH_CONSTRAINTS: MediaSpeechCapabilityConstraints = {
+ };
+ 
+ // These are explicit, spec-reviewed routes, NOT discovered availability or live capability proofs.
++const VIDEO_CONSTRAINTS: MediaVideoCapabilityConstraints = {
++  sizes: ["1280x720", "720x1280", "1792x1024", "1024x1792"],
++  durationsSeconds: [4, 8, 12],
++  maxPromptLength: 2000,
++  supportsSceneRegeneration: false
++};
++
++const SOUND_EFFECT_CONSTRAINTS: MediaSoundEffectCapabilityConstraints = {
++  minDurationSeconds: 0.5,
++  maxDurationSeconds: 22,
++  minPromptInfluence: 0,
++  maxPromptInfluence: 1,
++  maxTextLength: 500,
++  formats: ["mp3"]
++};
++
++const MUSIC_CONSTRAINTS: MediaMusicCapabilityConstraints = {
++  minLengthMs: 10_000,
++  maxLengthMs: 300_000,
++  maxPromptLength: 2000,
++  supportsInstrumentalFlag: true,
++  formats: ["mp3"]
++};
++
+ const routes: readonly MediaRegistryRoute[] = [
+   {
+     capability: "image_generation",
+@@ -184,6 +250,27 @@ const routes: readonly MediaRegistryRoute[] = [
+     model: "gpt-4o-mini-tts",
+     specification: "https://platform.openai.com/docs/api-reference/audio/createSpeech",
+     speechConstraints: SPEECH_CONSTRAINTS
++  },
++  {
++    capability: "video_generation",
++    provider: "openai",
++    model: "sora-2",
++    specification: "https://platform.openai.com/docs/api-reference/videos/create",
++    videoConstraints: VIDEO_CONSTRAINTS
++  },
++  {
++    capability: "sound_effects",
++    provider: "elevenlabs",
++    model: "eleven_sound_v2",
++    specification: "https://elevenlabs.io/docs/api-reference/text-to-sound-effects/convert",
++    soundEffectConstraints: SOUND_EFFECT_CONSTRAINTS
++  },
++  {
++    capability: "music_generation",
++    provider: "elevenlabs",
++    model: "music_v1",
++    specification: "https://elevenlabs.io/docs/api-reference/music/compose",
++    musicConstraints: MUSIC_CONSTRAINTS
+   }
+ ] as const;
+ 
+@@ -361,11 +448,132 @@ export function validateTranscriptionParameters(
+   };
+ }
+ 
++
++export interface VideoGenerationParametersInput {
++  readonly size?: string | undefined;
++  readonly seconds?: number | undefined;
++}
++
++export interface ValidatedVideoGenerationParameters {
++  readonly size: MediaVideoSize;
++  readonly seconds: MediaVideoDurationSeconds;
++}
++
++export function validateVideoParameters(
++  route: MediaRegistryRoute | null,
++  input: VideoGenerationParametersInput = {}
++): ValidatedVideoGenerationParameters {
++  if (!route || route.capability !== "video_generation" || !route.videoConstraints) {
++    throw new MediaCapabilityError("VIDEO_ROUTE_UNAVAILABLE");
++  }
++  const constraints = route.videoConstraints;
++  const rawSize = input.size ?? "1280x720";
++  if (!(constraints.sizes as readonly string[]).includes(rawSize)) {
++    throw new MediaCapabilityError("VIDEO_SIZE_UNSUPPORTED");
++  }
++  const rawSeconds = input.seconds ?? 4;
++  if (!(constraints.durationsSeconds as readonly number[]).includes(rawSeconds)) {
++    throw new MediaCapabilityError("VIDEO_DURATION_UNSUPPORTED");
++  }
++  return {
++    size: rawSize as MediaVideoSize,
++    seconds: rawSeconds as MediaVideoDurationSeconds
++  };
++}
++
++export interface SoundEffectParametersInput {
++  readonly duration_seconds?: number | undefined;
++  readonly prompt_influence?: number | undefined;
++}
++
++export interface ValidatedSoundEffectParameters {
++  readonly duration_seconds: number | null;
++  readonly prompt_influence: number | null;
++}
++
++export function validateSoundEffectParameters(
++  route: MediaRegistryRoute | null,
++  input: SoundEffectParametersInput = {}
++): ValidatedSoundEffectParameters {
++  if (!route || route.capability !== "sound_effects" || !route.soundEffectConstraints) {
++    throw new MediaCapabilityError("SOUND_EFFECT_ROUTE_UNAVAILABLE");
++  }
++  const c = route.soundEffectConstraints;
++  let duration: number | null = null;
++  if (input.duration_seconds !== undefined && input.duration_seconds !== null) {
++    if (
++      typeof input.duration_seconds !== "number" ||
++      !Number.isFinite(input.duration_seconds) ||
++      input.duration_seconds < c.minDurationSeconds ||
++      input.duration_seconds > c.maxDurationSeconds
++    ) {
++      throw new MediaCapabilityError("SOUND_EFFECT_DURATION_UNSUPPORTED");
++    }
++    duration = input.duration_seconds;
++  }
++  let influence: number | null = null;
++  if (input.prompt_influence !== undefined && input.prompt_influence !== null) {
++    if (
++      typeof input.prompt_influence !== "number" ||
++      !Number.isFinite(input.prompt_influence) ||
++      input.prompt_influence < c.minPromptInfluence ||
++      input.prompt_influence > c.maxPromptInfluence
++    ) {
++      throw new MediaCapabilityError("SOUND_EFFECT_INFLUENCE_UNSUPPORTED");
++    }
++    influence = input.prompt_influence;
++  }
++  return { duration_seconds: duration, prompt_influence: influence };
++}
++
++export interface MusicGenerationParametersInput {
++  readonly music_length_ms?: number | undefined;
++  readonly force_instrumental?: boolean | undefined;
++}
++
++export interface ValidatedMusicGenerationParameters {
++  readonly music_length_ms: number | null;
++  readonly force_instrumental: boolean;
++}
++
++export function validateMusicParameters(
++  route: MediaRegistryRoute | null,
++  input: MusicGenerationParametersInput = {}
++): ValidatedMusicGenerationParameters {
++  if (!route || route.capability !== "music_generation" || !route.musicConstraints) {
++    throw new MediaCapabilityError("MUSIC_ROUTE_UNAVAILABLE");
++  }
++  const c = route.musicConstraints;
++  let lengthMs: number | null = null;
++  if (input.music_length_ms !== undefined && input.music_length_ms !== null) {
++    if (
++      typeof input.music_length_ms !== "number" ||
++      !Number.isSafeInteger(input.music_length_ms) ||
++      input.music_length_ms < c.minLengthMs ||
++      input.music_length_ms > c.maxLengthMs
++    ) {
++      throw new MediaCapabilityError("MUSIC_LENGTH_UNSUPPORTED");
++    }
++    lengthMs = input.music_length_ms;
++  }
++  return {
++    music_length_ms: lengthMs,
++    force_instrumental: Boolean(input.force_instrumental ?? false)
++  };
++}
++
+ export class MediaCapabilityRegistry {
+   readonly #routes: readonly MediaRegistryRoute[];
+ 
+   constructor(
+-    enabled: readonly MediaCapability[] = ["image_generation", "transcription", "speech"]
++    enabled: readonly MediaCapability[] = [
++      "image_generation",
++      "transcription",
++      "speech",
++      "video_generation",
++      "sound_effects",
++      "music_generation"
++    ]
+   ) {
+     this.#routes = routes.filter((route) => enabled.includes(route.capability));
+   }
+diff --git a/packages/model-gateway/src/media/openai-media-adapter.ts b/packages/model-gateway/src/media/openai-media-adapter.ts
+index 1acb377..5d08018 100644
+--- a/packages/model-gateway/src/media/openai-media-adapter.ts
++++ b/packages/model-gateway/src/media/openai-media-adapter.ts
+@@ -9,7 +9,10 @@ import type {
+   MediaModel,
+   MediaSpeechFormat,
+   MediaSpeechMime,
+-  MediaSpeechVoice
++  MediaSpeechVoice,
++  MediaVideoDurationSeconds,
++  MediaVideoMime,
++  MediaVideoSize
+ } from "./media-registry.js";
+ 
+ export type NormalizedMediaErrorCode =
+@@ -69,8 +72,15 @@ export type MediaCanonicalUsage = {
+   total_tokens: number;
+ };
+ 
+-export type MediaAssetMime = MediaImageMime | MediaSpeechMime;
+-export type MediaAssetExtension = "png" | "jpg" | "webp" | "gif" | "mp3" | "wav" | "ogg";
++export type MediaAssetMime = MediaImageMime | MediaSpeechMime | MediaVideoMime;
++export type MediaAssetExtension = "png" | "jpg" | "webp" | "gif" | "mp3" | "wav" | "ogg" | "mp4";
++
++export interface VideoAdapterOptions {
++  readonly size?: MediaVideoSize;
++  readonly seconds?: MediaVideoDurationSeconds;
++  readonly pollIntervalMs?: number;
++  readonly maxPolls?: number;
++}
+ 
+ export type MediaBinary = {
+   bytes: Uint8Array;
+@@ -125,6 +135,7 @@ const providerUsage = (value: unknown): MediaCanonicalUsage | undefined => {
+ 
+ const MAX_IMAGE_BYTES = 16 * 1024 * 1024;
+ const MAX_SPEECH_BYTES = 8 * 1024 * 1024;
++const MAX_VIDEO_BYTES = 64 * 1024 * 1024;
+ const OPENAI_ORIGIN = "https://api.openai.com";
+ 
+ export const isPngBytes = (bytes: Uint8Array): boolean =>
+@@ -188,6 +199,13 @@ export const isWebmBytes = (bytes: Uint8Array): boolean =>
+   bytes[2] === 0xdf &&
+   bytes[3] === 0xa3;
+ 
++export const isMp4VideoBytes = (bytes: Uint8Array): boolean =>
++  bytes.length >= 12 &&
++  bytes[4] === 0x66 &&
++  bytes[5] === 0x74 &&
++  bytes[6] === 0x79 &&
++  bytes[7] === 0x70;
++
+ export const isMp4AudioBytes = (bytes: Uint8Array): boolean =>
+   bytes.length >= 8 &&
+   bytes[4] === 0x66 &&
+@@ -468,16 +486,17 @@ export class OpenAIMediaAdapter {
+ 
+   private async request(
+     path: string,
+-    body: BodyInit,
++    body: BodyInit | undefined,
+     contentType: string | null,
+-    signal: AbortSignal
++    signal: AbortSignal,
++    method: "POST" | "GET" = "POST"
+   ): Promise<Response> {
+     const deadline = AbortSignal.timeout(path === "images/edits" ? 120_000 : this.requestTimeoutMs);
+     const combined = AbortSignal.any([signal, deadline]);
+     try {
+       combined.throwIfAborted();
+       const response = await this.fetchImpl(`${this.baseUrl}/${path}`, {
+-        method: "POST",
++        method,
+         headers: {
+           Authorization: `Bearer ${this.apiKey}`,
+           ...(contentType ? { "Content-Type": contentType } : {})
+@@ -762,10 +781,103 @@ export class OpenAIMediaAdapter {
+     }
+     return { bytes, mime: expected.mime, extension: expected.extension };
+   }
++
++  async generateVideo(
++    prompt: string,
++    model: Extract<MediaModel, "sora-2">,
++    signal: AbortSignal,
++    options: VideoAdapterOptions = {}
++  ): Promise<MediaBinary> {
++    const size = options.size ?? "1280x720";
++    const seconds = options.seconds ?? 4;
++    const pollIntervalMs = Math.max(10, options.pollIntervalMs ?? 500);
++    const maxPolls = Math.max(1, options.maxPolls ?? 120);
++
++    const startRes = await this.request(
++      "videos",
++      JSON.stringify({ model, prompt, size, seconds: String(seconds) }),
++      "application/json",
++      signal
++    );
++    const startRaw = await readBounded(startRes, 256 * 1024, signal);
++    let created: { id?: unknown; status?: unknown; error?: { message?: unknown } } | null = null;
++    try {
++      created = JSON.parse(new TextDecoder().decode(startRaw)) as typeof created;
++    } catch {
++      throw new MediaProviderError("INVALID_ASSET", "Invalid video creation response", {
++        normalizedCode: "corrupt_response"
++      });
++    }
++    const videoId = typeof created?.id === "string" && /^[A-Za-z0-9._:-]{1,128}$/.test(created.id)
++      ? created.id
++      : null;
++    if (!videoId) {
++      throw new MediaProviderError("INVALID_ASSET", "Video job id missing from provider response", {
++        normalizedCode: "corrupt_response"
++      });
++    }
++
++    let status = typeof created?.status === "string" ? created.status : "queued";
++    for (let i = 0; i < maxPolls && (status === "queued" || status === "in_progress" || status === "running"); i++) {
++      if (signal.aborted) {
++        throw new MediaProviderError("ABORTED", "Video generation aborted", { normalizedCode: "aborted" });
++      }
++      await new Promise<void>((resolve, reject) => {
++        const timer = setTimeout(resolve, pollIntervalMs);
++        const onAbort = () => {
++          clearTimeout(timer);
++          reject(new MediaProviderError("ABORTED", "Video generation aborted", { normalizedCode: "aborted" }));
++        };
++        signal.addEventListener("abort", onAbort, { once: true });
++      });
++      const pollRes = await this.request(`videos/${encodeURIComponent(videoId)}`, undefined, null, signal, "GET");
++      const pollRaw = await readBounded(pollRes, 256 * 1024, signal);
++      let polled: { status?: unknown; error?: { message?: unknown } } | null = null;
++      try {
++        polled = JSON.parse(new TextDecoder().decode(pollRaw)) as typeof polled;
++      } catch {
++        throw new MediaProviderError("INVALID_ASSET", "Invalid video status response", {
++          normalizedCode: "corrupt_response"
++        });
++      }
++      status = typeof polled?.status === "string" ? polled.status : "failed";
++      if (status === "failed" || status === "cancelled") {
++        throw new MediaProviderError(
++          "PROVIDER_ERROR",
++          typeof polled?.error?.message === "string" ? polled.error.message : "Video generation failed",
++          { normalizedCode: "provider_error" }
++        );
++      }
++    }
++
++    if (status !== "completed" && status !== "done") {
++      throw new MediaProviderError("timeout", "Video generation polling timed out", {
++        normalizedCode: "timeout"
++      });
++    }
++
++    const contentRes = await this.request(`videos/${encodeURIComponent(videoId)}/content`, undefined, null, signal, "GET");
++    const contentType = contentRes.headers.get("content-type")?.split(";")[0]?.trim().toLowerCase();
++    if (contentType && contentType !== "application/octet-stream" && contentType !== "video/mp4") {
++      throw new MediaProviderError("INVALID_ASSET", `Unexpected video MIME ${contentType}`, {
++        normalizedCode: "invalid_mime"
++      });
++    }
++    const bytes = await readBounded(contentRes, MAX_VIDEO_BYTES, signal);
++    if (!isMp4VideoBytes(bytes)) {
++      throw new MediaProviderError("INVALID_ASSET", "No valid MP4 video signature returned", {
++        normalizedCode: "corrupt_response"
++      });
++    }
++    return { bytes, mime: "video/mp4", extension: "mp4" };
++  }
+ }
+ 
+ export const MEDIA_ENDPOINTS: Readonly<Record<MediaCapability, string>> = {
+   image_generation: `${OPENAI_ORIGIN}/v1/images/generations`,
+   transcription: `${OPENAI_ORIGIN}/v1/audio/transcriptions`,
+-  speech: `${OPENAI_ORIGIN}/v1/audio/speech`
++  speech: `${OPENAI_ORIGIN}/v1/audio/speech`,
++  video_generation: `${OPENAI_ORIGIN}/v1/videos`,
++  sound_effects: "https://api.elevenlabs.io/v1/sound-generation",
++  music_generation: "https://api.elevenlabs.io/v1/music"
+ };

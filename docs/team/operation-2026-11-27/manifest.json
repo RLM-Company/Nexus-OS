@@ -128,7 +128,14 @@
       "scope": "research_web_search",
       "instruction": "13_HARNESS_RESEARCH_RU.md",
       "status": "source_not_found",
-      "blocker": "No fresh PR/branch located at intake; owner asked for source link."
+      "blocker": "No fresh PR/branch located at intake; owner asked for source link.",
+      "follow_up": {
+        "owner": "second_developer_gpt",
+        "instruction": "../operation-2026-11-28/RESEARCH_HANDOFF_RU.md",
+        "reported_source_sha": "f23e8756c52522db35f647108199c0cd3a2de578",
+        "reported_source_author": "Grok",
+        "source_available": false
+      }
     },
     {
       "pr": "https://github.com/RLM-Company/Nexus-OS/pull/697",
