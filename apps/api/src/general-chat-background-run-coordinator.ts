@@ -1,7 +1,8 @@
 import {
   ContextTooLargeError,
   MemoryContextIncompleteError,
-  contextMemoryUsage
+  contextMemoryUsage,
+  selectContextBundle
 } from "@cosmora/core";
 import type { ChatService } from "@cosmora/core";
 import type { ChatImageAttachment } from "@cosmora/contracts";
@@ -249,12 +250,17 @@ export class GeneralChatBackgroundRunCoordinator {
           : {}),
         messages: await this.#applyKosmoraActions(conversation, controller.signal),
         historyCompaction: this.#store.historyCompactionForRun(queued.run_id, queued.owner_id),
-        recalledMemory: await this.#store.recallForRunAsync(
-          queued.run_id,
-          queued.owner_id,
-          conversation.slice(-8).map((m) => m.id),
-          controller.signal
-        ),
+        recalledMemory: await (async () => {
+          const recalled = await this.#store.recallForRunAsync(
+            queued.run_id,
+            queued.owner_id,
+            conversation.slice(-8).map((m) => m.id),
+            controller.signal
+          );
+          const query =
+            [...conversation].reverse().find((message) => message.role === "user")?.content ?? "";
+          return selectContextBundle(recalled, { owner: queued.owner_id, query });
+        })(),
         memoryNotes: this.#store.getChatMemory(queued.chat_id, queued.owner_id)?.memory_notes ?? "",
         skills: this.#store.skills.forRun(queued.run_id, queued.owner_id)?.items ?? []
       });

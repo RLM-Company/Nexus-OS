@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import {
   ContextMemoryCreateSchema,
   ContextMemoryUpdateSchema,
@@ -44,6 +45,67 @@ export function registerContextMemoryRoutes(
     });
     const owner = (r: FastifyRequest) => identityFor(r).owner_id;
     routes.get("/api/v1/memory/local-snapshot", (r) => store.localSnapshot(owner(r)));
+
+    /** Narrow bridge to the existing user-owned Drive interface (Harness 3).
+     * The manifest keeps scope, versions and the owner's explicit selection;
+     * it contains no credentials and grants no provider access. */
+    const driveManifest = (snapshot: unknown, scope: string) => {
+      const source = snapshot as {
+        format?: string;
+        entries?: unknown[];
+        settings?: unknown[];
+      };
+      const entries = (source.entries ?? []).filter((entry) => {
+        if (scope === "all") return true;
+        const row = entry as { scope?: string };
+        return row.scope === scope;
+      });
+      const payload = {
+        format: "kosmora.memory-drive-manifest.v1",
+        version: 1,
+        source_format: source.format ?? "kosmora.memory-snapshot.v1",
+        scope,
+        entries,
+        settings: source.settings ?? []
+      };
+      const sha256 = createHash("sha256").update(JSON.stringify(payload)).digest("hex");
+      return { ...payload, sha256 };
+    };
+    routes.get<{ Querystring: { scope?: string } }>(
+      "/api/v1/memory/drive-manifest",
+      {
+        schema: {
+          querystring: Type.Object({ scope: Type.Optional(Type.String({ maxLength: 32 })) })
+        }
+      },
+      (r, reply) => {
+        const scope = r.query.scope ?? "all";
+        if (!["all", "personal", "chat", "project"].includes(scope))
+          return reply.code(400).send({ error: { code: "INVALID_SCOPE" } });
+        return driveManifest(store.localSnapshot(owner(r)), scope);
+      }
+    );
+    routes.post<{ Body: unknown }>(
+      "/api/v1/memory/drive-manifest/verify",
+      { schema: { body: Type.Object({}, { additionalProperties: true }) } },
+      (r, reply) => {
+        const manifest = r.body as { format?: string; sha256?: string; [key: string]: unknown };
+        if (
+          manifest.format !== "kosmora.memory-drive-manifest.v1" ||
+          typeof manifest.sha256 !== "string"
+        )
+          return reply.code(400).send({ error: { code: "INVALID_DRIVE_MANIFEST" } });
+        const { sha256, ...payload } = manifest;
+        const actual = createHash("sha256").update(JSON.stringify(payload)).digest("hex");
+        if (actual !== sha256)
+          return reply.code(409).send({ error: { code: "DRIVE_MANIFEST_CHANGED" } });
+        return {
+          ok: true,
+          scope: payload.scope,
+          entries: Array.isArray(payload.entries) ? payload.entries.length : 0
+        };
+      }
+    );
     routes.get<{ Querystring: { q?: string; offset?: number } }>(
       "/api/v1/memory",
       {

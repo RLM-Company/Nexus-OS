@@ -1,0 +1,649 @@
+[
+  {
+    "id": "BIZ-013",
+    "result": {
+      "format": "kosmora.business-scenario-run.v1",
+      "scenario_id": "BIZ-013",
+      "artifact": {
+        "kind": "table",
+        "reused": "BIZ-013 / packages/core/src/supplier-offer-comparison.ts (verified)",
+        "row_count": 2,
+        "rows": [
+          {
+            "supplier": "Альфа",
+            "currency": "RUB",
+            "deliveryDays": 4,
+            "additionalCostsStatus": "указаны",
+            "additionalCosts": [
+              {
+                "label": "Доставка",
+                "amount": "0.25"
+              }
+            ],
+            "unrequestedItems": [],
+            "complete": true,
+            "knownSubtotal": "7.5",
+            "total": "7.5",
+            "lines": [
+              {
+                "itemId": "AB-10",
+                "label": "Кабель",
+                "requiredQuantity": 12.5,
+                "requiredUnit": "м",
+                "offeredQuantity": 12.5,
+                "offeredUnit": "м",
+                "unitPrice": 0.1,
+                "quoteAmount": "1.25",
+                "issues": []
+              },
+              {
+                "itemId": "AB-20",
+                "label": "Разъём",
+                "requiredQuantity": 5,
+                "requiredUnit": "шт.",
+                "offeredQuantity": 5,
+                "offeredUnit": "шт.",
+                "unitPrice": 1.2,
+                "quoteAmount": "6",
+                "issues": []
+              }
+            ]
+          },
+          {
+            "supplier": "Бета",
+            "currency": "EUR",
+            "deliveryDays": null,
+            "additionalCostsStatus": "не указаны",
+            "additionalCosts": null,
+            "unrequestedItems": ["EXTRA"],
+            "complete": false,
+            "knownSubtotal": "2",
+            "total": null,
+            "lines": [
+              {
+                "itemId": "AB-10",
+                "label": "Кабель",
+                "requiredQuantity": 12.5,
+                "requiredUnit": "м",
+                "offeredQuantity": 1,
+                "offeredUnit": "рулон",
+                "unitPrice": 2,
+                "quoteAmount": "2",
+                "issues": ["разные единицы"]
+              },
+              {
+                "itemId": "AB-20",
+                "label": "Разъём",
+                "requiredQuantity": 5,
+                "requiredUnit": "шт.",
+                "offeredQuantity": null,
+                "offeredUnit": null,
+                "unitPrice": null,
+                "quoteAmount": null,
+                "issues": ["позиция отсутствует"]
+              }
+            ]
+          }
+        ],
+        "csv": "Тип строки,Поставщик,Валюта,Срок в днях,Позиция,Наименование,Требуется,Ед. требования,Предложено,Ед. предложения,Цена за ед.,Известная сумма,Полная сумма,Состояние\r\nИтог,Альфа,RUB,4,,,,,,,,7.5,7.5,комплектно; расходы указаны\r\nТребование,Альфа,RUB,,AB-10,Кабель,12.5,м,12.5,м,0.1,1.25,,сопоставлено\r\nТребование,Альфа,RUB,,AB-20,Разъём,5,шт.,5,шт.,1.2,6,,сопоставлено\r\nРасход,Альфа,RUB,,,Доставка,,,,,,0.25,,указано\r\nИтог,Бета,EUR,,,,,,,,,2,,есть расхождения; расходы не указаны\r\nТребование,Бета,EUR,,AB-10,Кабель,12.5,м,1,рулон,2,2,,разные единицы\r\nТребование,Бета,EUR,,AB-20,Разъём,5,шт.,,,,,,позиция отсутствует\r\nВне спецификации,Бета,EUR,,EXTRA,,,,,,,,,условия по позиции требуют уточнения\r\n",
+        "markdown": "# Сравнение предложений поставщиков (BIZ-013, переиспользовано)\n\nСуммы указаны в валютах поставщиков; полная сумма — только при полном комплекте и известных расходах.\n# Сравнение предложений поставщиков\n\nСуммы указаны в валютах поставщиков. Известная сумма включает цены сопоставленных по ID строк предложения и указанные расходы. Полная сумма доступна при точном комплекте и известных расходах.\n\n| Тип строки | Поставщик | Валюта | Срок в днях | Позиция | Наименование | Требуется | Ед. требования | Предложено | Ед. предложения | Цена за ед. | Известная сумма | Полная сумма | Состояние |\n| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |\n| Итог | Альфа | RUB | 4 | — | — | — | — | — | — | — | 7.5 | 7.5 | комплектно; расходы указаны |\n| Требование | Альфа | RUB | — | AB-10 | Кабель | 12.5 | м | 12.5 | м | 0.1 | 1.25 | — | сопоставлено |\n| Требование | Альфа | RUB | — | AB-20 | Разъём | 5 | шт. | 5 | шт. | 1.2 | 6 | — | сопоставлено |\n| Расход | Альфа | RUB | — | — | Доставка | — | — | — | — | — | 0.25 | — | указано |\n| Итог | Бета | EUR | — | — | — | — | — | — | — | — | 2 | — | есть расхождения; расходы не указаны |\n| Требование | Бета | EUR | — | AB-10 | Кабель | 12.5 | м | 1 | рулон | 2 | 2 | — | разные единицы |\n| Требование | Бета | EUR | — | AB-20 | Разъём | 5 | шт. | — | — | — | — | — | позиция отсутствует |\n| Вне спецификации | Бета | EUR | — | EXTRA | — | — | — | — | — | — | — | — | условия по позиции требуют уточнения |\n",
+        "gaps": []
+      },
+      "checks": [
+        {
+          "criterion": "supplier_rows",
+          "passed": true,
+          "detail": "Сравнено поставщиков: 2."
+        },
+        {
+          "criterion": "complete_offers",
+          "passed": true,
+          "detail": "Полных по комплекту предложений: 1."
+        },
+        {
+          "criterion": "no_gaps",
+          "passed": true,
+          "detail": "Все обязательные поля предоставлены."
+        }
+      ],
+      "gaps": [],
+      "needs_answer": false
+    }
+  },
+  {
+    "id": "BIZ-014",
+    "result": {
+      "format": "kosmora.business-scenario-run.v1",
+      "scenario_id": "BIZ-014",
+      "artifact": {
+        "kind": "table",
+        "title": "Запрос цены по спецификации",
+        "header": ["#", "Позиция", "цена", "срок"],
+        "rows": [
+          ["1", "Кабель", "—", "—"],
+          ["2", "Разъём", "—", "—"]
+        ],
+        "csv": "\"#\",\"Позиция\",\"цена\",\"срок\"\r\n\"1\",\"Кабель\",\"—\",\"—\"\r\n\"2\",\"Разъём\",\"—\",\"—\"\r\n",
+        "note": "Отправка запроса требует отдельного полномочия; здесь подготовлен только черновик.",
+        "gaps": []
+      },
+      "checks": [
+        {
+          "criterion": "all_items_covered",
+          "passed": true,
+          "detail": "Позиций в запросе: 2."
+        },
+        {
+          "criterion": "required_fields_listed",
+          "passed": true,
+          "detail": "Обязательных ответов: 2."
+        },
+        {
+          "criterion": "no_gaps",
+          "passed": true,
+          "detail": "Все обязательные поля предоставлены."
+        }
+      ],
+      "gaps": [],
+      "needs_answer": false
+    }
+  },
+  {
+    "id": "BIZ-016",
+    "result": {
+      "format": "kosmora.business-scenario-run.v1",
+      "scenario_id": "BIZ-016",
+      "artifact": {
+        "kind": "register",
+        "title": "Сверка заказа, счёта и приёмки",
+        "rows": [
+          {
+            "key": "AB-10:5",
+            "order": true,
+            "invoice": true,
+            "receipt": true,
+            "status": "согласовано"
+          }
+        ],
+        "note": "Отсутствующий документ не считается совпадением; суммы не выводятся без явных данных.",
+        "gaps": []
+      },
+      "checks": [
+        {
+          "criterion": "three_way_coverage",
+          "passed": true,
+          "detail": "Сопоставлено позиций: 1."
+        },
+        {
+          "criterion": "mismatches_recorded",
+          "passed": true,
+          "detail": "Расхождений: 0."
+        },
+        {
+          "criterion": "no_gaps",
+          "passed": true,
+          "detail": "Все обязательные поля предоставлены."
+        }
+      ],
+      "gaps": [],
+      "needs_answer": false
+    }
+  },
+  {
+    "id": "BIZ-017",
+    "result": {
+      "format": "kosmora.business-scenario-run.v1",
+      "scenario_id": "BIZ-017",
+      "artifact": {
+        "kind": "calculation",
+        "title": "Контроль изменения закупочных цен",
+        "rows": [
+          {
+            "sku": "A",
+            "before": 10,
+            "after": 12,
+            "comparable": true,
+            "delta": 2,
+            "status": "сопоставимо"
+          }
+        ],
+        "note": "Влияние считается только по сопоставимым SKU, единицам и упаковке.",
+        "gaps": []
+      },
+      "checks": [
+        {
+          "criterion": "comparable_pairs",
+          "passed": true,
+          "detail": "Сопоставимых пар: 1."
+        },
+        {
+          "criterion": "packaging_separated",
+          "passed": true,
+          "detail": "Смена упаковки не выдаётся за рост цены."
+        },
+        {
+          "criterion": "no_gaps",
+          "passed": true,
+          "detail": "Все обязательные поля предоставлены."
+        }
+      ],
+      "gaps": [],
+      "needs_answer": false
+    }
+  },
+  {
+    "id": "BIZ-021",
+    "result": {
+      "format": "kosmora.business-scenario-run.v1",
+      "scenario_id": "BIZ-021",
+      "artifact": {
+        "kind": "calculation",
+        "title": "Управленческий отчёт о доходах и расходах",
+        "period": "2026-11",
+        "rows": [
+          {
+            "source": "продажа",
+            "kind": "income",
+            "amount": 100
+          },
+          {
+            "source": "закупка",
+            "kind": "expense",
+            "amount": 40
+          }
+        ],
+        "income": "100",
+        "expense": "40",
+        "profit": "60",
+        "note": "Прибыль и движение денег не смешиваются; статьи без правил распределения остаются необработанными.",
+        "gaps": []
+      },
+      "checks": [
+        {
+          "criterion": "period_given",
+          "passed": true,
+          "detail": "Период: 2026-11."
+        },
+        {
+          "criterion": "totals_recomputed",
+          "passed": true,
+          "detail": "Операций обработано: 2."
+        },
+        {
+          "criterion": "no_gaps",
+          "passed": true,
+          "detail": "Все обязательные поля предоставлены."
+        }
+      ],
+      "gaps": [],
+      "needs_answer": false
+    }
+  },
+  {
+    "id": "BIZ-023",
+    "result": {
+      "format": "kosmora.business-scenario-run.v1",
+      "scenario_id": "BIZ-023",
+      "artifact": {
+        "kind": "calculation",
+        "title": "Экономика товара, заказа или услуги",
+        "revenue": "100",
+        "discount": "10",
+        "net_revenue": "90",
+        "known_cost": "60",
+        "margin": "30",
+        "cost_complete": false,
+        "note": "Формула: маржа = выручка − скидка − известные расходы.",
+        "gaps": []
+      },
+      "checks": [
+        {
+          "criterion": "numbers_explicit",
+          "passed": true,
+          "detail": "Выручка 100, известные расходы 60."
+        },
+        {
+          "criterion": "cost_completeness",
+          "passed": false,
+          "detail": "Себестоимость неполная: маржа предварительная."
+        },
+        {
+          "criterion": "no_gaps",
+          "passed": true,
+          "detail": "Все обязательные поля предоставлены."
+        }
+      ],
+      "gaps": [],
+      "needs_answer": false
+    }
+  },
+  {
+    "id": "BIZ-024",
+    "result": {
+      "format": "kosmora.business-scenario-run.v1",
+      "scenario_id": "BIZ-024",
+      "artifact": {
+        "kind": "table",
+        "title": "План-факт бюджета",
+        "period": "2026-11",
+        "rows": [
+          {
+            "metric": "план",
+            "value": "100"
+          },
+          {
+            "metric": "факт",
+            "value": "120"
+          },
+          {
+            "metric": "отклонение",
+            "value": "20"
+          },
+          {
+            "metric": "коэффициент",
+            "value": "1.2"
+          }
+        ],
+        "note": "Сценарии «что если» требуют явных допущений; гипотеза не выдаётся за прогноз.",
+        "gaps": []
+      },
+      "checks": [
+        {
+          "criterion": "same_period",
+          "passed": true,
+          "detail": "Период: 2026-11."
+        },
+        {
+          "criterion": "deterministic_variance",
+          "passed": true,
+          "detail": "Отклонение: 20."
+        },
+        {
+          "criterion": "no_gaps",
+          "passed": true,
+          "detail": "Все обязательные поля предоставлены."
+        }
+      ],
+      "gaps": [],
+      "needs_answer": false
+    }
+  },
+  {
+    "id": "BIZ-038",
+    "result": {
+      "format": "kosmora.business-scenario-run.v1",
+      "scenario_id": "BIZ-038",
+      "artifact": {
+        "kind": "checklist",
+        "title": "Комплект документов по шаблону",
+        "rows": [
+          {
+            "field": "№",
+            "value": "001",
+            "status": "заполнено"
+          },
+          {
+            "field": "дата",
+            "value": "2026-11-27",
+            "status": "заполнено"
+          }
+        ],
+        "note": "Отсутствующий реквизит не выдумывается; требуется ответ владельца.",
+        "gaps": []
+      },
+      "checks": [
+        {
+          "criterion": "template_consistent",
+          "passed": true,
+          "detail": "Полей шаблона: 2."
+        },
+        {
+          "criterion": "no_gaps",
+          "passed": true,
+          "detail": "Все обязательные поля предоставлены."
+        }
+      ],
+      "gaps": [],
+      "needs_answer": false
+    }
+  },
+  {
+    "id": "BIZ-040",
+    "result": {
+      "format": "kosmora.business-scenario-run.v1",
+      "scenario_id": "BIZ-040",
+      "artifact": {
+        "kind": "register",
+        "reused": "BIZ-040 / packages/core/src/biz040-field-register.ts (verified)",
+        "rows": [
+          {
+            "field_key": "amount",
+            "field": "Сумма",
+            "critical": false,
+            "value": "00123",
+            "file_name": "a.pdf",
+            "page": 1,
+            "source": "pdf_text",
+            "status": "text_verified",
+            "note": "Извлечено из встроенного текста PDF; изображение не проверялось."
+          }
+        ],
+        "csv": "﻿field_key,field,value,file_name,page,source,verification_status,critical,note\r\namount,Сумма,00123,a.pdf,1,pdf_text,text_verified,no,Извлечено из встроенного текста PDF; изображение не проверялось.\r\n",
+        "note": "OCR-сомнительные и критичные неверенные поля не выдаются за подтверждённые.",
+        "gaps": []
+      },
+      "checks": [
+        {
+          "criterion": "fields_registered",
+          "passed": true,
+          "detail": "Полей в реестре: 1."
+        },
+        {
+          "criterion": "contradictions_visible",
+          "passed": true,
+          "detail": "Противоречий: 0."
+        },
+        {
+          "criterion": "no_gaps",
+          "passed": true,
+          "detail": "Все обязательные поля предоставлены."
+        }
+      ],
+      "gaps": [],
+      "needs_answer": false
+    }
+  },
+  {
+    "id": "BIZ-042",
+    "result": {
+      "format": "kosmora.business-scenario-run.v1",
+      "scenario_id": "BIZ-042",
+      "artifact": {
+        "kind": "register",
+        "title": "Матрица требований тендера/заявки",
+        "rows": [
+          {
+            "id": "T-1",
+            "mandatory": true,
+            "evidence": "сертификат",
+            "deadline": "2026-12-01",
+            "status": "есть доказательство"
+          }
+        ],
+        "note": "Подача документов — отдельная операция с отдельным полномочием.",
+        "gaps": []
+      },
+      "checks": [
+        {
+          "criterion": "requirements_listed",
+          "passed": true,
+          "detail": "Требований: 1."
+        },
+        {
+          "criterion": "no_gaps",
+          "passed": true,
+          "detail": "Все обязательные поля предоставлены."
+        }
+      ],
+      "gaps": [],
+      "needs_answer": false
+    }
+  },
+  {
+    "id": "BIZ-046",
+    "result": {
+      "format": "kosmora.business-scenario-run.v1",
+      "scenario_id": "BIZ-046",
+      "artifact": {
+        "kind": "register",
+        "title": "Проверка материалов по правилам бренда",
+        "evaluation": {
+          "format": "kosmora.skill-result-evaluation.v1",
+          "passed": true,
+          "checks": [
+            {
+              "criterion": "format",
+              "passed": true,
+              "detail": "Формат «any» соблюдён."
+            },
+            {
+              "criterion": "facts_preserved",
+              "passed": true,
+              "detail": "Все 1 обязательных фактов найдены в ответе."
+            },
+            {
+              "criterion": "constraints_followed",
+              "passed": true,
+              "detail": "Все 1 явных ограничений соблюдены."
+            }
+          ],
+          "not_checked": ["truth", "intelligence", "benchmark_gain"]
+        },
+        "style_rows": [],
+        "note": "Оценка стиля/структуры; истина и качество модели не проверяются.",
+        "gaps": []
+      },
+      "checks": [
+        {
+          "criterion": "facts_preserved",
+          "passed": true,
+          "detail": "Факты продукта сохранены или пробел зафиксирован."
+        },
+        {
+          "criterion": "no_gaps",
+          "passed": true,
+          "detail": "Все обязательные поля предоставлены."
+        }
+      ],
+      "gaps": [],
+      "needs_answer": false
+    }
+  },
+  {
+    "id": "BIZ-072",
+    "result": {
+      "format": "kosmora.business-scenario-run.v1",
+      "scenario_id": "BIZ-072",
+      "artifact": {
+        "kind": "text",
+        "title": "Рабочая сводка руководителю",
+        "period": "2026-11",
+        "rows": [
+          {
+            "text": "Решение по поставщику",
+            "source": "решение №12",
+            "status": "есть источник"
+          }
+        ],
+        "stale": ["старый прайс"],
+        "markdown": "# Рабочая сводка руководителю — 2026-11\n\n- Решение по поставщику (источник: решение №12)\n\nУстаревшие данные: старый прайс.",
+        "note": "Нет источника — пункт помечен как пробел, а не как факт.",
+        "gaps": []
+      },
+      "checks": [
+        {
+          "criterion": "period_given",
+          "passed": true,
+          "detail": "Период: 2026-11."
+        },
+        {
+          "criterion": "sources_present",
+          "passed": true,
+          "detail": "Пунктов: 1."
+        },
+        {
+          "criterion": "no_gaps",
+          "passed": true,
+          "detail": "Все обязательные поля предоставлены."
+        }
+      ],
+      "gaps": [],
+      "needs_answer": false
+    }
+  },
+  {
+    "id": "BIZ-023/reapplied",
+    "result": {
+      "format": "kosmora.business-scenario-run.v1",
+      "scenario_id": "BIZ-023",
+      "artifact": {
+        "kind": "calculation",
+        "title": "Экономика товара, заказа или услуги",
+        "revenue": "200",
+        "discount": "0",
+        "net_revenue": "200",
+        "known_cost": "50",
+        "margin": "150",
+        "cost_complete": true,
+        "note": "Формула: маржа = выручка − скидка − известные расходы.",
+        "gaps": []
+      },
+      "checks": [
+        {
+          "criterion": "numbers_explicit",
+          "passed": true,
+          "detail": "Выручка 200, известные расходы 50."
+        },
+        {
+          "criterion": "cost_completeness",
+          "passed": true,
+          "detail": "Себестоимость полная."
+        },
+        {
+          "criterion": "no_gaps",
+          "passed": true,
+          "detail": "Все обязательные поля предоставлены."
+        }
+      ],
+      "gaps": [],
+      "needs_answer": false
+    }
+  },
+  {
+    "id": "BIZ-021/gaps",
+    "result": {
+      "format": "kosmora.business-scenario-run.v1",
+      "scenario_id": "BIZ-021",
+      "artifact": {
+        "kind": "gaps",
+        "scenario_id": "BIZ-021",
+        "reason": "Недостаточно исходных данных; значения не выдуманы.",
+        "gaps": ["operations"]
+      },
+      "checks": [
+        {
+          "criterion": "no_gaps",
+          "passed": false,
+          "detail": "Зафиксировано пробелов: 1."
+        }
+      ],
+      "gaps": [
+        {
+          "field": "operations",
+          "detail": "Обязательный массив «operations» отсутствует."
+        }
+      ],
+      "needs_answer": true
+    }
+  }
+]
