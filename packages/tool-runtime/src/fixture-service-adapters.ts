@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/require-await -- Fixture transports resolve synchronously by design. */
 import type { ConnectorTransport } from "./connector-registry.js";
 
 /**
