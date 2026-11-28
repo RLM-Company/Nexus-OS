@@ -37,9 +37,12 @@ test("keeps every main workspace usable at 390x844", async ({ page }) => {
     );
     if (isChat) {
       await expect(
-        page.getByLabel(workspace.button === "Koscode" ? "Задание Koscode" : "Сообщение Kosmora", {
-          exact: true
-        })
+        page.getByLabel(
+          workspace.button === "Koscode" ? "Сообщение Koscode" : "Сообщение Kosmora",
+          {
+            exact: true
+          }
+        )
       ).toBeEnabled();
       await expect(page.locator(".sidebar")).toHaveAttribute(
         "data-space",

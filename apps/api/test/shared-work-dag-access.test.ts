@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/require-await -- Deterministic local provider adapter. */
 import type { IdentityContext } from "@cosmora/contracts";
 import { loadServerConfig } from "@cosmora/config";
 import {

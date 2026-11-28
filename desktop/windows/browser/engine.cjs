@@ -748,14 +748,17 @@ function createBrowserEngine({
         }
         throw Error("COMPUTER_SESSION_STOPPED");
       }
-      deviceLease.assertNative(holder, context.owner);
-      expected(observation);
-      // A new, expressly launched agent may reclaim a tab after user control.
-      ownership.release(tabId, OWNERS.HUMAN, context.owner);
-      ownership.claim(tabId, OWNERS.AGENT, signal);
       const controller = new AbortController();
-      dispatch = { tabId, signal, revision, controller, holder };
+      let claimed = false;
       try {
+        deviceLease.assertNative(holder, context.owner);
+        expected(observation);
+        // Validation may fail after a queued action changed the observation.
+        // It still has to release the already acquired device lease.
+        ownership.release(tabId, OWNERS.HUMAN, context.owner);
+        ownership.claim(tabId, OWNERS.AGENT, signal);
+        claimed = true;
+        dispatch = { tabId, signal, revision, controller, holder };
         return await executeOwned(
           action,
           observation,
@@ -765,13 +768,16 @@ function createBrowserEngine({
       } finally {
         dispatch = null;
         // A close or transfer may have removed this lease while the action waited.
-        if (tabs.has(tabId) && revision === handover)
-          ownership.release(tabId, OWNERS.AGENT, signal);
         try {
-          deviceLease.releaseNative(holder, context.owner);
-        } catch {
-          // Human takeover already evicted this lease; the generation guard
-          // above prevented any further input.
+          if (claimed && tabs.has(tabId) && revision === handover)
+            ownership.release(tabId, OWNERS.AGENT, signal);
+        } finally {
+          try {
+            deviceLease.releaseNative(holder, context.owner);
+          } catch {
+            // Human takeover already evicted this lease; the generation guard
+            // above prevented any further input.
+          }
         }
       }
     });

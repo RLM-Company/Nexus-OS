@@ -36,10 +36,11 @@ test("Koscode sidebar groups sessions by project without duplicate chat navigati
   await expect(sidebar.getByRole("button", { name: "Чаты", exact: true })).toHaveCount(0);
   await expect(sidebar.getByRole("button", { name: "Создать проект Koscode" })).toBeVisible();
   await expect(panel.getByText("Проект задач")).toBeVisible();
-  await expect(panel.locator(`a[href="/code-agent?project=${projectId}"]`)).toHaveAttribute(
-    "href",
-    `/code-agent?project=${projectId}`
-  );
+  await expect(
+    panel
+      .getByRole("link", { name: "Задачи и проверки", exact: true })
+      .and(panel.locator(`a[href="/code-agent?project=${projectId}"]`))
+  ).toHaveAttribute("href", `/code-agent?project=${projectId}`);
   await sidebar
     .getByRole("textbox", { name: "Поиск сессий и проектов Koscode" })
     .fill("несуществующая-сессия");

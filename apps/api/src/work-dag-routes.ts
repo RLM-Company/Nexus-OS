@@ -191,7 +191,7 @@ export function registerWorkDagRoutes(options: {
             coordinator.clone(
               r.params.projectId,
               r.params.id,
-              dataOwner(r) ?? "",
+              projectDataOwner(r) ?? "",
               identity.actor_id,
               r.body
             )

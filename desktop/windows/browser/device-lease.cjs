@@ -75,6 +75,7 @@ function createDeviceLease({ now = Date.now } = {}) {
       at: now(),
       generation
     };
+    next.cleanup?.();
     next.resolve(snapshot(native));
     emit();
   }

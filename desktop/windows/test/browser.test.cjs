@@ -6,6 +6,27 @@ const test = require("node:test"),
   os = require("node:os"),
   path = require("node:path");
 const { createBrowserEngine } = require("../browser/engine.cjs");
+
+test("a queued action with an obsolete observation releases the device lease", async (t) => {
+  const f = fixture(t);
+  const signal = new AbortController().signal;
+  await f.engine.open("https://example.test");
+  const before = await f.engine.observe(signal);
+  const first = f.engine.execute(
+    { kind: "browser_open", url: "https://example.test/next" },
+    before,
+    signal
+  );
+  const stale = assert.rejects(
+    f.engine.execute({ kind: "browser_tabs" }, before, signal),
+    /BROWSER_STALE/
+  );
+  await Promise.all([first, stale]);
+  assert.equal(f.engine.state().deviceLease.native, null);
+  const next = await f.engine.observe(signal);
+  const result = await f.engine.execute({ kind: "browser_tabs" }, next, AbortSignal.timeout(1000));
+  assert.ok(result.tabs.length > 0);
+});
 const { createBrowserProfiles } = require("../browser/profiles.cjs");
 const { safeUrl, address, profileKey, createTaskGate } = require("../browser/policy.cjs");
 const { validateComputerAction } = require("../computer-policy.cjs");
