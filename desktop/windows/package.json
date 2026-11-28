@@ -84,6 +84,7 @@
       "workspace/office-document.cjs",
       "workspace/office-text.cjs",
       "workspace/office-edit.cjs",
+      "workspace/office-csv.cjs",
       "workspace/office-view.cjs",
       "workspace/office-workspace.cjs",
       "browser/policy.cjs",

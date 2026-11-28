@@ -12,6 +12,7 @@ const typeLabels = {
 };
 function description(op: OfficeOperation) {
   if (op.kind === "replace_text") return `${op.target}: «${op.find}» → «${op.replace}»`;
+  if (op.kind === "set_docx_cell") return `${op.target}: «${op.value}»`;
   if (op.kind === "add_sheet") return `Добавить лист «${op.name}»`;
   if (op.kind === "set_range")
     return `${op.target}: диапазон ${op.start}, ${op.rows.length} × ${op.rows[0]?.length ?? 0}`;
@@ -112,6 +113,16 @@ function OperationEditor({
             />
           </label>
         </>
+      )}
+      {draft.kind === "set_docx_cell" && (
+        <label>
+          Новое содержимое ячейки{" "}
+          <textarea
+            aria-label="Новое содержимое ячейки"
+            value={draft.value}
+            onChange={(e) => setDraft({ ...draft, value: e.target.value })}
+          />
+        </label>
       )}
       {draft.kind === "set_cell" && (
         <>

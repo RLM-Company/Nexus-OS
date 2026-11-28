@@ -65,7 +65,7 @@ class OfficeRequestError extends Error {
 
 function officeCopyName(name: string) {
   return name.replace(
-    /^(.*?)(?:\.koswork)?(\.(?:docx|xlsx|pptx))$/i,
+    /^(.*?)(?:\.koswork)?(\.(?:docx|xlsx|csv|pptx))$/i,
     (_match, stem: string, extension: string) => {
       const suffix = ".koswork" + extension;
       return (
@@ -122,6 +122,7 @@ export function OfficeDocumentWorkspace() {
   const [target, setTarget] = useState("");
   const [find, setFind] = useState("");
   const [replace, setReplace] = useState("");
+  const [docxCellValue, setDocxCellValue] = useState("");
   const [address, setAddress] = useState("A1");
   const [valueType, setValueType] = useState<RangeType>("string");
   const [sheetName, setSheetName] = useState("");
@@ -302,7 +303,11 @@ export function OfficeDocumentWorkspace() {
       }
     });
   };
-  const xlsx = source?.name.toLowerCase().endsWith(".xlsx");
+  const xlsx = /\.xlsx$/i.test(source?.name ?? "") || /\.csv$/i.test(source?.name ?? "");
+  const csv = /\.csv$/i.test(source?.name ?? "");
+  const docxCell = /^table:[1-9][0-9]{0,2}\/row:[1-9][0-9]{0,4}\/cell:[1-9][0-9]{0,3}$/.test(
+    target
+  );
   const saveToDrive = () => {
     if (!result?.drive || result.drive.verified || busy) return;
     const { name, drive } = result;
@@ -345,14 +350,14 @@ export function OfficeDocumentWorkspace() {
     <section aria-label="Рабочие документы Koswork">
       <h3>Рабочие документы Koswork</h3>
       <p>
-        DOCX, XLSX, PPTX до 2 МиБ. Выбранный файл отправляется серверу для безопасного разбора.
+        DOCX, XLSX, CSV, PPTX до 2 МиБ. Выбранный файл отправляется серверу для безопасного разбора.
         Сохраняется новая копия; исходник остаётся у вас.
       </p>
       <label>
         Открыть Office{" "}
         <input
           type="file"
-          accept=".docx,.xlsx,.pptx"
+          accept=".docx,.xlsx,.csv,.pptx"
           disabled={busy}
           onChange={(e) => {
             const file = e.currentTarget.files?.[0];
@@ -531,20 +536,25 @@ export function OfficeDocumentWorkspace() {
                   Добавить правку ячейки
                 </button>
                 <OfficeRangeEditor target={target} onAdd={queue} disabled={editingIndex !== null} />
-                <label>
-                  Новый лист{" "}
-                  <input value={sheetName} onChange={(e) => setSheetName(e.target.value)} />
-                </label>
-                <button
-                  type="button"
-                  disabled={editingIndex !== null}
-                  onClick={() => queue({ kind: "add_sheet", name: sheetName })}
-                >
-                  Добавить лист в план
-                </button>
-                <p>
-                  После добавления листа выберите его адрес, чтобы включить ячейки в тот же план.
-                </p>
+                {!csv && (
+                  <>
+                    <label>
+                      Новый лист{" "}
+                      <input value={sheetName} onChange={(e) => setSheetName(e.target.value)} />
+                    </label>
+                    <button
+                      type="button"
+                      disabled={editingIndex !== null}
+                      onClick={() => queue({ kind: "add_sheet", name: sheetName })}
+                    >
+                      Добавить лист в план
+                    </button>
+                    <p>
+                      После добавления листа выберите его адрес, чтобы включить ячейки в тот же
+                      план.
+                    </p>
+                  </>
+                )}
               </>
             ) : (
               <>
@@ -562,6 +572,30 @@ export function OfficeDocumentWorkspace() {
                 >
                   Добавить замену в план
                 </button>
+                {docxCell && (
+                  <>
+                    <label>
+                      Заменить всё содержимое ячейки{" "}
+                      <input
+                        value={docxCellValue}
+                        onChange={(e) => setDocxCellValue(e.target.value)}
+                      />
+                    </label>
+                    <button
+                      type="button"
+                      disabled={editingIndex !== null}
+                      onClick={() =>
+                        queue({
+                          kind: "set_docx_cell",
+                          target,
+                          value: docxCellValue
+                        })
+                      }
+                    >
+                      Добавить замену ячейки
+                    </button>
+                  </>
+                )}
               </>
             )}
             <OfficePlanEditor

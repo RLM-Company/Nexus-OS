@@ -48,9 +48,17 @@ export function validateEditableOfficePlan(
       names.add(op.name.toLowerCase());
       sheets++;
     } else if (op.kind === "set_cell" || op.kind === "set_range") {
-      if (!/^sheet:[1-9][0-9]{0,2}$/.test(op.target) || Number(op.target.slice(6)) > sheets)
+      const isTable = op.target === "table:1";
+      if (
+        !isTable &&
+        (!/^sheet:[1-9][0-9]{0,2}$/.test(op.target) || Number(op.target.slice(6)) > sheets)
+      )
         throw Error("Лист для правки должен существовать или быть добавлен раньше в этом плане.");
       if (op.kind === "set_cell") officeRangeOperation(op.target, op.address, [[""]], ["string"]);
+    } else if (op.kind === "set_docx_cell") {
+      if (!/^table:[1-9][0-9]{0,2}\/row:[1-9][0-9]{0,4}\/cell:[1-9][0-9]{0,3}$/.test(op.target))
+        throw Error("Выберите ячейку таблицы DOCX для замены её содержимого.");
+      if (op.value.length > 4000) throw Error("Значение ячейки больше 4000 символов.");
     } else if (
       !op.target ||
       op.target.length > 120 ||
