@@ -1,0 +1,107 @@
+{
+  "wave": "local-completion-2026-11-28",
+  "base_sha": "132e609d7c6c47b13097437e3b56fe2bb5187ed7",
+  "instructions_branch": "team/local-completion-20261128",
+  "integration_owner": "11_CODEX",
+  "status": "prepared",
+  "dispatched": false,
+  "execution": "owner_manual_dispatch",
+  "deployment": "not_in_scope",
+  "agents": [
+    {
+      "id": "01_DEVELOPER",
+      "scope": "research",
+      "instruction": "01_DEVELOPER_RESEARCH_RU.md",
+      "status": "prepared",
+      "head_sha": null,
+      "pr": null
+    },
+    {
+      "id": "02_OPENCODE",
+      "scope": "automation",
+      "instruction": "02_OPENCODE_AUTOMATION_RU.md",
+      "status": "prepared",
+      "head_sha": null,
+      "pr": null
+    },
+    {
+      "id": "03_OPENCODE",
+      "scope": "integrations",
+      "instruction": "03_OPENCODE_INTEGRATIONS_RU.md",
+      "status": "prepared",
+      "head_sha": null,
+      "pr": null
+    },
+    {
+      "id": "04_OPENCODE",
+      "scope": "device_browser_windows",
+      "instruction": "04_OPENCODE_DESKTOP_RU.md",
+      "status": "prepared",
+      "head_sha": null,
+      "pr": null
+    },
+    {
+      "id": "05_OPENCODE",
+      "scope": "koscode",
+      "instruction": "05_OPENCODE_KOSCODE_RU.md",
+      "status": "prepared",
+      "head_sha": null,
+      "pr": null
+    },
+    {
+      "id": "06_OPENCODE",
+      "scope": "games_sites",
+      "instruction": "06_OPENCODE_GAMES_SITES_RU.md",
+      "status": "prepared",
+      "head_sha": null,
+      "pr": null
+    },
+    {
+      "id": "07_OPENCODE",
+      "scope": "media_presentations",
+      "instruction": "07_OPENCODE_MEDIA_RU.md",
+      "status": "prepared",
+      "head_sha": null,
+      "pr": null
+    },
+    {
+      "id": "08_HARNESS",
+      "scope": "stars_remote",
+      "instruction": "08_HARNESS_STARS_RU.md",
+      "status": "prepared",
+      "head_sha": null,
+      "pr": null
+    },
+    {
+      "id": "09_HARNESS",
+      "scope": "memory_skills_files",
+      "instruction": "09_HARNESS_MEMORY_FILES_RU.md",
+      "status": "prepared",
+      "head_sha": null,
+      "pr": null
+    },
+    {
+      "id": "10_HARNESS",
+      "scope": "voice_meetings",
+      "instruction": "10_HARNESS_VOICE_RU.md",
+      "status": "prepared",
+      "head_sha": null,
+      "pr": null
+    },
+    {
+      "id": "11_CODEX",
+      "scope": "developer_api_integration_then_speed",
+      "instruction": "11_CODEX_API_INTEGRATION_RU.md",
+      "status": "prepared",
+      "head_sha": null,
+      "pr": null
+    }
+  ],
+  "acceptance": {
+    "fixture": "separate evidence",
+    "real_model": "one baseline chat and one small Koswork file scenario passed on base SHA; not full acceptance",
+    "owner_pc": "not_completed",
+    "vps": "not_completed",
+    "first_group": "not_run"
+  }
+}
