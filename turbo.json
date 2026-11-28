@@ -14,6 +14,7 @@
         "$TURBO_ROOT$/desktop/windows/workspace/office-edit.cjs",
         "$TURBO_ROOT$/desktop/windows/workspace/office-view.cjs",
         "$TURBO_ROOT$/desktop/windows/workspace/office-document.cjs",
+        "$TURBO_ROOT$/desktop/windows/workspace/office-csv.cjs",
         "$TURBO_ROOT$/desktop/windows/workspace/office-text.cjs",
         "$TURBO_ROOT$/desktop/windows/workspace/version-backup.cjs",
         "$TURBO_ROOT$/desktop/windows/workspace/path-guard.cjs",
