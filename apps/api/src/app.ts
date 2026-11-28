@@ -187,7 +187,7 @@ import {
 } from "./identity.js";
 import { EmergencyStopActivatedError, RuntimeMetrics } from "./operations.js";
 import type { DemoManagerCoordinator } from "./demo-manager-coordinator.js";
-import type { ManagerWorkStore, StarsMissionStore } from "@cosmora/db";
+import type { ManagerWorkStore, StarsMissionStore, StarsOrgStore } from "@cosmora/db";
 import { registerArtifactContextRoutes } from "./artifact-context-routes.js";
 import type { ManagerWorkCoordinator } from "./manager-work-coordinator.js";
 import { registerManagerWorkRoutes } from "./manager-work-routes.js";
@@ -280,6 +280,7 @@ export interface AppDependencies {
   demoManagerCoordinator?: DemoManagerCoordinator;
   managerWorkStore?: ManagerWorkStore;
   starsMissionStore?: StarsMissionStore;
+  starsOrgStore?: StarsOrgStore;
   projectAutomationStore?: ProjectAutomationStore;
   payStore?: PayStore;
   payGateway?: PayGateway;
@@ -1557,6 +1558,7 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
         ? { dag: dependencies.managerWorkCoordinator.dag }
         : {}),
       ...(dependencies.agentTeamRunStore ? { teamRuns: dependencies.agentTeamRunStore } : {}),
+      ...(dependencies.starsOrgStore ? { orgStore: dependencies.starsOrgStore } : {}),
       identityFor
     });
 
