@@ -734,6 +734,16 @@ export class GeneralChatStore {
     return { chat, userMessage, run };
   }
 
+  /** Resolve the data scope of a run by id only. Returns identifiers, never content. */
+  runScope(runId: string): { ownerId: string; projectId: string | null } | null {
+    const row = this.#sqlite
+      .prepare(
+        "SELECT c.owner_id AS owner_id, c.project_id AS project_id FROM general_chat_runs r JOIN general_chats c ON c.id=r.chat_id WHERE r.id=?"
+      )
+      .get(runId) as { owner_id: string; project_id: string | null } | undefined;
+    return row ? { ownerId: row.owner_id, projectId: row.project_id } : null;
+  }
+
   getRun(runId: string, ownerId = LOCAL_OWNER_ID): StoredGeneralChatRun | null {
     const row = this.#sqlite
       .prepare(

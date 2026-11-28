@@ -201,7 +201,7 @@ import { registerGeneralChatRoutes, type ActiveModelRun } from "./general-chat-r
 import { registerCodeAgentRoutes } from "./code-agent/routes.js";
 import { CodeAgentService } from "./code-agent/service.js";
 import { CodeAgentStore } from "./code-agent/store.js";
-import type { CodeAgentWorkspaceRunner } from "@cosmora/tool-runtime";
+import type { CodeAgentWorkspaceRunner, ConnectorTransport } from "@cosmora/tool-runtime";
 import { configuredCodeAgentExecutor } from "./code-agent/executor.js";
 import { GithubIntegration, type GithubDraftStore } from "./github-integration.js";
 import { registerGithubRoutes } from "./github-routes.js";
@@ -248,6 +248,8 @@ export interface AppDependencies {
   indexedRecall?: IndexedMemoryRecall | undefined;
   semanticRanker?: ContextMemoryRanker | undefined;
   googleDrive?: GoogleDriveRuntime;
+  /** Owner-approved HTTP connector transport; injected by the server, never from descriptors. */
+  httpConnectorTransport?: ConnectorTransport;
   computerControl?: { enabled: boolean };
   runtimeClock?: RuntimeClock;
   config: ServerConfig;
@@ -889,7 +891,9 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
       origin: dependencies.config.webOrigin,
       identityFor
     },
-    dependencies.googleDrive
+    dependencies.googleDrive,
+    dependencies.httpConnectorTransport,
+    dependencies.githubIntegration
   );
   if (dependencies.projectStore) registerApexRoutes(app, dependencies.projectStore, identityFor);
   if (dependencies.payStore)
@@ -1531,6 +1535,9 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
       ...(dependencies.generalChatStore ? { chats: dependencies.generalChatStore } : {}),
       coordinator: dependencies.managerWorkCoordinator,
       projects: dependencies.projectStore,
+      ...(dependencies.projectMembershipStore
+        ? { membership: dependencies.projectMembershipStore }
+        : {}),
       nodeBudget: {
         max_input_tokens: Math.min(3_000_000, (dependencies.modelContextWindowTokens ?? 32000) * 3),
         max_output_tokens: Math.min(300_000, dependencies.config.managerMaxOutputTokens * 3)
@@ -1614,6 +1621,9 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
       chat: dependencies.chat,
       ...(dependencies.accountStore ? { accountStore: dependencies.accountStore } : {}),
       ...(dependencies.projectStore ? { projectStore: dependencies.projectStore } : {}),
+      ...(dependencies.projectMembershipStore
+        ? { projectMembership: dependencies.projectMembershipStore }
+        : {}),
       ...(dependencies.managerWorkStore
         ? { projectMemory: dependencies.managerWorkStore.memory }
         : {}),
@@ -2468,8 +2478,17 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
       "/api/v1/projects",
       { schema: { response: { 200: ProjectListResponseSchema } } },
       (request) => {
+        const owner = identityFor(request).owner_id;
+        const owned = store.listProjects(owner);
+        const membership = dependencies.projectMembershipStore;
+        const shared = membership
+          ? membership
+              .sharedWith(owner)
+              .filter((project) => !owned.some((item) => item.id === project.id))
+              .map((project) => project as ProjectListResponse["items"][number])
+          : [];
         const response: ProjectListResponse = {
-          items: store.listProjects(identityFor(request).owner_id)
+          items: [...owned, ...shared]
         };
         return response;
       }

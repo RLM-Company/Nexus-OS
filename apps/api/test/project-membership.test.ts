@@ -225,4 +225,58 @@ describe("project membership API", () => {
       ).statusCode
     ).toBe(404);
   });
+
+  it("records the acting editor as author, conflicts on stale version and refuses viewer writes", async () => {
+    const base = `/api/v1/projects/${projectId}`;
+    await ownerApp.inject({
+      method: "POST",
+      url: `${base}/members/invite`,
+      payload: { account_id: "owner-b", role: "editor" }
+    });
+    await memberApp.inject({ method: "POST", url: `${base}/members/accept` });
+    await ownerApp.inject({
+      method: "POST",
+      url: `${base}/members/invite`,
+      payload: { account_id: "owner-c", role: "viewer" }
+    });
+    await thirdApp.inject({ method: "POST", url: `${base}/members/accept` });
+    const payload = { version: 0, instructions: "Материал от редактора", attachments: [] };
+    const saved = await memberApp.inject({ method: "PUT", url: `${base}/materials`, payload });
+    expect(saved.statusCode).toBe(200);
+    expect(saved.json()).toMatchObject({ version: 1, updated_by: "owner-b" });
+    expect(
+      (await memberApp.inject({ method: "PUT", url: `${base}/materials`, payload })).statusCode
+    ).toBe(409);
+    expect(
+      (
+        await thirdApp.inject({
+          method: "PUT",
+          url: `${base}/materials`,
+          payload: { ...payload, version: 1 }
+        })
+      ).statusCode
+    ).toBe(404);
+  });
+
+  it("shows an accepted shared project in the member's main project list, not before acceptance", async () => {
+    const base = `/api/v1/projects/${projectId}/members`;
+    const listed = async (app: typeof memberApp) =>
+      (await app.inject({ method: "GET", url: "/api/v1/projects" })).json<{
+        items: Array<{ id: string; membership_role?: string }>;
+      }>().items;
+    expect((await listed(memberApp)).some((item) => item.id === projectId)).toBe(false);
+    await ownerApp.inject({
+      method: "POST",
+      url: `${base}/invite`,
+      payload: { account_id: "owner-b", role: "viewer" }
+    });
+    expect((await listed(memberApp)).some((item) => item.id === projectId)).toBe(false);
+    await memberApp.inject({ method: "POST", url: `${base}/accept` });
+    expect((await listed(memberApp)).find((item) => item.id === projectId)).toMatchObject({
+      id: projectId,
+      membership_role: "viewer"
+    });
+    await ownerApp.inject({ method: "DELETE", url: `${base}/owner-b` });
+    expect((await listed(memberApp)).some((item) => item.id === projectId)).toBe(false);
+  });
 });

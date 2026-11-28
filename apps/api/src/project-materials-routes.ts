@@ -109,8 +109,12 @@ export function registerProjectMaterialsRoutes(
         return reply.code(400).send({ error: { code: "VALIDATION_ERROR" } });
       try {
         return (
-          store.setMaterials(request.params.projectId, access.ownerId, request.body) ??
-          reply.code(404).send({ error: { code: "PROJECT_NOT_FOUND" } })
+          store.setMaterials(
+            request.params.projectId,
+            access.ownerId,
+            request.body,
+            identityFor(request).actor_id
+          ) ?? reply.code(404).send({ error: { code: "PROJECT_NOT_FOUND" } })
         );
       } catch (error) {
         if (error instanceof ProjectMaterialsFencedError)

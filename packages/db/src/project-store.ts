@@ -97,6 +97,8 @@ export interface ProjectMaterials {
   instructions: string;
   attachments: ChatTextAttachment[];
   updated_at: string;
+  /** Actor account that made the last change; data stays under the project owner. */
+  updated_by?: string | null;
 }
 
 export interface StoredMessage {
@@ -251,6 +253,17 @@ export class ProjectStore {
     return typeof row?.id === "string" ? row.id : null;
   }
 
+  #materialAuthor(projectId: string, version: number): string | null {
+    try {
+      const row = this.#sqlite
+        .prepare("SELECT actor_id FROM project_material_activity WHERE project_id=? AND version=?")
+        .get(projectId, version) as { actor_id: string } | undefined;
+      return row?.actor_id ?? null;
+    } catch {
+      return null;
+    }
+  }
+
   getMaterials(projectId: string, ownerId = LOCAL_OWNER_ID): ProjectMaterials | null {
     const project = this.getProject(projectId, ownerId);
     if (!project) return null;
@@ -265,7 +278,8 @@ export class ProjectStore {
           version: Number(row.version),
           instructions: String(row.instructions),
           attachments: JSON.parse(String(row.attachments_json)) as ChatTextAttachment[],
-          updated_at: String(row.updated_at)
+          updated_at: String(row.updated_at),
+          updated_by: this.#materialAuthor(projectId, Number(row.version))
         }
       : {
           project_id: projectId,
@@ -280,6 +294,7 @@ export class ProjectStore {
     projectId: string,
     ownerId: string,
     input: { version: number; instructions: string; attachments: ChatTextAttachment[] },
+    actor?: string | null,
     completion?: {
       policy: PolicyStore;
       operationId: string;
@@ -318,6 +333,15 @@ export class ProjectStore {
           JSON.stringify(input.attachments),
           now()
         );
+      try {
+        this.#sqlite
+          .prepare(
+            "INSERT OR IGNORE INTO project_material_activity (project_id, version, actor_id, changed_at) VALUES (?, ?, ?, ?)"
+          )
+          .run(projectId, current.version + 1, actor ?? ownerId, now());
+      } catch {
+        // Upgrade fixtures may predate 0078; material bytes are still saved.
+      }
       const saved = this.getMaterials(projectId, ownerId);
       if (!saved) throw new Error("Saved project materials are unavailable");
       completion?.policy.completeOperationInTransaction(

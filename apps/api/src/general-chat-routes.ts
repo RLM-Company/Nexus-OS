@@ -34,8 +34,10 @@ import {
   type StoredGeneralChatMessage,
   type StoredGeneralChatRun,
   type ProjectStore,
-  type ProjectMemoryStore
+  type ProjectMemoryStore,
+  type ProjectMembershipStore
 } from "@cosmora/db";
+import { projectAccess } from "./project-access.js";
 import {
   GatewayRunError,
   type ModelGateway,
@@ -68,6 +70,7 @@ export interface GeneralChatRouteOptions {
   accountStore?: AccountStore;
   store: GeneralChatStore;
   projectStore?: ProjectStore;
+  projectMembership?: ProjectMembershipStore;
   projectMemory?: ProjectMemoryStore;
   modelGateway: ModelGateway;
   taskSplitRoutes?: ServerConfig["chatTaskSplitRoutes"];
@@ -630,11 +633,22 @@ export const registerGeneralChatRoutes = (options: GeneralChatRouteOptions): voi
     { schema: { params: runParams } },
     async (request, reply) => {
       const identity = options.identityFor(request);
-      const run = options.store.getRun(request.params.runId, identity.owner_id);
-      const conversation = options.store.getConversationForRun(
-        request.params.runId,
-        identity.owner_id
-      );
+      const actor = identity.owner_id;
+      // A project member reads a shared run's events; the data owner scope stays
+      // unchanged and dataOwnerId is never globally replaced.
+      const scope = options.store.runScope(request.params.runId);
+      let dataOwnerId = actor;
+      if (scope && scope.ownerId !== actor) {
+        if (!scope.projectId || !options.projectMembership) {
+          return reply.status(404).send(error(request.id, "RUN_NOT_FOUND", "Run not found"));
+        }
+        const access = projectAccess(options.projectMembership, scope.projectId, actor, "any");
+        if (!access || access.ownerId !== scope.ownerId)
+          return reply.status(404).send(error(request.id, "RUN_NOT_FOUND", "Run not found"));
+        dataOwnerId = scope.ownerId;
+      }
+      const run = options.store.getRun(request.params.runId, dataOwnerId);
+      const conversation = options.store.getConversationForRun(request.params.runId, dataOwnerId);
       if (!run || conversation.length === 0) {
         return reply.status(404).send(error(request.id, "RUN_NOT_FOUND", "Run not found"));
       }
@@ -651,7 +665,7 @@ export const registerGeneralChatRoutes = (options: GeneralChatRouteOptions): voi
       });
       reply.raw.write(": connected\n\n");
 
-      const existing = options.store.getAssistantMessage(run.id, identity.owner_id);
+      const existing = options.store.getAssistantMessage(run.id, dataOwnerId);
       if (run.status === "cancelled") {
         sendEvent(reply, { type: "run.cancelled", data: { run_id: run.id } });
         end(reply);
@@ -681,7 +695,7 @@ export const registerGeneralChatRoutes = (options: GeneralChatRouteOptions): voi
         options.runObservers.add(observer);
         reply.raw.once("close", stopObserving);
         try {
-          await observePersistedRun(reply, options.store, run, identity.owner_id, observer.signal);
+          await observePersistedRun(reply, options.store, run, dataOwnerId, observer.signal);
         } finally {
           reply.raw.off("close", stopObserving);
           options.runObservers.delete(observer);
@@ -691,7 +705,7 @@ export const registerGeneralChatRoutes = (options: GeneralChatRouteOptions): voi
       }
 
       if (options.emergencyStopStore?.getProcessStop()) {
-        options.store.startAssistantMessage(run.id, identity.owner_id);
+        options.store.startAssistantMessage(run.id, dataOwnerId);
         options.store.failRun(run.id, "EMERGENCY_STOP");
         options.runtimeMetrics.runFailed("EMERGENCY_STOP");
         sendEvent(reply, {
@@ -702,7 +716,7 @@ export const registerGeneralChatRoutes = (options: GeneralChatRouteOptions): voi
         return reply;
       }
 
-      const assistant = options.store.startAssistantMessage(run.id, identity.owner_id);
+      const assistant = options.store.startAssistantMessage(run.id, dataOwnerId);
       if (!assistant) {
         end(reply);
         return reply;
