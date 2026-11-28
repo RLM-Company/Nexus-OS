@@ -57,7 +57,8 @@ export class ResearchStore {
     projectId: string,
     question: string,
     id: string = randomUUID(),
-    modelRequested?: boolean
+    modelRequested?: boolean,
+    parentRunId?: string
   ): ResearchRun {
     if (this.isFenced(ownerId)) throw Error("RESEARCH_OWNER_QUIESCED");
     const count = this.sqlite
@@ -71,6 +72,7 @@ export class ResearchStore {
       actor_id: actorId,
       project_id: projectId,
       question,
+      ...(parentRunId ? { parent_run_id: parentRunId } : {}),
       status: "queued",
       stage: "В очереди",
       candidates: [],

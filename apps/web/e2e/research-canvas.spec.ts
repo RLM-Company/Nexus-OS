@@ -354,3 +354,45 @@ test("shows Research evidence and excludes a source using the existing project A
   ]);
   await expect(archive).toBeVisible();
 });
+
+test("follows up on a persisted report and restores its origin after reload", async ({
+  page,
+  request
+}) => {
+  const projectId = await project(request);
+  const profile = await request.put(`/api/v1/projects/${projectId}/autonomy-profile`, {
+    data: { base_level: "A1", overrides: [], expected_version: 1 }
+  });
+  expect(profile.ok()).toBe(true);
+  const question = "Какой код указан в архиве лунной станции?";
+  const revised = "Какой код архива лунной станции указан в реестре?";
+  await page.goto("/research-workspace");
+  await page.getByRole("combobox", { name: "Проект", exact: true }).selectOption(projectId);
+  const field = page.getByRole("textbox", { name: "Вопрос", exact: true });
+  const start = page.getByRole("button", { name: "Исследовать", exact: true });
+  await field.fill(question);
+  await start.click();
+  const refine = page.getByRole("button", { name: "Уточнить вопрос", exact: true });
+  await expect(refine).toBeVisible();
+  await expect(page.getByText(/SELENE-047/).first()).toBeVisible();
+  await page.getByText("S1 · Происхождение не проверено").click();
+  await page.getByLabel("Происхождение S1").selectOption("primary");
+  await page.getByLabel("Основание S1").fill("Запись владельца открытого реестра станции");
+  await page.getByRole("button", { name: "Сохранить отметку S1" }).click();
+  await expect(page.getByText("S1 · Первичный источник (отметка владельца)")).toBeVisible();
+  const original = new URL(page.url()).searchParams.get("run_id");
+  await refine.click();
+  await expect(field).toHaveValue(question);
+  await expect(start).toBeDisabled();
+  await field.fill(revised);
+  await start.click();
+  await expect(page.getByRole("heading", { name: revised, exact: true })).toBeVisible();
+  await expect(refine).toBeVisible();
+  expect(new URL(page.url()).searchParams.get("run_id")).not.toBe(original);
+  await page.reload();
+  await expect(page.getByRole("heading", { name: revised, exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Открыть исходное исследование" }).click();
+  await expect(page.getByRole("heading", { name: question, exact: true })).toBeVisible();
+  await expect(page.getByText("S1 · Первичный источник (отметка владельца)")).toBeVisible();
+  expect(new URL(page.url()).searchParams.get("run_id")).toBe(original);
+});

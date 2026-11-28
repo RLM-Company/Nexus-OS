@@ -32,8 +32,14 @@ test("B5 searches a specific message in place and leaves an unrelated draft inta
     "href",
     "https://example.org/b5/archive"
   );
+  await expect(answer(page)).toContainText("Найденные источники");
   await expect(page).toHaveURL(url);
   await expect(editor(page)).toHaveValue("Независимый черновик");
+  await page.reload();
+  await expect(answer(page).getByRole("link", { name: "Демо-архив" })).toHaveAttribute(
+    "href",
+    "https://example.org/b5/archive"
+  );
 });
 
 for (const [input, error] of [

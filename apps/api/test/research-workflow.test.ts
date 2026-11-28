@@ -295,4 +295,42 @@ describe("research v1, source-grounded workflow", () => {
     ).toHaveLength(1);
     await coordinator.stop();
   });
+  it("cancels while reading and ignores a late result", async () => {
+    const repository = store();
+    let release: (() => void) | undefined;
+    const coordinator = new ResearchCoordinator(
+      repository,
+      searchAdapter,
+      new ResearchPageReader({
+        resolver,
+        transport: (url) => {
+          if (url.pathname === "/robots.txt")
+            return Promise.resolve({ status: 404, contentType: "", body: "" });
+          return new Promise((resolve) => {
+            release = () =>
+              resolve({
+                status: 200,
+                contentType: "text/plain",
+                body: "История промышленности: запоздавший результат."
+              });
+          });
+        }
+      }),
+      undefined,
+      Date.now,
+      () => true
+    );
+    const run = repository.create(owner, actor, project, "История промышленности");
+    expect(coordinator.launch(run)).toBe(true);
+    await waitUntil(() => release !== undefined);
+    expect(coordinator.cancel(run.id, "different-owner")).toBeNull();
+    expect(coordinator.cancel(run.id, owner)?.status).toBe("cancelled");
+    release!();
+    await coordinator.stop();
+    expect(repository.get(run.id, owner)).toMatchObject({
+      status: "cancelled",
+      sources: [],
+      next_index: 0
+    });
+  });
 });

@@ -7,6 +7,7 @@ import { installSiteWorkFixture } from "./site-work-provider.js";
 import { installGameWorkFixture } from "./game-work-provider.js";
 
 const researchQuestion = "Какой код указан в архиве лунной станции?";
+const refinedResearchQuestion = "Какой код архива лунной станции указан в реестре?";
 const researchUrl = "https://example.org/lunar-station-archive";
 const researchEvidence = "Код архива лунной станции — SELENE-047.";
 // Retain the prototype methods for the fixture and forward their original receiver with .call.
@@ -38,7 +39,7 @@ WebSearch.prototype.search = async function (query, signal, engine) {
     );
     return originalSearch.call(fixture, query, signal);
   }
-  if (query === researchQuestion) {
+  if (query === researchQuestion || query === refinedResearchQuestion) {
     return {
       query,
       searched_at: new Date().toISOString(),
@@ -77,7 +78,7 @@ MockProviderAdapter.prototype.stream = async function* (request, signal) {
       input.includes("[kosmora_web_search]") &&
       input.includes("B5-047") &&
       input.includes("https://example.org/b5/archive")
-        ? "Код архива — B5-047. [Демо-архив](https://example.org/b5/archive)"
+        ? "Код архива — B5-047."
         : input.includes("kind: explain")
           ? "Дисперсия показывает разброс значений вокруг среднего."
           : input.includes("kind: hint")

@@ -28,7 +28,7 @@ import {
   type ChatStudioRunner
 } from "./media/chat-studio.js";
 import type { WebSearch } from "./web-search.js";
-import { applyKosmoraActions, ChatActionError } from "./kosmora-actions.js";
+import { applyKosmoraActions, ChatActionError, searchSourcesMarkdown } from "./kosmora-actions.js";
 import {
   QuotaExceededError,
   RelayExecution,
@@ -106,14 +106,6 @@ export class GeneralChatBackgroundRunCoordinator {
     this.#pollIntervalMs = positiveInteger(options.pollIntervalMs, 100);
     this.#controlPollIntervalMs = positiveInteger(options.controlPollIntervalMs, 50);
     this.#maxConcurrentRuns = positiveInteger(options.maxConcurrentRuns, 4);
-  }
-
-  /** Dispatch-time rendering for the owner's explicit actions, shared with the stream path. */
-  #applyKosmoraActions(
-    conversation: StoredGeneralChatMessage[],
-    signal: AbortSignal
-  ): Promise<StoredGeneralChatMessage[]> {
-    return applyKosmoraActions(conversation, this.#search, signal);
   }
 
   get activeRunCount(): number {
@@ -269,6 +261,7 @@ export class GeneralChatBackgroundRunCoordinator {
           this.#runtimeMetrics.runCompleted();
         return;
       }
+      let searchSources = "";
       let modelRequest = this.#chat.buildRequest({
         chatId: queued.chat_id,
         runId: queued.run_id,
@@ -277,7 +270,14 @@ export class GeneralChatBackgroundRunCoordinator {
               identityPrompt: ownerIdentityPrompt(this.#accountStore.get(queued.owner_id))
             }
           : {}),
-        messages: await this.#applyKosmoraActions(conversation, controller.signal),
+        messages: await applyKosmoraActions(
+          conversation,
+          this.#search,
+          controller.signal,
+          (result) => {
+            searchSources = searchSourcesMarkdown(result);
+          }
+        ),
         historyCompaction: this.#store.historyCompactionForRun(queued.run_id, queued.owner_id),
         recalledMemory: await (async () => {
           const recalled = await this.#store.recallForRunAsync(
@@ -461,6 +461,8 @@ export class GeneralChatBackgroundRunCoordinator {
         );
         this.#store.appendAssistantDelta(assistant.id, translated);
       }
+      controller.signal.throwIfAborted();
+      if (searchSources) this.#store.appendAssistantDelta(assistant.id, searchSources);
       this.#store.completeRun(queued.run_id, completed.provider, completed.model, completed.usage, {
         attempt: completed.route.attempt,
         calculatedCost: completed.calculatedCost

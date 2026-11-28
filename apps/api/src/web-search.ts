@@ -1,5 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { Type } from "typebox";
+import { canonicalResearchUrl } from "@cosmora/core";
+import { validatePublicHost } from "./research/page-reader.js";
 
 export interface SearchResult {
   title: string;
@@ -73,18 +75,18 @@ export class WebSearch {
     const items: SearchResult[] = [];
     const seen = new Set<string>();
     for (const item of body.results) {
-      if (typeof item.url !== "string" || item.url.length > 1500 || typeof item.title !== "string")
+      if (
+        !item ||
+        typeof item.url !== "string" ||
+        item.url.length > 1500 ||
+        typeof item.title !== "string"
+      )
         continue;
       try {
-        const url = new URL(item.url);
-        if (
-          !["https:", "http:"].includes(url.protocol) ||
-          url.username ||
-          url.password ||
-          seen.has(url.href)
-        )
-          continue;
-        seen.add(url.href);
+        const url = canonicalResearchUrl(item.url);
+        if (!url || seen.has(url)) continue;
+        validatePublicHost(new URL(url).hostname);
+        seen.add(url);
         const clean = (value: string, limit: number) =>
           value
             .replace(/<[^>]*>/g, "")
@@ -95,7 +97,7 @@ export class WebSearch {
             .join("")
             .slice(0, limit);
         items.push({
-          url: url.href,
+          url,
           title: clean(item.title, 180),
           snippet: clean(typeof item.content === "string" ? item.content : "", 700)
         });

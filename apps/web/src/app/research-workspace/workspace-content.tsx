@@ -6,11 +6,17 @@ import styles from "./research-workspace.module.css";
 import { ReportCanvas } from "../canvas-editor/report-canvas";
 import { ResearchComparison, type ResearchSourceSnapshot } from "./research-comparison";
 import { ResearchSourceRecheck, type SourceRecheckResult } from "./research-source-recheck";
-import { ResearchReceipts } from "./research-receipts";
-import type { ResearchSourceReceipt } from "@cosmora/core";
+import { ResearchReceipts, ResearchSourceExclusion } from "./research-receipts";
+import { ResearchSourceOriginControl } from "./research-source-origin";
+import type { ResearchSource, ResearchSourceReceipt } from "@cosmora/core";
 
 type Project = { id: string; title: string };
-type Source = ResearchSourceSnapshot & { snippet: string; checked_at: string };
+type Source = ResearchSourceSnapshot & {
+  checked_at: string;
+  duplicate_of?: string;
+  project_source_id?: string;
+  origin?: ResearchSource["origin"];
+};
 type Citation = { source_id: string; excerpt_id: string };
 type Claim = { text: string; citations: Citation[] };
 type Answer = { summary: Claim[]; disagreements: Claim[]; gaps: string[] };
@@ -18,6 +24,7 @@ type Run = {
   id: string;
   project_id: string;
   question: string;
+  parent_run_id?: string;
   status:
     | "queued"
     | "searching"
@@ -104,6 +111,8 @@ export function ResearchWorkspaceContent({ embedded = false }: { embedded?: bool
   const [projects, setProjects] = useState<Project[]>([]);
   const [projectId, setProjectId] = useState("");
   const [question, setQuestion] = useState("");
+  const [refinement, setRefinement] = useState<Run | null>(null);
+  const questionInput = useRef<HTMLTextAreaElement>(null);
   const [synthesize, setSynthesize] = useState(false);
   const [runs, setRuns] = useState<Run[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
@@ -201,7 +210,12 @@ export function ResearchWorkspaceContent({ embedded = false }: { embedded?: bool
     event.preventDefault();
     if (busy || startInFlight.current || !projectId || question.trim().length < 8) return;
     startInFlight.current = true;
-    const body = { project_id: projectId, question: question.trim(), synthesize };
+    const body = {
+      project_id: refinement?.project_id ?? projectId,
+      question: question.trim(),
+      synthesize,
+      ...(refinement ? { parent_run_id: refinement.id } : {})
+    };
     const payload = JSON.stringify(body);
     const previous = pendingStart.current;
     const id =
@@ -221,6 +235,7 @@ export function ResearchWorkspaceContent({ embedded = false }: { embedded?: bool
       pendingStart.current = null;
       selectRun(run.id);
       setQuestion("");
+      setRefinement(null);
       setSynthesize(false);
       await sync();
     } catch (error) {
@@ -240,7 +255,9 @@ export function ResearchWorkspaceContent({ embedded = false }: { embedded?: bool
     const index = Number(citation.source_id.slice(1)) - 1;
     const excerpt = Number(citation.excerpt_id.slice(1)) - 1;
     const source = current?.sources[index];
-    return source?.status === "read" && source.passages[excerpt] ? source.url : null;
+    return source?.status === "read" && source.passages[excerpt]
+      ? `#research-${current?.id}-${citation.source_id}-${citation.excerpt_id}`
+      : null;
   };
   const claims = (items: Claim[]) => (
     <ul className={styles.summary}>
@@ -250,8 +267,8 @@ export function ResearchWorkspaceContent({ embedded = false }: { embedded?: bool
           {claim.citations.map((cite, position) => {
             const url = citationUrl(cite);
             return url ? (
-              <a key={position} href={url} target="_blank" rel="noopener noreferrer">
-                [{cite.source_id}:{cite.excerpt_id}] ↗
+              <a key={position} href={url}>
+                [{cite.source_id}:{cite.excerpt_id}]
               </a>
             ) : (
               <span key={position}>[недействительный источник]</span>
@@ -280,11 +297,21 @@ export function ResearchWorkspaceContent({ embedded = false }: { embedded?: bool
       <div className={styles.columns}>
         <aside className={styles.sidebar}>
           <form onSubmit={(event) => void create(event)} className={styles.form}>
-            <h2>Новое исследование</h2>
+            <h2>{refinement ? "Уточнение вопроса" : "Новое исследование"}</h2>
+            {refinement && (
+              <p>
+                Новый отчёт для вопроса «{refinement.question}». Будут применены текущие исключения
+                проекта.
+                <button type="button" disabled={busy} onClick={() => setRefinement(null)}>
+                  Отменить уточнение
+                </button>
+              </p>
+            )}
             <label>
               Проект
               <select
-                value={projectId}
+                value={refinement?.project_id ?? projectId}
+                disabled={Boolean(refinement)}
                 onChange={(event) => setProjectId(event.target.value)}
                 required
               >
@@ -298,6 +325,7 @@ export function ResearchWorkspaceContent({ embedded = false }: { embedded?: bool
             <label>
               Вопрос
               <textarea
+                ref={questionInput}
                 value={question}
                 onChange={(event) => setQuestion(event.target.value)}
                 maxLength={240}
@@ -319,7 +347,11 @@ export function ResearchWorkspaceContent({ embedded = false }: { embedded?: bool
             <button
               type="submit"
               disabled={
-                busy || !availability?.available || !projectId || question.trim().length < 8
+                busy ||
+                !availability?.available ||
+                !(refinement?.project_id ?? projectId) ||
+                question.trim().length < 8 ||
+                question.trim() === refinement?.question
               }
               className={styles.primary}
             >
@@ -388,6 +420,17 @@ export function ResearchWorkspaceContent({ embedded = false }: { embedded?: bool
             <>
               <p className={styles.label}>ИССЛЕДОВАНИЕ · {statuses[current.status]}</p>
               <h2>{current.question}</h2>
+              {current.parent_run_id && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    selectRun(current.parent_run_id!);
+                    void sync();
+                  }}
+                >
+                  Открыть исходное исследование
+                </button>
+              )}
               <p>{current.stage}</p>
               <div
                 className={styles.meter}
@@ -408,6 +451,19 @@ export function ResearchWorkspaceContent({ embedded = false }: { embedded?: bool
                 {sourceCount} страниц прочитано · попытка {current.attempts} из 3
               </small>
               <div className={styles.actions}>
+                {current.status === "completed" && (
+                  <button
+                    type="button"
+                    disabled={busy || !availability?.available}
+                    onClick={() => {
+                      setRefinement(current);
+                      setQuestion(current.question);
+                      questionInput.current?.focus();
+                    }}
+                  >
+                    Уточнить вопрос
+                  </button>
+                )}
                 {["queued", "searching", "reading", "synthesizing"].includes(current.status) && (
                   <button disabled={busy} onClick={() => void invoke("pause")}>
                     Пауза
@@ -560,7 +616,10 @@ export function ResearchWorkspaceContent({ embedded = false }: { embedded?: bool
                         {source.title} · S{sourceIndex + 1}
                       </h4>
                       {source.passages.map((passage, index) => (
-                        <blockquote key={index}>
+                        <blockquote
+                          id={`research-${current.id}-S${sourceIndex + 1}-E${index + 1}`}
+                          key={index}
+                        >
                           <small>
                             S{sourceIndex + 1}:E{index + 1}
                           </small>{" "}
@@ -568,7 +627,7 @@ export function ResearchWorkspaceContent({ embedded = false }: { embedded?: bool
                         </blockquote>
                       ))}
                       <a href={source.url} rel="noopener noreferrer" target="_blank">
-                        Открыть первоисточник ↗
+                        Открыть страницу ↗
                       </a>
                     </li>
                   ) : null
@@ -607,21 +666,55 @@ export function ResearchWorkspaceContent({ embedded = false }: { embedded?: bool
               <h3>Реестр источников</h3>
               <ul className={styles.sources}>
                 {current.sources.map((source, index) => (
-                  <li key={source.url}>
+                  <li key={current.id + ":" + source.url}>
                     <strong>S{index + 1}</strong>
                     <a href={source.url} rel="noopener noreferrer" target="_blank">
                       {source.title}
                     </a>
                     <small>
-                      {sourceStatuses[source.status]} ·{" "}
-                      {new Date(source.checked_at).toLocaleString("ru")}
+                      {sourceStatuses[source.status]}
+                      {source.duplicate_of && ` · совпадает со снимком ${source.duplicate_of}`}
+                      {source.content_digest &&
+                        ` · SHA-256 ${source.content_digest.slice(0, 12)}…`}{" "}
+                      · {new Date(source.checked_at).toLocaleString("ru")}
                     </small>
+                    {current.status === "completed" && source.status === "read" && (
+                      <ResearchSourceOriginControl
+                        sourceId={`S${index + 1}`}
+                        origin={source.origin}
+                        save={async (role, note) => {
+                          const updated = await api<Run>(
+                            `/api/v1/research/${current.id}/source-origin`,
+                            {
+                              method: "PUT",
+                              headers: { "content-type": "application/json" },
+                              body: JSON.stringify({ source_index: index, role, note })
+                            }
+                          );
+                          setRuns((previous) =>
+                            previous.map((run) =>
+                              run.id === updated.id && run.updated_at <= updated.updated_at
+                                ? updated
+                                : run
+                            )
+                          );
+                        }}
+                      />
+                    )}
+                    {source.project_source_id && (
+                      <ResearchSourceExclusion
+                        projectId={current.project_id}
+                        sourceId={source.project_source_id}
+                        label={`Исключить S${index + 1} из новых исследований`}
+                      />
+                    )}
                   </li>
                 ))}
               </ul>
               <p className={styles.muted}>
                 Ссылки позволяют проверить сведения. Доступные только после входа страницы и CAPTCHA
-                не обходятся. Не все публичные сайты разрешают автоматическое чтение.
+                не обходятся. Совпадение снимков выявляет копии текста. Происхождение страницы и
+                независимость других публикаций автоматически не подтверждаются.
               </p>
             </>
           )}

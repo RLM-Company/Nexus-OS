@@ -2,7 +2,13 @@ import { createHash, randomUUID } from "node:crypto";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { Type } from "typebox";
 import { evaluatePolicy } from "@cosmora/policy-engine";
-import { RESEARCH_LIMITS, researchHtml, researchMarkdown, type ResearchRun } from "@cosmora/core";
+import {
+  RESEARCH_LIMITS,
+  researchHtml,
+  researchMarkdown,
+  type ResearchRun,
+  type ResearchSourceOrigin
+} from "@cosmora/core";
 import type { IdentityContext } from "@cosmora/contracts";
 import type { ProjectStore, PolicyStore, EmergencyStopStore } from "@cosmora/db";
 import type { WebSearch } from "../web-search.js";
@@ -101,7 +107,13 @@ export function registerResearchRoutes(options: {
   }));
   app.get("/api/v1/research", (request) => ({ items: store.list(identityFor(request).owner_id) }));
   app.post<{
-    Body: { project_id: string; question: string; synthesize: boolean; client_request_id?: string };
+    Body: {
+      project_id: string;
+      question: string;
+      synthesize: boolean;
+      client_request_id?: string;
+      parent_run_id?: string;
+    };
   }>(
     "/api/v1/research",
     {
@@ -111,6 +123,7 @@ export function registerResearchRoutes(options: {
             project_id: Type.String({ minLength: 1, maxLength: 128 }),
             question: Type.String({ minLength: 8, maxLength: 240 }),
             synthesize: Type.Boolean(),
+            parent_run_id: Type.Optional(Type.String({ format: "uuid" })),
             client_request_id: Type.Optional(
               Type.String({ minLength: 1, maxLength: 128, pattern: "^[a-z0-9-]+$" })
             )
@@ -121,7 +134,7 @@ export function registerResearchRoutes(options: {
     },
     (request, reply) => {
       const { owner_id, actor_id } = identityFor(request);
-      const { project_id, synthesize, client_request_id } = request.body;
+      const { project_id, synthesize, client_request_id, parent_run_id } = request.body;
       if (!projects.getProject(project_id, owner_id))
         return reply.code(404).send({ error: { code: "PROJECT_NOT_FOUND" } });
       const question = request.body.question.trim();
@@ -130,7 +143,9 @@ export function registerResearchRoutes(options: {
         ? researchRequestId(owner_id, actor_id, project_id, client_request_id)
         : randomUUID();
       const replay = (previous: ResearchRun) =>
-        previous.question === question && previous.initial_model_requested === synthesize
+        previous.question === question &&
+        previous.initial_model_requested === synthesize &&
+        previous.parent_run_id === parent_run_id
           ? reply.code(200).send(previous)
           : reply.code(409).send({
               error: {
@@ -141,6 +156,17 @@ export function registerResearchRoutes(options: {
       if (client_request_id) {
         const previous = store.get(id, owner_id);
         if (previous) return replay(previous);
+      }
+      if (parent_run_id) {
+        const parent = store.get(parent_run_id, owner_id);
+        if (parent?.project_id !== project_id) return reply.code(404).send(notFound);
+        if (parent.status !== "completed" || parent.question === question)
+          return reply.code(409).send({
+            error: {
+              code: "RESEARCH_REFINEMENT_INVALID",
+              message: "Измените вопрос завершённого исследования."
+            }
+          });
       }
       if (!search.configured)
         return reply.code(503).send({ error: { code: "SEARCH_UNAVAILABLE" } });
@@ -183,7 +209,7 @@ export function registerResearchRoutes(options: {
         });
       let run: ResearchRun;
       try {
-        run = store.create(owner_id, actor_id, project_id, question, id, synthesize);
+        run = store.create(owner_id, actor_id, project_id, question, id, synthesize, parent_run_id);
       } catch {
         if (client_request_id) {
           const previous = store.get(id, owner_id);
@@ -288,6 +314,44 @@ export function registerResearchRoutes(options: {
       if (result.status === "busy")
         return reply.code(429).send({ error: { code: "RESEARCH_BUSY_OR_STOPPED" } });
       return result;
+    }
+  );
+  app.put<{
+    Params: Params;
+    Body: { source_index: number; role: ResearchSourceOrigin | null; note: string };
+  }>(
+    "/api/v1/research/:id/source-origin",
+    {
+      schema: {
+        params: idParams,
+        body: Type.Object(
+          {
+            source_index: Type.Integer({ minimum: 0, maximum: RESEARCH_LIMITS.maxCandidates - 1 }),
+            role: Type.Union([Type.Literal("primary"), Type.Literal("independent"), Type.Null()]),
+            note: Type.String({ maxLength: 500 })
+          },
+          { additionalProperties: false }
+        )
+      }
+    },
+    (request, reply) => {
+      const run = owned(request);
+      const { source_index, role } = request.body;
+      const source = run?.sources[source_index];
+      if (!run || !source || !projects.getProject(run.project_id, run.owner_id))
+        return reply.code(404).send(notFound);
+      if (run.status !== "completed" || source.status !== "read" || store.isFenced(run.owner_id))
+        return reply.code(409).send({ error: { code: "INVALID_STATE" } });
+      const note = request.body.note.trim();
+      if (role && !note)
+        return reply.code(400).send({
+          error: { code: "RESEARCH_ORIGIN_REASON_REQUIRED", message: "Укажите основание отметки." }
+        });
+      return store.update(run.id, run.owner_id, ["completed"], (value) => {
+        const entry = value.sources[source_index]!;
+        if (role) entry.origin = { role, note };
+        else delete entry.origin;
+      });
     }
   );
   // Separate explicit paid action: no synthesis without owner interaction and shared budget.
