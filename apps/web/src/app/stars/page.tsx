@@ -1,8 +1,11 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { startVisibleReadPolling } from "../visible-read-poller";
+import { acceptsStarsProgress } from "../task-runtime-evidence";
 import styles from "./stars.module.css";
 import { StarsExecution, type MissionExecution } from "./stars-execution";
+import { StarsOrgPanel } from "./stars-org-panel";
 
 type MissionAgent = {
   id: string;
@@ -21,7 +24,7 @@ type Mission = MissionExecution & {
   stage: string;
   agents: MissionAgent[];
   dependencies: Record<string, string[]>;
-  messages: Array<{ from: string; to: string; text: string; at: number }>;
+  messages: Array<{ id: string; from: string; to: string; text: string; at: number }>;
   results: Array<{ agent_id: string; summary: string; verification: string }>;
   combined_result: string | null;
   question: string | null;
@@ -49,6 +52,8 @@ export default function StarsPage() {
   const [error, setError] = useState("");
   const [selected, setSelected] = useState<string | null>(null);
   const [address, setAddress] = useState("");
+  const [replacement, setReplacement] = useState("");
+  const [readIssue, setReadIssue] = useState("");
 
   useEffect(() => {
     const controller = new AbortController();
@@ -56,35 +61,61 @@ export default function StarsPage() {
       .then((response) => response.json())
       .then((data: { items?: { id: string; title: string }[] }) => setProjects(data.items ?? []))
       .catch(() => {});
-    fetch("/api/v1/stars/missions", { cache: "no-store", signal: controller.signal })
-      .then((response) => response.json())
-      .then((data: { items?: Mission[] }) =>
-        setMission((current) => current ?? data.items?.[0] ?? null)
-      )
-      .catch(() => {});
+    const chosen = new URLSearchParams(window.location.search).get("mission");
+    const path = "/api/v1/stars/missions" + (chosen ? "/" + encodeURIComponent(chosen) : "");
+    void fetch(path, { cache: "no-store", signal: controller.signal })
+      .then(async (response) => {
+        if (!response.ok) throw new Error("MISSION_UNAVAILABLE");
+        const data = (await response.json()) as Mission & { items?: Mission[] };
+        if (chosen && data.id !== chosen) throw new Error("MISSION_MISMATCH");
+        if (!controller.signal.aborted)
+          setMission((current) => current ?? (chosen ? data : (data.items?.[0] ?? null)));
+      })
+      .catch(() => {
+        if (!controller.signal.aborted && chosen) setReadIssue("Сохранённая миссия недоступна.");
+      });
     return () => controller.abort();
   }, []);
+
+  const selectedId = mission?.id;
+  useEffect(() => {
+    if (!selectedId) return;
+    const url = new URL(window.location.href);
+    if (url.searchParams.get("mission") === selectedId) return;
+    url.searchParams.set("mission", selectedId);
+    window.history.replaceState(window.history.state, "", url);
+  }, [selectedId]);
 
   const missionId = mission?.execution ? mission.id : null;
   useEffect(() => {
     if (!missionId) return;
-    const controller = new AbortController();
-    const refresh = () => {
-      void fetch(`/api/v1/stars/missions/${encodeURIComponent(missionId)}`, {
-        cache: "no-store",
-        signal: controller.signal
-      })
-        .then((response) => (response.ok ? (response.json() as Promise<Mission>) : null))
-        .then((fresh) => {
-          if (fresh) setMission((current) => (current?.id === fresh.id ? fresh : current));
-        })
-        .catch(() => {});
-    };
-    const timer = window.setInterval(refresh, 3000);
-    return () => {
-      controller.abort();
-      window.clearInterval(timer);
-    };
+    return startVisibleReadPolling(
+      async (signal) => {
+        const response = await fetch(`/api/v1/stars/missions/${encodeURIComponent(missionId)}`, {
+          cache: "no-store",
+          signal: AbortSignal.any([signal, AbortSignal.timeout(8000)])
+        });
+        if (signal.aborted) return;
+        if ([401, 403, 404, 410].includes(response.status)) {
+          setMission((current) => (current?.id === missionId ? null : current));
+          setReadIssue("Миссия недоступна.");
+          return;
+        }
+        if (!response.ok) throw new Error("MISSION_READ_FAILED");
+        const fresh = (await response.json()) as Mission;
+        if (signal.aborted) return;
+        if (fresh.id !== missionId) throw new Error("MISSION_READ_MISMATCH");
+        setMission((current) =>
+          current && acceptsStarsProgress(current, fresh) ? fresh : current
+        );
+        setReadIssue("");
+      },
+      {
+        intervalMs: 3000,
+        onError: () =>
+          setReadIssue("Связь прервана. Показано последнее подтверждённое состояние миссии.")
+      }
+    );
   }, [missionId]);
 
   const edges = useMemo(
@@ -99,6 +130,7 @@ export default function StarsPage() {
     if (!scope || creating || !goal.trim()) return;
     setCreating(true);
     setError("");
+    setReadIssue("");
     try {
       const created = await POST<Mission>("/api/v1/stars/missions", {
         client_request_id: crypto.randomUUID(),
@@ -193,6 +225,7 @@ export default function StarsPage() {
         </button>
       </section>
       {error && <p role="alert">{error}</p>}
+      {readIssue && <p role="alert">{readIssue}</p>}
       {mission && (
         <>
           <section className={styles.summary}>
@@ -203,11 +236,14 @@ export default function StarsPage() {
             </span>
             <span>версия: {mission.version}</span>
           </section>
+          <StarsOrgPanel scope={mission?.team_scope ?? scope} />
           <StarsExecution
             key={mission.id}
             mission={mission}
             onBound={(bound) => {
-              setMission((current) => (current?.id === bound.id ? bound : current));
+              setMission((current) =>
+                current && acceptsStarsProgress(current, bound) ? bound : current
+              );
             }}
           />
           {!mission.execution && (
@@ -245,6 +281,15 @@ export default function StarsPage() {
                 </ul>
                 {mission.combined_result && <p>Общий итог: {mission.combined_result}</p>}
                 {mission.question && <p role="status">Вопрос: {mission.question}</p>}
+                {mission.messages.length > 0 && (
+                  <ul aria-label="История сообщений команды">
+                    {mission.messages.map((message) => (
+                      <li key={message.id}>
+                        {message.from} → {message.to}: {message.text}
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </section>
               {selected && (
                 <section className={styles.address}>
@@ -265,6 +310,36 @@ export default function StarsPage() {
                   </button>
                   <button type="button" onClick={() => void event({ type: "cancel" })}>
                     Отмена
+                  </button>
+                  <input
+                    value={replacement}
+                    onChange={(e) => setReplacement(e.target.value)}
+                    placeholder="ID заменяющего агента"
+                    aria-label="ID заменяющего агента"
+                  />
+                  <button
+                    type="button"
+                    onClick={() =>
+                      void event({ type: "fail", agent_id: selected, reason: "owner_stop" })
+                    }
+                  >
+                    Остановить агента
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!replacement.trim()}
+                    onClick={() =>
+                      void event({
+                        type: "replace",
+                        failed_agent_id: selected,
+                        replacement_id: replacement.trim()
+                      })
+                    }
+                  >
+                    Заменить
+                  </button>
+                  <button type="button" onClick={() => void event({ type: "resume" })}>
+                    Повторить
                   </button>
                 </section>
               )}

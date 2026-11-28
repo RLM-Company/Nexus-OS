@@ -32,9 +32,18 @@ test("keeps every main workspace usable at 390x844", async ({ page }) => {
       .click();
     await expect(menu).not.toBeVisible();
     const isChat = ["Koscode", "Koswork"].includes(workspace.button);
-    await expect(page.locator(".topbar h1")).toHaveText(isChat ? "Новый чат" : workspace.button);
+    await expect(page.locator(".topbar h1")).toHaveText(
+      workspace.button === "Koscode" ? "Новая сессия" : isChat ? "Новый чат" : workspace.button
+    );
     if (isChat) {
-      await expect(page.getByLabel("Сообщение Kosmora", { exact: true })).toBeEnabled();
+      await expect(
+        page.getByLabel(
+          workspace.button === "Koscode" ? "Сообщение Koscode" : "Сообщение Kosmora",
+          {
+            exact: true
+          }
+        )
+      ).toBeEnabled();
       await expect(page.locator(".sidebar")).toHaveAttribute(
         "data-space",
         workspace.button === "Koscode" ? "coscode" : "kosmora"

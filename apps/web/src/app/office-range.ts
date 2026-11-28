@@ -68,7 +68,7 @@ export function officeRangeOperation(
   const match = /^([A-Z]{1,3})([1-9][0-9]{0,5})$/.exec(start);
   const width = rows[0]?.length ?? 0;
   if (
-    !/^sheet:[1-9][0-9]{0,2}$/.test(target) ||
+    (target !== "table:1" && !/^sheet:[1-9][0-9]{0,2}$/.test(target)) ||
     !match ||
     !rows.length ||
     rows.length > 10 ||

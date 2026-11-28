@@ -14,7 +14,8 @@ import {
   ManagerWorkConflict,
   type GeneralChatStore,
   type ManagerWorkStore,
-  type ProjectStore
+  type ProjectStore,
+  type ProjectMembershipStore
 } from "@cosmora/db";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { Type } from "typebox";
@@ -27,11 +28,18 @@ export function registerManagerWorkRoutes(options: {
   projects: ProjectStore;
   coordinator: ManagerWorkCoordinator;
   identityFor: (request: FastifyRequest) => IdentityContext;
+  membership?: ProjectMembershipStore;
   nodeBudget?: { max_input_tokens: number; max_output_tokens: number };
 }): void {
   const { app, store, projects, coordinator, identityFor } = options;
   registerWorkflowRoutes(options);
-  registerWorkDagRoutes({ app, projects, coordinator: coordinator.dag, identityFor });
+  registerWorkDagRoutes({
+    app,
+    projects,
+    coordinator: coordinator.dag,
+    identityFor,
+    membership: options.membership
+  });
   registerWorkSkillRoutes(app, store.skills, identityFor);
   registerProjectMemoryRoutes({ app, memory: store.memory, projects, identityFor });
   registerWorkRuntimeRoutes({ app, store, projects, identityFor });

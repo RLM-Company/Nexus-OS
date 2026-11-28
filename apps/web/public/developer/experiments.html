@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Kosmora · Speed experiments</title>
+    <style>
+      body {
+        font-family: system-ui, sans-serif;
+        margin: 2rem;
+        max-width: 960px;
+      }
+      textarea {
+        width: 100%;
+        min-height: 80px;
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 1rem;
+      }
+      .card {
+        border: 1px solid #ddd;
+        border-radius: 8px;
+        padding: 1rem;
+      }
+      pre {
+        white-space: pre-wrap;
+      }
+      .note {
+        color: #555;
+      }
+      .error {
+        color: #b00020;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Сравнение режимов developer API</h1>
+    <p class="note">
+      Одинаковый вход, стандартный и быстрый режим. Время берётся из ответа API; провайдер зависит
+      от настроек сервера. Это не утверждение об ускорении декодирования чужой модели.
+    </p>
+    <label>Ключ разработчика (cdev_…)<br /><input id="key" size="64" /></label>
+    <label>Вопрос<br /><textarea id="prompt">Сколько будет 40+2?</textarea></label>
+    <button id="run">Запустить оба режима</button>
+    <div class="grid">
+      <div class="card">
+        <h3>standard</h3>
+        <pre id="standard"></pre>
+      </div>
+      <div class="card">
+        <h3>fast (explicit)</h3>
+        <pre id="fast"></pre>
+      </div>
+    </div>
+    <h2>Сохранённые прогоны</h2>
+    <div id="history"></div>
+    <script>
+      const storeKey = "kosmora.developer.speed.v1";
+      const run = async (mode) => {
+        const response = await fetch("/api/v1/developer/v1/chat/completions", {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            authorization: "Bearer " + document.getElementById("key").value.trim()
+          },
+          body: JSON.stringify({
+            messages: [{ role: "user", content: document.getElementById("prompt").value }],
+            mode
+          })
+        });
+        const body = await response.json();
+        if (!response.ok) throw new Error(body?.error?.code || response.status);
+        return body;
+      };
+      const render = (node, body) => {
+        node.textContent = JSON.stringify(
+          {
+            request_id: body.id,
+            model: body.model,
+            answer: body.choices?.[0]?.message?.content,
+            usage: body.usage
+          },
+          null,
+          2
+        );
+      };
+      document.getElementById("run").onclick = async () => {
+        try {
+          const prompt = document.getElementById("prompt").value;
+          const [standard, fast] = await Promise.all([run("standard"), run("fast")]);
+          render(document.getElementById("standard"), standard);
+          render(document.getElementById("fast"), fast);
+          const runs = JSON.parse(localStorage.getItem(storeKey) || "[]");
+          runs.unshift({
+            at: new Date().toISOString(),
+            prompt,
+            standard: { id: standard.id, usage: standard.usage },
+            fast: { id: fast.id, usage: fast.usage }
+          });
+          localStorage.setItem(storeKey, JSON.stringify(runs.slice(0, 20)));
+          refresh();
+        } catch (error) {
+          document.body.insertAdjacentHTML("beforeend", `<p class="error">${error.message}</p>`);
+        }
+      };
+      function refresh() {
+        const runs = JSON.parse(localStorage.getItem(storeKey) || "[]");
+        document.getElementById("history").innerHTML =
+          runs
+            .map(
+              (entry) =>
+                `<div class="card"><code>${entry.at}</code> · ${entry.prompt}<pre>${JSON.stringify({ standard: entry.standard.usage, fast: entry.fast.usage }, null, 2)}</pre></div>`
+            )
+            .join("") || '<p class="note">Прогонов нет.</p>';
+      }
+      refresh();
+    </script>
+  </body>
+</html>

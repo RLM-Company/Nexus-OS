@@ -150,7 +150,7 @@ test("Koscode keeps a development brief as an unsent draft across mode changes",
   const modeMenu = page.locator(".workspace-mode-menu");
   await modeTrigger.click();
   await modeMenu.getByRole("button", { name: "Koscode", exact: true }).click();
-  const composer = page.getByLabel("Сообщение Kosmora", { exact: true });
+  const composer = page.getByLabel("Сообщение Koscode", { exact: true });
   await composer.fill(
     "Добавить поиск по названиям проектов\nКритерии готовности: поиск не зависит от регистра"
   );

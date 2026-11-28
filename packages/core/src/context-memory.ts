@@ -1,6 +1,10 @@
 import type { ContextMemoryBundle } from "@cosmora/contracts";
 import { ContextTooLargeError } from "./conversation-window.js";
-import { compactContextEvidence, rankContextEvidence } from "./context-evidence-selection.js";
+import {
+  compactContextEvidence,
+  rankContextEvidence,
+  selectContextScope
+} from "./context-evidence-selection.js";
 
 export class MemoryContextIncompleteError extends ContextTooLargeError {
   constructor() {
@@ -107,6 +111,25 @@ export function fitContextMemory(
         ...(trackMatches ? matchSummary(selectedMatched) : {})
       }
     : undefined;
+}
+
+/** Production-facing scope-aware selection. Keeps the bundle shape and honest
+ * match counters while applying owner scoping, newest-revision precedence,
+ * deletion and lookalike filtering before the usual packing. */
+export function selectContextBundle(
+  bundle: ContextMemoryBundle | undefined,
+  options: { owner: string; query?: string }
+): ContextMemoryBundle | undefined {
+  if (!bundle) return undefined;
+  const items = selectContextScope(bundle.items, options);
+  const matched = items.filter((item) => item.matched).length;
+  const trackMatches = hasMatchSummary(bundle);
+  return {
+    ...bundle,
+    items,
+    omitted: checkedSize(checkedSize(bundle.omitted) + bundle.items.length - items.length),
+    ...(trackMatches ? matchSummary(matched) : {})
+  };
 }
 
 export function mergeContextMemory(

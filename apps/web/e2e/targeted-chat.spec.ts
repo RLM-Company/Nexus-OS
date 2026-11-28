@@ -72,18 +72,20 @@ test("Kosmora and Work share navigation; Koscode isolates its chats and includes
   );
   await mode(page, "Koscode");
   await expect(sidebar).toHaveAttribute("data-space", "coscode");
-  await expect(sidebar.locator(".chat-item").filter({ hasText: `Код ${tag}` })).toBeVisible();
-  await expect(sidebar.locator(".chat-item").filter({ hasText: `Обычный ${tag}` })).toHaveCount(0);
-  await expect(sidebar.locator(".chat-item").filter({ hasText: `Рабочий ${tag}` })).toBeVisible();
-  await sidebar
-    .locator(".chat-item")
-    .filter({ hasText: `Рабочий ${tag}` })
-    .click();
+  const sessions = sidebar.getByRole("region", { name: "Сессии Koscode" });
+  await expect(sessions.getByRole("button", { name: `Код ${tag}`, exact: true })).toBeVisible();
+  await expect(sessions.getByRole("button", { name: new RegExp(`^Обычный ${tag}`) })).toHaveCount(
+    0
+  );
+  await expect(sessions.getByRole("button", { name: new RegExp(`^Рабочий ${tag}`) })).toBeVisible();
+  await sidebar.getByRole("button", { name: new RegExp(`^Рабочий ${tag}`) }).click();
   await expect(page).toHaveURL(new RegExp(work.chat.id));
   await expect(sidebar).toHaveAttribute("data-space", "coscode");
   await page.reload();
   await expect(sidebar).toHaveAttribute("data-space", "coscode");
-  await expect(sidebar.locator(".chat-item").filter({ hasText: `Обычный ${tag}` })).toHaveCount(0);
+  await expect(sessions.getByRole("button", { name: new RegExp(`^Обычный ${tag}`) })).toHaveCount(
+    0
+  );
   await mode(page, "Kosmora");
   await expect(sidebar).toHaveAttribute("data-space", "kosmora");
   expect(normal.chat.id).toBeTruthy();

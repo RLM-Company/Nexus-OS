@@ -9,6 +9,7 @@ const { findText } = require("./find-text.cjs");
 const { actionProbe, actionEvidence } = require("./action-evidence.cjs");
 const { recordRecovery, recoveryHint } = require("./recovery.cjs");
 const { createTabOwnership, OWNERS } = require("./tab-ownership.cjs");
+const { createDeviceLease } = require("./device-lease.cjs");
 
 const HOME = "about:blank";
 const unicodePrefix = (text, end) =>
@@ -37,6 +38,7 @@ function createBrowserEngine({
 }) {
   const tabs = new Map();
   const ownership = createTabOwnership({ now });
+  const deviceLease = createDeviceLease({ now });
   const revoked = new WeakSet();
   let screenQueue = Promise.resolve();
   let handover = 0;
@@ -77,6 +79,7 @@ function createBrowserEngine({
   }
   function takeControl() {
     handover++;
+    deviceLease.takeOver({ holder: "local-user", owner: context.owner, reason: "human input" });
     if (dispatch) {
       revoked.add(dispatch.signal);
       dispatch.controller.abort();
@@ -113,7 +116,8 @@ function createBrowserEngine({
       liveTabs: [...tabs.values()].filter((t) => t.view).length,
       maxLiveTabs: 3,
       maxTabs: 8,
-      downloads: downloads.map(({ item, path, ...d }) => d)
+      downloads: downloads.map(({ item, path, ...d }) => d),
+      deviceLease: deviceLease.state()
     };
   }
   function detach(tab) {
@@ -707,32 +711,80 @@ function createBrowserEngine({
   async function execute(action, observation, signal) {
     const tabId = expected(observation).id;
     const revision = handover;
+    // One native cursor/focus: agents queue at the device level even before
+    // the per-tab serialize step. Each action is a distinct holder (a caller
+    // may reuse one AbortSignal for sequential actions); human takeover cancels
+    // any waiting agent.
+    const holder = Symbol("native-action");
     const run = screenQueue.then(async () => {
       if (signal.aborted || revoked.has(signal) || revision !== handover)
         throw Error("COMPUTER_SESSION_STOPPED");
-      expected(observation);
-      // A new, expressly launched agent may reclaim a tab after user control.
-      ownership.release(tabId, OWNERS.HUMAN, context.owner);
-      ownership.claim(tabId, OWNERS.AGENT, signal);
-      const controller = new AbortController();
-      dispatch = { tabId, signal, revision, controller };
+      // Acquire the device lease inside the queue: a rejected acquisition
+      // still lets the next queued action proceed.
       try {
+        const held = deviceLease.state().native;
+        if (held && held.priority === "human") {
+          try {
+            deviceLease.releaseNative(held.holder, held.owner);
+          } catch {
+            // Changed in the meantime; acquireNative will queue or fail.
+          }
+        }
+        await deviceLease.acquireNative({
+          holder,
+          owner: context.owner,
+          priority: "agent",
+          reason: action.kind,
+          signal
+        });
+      } catch {
+        throw Error("COMPUTER_SESSION_STOPPED");
+      }
+      if (signal.aborted || revision !== handover) {
+        try {
+          deviceLease.releaseNative(holder, context.owner);
+        } catch {
+          // Human takeover already evicted this lease.
+        }
+        throw Error("COMPUTER_SESSION_STOPPED");
+      }
+      const controller = new AbortController();
+      let claimed = false;
+      try {
+        deviceLease.assertNative(holder, context.owner);
+        expected(observation);
+        // Validation may fail after a queued action changed the observation.
+        // It still has to release the already acquired device lease.
+        ownership.release(tabId, OWNERS.HUMAN, context.owner);
+        ownership.claim(tabId, OWNERS.AGENT, signal);
+        claimed = true;
+        dispatch = { tabId, signal, revision, controller, holder };
         return await executeOwned(
           action,
           observation,
-          AbortSignal.any([signal, controller.signal])
+          AbortSignal.any([signal, controller.signal]),
+          holder
         );
       } finally {
         dispatch = null;
         // A close or transfer may have removed this lease while the action waited.
-        if (tabs.has(tabId) && revision === handover)
-          ownership.release(tabId, OWNERS.AGENT, signal);
+        try {
+          if (claimed && tabs.has(tabId) && revision === handover)
+            ownership.release(tabId, OWNERS.AGENT, signal);
+        } finally {
+          try {
+            deviceLease.releaseNative(holder, context.owner);
+          } catch {
+            // Human takeover already evicted this lease; the generation guard
+            // above prevented any further input.
+          }
+        }
       }
     });
     screenQueue = run.catch(() => {});
     return run;
   }
-  async function executeOwned(action, observation, signal) {
+  async function executeOwned(action, observation, signal, holder) {
     pendingRecovery = null;
     expected(observation);
     const probe = actionProbe(action, last.document),
@@ -761,6 +813,7 @@ function createBrowserEngine({
       if (!dispatch || dispatch.revision !== handover || revoked.has(dispatch.signal))
         throw Error("COMPUTER_SESSION_STOPPED");
       ownership.assertOwner(dispatch.tabId, OWNERS.AGENT, dispatch.signal);
+      deviceLease.assertNative(dispatch.holder, context.owner);
       expected(observation);
     };
     let attemptedInput = false;
@@ -1258,6 +1311,7 @@ function createBrowserEngine({
         failed = true;
       }
       stopped = true;
+      deviceLease.stop();
       clearInterval(timer);
       browserSession.removeListener("will-download", onDownload);
       for (const tab of tabs.values()) {

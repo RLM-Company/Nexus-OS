@@ -476,13 +476,17 @@ export function StudioDocumentLibrary({ projectId, onCompose, onProjectCreated }
       setBusy(false);
     }
   };
-  const cancelAnswer = async () => {
+  const cancelAnswer = async (action: "cancel" | "pause" = "cancel") => {
     if (!base || !activeAnswerId) return;
     try {
-      await libraryFetch(`${base}/answers/${encodeURIComponent(activeAnswerId)}/cancel`, {
+      await libraryFetch(`${base}/answers/${encodeURIComponent(activeAnswerId)}/${action}`, {
         method: "POST"
       });
-      setStatus("Отмена запрошена. Неизвестный расход остаётся удержанным до сверки.");
+      setStatus(
+        action === "pause"
+          ? "Пауза запрошена. Завершённые части сохранены."
+          : "Отмена запрошена. Неизвестный расход остаётся удержанным до сверки."
+      );
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Не удалось отменить");
     }
@@ -494,13 +498,18 @@ export function StudioDocumentLibrary({ projectId, onCompose, onProjectCreated }
    * reconcile the answer history and only dispatch a new model request on a
    * fresh explicit click. The original run keeps its diagnostic in history.
    */
+  const canContinueAnalysis = (entry: AnswerReport) =>
+    !!entry.coverage &&
+    (entry.status === "failed" ||
+      entry.status === "cancelled" ||
+      (entry.status === "done" && entry.coverage.failed_chunks > 0));
   const retryInFlight = useRef<string | null>(null);
   const retryAnswer = async (sourceId: string) => {
     if (retryInFlight.current) return;
     if (!base || !projectId || busy || !!activeAnswerId || !!retryPending || !answerAvailable)
       return;
     const source = answers.find((item) => item.id === sourceId);
-    if (!source?.coverage || (source.status !== "failed" && source.status !== "cancelled")) return;
+    if (!source || !canContinueAnalysis(source)) return;
     retryInFlight.current = sourceId;
     setBusy(true);
     setError("");
@@ -962,7 +971,9 @@ export function StudioDocumentLibrary({ projectId, onCompose, onProjectCreated }
               <>
                 <p role="status">
                   {saved.status === "done"
-                    ? "Ответ сохранён"
+                    ? saved.coverage?.failed_chunks
+                      ? "Частичный ответ сохранён"
+                      : "Ответ сохранён"
                     : saved.status === "running"
                       ? saved.coverage?.phase === "synthesis"
                         ? "Собираем отчёт…"
@@ -970,7 +981,9 @@ export function StudioDocumentLibrary({ projectId, onCompose, onProjectCreated }
                       : saved.status === "queued"
                         ? "Ожидание запуска"
                         : saved.status === "cancelled"
-                          ? "Запрос отменён"
+                          ? saved.error_code === "PAUSED"
+                            ? "Анализ на паузе"
+                            : "Запрос отменён"
                           : `Ошибка: ${saved.error_code ?? "неизвестно"}`}
                 </p>
                 {saved.coverage && saved.status !== "done" && (
@@ -987,7 +1000,7 @@ export function StudioDocumentLibrary({ projectId, onCompose, onProjectCreated }
                     )}
                   </div>
                 )}
-                {saved.coverage && (saved.status === "failed" || saved.status === "cancelled") && (
+                {canContinueAnalysis(saved) && (
                   <button
                     type="button"
                     disabled={!!activeAnswerId || !!retryPending || busy || !answerAvailable}
@@ -997,7 +1010,9 @@ export function StudioDocumentLibrary({ projectId, onCompose, onProjectCreated }
                   >
                     {uncertainRetry === saved.id
                       ? "Сверить и повторить анализ"
-                      : "Повторить анализ"}
+                      : saved.error_code === "PAUSED" || saved.status === "done"
+                        ? "Продолжить анализ"
+                        : "Повторить анализ"}
                   </button>
                 )}
                 {saved.status === "done" && (
@@ -1036,6 +1051,16 @@ export function StudioDocumentLibrary({ projectId, onCompose, onProjectCreated }
                   </div>
                 )}
                 <div className={styles.toolbar}>
+                  {activeAnswerId === saved.id && saved.coverage && (
+                    <button type="button" onClick={() => void cancelAnswer("pause")}>
+                      Поставить анализ на паузу
+                    </button>
+                  )}
+                  {saved.coverage && saved.status !== "running" && saved.status !== "queued" && (
+                    <a href={`${base}/answers/${encodeURIComponent(saved.id)}/analysis.ndjson`}>
+                      Скачать реестр разобранных частей
+                    </a>
+                  )}
                   {activeAnswerId && (
                     <button type="button" onClick={() => void cancelAnswer()}>
                       Отменить модельный запрос

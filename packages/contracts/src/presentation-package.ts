@@ -1,3 +1,11 @@
+import { imageDimensions } from "./chat-attachments.js";
+
+export type PresentationVisual =
+  | { kind: "table"; rows: string[][] }
+  | { kind: "image"; mime: "image/png" | "image/jpeg"; alt: string; data_base64: string };
+export const PRESENTATION_IMAGE_BYTES = 48_000;
+export const PRESENTATION_TABLE_LIMITS = { rows: 5, columns: 4, cell: 36 } as const;
+
 export type PresentationTheme = "paper" | "night" | "ocean";
 export type PresentationSlide = {
   id: string;
@@ -6,6 +14,7 @@ export type PresentationSlide = {
   body: string;
   aside: string;
   notes: string;
+  visual?: PresentationVisual | undefined;
 };
 export type PresentationWorkReference = {
   project_id: string;
@@ -64,7 +73,61 @@ const text = (value: unknown, max: number): string => {
   return value;
 };
 
-/** Imports only text and known layout values; legacy exported IDs/versions never become account identity. */
+export function parsePresentationVisual(input: unknown): PresentationVisual {
+  const value = object(input);
+  if (value.kind === "table") {
+    if (
+      Object.keys(value).some((key) => key !== "kind" && key !== "rows") ||
+      !Array.isArray(value.rows) ||
+      !value.rows.length ||
+      value.rows.length > PRESENTATION_TABLE_LIMITS.rows
+    )
+      return fail();
+    let columns = 0;
+    const rows = value.rows.map((entry: unknown, index: number) => {
+      if (
+        !Array.isArray(entry) ||
+        !entry.length ||
+        entry.length > PRESENTATION_TABLE_LIMITS.columns
+      )
+        return fail();
+      if (index === 0) columns = entry.length;
+      if (entry.length !== columns) return fail();
+      return entry.map((cell: unknown) => {
+        const content = text(cell, PRESENTATION_TABLE_LIMITS.cell);
+        if (/[\r\n\t]/u.test(content)) return fail();
+        return content;
+      });
+    });
+    return { kind: "table", rows };
+  }
+  if (
+    value.kind !== "image" ||
+    Object.keys(value).some((key) => !["kind", "mime", "alt", "data_base64"].includes(key))
+  )
+    return fail();
+  const mime = value.mime;
+  if (mime !== "image/png" && mime !== "image/jpeg") return fail();
+  const alt = text(value.alt, 160).trim();
+  const data_base64 = text(value.data_base64, (PRESENTATION_IMAGE_BYTES / 3) * 4);
+  if (!alt || data_base64.length % 4 !== 0 || !/^[A-Za-z0-9+/]+={0,2}$/u.test(data_base64))
+    return fail();
+  const dimensions = imageDimensions(
+    Uint8Array.from(atob(data_base64), (c) => c.charCodeAt(0)),
+    mime
+  );
+  if (
+    !dimensions ||
+    dimensions.width < 1 ||
+    dimensions.height < 1 ||
+    dimensions.width > 1024 ||
+    dimensions.height > 1024
+  )
+    return fail();
+  return { kind: "image", mime, alt, data_base64 };
+}
+
+/** Imports text and bounded slide visuals; legacy exported IDs/versions never become account identity. */
 export function parsePresentationPackage(source: string, allowLegacy = true): PresentationPackage {
   if (new TextEncoder().encode(source).length > PRESENTATION_IMPORT_BYTES)
     throw Error("Файл презентации превышает 350 КБ.");
@@ -101,7 +164,7 @@ export function parsePresentationPackage(source: string, allowLegacy = true): Pr
     const slide = object(raw);
     if (
       Object.keys(slide).some(
-        (key) => !["id", "layout", "title", "body", "aside", "notes"].includes(key)
+        (key) => !["id", "layout", "title", "body", "aside", "notes", "visual"].includes(key)
       )
     )
       return fail();
@@ -111,13 +174,15 @@ export function parsePresentationPackage(source: string, allowLegacy = true): Pr
     const layout = slide.layout;
     if (layout !== "title" && layout !== "content" && layout !== "two-column" && layout !== "quote")
       return fail();
+    if (slide.visual !== undefined && layout !== "content") return fail();
     return {
       id,
       layout,
       title: text(slide.title, 180),
       body: text(slide.body, 4000),
       aside: text(slide.aside, 4000),
-      notes: text(slide.notes, 4000)
+      notes: text(slide.notes, 4000),
+      ...(slide.visual === undefined ? {} : { visual: parsePresentationVisual(slide.visual) })
     };
   });
   if (new TextEncoder().encode(JSON.stringify(slides)).length > 300_000) return fail();
@@ -149,7 +214,13 @@ export function presentationSlideOverflow(slide: PresentationSlide): string[] {
   if (estimate(slide.title, slide.layout === "title" ? 35 : 55) > titleMax)
     issues.push("заголовок");
   const bodyLineWidth = slide.layout === "two-column" ? 47 : slide.layout === "quote" ? 58 : 90;
-  const bodyLines = slide.layout === "title" ? 4 : slide.layout === "quote" ? 8 : 14;
+  const bodyLines = slide.visual
+    ? 4
+    : slide.layout === "title"
+      ? 4
+      : slide.layout === "quote"
+        ? 8
+        : 14;
   if (estimate(slide.body, bodyLineWidth) > bodyLines) issues.push("основной текст");
   if (slide.layout === "two-column" && estimate(slide.aside, 47) > 14)
     issues.push("вторая колонка");
@@ -167,6 +238,7 @@ export function validateGeneratedPresentation(
     value.slides[0]?.layout !== "title" ||
     value.slides.some(
       (slide) =>
+        slide.visual !== undefined ||
         !slide.title.trim() ||
         slide.title.length > 65 ||
         slide.body.length > 400 ||

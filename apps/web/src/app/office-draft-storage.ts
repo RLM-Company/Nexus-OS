@@ -36,7 +36,7 @@ export function officeDraftKey(source: OfficeDraftSource): string {
     source.name.length > 255 ||
     /[\\/]/.test(source.name) ||
     source.name.includes(String.fromCharCode(0)) ||
-    !/\.(docx|xlsx|pptx)$/i.test(source.name) ||
+    !/\.(docx|xlsx|csv|pptx)$/i.test(source.name) ||
     !/^sha256:[a-f0-9]{64}$/.test(source.version) ||
     !Number.isInteger(source.existingSheets) ||
     source.existingSheets < 0 ||
@@ -48,6 +48,12 @@ export function officeDraftKey(source: OfficeDraftSource): string {
 function checkedOperations(value: unknown, source: OfficeDraftSource): OfficeOperation[] {
   if (!Array.isArray(value) || !value.length || value.length > 40) throw invalid();
   const xlsx = /\.xlsx$/i.test(source.name);
+  const csv = /\.csv$/i.test(source.name);
+  const tableCell = (op: Record<string, unknown>) =>
+    !exact(op, ["kind", "target", "value"]) ||
+    typeof op.target !== "string" ||
+    typeof op.value !== "string" ||
+    !/^table:[1-9][0-9]{0,2}\/row:[1-9][0-9]{0,4}\/cell:[1-9][0-9]{0,3}$/.test(op.target);
   const cell = (v: unknown) => {
     if (
       v !== null &&
@@ -63,7 +69,9 @@ function checkedOperations(value: unknown, source: OfficeDraftSource): OfficeOpe
   for (const candidate of value as unknown[]) {
     if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) throw invalid();
     const op = candidate as Record<string, unknown>;
-    if (op.kind === "replace_text" && !xlsx) {
+    if (op.kind === "set_docx_cell" && !xlsx && !csv) {
+      if (tableCell(op)) throw invalid();
+    } else if (op.kind === "replace_text" && !xlsx && !csv) {
       if (
         !exact(op, ["kind", "target", "find", "replace"]) ||
         typeof op.target !== "string" ||
@@ -73,19 +81,21 @@ function checkedOperations(value: unknown, source: OfficeDraftSource): OfficeOpe
         throw invalid();
     } else if (op.kind === "add_sheet" && xlsx) {
       if (!exact(op, ["kind", "name"]) || typeof op.name !== "string") throw invalid();
-    } else if (op.kind === "set_cell" && xlsx) {
+    } else if (op.kind === "set_cell" && (xlsx || csv)) {
       if (
         !exact(op, ["kind", "target", "address", "value"]) ||
         typeof op.target !== "string" ||
-        typeof op.address !== "string"
+        typeof op.address !== "string" ||
+        (csv && op.target !== "table:1")
       )
         throw invalid();
       cell(op.value);
-    } else if (op.kind === "set_range" && xlsx) {
+    } else if (op.kind === "set_range" && (xlsx || csv)) {
       if (
         !exact(op, ["kind", "target", "start", "rows"]) ||
         typeof op.target !== "string" ||
         typeof op.start !== "string" ||
+        (csv && op.target !== "table:1") ||
         !Array.isArray(op.rows) ||
         op.rows.length > 10
       )

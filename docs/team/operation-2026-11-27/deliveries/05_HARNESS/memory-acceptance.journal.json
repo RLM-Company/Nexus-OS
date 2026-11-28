@@ -1,0 +1,206 @@
+{
+  "status": "PASS",
+  "format": "kosmora.memory-acceptance.journal.v1",
+  "started_at": "2026-11-27T15:00:25.309Z",
+  "node": "v24.21.0",
+  "owner": "owner-local",
+  "checkpoints": [
+    {
+      "id": "01",
+      "name": "1. Deterministic two-project, multi-chat fixture corpus",
+      "ms": 5,
+      "result": {
+        "chat_a_messages": 17,
+        "chat_b_messages": 5,
+        "projects": 3,
+        "foreign_messages": 2
+      }
+    },
+    {
+      "id": "02",
+      "name": "2. Decision accepted, changed, compacted, serialized, continued",
+      "ms": 3,
+      "result": {
+        "compaction": {
+          "state": "applied",
+          "source_bytes": 8213,
+          "capsule_bytes": 5410,
+          "protected_kept": 6
+        },
+        "snapshot": {
+          "format": "kosmora.memory-snapshot.v1",
+          "entries": 3
+        },
+        "restored": {
+          "current_version": 2,
+          "retained_old_version": 1,
+          "continued_items": 8,
+          "history_items_in_continuation": 7,
+          "current_reference": "M:93c25d39-b63e-4cd2-bfc4-f23bfb84c25e"
+        }
+      }
+    },
+    {
+      "id": "03",
+      "name": "3. Excluded source and cross-owner/cross-project isolation",
+      "ms": 2,
+      "result": {
+        "exclude": {
+          "source_message_id": "a-12",
+          "present_before": true,
+          "present_after": false
+        },
+        "isolation": {
+          "foreign_owner_in_bundle": false,
+          "other_project_in_bundle": false
+        },
+        "core_scope": {
+          "mixed_items": 10,
+          "scoped_items": 8,
+          "fitted_items": 8,
+          "selected_after_merge": 2
+        }
+      }
+    },
+    {
+      "id": "04",
+      "name": "4. Skill cycle: compile, accept, evaluate, correct, disable",
+      "ms": 8,
+      "result": {
+        "draft": {
+          "format": "kosmora.specialization-draft.v1",
+          "accepted": false,
+          "not_granted": [
+            "tool execution rights",
+            "system instruction authority",
+            "access to sources outside the owner's grants"
+          ]
+        },
+        "skill": {
+          "id": "e7a3c7f4-b646-4208-845b-fdb7b28621cb",
+          "accepted_version": 1,
+          "corrected_version": 2
+        },
+        "evaluation": {
+          "before_correction_passed": false,
+          "after_correction_passed": true,
+          "after_disable_passed": true,
+          "not_checked": ["truth", "intelligence", "benchmark_gain"]
+        },
+        "chat_selection": {
+          "enabled_items": 1,
+          "disabled_items": 0
+        },
+        "versions_retained": [2, 1]
+      }
+    },
+    {
+      "id": "05",
+      "name": "5. Honest boundaries",
+      "ms": 1,
+      "result": {
+        "not_checked": [
+          "truth of any recalled statement (provenance and version are checked, not factual correctness)",
+          "model quality, reasoning, paraphrase quality or benchmark gain",
+          "live provider / real LLM responses (no network or model call was made)",
+          "real production HTTP wiring (this local harness imports modules directly)",
+          "embedding/semantic retrieval quality (no semantic ranker was used)",
+          "secret detection beyond the existing memoryContainsCredential rule",
+          "permissions/tool execution: compiled skills grant no rights",
+          "perfect or lossless memory: compaction is exact-quote extractive; omitted spans remain omitted"
+        ]
+      }
+    }
+  ],
+  "assertions": [
+    {
+      "name": "17 owner messages in chat A and 5 in chat B",
+      "passed": true
+    },
+    {
+      "name": "two projects and one foreign owner chat exist",
+      "passed": true
+    },
+    {
+      "name": "fixture carries decisions, contradictions and a source to exclude",
+      "passed": true
+    },
+    {
+      "name": "compaction applied and report is honest",
+      "passed": true
+    },
+    {
+      "name": "both decision versions survive compaction with provenance",
+      "passed": true
+    },
+    {
+      "name": "snapshot JSON round-trip preserves versions and source hashes",
+      "passed": true
+    },
+    {
+      "name": "new decision wins; old decision is not silently overriding",
+      "passed": true
+    },
+    {
+      "name": "continuation via another allowed chat keeps exact facts",
+      "passed": true
+    },
+    {
+      "name": "excluded source is present before exclusion",
+      "passed": true
+    },
+    {
+      "name": "excluded source is absent after exclusion",
+      "passed": true
+    },
+    {
+      "name": "foreign owner and foreign project evidence do not leak",
+      "passed": true
+    },
+    {
+      "name": "selectContextScope drops foreign owner, deleted source and stale revision",
+      "passed": true
+    },
+    {
+      "name": "fit/merge/selectContextBundle keep the current bundle shape",
+      "passed": true
+    },
+    {
+      "name": "compiled draft is inert and cites non-granted rights",
+      "passed": true
+    },
+    {
+      "name": "explicit accept creates a versioned skill idempotently",
+      "passed": true
+    },
+    {
+      "name": "old artifact fails, corrected artifact passes explicit checks",
+      "passed": true
+    },
+    {
+      "name": "correction appends version 2; version 1 remains accessible",
+      "passed": true
+    },
+    {
+      "name": "disable leaves a different but correct result and old artifact readable",
+      "passed": true
+    },
+    {
+      "name": "no provider/model/network was called",
+      "passed": true
+    }
+  ],
+  "fixture": true,
+  "provider_called": false,
+  "model_called": false,
+  "network_called": false,
+  "finished_at": "2026-11-27T15:00:26.139Z",
+  "summary": {
+    "checkpoints": 5,
+    "assertions": 19,
+    "failed_assertions": 0,
+    "provider_called": false,
+    "model_called": false,
+    "network_called": false
+  }
+}

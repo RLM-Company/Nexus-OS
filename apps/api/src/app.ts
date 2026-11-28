@@ -1,3 +1,4 @@
+import { registerBusinessScenarioRoutes } from "./business-scenario-routes.js"; // Harness 2 wiring (2 lines)
 import { registerDocumentWorkspaceRoutes } from "./document-workspace-routes.js";
 import { registerGithubIssueRoutes } from "./github-issue-routes.js";
 import type { ContextMemoryRanker } from "@cosmora/contracts";
@@ -168,6 +169,8 @@ import {
   type UsageStore
 } from "@cosmora/db";
 import type { ScheduledDispatchStore } from "@cosmora/db";
+import type { AutomationStore } from "@cosmora/db";
+import { registerAutomationRoutes } from "./automation-routes.js";
 import type { ProjectCorrectionRuleStore, ProjectSourceStore } from "@cosmora/db";
 import {
   GatewayRunError,
@@ -186,7 +189,7 @@ import {
 } from "./identity.js";
 import { EmergencyStopActivatedError, RuntimeMetrics } from "./operations.js";
 import type { DemoManagerCoordinator } from "./demo-manager-coordinator.js";
-import type { ManagerWorkStore, StarsMissionStore } from "@cosmora/db";
+import type { ManagerWorkStore, StarsMissionStore, StarsOrgStore } from "@cosmora/db";
 import { registerArtifactContextRoutes } from "./artifact-context-routes.js";
 import type { ManagerWorkCoordinator } from "./manager-work-coordinator.js";
 import { registerManagerWorkRoutes } from "./manager-work-routes.js";
@@ -197,11 +200,13 @@ import {
   autonomyProfileStepUpChallenge,
   projectUsageLimitStepUpChallenge
 } from "./step-up-challenge.js";
+import { registerDeveloperApiRoutes } from "./developer-api/routes.js";
+import type { DeveloperApiStore } from "@cosmora/db";
 import { registerGeneralChatRoutes, type ActiveModelRun } from "./general-chat-routes.js";
 import { registerCodeAgentRoutes } from "./code-agent/routes.js";
 import { CodeAgentService } from "./code-agent/service.js";
 import { CodeAgentStore } from "./code-agent/store.js";
-import type { CodeAgentWorkspaceRunner } from "@cosmora/tool-runtime";
+import type { CodeAgentWorkspaceRunner, ConnectorTransport } from "@cosmora/tool-runtime";
 import { configuredCodeAgentExecutor } from "./code-agent/executor.js";
 import { GithubIntegration, type GithubDraftStore } from "./github-integration.js";
 import { registerGithubRoutes } from "./github-routes.js";
@@ -248,6 +253,8 @@ export interface AppDependencies {
   indexedRecall?: IndexedMemoryRecall | undefined;
   semanticRanker?: ContextMemoryRanker | undefined;
   googleDrive?: GoogleDriveRuntime;
+  /** Owner-approved HTTP connector transport; injected by the server, never from descriptors. */
+  httpConnectorTransport?: ConnectorTransport;
   computerControl?: { enabled: boolean };
   runtimeClock?: RuntimeClock;
   config: ServerConfig;
@@ -266,6 +273,7 @@ export interface AppDependencies {
   accountModel?: { provider: string; model: string; capabilities: Record<string, boolean> };
   database: DatabaseHealth;
   scheduledDispatchStore?: ScheduledDispatchStore;
+  automationStore?: AutomationStore;
   projectCorrectionRuleStore?: ProjectCorrectionRuleStore;
   identityStore?: IdentityStore;
   registration?: RegistrationOptions;
@@ -277,6 +285,7 @@ export interface AppDependencies {
   demoManagerCoordinator?: DemoManagerCoordinator;
   managerWorkStore?: ManagerWorkStore;
   starsMissionStore?: StarsMissionStore;
+  starsOrgStore?: StarsOrgStore;
   projectAutomationStore?: ProjectAutomationStore;
   payStore?: PayStore;
   payGateway?: PayGateway;
@@ -292,6 +301,7 @@ export interface AppDependencies {
   agentTeamStore?: AgentTeamStore;
   agentTeamRunStore?: AgentTeamRunStore;
   modelGateway?: ModelGateway;
+  developerApiStore?: DeveloperApiStore;
   chat?: ChatService;
   manager?: ManagerService;
   modelRegistryVersion?: string;
@@ -722,7 +732,8 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
               "req.headers.authorization",
               "req.headers.cookie",
               "req.headers.x-step-up-token",
-              "req.headers.x-kosmora-computer-token"
+              "req.headers.x-kosmora-computer-token",
+              "req.headers.x-api-key"
             ]
           }
   }).withTypeProvider<TypeBoxTypeProvider>();
@@ -744,8 +755,11 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
   };
 
   app.addHook("onRequest", async (request, reply) => {
-    const path = request.url.split("?", 1)[0];
+    const path = request.url.split("?", 1)[0] ?? "";
     if (path === "/api/v1/health") return;
+    // Signed inbound webhook deliveries authenticate with HMAC inside the route.
+    if (request.method === "POST" && path.startsWith("/api/v1/developer/v1/webhooks/receive/"))
+      return;
     if (
       dependencies.registration &&
       (path === "/login" ||
@@ -812,6 +826,7 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
     });
   }
 
+  registerBusinessScenarioRoutes({ app, identityFor }); // Harness 2 wiring (line 2 of 2)
   app.get(
     "/api/v1/navigation-context",
     {
@@ -889,7 +904,9 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
       origin: dependencies.config.webOrigin,
       identityFor
     },
-    dependencies.googleDrive
+    dependencies.googleDrive,
+    dependencies.httpConnectorTransport,
+    dependencies.githubIntegration
   );
   if (dependencies.projectStore) registerApexRoutes(app, dependencies.projectStore, identityFor);
   if (dependencies.payStore)
@@ -996,6 +1013,21 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
       chats: dependencies.generalChatStore,
       projects: dependencies.projectStore,
       ...(dependencies.managerWorkStore ? { works: dependencies.managerWorkStore } : {}),
+      identityFor
+    });
+  if (
+    dependencies.automationStore &&
+    dependencies.projectStore &&
+    dependencies.managerWorkStore &&
+    dependencies.managerWorkCoordinator
+  )
+    registerAutomationRoutes({
+      app,
+      store: dependencies.automationStore,
+      workflows: dependencies.managerWorkStore,
+      projects: dependencies.projectStore,
+      coordinator: dependencies.managerWorkCoordinator,
+      ...(dependencies.starsMissionStore ? { stars: dependencies.starsMissionStore } : {}),
       identityFor
     });
   if (projectCorrectionRuleStore)
@@ -1531,6 +1563,9 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
       ...(dependencies.generalChatStore ? { chats: dependencies.generalChatStore } : {}),
       coordinator: dependencies.managerWorkCoordinator,
       projects: dependencies.projectStore,
+      ...(dependencies.projectMembershipStore
+        ? { membership: dependencies.projectMembershipStore }
+        : {}),
       nodeBudget: {
         max_input_tokens: Math.min(3_000_000, (dependencies.modelContextWindowTokens ?? 32000) * 3),
         max_output_tokens: Math.min(300_000, dependencies.config.managerMaxOutputTokens * 3)
@@ -1548,6 +1583,7 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
         ? { dag: dependencies.managerWorkCoordinator.dag }
         : {}),
       ...(dependencies.agentTeamRunStore ? { teamRuns: dependencies.agentTeamRunStore } : {}),
+      ...(dependencies.starsOrgStore ? { orgStore: dependencies.starsOrgStore } : {}),
       identityFor
     });
 
@@ -1599,6 +1635,15 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
     registerProjectSourceRoutes(app, projectSourceStore, identityFor, projectMembershipStore);
   if (projectMembershipStore)
     registerProjectMembershipRoutes(app, projectMembershipStore, identityFor);
+  if (dependencies.developerApiStore && dependencies.modelGateway && dependencies.chat) {
+    registerDeveloperApiRoutes({
+      app,
+      store: dependencies.developerApiStore,
+      identityFor,
+      gateway: dependencies.modelGateway,
+      chat: dependencies.chat
+    });
+  }
   if (dependencies.generalChatStore && dependencies.modelGateway && dependencies.chat) {
     registerHistoryCompactionRoutes(
       app,
@@ -1614,6 +1659,9 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
       chat: dependencies.chat,
       ...(dependencies.accountStore ? { accountStore: dependencies.accountStore } : {}),
       ...(dependencies.projectStore ? { projectStore: dependencies.projectStore } : {}),
+      ...(dependencies.projectMembershipStore
+        ? { projectMembership: dependencies.projectMembershipStore }
+        : {}),
       ...(dependencies.managerWorkStore
         ? { projectMemory: dependencies.managerWorkStore.memory }
         : {}),
@@ -2468,8 +2516,17 @@ export const buildApp = (dependencies: AppDependencies): FastifyInstance => {
       "/api/v1/projects",
       { schema: { response: { 200: ProjectListResponseSchema } } },
       (request) => {
+        const owner = identityFor(request).owner_id;
+        const owned = store.listProjects(owner);
+        const membership = dependencies.projectMembershipStore;
+        const shared = membership
+          ? membership
+              .sharedWith(owner)
+              .filter((project) => !owned.some((item) => item.id === project.id))
+              .map((project) => project as ProjectListResponse["items"][number])
+          : [];
         const response: ProjectListResponse = {
-          items: store.listProjects(identityFor(request).owner_id)
+          items: [...owned, ...shared]
         };
         return response;
       }

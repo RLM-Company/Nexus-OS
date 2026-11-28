@@ -2207,6 +2207,7 @@ describe("Code agent real gateway/GitHub/policy vertical", () => {
     expect(view.snapshot).toBeUndefined();
     expect(view.workspace_scope).toBeUndefined();
     expect(view.owner_id).toBeUndefined();
+    expect(view.output_checkpoint).toBeUndefined();
     const other = f.projects.createProject("Other", randomUUID()).project.id;
     expect(
       (await f.app.inject({ url: `/api/v1/projects/${other}/code-agent/${id}` })).statusCode
@@ -2214,6 +2215,52 @@ describe("Code agent real gateway/GitHub/policy vertical", () => {
     f.requestOwner("someone-else");
     expect((await f.app.inject({ url: `${f.base}/${id}` })).statusCode).toBe(404);
     expect(f.store.get(id, "someone-else")).toBeNull();
+  });
+
+  it("never exposes an unvalidated model output checkpoint through a run view", async () => {
+    // A cancelled stream keeps raw, unvalidated assistant text on the durable run
+    // for recovery. That internal artifact must not appear in any owner-facing
+    // GET/POST view: it is untrusted data and can contain partial credentials.
+    const secretTail = "sk-proj-OC5LEAK12";
+    const f = await fixture({
+      toolCalling: false,
+      providerResponse: () =>
+        new Response(
+          new ReadableStream<Uint8Array>({
+            start(controller) {
+              controller.enqueue(
+                new TextEncoder().encode(
+                  sse({
+                    choices: [{ delta: { content: '{"summary":"' + secretTail } }]
+                  })
+                )
+              );
+            }
+          }),
+          { headers: { "content-type": "text/event-stream" } }
+        )
+    });
+    const id = f.service.create(f.project, LOCAL_DEVELOPMENT_IDENTITY, {
+      client_request_id: randomUUID(),
+      task: "Fix",
+      base_branch: "main",
+      files: ["src/add.js"]
+    }).id;
+    await vi.waitFor(() => expect(f.get(id).output_checkpoint?.text).toContain(secretTail));
+    await nextTurn();
+    f.service.cancel(id, owner);
+    await f.service.whenIdle();
+    // Sanity: the durable run really keeps the checkpoint, so the assertion below
+    // proves the view is redacted rather than merely absent by accident.
+    expect(f.get(id).output_checkpoint?.text).toContain(secretTail);
+    const view = (await f.app.inject({ url: `${f.base}/${id}` })).json<Record<string, unknown>>();
+    expect(view.output_checkpoint).toBeUndefined();
+    expect(JSON.stringify(view)).not.toContain(secretTail);
+    expect(JSON.stringify(view)).not.toContain("unvalidated_model_output");
+    // Other owner-facing recovery state survives the projection.
+    expect(view.status).toBe("cancelled");
+    expect(view.id).toBe(id);
+    expect(f.githubCalls.every((call) => call.method === "GET")).toBe(true);
   });
 
   it("cancels an in-flight approved check without a late-result overwrite or GitHub write", async () => {

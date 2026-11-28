@@ -273,7 +273,9 @@ export class WorkflowStore {
         parameters: definition.parameters,
         nodes: definition.nodes,
         requirements: definition.requirements,
-        expected_results: definition.expected_results
+        expected_results: definition.expected_results,
+        ...(definition.conditions ? { conditions: definition.conditions } : {}),
+        ...(definition.confirmations ? { confirmations: definition.confirmations } : {})
       };
       this.sql
         .prepare("UPDATE projects SET status='ACTIVE' WHERE id=? AND owner_id=? AND status='DRAFT'")

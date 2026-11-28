@@ -503,6 +503,22 @@ async function runNativeBrowserAcceptance({ app, origin }) {
     }
     for (const tab of engine.state().tabs) await engine.close(tab.id, true);
     assert.equal(engine.state().liveTabs, 0);
+    // Device lease on the real Electron transport: one agent holds the native
+    // focus, a second agent queues, human takeover evicts and cancels it.
+    stage = "device-lease";
+    await engine.open();
+    const leaseState = engine.state().deviceLease;
+    assert.ok(leaseState && typeof leaseState.generation === "number");
+    assert.equal(leaseState.native, null);
+    assert.equal(leaseState.stopped, false);
+    assert.equal(leaseState.dom.length, 0);
+    // The engine's takeControl() is the human-input entry point; call it while
+    // no agent holds the lease and confirm a human-owned native slot appears.
+    engine.takeControl();
+    const afterTakeover = engine.state().deviceLease.native;
+    assert.equal(afterTakeover.priority, "human");
+    assert.equal(afterTakeover.holder, "local-user");
+    assert.equal(engine.state().deviceLease.waiting.length, 0);
     return {
       transport: "packaged Electron WebContentsView + debugger",
       search: true,
@@ -521,7 +537,9 @@ async function runNativeBrowserAcceptance({ app, origin }) {
       pagedTextReaderVersionGuard: true,
       pagedTextReaderExclusions: true,
       computerTransport: "fixture only; no OS capture/input",
-      separateEnvironmentGrants: true
+      separateEnvironmentGrants: true,
+      deviceLease: true,
+      humanTakeover: true
     };
   } catch (error) {
     throw new Error(

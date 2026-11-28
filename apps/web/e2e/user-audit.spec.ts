@@ -123,7 +123,7 @@ test("reaches every primary workspace from the phone navigation", async ({ page 
       .getByRole("button", { name: new RegExp(`^${label}(?:\\s|$)`) })
       .click();
     await expect(page.locator(".topbar h1")).toHaveText(
-      ["Koscode", "Koswork"].includes(label) ? "Новый чат" : label
+      label === "Koscode" ? "Новая сессия" : label === "Koswork" ? "Новый чат" : label
     );
   }
 
@@ -252,7 +252,9 @@ test("keeps sidebar focus on keyboard-operated controls", async ({ page }) => {
     await page.keyboard.press("Enter");
     await expect(modeMenu).not.toHaveAttribute("open");
     await expect(modeTrigger).toBeFocused();
-    await expect(page.locator(".topbar h1")).toHaveText("Новый чат");
+    await expect(page.locator(".topbar h1")).toHaveText(
+      name === "Koscode" ? "Новая сессия" : "Новый чат"
+    );
   }
   // Return from the separate Koscode workspace before testing shared navigation.
   await modeTrigger.click();

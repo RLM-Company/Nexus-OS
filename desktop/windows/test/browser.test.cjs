@@ -6,6 +6,27 @@ const test = require("node:test"),
   os = require("node:os"),
   path = require("node:path");
 const { createBrowserEngine } = require("../browser/engine.cjs");
+
+test("a queued action with an obsolete observation releases the device lease", async (t) => {
+  const f = fixture(t);
+  const signal = new AbortController().signal;
+  await f.engine.open("https://example.test");
+  const before = await f.engine.observe(signal);
+  const first = f.engine.execute(
+    { kind: "browser_open", url: "https://example.test/next" },
+    before,
+    signal
+  );
+  const stale = assert.rejects(
+    f.engine.execute({ kind: "browser_tabs" }, before, signal),
+    /BROWSER_STALE/
+  );
+  await Promise.all([first, stale]);
+  assert.equal(f.engine.state().deviceLease.native, null);
+  const next = await f.engine.observe(signal);
+  const result = await f.engine.execute({ kind: "browser_tabs" }, next, AbortSignal.timeout(1000));
+  assert.ok(result.tabs.length > 0);
+});
 const { createBrowserProfiles } = require("../browser/profiles.cjs");
 const { safeUrl, address, profileKey, createTaskGate } = require("../browser/policy.cjs");
 const { validateComputerAction } = require("../computer-policy.cjs");
@@ -563,6 +584,50 @@ test("manual takeover cancels an in-flight browser action and queued inputs", as
     /COMPUTER_SESSION_STOPPED/
   );
   await f.engine.execute({ kind: "browser_read" }, fresh, new AbortController().signal);
+});
+
+test("two agents contending for one native window are serialized by the device lease", async (t) => {
+  const f = fixture(t);
+  await f.engine.open("https://example.test");
+  const a = new AbortController().signal;
+  const b = new AbortController().signal;
+  const before = await f.engine.observe(a);
+  let resume;
+  const entered = new Promise((resolve) => {
+    resume = resolve;
+  });
+  f.setHook(async (method, args) => {
+    if (method === "Runtime.callFunctionOn" && args.functionDeclaration === documentCode.locate) {
+      await entered;
+    }
+  });
+  // Agent A drives a native action; its lease is visible in engine state.
+  const first = f.engine.execute({ kind: "browser_click", ref: "e1" }, before, a);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(f.engine.state().deviceLease.native.priority, "agent");
+  const firstHolder = f.engine.state().deviceLease.native.holder;
+  // Agent B starts a native action on the SAME window: it must wait, not grab focus.
+  let secondResolved = false;
+  const second = f.engine.execute({ kind: "browser_read" }, before, b).then((value) => {
+    secondResolved = true;
+    return value;
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(secondResolved, false, "B must not act until A releases the native lease");
+  assert.equal(f.engine.state().deviceLease.native.holder, firstHolder);
+  // B is blocked either in the serialized screen queue or the device lease
+  // queue; in neither case did it move the native focus.
+  assert.equal(secondResolved, false);
+  const dom = f.engine.state().deviceLease.dom;
+  assert.ok(Array.isArray(dom));
+  // Release A only after B's contention was observed.
+  f.setHook(undefined);
+  resume();
+  await first;
+  await second;
+  assert.equal(f.engine.state().deviceLease.native, null);
+  // No duplicate result and no late input from B before A released the lease.
+  assert.equal(f.engine.state().deviceLease.waiting.length, 0);
 });
 
 test("navigation, resize, tab changes and target changes invalidate old refs before input", async (t) => {

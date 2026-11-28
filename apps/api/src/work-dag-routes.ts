@@ -21,22 +21,58 @@ import type { FastifyInstance, FastifyRequest } from "fastify";
 import { Type } from "typebox";
 import { TypeBoxValidatorCompiler } from "@fastify/type-provider-typebox";
 import type { WorkDagCoordinator } from "./work-dag-coordinator.js";
+import { projectAccess } from "./project-access.js";
+import type { ProjectMembershipStore } from "@cosmora/db";
 
 export function registerWorkDagRoutes(options: {
   app: FastifyInstance;
   projects: ProjectStore;
   coordinator: WorkDagCoordinator;
   identityFor: (request: FastifyRequest) => IdentityContext;
+  membership?: ProjectMembershipStore | undefined;
 }): void {
-  const { app, projects, coordinator, identityFor } = options;
+  const { app, projects, coordinator, identityFor, membership } = options;
   const base = "/api/v1/projects/:projectId/work-dags";
   type Params = { projectId: string; id: string };
   const params = Type.Object(
     { projectId: Type.String({ minLength: 1 }), id: Type.Optional(Type.String({ minLength: 1 })) },
     { additionalProperties: false }
   );
-  const owned = (r: FastifyRequest<{ Params: Params }>) =>
-    projects.getProject(r.params.projectId, identityFor(r).owner_id);
+  const owned = (r: FastifyRequest<{ Params: Params }>) => {
+    const actor = identityFor(r).owner_id;
+    const access = projectAccess(
+      membership,
+      r.params.projectId,
+      actor,
+      r.method === "GET" ? "any" : "editor"
+    );
+    return access && access.projectId === r.params.projectId
+      ? projects.getProject(r.params.projectId, access.ownerId)
+      : null;
+  };
+  /** Owner scope for an id-based DAG operation; member access is checked on
+   * every call, so a revoked member cannot reuse a previously known id. */
+  const projectDataOwner = (r: FastifyRequest<{ Params: Params }>): string | null => {
+    const access = projectAccess(
+      membership,
+      r.params.projectId,
+      identityFor(r).owner_id,
+      r.method === "GET" ? "any" : "editor"
+    );
+    return access && access.projectId === r.params.projectId ? access.ownerId : null;
+  };
+  const dataOwner = (r: FastifyRequest<{ Params: Params }>): string | null => {
+    const actor = identityFor(r).owner_id;
+    const scope = coordinator.scope(r.params.id ?? "");
+    if (!scope || scope.projectId !== r.params.projectId) return null;
+    const access = projectAccess(
+      membership,
+      scope.projectId,
+      actor,
+      r.method === "GET" ? "any" : "editor"
+    );
+    return access && access.ownerId === scope.ownerId ? scope.ownerId : null;
+  };
   const safe = (
     fn: () => unknown,
     reply: { code: (n: number) => { send: (value: unknown) => unknown } }
@@ -66,7 +102,7 @@ export function registerWorkDagRoutes(options: {
   app.get<{ Params: Params }>(base, { schema: { params } }, (r, reply) => {
     if (!owned(r)) return reply.code(404).send({ error: "PROJECT_NOT_FOUND" });
     return safe(
-      () => ({ items: coordinator.list(r.params.projectId, identityFor(r).owner_id) }),
+      () => ({ items: coordinator.list(r.params.projectId, projectDataOwner(r) ?? "") }),
       reply
     );
   });
@@ -81,7 +117,12 @@ export function registerWorkDagRoutes(options: {
           reply
             .code(201)
             .send(
-              coordinator.create(r.params.projectId, identity.owner_id, identity.actor_id, r.body)
+              coordinator.create(
+                r.params.projectId,
+                projectDataOwner(r) ?? "",
+                identity.actor_id,
+                r.body
+              )
             ),
         reply
       );
@@ -91,7 +132,7 @@ export function registerWorkDagRoutes(options: {
     reply.header("Cache-Control", "private, no-store");
     return safe(
       () =>
-        coordinator.get(r.params.id, identityFor(r).owner_id, r.params.projectId) ??
+        coordinator.get(r.params.id, dataOwner(r) ?? "", r.params.projectId) ??
         reply.code(404).send({ error: "DAG_NOT_FOUND" }),
       reply
     );
@@ -111,7 +152,12 @@ export function registerWorkDagRoutes(options: {
           .header("Cache-Control", "private, no-store")
           .code(201)
           .send(
-            coordinator.import(r.params.projectId, identity.owner_id, identity.actor_id, r.body)
+            coordinator.import(
+              r.params.projectId,
+              projectDataOwner(r) ?? "",
+              identity.actor_id,
+              r.body
+            )
           );
       }, reply)
   );
@@ -124,9 +170,7 @@ export function registerWorkDagRoutes(options: {
           .header("X-Content-Type-Options", "nosniff")
           .type("application/json; charset=utf-8")
           .send(
-            JSON.stringify(
-              coordinator.package(r.params.id, identityFor(r).owner_id, r.params.projectId)
-            )
+            JSON.stringify(coordinator.package(r.params.id, dataOwner(r) ?? "", r.params.projectId))
           ),
       reply
     )
@@ -147,7 +191,7 @@ export function registerWorkDagRoutes(options: {
             coordinator.clone(
               r.params.projectId,
               r.params.id,
-              identity.owner_id,
+              projectDataOwner(r) ?? "",
               identity.actor_id,
               r.body
             )
@@ -156,9 +200,9 @@ export function registerWorkDagRoutes(options: {
   );
   app.get<{ Params: Params }>(base + "/:id/checkpoints", { schema: { params } }, (r, reply) =>
     safe(() => {
-      if (!coordinator.owns(r.params.id, identityFor(r).owner_id, r.params.projectId))
+      if (!coordinator.owns(r.params.id, dataOwner(r) ?? "", r.params.projectId))
         return reply.code(404).send({ error: "DAG_NOT_FOUND" });
-      return { items: coordinator.checkpoints(r.params.id, identityFor(r).owner_id) };
+      return { items: coordinator.checkpoints(r.params.id, dataOwner(r) ?? "") };
     }, reply)
   );
   app.put<{ Params: Params; Body: WorkDagArchive }>(
@@ -166,7 +210,7 @@ export function registerWorkDagRoutes(options: {
     { validatorCompiler: TypeBoxValidatorCompiler, schema: { params, body: WorkDagArchiveSchema } },
     (r, reply) =>
       safe(() => {
-        const owner = identityFor(r).owner_id;
+        const owner = dataOwner(r) ?? "";
         if (!coordinator.owns(r.params.id, owner, r.params.projectId))
           return reply.code(404).send({ error: "DAG_NOT_FOUND" });
         return reply
@@ -179,7 +223,7 @@ export function registerWorkDagRoutes(options: {
     { validatorCompiler: TypeBoxValidatorCompiler, schema: { params, body: WorkDagRenameSchema } },
     (r, reply) =>
       safe(() => {
-        const owner = identityFor(r).owner_id;
+        const owner = dataOwner(r) ?? "";
         if (!coordinator.owns(r.params.id, owner, r.params.projectId))
           return reply.code(404).send({ error: "DAG_NOT_FOUND" });
         return reply
@@ -190,7 +234,7 @@ export function registerWorkDagRoutes(options: {
   app.get<{ Params: Params }>(base + "/:id/results", { schema: { params } }, (r, reply) =>
     safe(() => {
       reply.header("cache-control", "private, no-store");
-      const owner = identityFor(r).owner_id;
+      const owner = dataOwner(r) ?? "";
       if (!coordinator.owns(r.params.id, owner, r.params.projectId))
         return reply.code(404).send({ error: "DAG_NOT_FOUND" });
       const result = coordinator.results(r.params.id, owner);
@@ -218,7 +262,7 @@ export function registerWorkDagRoutes(options: {
     (r, reply) =>
       safe(() => {
         reply.header("cache-control", "private, no-store");
-        const owner = identityFor(r).owner_id;
+        const owner = dataOwner(r) ?? "";
         if (!coordinator.owns(r.params.id, owner, r.params.projectId))
           return reply.code(404).send({ error: "DAG_NOT_FOUND" });
         const { node_id, node_ids } = r.query;
@@ -254,9 +298,9 @@ export function registerWorkDagRoutes(options: {
     { schema: { params, body: WorkDagEditSchema } },
     (r, reply) =>
       safe(() => {
-        if (!coordinator.owns(r.params.id, identityFor(r).owner_id, r.params.projectId))
+        if (!coordinator.owns(r.params.id, dataOwner(r) ?? "", r.params.projectId))
           return reply.code(404).send({ error: "DAG_NOT_FOUND" });
-        return coordinator.edit(r.params.id, identityFor(r).owner_id, r.body.version, r.body.nodes);
+        return coordinator.edit(r.params.id, dataOwner(r) ?? "", r.body.version, r.body.nodes);
       }, reply)
   );
   app.post<{ Params: Params; Body: WorkDagControl }>(
@@ -264,9 +308,9 @@ export function registerWorkDagRoutes(options: {
     { schema: { params, body: WorkDagControlSchema } },
     (r, reply) =>
       safe(() => {
-        if (!coordinator.owns(r.params.id, identityFor(r).owner_id, r.params.projectId))
+        if (!coordinator.owns(r.params.id, dataOwner(r) ?? "", r.params.projectId))
           return reply.code(404).send({ error: "DAG_NOT_FOUND" });
-        return coordinator.control(r.params.id, identityFor(r).owner_id, r.body);
+        return coordinator.control(r.params.id, dataOwner(r) ?? "", r.body);
       }, reply)
   );
 }

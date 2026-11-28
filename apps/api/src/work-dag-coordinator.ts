@@ -91,6 +91,9 @@ export class WorkDagCoordinator {
     if (!graph || graph.project_id !== project) throw new WorkDagConflict("DAG_NOT_FOUND");
     return createWorkPlanPackage(graph);
   }
+  scope(id: string): { ownerId: string; projectId: string } | null {
+    return this.works.dag.scope(id);
+  }
   owns(id: string, owner: string, project: string): boolean {
     return this.works.dag.get(id, owner)?.project_id === project;
   }

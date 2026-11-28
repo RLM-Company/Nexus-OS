@@ -7,6 +7,7 @@ import Link from "next/link";
 import { WorkResultSources } from "./work-result-sources";
 import { SupplierWorkResult } from "./supplier-work-result";
 import { WorkManagerDag } from "./work-manager-dag";
+import { WorkClarificationForm } from "./clarification-card";
 import { WorkManagerProgress } from "./work-manager-progress";
 import { WorkManagerMemory } from "./work-manager-memory";
 import { DesktopComputerButton } from "./desktop-computer-button";
@@ -266,7 +267,6 @@ export function ManagerWorkPanel({
   const [role, setRole] = useState<CreateManagerWork["worker_role"]>("analyst");
   const [critic, setCritic] = useState(true);
   const [work, setWork] = useState<Work | null>(null);
-  const [supplierAnswer, setSupplierAnswer] = useState({ workId: "", text: "" });
   const [works, setWorks] = useState<Work[]>([]);
   const [selectedWorkId, setSelectedWorkId] = useState<string | null>(null);
   const [historyLoaded, setHistoryLoaded] = useState(false);
@@ -618,11 +618,11 @@ export function ManagerWorkPanel({
       });
       recordMutation(updated, epoch);
     } catch (cause) {
-      if (!(cause instanceof WorkHttpError && cause.status < 500)) {
+      if (!(cause instanceof WorkHttpError && cause.status < 500 && cause.status !== 409)) {
         const current = await json<Work>(url).catch(() => null);
-        if (current?.id === questionWork.id && current.supplier_clarification?.answer === answer) {
+        if (current?.id === questionWork.id && current.version >= questionWork.version) {
           recordMutation(current, epoch);
-          return;
+          if (current.supplier_clarification?.answer === answer) return;
         }
       }
       if (epoch === mutationEpoch.current)
@@ -956,7 +956,12 @@ export function ManagerWorkPanel({
       <WorkManagerMemory key={projectId} projectId={projectId} />
       {work && (
         <>
-          <WorkManagerProgress projectId={projectId} workId={work.id} version={work.version} />
+          <WorkManagerProgress
+            projectId={projectId}
+            workId={work.id}
+            version={work.version}
+            goal={work.request?.goal}
+          />
           <AcceptedSkillView
             key={work.id}
             path={base + "/" + encodeURIComponent(work.id) + "/skills"}
@@ -1043,37 +1048,12 @@ export function ManagerWorkPanel({
           {work.status === "blocked" &&
             work.error_code === "SUPPLIER_ANSWER_REQUIRED" &&
             work.supplier_clarification && (
-              <form
-                aria-label="Уточнение сравнения поставщиков"
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  if (supplierAnswer.workId === work.id && supplierAnswer.text.trim())
-                    void answerSupplierQuestion(work, supplierAnswer.text);
-                }}
-              >
-                <p>{work.supplier_clarification.question}</p>
-                <label>
-                  Недостающие данные JSON
-                  <textarea
-                    value={supplierAnswer.workId === work.id ? supplierAnswer.text : ""}
-                    maxLength={8000}
-                    onChange={(event) =>
-                      setSupplierAnswer({ workId: work.id, text: event.target.value })
-                    }
-                  />
-                </label>
-                <button
-                  className="manager-work-action primary"
-                  disabled={
-                    busy ||
-                    executionGate !== "clear" ||
-                    supplierAnswer.workId !== work.id ||
-                    !supplierAnswer.text.trim()
-                  }
-                >
-                  Продолжить сравнение
-                </button>
-              </form>
+              <WorkClarificationForm
+                key={work.id + ":" + work.supplier_clarification.question}
+                question={work.supplier_clarification.question}
+                busy={busy || executionGate !== "clear"}
+                submit={(answer) => answerSupplierQuestion(work, answer)}
+              />
             )}
           {workIsSupplier ? (
             <SupplierWorkResult

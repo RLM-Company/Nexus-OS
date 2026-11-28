@@ -162,3 +162,65 @@ test("plan search and missing links cannot silently select a different plan", as
   await expect(card).toContainText(first.title);
   await expect(editor.getByText("План из ссылки не найден в этом проекте")).toHaveCount(0);
 });
+
+test("switching the pinned plan in the same project fences a late snapshot and recovers a disconnected read", async ({
+  page,
+  request
+}) => {
+  const created = await request.post("/api/v1/projects", {
+    data: { initial_message: "Два независимых плана", client_message_id: crypto.randomUUID() }
+  });
+  const { project } = (await created.json()) as { project: { id: string } };
+  const base = `/api/v1/projects/${project.id}/work-dags`;
+  async function create(title: string) {
+    const response = await request.post(base, {
+      data: {
+        title,
+        client_request_id: crypto.randomUUID(),
+        nodes: [{ id: "brief", title: "Проверить данные", goal: "Сверь данные", depends_on: [] }]
+      }
+    });
+    expect(response.status()).toBe(201);
+    return response.json() as Promise<WorkDag>;
+  }
+  const first = await create("План A");
+  const second = await create("План B");
+  const card = page.getByRole("region", { name: "Задачи и план чата" });
+  await page.goto(`/?project=${project.id}&view=chat&plan=${first.id}`);
+  await expect(card).toContainText(first.title);
+  let release!: () => void;
+  const hold = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await page.route("**" + base + "/" + first.id, async (route) => {
+    const old = await route.fetch();
+    await hold;
+    await route.fulfill({ response: old }).catch(() => undefined);
+  });
+  const dispatched = page.waitForRequest((req) => req.url().endsWith("/" + first.id));
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await dispatched;
+  await page.evaluate((id) => {
+    const url = new URL(window.location.href);
+    url.searchParams.set("plan", id);
+    window.history.pushState(window.history.state, "", url);
+    window.dispatchEvent(new PopStateEvent("popstate"));
+  }, second.id);
+  await expect(card).toContainText(second.title);
+  await expect(card.getByRole("link", { name: "Открыть управление планом" })).toHaveAttribute(
+    "href",
+    `/?project=${project.id}&view=plan&plan=${second.id}`
+  );
+  release();
+  let online = false;
+  await page.route("**" + base + "/" + second.id, (route) =>
+    online ? route.continue() : route.abort()
+  );
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await expect(card.getByRole("alert")).toContainText("последняя подтверждённая версия");
+  await expect(card).not.toContainText(first.title);
+  online = true;
+  await page.evaluate(() => window.dispatchEvent(new Event("online")));
+  await expect(card.getByRole("alert")).toHaveCount(0);
+  await expect(card).toContainText(second.title);
+});

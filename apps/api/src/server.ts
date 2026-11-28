@@ -1,7 +1,12 @@
 import { EnvironmentSecretResolver, loadServerConfig } from "@cosmora/config";
 import { configuredMcpDiscovery } from "./mcp-discovery.js";
 import { WORK_EXECUTION_CONCURRENCY } from "@cosmora/contracts";
-import { RuntimeClock } from "@cosmora/model-gateway";
+import {
+  ElevenLabsMediaAdapter,
+  GeminiVideoMediaAdapter,
+  RuntimeClock,
+  validGeminiVideoProject
+} from "@cosmora/model-gateway";
 import {
   AgentBlueprintStore,
   DocumentLibraryStore,
@@ -19,17 +24,20 @@ import {
   DemoManagerStore,
   ManagerWorkStore,
   StarsMissionStore,
+  StarsOrgStore,
   EmergencyStopStore,
   IdentityStore,
   openDatabase,
   PolicyStore,
   PatternLibraryStore,
   ScheduledDispatchStore,
+  AutomationStore,
   ProjectCorrectionRuleStore,
   runMigrations,
   upgradeAccountProfileColumns,
   StepUpProofStore,
   ProjectMembershipStore,
+  DeveloperApiStore,
   UsageStore
 } from "@cosmora/db";
 import { validateAgentDelegation } from "@cosmora/policy-engine";
@@ -42,6 +50,7 @@ import {
   StoredStepUpProofConsumer
 } from "./identity.js";
 import { GeneralChatBackgroundRunCoordinator } from "./general-chat-background-run-coordinator.js";
+import { createDeveloperIdentityResolver } from "./developer-api/developer-key-resolver.js";
 import { GeneralChatRuntimeStore } from "./general-chat-runtime-store.js";
 import { ManagerBackgroundRunCoordinator } from "./manager-background-run-coordinator.js";
 import { DemoManagerCoordinator } from "./demo-manager-coordinator.js";
@@ -55,6 +64,7 @@ import { AccountStore } from "./account-settings/account-store.js";
 import { loadModelRegistryDocument } from "./model-runtime.js";
 import { ResearchStore } from "./research/research-store.js";
 import { MediaService } from "./media/media-service.js";
+import { runChatStudio } from "./media/chat-studio.js";
 import { generateChatImage } from "./media/chat-images.js";
 import { AccountMediaBudget } from "./media/account-media-budget.js";
 import { resolve } from "node:path";
@@ -140,6 +150,7 @@ try {
   upgradeAccountProfileColumns(database.sqlite);
   const accountStore = new AccountStore(database.sqlite);
   const scheduledDispatchStore = new ScheduledDispatchStore(database.sqlite);
+  const automationStore = new AutomationStore(database.sqlite);
   const projectCorrectionRuleStore = new ProjectCorrectionRuleStore(database.sqlite);
   const recoveredAccountHolds = accountStore.reconcileKnownCanonicalHolds();
   const modelRuntime = await buildModelRuntime(config, {
@@ -188,16 +199,18 @@ try {
   const demoManagerStore = new DemoManagerStore(database.sqlite);
   const emergencyStopStore = new EmergencyStopStore(database.sqlite);
   const identityStore = new IdentityStore(database.sqlite);
+  const developerApiStore = new DeveloperApiStore(database.sqlite);
   const stepUpProofStore = new StepUpProofStore(database.sqlite);
   const runtimeMetrics = new RuntimeMetrics();
   if (recoveredAccountHolds > 0)
     process.stdout.write(
       `Reconciled ${recoveredAccountHolds} verified owner holds after restart\n`
     );
-  const identityResolver =
+  const baseIdentityResolver =
     config.nodeEnv === "production"
       ? new BearerSessionIdentityResolver(identityStore)
       : new StaticIdentityResolver(LOCAL_DEVELOPMENT_IDENTITY);
+  const identityResolver = createDeveloperIdentityResolver(developerApiStore, baseIdentityResolver);
   if (config.runtimeEmergencyStop) {
     emergencyStopStore.activateProcess(
       "RUNTIME_EMERGENCY_STOP environment switch",
@@ -243,7 +256,19 @@ try {
     runner: configuredCodeAgentExecutor(),
     ownerBudget: sharedBudget
   });
+  const elevenLabsCredential = process.env.KOSMORA_MEDIA_ELEVENLABS_API_KEY?.trim();
+  const videoProject = process.env.KOSMORA_MEDIA_GOOGLE_VIDEO_PROJECT?.trim();
+  const videoCredential = process.env.KOSMORA_MEDIA_GOOGLE_VIDEO_ACCESS_TOKEN?.trim();
   const mediaService = new MediaService({
+    ...(process.env.KOSMORA_MEDIA_GOOGLE_VIDEO_ENABLED === "true" &&
+    videoProject &&
+    validGeminiVideoProject(videoProject) &&
+    videoCredential
+      ? { video: new GeminiVideoMediaAdapter(videoProject, videoCredential) }
+      : {}),
+    ...(process.env.KOSMORA_MEDIA_ELEVENLABS_ENABLED === "true" && elevenLabsCredential
+      ? { creativeAudio: new ElevenLabsMediaAdapter(elevenLabsCredential) }
+      : {}),
     imageEditingEnabled: process.env.KOSMORA_MEDIA_EDIT_ENABLED === "true",
     ownerBudget: new AccountMediaBudget(
       accountStore,
@@ -315,6 +340,7 @@ try {
   app = buildApp({
     mcpDiscovery: configuredMcpDiscovery(process.env),
     scheduledDispatchStore,
+    automationStore,
     projectCorrectionRuleStore,
     indexedRecall: semanticIndex,
     semanticRanker,
@@ -405,6 +431,7 @@ try {
     demoManagerStore,
     managerWorkStore,
     starsMissionStore: new StarsMissionStore(database.sqlite),
+    starsOrgStore: new StarsOrgStore(database.sqlite),
     projectAutomationStore: new ProjectAutomationStore(database.sqlite),
     // Merchant activation is a separate release. This integration exposes read-only accounting and a disabled checkout.
     payStore: new PayStore(database.sqlite),
@@ -426,6 +453,7 @@ try {
     }),
     agentStudioMutationStore: new AgentStudioMutationStore(database.sqlite),
     modelGateway: modelRuntime.gateway,
+    developerApiStore,
     chat: modelRuntime.chat,
     manager: modelRuntime.manager,
     modelRegistryVersion: modelRuntime.registryVersion,
@@ -459,8 +487,9 @@ try {
     logger: app.log
   });
   generalChatBackgroundCoordinator = new GeneralChatBackgroundRunCoordinator({
-    imageGeneration: (owner, prompt, signal, references) =>
-      generateChatImage(mediaService, owner, prompt, signal, references),
+    studio: (owner, run, prompt, signal) => runChatStudio(mediaService, owner, run, prompt, signal),
+    imageGeneration: (owner, prompt, signal, references, run) =>
+      generateChatImage(mediaService, owner, prompt, signal, references, run),
     search: new WebSearch(process.env.WEB_SEARCH_ORIGIN),
     store: generalChatStore,
     modelGateway: modelRuntime.gateway,

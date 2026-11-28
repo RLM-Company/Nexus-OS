@@ -2,6 +2,10 @@ import type { FastifyInstance, FastifyRequest } from "fastify";
 import type { IdentityContext } from "@cosmora/contracts";
 import { PresentationError, type PresentationStore } from "@cosmora/db";
 import { Type } from "typebox";
+import {
+  PRESENTATION_IMAGE_BYTES,
+  PRESENTATION_TABLE_LIMITS
+} from "@cosmora/contracts/presentation-package";
 
 export function registerPresentationRoutes(
   app: FastifyInstance,
@@ -23,7 +27,36 @@ export function registerPresentationRoutes(
       title: Type.String({ maxLength: 180 }),
       body: Type.String({ maxLength: 4000 }),
       aside: Type.String({ maxLength: 4000 }),
-      notes: Type.String({ maxLength: 4000 })
+      notes: Type.String({ maxLength: 4000 }),
+      visual: Type.Optional(
+        Type.Union([
+          Type.Object(
+            {
+              kind: Type.Literal("table"),
+              rows: Type.Array(
+                Type.Array(Type.String({ maxLength: PRESENTATION_TABLE_LIMITS.cell }), {
+                  minItems: 1,
+                  maxItems: PRESENTATION_TABLE_LIMITS.columns
+                }),
+                { minItems: 1, maxItems: PRESENTATION_TABLE_LIMITS.rows }
+              )
+            },
+            { additionalProperties: false }
+          ),
+          Type.Object(
+            {
+              kind: Type.Literal("image"),
+              mime: Type.Union([Type.Literal("image/png"), Type.Literal("image/jpeg")]),
+              alt: Type.String({ minLength: 1, maxLength: 160 }),
+              data_base64: Type.String({
+                minLength: 1,
+                maxLength: (PRESENTATION_IMAGE_BYTES / 3) * 4
+              })
+            },
+            { additionalProperties: false }
+          )
+        ])
+      )
     },
     { additionalProperties: false }
   );

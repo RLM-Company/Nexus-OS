@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { CHAT_ATTACHMENT_LIMITS, type ChatImageAttachment } from "@cosmora/contracts";
 import { prepareChatImage } from "../prepare-chat-image";
 import { WorkspaceIcon } from "../workspace-icons";
@@ -11,6 +11,7 @@ import {
 } from "./media-panel";
 import { IMAGE_SIZE_FOR_RATIO, resolveImageOptions } from "./media-image-options";
 import { SpeechStudio } from "../voice/voice-playback";
+import { CreativeMediaPanel } from "./creative-media-panel";
 import { VideoStoryboard } from "./video-storyboard";
 import styles from "./media-workbench.module.css";
 
@@ -24,6 +25,12 @@ export function MediaWorkbench({ surface }: { surface: "images" | "video" | "sou
   const capabilities = useMediaCapabilities();
   const [style, setStyle] = useState("Авто");
   const [duration, setDuration] = useState("5");
+  const [clipScene, setClipScene] = useState<{
+    id: string;
+    version: number;
+    prompt: string;
+    seconds: number;
+  }>();
   const [source, setSource] = useState<{ id: string; name: string }>();
   const sourceId = source?.id;
   const [references, setReferences] = useState<Reference[]>([]);
@@ -34,7 +41,7 @@ export function MediaWorkbench({ surface }: { surface: "images" | "video" | "sou
   const [reading, setReading] = useState(false);
   const [hydrated, setHydrated] = useState(false);
   const draftKey = `kosmora:studio-settings:${surface}`;
-  useEffect(() => {
+  useLayoutEffect(() => {
     try {
       const raw = sessionStorage.getItem(draftKey);
       const saved: unknown = raw && raw.length < 12000 ? JSON.parse(raw) : null;
@@ -64,7 +71,7 @@ export function MediaWorkbench({ surface }: { surface: "images" | "video" | "sou
     }
     setHydrated(true);
   }, [draftKey]);
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!hydrated) return;
     try {
       sessionStorage.setItem(
@@ -159,16 +166,9 @@ export function MediaWorkbench({ surface }: { surface: "images" | "video" | "sou
             Kosmora Studio
           </span>
           <h2>Music</h2>
-          <p>Музыка и атмосфера. Генерация появится после подключения провайдера.</p>
+          <p>Создавайте и сохраняйте композиции по описанию.</p>
         </header>
-        <div className={styles.empty} role="status">
-          <WorkspaceIcon name="sound" />
-          <h3>Генерация музыки не подключена</h3>
-          <p>Пока создание аудиофайлов доступно для озвучивания текста в Sound.</p>
-          <button type="button" disabled>
-            Сгенерировать музыку
-          </button>
-        </div>
+        <CreativeMediaPanel kind="music" capability={capabilities?.music_generation} />
       </section>
     );
   if (surface === "sound")
@@ -182,8 +182,13 @@ export function MediaWorkbench({ surface }: { surface: "images" | "video" | "sou
           <h2>Sound</h2>
           <p>Озвучивание текста, прослушивание и сохранённые записи.</p>
         </header>
+        {capabilities?.speech.ready && (
+          <p className={styles.hint}>
+            Команда в чате: <code>/studio speech --paid: текст для озвучки</code>
+          </p>
+        )}
         <SpeechStudio />
-        <p role="status">Генерация звуковых эффектов (SFX) пока не подключена.</p>
+        <CreativeMediaPanel kind="sfx" capability={capabilities?.sound_effects} />
       </section>
     );
   const imageConstraints = capabilities?.image_generation.constraints;
@@ -410,7 +415,9 @@ export function MediaWorkbench({ surface }: { surface: "images" | "video" | "sou
           )}
           <p className={styles.hint}>
             {video
-              ? "Видеогенерация не подключена. Черновик не запускает провайдера."
+              ? capabilities?.video_generation?.ready
+                ? "Создайте отдельный клип из черновика или выберите сохранённую версию сцены."
+                : "Видеогенерация не подключена. Черновик не запускает провайдера."
               : imageOptions
                 ? `Маршрут: ${imageOptions.format.toUpperCase()} · ${IMAGE_SIZE_FOR_RATIO[imageOptions.aspect_ratio].replace("x", " × ")}. Стиль передаётся в описании.`
                 : "Параметры появятся только после подтверждения от API."}
@@ -418,14 +425,44 @@ export function MediaWorkbench({ surface }: { surface: "images" | "video" | "sou
         </section>
         <section className={styles.result} aria-label="Результат генерации">
           {video ? (
-            <VideoStoryboard
-              description={prompt}
-              duration={duration}
-              onSelect={(next, seconds) => {
-                setPrompt(next);
-                setDuration(seconds);
-              }}
-            />
+            <>
+              <VideoStoryboard
+                description={prompt}
+                duration={duration}
+                onSelect={(next, seconds) => {
+                  setPrompt(next);
+                  setDuration(seconds);
+                  setClipScene(undefined);
+                }}
+                {...(capabilities?.video_generation?.ready
+                  ? {
+                      onSelectClip: (
+                        scene: { id: string; version: number },
+                        next: string,
+                        seconds: number
+                      ) => setClipScene({ ...scene, prompt: next, seconds })
+                    }
+                  : {})}
+              />
+              {clipScene && (
+                <button type="button" onClick={() => setClipScene(undefined)}>
+                  Использовать текущий черновик для клипа
+                </button>
+              )}
+              <CreativeMediaPanel
+                kind="video"
+                capability={capabilities?.video_generation}
+                clip={
+                  clipScene
+                    ? {
+                        prompt: clipScene.prompt,
+                        seconds: clipScene.seconds,
+                        scene: { id: clipScene.id, version: clipScene.version }
+                      }
+                    : { prompt, seconds: Number(duration) }
+                }
+              />
+            </>
           ) : (
             <MediaGenerationPanel
               prompt={description}

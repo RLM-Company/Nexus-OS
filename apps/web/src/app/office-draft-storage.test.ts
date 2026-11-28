@@ -166,6 +166,37 @@ describe("explicit Office plan drafts", () => {
     );
     expect(readOfficeDraft(storage, xlsx).operations).toBeNull();
   });
+  it("round-trips CSV and DOCX cell plans, rejecting cross-format operations", () => {
+    const storage = new MemoryStorage();
+    const csv = { name: "prices.csv", version: "sha256:" + "c".repeat(64), existingSheets: 0 };
+    const csvOps: OfficeOperation[] = [
+      { kind: "set_cell", target: "table:1", address: "A2", value: "00456" },
+      { kind: "set_cell", target: "table:1", address: "C2", value: { formula: "SUM(C1:C1)" } }
+    ];
+    const saved = saveOfficeDraft(storage, csv, csvOps, null, "csv");
+    expect(restoreOfficeDraft(storage, csv, saved.raw!)).toEqual(csvOps);
+    const cell = {
+      name: "table.docx",
+      version: "sha256:" + "d".repeat(64),
+      existingSheets: 0
+    };
+    const cellOps: OfficeOperation[] = [
+      { kind: "set_docx_cell", target: "table:1/row:1/cell:1", value: "Новая цена" },
+      { kind: "replace_text", target: "paragraph:2", find: "A", replace: "B" }
+    ];
+    const cellSaved = saveOfficeDraft(storage, cell, cellOps, null, "cell");
+    expect(restoreOfficeDraft(storage, cell, cellSaved.raw!)).toEqual(cellOps);
+    // Wrong format operations never restore.
+    for (const [target, ops] of [
+      [csv, [{ kind: "set_docx_cell", target: "table:1/row:1/cell:1", value: "x" }]],
+      [cell, [{ kind: "set_cell", target: "table:1", address: "A1", value: "x" }]],
+      [csv, [{ kind: "set_cell", target: "sheet:1", address: "A1", value: "x" }]]
+    ] as Array<[typeof csv, OfficeOperation[]]>) {
+      const record = JSON.stringify({ ...JSON.parse(saved.raw!), operations: ops });
+      storage.setItem(officeDraftKey(target), record);
+      expect(readOfficeDraft(storage, target).operations).toBeNull();
+    }
+  });
   it("bounds its own namespace without evicting chat drafts or saved Office plans", () => {
     const storage = new MemoryStorage();
     storage.setItem("cosmora:composer-draft:chat:a", "keep");

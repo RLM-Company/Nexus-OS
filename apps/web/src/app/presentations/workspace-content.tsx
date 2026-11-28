@@ -22,6 +22,7 @@ import {
 import { PresentationImport } from "./presentation-import";
 import { PresentationHistory } from "./presentation-history";
 import { SlidePreview } from "./slide-preview";
+import { SlideVisualEditor } from "./slide-visual-editor";
 import { presentationPackage, type PresentationPackage } from "./package";
 import {
   newSlide,
@@ -632,6 +633,7 @@ export function PresentationsPageContent({ embedded = false }: { embedded?: bool
                       Макет
                       <select
                         value={selectedSlide.layout}
+                        disabled={Boolean(selectedSlide.visual)}
                         onChange={(event) => modifySlide({ layout: event.target.value as Layout })}
                       >
                         {layouts.map((layout) => (
@@ -687,6 +689,13 @@ export function PresentationsPageContent({ embedded = false }: { embedded?: bool
                       />
                     </label>
                   </div>
+                  {selectedSlide.layout === "content" && (
+                    <SlideVisualEditor
+                      key={`${deck.id}:${selectedSlide.id}`}
+                      visual={selectedSlide.visual}
+                      onChange={(visual) => modifySlide({ visual })}
+                    />
+                  )}
                   {warnings.length > 0 && (
                     <div className={styles.warnings} role="status">
                       <strong>Проверьте размещение текста</strong>

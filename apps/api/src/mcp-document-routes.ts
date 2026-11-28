@@ -236,10 +236,11 @@ export function registerMcpDocumentRoutes(
             projectId,
             ownerId,
             { version: preview.version, instructions: materials.instructions, attachments },
+            context.actorId,
             {
               policy,
               operationId: context.operationId,
-              resultForVersion: (version) => ({ version, imported_document })
+              resultForVersion: (version: number) => ({ version, imported_document })
             }
           );
           if (!saved) return Promise.resolve({ error: "MCP_MATERIALS_CHANGED" });

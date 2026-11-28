@@ -21,6 +21,7 @@ export const UPLOAD_STATE_LABELS: Record<UploadState, string> = {
 };
 export const uploadFinished = (item: LibraryUploadItem): boolean =>
   ["ready", "failed", "cancelled", "uncertain"].includes(item.state);
+export type DeferredLibraryFile = { name: string; size: number; open: () => File };
 export type LibraryUploadAdapter = {
   stage: (file: File, signal: AbortSignal) => Promise<LibraryFileView>;
   extract: (
@@ -33,7 +34,7 @@ export type LibraryUploadAdapter = {
 };
 
 export async function runLibraryUploadQueue(
-  files: readonly File[],
+  files: readonly (File | DeferredLibraryFile)[],
   adapter: LibraryUploadAdapter,
   signal: AbortSignal,
   onChange: (items: LibraryUploadItem[]) => void
@@ -53,18 +54,18 @@ export async function runLibraryUploadQueue(
   };
   onChange(items);
   for (let index = 0; index < files.length; index++) {
-    const file = files[index]!;
+    const entry = files[index]!;
     if (signal.aborted) {
       update(index, { state: "cancelled", detail: "Обработка не начиналась." });
       continue;
     }
     if (
-      !/^[^/\\]{1,180}\.(pdf|docx|txt|csv)$/i.test(file.name) ||
-      Array.from(file.name).some(
+      !/^[^/\\]{1,180}\.(pdf|docx|txt|csv)$/i.test(entry.name) ||
+      Array.from(entry.name).some(
         (character) => character.charCodeAt(0) < 32 || character.charCodeAt(0) === 127
       ) ||
-      !file.size ||
-      file.size > 20_000_000
+      !entry.size ||
+      entry.size > 20_000_000
     ) {
       update(index, {
         state: "failed",
@@ -76,6 +77,9 @@ export async function runLibraryUploadQueue(
     let dispatched = false;
     try {
       update(index, { state: "uploading" });
+      signal.throwIfAborted();
+      // Fully validate and inflate a single ZIP member just before staging it.
+      const file = "open" in entry ? entry.open() : entry;
       signal.throwIfAborted();
       dispatched = true;
       staged = await adapter.stage(file, signal);

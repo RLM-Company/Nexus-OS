@@ -46,13 +46,13 @@ describe("ConnectorRegistry", () => {
     registry.register(FIRST_SLICE_CONNECTORS);
     registry.bindToRuntime();
     const status = registry.status(projectId);
-    expect(status.connectors).toHaveLength(3);
+    expect(status.connectors).toHaveLength(4);
     for (const connector of status.connectors) {
       expect(connector.state).toBe("not_connected");
       expect(connector.transport_wired).toBe(false);
       expect(connector.operations).toBeGreaterThan(0);
     }
-    expect(registry.list()).toHaveLength(3);
+    expect(registry.list()).toHaveLength(4);
     expect(registry.isWired(readToolId)).toBe(false);
   });
 

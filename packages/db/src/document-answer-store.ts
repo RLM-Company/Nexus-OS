@@ -9,10 +9,14 @@ export type AnswerSource = Pick<
 export type DocumentAnalysisCoverage = {
   total_chunks: number;
   analyzed_chunks: number;
+  reused_chunks?: number;
   failed_chunks: number;
   phase: "reading" | "synthesis" | "complete";
   files: Array<{
     name: string;
+    file_id?: string;
+    bytes?: number;
+    analyzed_pages?: number;
     chunks: number;
     analyzed_chunks: number;
     failed_chunks: number;
@@ -118,6 +122,12 @@ export class DocumentAnswerStore {
     this.sqlite.exec("BEGIN IMMEDIATE");
     try {
       this.assertProject(projectId, ownerId);
+      const existing = retry && this.findByRetryRequest(projectId, ownerId, retry.requestId);
+      if (existing) {
+        if (existing.retry_of !== retry.of) throw new DocumentAnswerError("CONFLICT");
+        this.sqlite.exec("COMMIT");
+        return existing;
+      }
       // Revalidate every selected chunk at creation time (search results are not trusted).
       for (const source of sources) {
         const row = this.sqlite
@@ -205,6 +215,91 @@ export class DocumentAnswerStore {
       ) === 1
     );
   }
+  /** Look up a verified checkpoint in the retry lineage with the exact current input. */
+  batch(
+    projectId: string,
+    ownerId: string,
+    runId: string,
+    ordinal: number,
+    hash: string
+  ): { notes: string } | null {
+    const row = this.sqlite
+      .prepare(
+        `WITH RECURSIVE lineage(id, retry_of) AS (
+         SELECT r.id, r.retry_of FROM document_answer_runs r
+         JOIN projects p ON p.id=r.project_id AND p.owner_id=r.owner_id
+         WHERE r.id=? AND r.project_id=? AND r.owner_id=?
+         UNION
+         SELECT r.id, r.retry_of FROM document_answer_runs r
+         JOIN lineage l ON r.id=l.retry_of
+         WHERE r.project_id=? AND r.owner_id=?
+       )
+       SELECT b.notes_json FROM lineage l JOIN document_answer_batches b ON b.run_id=l.id
+       WHERE b.ordinal=? AND b.input_hash=? AND b.verified=1 LIMIT 1`
+      )
+      .get(runId, projectId, ownerId, projectId, ownerId, ordinal, hash);
+    return row ? { notes: String(row.notes_json) } : null;
+  }
+
+  saveBatch(
+    run: Pick<DocumentAnswer, "id" | "project_id" | "owner_id">,
+    ordinal: number,
+    hash: string,
+    notes: string,
+    coverage: DocumentAnalysisCoverage,
+    verified = true
+  ): boolean {
+    this.sqlite.exec("BEGIN IMMEDIATE");
+    try {
+      const updated = this.transition(run.project_id, run.owner_id, run.id, "running", "running", {
+        coverage
+      });
+      if (updated) {
+        this.sqlite
+          .prepare(
+            "INSERT INTO document_answer_batches (run_id, ordinal, input_hash, notes_json, verified) VALUES (?,?,?,?,?)"
+          )
+          .run(run.id, ordinal, hash, notes, verified ? 1 : 0);
+      }
+      this.sqlite.exec("COMMIT");
+      return updated;
+    } catch (error) {
+      this.sqlite.exec("ROLLBACK");
+      throw error;
+    }
+  }
+
+  *batches(run: Pick<DocumentAnswer, "id" | "project_id" | "owner_id">): Iterable<{
+    ordinal: number;
+    input_hash: string;
+    notes: string;
+    verified: boolean;
+  }> {
+    // Keyset pages release the SQLite cursor before waiting for a synthesis provider.
+    let after = -1;
+    for (;;) {
+      const rows = this.sqlite
+        .prepare(
+          `SELECT b.ordinal, b.input_hash, b.notes_json, b.verified FROM document_answer_batches b
+         JOIN document_answer_runs r ON r.id=b.run_id
+         JOIN projects p ON p.id=r.project_id AND p.owner_id=r.owner_id
+         WHERE r.id=? AND r.project_id=? AND r.owner_id=? AND b.ordinal>?
+         ORDER BY b.ordinal LIMIT 8`
+        )
+        .all(run.id, run.project_id, run.owner_id, after);
+      if (!rows.length) return;
+      for (const row of rows) {
+        after = Number(row.ordinal);
+        yield {
+          ordinal: after,
+          input_hash: String(row.input_hash),
+          notes: String(row.notes_json),
+          verified: row.verified === 1
+        };
+      }
+    }
+  }
+
   /** Find the exact server-side task created by a retry attempt, scoped to owner
    * and project. The client's id is stable across a lost response and reload. */
   findByRetryRequest(projectId: string, ownerId: string, requestId: string): DocumentAnswer | null {
@@ -215,15 +310,20 @@ export class DocumentAnswerStore {
       .get(projectId, ownerId, requestId) as Record<string, unknown> | undefined;
     return row ? asAnswer(row) : null;
   }
-  cancel(projectId: string, ownerId: string, id: string): boolean {
+  cancel(
+    projectId: string,
+    ownerId: string,
+    id: string,
+    reason: "CANCELLED" | "PAUSED" = "CANCELLED"
+  ): boolean {
     return (
       Number(
         this.sqlite
           .prepare(
-            `UPDATE document_answer_runs SET status='cancelled',error_code='CANCELLED',updated_at=?
+            `UPDATE document_answer_runs SET status='cancelled',error_code=?,updated_at=?
       WHERE id=? AND project_id=? AND owner_id=? AND status IN ('queued','running')`
           )
-          .run(new Date().toISOString(), id, projectId, ownerId).changes
+          .run(reason, new Date().toISOString(), id, projectId, ownerId).changes
       ) === 1
     );
   }
@@ -244,6 +344,7 @@ export class DocumentAnswerStore {
     files: Array<Record<string, unknown>>;
     chunks: Array<Record<string, unknown>>;
     answers: DocumentAnswer[];
+    analysis_batches: Array<Record<string, unknown>>;
   } {
     const originals = this.sqlite
       .prepare(
@@ -287,7 +388,15 @@ export class DocumentAnswerStore {
       WHERE f.owner_id=? AND p.owner_id=? ORDER BY c.file_id,c.ordinal`
       )
       .all(ownerId, ownerId);
-    return { manifest, files, chunks, answers };
+    const analysis_batches = this.sqlite
+      .prepare(
+        `SELECT b.run_id, b.ordinal, b.input_hash, b.notes_json, b.verified
+       FROM document_answer_batches b JOIN document_answer_runs r ON r.id=b.run_id
+       JOIN projects p ON p.id=r.project_id AND p.owner_id=r.owner_id
+       WHERE r.owner_id=? ORDER BY b.run_id,b.ordinal`
+      )
+      .all(ownerId);
+    return { manifest, files, chunks, answers, analysis_batches };
   }
   deleteOwner(ownerId: string): { originals: number; answers: number } {
     this.sqlite.exec("BEGIN IMMEDIATE");

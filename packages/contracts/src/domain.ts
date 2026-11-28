@@ -49,7 +49,10 @@ export const ProjectSummarySchema = Type.Object(
     title: Type.String({ minLength: 1, maxLength: 160 }),
     status: ProjectStatusSchema,
     updated_at: IsoDateTimeSchema,
-    last_message_preview: Type.Union([Type.String({ maxLength: 240 }), Type.Null()])
+    last_message_preview: Type.Union([Type.String({ maxLength: 240 }), Type.Null()]),
+    membership_role: Type.Optional(
+      Type.Union([Type.Literal("viewer"), Type.Literal("editor"), Type.Literal("owner")])
+    )
   },
   { additionalProperties: false }
 );

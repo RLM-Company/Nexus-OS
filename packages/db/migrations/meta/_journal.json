@@ -519,6 +519,48 @@
       "when": 1795608000005,
       "tag": "0077_project_intake_schema",
       "breakpoints": true
+    },
+    {
+      "idx": 78,
+      "version": "6",
+      "when": 1795608000006,
+      "tag": "0078_project_material_authorship",
+      "breakpoints": true
+    },
+    {
+      "idx": 79,
+      "version": "6",
+      "when": 1795694400000,
+      "tag": "0079_stars_org_snapshots",
+      "breakpoints": true
+    },
+    {
+      "idx": 80,
+      "version": "6",
+      "when": 1795694400001,
+      "tag": "0080_document_answer_batches",
+      "breakpoints": true
+    },
+    {
+      "idx": 81,
+      "version": "6",
+      "when": 1795694400002,
+      "tag": "0081_developer_api",
+      "breakpoints": true
+    },
+    {
+      "idx": 82,
+      "version": "6",
+      "when": 1795694400003,
+      "tag": "0082_automation_runtime",
+      "breakpoints": true
+    },
+    {
+      "idx": 83,
+      "version": "6",
+      "when": 1795694400004,
+      "tag": "0083_automation_event_inbox",
+      "breakpoints": true
     }
   ]
 }

@@ -1,9 +1,11 @@
 import { registerChatSkillRoutes } from "./chat-skill-routes.js";
+import { startChatStreamHeartbeat } from "./chat-stream-heartbeat.js";
 import { registerChatWorkspaceRoutes } from "./chat-workspace-routes.js";
 import {
   ContextTooLargeError,
   MemoryContextIncompleteError,
-  contextMemoryUsage
+  contextMemoryUsage,
+  selectContextBundle
 } from "@cosmora/core";
 import { TypeBoxValidatorCompiler, type TypeBoxTypeProvider } from "@fastify/type-provider-typebox";
 import {
@@ -34,8 +36,10 @@ import {
   type StoredGeneralChatMessage,
   type StoredGeneralChatRun,
   type ProjectStore,
-  type ProjectMemoryStore
+  type ProjectMemoryStore,
+  type ProjectMembershipStore
 } from "@cosmora/db";
+import { projectAccess } from "./project-access.js";
 import {
   GatewayRunError,
   type ModelGateway,
@@ -68,6 +72,7 @@ export interface GeneralChatRouteOptions {
   accountStore?: AccountStore;
   store: GeneralChatStore;
   projectStore?: ProjectStore;
+  projectMembership?: ProjectMembershipStore;
   projectMemory?: ProjectMemoryStore;
   modelGateway: ModelGateway;
   taskSplitRoutes?: ServerConfig["chatTaskSplitRoutes"];
@@ -109,12 +114,10 @@ const end = (reply: FastifyReply): void => {
   if (!reply.raw.destroyed && !reply.raw.writableEnded) reply.raw.end();
 };
 
-const replay = (
+const replayMessageSnapshot = (
   reply: FastifyReply,
   runId: string,
-  message: StoredGeneralChatMessage,
-  provider: string,
-  model: string
+  message: StoredGeneralChatMessage
 ): void => {
   sendEvent(reply, {
     type: "run.started",
@@ -130,6 +133,16 @@ const replay = (
       data: { run_id: runId, message_id: message.id, seq: 0, delta: message.content }
     });
   }
+};
+
+const replay = (
+  reply: FastifyReply,
+  runId: string,
+  message: StoredGeneralChatMessage,
+  provider: string,
+  model: string
+): void => {
+  replayMessageSnapshot(reply, runId, message);
   sendEvent(reply, {
     type: "message.completed",
     data: {
@@ -154,7 +167,9 @@ const waitForObserverPoll = async (signal: AbortSignal): Promise<void> => {
       resolve();
     };
     const timer = setTimeout(done, 50);
-    timer.unref?.();
+    // This wait belongs to an active response. Keep it referenced until the
+    // response closes; otherwise a final persisted state can wait for another
+    // unrelated handle to wake the event loop. Abort clears the timer above.
     signal.addEventListener("abort", done, { once: true });
   });
 };
@@ -200,14 +215,22 @@ const observePersistedRun = async (
 
   while (!signal.aborted && !reply.raw.destroyed && !reply.raw.writableEnded) {
     const run = store.getRun(initialRun.id, ownerId);
-    if (!run) break;
+    if (!run) {
+      sendEvent(reply, {
+        type: "run.failed",
+        data: { run_id: initialRun.id, error_code: "RUN_NOT_FOUND", retryable: false }
+      });
+      break;
+    }
     const message = store.getAssistantMessage(run.id, ownerId);
 
     if (run.status === "cancelled") {
+      if (message) observeMessage(run, message);
       sendEvent(reply, { type: "run.cancelled", data: { run_id: run.id } });
       break;
     }
     if (run.status === "failed") {
+      if (message) observeMessage(run, message);
       sendEvent(reply, {
         type: "run.failed",
         data: {
@@ -630,11 +653,22 @@ export const registerGeneralChatRoutes = (options: GeneralChatRouteOptions): voi
     { schema: { params: runParams } },
     async (request, reply) => {
       const identity = options.identityFor(request);
-      const run = options.store.getRun(request.params.runId, identity.owner_id);
-      const conversation = options.store.getConversationForRun(
-        request.params.runId,
-        identity.owner_id
-      );
+      const actor = identity.owner_id;
+      // A project member reads a shared run's events; the data owner scope stays
+      // unchanged and dataOwnerId is never globally replaced.
+      const scope = options.store.runScope(request.params.runId);
+      let dataOwnerId = actor;
+      if (scope && scope.ownerId !== actor) {
+        if (!scope.projectId || !options.projectMembership) {
+          return reply.status(404).send(error(request.id, "RUN_NOT_FOUND", "Run not found"));
+        }
+        const access = projectAccess(options.projectMembership, scope.projectId, actor, "any");
+        if (!access || access.ownerId !== scope.ownerId)
+          return reply.status(404).send(error(request.id, "RUN_NOT_FOUND", "Run not found"));
+        dataOwnerId = scope.ownerId;
+      }
+      const run = options.store.getRun(request.params.runId, dataOwnerId);
+      const conversation = options.store.getConversationForRun(request.params.runId, dataOwnerId);
       if (!run || conversation.length === 0) {
         return reply.status(404).send(error(request.id, "RUN_NOT_FOUND", "Run not found"));
       }
@@ -651,13 +685,15 @@ export const registerGeneralChatRoutes = (options: GeneralChatRouteOptions): voi
       });
       reply.raw.write(": connected\n\n");
 
-      const existing = options.store.getAssistantMessage(run.id, identity.owner_id);
+      const existing = options.store.getAssistantMessage(run.id, dataOwnerId);
       if (run.status === "cancelled") {
+        if (existing) replayMessageSnapshot(reply, run.id, existing);
         sendEvent(reply, { type: "run.cancelled", data: { run_id: run.id } });
         end(reply);
         return reply;
       }
       if (run.status === "failed") {
+        if (existing) replayMessageSnapshot(reply, run.id, existing);
         sendEvent(reply, {
           type: "run.failed",
           data: {
@@ -676,13 +712,15 @@ export const registerGeneralChatRoutes = (options: GeneralChatRouteOptions): voi
       }
 
       if (runsExecuteInBackground) {
+        const stopHeartbeat = startChatStreamHeartbeat(reply.raw);
         const observer = new AbortController();
         const stopObserving = (): void => observer.abort();
         options.runObservers.add(observer);
         reply.raw.once("close", stopObserving);
         try {
-          await observePersistedRun(reply, options.store, run, identity.owner_id, observer.signal);
+          await observePersistedRun(reply, options.store, run, dataOwnerId, observer.signal);
         } finally {
+          stopHeartbeat();
           reply.raw.off("close", stopObserving);
           options.runObservers.delete(observer);
         }
@@ -691,7 +729,7 @@ export const registerGeneralChatRoutes = (options: GeneralChatRouteOptions): voi
       }
 
       if (options.emergencyStopStore?.getProcessStop()) {
-        options.store.startAssistantMessage(run.id, identity.owner_id);
+        options.store.startAssistantMessage(run.id, dataOwnerId);
         options.store.failRun(run.id, "EMERGENCY_STOP");
         options.runtimeMetrics.runFailed("EMERGENCY_STOP");
         sendEvent(reply, {
@@ -702,7 +740,7 @@ export const registerGeneralChatRoutes = (options: GeneralChatRouteOptions): voi
         return reply;
       }
 
-      const assistant = options.store.startAssistantMessage(run.id, identity.owner_id);
+      const assistant = options.store.startAssistantMessage(run.id, dataOwnerId);
       if (!assistant) {
         end(reply);
         return reply;
@@ -731,18 +769,26 @@ export const registerGeneralChatRoutes = (options: GeneralChatRouteOptions): voi
       });
       options.runtimeMetrics.runStarted();
       const mainHolds = new Map<number, string>();
+      const stopHeartbeat = startChatStreamHeartbeat(reply.raw);
       try {
         let modelRequest = options.chat.buildRequest({
           chatId: run.chat_id,
           runId: run.id,
           messages: await applyKosmoraActions(conversation, options.search, controller.signal),
           historyCompaction: options.store.historyCompactionForRun(run.id, identity.owner_id),
-          recalledMemory: await options.store.recallForRunAsync(
-            run.id,
-            identity.owner_id,
-            conversation.slice(-8).map((m) => m.id),
-            controller.signal
-          ),
+          recalledMemory: await (async () => {
+            const recalled = await options.store.recallForRunAsync(
+              run.id,
+              identity.owner_id,
+              conversation.slice(-8).map((m) => m.id),
+              controller.signal
+            );
+            const query =
+              [...conversation].reverse().find((message) => message.role === "user")?.content ?? "";
+            // Production path: owner scope, latest revision and honest matched
+            // evidence are selected before the memory is packed into the request.
+            return selectContextBundle(recalled, { owner: identity.owner_id, query });
+          })(),
           memoryNotes:
             options.store.getChatMemory(run.chat_id, identity.owner_id)?.memory_notes ?? "",
           ...(options.accountStore
@@ -1024,6 +1070,7 @@ export const registerGeneralChatRoutes = (options: GeneralChatRouteOptions): voi
           }
         }
       } finally {
+        stopHeartbeat();
         for (const hold of mainHolds.values())
           options.accountStore?.uncertainReservation(hold, "main");
         options.activeRuns.delete(run.id);

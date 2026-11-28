@@ -12,7 +12,13 @@ const job = {
 describe("owner-scoped media history response validation", () => {
   it("accepts owned empty history and normal jobs", () => {
     expect(parseMediaJobListResponse({ items: [] })).toEqual([]);
-    expect(parseMediaJobListResponse({ items: [job] })).toEqual([job]);
+    const items = [
+      job,
+      { ...job, kind: "video" },
+      { ...job, kind: "sfx" },
+      { ...job, kind: "music" }
+    ];
+    expect(parseMediaJobListResponse({ items })).toEqual(items);
   });
 
   it("rejects malformed HTTP 200 results rather than treating paid work as absent", () => {
@@ -23,7 +29,7 @@ describe("owner-scoped media history response validation", () => {
       { items: "not an array" },
       { items: [null] },
       { items: [{ ...job, id: "foreign-invalid-id" }] },
-      { items: [{ ...job, kind: "video" }] },
+      { items: [job, { ...job, kind: "unsupported-kind" }] },
       { items: [{ ...job, status: "hidden" }] },
       { items: [{ ...job, client_request_id: 12 }] }
     ]) {

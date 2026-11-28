@@ -1,6 +1,8 @@
 "use client";
 
 import Link from "next/link";
+import { KoscodeNavigation } from "./koscode-navigation";
+import koscodeStyles from "./koscode-navigation.module.css";
 import {
   useCallback,
   useEffect,
@@ -29,7 +31,7 @@ import { ProfileOnboarding } from "./profile-onboarding";
 import { greetingByAssistantGender, type GreetingProfile } from "./profile-onboarding-core";
 import { ClarificationCardPanel } from "./clarification-card";
 import { ChatTaskPlanPanel } from "./chat-task-plan-panel";
-import { emitChatTaskEvent, useChatTaskPlan } from "./use-chat-task-plan";
+import { useChatTaskPlan } from "./use-chat-task-plan";
 import { ChatSearchTrigger } from "./chat-search-trigger";
 import { ProjectTitleEditor } from "./project-title-editor";
 import { QuickSwitcher } from "./quick-switcher";
@@ -479,6 +481,21 @@ const displayedGeneralContent = (message: LocalChatMessage): string | null => {
       : message.error_code === "IMAGE_PROMPT_TOO_LONG"
         ? "Сократите описание изображения до 2000 символов."
         : "Не удалось создать изображение. Автоматического повторного списания не было; можно повторить запрос вручную.";
+  if (message.status === "failed" && message.error_code?.startsWith("STUDIO_")) {
+    return (
+      (
+        {
+          STUDIO_COMMAND_INVALID:
+            "Проверьте команду Studio, её параметры и отметку --paid:. Команды не принимают вложения.",
+          STUDIO_UNAVAILABLE: "Провайдер этой операции Studio сейчас недоступен.",
+          STUDIO_BUSY: "Другая задача Studio выполняется. Проверьте историю.",
+          STUDIO_OUTCOME_UNKNOWN:
+            "Исход операции у провайдера неизвестен. Проверьте историю Studio перед повторным запуском.",
+          STUDIO_GENERATION_FAILED: "Studio не смогла получить файл. Проверьте историю."
+        } as Record<string, string>
+      )[message.error_code] ?? "Не удалось выполнить команду Studio."
+    );
+  }
   if (message.status === "failed" && message.error_code === "MEDIA_UNAVAILABLE")
     return "Генерация изображений сейчас недоступна. Текстовый чат продолжает работать.";
   if (message.status === "cancelled") return "Ответ остановлен владельцем.";
@@ -638,13 +655,6 @@ export default function Home() {
     ),
     pins.chats
   );
-  // Koscode sidebar: group sessions by project and expose active task counts.
-  const codeSessionsByProject = projects
-    .map((project) => ({
-      project,
-      sessions: spaceChats.filter((chat) => chat.project_id === project.id)
-    }))
-    .filter((group) => group.sessions.length > 0);
   const matchingProjects = pinsFirst(
     navigationSearch
       ? projects.filter((project) =>
@@ -658,9 +668,6 @@ export default function Home() {
   const composerDraftKey = pendingProjectId
     ? `${COMPOSER_DRAFT_STORAGE_PREFIX}project-new-chat:${pendingProjectId}`
     : composerDraftStorageKey(activeProject?.id ?? selectedProjectRef.current, activeLocalChatId);
-  const taskPlanScope = activeProject?.id ?? activeLocalChatId ?? "new-chat";
-  const taskPlanScopeRef = useRef(taskPlanScope);
-  taskPlanScopeRef.current = taskPlanScope;
   const taskPlan = useChatTaskPlan(
     activeProject?.id ?? null,
     projectView === "chat" && surface === "manager"
@@ -1496,16 +1503,6 @@ export default function Home() {
         setRunPhase("running");
       });
 
-      source.addEventListener("queued", () => {
-        if (!isCurrent()) return;
-        emitChatTaskEvent(taskPlanScopeRef.current, { type: "queue" });
-      });
-
-      source.addEventListener("tool.call", () => {
-        if (!isCurrent()) return;
-        emitChatTaskEvent(taskPlanScopeRef.current, { type: "tool" });
-      });
-
       source.addEventListener("message.started", (raw) => {
         if (!isCurrent()) return;
         const event = JSON.parse(String(raw.data)) as {
@@ -1653,14 +1650,6 @@ export default function Home() {
         if (!isCurrent()) return;
         setError(null);
         setRunPhase("running");
-      });
-      source.addEventListener("queued", () => {
-        if (!isCurrent()) return;
-        emitChatTaskEvent(taskPlanScopeRef.current, { type: "queue" });
-      });
-      source.addEventListener("tool.call", () => {
-        if (!isCurrent()) return;
-        emitChatTaskEvent(taskPlanScopeRef.current, { type: "tool" });
       });
       source.addEventListener("message.started", (raw) => {
         if (!isCurrent()) return;
@@ -2472,375 +2461,370 @@ export default function Home() {
           }
           onNavigate={selectSurface}
         />
-        {codeSpace && (
-          <div className="coscode-space-tools">
-            <Link
-              href={
-                activeProject
-                  ? `/code-agent?project=${encodeURIComponent(activeProject.id)}`
-                  : "/code-agent"
-              }
-            >
-              <WorkspaceIcon name="code" /> Репозиторий и изменения
-            </Link>
-            <Link href="/github">
-              <WorkspaceIcon name="projects" /> GitHub
-            </Link>
-            <Link href={controlCenterHref}>
-              <WorkspaceIcon name="settings" /> Настройки Koscode
-            </Link>
-          </div>
-        )}
-        {codeSpace && (
-          <section className="sidebar-section coscode-sessions" aria-label="Сессии Koscode">
-            <div className="coscode-sessions-heading">
-              <span>Активные задачи</span>
-              <small>{spaceChats.length}</small>
-            </div>
-            {codeSessionsByProject.length === 0 ? (
-              <p className="empty-projects">Нет сессий с проектом.</p>
-            ) : (
-              codeSessionsByProject.map(({ project, sessions }) => (
-                <div className="coscode-session-group" key={project.id}>
-                  <div className="coscode-session-title">
-                    <strong>{project.title}</strong>
-                    <small>{sessions.length}</small>
-                  </div>
-                  {sessions.slice(0, 4).map((chat) => (
-                    <button
-                      type="button"
-                      key={chat.id}
-                      className={
-                        activeLocalChatId === chat.id
-                          ? "project-chat-item active"
-                          : "project-chat-item"
-                      }
-                      onClick={() => void openLocalChat(chat.id)}
-                    >
-                      <span>{chat.title}</span>
-                    </button>
-                  ))}
-                  <Link
-                    className="coscode-session-link"
-                    href={`/code-agent?project=${encodeURIComponent(project.id)}`}
-                  >
-                    Задачи и проверки <WorkspaceIcon name="arrow" />
-                  </Link>
-                </div>
-              ))
+        {codeSpace ? (
+          <KoscodeNavigation
+            projects={projects}
+            sessions={pinsFirst(spaceChats, pins.chats).map((chat) => ({
+              id: chat.id,
+              title: chat.title,
+              projectId: chat.project_id ?? null,
+              mode: chat.mode ?? "coscode",
+              pinned: pins.chats.includes(chat.id)
+            }))}
+            selectedProjectId={activeLocalChat?.project_id ?? activeProject?.id ?? pendingProjectId}
+            selectedSessionId={activeLocalChatId}
+            onNewSession={(projectId) => {
+              newChat();
+              if (projectId) setPendingProjectId(projectId);
+            }}
+            onCreateProject={() => setCreateProjectOpen(true)}
+            onSelectSession={(id) => void openLocalChat(id)}
+            renderSessionMenu={(session) => (
+              <ChatItemMenu
+                id={session.id}
+                title={session.title}
+                pinned={pins.chats.includes(session.id)}
+                disabled={!pinsHydrated || (sending && activeLocalChatId === session.id)}
+                projectId={session.projectId}
+                projects={projects}
+                onPin={() => changePin("chats", session.id)}
+                onOpen={() => void openLocalChat(session.id)}
+                onRename={(title) =>
+                  setLocalChats((current) =>
+                    current.map((item) => (item.id === session.id ? { ...item, title } : item))
+                  )
+                }
+                onMove={(projectId) =>
+                  setLocalChats((current) =>
+                    current.map((item) =>
+                      item.id === session.id ? { ...item, project_id: projectId } : item
+                    )
+                  )
+                }
+                onDelete={() => {
+                  setLocalChats((current) => current.filter((item) => item.id !== session.id));
+                  if (activeLocalChatId === session.id) newChat();
+                }}
+              />
             )}
-          </section>
-        )}
-
-        <button className="new-project" onClick={newChat}>
-          <span>
-            <ToolIcon kind="new-chat" />
-          </span>
-          <span className="new-chat-label">Новый чат</span>
-        </button>
-
-        <div className="navigation-search">
-          <WorkspaceIcon name="search" />
-          <input
-            ref={navigationSearchRef}
-            aria-label="Поиск чатов и проектов"
-            placeholder="Поиск чатов и проектов"
-            value={navigationQuery}
-            onChange={(event) => {
-              setNavigationQuery(event.target.value);
-              if (event.target.value.trim()) {
-                setChatsExpanded(true);
-                setProjectsExpanded(true);
-              }
-            }}
-            onKeyDown={(event) => {
-              if (event.key === "Escape") setNavigationQuery("");
-            }}
           />
-          {navigationQuery && (
-            <button
-              type="button"
-              aria-label="Очистить поиск"
-              onClick={() => {
-                setNavigationQuery("");
-                navigationSearchRef.current?.focus();
-              }}
-            >
-              <WorkspaceIcon name="close" />
-            </button>
-          )}
-        </div>
-        <nav className="navigation" aria-label="Основная навигация">
-          <section className="sidebar-section">
-            <button
-              type="button"
-              className="projects-heading sidebar-section-toggle"
-              aria-expanded={chatsExpanded}
-              aria-controls="sidebar-chat-list"
-              onClick={() => setChatsExpanded((current) => !current)}
-            >
-              <ToolIcon kind="chats" />
-              <span>Чаты</span>
-              <small>{spaceChats.length}</small>
-              <span className="section-chevron" aria-hidden="true">
-                ›
+        ) : (
+          <>
+            <button className="new-project" onClick={newChat}>
+              <span>
+                <ToolIcon kind="new-chat" />
               </span>
+              <span className="new-chat-label">Новый чат</span>
             </button>
-            {chatsExpanded && (
-              <div
-                className={`project-list chat-list${localChats.length === 0 ? " empty-list" : ""}`}
-                id="sidebar-chat-list"
-              >
-                {matchingChats.map((chat) => (
-                  <div className="pinnable-navigation-item" key={chat.id}>
-                    <button
-                      type="button"
-                      className={
-                        surface === "manager" && activeLocalChatId === chat.id
-                          ? "project-item chat-item active"
-                          : "project-item chat-item"
-                      }
-                      onClick={() => void openLocalChat(chat.id)}
-                    >
-                      <span>
-                        <strong id={`pin-chat-${chat.id}`}>{chat.title}</strong>
-                        <small>{chat.last_message_preview ?? "Обычный чат"}</small>
-                      </span>
-                    </button>
-                    <ChatItemMenu
-                      id={chat.id}
-                      title={chat.title}
-                      pinned={pins.chats.includes(chat.id)}
-                      disabled={!pinsHydrated || (sending && activeLocalChatId === chat.id)}
-                      projectId={chat.project_id ?? null}
-                      projects={projects}
-                      onPin={() => changePin("chats", chat.id)}
-                      onOpen={() => void openLocalChat(chat.id)}
-                      onRename={(title) =>
-                        setLocalChats((current) =>
-                          current.map((item) => (item.id === chat.id ? { ...item, title } : item))
-                        )
-                      }
-                      onMove={(projectId) =>
-                        setLocalChats((current) =>
-                          current.map((item) =>
-                            item.id === chat.id ? { ...item, project_id: projectId } : item
-                          )
-                        )
-                      }
-                      onDelete={() => {
-                        setLocalChats((current) => current.filter((item) => item.id !== chat.id));
-                        if (activeLocalChatId === chat.id) newChat();
-                      }}
-                    />
-                  </div>
-                ))}
-                {navigationSearch && matchingChats.length === 0 && (
-                  <p className="empty-projects">Чаты не найдены.</p>
-                )}
-                {localChatsHydrated && localChats.length === 0 && !navigationSearch && (
-                  <p className="empty-projects">Пока нет чатов</p>
-                )}
-              </div>
-            )}
-          </section>
-          {pinNotice && (
-            <p className="pin-notice" role="status">
-              {pinNotice}
-            </p>
-          )}
-          <section className="sidebar-section">
-            <button
-              type="button"
-              className="projects-heading sidebar-section-toggle"
-              aria-expanded={projectsExpanded}
-              aria-controls="sidebar-project-list"
-              onClick={() => setProjectsExpanded((current) => !current)}
-            >
-              <ToolIcon kind="projects" />
-              <span>Проекты</span>
-              <small>{projects.length}</small>
-              <span className="section-chevron" aria-hidden="true">
-                ›
-              </span>
-            </button>
-            {projectsExpanded && (
-              <div className="project-list" id="sidebar-project-list">
+
+            <div className="navigation-search">
+              <WorkspaceIcon name="search" />
+              <input
+                ref={navigationSearchRef}
+                aria-label="Поиск чатов и проектов"
+                placeholder="Поиск чатов и проектов"
+                value={navigationQuery}
+                onChange={(event) => {
+                  setNavigationQuery(event.target.value);
+                  if (event.target.value.trim()) {
+                    setChatsExpanded(true);
+                    setProjectsExpanded(true);
+                  }
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === "Escape") setNavigationQuery("");
+                }}
+              />
+              {navigationQuery && (
                 <button
                   type="button"
-                  className="sidebar-create-project"
-                  onClick={() => setCreateProjectOpen(true)}
+                  aria-label="Очистить поиск"
+                  onClick={() => {
+                    setNavigationQuery("");
+                    navigationSearchRef.current?.focus();
+                  }}
                 >
-                  <WorkspaceIcon name="projects" />
-                  <span>Создать проект</span>
-                  <span aria-hidden="true">+</span>
+                  <WorkspaceIcon name="close" />
                 </button>
-                {matchingProjects.map((project) => (
-                  <div className="pinnable-navigation-item" key={project.id}>
-                    <button
-                      className={
-                        surface === "manager" && activeProject?.id === project.id
-                          ? "project-item active"
-                          : "project-item"
-                      }
-                      onClick={() => {
-                        setOpenProjectFolderId((current) =>
-                          current === project.id ? null : project.id
-                        );
-                        void openProject(project.id);
-                      }}
-                    >
-                      <span className="project-glyph">
-                        {project.title.slice(0, 1).toUpperCase()}
-                      </span>
-                      <span>
-                        <strong id={`pin-project-${project.id}`}>{project.title}</strong>
-                        <small>{project.last_message_preview ?? "Новый проект"}</small>
-                      </span>
-                    </button>
-                    <button
-                      type="button"
-                      className="navigation-pin"
-                      aria-label={`${pins.projects.includes(project.id) ? "Открепить" : "Закрепить"} проект`}
-                      aria-describedby={`pin-project-${project.id}`}
-                      aria-pressed={pins.projects.includes(project.id)}
-                      disabled={!pinsHydrated}
-                      onClick={() => changePin("projects", project.id)}
-                    >
-                      <PinIcon />
-                    </button>
-                    {openProjectFolderId === project.id && (
-                      <div
-                        className="project-chat-folder"
-                        aria-label={`Чаты проекта ${project.title}`}
-                      >
-                        {localChats
-                          .filter((chat) => chat.project_id === project.id)
-                          .map((chat) => (
-                            <button
-                              key={chat.id}
-                              type="button"
-                              className={
-                                activeLocalChatId === chat.id
-                                  ? "project-chat-item active"
-                                  : "project-chat-item"
-                              }
-                              onClick={() => void openLocalChat(chat.id)}
-                            >
-                              <span>{chat.title}</span>
-                            </button>
-                          ))}
-                        <button
-                          type="button"
-                          className="project-chat-item new"
-                          onClick={() => {
-                            if (codeSpace) setChatMode("coscode");
-                            resetToLocalChat(null, true);
-                            setPendingProjectId(project.id);
-                          }}
-                        >
-                          + Новый чат в проекте
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                ))}
-                {navigationSearch && matchingProjects.length === 0 && (
-                  <p className="empty-projects">Проекты не найдены.</p>
-                )}
-                {!loading && projects.length === 0 && !navigationSearch && (
-                  <p className="empty-projects">Пока нет проектов</p>
-                )}
-              </div>
-            )}
-          </section>
-          <div className="sidebar-tools" aria-label="Рабочие области">
-            {TOOL_ITEMS.filter(
-              (item) =>
-                ![
-                  "work",
-                  "code",
-                  "studio",
-                  "files",
-                  "images",
-                  "video",
-                  "sound",
-                  "music",
-                  "settings",
-                  "apps",
-                  "features",
-                  "multi-agent",
-                  "research",
-                  "presentations",
-                  "sites",
-                  "games",
-                  "skills"
-                ].includes(item.id)
-            ).map((item) => (
-              <button
-                key={item.id}
-                type="button"
-                className={surface === item.id ? "sidebar-tool active" : "sidebar-tool"}
-                aria-current={surface === item.id ? "page" : undefined}
-                onClick={() => selectSurface(item.id)}
-              >
-                <ToolIcon kind={item.id} />
-                <span>{item.label}</span>
-              </button>
-            ))}
-            {!codeSpace && (
-              <section className="sidebar-section studio-section">
+              )}
+            </div>
+            <nav className="navigation" aria-label="Основная навигация">
+              <section className="sidebar-section">
                 <button
                   type="button"
-                  className="projects-heading sidebar-section-toggle studio-toggle"
-                  aria-expanded={studioExpanded}
-                  aria-controls="studio-tools"
-                  onClick={() => setStudioExpanded((expanded) => !expanded)}
+                  className="projects-heading sidebar-section-toggle"
+                  aria-expanded={chatsExpanded}
+                  aria-controls="sidebar-chat-list"
+                  onClick={() => setChatsExpanded((current) => !current)}
                 >
-                  <ToolIcon kind="studio" />
-                  <span>Kosmora Studio</span>
+                  <ToolIcon kind="chats" />
+                  <span>Чаты</span>
+                  <small>{spaceChats.length}</small>
                   <span className="section-chevron" aria-hidden="true">
                     ›
                   </span>
                 </button>
-                {studioExpanded && (
-                  <div className="studio-tools" id="studio-tools">
-                    {STUDIO_ITEMS.map((item) => (
-                      <button
-                        key={item.id}
-                        type="button"
-                        className={surface === item.id ? "sidebar-tool active" : "sidebar-tool"}
-                        aria-current={surface === item.id ? "page" : undefined}
-                        onClick={() => selectSurface(item.id)}
-                      >
-                        <ToolIcon kind={item.id} />
-                        <span>{item.label}</span>
-                      </button>
+                {chatsExpanded && (
+                  <div
+                    className={`project-list chat-list${localChats.length === 0 ? " empty-list" : ""}`}
+                    id="sidebar-chat-list"
+                  >
+                    {matchingChats.map((chat) => (
+                      <div className="pinnable-navigation-item" key={chat.id}>
+                        <button
+                          type="button"
+                          className={
+                            surface === "manager" && activeLocalChatId === chat.id
+                              ? "project-item chat-item active"
+                              : "project-item chat-item"
+                          }
+                          onClick={() => void openLocalChat(chat.id)}
+                        >
+                          <span>
+                            <strong id={`pin-chat-${chat.id}`}>{chat.title}</strong>
+                            <small>{chat.last_message_preview ?? "Обычный чат"}</small>
+                          </span>
+                        </button>
+                        <ChatItemMenu
+                          id={chat.id}
+                          title={chat.title}
+                          pinned={pins.chats.includes(chat.id)}
+                          disabled={!pinsHydrated || (sending && activeLocalChatId === chat.id)}
+                          projectId={chat.project_id ?? null}
+                          projects={projects}
+                          onPin={() => changePin("chats", chat.id)}
+                          onOpen={() => void openLocalChat(chat.id)}
+                          onRename={(title) =>
+                            setLocalChats((current) =>
+                              current.map((item) =>
+                                item.id === chat.id ? { ...item, title } : item
+                              )
+                            )
+                          }
+                          onMove={(projectId) =>
+                            setLocalChats((current) =>
+                              current.map((item) =>
+                                item.id === chat.id ? { ...item, project_id: projectId } : item
+                              )
+                            )
+                          }
+                          onDelete={() => {
+                            setLocalChats((current) =>
+                              current.filter((item) => item.id !== chat.id)
+                            );
+                            if (activeLocalChatId === chat.id) newChat();
+                          }}
+                        />
+                      </div>
                     ))}
+                    {navigationSearch && matchingChats.length === 0 && (
+                      <p className="empty-projects">Чаты не найдены.</p>
+                    )}
+                    {localChatsHydrated && localChats.length === 0 && !navigationSearch && (
+                      <p className="empty-projects">Пока нет чатов</p>
+                    )}
                   </div>
                 )}
               </section>
-            )}
-            <button
-              type="button"
-              className={surface === "apps" ? "sidebar-tool active" : "sidebar-tool"}
-              aria-current={surface === "apps" ? "page" : undefined}
-              onClick={() => selectSurface("apps")}
-            >
-              <ToolIcon kind="apps" />
-              <span>Интеграции</span>
-            </button>
-            <button
-              type="button"
-              className={surface === "features" ? "sidebar-tool active" : "sidebar-tool"}
-              aria-current={surface === "features" ? "page" : undefined}
-              onClick={() => selectSurface("features")}
-            >
-              <ToolIcon kind="features" />
-              <span>Возможности</span>
-            </button>
-          </div>
-        </nav>
+              {pinNotice && (
+                <p className="pin-notice" role="status">
+                  {pinNotice}
+                </p>
+              )}
+              <section className="sidebar-section">
+                <button
+                  type="button"
+                  className="projects-heading sidebar-section-toggle"
+                  aria-expanded={projectsExpanded}
+                  aria-controls="sidebar-project-list"
+                  onClick={() => setProjectsExpanded((current) => !current)}
+                >
+                  <ToolIcon kind="projects" />
+                  <span>Проекты</span>
+                  <small>{projects.length}</small>
+                  <span className="section-chevron" aria-hidden="true">
+                    ›
+                  </span>
+                </button>
+                {projectsExpanded && (
+                  <div className="project-list" id="sidebar-project-list">
+                    <button
+                      type="button"
+                      className="sidebar-create-project"
+                      onClick={() => setCreateProjectOpen(true)}
+                    >
+                      <WorkspaceIcon name="projects" />
+                      <span>Создать проект</span>
+                      <span aria-hidden="true">+</span>
+                    </button>
+                    {matchingProjects.map((project) => (
+                      <div className="pinnable-navigation-item" key={project.id}>
+                        <button
+                          className={
+                            surface === "manager" && activeProject?.id === project.id
+                              ? "project-item active"
+                              : "project-item"
+                          }
+                          onClick={() => {
+                            setOpenProjectFolderId((current) =>
+                              current === project.id ? null : project.id
+                            );
+                            void openProject(project.id);
+                          }}
+                        >
+                          <span className="project-glyph">
+                            {project.title.slice(0, 1).toUpperCase()}
+                          </span>
+                          <span>
+                            <strong id={`pin-project-${project.id}`}>{project.title}</strong>
+                            <small>{project.last_message_preview ?? "Новый проект"}</small>
+                          </span>
+                        </button>
+                        <button
+                          type="button"
+                          className="navigation-pin"
+                          aria-label={`${pins.projects.includes(project.id) ? "Открепить" : "Закрепить"} проект`}
+                          aria-describedby={`pin-project-${project.id}`}
+                          aria-pressed={pins.projects.includes(project.id)}
+                          disabled={!pinsHydrated}
+                          onClick={() => changePin("projects", project.id)}
+                        >
+                          <PinIcon />
+                        </button>
+                        {openProjectFolderId === project.id && (
+                          <div
+                            className="project-chat-folder"
+                            aria-label={`Чаты проекта ${project.title}`}
+                          >
+                            {localChats
+                              .filter((chat) => chat.project_id === project.id)
+                              .map((chat) => (
+                                <button
+                                  key={chat.id}
+                                  type="button"
+                                  className={
+                                    activeLocalChatId === chat.id
+                                      ? "project-chat-item active"
+                                      : "project-chat-item"
+                                  }
+                                  onClick={() => void openLocalChat(chat.id)}
+                                >
+                                  <span>{chat.title}</span>
+                                </button>
+                              ))}
+                            <button
+                              type="button"
+                              className="project-chat-item new"
+                              onClick={() => {
+                                if (codeSpace) setChatMode("coscode");
+                                resetToLocalChat(null, true);
+                                setPendingProjectId(project.id);
+                              }}
+                            >
+                              + Новый чат в проекте
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                    {navigationSearch && matchingProjects.length === 0 && (
+                      <p className="empty-projects">Проекты не найдены.</p>
+                    )}
+                    {!loading && projects.length === 0 && !navigationSearch && (
+                      <p className="empty-projects">Пока нет проектов</p>
+                    )}
+                  </div>
+                )}
+              </section>
+              <div className="sidebar-tools" aria-label="Рабочие области">
+                {TOOL_ITEMS.filter(
+                  (item) =>
+                    ![
+                      "work",
+                      "code",
+                      "studio",
+                      "files",
+                      "images",
+                      "video",
+                      "sound",
+                      "music",
+                      "settings",
+                      "apps",
+                      "features",
+                      "multi-agent",
+                      "research",
+                      "presentations",
+                      "sites",
+                      "games",
+                      "skills"
+                    ].includes(item.id)
+                ).map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    className={surface === item.id ? "sidebar-tool active" : "sidebar-tool"}
+                    aria-current={surface === item.id ? "page" : undefined}
+                    onClick={() => selectSurface(item.id)}
+                  >
+                    <ToolIcon kind={item.id} />
+                    <span>{item.label}</span>
+                  </button>
+                ))}
+                {!codeSpace && (
+                  <section className="sidebar-section studio-section">
+                    <button
+                      type="button"
+                      className="projects-heading sidebar-section-toggle studio-toggle"
+                      aria-expanded={studioExpanded}
+                      aria-controls="studio-tools"
+                      onClick={() => setStudioExpanded((expanded) => !expanded)}
+                    >
+                      <ToolIcon kind="studio" />
+                      <span>Kosmora Studio</span>
+                      <span className="section-chevron" aria-hidden="true">
+                        ›
+                      </span>
+                    </button>
+                    {studioExpanded && (
+                      <div className="studio-tools" id="studio-tools">
+                        {STUDIO_ITEMS.map((item) => (
+                          <button
+                            key={item.id}
+                            type="button"
+                            className={surface === item.id ? "sidebar-tool active" : "sidebar-tool"}
+                            aria-current={surface === item.id ? "page" : undefined}
+                            onClick={() => selectSurface(item.id)}
+                          >
+                            <ToolIcon kind={item.id} />
+                            <span>{item.label}</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </section>
+                )}
+                <button
+                  type="button"
+                  className={surface === "apps" ? "sidebar-tool active" : "sidebar-tool"}
+                  aria-current={surface === "apps" ? "page" : undefined}
+                  onClick={() => selectSurface("apps")}
+                >
+                  <ToolIcon kind="apps" />
+                  <span>Интеграции</span>
+                </button>
+                <button
+                  type="button"
+                  className={surface === "features" ? "sidebar-tool active" : "sidebar-tool"}
+                  aria-current={surface === "features" ? "page" : undefined}
+                  onClick={() => selectSurface("features")}
+                >
+                  <ToolIcon kind="features" />
+                  <span>Возможности</span>
+                </button>
+              </div>
+            </nav>
+          </>
+        )}
 
         <AccountMenu
           onSettings={() => selectSurface("settings")}
@@ -2866,12 +2850,16 @@ export default function Home() {
               {surface === "manager"
                 ? activeProject
                   ? "Активный проект"
-                  : "Обычный чат"
+                  : codeSpace
+                    ? "Рабочее пространство кода"
+                    : "Обычный чат"
                 : "Kosmora workspace"}
             </span>
             <h1 id="workspace-title">
               {surface === "manager"
-                ? (activeProject?.title ?? activeLocalChat?.title ?? "Новый чат")
+                ? (activeProject?.title ??
+                  activeLocalChat?.title ??
+                  (codeSpace ? "Новая сессия" : "Новый чат"))
                 : SURFACE_TITLE[surface]}
             </h1>
           </div>
@@ -2968,6 +2956,28 @@ export default function Home() {
           </div>
         </header>
 
+        {codeSpace && surface === "manager" && (
+          <div className={koscodeStyles.workspaceContext}>
+            <span>
+              <WorkspaceIcon name="projects" />
+              {projects.find(
+                (item) =>
+                  item.id === (activeLocalChat?.project_id ?? activeProject?.id ?? pendingProjectId)
+              )?.title ?? "Без проекта"}
+            </span>
+            <Link
+              href={
+                (activeLocalChat?.project_id ?? activeProject?.id ?? pendingProjectId)
+                  ? `/code-agent?project=${encodeURIComponent(activeLocalChat?.project_id ?? activeProject?.id ?? pendingProjectId ?? "")}`
+                  : "/code-agent"
+              }
+            >
+              <WorkspaceIcon name="code" />
+              Файлы и изменения
+              <WorkspaceIcon name="arrow" />
+            </Link>
+          </div>
+        )}
         {activeProject && (
           <nav className="project-tabs" role="tablist" aria-label="Разделы проекта">
             <button
@@ -3389,7 +3399,10 @@ export default function Home() {
             </div>
           </section>
         ) : localChatMessages.length > 0 ? (
-          <section className="chat-panel general-chat-panel" aria-label="Обычный чат Kosmora">
+          <section
+            className="chat-panel general-chat-panel"
+            aria-label={codeSpace ? "Сессия Koscode" : "Обычный чат Kosmora"}
+          >
             {activeLocalChatId && (
               <ChatBranches
                 key={activeLocalChatId}
@@ -3639,8 +3652,8 @@ export default function Home() {
         ) : !activeProject ? (
           <>
             <section className="hero">
-              <h2>{greeting}</h2>
-              {greetingProfile?.display_name && (
+              <h2>{codeSpace ? "Что будем разрабатывать?" : greeting}</h2>
+              {!codeSpace && greetingProfile?.display_name && (
                 <p className="hero-greeting-name">
                   {greetingProfile.display_name},{" "}
                   {greetingByAssistantGender[greetingProfile.assistant_gender ?? "neutral"]}
@@ -3655,6 +3668,7 @@ export default function Home() {
         {taskPlan.plan && (
           <ChatTaskPlanPanel
             plan={taskPlan.plan}
+            stale={taskPlan.stale}
             onChange={(plan) => taskPlan.setCollapsed(plan.collapsed)}
           />
         )}
@@ -3714,7 +3728,11 @@ export default function Home() {
           onSubmit={(event) => void submit(event)}
         >
           <label htmlFor="task">
-            {activeProject ? "Сообщение менеджеру" : "Сообщение Kosmora"}
+            {codeSpace
+              ? "Сообщение Koscode"
+              : activeProject
+                ? "Сообщение менеджеру"
+                : "Сообщение Kosmora"}
           </label>
           <textarea
             id="task"
@@ -3732,7 +3750,11 @@ export default function Home() {
               sending || loading || !initialRouteReady || draftStorageReadyKey !== attachmentScope
             }
             placeholder={
-              activeProject ? "Уточните задачу или добавьте требование…" : "Спросите что-нибудь…"
+              codeSpace
+                ? "Опишите задачу по коду…"
+                : activeProject
+                  ? "Уточните задачу или добавьте требование…"
+                  : "Спросите что-нибудь…"
             }
           />
           <div className="composer-controls">

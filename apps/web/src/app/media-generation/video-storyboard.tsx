@@ -17,11 +17,17 @@ async function fetchBoard(signal?: AbortSignal): Promise<StudioStoryboard> {
 export function VideoStoryboard({
   description,
   duration,
-  onSelect
+  onSelect,
+  onSelectClip
 }: {
   description: string;
   duration: string;
   onSelect: (description: string, duration: string) => void;
+  onSelectClip?: (
+    scene: { id: string; version: number },
+    description: string,
+    seconds: number
+  ) => void;
 }) {
   const [board, setBoard] = useState<StudioStoryboard | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
@@ -100,9 +106,6 @@ export function VideoStoryboard({
         Сцены и версии можно сохранить и принять. Экспорт содержит JSON с описаниями и плановой
         длительностью.
       </p>
-      <button type="button" disabled>
-        Сгенерировать видео
-      </button>
       {board ? (
         <>
           <button
@@ -149,6 +152,20 @@ export function VideoStoryboard({
                               Версия {revision.version} · {revision.duration_seconds} с
                             </p>
                             <p>{revision.description}</p>
+                            {onSelectClip && (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  onSelectClip(
+                                    { id: scene.id, version: revision.version },
+                                    revision.description,
+                                    revision.duration_seconds
+                                  )
+                                }
+                              >
+                                Выбрать версию {revision.version} для клипа
+                              </button>
+                            )}
                             <button
                               type="button"
                               disabled={saving || scene.accepted_version === revision.version}

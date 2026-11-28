@@ -734,6 +734,16 @@ export class GeneralChatStore {
     return { chat, userMessage, run };
   }
 
+  /** Resolve the data scope of a run by id only. Returns identifiers, never content. */
+  runScope(runId: string): { ownerId: string; projectId: string | null } | null {
+    const row = this.#sqlite
+      .prepare(
+        "SELECT c.owner_id AS owner_id, c.project_id AS project_id FROM general_chat_runs r JOIN general_chats c ON c.id=r.chat_id WHERE r.id=?"
+      )
+      .get(runId) as { owner_id: string; project_id: string | null } | undefined;
+    return row ? { ownerId: row.owner_id, projectId: row.project_id } : null;
+  }
+
   getRun(runId: string, ownerId = LOCAL_OWNER_ID): StoredGeneralChatRun | null {
     const row = this.#sqlite
       .prepare(
@@ -848,42 +858,60 @@ export class GeneralChatStore {
   }
 
   getAssistantMessage(runId: string, ownerId = LOCAL_OWNER_ID): StoredGeneralChatMessage | null {
-    if (!this.getRun(runId, ownerId)) return null;
+    const run = this.getRun(runId, ownerId);
+    if (!run) return null;
     const row = this.#sqlite
       .prepare(
-        `SELECT ${MESSAGE_COLUMNS} FROM general_chat_messages WHERE run_id = ? AND role = 'assistant'`
+        `SELECT ${MESSAGE_COLUMNS} FROM general_chat_messages
+         WHERE chat_id = ? AND run_id = ? AND role = 'assistant'`
       )
-      .get(runId) as SqlRow | undefined;
+      .get(run.chat_id, runId) as SqlRow | undefined;
     return row ? asMessage(row) : null;
   }
 
   startAssistantMessage(runId: string, ownerId = LOCAL_OWNER_ID): StoredGeneralChatMessage | null {
-    const run = this.getRun(runId, ownerId);
-    if (!run) return null;
-    const existing = this.getAssistantMessage(runId, ownerId);
-    if (existing) return existing;
-    const createdAt = timestamp();
-    const messageId = randomUUID();
-    this.#sqlite
-      .prepare(
-        `INSERT INTO general_chat_messages
+    this.#sqlite.exec("BEGIN IMMEDIATE;");
+    try {
+      const run = this.getRun(runId, ownerId);
+      if (!run || (run.status !== "queued" && run.status !== "running")) {
+        this.#sqlite.exec("COMMIT;");
+        return null;
+      }
+      const existing = this.getAssistantMessage(runId, ownerId);
+      if (existing) {
+        this.#sqlite.exec("COMMIT;");
+        return existing;
+      }
+      const createdAt = timestamp();
+      const messageId = randomUUID();
+      this.#sqlite
+        .prepare(
+          `INSERT INTO general_chat_messages
           (id, chat_id, owner_id, role, content_type, content, status, run_id, created_at, updated_at)
          VALUES (?, ?, ?, 'assistant', 'text', '', 'streaming', ?, ?, ?)`
-      )
-      .run(messageId, run.chat_id, ownerId, runId, createdAt, createdAt);
-    this.#sqlite
-      .prepare("UPDATE general_chat_runs SET status = 'running', updated_at = ? WHERE id = ?")
-      .run(createdAt, runId);
-    const row = this.#sqlite
-      .prepare(`SELECT ${MESSAGE_COLUMNS} FROM general_chat_messages WHERE id = ?`)
-      .get(messageId) as SqlRow | undefined;
-    return row ? asMessage(row) : null;
+        )
+        .run(messageId, run.chat_id, ownerId, runId, createdAt, createdAt);
+      this.#sqlite
+        .prepare("UPDATE general_chat_runs SET status = 'running', updated_at = ? WHERE id = ?")
+        .run(createdAt, runId);
+      const row = this.#sqlite
+        .prepare(`SELECT ${MESSAGE_COLUMNS} FROM general_chat_messages WHERE id = ?`)
+        .get(messageId) as SqlRow | undefined;
+      this.#sqlite.exec("COMMIT;");
+      return row ? asMessage(row) : null;
+    } catch (error) {
+      this.#sqlite.exec("ROLLBACK;");
+      throw error;
+    }
   }
 
   appendAssistantDelta(messageId: string, delta: string): void {
     this.#sqlite
       .prepare(
-        "UPDATE general_chat_messages SET content = content || ?, updated_at = ? WHERE id = ?"
+        `UPDATE general_chat_messages SET content = content || ?, updated_at = ?
+         WHERE id = ? AND role = 'assistant' AND status = 'streaming'
+           AND EXISTS (SELECT 1 FROM general_chat_runs r
+                       WHERE r.id = general_chat_messages.run_id AND r.status = 'running')`
       )
       .run(delta, timestamp(), messageId);
   }
@@ -1088,12 +1116,17 @@ export class GeneralChatStore {
     const failedAt = timestamp();
     this.#sqlite.exec("BEGIN IMMEDIATE;");
     try {
-      this.#sqlite
+      const changed = this.#sqlite
         .prepare(
           `UPDATE general_chat_runs SET status = 'failed', updated_at = ?
            WHERE id = ? AND status IN ('queued', 'running')`
         )
         .run(failedAt, runId);
+      if (Number(changed.changes) === 0) {
+        this.#sqlite.exec("COMMIT;");
+        return;
+      }
+      this.#ensureFailedAssistant(runId, errorCode, failedAt);
       this.#sqlite
         .prepare(
           `UPDATE general_chat_messages SET status = 'failed', error_code = ?, updated_at = ?
@@ -1111,6 +1144,21 @@ export class GeneralChatStore {
       this.#sqlite.exec("ROLLBACK;");
       throw error;
     }
+  }
+
+  /** A terminal run must be represented in history even if no token was produced. */
+  #ensureFailedAssistant(runId: string, errorCode: string, at: string): void {
+    this.#sqlite
+      .prepare(
+        `INSERT INTO general_chat_messages
+        (id, chat_id, owner_id, role, content_type, content, status, run_id, error_code, created_at, updated_at)
+       SELECT ?, r.chat_id, c.owner_id, 'assistant', 'text', '', 'failed', r.id, ?, ?, ?
+       FROM general_chat_runs r JOIN general_chats c ON c.id = r.chat_id
+       WHERE r.id = ? AND r.status = 'failed'
+         AND NOT EXISTS (SELECT 1 FROM general_chat_messages m
+                         WHERE m.chat_id = r.chat_id AND m.run_id = r.id AND m.role = 'assistant')`
+      )
+      .run(randomUUID(), errorCode, at, at, runId);
   }
 
   cancelRun(runId: string, ownerId = LOCAL_OWNER_ID): "cancelled" | "finished" | null {
@@ -1162,10 +1210,21 @@ export class GeneralChatStore {
     const failedAt = timestamp();
     this.#sqlite.exec("BEGIN IMMEDIATE;");
     try {
+      const orphans = this.#sqlite
+        .prepare(
+          `SELECT r.id, r.status FROM general_chat_runs r
+         WHERE r.status IN ('running', 'failed')
+           AND r.id = (SELECT latest.run_id FROM general_chat_messages latest
+                       WHERE latest.chat_id = r.chat_id AND latest.role = 'user'
+                       ORDER BY latest.rowid DESC LIMIT 1)
+           AND r.id NOT IN (SELECT m.run_id FROM general_chat_messages m
+                            WHERE m.role = 'assistant' AND m.run_id IS NOT NULL)`
+        )
+        .all() as Array<{ id: string; status: string }>;
       this.#sqlite
         .prepare(
           `UPDATE general_chat_messages SET status = 'failed', error_code = ?, updated_at = ?
-           WHERE role = 'assistant' AND status = 'streaming'
+           WHERE role = 'assistant' AND status IN ('pending', 'streaming')
              AND run_id IN (SELECT id FROM general_chat_runs WHERE status = 'running')`
         )
         .run(errorCode, failedAt);
@@ -1181,6 +1240,12 @@ export class GeneralChatStore {
           `UPDATE general_chat_runs SET status = 'failed', updated_at = ? WHERE status = 'running'`
         )
         .run(failedAt);
+      for (const orphan of orphans)
+        this.#ensureFailedAssistant(
+          orphan.id,
+          orphan.status === "running" ? errorCode : "INTERRUPTED",
+          failedAt
+        );
       this.#sqlite.exec("COMMIT;");
       return Number(result.changes);
     } catch (error) {

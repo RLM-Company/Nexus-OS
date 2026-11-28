@@ -1,6 +1,12 @@
 import { createHash } from "node:crypto";
 import {
   MediaCapabilityError,
+  AUDIO_CREATIVE_ROUTES,
+  VIDEO_CREATIVE_ROUTE,
+  type GeminiVideoMediaAdapter,
+  type VideoAspectRatio,
+  type CreativeAudioKind,
+  type ElevenLabsMediaAdapter,
   MediaCapabilityRegistry,
   MediaProviderError,
   OpenAIMediaAdapter,
@@ -86,6 +92,8 @@ export interface MediaOptions {
   apiKey?: string;
   paidEnabled?: boolean;
   adapter?: MediaAdapter;
+  creativeAudio?: Pick<ElevenLabsMediaAdapter, "generate">;
+  video?: Pick<GeminiVideoMediaAdapter, "generate">;
   ownerBudget?: OwnerMediaBudget;
   registry?: MediaCapabilityRegistry;
   emergencyStopped?: () => boolean;
@@ -133,6 +141,8 @@ const normalizeClientRequestId = (value: string | undefined): string | null => {
 export class MediaService {
   private readonly store: MediaFileStore | null;
   private readonly adapter: MediaAdapter | undefined;
+  private readonly creativeAudio: MediaOptions["creativeAudio"];
+  private readonly video: MediaOptions["video"];
   private readonly registry: MediaCapabilityRegistry;
   private readonly budget: OwnerMediaBudget | undefined;
   private readonly running = new Map<
@@ -150,6 +160,8 @@ export class MediaService {
 
   constructor(options: MediaOptions = {}) {
     this.store = options.directory ? new MediaFileStore(options.directory) : null;
+    this.creativeAudio = options.creativeAudio;
+    this.video = options.video;
     this.paidEnabled = options.paidEnabled === true;
     this.imageEditingEnabled = options.imageEditingEnabled === true;
     this.providerId = options.baseUrl?.startsWith("https://ru.cheapvibecode.ru/")
@@ -245,6 +257,131 @@ export class MediaService {
     return result;
   }
 
+  creativeCapability(kind: CreativeAudioKind | "video") {
+    const route = kind === "video" ? VIDEO_CREATIVE_ROUTE : AUDIO_CREATIVE_ROUTES[kind];
+    const adapter = kind === "video" ? this.video : this.creativeAudio;
+    const reason = !adapter
+      ? "REGISTRY_UNAVAILABLE"
+      : !this.store
+        ? "STORAGE_UNAVAILABLE"
+        : !this.paidEnabled
+          ? "PAID_EXECUTION_DISABLED"
+          : !this.budget
+            ? "BUDGET_UNAVAILABLE"
+            : this.closed
+              ? "MEDIA_STOPPED"
+              : this.emergencyStopped()
+                ? "EMERGENCY_STOP"
+                : null;
+    return {
+      ready: reason === null,
+      reason,
+      model: adapter ? route.model : null,
+      provider: adapter ? route.provider : null,
+      constraints: { minSeconds: route.minSeconds, maxSeconds: route.maxSeconds }
+    };
+  }
+
+  enqueueCreativeAudio(
+    ownerId: string,
+    kind: CreativeAudioKind,
+    value: string,
+    seconds: number,
+    instrumental: boolean,
+    consent: boolean,
+    clientRequest?: string
+  ): MediaJob {
+    const prompt = value.trim();
+    const route = AUDIO_CREATIVE_ROUTES[kind];
+    if (!prompt) throw Error("TEXT_REQUIRED");
+    if (
+      prompt.length > 1800 ||
+      !Number.isInteger(seconds) ||
+      seconds < route.minSeconds ||
+      seconds > route.maxSeconds ||
+      (kind === "sfx" && instrumental)
+    )
+      throw Error("CREATIVE_OPTIONS_INVALID");
+    return this.submit(
+      ownerId,
+      kind,
+      consent,
+      {
+        client_request_id: normalizeClientRequestId(clientRequest),
+        request_fingerprint: sha256Hex(JSON.stringify([kind, prompt, seconds, instrumental])),
+        parameters: {
+          duration_seconds: seconds,
+          ...(kind === "music" ? { instrumental } : {}),
+          prompt_sha256: sha256Hex(prompt)
+        }
+      },
+      async (signal) => ({
+        binary: await this.creativeAudio!.generate(kind, prompt, seconds, instrumental, signal)
+      }),
+      kind === "music" ? 180_000 : 60_000
+    );
+  }
+
+  enqueueVideo(
+    ownerId: string,
+    request: {
+      prompt: string;
+      duration_seconds: number;
+      aspect_ratio: VideoAspectRatio;
+      explicit_paid_consent: boolean;
+      scene?: { id: string; version: number };
+    },
+    clientRequest?: string
+  ): MediaJob {
+    const prompt = request.prompt.trim();
+    const seconds = request.duration_seconds;
+    if (!prompt) throw Error("TEXT_REQUIRED");
+    if (
+      prompt.length > 1800 ||
+      !Number.isInteger(seconds) ||
+      seconds < VIDEO_CREATIVE_ROUTE.minSeconds ||
+      seconds > VIDEO_CREATIVE_ROUTE.maxSeconds ||
+      !["16:9", "9:16"].includes(request.aspect_ratio)
+    )
+      throw Error("CREATIVE_OPTIONS_INVALID");
+
+    const aspectRatio = request.aspect_ratio;
+    const sceneId = request.scene?.id;
+    const sceneVersion = request.scene?.version;
+    return this.submit(
+      ownerId,
+      "video",
+      request.explicit_paid_consent,
+      {
+        client_request_id: normalizeClientRequestId(clientRequest),
+        request_fingerprint: sha256Hex(
+          JSON.stringify([prompt, seconds, aspectRatio, sceneId, sceneVersion])
+        ),
+        parameters: {
+          duration_seconds: seconds,
+          aspect_ratio: aspectRatio,
+          resolution: VIDEO_CREATIVE_ROUTE.resolution,
+          ...(sceneId ? { scene_id: sceneId, scene_version: sceneVersion } : {}),
+          prompt_sha256: sha256Hex(prompt)
+        }
+      },
+      async (signal) => ({
+        binary: await this.video!.generate(prompt, seconds, aspectRatio, signal)
+      }),
+      240_000,
+      sceneId
+        ? () => {
+            const revision = this.storyboard(ownerId)
+              .scenes.find(({ id }) => id === sceneId)
+              ?.revisions.find(({ version }) => version === sceneVersion);
+            if (!revision) throw Error("STORYBOARD_SCENE_NOT_FOUND");
+            if (revision.description !== prompt || revision.duration_seconds !== seconds)
+              throw Error("STORYBOARD_CONFLICT");
+          }
+        : undefined
+    );
+  }
+
   private check(capability: MediaCapability, consent: boolean, ownerId: string): void {
     if (
       !this.capabilities()[capability].ready ||
@@ -288,7 +425,21 @@ export class MediaService {
   ): MediaJob {
     const capability =
       kind === "image" ? "image_generation" : kind === "speech" ? "speech" : "transcription";
-    this.check(capability, consent, ownerId);
+    const creative =
+      kind === "video"
+        ? VIDEO_CREATIVE_ROUTE
+        : kind === "sfx" || kind === "music"
+          ? AUDIO_CREATIVE_ROUTES[kind]
+          : null;
+    if (kind === "sfx" || kind === "music" || kind === "video") {
+      if (
+        !this.creativeCapability(kind).ready ||
+        this.closedOwners.has(ownerId) ||
+        !this.ownerActive(ownerId)
+      )
+        throw Error("MEDIA_UNAVAILABLE");
+      if (!consent) throw Error("CONSENT_REQUIRED");
+    } else this.check(capability, consent, ownerId);
 
     // Idempotent client_request_id check BEFORE busy/quota checks so retries return the existing job.
     if (metadata.client_request_id) {
@@ -313,14 +464,14 @@ export class MediaService {
       throw new Error("MEDIA_BUSY");
     }
 
-    const route = this.registry.route(capability);
+    const route = creative ?? this.registry.route(capability);
     if (!route) throw new Error("MEDIA_UNAVAILABLE");
 
     prepare?.();
     const job = this.store!.create(ownerId, kind, {
       ...metadata,
       model: route.model,
-      provider: this.providerId
+      provider: creative?.provider ?? this.providerId
     });
     const controller = new AbortController();
     const task = new Promise<void>((resolve) => {
@@ -640,20 +791,17 @@ export class MediaService {
         transition(job.id, job.owner_id, "cancelled");
         return;
       }
-      const capability =
-        job.kind === "image"
-          ? "image_generation"
-          : job.kind === "speech"
-            ? "speech"
-            : "transcription";
-      const model = this.registry.route(capability)?.model;
+      const model = job.model;
       if (!model || !this.budget) throw new Error("BUDGET_UNAVAILABLE");
       // The shared ledger MUST reserve idempotently using this exact job id, before any provider dispatch.
       await this.budget.reserve({
         ownerId: job.owner_id,
         operationId: job.id,
         kind: job.kind,
-        model
+        model,
+        ...(job.kind === "sfx" || job.kind === "music" || job.kind === "video"
+          ? { provider: job.provider! }
+          : {})
       });
       reserved = true;
       store.budget(job.id, job.owner_id, "reserved");

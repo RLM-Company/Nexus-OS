@@ -9,6 +9,17 @@ export const StarsMissionEventSchema = Type.Union([
     {
       type: Type.Literal("brief"),
       goal: Type.String({ minLength: 1, maxLength: 4000 }),
+      author: Type.Optional(EntityIdSchema),
+      responsible: Type.Optional(EntityIdSchema),
+      input_versions: Type.Optional(
+        Type.Array(Type.String({ minLength: 1, maxLength: 160 }), { maxItems: 32 })
+      ),
+      criteria: Type.Optional(
+        Type.Array(Type.String({ minLength: 1, maxLength: 400 }), { maxItems: 16 })
+      ),
+      acceptance_rules: Type.Optional(
+        Type.Array(Type.String({ minLength: 1, maxLength: 400 }), { maxItems: 16 })
+      ),
       ...versioned
     },
     { additionalProperties: false }
@@ -27,7 +38,11 @@ export const StarsMissionEventSchema = Type.Union([
       agents: Type.Array(
         Type.Object({
           id: EntityIdSchema,
-          role: Type.Union([Type.Literal("manager"), Type.Literal("executor")]),
+          role: Type.Union([
+            Type.Literal("manager"),
+            Type.Literal("executor"),
+            Type.Literal("senior")
+          ]),
           task: Type.String({ minLength: 1, maxLength: 2000 }),
           context_scopes: Type.Array(EntityIdSchema, { maxItems: 32 })
         }),
@@ -111,6 +126,23 @@ export const StarsMissionEventSchema = Type.Union([
     {
       type: Type.Literal("combine"),
       summary: Type.String({ minLength: 1, maxLength: 8000 }),
+      ...versioned
+    },
+    { additionalProperties: false }
+  ),
+  Type.Object(
+    {
+      type: Type.Literal("conflict"),
+      from: EntityIdSchema,
+      text: Type.String({ minLength: 1, maxLength: 2000 }),
+      ...versioned
+    },
+    { additionalProperties: false }
+  ),
+  Type.Object(
+    {
+      type: Type.Literal("accept"),
+      actor: EntityIdSchema,
       ...versioned
     },
     { additionalProperties: false }

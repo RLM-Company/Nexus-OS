@@ -219,3 +219,44 @@ export function clearClarificationForTask(taskScope: string) {
     /* Storage may be unavailable; an in-memory card still stays honest. */
   }
 }
+
+/** The work snapshot supplies the question; only the API can accept the answer. */
+export function WorkClarificationForm({
+  question,
+  busy,
+  submit
+}: {
+  question: string;
+  busy: boolean;
+  submit: (text: string) => Promise<void>;
+}) {
+  const [draft, setDraft] = useState("");
+  const sending = useRef(false);
+
+  return (
+    <form
+      aria-label="Уточнение сравнения поставщиков"
+      onSubmit={(event) => {
+        event.preventDefault();
+        if (busy || sending.current || !draft.trim()) return;
+        sending.current = true;
+        void submit(draft).finally(() => {
+          sending.current = false;
+        });
+      }}
+    >
+      <p>{question}</p>
+      <label>
+        Недостающие данные JSON
+        <textarea
+          value={draft}
+          maxLength={8000}
+          onChange={(event) => setDraft(event.target.value)}
+        />
+      </label>
+      <button className="manager-work-action primary" disabled={busy || !draft.trim()}>
+        Продолжить сравнение
+      </button>
+    </form>
+  );
+}
