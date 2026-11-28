@@ -1,3 +1,4 @@
+import { Readable } from "node:stream";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import type { IdentityContext } from "@cosmora/contracts";
 import { Type } from "typebox";
@@ -136,6 +137,70 @@ export function registerDocumentAnswerRoutes(
           retryRequestId
         );
         return reply.code(202).send(answer);
+      } catch (cause) {
+        return err(reply, cause);
+      }
+    }
+  );
+  app.get<{ Params: { projectId: string; id: string } }>(
+    `${base}/:id/analysis.ndjson`,
+    { schema: { params: item } },
+    (req, reply) => {
+      const owner = identityFor(req).owner_id;
+      const run = service.store.get(req.params.projectId, owner, req.params.id);
+      if (!run?.coverage) return reply.code(404).send({ error: { code: "NOT_FOUND" } });
+      if (["queued", "running"].includes(run.status))
+        return reply.code(409).send({ error: { code: "ANALYSIS_IN_PROGRESS" } });
+      function* records() {
+        if (!run) return;
+        yield JSON.stringify({
+          type: "coverage",
+          id: run.id,
+          retry_of: run.retry_of,
+          status: run.status,
+          question: run.question,
+          coverage: run.coverage,
+          summary: run.answer
+        }) + "\n";
+        for (const row of service.store.batches(run)) {
+          if (reply.raw.destroyed) return;
+          const { ordinal, input_hash } = row;
+          const result = JSON.parse(row.notes) as {
+            file_id: string;
+            fragments: Array<{ chunk_id: number; sha256: string }>;
+          };
+          const fileUrl = `/api/v1/projects/${encodeURIComponent(run.project_id)}/document-library/${encodeURIComponent(result.file_id)}`;
+          yield JSON.stringify({
+            type: row.verified ? "verified_batch" : "failed_batch",
+            ordinal,
+            input_hash,
+            result: {
+              ...result,
+              original_url: fileUrl + "/download",
+              fragments: result.fragments.map((fragment) => ({
+                ...fragment,
+                current_fragment_url:
+                  fileUrl + "/fragments/" + fragment.chunk_id + "?sha256=" + fragment.sha256
+              }))
+            }
+          }) + "\n";
+        }
+      }
+      return reply
+        .header("Cache-Control", "private, no-store")
+        .header("X-Content-Type-Options", "nosniff")
+        .header("Content-Disposition", 'attachment; filename="kosmora-analysis.ndjson"')
+        .type("application/x-ndjson")
+        .send(Readable.from(records(), { objectMode: false }));
+    }
+  );
+  app.post<{ Params: { projectId: string; id: string } }>(
+    `${base}/:id/pause`,
+    { schema: { params: item } },
+    (req, reply) => {
+      try {
+        service.pause(req.params.projectId, identityFor(req).owner_id, req.params.id);
+        return { status: "paused" };
       } catch (cause) {
         return err(reply, cause);
       }
