@@ -2,17 +2,19 @@ import type { ResearchSourceReceipt } from "@cosmora/core";
 import type { SourceExclusionsView } from "@cosmora/contracts";
 import { useRef, useState } from "react";
 
-export function ResearchReceipts({
+export function ResearchSourceExclusion({
   projectId,
-  receipts
+  sourceId,
+  label = "Исключить из новых исследований"
 }: {
   projectId: string;
-  receipts: ResearchSourceReceipt[];
+  sourceId: string;
+  label?: string;
 }) {
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
   const inFlight = useRef(false);
-  async function exclude(id: string) {
+  async function exclude() {
     if (inFlight.current) return;
     inFlight.current = true;
     setBusy(true);
@@ -23,7 +25,9 @@ export function ResearchReceipts({
       if (!current.ok) throw Error("Не удалось прочитать исключения проекта.");
       const state = (await current.json()) as SourceExclusionsView;
       if (
-        !state.items.some((item) => item.source_kind === "research_page" && item.source_id === id)
+        !state.items.some(
+          (item) => item.source_kind === "research_page" && item.source_id === sourceId
+        )
       ) {
         const result = await fetch(url, {
           method: "PUT",
@@ -34,7 +38,7 @@ export function ResearchReceipts({
               ...state.items,
               {
                 source_kind: "research_page",
-                source_id: id,
+                source_id: sourceId,
                 excluded_at: new Date().toISOString(),
                 reason: "Исключён владельцем из будущих исследований"
               }
@@ -54,6 +58,23 @@ export function ResearchReceipts({
   }
 
   return (
+    <>
+      <button type="button" disabled={busy} onClick={() => void exclude()}>
+        {label}
+      </button>
+      {message && <p role="status">{message}</p>}
+    </>
+  );
+}
+
+export function ResearchReceipts({
+  projectId,
+  receipts
+}: {
+  projectId: string;
+  receipts: ResearchSourceReceipt[];
+}) {
+  return (
     <details>
       <summary>Квитанции источников</summary>
       <ul>
@@ -71,18 +92,11 @@ export function ResearchReceipts({
               SHA-256 выдержки <code>{receipt.excerpt_sha256}</code>
             </p>
             {receipt.project_source_id && (
-              <button
-                type="button"
-                disabled={busy}
-                onClick={() => void exclude(receipt.project_source_id!)}
-              >
-                Исключить из новых исследований
-              </button>
+              <ResearchSourceExclusion projectId={projectId} sourceId={receipt.project_source_id} />
             )}
           </li>
         ))}
       </ul>
-      {message && <p role="status">{message}</p>}
     </details>
   );
 }

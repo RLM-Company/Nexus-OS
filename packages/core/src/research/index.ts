@@ -26,6 +26,11 @@ export type ResearchStatus =
   | "cancelled";
 export type SourceStatus =
   "read" | "duplicate" | "robots_denied" | "network_denied" | "unavailable";
+export const RESEARCH_ORIGIN_LABELS = {
+  primary: "Первичный источник",
+  independent: "Независимое подтверждение"
+} as const;
+export type ResearchSourceOrigin = keyof typeof RESEARCH_ORIGIN_LABELS;
 export interface ResearchSource {
   title: string;
   url: string;
@@ -34,6 +39,9 @@ export interface ResearchSource {
   passages: string[];
   checked_at: string;
   content_digest?: string;
+  duplicate_of?: string;
+  project_source_id?: string;
+  origin?: { role: ResearchSourceOrigin; note: string };
 }
 export interface ResearchCandidate {
   title: string;
@@ -67,6 +75,7 @@ export interface ResearchRun {
   actor_id: string;
   project_id: string;
   question: string;
+  parent_run_id?: string;
   status: ResearchStatus;
   stage: string;
   candidates: ResearchCandidate[];
@@ -423,6 +432,7 @@ export interface ResearchSnapshotView {
   snapshots: { id: string; digest: string; checked_at: string }[];
   read_count: number;
   candidate_count: number;
+  checked_count: number;
   max_sources: number;
   attempts: number;
   max_attempts: number;
@@ -446,13 +456,11 @@ export function researchSnapshotView(run: ResearchRun): ResearchSnapshotView {
     snapshots,
     read_count,
     candidate_count: run.candidates.length,
+    checked_count: run.next_index,
     max_sources: RESEARCH_LIMITS.maxSources,
     attempts: run.attempts,
     max_attempts: RESEARCH_LIMITS.maxAttempts,
-    // A completed run may still be incomplete: more candidates existed than were
-    // read, or the source budget was reached. Never present this as exhaustive.
-    truncated_by_limits:
-      run.candidates.length > read_count || read_count >= RESEARCH_LIMITS.maxSources,
+    truncated_by_limits: run.candidates.length > run.next_index,
     contradictions: (run.answer?.disagreements ?? []).map((claim) => claim.text)
   };
 }
@@ -468,6 +476,7 @@ export function researchMarkdown(run: ResearchRun): string {
     `# Исследование: ${safeMarkdown(run.question)}`,
     "",
     `Идентификатор исследования: ${run.id}.`,
+    ...(run.parent_run_id ? [`Исходное исследование: ${run.parent_run_id}.`] : []),
     "",
     `Статус: ${run.status}. Создано: ${run.created_at}. Обновлено: ${run.updated_at}.`,
     "",
@@ -538,7 +547,7 @@ export function researchMarkdown(run: ResearchRun): string {
   lines.push("## Реестр источников", "");
   for (const [index, source] of run.sources.entries()) {
     lines.push(
-      `S${index + 1}. ${safeMarkdown(source.title)} — ${source.url} (${source.status}; ${source.checked_at})`
+      `S${index + 1}. ${safeMarkdown(source.title)} — ${source.url} (${source.status}; ${source.checked_at})${source.content_digest ? ` — SHA-256 ${source.content_digest}` : ""}${source.duplicate_of ? ` — совпадает со снимком ${source.duplicate_of}` : ""}${source.origin ? ` — отметка владельца «${RESEARCH_ORIGIN_LABELS[source.origin.role]}»: ${safeMarkdown(source.origin.note)}` : ""}`
     );
   }
   // Honest deduplication: identical bounded text is ONE source, never several
@@ -611,7 +620,7 @@ export function researchMarkdown(run: ResearchRun): string {
     "",
     "## Ограничения",
     "",
-    `Прочитано страниц: ${run.sources.filter((s) => s.status === "read").length} из ${run.candidates.length} кандидатов; максимум ${RESEARCH_LIMITS.maxSources} прочитанных страниц. Источники могли измениться после даты проверки. Закрытый контент, авторизация и CAPTCHA не обходились.`,
+    `Прочитано страниц: ${run.sources.filter((s) => s.status === "read").length} из ${run.candidates.length} кандидатов (проверено адресов: ${view.checked_count}); максимум ${RESEARCH_LIMITS.maxSources} прочитанных страниц. Источники могли измениться после даты проверки. Закрытый контент, авторизация и CAPTCHA не обходились.`,
     ""
   );
   return lines.join("\n");
@@ -647,5 +656,5 @@ export function researchHtml(run: ResearchRun): string {
     : "";
   const view = researchSnapshotView(run);
   const snapshotHtml = `<h2>Снимки источников</h2>${view.snapshots.length ? `<ul>${view.snapshots.map((s) => `<li>${h(s.id)}: дайджест ${h(s.digest)}…, получен ${h(s.checked_at)}</li>`).join("")}</ul>` : "<p>Снимки с дайджестом отсутствуют.</p>"}<h2>Границы исследования</h2><p>Прочитано ${view.read_count} из ${view.candidate_count} кандидатов (лимит ${view.max_sources}); попыток ${view.attempts} из ${view.max_attempts}. ${view.truncated_by_limits ? "Достигнут предел просмотра: исследование ограничено и не охватывает все найденные источники." : "Все найденные кандидаты рассмотрены в пределах лимита."}</p><h2>Противоречия (значения и единицы)</h2>${view.contradictions.length ? `<ol>${view.contradictions.map((c) => `<li>${h(c)}</li>`).join("")}</ol>` : "<p>Явных расхождений не зафиксировано; это не означает их отсутствия.</p>"}<p>Разные значения сохранены как есть: победитель не выбран, единицы не нормализованы.</p>`;
-  return `<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Исследование — Kosmora</title><style>body{font:16px/1.65 system-ui,sans-serif;max-width:860px;margin:3rem auto;padding:0 1.5rem;color:#181818}blockquote{border-left:3px solid #999;padding-left:1rem;margin-left:0;white-space:pre-wrap}small{color:#555}a{color:inherit;overflow-wrap:anywhere}hr{border:0;border-top:1px solid #bbb}</style></head><body><h1>${h(run.question)}</h1><small>${h(run.updated_at)} · ${h(run.status)}</small>${answerHtml}<h2>Ответ по проверенным выдержкам</h2><p>Фрагменты прочитанных страниц. Модельный синтез не является независимой проверкой фактов.</p>${sources.length ? `<h2>Краткая сводка по источникам</h2><ol>${sources.map((source) => `<li>${h(source.passages[0]!.slice(0, 260))} <a href="${h(source.url)}" rel="noopener noreferrer">[S${run.sources.indexOf(source) + 1}:E1]</a></li>`).join("")}</ol><h2>Подтверждающие фрагменты</h2>` + sources.map((source) => `<section><h3>S${run.sources.indexOf(source) + 1}. ${h(source.title)}</h3>${source.passages.map((p, index) => `<p><strong>S${run.sources.indexOf(source) + 1}:E${index + 1}</strong></p><blockquote>${h(p)}</blockquote>`).join("")}<p><a rel="noopener noreferrer" href="${h(source.url)}">Источник S${run.sources.indexOf(source) + 1}</a></p></section>`).join("") : "<p>Пригодных выдержек не найдено.</p>"}<hr><h2>Реестр источников</h2><ol>${run.sources.map((source, index) => `<li>S${index + 1}: <a rel="noopener noreferrer" href="${h(source.url)}">${h(source.title)}</a> — ${h(source.status)} (${h(source.checked_at)})</li>`).join("")}</ol>${snapshotHtml}<p>Лимит: до ${RESEARCH_LIMITS.maxSources} прочитанных страниц. Вход на сайты и обход ограничений не выполнялись.</p></body></html>`;
+  return `<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Исследование — Kosmora</title><style>body{font:16px/1.65 system-ui,sans-serif;max-width:860px;margin:3rem auto;padding:0 1.5rem;color:#181818}blockquote{border-left:3px solid #999;padding-left:1rem;margin-left:0;white-space:pre-wrap}small{color:#555}a{color:inherit;overflow-wrap:anywhere}hr{border:0;border-top:1px solid #bbb}</style></head><body><h1>${h(run.question)}</h1><small>${h(run.updated_at)} · ${h(run.status)}</small>${run.parent_run_id ? `<p>Исходное исследование: ${h(run.parent_run_id)}.</p>` : ""}${answerHtml}<h2>Ответ по проверенным выдержкам</h2><p>Фрагменты прочитанных страниц. Модельный синтез не является независимой проверкой фактов.</p>${sources.length ? `<h2>Краткая сводка по источникам</h2><ol>${sources.map((source) => `<li>${h(source.passages[0]!.slice(0, 260))} <a href="${h(source.url)}" rel="noopener noreferrer">[S${run.sources.indexOf(source) + 1}:E1]</a></li>`).join("")}</ol><h2>Подтверждающие фрагменты</h2>` + sources.map((source) => `<section><h3>S${run.sources.indexOf(source) + 1}. ${h(source.title)}</h3>${source.passages.map((p, index) => `<p><strong>S${run.sources.indexOf(source) + 1}:E${index + 1}</strong></p><blockquote>${h(p)}</blockquote>`).join("")}<p><a rel="noopener noreferrer" href="${h(source.url)}">Источник S${run.sources.indexOf(source) + 1}</a></p></section>`).join("") : "<p>Пригодных выдержек не найдено.</p>"}<hr><h2>Реестр источников</h2><ol>${run.sources.map((source, index) => `<li>S${index + 1}: <a rel="noopener noreferrer" href="${h(source.url)}">${h(source.title)}</a> — ${h(source.status)} (${h(source.checked_at)})${source.content_digest ? ` — SHA-256 <code>${h(source.content_digest)}</code>` : ""}${source.duplicate_of ? ` — совпадает со снимком ${h(source.duplicate_of)}` : ""}${source.origin ? ` — отметка владельца «${h(RESEARCH_ORIGIN_LABELS[source.origin.role])}»: ${h(source.origin.note)}` : ""}</li>`).join("")}</ol>${snapshotHtml}<p>Лимит: до ${RESEARCH_LIMITS.maxSources} прочитанных страниц. Вход на сайты и обход ограничений не выполнялись.</p></body></html>`;
 }

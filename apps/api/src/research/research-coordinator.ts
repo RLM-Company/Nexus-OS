@@ -193,7 +193,7 @@ export class ResearchCoordinator {
     if (!run || run.status === "paused") return;
     if (!run.candidates.length) {
       try {
-        const result = await this.search.search(run.question);
+        const result = await this.search.search(run.question, timed);
         if (timed.aborted || this.clock() >= deadline) throw new Error("TIME_BUDGET");
         const excluded = this.excludedSourceIds(run);
         run = this.activeUpdate(id, owner, ["searching"], (state) => {
@@ -237,13 +237,19 @@ export class ResearchCoordinator {
       let status: ResearchSource["status"] = "unavailable";
       let passages: string[] = [];
       let contentDigest: string | undefined;
+      let duplicateOf: string | undefined;
       try {
         const text = await this.reader.read(candidate.url, timed);
         if (timed.aborted) throw new Error("ABORTED");
         // Compare the exact bounded text returned by the reader, not the selected excerpts.
         const digest = createHash("sha256").update(text).digest("hex");
-        if (run.sources.some((source) => source.content_digest === digest)) {
+        const originalIndex = run.sources.findIndex(
+          (source) => source.status === "read" && source.content_digest === digest
+        );
+        if (originalIndex >= 0) {
           status = "duplicate";
+          contentDigest = digest;
+          duplicateOf = `S${originalIndex + 1}`;
         } else {
           passages = researchPassages(text, run.question);
           if (passages.length) {
@@ -280,10 +286,12 @@ export class ResearchCoordinator {
       run = this.activeUpdate(id, owner, ["reading"], (state) => {
         state.sources.push({
           ...candidate,
+          project_source_id: createHash("sha256").update(candidate.url).digest("hex"),
           status,
           passages,
           checked_at: new Date().toISOString(),
-          ...(contentDigest ? { content_digest: contentDigest } : {})
+          ...(contentDigest ? { content_digest: contentDigest } : {}),
+          ...(duplicateOf ? { duplicate_of: duplicateOf } : {})
         });
         state.next_index++;
       });
