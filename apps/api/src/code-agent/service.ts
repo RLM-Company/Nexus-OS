@@ -48,6 +48,30 @@ import { CodeAgentError, type CodeAgentStore, type CodeAgentRun } from "./store.
 
 const hash = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
 export const safeCodePath = isSafeCodeContextPath;
+/**
+ * Owner-facing projection of a durable run. Immutable source, internal identity and
+ * scope fences, and raw unvalidated model output stay on the server: they are recovery
+ * artifacts, not trusted results. `publication_token` is deliberately retained as the
+ * owner's one-time proof for the confidential publication confirmation.
+ */
+export function codeAgentViewState(run: CodeAgentRun) {
+  const {
+    snapshot,
+    owner_id,
+    actor_id,
+    workspace_scope,
+    repository_paths,
+    output_checkpoint,
+    ...visible
+  } = run;
+  void snapshot;
+  void owner_id;
+  void actor_id;
+  void workspace_scope;
+  void repository_paths;
+  void output_checkpoint;
+  return visible;
+}
 const validFiles = (files: GithubFileChange[]) =>
   files.length > 0 &&
   files.length <= 8 &&
@@ -169,12 +193,7 @@ export class CodeAgentService {
     return run;
   }
   view(run: CodeAgentRun) {
-    const { snapshot, owner_id, actor_id, workspace_scope, repository_paths, ...visible } = run;
-    void repository_paths;
-    void snapshot;
-    void owner_id;
-    void actor_id;
-    void workspace_scope;
+    const visible = codeAgentViewState(run);
     const ledger = (run.model_run_ids ?? []).flatMap((id) =>
       this.deps.projects.getModelUsageForRun(id, run.owner_id)
     );
