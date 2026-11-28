@@ -13,7 +13,14 @@ const EVENTS = Object.freeze({
   COMPUTER_FILE_NOT_FOUND: "file_missing",
   COMPUTER_DESKTOP_UNAVAILABLE: "device_unavailable",
   COMPUTER_SCREEN_UNAVAILABLE: "device_unavailable",
-  COMPUTER_NATIVE_INTERRUPTED: "device_disconnected"
+  COMPUTER_NATIVE_INTERRUPTED: "device_disconnected",
+  // Device-wide lease: human takeover and disconnect must be typed recovery
+  // events so the planner replans from a fresh observation instead of blindly
+  // retrying an input whose effect may be uncertain.
+  DEVICE_LEASE_TAKEN_OVER: "user_input_active",
+  DEVICE_LEASE_LOST: "user_input_active",
+  DEVICE_LEASE_ABORTED: "device_disconnected",
+  DEVICE_STOPPED: "device_disconnected"
 });
 
 /** Return a typed event for a known device failure, or null for unknown errors. */
