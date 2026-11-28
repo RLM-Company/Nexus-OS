@@ -26,7 +26,7 @@ import {
   type WorkDueFilter
 } from "./work-schedule-ui";
 import { useExecutionGate } from "./use-execution-gate";
-import { announceChatTaskPlan } from "./use-chat-task-plan";
+import { notifyWorkPlanSelection } from "./use-chat-task-plan";
 import { AI_WORK_CHAIN_FILE, parseAiWorkChain } from "./ai-work-chain";
 import styles from "./work-manager.module.css";
 
@@ -206,6 +206,7 @@ export function WorkManagerDag({
     if (url.searchParams.get("plan") === pinned.id) return;
     url.searchParams.set("plan", pinned.id);
     window.history.replaceState(window.history.state, "", url);
+    notifyWorkPlanSelection();
   }, [pinned, selected, onPlanSnapshot, projectId]);
   useEffect(() => {
     const openPlan = (event: Event) => {
@@ -304,17 +305,6 @@ export function WorkManagerDag({
       setSelected(result.id);
       setCollection(result.archived_at ? "archived" : "active");
       setSearch("");
-      // Feed the real durable DAG into the chat plan/timer panel. Nodes already
-      // carry ids, titles and dependencies, so no text is parsed or invented.
-      announceChatTaskPlan(projectId, {
-        id: result.id,
-        goal: result.title,
-        steps: result.nodes.map((node) => ({
-          id: node.id,
-          title: node.title,
-          depends_on: [...node.depends_on]
-        }))
-      });
     } else {
       setCopiedElsewhere(result);
     }

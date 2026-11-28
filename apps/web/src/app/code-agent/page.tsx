@@ -5,6 +5,7 @@ import { useCodeEditorNavigationGuard } from "./editor-navigation";
 import { CodeRepairControl } from "./repair-control";
 import { acceptsCodeSnapshot, type CodeSnapshotStamp } from "./snapshot-order";
 import { CodeCheckEvidence, hasVerifiedCodeCheck } from "./check-evidence";
+import { TaskRuntimeInterval } from "../task-runtime-interval";
 import { TerminalOutput } from "../ui/terminal-output";
 import { CodePatchEditor } from "./patch-editor";
 import { codePatchMessages, type CodePatchPreview } from "./patch-client";
@@ -842,6 +843,13 @@ export default function CodeAgentPage() {
               <div>
                 <h2>{run.task}</h2>
                 <p role="status">{labels[run.status] ?? run.status}</p>
+                {run.log?.length > 1 && (
+                  <TaskRuntimeInterval
+                    start={run.log[0]?.at}
+                    end={run.log.at(-1)?.at}
+                    label="Интервал событий задачи"
+                  />
+                )}
               </div>
               <button disabled={busy} onClick={() => void action(() => readRun(root, run.id))}>
                 Обновить состояние

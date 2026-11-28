@@ -23,6 +23,7 @@ export function registerWorkRuntimeRoutes(options: {
     if (!work || work.project_id !== req.params.projectId)
       return reply.code(404).send({ error: "WORK_NOT_FOUND" });
     return {
+      version: work.version,
       progress: workRuntimeProgress(work),
       checkpoints: store.runtime.checkpoints(work.project_id, owner, work.id),
       artifacts: store.runtime.artifacts(work.project_id, owner, work.id),

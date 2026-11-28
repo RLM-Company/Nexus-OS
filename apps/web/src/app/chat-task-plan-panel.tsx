@@ -1,4 +1,5 @@
 "use client";
+import Link from "next/link";
 import {
   formatDuration,
   planSummary,
@@ -41,9 +42,11 @@ const TIMING_SOURCE: Record<TimingKind, string> = {
  * metrics — only intervals actually recorded from run/tool events are shown. */
 export function ChatTaskPlanPanel({
   plan,
-  onChange
+  onChange,
+  stale = false
 }: {
   plan: ChatTaskPlan;
+  stale?: boolean;
   onChange: (next: ChatTaskPlan) => void;
 }) {
   const summary = planSummary(plan);
@@ -68,6 +71,7 @@ export function ChatTaskPlanPanel({
         {`Шагов: ${summary.total} · завершено ${summary.completed} · выполняется ${summary.running} · на паузе ${summary.paused} · ожидает ${summary.pending} · заблокировано ${summary.blocked}`}
         {active ? ` · активный: ${active.title}` : ""}
       </p>
+      {stale && <p role="alert">Связь прервана. Показана последняя подтверждённая версия плана.</p>}
       {!plan.collapsed && (
         <>
           <ol className={styles.steps}>
@@ -77,7 +81,20 @@ export function ChatTaskPlanPanel({
                   {STATUS_LABEL[step.status]}
                   {step.block_reason ? ` (${REASON_LABEL[step.block_reason]})` : ""}
                 </span>
-                <span className={styles.title}>{step.title}</span>
+                <span className={styles.title}>
+                  {step.title}
+                  {step.depends_on.length > 0 && (
+                    <small>
+                      {" "}
+                      · После:{" "}
+                      {step.depends_on
+                        .map(
+                          (id) => plan.steps.find((candidate) => candidate.id === id)?.title ?? id
+                        )
+                        .join(", ")}
+                    </small>
+                  )}
+                </span>
                 {step.started_at !== null && (
                   <span className={styles.time}>
                     {step.ended_at !== null
@@ -88,6 +105,11 @@ export function ChatTaskPlanPanel({
               </li>
             ))}
           </ol>
+          <Link
+            href={`/?project=${encodeURIComponent(plan.scope)}&view=plan&plan=${encodeURIComponent(plan.id)}`}
+          >
+            Открыть управление планом
+          </Link>
           <div className={styles.timing} aria-label="Время по событиям">
             {(Object.keys(TIMING_LABEL) as TimingKind[]).map((kind) => (
               <span
