@@ -36,6 +36,7 @@ import {
   upgradeAccountProfileColumns,
   StepUpProofStore,
   ProjectMembershipStore,
+  DeveloperApiStore,
   UsageStore
 } from "@cosmora/db";
 import { validateAgentDelegation } from "@cosmora/policy-engine";
@@ -48,6 +49,7 @@ import {
   StoredStepUpProofConsumer
 } from "./identity.js";
 import { GeneralChatBackgroundRunCoordinator } from "./general-chat-background-run-coordinator.js";
+import { createDeveloperIdentityResolver } from "./developer-api/developer-key-resolver.js";
 import { GeneralChatRuntimeStore } from "./general-chat-runtime-store.js";
 import { ManagerBackgroundRunCoordinator } from "./manager-background-run-coordinator.js";
 import { DemoManagerCoordinator } from "./demo-manager-coordinator.js";
@@ -195,16 +197,18 @@ try {
   const demoManagerStore = new DemoManagerStore(database.sqlite);
   const emergencyStopStore = new EmergencyStopStore(database.sqlite);
   const identityStore = new IdentityStore(database.sqlite);
+  const developerApiStore = new DeveloperApiStore(database.sqlite);
   const stepUpProofStore = new StepUpProofStore(database.sqlite);
   const runtimeMetrics = new RuntimeMetrics();
   if (recoveredAccountHolds > 0)
     process.stdout.write(
       `Reconciled ${recoveredAccountHolds} verified owner holds after restart\n`
     );
-  const identityResolver =
+  const baseIdentityResolver =
     config.nodeEnv === "production"
       ? new BearerSessionIdentityResolver(identityStore)
       : new StaticIdentityResolver(LOCAL_DEVELOPMENT_IDENTITY);
+  const identityResolver = createDeveloperIdentityResolver(developerApiStore, baseIdentityResolver);
   if (config.runtimeEmergencyStop) {
     emergencyStopStore.activateProcess(
       "RUNTIME_EMERGENCY_STOP environment switch",
@@ -446,6 +450,7 @@ try {
     }),
     agentStudioMutationStore: new AgentStudioMutationStore(database.sqlite),
     modelGateway: modelRuntime.gateway,
+    developerApiStore,
     chat: modelRuntime.chat,
     manager: modelRuntime.manager,
     modelRegistryVersion: modelRuntime.registryVersion,

@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Kosmora · Developer keys</title>
+    <style>
+      body {
+        font-family: system-ui, sans-serif;
+        margin: 2rem;
+        max-width: 760px;
+      }
+      code {
+        background: #f3f3f3;
+        padding: 0.2rem 0.4rem;
+      }
+      button {
+        padding: 0.5rem 0.9rem;
+      }
+      .card {
+        border: 1px solid #ddd;
+        border-radius: 8px;
+        padding: 1rem;
+        margin: 1rem 0;
+      }
+      .error {
+        color: #b00020;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Ключи разработчика</h1>
+    <p>
+      Управление ключами через существующую сессию владельца. Секрет показывается только при
+      выпуске.
+    </p>
+    <div class="card">
+      <label
+        >Scopes (через запятую)<br /><input
+          id="scopes"
+          size="60"
+          value="chat.read,chat.write,tasks.read,tasks.write,webhooks.write"
+      /></label>
+      <button id="issue">Выпустить ключ</button>
+      <p id="issued" class="card" hidden></p>
+    </div>
+    <h2>Существующие ключи</h2>
+    <div id="keys"></div>
+    <script>
+      const base = "/api/v1/developer/v1";
+      const showError = (error) => {
+        document.body.insertAdjacentHTML("beforeend", `<p class="error">${error}</p>`);
+      };
+      async function request(path, options = {}) {
+        const response = await fetch(base + path, { credentials: "same-origin", ...options });
+        const body = await response.json();
+        if (!response.ok) throw new Error(body?.error?.code || response.status);
+        return body;
+      }
+      async function refresh() {
+        try {
+          const { keys } = await request("/keys");
+          document.getElementById("keys").innerHTML =
+            keys
+              .map(
+                (key) =>
+                  `<div class="card"><code>${key.key_id}</code> · ${key.scopes.join(", ")} · ${key.revoked_at ? "отозван" : "активен"} ${key.revoked_at ? "" : `<button data-revoke="${key.key_id}">Отозвать</button>`}</div>`
+              )
+              .join("") || "<p>Ключей нет.</p>";
+          document.querySelectorAll("[data-revoke]").forEach(
+            (button) =>
+              (button.onclick = async () => {
+                await request("/keys/" + button.dataset.revoke, { method: "DELETE" });
+                await refresh();
+              })
+          );
+        } catch (error) {
+          showError(error.message);
+        }
+      }
+      document.getElementById("issue").onclick = async () => {
+        try {
+          const scopes = document
+            .getElementById("scopes")
+            .value.split(",")
+            .map((s) => s.trim())
+            .filter(Boolean);
+          const issued = await request("/keys", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ scopes, ttl_ms: 86400000 })
+          });
+          const node = document.getElementById("issued");
+          node.hidden = false;
+          node.innerHTML = `<strong>Сохраните секрет сейчас:</strong><br /><code>${issued.token}</code><br />key_id: ${issued.key_id}`;
+          await refresh();
+        } catch (error) {
+          showError(error.message);
+        }
+      };
+      refresh();
+    </script>
+  </body>
+</html>
