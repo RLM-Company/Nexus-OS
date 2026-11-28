@@ -1,0 +1,158 @@
+{
+  "wave": "2026-11-27",
+  "base_sha": "3af92583ccc8ceb49f44c0b8633955f40feaf59f",
+  "status": "integrated_in_candidate_not_deployed",
+  "dispatched": true,
+  "sprint": {
+    "instruction": "SPRINT_48H_RU.md",
+    "work_queue_instruction": "MAX_WORK_QUEUE_RU.md",
+    "intensity": "high_continuous_scoped_delivery",
+    "status": "integration",
+    "automation_installed": false,
+    "start_reference_utc": "2026-11-27T12:56:58Z",
+    "main_finish_reference_utc": "2026-11-29T12:56:58Z",
+    "promotion_end_estimate_utc": "2026-11-29T15:56:58Z",
+    "promotion_end_source": "owner_report_not_provider_verified",
+    "accelerated_agents": [
+      "01_OPENCODE",
+      "02_OPENCODE",
+      "03_OPENCODE",
+      "04_HARNESS",
+      "05_HARNESS",
+      "06_HARNESS",
+      "10_OPENCODE",
+      "11_OPENCODE",
+      "12_OPENCODE",
+      "13_HARNESS",
+      "14_HARNESS",
+      "15_HARNESS"
+    ]
+  },
+  "integration_owner": "codex",
+  "review_owner": "codex",
+  "agents": [
+    {
+      "id": "01_OPENCODE",
+      "scope": "device_browser_desktop",
+      "instruction": "01_OPENCODE_DEVICE_BROWSER_RU.md",
+      "status": "included_in_candidate",
+      "head_sha": "a440afa630d5ce23e84827028d0fe60e1e720b8b",
+      "pr": "https://github.com/RLM-Company/Nexus-OS/pull/690"
+    },
+    {
+      "id": "02_OPENCODE",
+      "scope": "games_sites",
+      "instruction": "02_OPENCODE_GAMES_SITES_RU.md",
+      "status": "included_in_candidate",
+      "head_sha": "9002c5e2a261433549634c470e4d9d1742d27cee",
+      "pr": "https://github.com/RLM-Company/Nexus-OS/pull/693"
+    },
+    {
+      "id": "03_OPENCODE",
+      "scope": "developer_api_performance",
+      "instruction": "03_OPENCODE_API_SPEED_RU.md",
+      "status": "included_in_candidate",
+      "head_sha": "48862d7809e306ada8ac40776c53be02cf434a3c",
+      "pr": "https://github.com/RLM-Company/Nexus-OS/pull/694",
+      "required_corrections": [699, 700]
+    },
+    {
+      "id": "04_HARNESS",
+      "scope": "stars_hierarchy_execution",
+      "instruction": "04_HARNESS_STARS_RU.md",
+      "status": "included_in_candidate",
+      "head_sha": "9a28426db9552af46dbe021f5de3f024cea70ea0",
+      "pr": "https://github.com/RLM-Company/Nexus-OS/pull/695"
+    },
+    {
+      "id": "05_HARNESS",
+      "scope": "memory_skills_business",
+      "instruction": "05_HARNESS_MEMORY_SKILLS_RU.md",
+      "status": "included_in_candidate",
+      "head_sha": "387eceedfb6c3d3f96de1449e0a61c3b05ece4c9",
+      "pr": "https://github.com/RLM-Company/Nexus-OS/pull/692"
+    },
+    {
+      "id": "06_HARNESS",
+      "scope": "collaboration_connectors",
+      "instruction": "06_HARNESS_COLLAB_CONNECTORS_RU.md",
+      "status": "included_in_candidate",
+      "head_sha": "6cddbd4822fe0e5ab8ff1cac2079f09f378326c8",
+      "pr": "https://github.com/RLM-Company/Nexus-OS/pull/691"
+    },
+    {
+      "id": "07_GEMINI",
+      "scope": "media_presentations",
+      "instruction": "07_GEMINI_MEDIA_RU.md",
+      "status": "included_in_candidate",
+      "head_sha": "df714f5496488d38376c19eca8446b3af690631c",
+      "pr": "https://github.com/RLM-Company/Nexus-OS/pull/689"
+    },
+    {
+      "id": "08_GROK",
+      "scope": "voice_meetings",
+      "instruction": "08_GROK_VOICE_MEETINGS_RU.md",
+      "status": "source_not_found",
+      "head_sha": null,
+      "pr": null,
+      "blocker": "No fresh PR/branch located at intake; owner asked for source link."
+    },
+    {
+      "pr": "https://github.com/RLM-Company/Nexus-OS/pull/696",
+      "id": "10_OPENCODE",
+      "head_sha": "75b77331e18375290df567d5553af99c3eb9f6ed",
+      "scope": "office_documents_spreadsheets",
+      "instruction": "10_OPENCODE_OFFICE_RU.md",
+      "status": "included_in_candidate"
+    },
+    {
+      "pr": "https://github.com/RLM-Company/Nexus-OS/pull/701",
+      "id": "11_OPENCODE",
+      "head_sha": "6619a3498a1d9d06fc9ba9095044b84069bb158c",
+      "scope": "koscode_workbench",
+      "instruction": "11_OPENCODE_KOSCODE_RU.md",
+      "status": "included_in_candidate"
+    },
+    {
+      "pr": "https://github.com/RLM-Company/Nexus-OS/pull/703",
+      "id": "12_OPENCODE",
+      "head_sha": "69783a883e3595726155330a6e1315338900c730",
+      "scope": "workflows_automation",
+      "instruction": "12_OPENCODE_AUTOMATIONS_RU.md",
+      "status": "included_in_candidate"
+    },
+    {
+      "pr": null,
+      "id": "13_HARNESS",
+      "head_sha": null,
+      "scope": "research_web_search",
+      "instruction": "13_HARNESS_RESEARCH_RU.md",
+      "status": "source_not_found",
+      "blocker": "No fresh PR/branch located at intake; owner asked for source link."
+    },
+    {
+      "pr": "https://github.com/RLM-Company/Nexus-OS/pull/697",
+      "id": "14_HARNESS",
+      "head_sha": "a6d58c4b220bdc0b870111e0c2b78251b20d449c",
+      "scope": "large_file_analysis",
+      "instruction": "14_HARNESS_FILE_ANALYSIS_RU.md",
+      "status": "included_in_candidate"
+    },
+    {
+      "pr": "https://github.com/RLM-Company/Nexus-OS/pull/698",
+      "id": "15_HARNESS",
+      "head_sha": "b6e825cc81c42f8344893eb118305f1c78a8bdf1",
+      "scope": "task_control_observability",
+      "instruction": "15_HARNESS_TASK_CONTROL_RU.md",
+      "status": "included_in_candidate"
+    }
+  ],
+  "dispatch_evidence": "Owner reports manual dispatch; received PR heads recorded at intake.",
+  "integration_owner_basis": "Owner instruction 2026-11-28: all developers delivered, integrate.",
+  "integrator_prs": [699, 700, 702, 704],
+  "acceptance": {
+    "full_ci": "pending_for_exact_candidate_sha",
+    "vps": "not_deployed_or_checked_in_this_intake",
+    "first_group": "not_run"
+  }
+}
