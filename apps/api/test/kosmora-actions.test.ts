@@ -57,12 +57,12 @@ describe("Kosmora explicit actions", () => {
       items: [
         {
           title: "Источник",
-          url: "https://example.test/article",
+          url: "https://example.org/article",
           snippet: "Фрагмент"
         }
       ]
     });
-    expect(block).toContain("https://example.test/article");
+    expect(block).toContain("https://example.org/article");
     expect(block).toContain("searched_at:");
     expect(block).toContain("недоверенные цитируемые данные");
     expect(block).toContain("не выдумывай ссылки");
@@ -95,7 +95,7 @@ describe("Kosmora explicit actions", () => {
   it("runs search only when requested and injects the results as data", async () => {
     let calls = 0;
     const base = fetchFixture([
-      { title: "Отчёт", url: "https://example.test/report", content: "19 700 ₽" }
+      { title: "Отчёт", url: "https://example.org/report", content: "19 700 ₽" }
     ]);
     const counted: typeof fetch = async (...args) => {
       calls++;
@@ -109,7 +109,7 @@ describe("Kosmora explicit actions", () => {
     );
     expect(calls).toBe(1);
     expect(result[0]!.content).toContain("[kosmora_web_search]");
-    expect(result[0]!.content).toContain("https://example.test/report");
+    expect(result[0]!.content).toContain("https://example.org/report");
     expect(result[0]!.content).toContain("19 700 ₽");
     expect(result[0]!.content.startsWith("Что нового по теме 00123?")).toBe(true);
   });

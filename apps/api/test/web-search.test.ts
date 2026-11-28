@@ -13,7 +13,11 @@ it("bounds search results and never follows provider links or redirects", async 
         JSON.stringify({
           results: [
             { title: "<b>Docs</b>", url: "https://example.org/docs", content: "Text" },
-            { title: "Duplicate", url: "https://example.org/docs" },
+            { title: "Duplicate", url: "https://example.org/docs?utm_medium=ref#top" },
+            null,
+            { title: "Loopback", url: "http://127.0.0.1/" },
+            { title: "Local", url: "http://service.internal/" },
+            { title: "Port", url: "https://example.org:8080/docs" },
             { title: "Attack", url: "javascript:alert(1)" },
             { title: "Credential", url: "https://user:password@example.org/" }
           ]
