@@ -15,6 +15,7 @@ export type IconName =
   | "projects"
   | "work"
   | "code"
+  | "branch"
   | "multi-agent"
   | "skills"
   | "studio"
@@ -51,6 +52,14 @@ export type IconName =
 // Shared action icons keep identical geometry across chat and composer.
 
 const paths: Record<Exclude<IconName, "cosmora">, React.ReactNode> = {
+  branch: (
+    <>
+      <circle cx="6" cy="5" r="2" />
+      <circle cx="18" cy="6" r="2" />
+      <circle cx="6" cy="19" r="2" />
+      <path d="M6 7v10m0-4h5a7 7 0 0 0 7-5" />
+    </>
+  ),
   plus: <path d="M12 5v14M5 12h14" />,
   repeat: (
     <>

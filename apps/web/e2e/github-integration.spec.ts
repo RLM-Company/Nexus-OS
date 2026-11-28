@@ -239,11 +239,11 @@ test("reveals files past the first 500 and reports a GitHub read refusal", async
 test("Code opens the real repository workspace", async ({ page }) => {
   await page.goto("/?surface=code");
   await expect(
-    page.locator(".coscode-space-tools").getByRole("link", { name: "GitHub", exact: true })
+    page.locator("aside.sidebar").getByRole("link", { name: "Репозитории GitHub", exact: true })
   ).toHaveAttribute("href", "/github");
   await page
-    .locator(".coscode-space-tools")
-    .getByRole("link", { name: "GitHub", exact: true })
+    .locator("aside.sidebar")
+    .getByRole("link", { name: "Репозитории GitHub", exact: true })
     .click();
   await expect(page.getByRole("heading", { name: "GitHub ещё не подключён" })).toBeVisible();
 });

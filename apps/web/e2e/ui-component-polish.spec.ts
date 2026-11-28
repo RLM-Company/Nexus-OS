@@ -13,7 +13,7 @@ test("GitHub import opens the prepared chat even when Code was saved", async ({ 
     );
   }, importId);
   await page.goto(`/?github_import=${importId}`);
-  await expect(page.getByLabel("Сообщение Kosmora")).toHaveValue("Проверь router.ts из GitHub");
+  await expect(page.getByLabel("Задание Koscode")).toHaveValue("Проверь router.ts из GitHub");
   await expect(page.getByRole("list", { name: "Прикреплённые файлы" })).toContainText("router.ts");
   await expect(page.getByRole("heading", { name: "Code", exact: true })).toHaveCount(0);
   await expect(page).not.toHaveURL(/github_import/);
