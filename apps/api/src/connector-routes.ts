@@ -23,7 +23,8 @@ export function registerConnectorRoutes(
   mcp: McpRouteDependencies,
   drive?: GoogleDriveRuntime,
   http?: ConnectorTransport,
-  github?: GithubIntegration
+  github?: GithubIntegration,
+  fixtures?: { transports: Record<string, ConnectorTransport> }
 ) {
   const runtime = policyStore ? new GuardedToolRuntime(policyStore) : undefined;
   const registry = runtime ? new ConnectorRegistry(runtime) : undefined;
@@ -45,6 +46,9 @@ export function registerConnectorRoutes(
       connectorToolId("github", "read_file"),
       githubConnectorTransports(github)
     );
+  if (fixtures)
+    for (const [toolId, transport] of Object.entries(fixtures.transports))
+      registry?.bindTransport(toolId, transport);
   registerMcpRoutes(app, registry, { ...mcp, policy: policyStore });
   registry?.bindToRuntime();
 

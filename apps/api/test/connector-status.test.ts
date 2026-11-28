@@ -38,9 +38,11 @@ describe("integrations status endpoint", () => {
         connectors: { id: string; state: string; transport_wired: boolean; operations: number }[];
       }>();
       expect(body.connectors.map((item) => item.id).sort()).toEqual([
+        "calendar-fixture",
         "github",
         "google-drive",
         "http-api",
+        "mail-fixture",
         "office"
       ]);
       for (const connector of body.connectors) {

@@ -2,6 +2,7 @@ import { EnvironmentSecretResolver, loadServerConfig } from "@cosmora/config";
 import { configuredMcpDiscovery } from "./mcp-discovery.js";
 import { WORK_EXECUTION_CONCURRENCY } from "@cosmora/contracts";
 import { RuntimeClock } from "@cosmora/model-gateway";
+import { createFixtureServiceAdapters } from "@cosmora/tool-runtime";
 import {
   AgentBlueprintStore,
   DocumentLibraryStore,
@@ -319,6 +320,7 @@ try {
     indexedRecall: semanticIndex,
     semanticRanker,
     googleDrive,
+    fixtureServiceAdapters: createFixtureServiceAdapters(),
     computerControl: { enabled: true },
     runtimeClock: modelRuntime.clock,
     intelligenceGraphWorkspace: {
